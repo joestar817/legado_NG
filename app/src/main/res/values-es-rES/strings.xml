@@ -98,7 +98,7 @@
     <string name="offline_cache_s">precarga el o los capítulos(s) seleccionado(s) en Almacenamiento en caché</string>
     <string name="change_origin">Cambiar origen</string>
     <string name="about_description">\u3000\u3000 Este es una aplicación de lectura bajo software libre, desarrollado en Kotlin, en que podrás participar. </string>
-    <string name="app_share_description">Legado (YueDu 3.0) disponible para descargar en：\n https://github.com/gedoor/legado/releases</string>
+    <string name="app_share_description">阅读NG download link：\n https://github.com/joestar817/legado/releases</string>
     <string name="version_name">Versión %s</string>
     <string name="pt_background_verification">Verificación en segundo plano</string>
     <string name="ps_background_verification">podrá utilizar con libertad cuando se verifique la fuente del libro</string>
@@ -698,11 +698,8 @@
     <string name="contact">Contact</string>
     <string name="license">License</string>
     <string name="other">Other</string>
-    <string name="official_account">开源阅读</string>
-    <string name="follow_official_account">Follow WeChat Official Accounts</string>
     <string name="wechat">WeChat</string>
     <string name="thanks">Supporting me will be appreciated</string>
-    <string name="about_official_account">Official Accounts[开源阅读]</string>
     <string name="source_auto_changing">Changing source</string>
     <string name="click_to_apply">Tap to join</string>
     <string name="middle">Middle</string>
@@ -742,15 +739,7 @@
     <string name="starting_download">Iniciando descarga</string>
     <string name="already_in_download">Este libro ya está en la lista de descargas</string>
     <string name="click_to_open">Haga clic para abrir</string>
-    <string name="follow_public_account_summary">Siga [开源阅读] para obtener ayuda haciendo clic en los anuncios</string>
-    <string name="weChat_appreciation_code">Código de sugerencia de WeChat</string>
-    <string name="alipay">AliPay</string>
-    <string name="alipay_red_envelope_search_code">Sobre rojo de AliPay, código de búsqueda</string>
-    <string name="alipay_red_envelope_copy">537954522 Haga clic para copiar</string>
-    <string name="alipay_red_envelope_qr_code">Código QR del sobre rojo de AliPay</string>
-    <string name="alipay_payment_qr_code">Código QR de AliPay</string>
-    <string name="qq_collection_qr_code">Código QR de la Colección QQ</string>
-    <string name="contributors_summary">gedoor, Invinciblelee, Xwite, etc. Para obtener más detalles, vaya a Github</string>
+    <string name="contributors_summary">Checking in GitHub for details</string>
     <string name="clear_cache_summary">Limpiar la caché de libros y fuentes descargados</string>
     <string name="default_cover">Portada predeterminada</string>
     <string name="restore_ignore">Lista de descartados</string>
@@ -772,8 +761,7 @@
     <string name="show_brightness_view">Mostrar widget de brillo</string>
     <string name="language">Idioma</string>
     <string name="import_rss_source">Importar fuente RSS</string>
-    <string name="donate_summary">Su donación mejora esta aplicación</string>
-    <string name="about_summary">Cuenta oficial de Wechat [开源阅读软件]</string>
+    <string name="about_summary">Next Generation Legado - 阅读NG</string>
     <string name="read_record">Leer historial</string>
     <string name="del_read_record">Eliminar historial de lectura</string>
     <string name="read_record_summary">Leer resumen del historial</string>

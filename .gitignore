@@ -18,3 +18,7 @@ package-lock.json
 .kotlin/
 .cxx
 .vscode
+.idea
+.agent
+.claude
+AGENTS.md

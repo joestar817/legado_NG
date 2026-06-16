@@ -35,7 +35,6 @@ class CronetInterceptor(private val cookieJar: CookieJar) : Interceptor {
             builder.removeHeader("Keep-Alive")
             builder.removeHeader("Accept-Encoding")
 
-            // https://github.com/gedoor/legado/issues/5025#issuecomment-2851156500
             if (!original.isHttps &&
                 original.header("User-Agent")?.startsWith("Mozilla", true) == true
             ) {

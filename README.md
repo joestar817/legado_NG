@@ -1,31 +1,42 @@
 # [English](English.md) [中文](README.md)
 
-![icon_android](https://gitee.com/lyc486/yuedu/raw/master/icon_android.png)
 <a href="https://jb.gg/OpenSourceSupport" target="_blank">
 <img width="24" height="24" src="https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.svg?_gl=1*135yekd*_ga*OTY4Mjg4NDYzLjE2Mzk0NTE3MzQ.*_ga_9J976DJZ68*MTY2OTE2MzM5Ny4xMy4wLjE2NjkxNjMzOTcuNjAuMC4w&_ga=2.257292110.451256242.1669085120-968288463.1639451734" alt="idea"/>
 </a>
 
 <div align="center">
-<img width="125" height="125" src="https://github.com/gedoor/legado/raw/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="legado"/>
+<img width="125" height="125" src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="legado"/>
 <br>
-阅读Sigma
+阅读NG — Next Generation Legado
 <br>
-<a href="https://loyc.xyz/c/legado.html" target="_blank">软件介绍页</a>
+阅读NG 继承自<a href="https://github.com/Luoyacheng/legado" target="_blank">阅读Sigma</a>（阅读Sigma 又继承自 <a href="https://github.com/gedoor/legado" target="_blank">Legado</a>），致力于打造下一代的阅读体验。
 <br>
-阅读Sigma继承自<a href="https://github.com/gedoor/legado" target="_blank">Legado</a>，在其基础上新增更多功能。
+<b>Next Generation Legado</b> 寓意着在原有阅读器的基础上不断进化，追求更卓越的阅读体验。
 </div>
 
 ## 版本说明
-- 测试版(beta)：包名与原版相同，可覆盖更新，版本更新频繁
-- 正式版(plus)：新的共存包名，安装后是一个新软件，不会覆盖原版，每到一个稳定阶段进行一次更新
-#### 找不到下载地址可以去这里 [下载软件](https://gitee.com/lyc486/legado/releases)
+- 测试版(beta)：使用阅读NG独立包名前缀，可与阅读原版、阅读Sigma共存
+- 正式版(plus)：使用阅读NG独立共存包名，安装后是一个新软件，不会覆盖原版，每到一个稳定阶段进行一次更新
+
+## 与其他版本共存
+
+阅读NG 使用独立包名前缀 `io.legado.app.ng`。当前构建仍会按构建类型追加后缀，例如：
+- 测试版：`io.legado.app.ng.release`
+- 调试版：`io.legado.app.ng.debug`
+- 正式共存版：`io.legado.app.ng.releaseS`
+
+因此阅读NG可与以下版本同时安装：
+- 阅读原版
+- 阅读Sigma
+
+各版本数据相互独立，互不影响。
 
 [![](https://img.shields.io/badge/-Contents:-696969.svg)](#contents) [![](https://img.shields.io/badge/-Function-F5F5F5.svg)](#Function-主要功能-) [![](https://img.shields.io/badge/-Community-F5F5F5.svg)](#Community-交流社区-) [![](https://img.shields.io/badge/-API-F5F5F5.svg)](#API-) [![](https://img.shields.io/badge/-Other-F5F5F5.svg)](#Other-其他-) [![](https://img.shields.io/badge/-Grateful-F5F5F5.svg)](#Grateful-感谢-) [![](https://img.shields.io/badge/-Interface-F5F5F5.svg)](#Interface-界面-)
 
 >新用户？
 >
 >软件不提供内容，需要您自己手动添加，例如导入书源等。
->看看 [官方帮助文档](https://www.yuque.com/legado/wiki)，也许里面就有你要的答案。
+>可先查看内置帮助文档，了解书源、订阅源和导入规则等基础用法。
 
 # Function-主要功能 [![](https://img.shields.io/badge/-Function-F5F5F5.svg)](#Function-主要功能-)
 [English](English.md)
@@ -48,18 +59,7 @@
 
 # Community-交流社区 [![](https://img.shields.io/badge/-Community-F5F5F5.svg)](#Community-交流社区-)
 
-#### Telegram
-[![Telegram-channel](https://img.shields.io/badge/Σ_Telegram-%E9%A2%91%E9%81%93-blue)](https://t.me/readsigma)
-
-#### WeChat
-[![WeChat-channel](https://img.shields.io/badge/Σ_%e5%be%ae%e4%bf%a1-%e5%85%ac%e4%bc%97%e5%8f%b7-green)](https://mp.weixin.qq.com/s/f54f7yP9HQi6P5Wky8wE1A)  
-<img src="https://open.weixin.qq.com/qr/code?username=legado_plus" width="100">
-
-#### Discord
-[![Discord](https://img.shields.io/discord/560731361414086666?color=%235865f2&label=Discord)](https://discord.gg/VtUfRyzRXn)
-
-#### Other
-https://www.yuque.com/legado/wiki/community
+暂无官方社区入口。
 
 <a href="#readme">
     <img src="https://img.shields.io/badge/-返回顶部-orange.svg" alt="#" align="right">
@@ -77,20 +77,20 @@ https://www.yuque.com/legado/wiki/community
 
 # Other-其他 [![](https://img.shields.io/badge/-Other-F5F5F5.svg)](#Other-其他-)
 ##### 免责声明
-https://gedoor.github.io/Disclaimer
+软件不提供内容，第一次安装后需要自行导入书源、订阅源或本地文件。使用前请自行确认数据来源的合法性。
 
-##### 阅读3.0
+##### 阅读NG
 * [书源规则](https://mgz0227.github.io/The-tutorial-of-Legado/)
 * [更新日志](/app/src/main/assets/updateLog.md)
 * [帮助文档](/app/src/main/assets/web/help/md/appHelp.md)
-* [web端书架](https://github.com/gedoor/legado_web_bookshelf)
-* [web端源编辑](https://github.com/gedoor/legado_web_source_editor)
 
 <a href="#readme">
     <img src="https://img.shields.io/badge/-返回顶部-orange.svg" alt="#" align="right">
 </a>
 
 # Grateful-感谢 [![](https://img.shields.io/badge/-Grateful-F5F5F5.svg)](#Grateful-感谢-)
+> * [gedoor/legado](https://github.com/gedoor/legado) — 阅读 3.0 原作者
+> * [Luoyacheng/legado](https://github.com/Luoyacheng/legado) — 阅读Sigma，NG 的直接上游
 > * org.jsoup:jsoup
 > * cn.wanghaomiao:JsoupXpath
 > * com.jayway.jsonpath:json-path
@@ -111,10 +111,6 @@ https://gedoor.github.io/Disclaimer
 <a href="#readme">
     <img src="https://img.shields.io/badge/-返回顶部-orange.svg" alt="#" align="right">
 </a>
-
-# Interface-界面 [![](https://img.shields.io/badge/-Interface-F5F5F5.svg)](#Interface-界面-)
-<img src="https://github.com/gedoor/gedoor.github.io/blob/master/static/img/legado/%E9%98%85%E8%AF%BB%E7%AE%80%E4%BB%8B1.jpg" width="270"><img src="https://github.com/gedoor/gedoor.github.io/blob/master/static/img/legado/%E9%98%85%E8%AF%BB%E7%AE%80%E4%BB%8B2.jpg" width="270"><img src="https://github.com/gedoor/gedoor.github.io/blob/master/static/img/legado/%E9%98%85%E8%AF%BB%E7%AE%80%E4%BB%8B3.jpg" width="270">
-<img src="https://github.com/gedoor/gedoor.github.io/blob/master/static/img/legado/%E9%98%85%E8%AF%BB%E7%AE%80%E4%BB%8B4.jpg" width="270"><img src="https://github.com/gedoor/gedoor.github.io/blob/master/static/img/legado/%E9%98%85%E8%AF%BB%E7%AE%80%E4%BB%8B5.jpg" width="270"><img src="https://github.com/gedoor/gedoor.github.io/blob/master/static/img/legado/%E9%98%85%E8%AF%BB%E7%AE%80%E4%BB%8B6.jpg" width="270">
 
 <a href="#readme">
     <img src="https://img.shields.io/badge/-返回顶部-orange.svg" alt="#" align="right">

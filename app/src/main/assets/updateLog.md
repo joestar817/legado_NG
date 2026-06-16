@@ -1,6 +1,4 @@
 # 更新日志
-欢迎关注公众号[阅读Plus]即时了解软件更新资讯  
-<img src="https://open.weixin.qq.com/qr/code?username=legado_plus" width="200">
 
 ## cronet版本: 128.0.6613.40
 
@@ -75,15 +73,9 @@
 
 
 ## **必读**
-来源于fork仓库 [Luoyacheng/legado](https://github.com/Luoyacheng/legado)　  
-[查看实时详细日志](https://gitee.com/lyc486/legado/commits/main)　 
+阅读NG 当前维护仓库：[joestar817/legado](https://github.com/joestar817/legado)
+[查看实时详细日志](https://github.com/joestar817/legado/commits/main)　
 
 【温馨提醒】 *更新前一定要做好备份，以免数据丢失！*  
 * 阅读只是一个转码工具，不提供内容，第一次安装app，需要自己手动导入书源。
 * 正文出现缺字漏字、内容缺失、排版错乱等情况，有可能是净化规则或简繁转换出现问题。
-----
-
-* [2025年日志](https://github.com/Luoyacheng/legado/blob/record2025/app/src/main/assets/updateLog.md)　
-* [2023年日志](https://github.com/gedoor/legado/blob/record2023/app/src/main/assets/updateLog.md)　
-* [2022年日志](https://github.com/gedoor/legado/blob/record2022/app/src/main/assets/updateLog.md)　
-* [2021年日志](https://github.com/gedoor/legado/blob/record2021/app/src/main/assets/updateLog.md)　

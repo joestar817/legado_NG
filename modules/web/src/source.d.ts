@@ -1,4 +1,4 @@
-/** https://github.com/gedoor/legado/tree/master/app/src/main/java/io/legado/app/data/entities */
+/** https://github.com/joestar817/legado/tree/main/app/src/main/java/io/legado/app/data/entities */
 type BaseSource = {
   /**
    * 并发率

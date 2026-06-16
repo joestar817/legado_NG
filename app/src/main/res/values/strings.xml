@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--App-->
-    <string name="app_name">Legado</string>
-    <string name="app_name_a">Legado·A</string>
-    <string name="app_name_s" translatable="false">LegadoPlus</string>
+    <string name="app_name">阅读</string>
+    <string name="app_name_a">阅读·A</string>
+    <string name="app_name_s" translatable="false">阅读NG</string>
     <string name="receiving_shared_label">Legado·search</string>
     <string name="tip_perm_request_storage">Legado needs storage access to find and read books. please go "App Settings" to allow "Storage permission".</string>
 
@@ -103,7 +103,7 @@
         \u3000\u3000 This is an open source reading software newly developed by Kotlin, welcome to join us.
     </string>
     <string name="app_share_description">
-        Legado (YueDu 3.0) download link：\n https://github.com/gedoor/legado/releases
+        阅读NG download link：\n https://github.com/joestar817/legado/releases
     </string>
     <string name="version_name">Version %s</string>
     <string name="pt_background_verification">Background-verification</string>
@@ -706,11 +706,8 @@
     <string name="contact">Contact</string>
     <string name="license">License</string>
     <string name="other">Other</string>
-    <string name="official_account">开源阅读</string>
-    <string name="follow_official_account">Follow WeChat Official Accounts</string>
     <string name="wechat">WeChat</string>
     <string name="thanks">Supporting me will be appreciated</string>
-    <string name="about_official_account">Official Accounts[开源阅读]</string>
     <string name="source_auto_changing">Changing source</string>
     <string name="click_to_apply">Tap to join</string>
     <string name="middle">Middle</string>
@@ -750,15 +747,7 @@
     <string name="starting_download">Starting download</string>
     <string name="already_in_download">This book is already in Download list</string>
     <string name="click_to_open">Click to open</string>
-    <string name="follow_public_account_summary">Follow [开源阅读] to support me by clicking on ads</string>
-    <string name="weChat_appreciation_code">WeChat Tipping Code</string>
-    <string name="alipay">AliPay</string>
-    <string name="alipay_red_envelope_search_code">AliPay red envelope search code</string>
-    <string name="alipay_red_envelope_copy">537954522 Click to copy</string>
-    <string name="alipay_red_envelope_qr_code">AliPay red envelope QR code</string>
-    <string name="alipay_payment_qr_code">AliPay QR code</string>
-    <string name="qq_collection_qr_code">QQ Collection QR code</string>
-    <string name="contributors_summary">gedoor,Invinciblelee,Xwite etc. Checking in github for details</string>
+    <string name="contributors_summary">Checking in GitHub for details</string>
     <string name="clear_cache_summary">Clear the cache of the downloaded books and fonts</string>
     <string name="default_cover">Default cover</string>
     <string name="restore_ignore">Bypass list</string>
@@ -780,8 +769,7 @@
     <string name="show_brightness_view">Show brightness widget</string>
     <string name="language">Language</string>
     <string name="import_rss_source">Import rss source</string>
-    <string name="donate_summary">Your donation makes this app better</string>
-    <string name="about_summary">Wechat official account [开源阅读软件]</string>
+    <string name="about_summary">Next Generation Legado - 阅读NG</string>
     <string name="read_record">Read record</string>
     <string name="del_read_record">Delete Read record</string>
     <string name="read_record_summary">Read record summary</string>
@@ -1300,11 +1288,11 @@
     <string name="video_setting">视频设置</string>
     <string name="video_setting_summary">自动播放、全屏播放等配置</string>
     <string name="history">历史记录</string>
-    <string name="app_name_sigma">阅读Sigma</string>
-    <string name="about_description_sigma">\u3000\u3000阅读Sigma继承自legado，旨在原版基础上完善和增加功能，欢迎您的加入。</string>
-    <string name="contributors_summary_sigma">gedoor、Luoyacheng、Horis和 Xwite 等，详情请在 GitHub 中查看</string>
-    <string name="app_share_description_sigma">
-        阅读 Sigma 下载地址：\nhttps://github.com/Luoyacheng/legado/releases
+    <string name="app_name_ng">阅读NG</string>
+    <string name="about_description_ng">　　阅读NG（Next Generation Legado），致力于打造下一代的阅读体验。</string>
+    <string name="contributors_summary_ng">详情请在 GitHub 中查看</string>
+    <string name="app_share_description_ng">
+        阅读NG 下载地址：\nhttps://github.com/joestar817/legado/releases
     </string>
     <string name="sure_cache_book">是否确认开始缓存？</string>
     <string name="non_printable_set">不可视字符设定</string>

@@ -11,9 +11,6 @@ on:
       - '**/modules/web/**'
   workflow_dispatch:
 
-env:
-  UPSTREAM_REPOSITORY: Luoyacheng/legado
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -57,7 +54,7 @@ jobs:
           echo "APP_VER=$version" >> $GITHUB_ENV
 
       - name: push changes
-        if: ${{ github.event_name != 'pull_request' && github.repository == env.UPSTREAM_REPOSITORY }}
+        if: ${{ github.event_name != 'pull_request' && github.repository == 'joestar817/legado' }}
         uses: stefanzweifel/git-auto-commit-action@v7.0.0
         with:
           commit_message: Bump web ${{ env.APP_VER}}

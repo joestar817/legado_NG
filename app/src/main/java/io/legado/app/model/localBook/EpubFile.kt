@@ -379,7 +379,7 @@ class EpubFile(var book: Book) {
             /**
              * 检索到第一章href停止
              * completeHref可能有fragment(#id) 必须去除
-             * fix https://github.com/gedoor/legado/issues/1932
+             * completeHref may not exactly match content href when fragment exists.
              */
             if (firstRef.completeHref.substringBeforeLast("#") == content.href) break
             val chapter = BookChapter()

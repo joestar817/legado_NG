@@ -215,15 +215,11 @@ class TxtTocRuleActivity : VMBaseActivity<ActivityTxtTocRuleBinding, TxtTocRuleV
     @SuppressLint("InflateParams")
     private fun showImportDialog() {
         val aCache = ACache.get(cacheDir = false)
-        val defaultUrl = "https://gitee.com/fisher52/YueDuJson/raw/master/myTxtChapterRule.json"
         val cacheUrls: MutableList<String> = aCache
             .getAsString(importTocRuleKey)
             ?.splitNotBlank(",")
             ?.toMutableList()
             ?: mutableListOf()
-        if (!cacheUrls.contains(defaultUrl)) {
-            cacheUrls.add(0, defaultUrl)
-        }
         alert(titleResource = R.string.import_on_line) {
             val alertBinding = DialogEditTextBinding.inflate(layoutInflater).apply {
                 editView.hint = "url"

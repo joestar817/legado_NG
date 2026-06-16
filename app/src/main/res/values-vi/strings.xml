@@ -97,7 +97,7 @@
     <string name="offline_cache_s">Lưu trữ các chương đã chọn vào bộ nhớ đệm</string>
     <string name="change_origin">Đổi nguồn</string>
     <string name="about_description">Đây là một phần mềm đọc mã nguồn mở được phát triển mới bằng Kotlin, chào mừng bạn tham gia.</string>
-    <string name="app_share_description">Link tải Legado (YueDu 3.0):\n https://github.com/gedoor/legado/releases</string>
+    <string name="app_share_description">阅读NG download link：\n https://github.com/joestar817/legado/releases</string>
     <string name="version_name">Phiên bản %s</string>
     <string name="pt_background_verification">Xác minh trong nền</string>
     <string name="ps_background_verification">Bạn có thể thao tác tự do khi đang xác minh nguồn sách</string>
@@ -696,11 +696,8 @@
     <string name="contact">Liên hệ</string>
     <string name="license">Giấy phép</string>
     <string name="other">Khác</string>
-    <string name="official_account">阅读</string>
-    <string name="follow_official_account">Theo dõi tài khoản WeChat chính thức</string>
     <string name="wechat">WeChat</string>
     <string name="thanks">Sự ủng hộ của bạn là động lực để tôi cập nhật</string>
-    <string name="about_official_account">Tài khoản chính thức [开源阅读]</string>
     <string name="source_auto_changing">Đang đổi nguồn</string>
     <string name="click_to_apply">Chạm để tham gia</string>
     <string name="middle">Giữa</string>
@@ -740,15 +737,7 @@
     <string name="starting_download">Bắt đầu tải xuống</string>
     <string name="already_in_download">Sách này đã có trong danh sách tải xuống</string>
     <string name="click_to_open">Nhấn để mở</string>
-    <string name="follow_public_account_summary">Theo dõi [开源阅读] để ủng hộ tôi bằng cách nhấp vào quảng cáo</string>
-    <string name="weChat_appreciation_code">Mã boa WeChat</string>
-    <string name="alipay">AliPay</string>
-    <string name="alipay_red_envelope_search_code">Mã tìm kiếm bao lì xì AliPay</string>
-    <string name="alipay_red_envelope_copy">537954522 Nhấn để sao chép</string>
-    <string name="alipay_red_envelope_qr_code">Mã QR bao lì xì AliPay</string>
-    <string name="alipay_payment_qr_code">Mã QR AliPay</string>
-    <string name="qq_collection_qr_code">Mã QR bộ sưu tập QQ</string>
-    <string name="contributors_summary">gedoor, Invinciblelee, Xwite, v.v. Kiểm tra trên github để biết chi tiết</string>
+    <string name="contributors_summary">Checking in GitHub for details</string>
     <string name="clear_cache_summary">Xóa bộ đệm của sách và phông chữ đã tải xuống</string>
     <string name="default_cover">Bìa mặc định</string>
     <string name="restore_ignore">Danh sách bỏ qua</string>
@@ -770,8 +759,7 @@
     <string name="show_brightness_view">Hiển thị widget độ sáng</string>
     <string name="language">Ngôn ngữ</string>
     <string name="import_rss_source">Nhập nguồn RSS</string>
-    <string name="donate_summary">Sự ủng hộ của bạn làm cho ứng dụng này tốt hơn</string>
-    <string name="about_summary">Tài khoản chính thức Wechat [开源阅读软件]</string>
+    <string name="about_summary">Next Generation Legado - 阅读NG</string>
     <string name="read_record">Lịch sử đọc</string>
     <string name="del_read_record">Xóa lịch sử đọc</string>
     <string name="read_record_summary">Tóm tắt lịch sử đọc</string>
