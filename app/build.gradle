@@ -309,3 +309,45 @@ dependencies {
     implementation(libs.soraEditor.core)
     implementation(libs.soraEditor.language.textmate)
 }
+
+def resolveAdbExecutable = {
+    def sdkDir = null
+    def localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        def localProperties = new Properties()
+        localPropertiesFile.withInputStream { localProperties.load(it) }
+        sdkDir = localProperties.getProperty("sdk.dir")
+    }
+    sdkDir = sdkDir ?: System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+    if (!sdkDir) {
+        throw new GradleException("Android SDK path not found. Set sdk.dir in local.properties or ANDROID_HOME/ANDROID_SDK_ROOT.")
+    }
+
+    def adbName = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows") ? "adb.exe" : "adb"
+    def adbExecutable = new File(new File(sdkDir, "platform-tools"), adbName)
+    if (!adbExecutable.isFile()) {
+        throw new GradleException("adb not found at ${adbExecutable}. Check Android SDK installation.")
+    }
+    return adbExecutable.absolutePath
+}
+
+tasks.register("installAppDebugStreaming", Exec) {
+    group = "install"
+    description = "Installs the AppDebug APK with adb streaming install."
+    dependsOn("assembleAppDebug")
+
+    doFirst {
+        def apkDir = layout.buildDirectory.dir("outputs/apk/app/debug").get().asFile
+        def apkFiles = apkDir.exists() ? apkDir.listFiles().findAll { it.name.endsWith(".apk") } : []
+        if (!apkFiles) {
+            throw new GradleException("AppDebug APK not found in ${apkDir}.")
+        }
+        def apkFile = apkFiles.max { it.lastModified() }
+        commandLine(resolveAdbExecutable(), "install", "--streaming", "-r", "-d", apkFile.absolutePath)
+    }
+}
+
+tasks.matching { it.name == "installAppDebug" }.configureEach {
+    dependsOn("installAppDebugStreaming")
+    enabled = false
+}

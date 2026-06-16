@@ -13,6 +13,13 @@ if "%DIRNAME%" == "" set DIRNAME=.
 set APP_BASE_NAME=%~n0
 set APP_HOME=%DIRNAME%
 
+@rem Load local environment variables from .env if present.
+if exist "%APP_HOME%\.env" (
+    for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%APP_HOME%\.env") do (
+        if not "%%A" == "" set "%%A=%%B"
+    )
+)
+
 @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 set DEFAULT_JVM_OPTS=
 
