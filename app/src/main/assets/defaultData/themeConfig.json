@@ -30,5 +30,27 @@
     "accentColor": "#FFFFFF",
     "backgroundColor": "#000000",
     "bottomBackground": "#000000"
+  },
+  {
+    "themeName": "暖色渐变",
+    "isNightTheme": false,
+    "primaryColor": "#FFFFFF",
+    "accentColor": "#E53935",
+    "backgroundColor": "#F5F5F5",
+    "bottomBackground": "#EEEEEE",
+    "transparentNavBar": true,
+    "backgroundImgPath": "asset://defaultData/theme/reading_ng_bg_1.png",
+    "backgroundImgBlur": 0
+  },
+  {
+    "themeName": "绿色渐变",
+    "isNightTheme": false,
+    "primaryColor": "#FFFFFF",
+    "accentColor": "#E53935",
+    "backgroundColor": "#F5F5F5",
+    "bottomBackground": "#EEEEEE",
+    "transparentNavBar": true,
+    "backgroundImgPath": "asset://defaultData/theme/reading_ng_bg_2.png",
+    "backgroundImgBlur": 0
   }
 ]

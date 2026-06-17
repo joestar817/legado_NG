@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.RecyclerView
 import io.legado.app.R
 import io.legado.app.base.VMBaseFragment
 import io.legado.app.constant.AppLog
+import io.legado.app.constant.Theme
 import io.legado.app.data.AppDatabase
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookSourcePart
@@ -23,12 +24,14 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.primaryTextColor
+import io.legado.app.lib.theme.transparentNavBar
 import io.legado.app.ui.book.explore.ExploreShowActivity
 import io.legado.app.ui.book.search.SearchActivity
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.main.MainFragmentInterface
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.flowWithLifecycleAndDatabaseChange
+import io.legado.app.utils.getCompatColor
 import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.transaction
@@ -72,6 +75,7 @@ class ExploreFragment() : VMBaseFragment<ExploreViewModel>(R.layout.fragment_exp
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         setSupportToolbar(binding.titleBar.toolbar)
+        applyTransparentModeUi()
         initSearchView()
         initRecyclerView()
         initGroupData()
@@ -81,12 +85,21 @@ class ExploreFragment() : VMBaseFragment<ExploreViewModel>(R.layout.fragment_exp
     override fun onCompatCreateOptionsMenu(menu: Menu) {
         super.onCompatCreateOptionsMenu(menu)
         menuInflater.inflate(R.menu.main_explore, menu)
+        if (requireContext().transparentNavBar) {
+            menu.applyTint(requireContext(), Theme.Light)
+        }
         groupsMenu = menu.findItem(R.id.menu_group)?.subMenu
         upGroupsMenu()
     }
 
     private fun initSearchView() {
-        searchView.applyTint(primaryTextColor)
+        searchView.applyTint(
+            if (requireContext().transparentNavBar) {
+                requireContext().getCompatColor(R.color.primaryText)
+            } else {
+                primaryTextColor
+            }
+        )
         searchView.isSubmitButtonEnabled = true
         searchView.queryHint = getString(R.string.screen_find)
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
@@ -99,6 +112,20 @@ class ExploreFragment() : VMBaseFragment<ExploreViewModel>(R.layout.fragment_exp
                 return false
             }
         })
+    }
+
+    private fun applyTransparentModeUi() {
+        if (requireContext().transparentNavBar) {
+            binding.contentPanel.setBackgroundResource(
+                if (AppConfig.isNightTheme) {
+                    R.drawable.bg_main_content_panel_night
+                } else {
+                    R.drawable.bg_main_content_panel
+                }
+            )
+        } else {
+            binding.contentPanel.setBackgroundResource(R.color.transparent)
+        }
     }
 
     private fun initRecyclerView() {

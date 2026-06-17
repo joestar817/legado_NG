@@ -8,6 +8,15 @@
     android:orientation="horizontal"
     android:padding="8dp">
 
+    <ImageButton
+        android:id="@+id/iv_drag_handle"
+        android:layout_width="40dp"
+        android:layout_height="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/sort"
+        android:padding="8dp"
+        android:src="@drawable/ic_drag_handle" />
+
     <TextView
         android:id="@+id/tv_group"
         android:layout_width="0dp"

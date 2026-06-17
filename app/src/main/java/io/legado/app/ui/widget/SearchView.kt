@@ -15,7 +15,10 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.widget.TextView
 import androidx.appcompat.widget.SearchView
+import androidx.core.graphics.drawable.DrawableCompat
 import io.legado.app.R
+import io.legado.app.lib.theme.transparentNavBar
+import io.legado.app.utils.getCompatColor
 import io.legado.app.utils.printOnDebug
 
 
@@ -43,6 +46,16 @@ class SearchView @JvmOverloads constructor(
             // 改变字体
             textView!!.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             textView!!.gravity = Gravity.CENTER_VERTICAL
+            if (context.transparentNavBar) {
+                val textColor = context.getCompatColor(R.color.primaryText)
+                textView!!.setTextColor(textColor)
+                textView!!.setHintTextColor(textColor)
+                mSearchHintIcon = mSearchHintIcon?.mutate()?.let { drawable ->
+                    DrawableCompat.wrap(drawable).apply {
+                        DrawableCompat.setTint(this, textColor)
+                    }
+                }
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 textView!!.isLocalePreferredLineHeightForMinimumUsed = false
             }

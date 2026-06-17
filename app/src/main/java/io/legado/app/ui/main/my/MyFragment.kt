@@ -10,13 +10,16 @@ import io.legado.app.R
 import io.legado.app.base.BaseFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
+import io.legado.app.constant.Theme
 import io.legado.app.databinding.FragmentMyConfigBinding
+import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.lib.dialogs.selector
 import io.legado.app.lib.prefs.NameListPreference
 import io.legado.app.lib.prefs.SwitchPreference
 import io.legado.app.lib.prefs.fragment.PreferenceFragment
 import io.legado.app.lib.theme.primaryColor
+import io.legado.app.lib.theme.transparentNavBar
 import io.legado.app.service.WebService
 import io.legado.app.ui.about.AboutActivity
 import io.legado.app.ui.about.ReadRecordActivity
@@ -30,10 +33,14 @@ import io.legado.app.ui.file.FileManageActivity
 import io.legado.app.ui.main.MainFragmentInterface
 import io.legado.app.ui.replace.ReplaceRuleActivity
 import io.legado.app.utils.LogUtils
+import io.legado.app.utils.applyTint
+import io.legado.app.utils.getCompatColor
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.observeEventSticky
 import io.legado.app.utils.openUrl
 import io.legado.app.utils.putPrefBoolean
+import io.legado.app.utils.putPrefInt
+import io.legado.app.utils.removePref
 import io.legado.app.utils.sendToClip
 import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.showHelp
@@ -54,6 +61,7 @@ class MyFragment() : BaseFragment(R.layout.fragment_my_config), MainFragmentInte
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         setSupportToolbar(binding.titleBar.toolbar)
+        applyTransparentModeUi()
         val fragmentTag = "prefFragment"
         var preferenceFragment = childFragmentManager.findFragmentByTag(fragmentTag)
         if (preferenceFragment == null) preferenceFragment = MyPreferenceFragment()
@@ -63,11 +71,29 @@ class MyFragment() : BaseFragment(R.layout.fragment_my_config), MainFragmentInte
 
     override fun onCompatCreateOptionsMenu(menu: Menu) {
         menuInflater.inflate(R.menu.main_my, menu)
+        if (requireContext().transparentNavBar) {
+            menu.applyTint(requireContext(), Theme.Light)
+        }
     }
 
     override fun onCompatOptionsItemSelected(item: MenuItem) {
         when (item.itemId) {
             R.id.menu_help -> showHelp("appHelp")
+        }
+    }
+
+    private fun applyTransparentModeUi() {
+        if (requireContext().transparentNavBar) {
+            binding.titleBar.setTitleTextColor(requireContext().getCompatColor(R.color.primaryText))
+            binding.preFragment.setBackgroundResource(
+                if (AppConfig.isNightTheme) {
+                    R.drawable.bg_main_content_panel_night
+                } else {
+                    R.drawable.bg_main_content_panel
+                }
+            )
+        } else {
+            binding.preFragment.setBackgroundResource(R.color.transparent)
         }
     }
 
@@ -103,11 +129,38 @@ class MyFragment() : BaseFragment(R.layout.fragment_my_config), MainFragmentInte
                 }
             }
             findPreference<NameListPreference>(PreferKey.themeMode)?.let {
-                it.setOnPreferenceChangeListener { _, _ ->
-                    view?.post { ThemeConfig.applyDayNight(requireContext()) }
+                it.setOnPreferenceChangeListener { _, newValue ->
+                    view?.post {
+                        val themeMode = newValue as? String
+                        when (themeMode) {
+                            "4" -> applyBuiltInTheme("暖色渐变")
+                            "5" -> applyBuiltInTheme("绿色渐变")
+                            else -> applyStandardTheme(themeMode)
+                        }
+                    }
                     true
                 }
             }
+        }
+
+        private fun applyStandardTheme(themeMode: String?) {
+            requireContext().putPrefBoolean(PreferKey.tNavBar, false)
+            requireContext().putPrefBoolean(PreferKey.tNavBarN, false)
+            requireContext().removePref(PreferKey.bgImage)
+            requireContext().removePref(PreferKey.bgImageN)
+            requireContext().putPrefInt(PreferKey.bgImageBlurring, 0)
+            requireContext().putPrefInt(PreferKey.bgImageNBlurring, 0)
+            if (themeMode == "1") {
+                requireContext().putPrefInt(PreferKey.cPrimary, 0xFF795548.toInt())
+            }
+            ThemeConfig.applyDayNight(requireContext())
+        }
+
+        private fun applyBuiltInTheme(themeName: String) {
+            ThemeConfig.configList
+                .firstOrNull { it.themeName == themeName }
+                ?.let { ThemeConfig.applyConfig(requireContext(), it) }
+                ?: ThemeConfig.applyDayNight(requireContext())
         }
 
         override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

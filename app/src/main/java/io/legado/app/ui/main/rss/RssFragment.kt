@@ -12,14 +12,17 @@ import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.VMBaseFragment
 import io.legado.app.constant.AppLog
+import io.legado.app.constant.Theme
 import io.legado.app.data.AppDatabase
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.RssSource
 import io.legado.app.databinding.FragmentRssBinding
 import io.legado.app.databinding.ItemRssBinding
 import io.legado.app.lib.dialogs.alert
+import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.primaryTextColor
+import io.legado.app.lib.theme.transparentNavBar
 import io.legado.app.ui.main.MainFragmentInterface
 import io.legado.app.ui.rss.article.ReadRecordDialog
 import io.legado.app.ui.rss.article.RssSortActivity
@@ -30,6 +33,7 @@ import io.legado.app.ui.rss.source.manage.RssSourceActivity
 import io.legado.app.ui.rss.subscription.RuleSubActivity
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.flowWithLifecycleAndDatabaseChange
+import io.legado.app.utils.getCompatColor
 import io.legado.app.utils.openUrl
 import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.showDialogFragment
@@ -73,6 +77,7 @@ class RssFragment() : VMBaseFragment<RssViewModel>(R.layout.fragment_rss), MainF
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         setSupportToolbar(binding.titleBar.toolbar)
+        applyTransparentModeUi()
         initSearchView()
         initRecyclerView()
         initGroupData()
@@ -81,6 +86,9 @@ class RssFragment() : VMBaseFragment<RssViewModel>(R.layout.fragment_rss), MainF
 
     override fun onCompatCreateOptionsMenu(menu: Menu) {
         menuInflater.inflate(R.menu.main_rss, menu)
+        if (requireContext().transparentNavBar) {
+            menu.applyTint(requireContext(), Theme.Light)
+        }
         groupsMenu = menu.findItem(R.id.menu_group)?.subMenu
         upGroupsMenu()
     }
@@ -110,7 +118,13 @@ class RssFragment() : VMBaseFragment<RssViewModel>(R.layout.fragment_rss), MainF
     }
 
     private fun initSearchView() {
-        searchView.applyTint(primaryTextColor)
+        searchView.applyTint(
+            if (requireContext().transparentNavBar) {
+                requireContext().getCompatColor(R.color.primaryText)
+            } else {
+                primaryTextColor
+            }
+        )
         searchView.isSubmitButtonEnabled = true
         searchView.queryHint = getString(R.string.rss)
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
@@ -123,6 +137,20 @@ class RssFragment() : VMBaseFragment<RssViewModel>(R.layout.fragment_rss), MainF
                 return false
             }
         })
+    }
+
+    private fun applyTransparentModeUi() {
+        if (requireContext().transparentNavBar) {
+            binding.contentPanel.setBackgroundResource(
+                if (AppConfig.isNightTheme) {
+                    R.drawable.bg_main_content_panel_night
+                } else {
+                    R.drawable.bg_main_content_panel
+                }
+            )
+        } else {
+            binding.contentPanel.setBackgroundResource(R.color.transparent)
+        }
     }
 
     private fun initRecyclerView() {

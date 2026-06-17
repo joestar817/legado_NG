@@ -4,7 +4,11 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
 import android.database.ContentObserver
+import android.graphics.Canvas
+import android.graphics.ColorFilter
 import android.graphics.PorterDuff
+import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.provider.Settings
@@ -44,6 +48,7 @@ import io.legado.app.utils.ConstraintModify
 import io.legado.app.utils.activity
 import io.legado.app.utils.applyNavigationBarPadding
 import io.legado.app.utils.dpToPx
+import io.legado.app.utils.getCompatColor
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.gone
 import io.legado.app.utils.invisible
@@ -53,6 +58,7 @@ import io.legado.app.utils.openUrl
 import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.visible
+import io.legado.app.utils.windowSize
 import splitties.views.onClick
 import splitties.views.onLongClick
 import androidx.core.graphics.toColorInt
@@ -85,14 +91,20 @@ class ReadMenu @JvmOverloads constructor(
     }
     private val immersiveMenu: Boolean
         get() = AppConfig.readBarStyleFollowPage && ReadBookConfig.durConfig.curBgType() == 0
-    private var bgColor: Int = if (immersiveMenu) {
+    private val useGradientThemeMenu: Boolean
+        get() = !AppConfig.isEInkMode && (AppConfig.themeMode == "4" || AppConfig.themeMode == "5")
+    private var bgColor: Int = if (useGradientThemeMenu) {
+        context.bottomBackground
+    } else if (immersiveMenu) {
         kotlin.runCatching {
             ReadBookConfig.durConfig.curBgStr().toColorInt()
         }.getOrDefault(context.bottomBackground)
     } else {
         context.bottomBackground
     }
-    private var textColor: Int = if (immersiveMenu) {
+    private var textColor: Int = if (useGradientThemeMenu) {
+        context.getCompatColor(R.color.primaryText)
+    } else if (immersiveMenu) {
         ReadBookConfig.durConfig.curTextColor()
     } else {
         context.getPrimaryTextColor(ColorUtils.isColorLight(bgColor))
@@ -180,7 +192,12 @@ class ReadMenu @JvmOverloads constructor(
         }
         initAnimation()
         tvCustomBtn.setColorFilter(context.accentColor)
-        if (immersiveMenu) {
+        if (useGradientThemeMenu) {
+            titleBar.setTextColor(textColor)
+            titleBar.setColorFilter(textColor)
+            tvChapterName.setTextColor(context.getCompatColor(R.color.tv_text_summary))
+            tvChapterUrl.setTextColor(context.getCompatColor(R.color.tv_text_summary))
+        } else if (immersiveMenu) {
             val lightTextColor = ColorUtils.withAlpha(ColorUtils.lightenColor(textColor), 0.75f)
             titleBar.setTextColor(textColor)
             titleBar.setBackgroundColor(bgColor)
@@ -203,6 +220,11 @@ class ReadMenu @JvmOverloads constructor(
         if (AppConfig.isEInkMode) {
             titleBar.setBackgroundResource(R.drawable.bg_eink_border_bottom)
             llBottomBg.setBackgroundResource(R.drawable.bg_eink_border_top)
+        } else if (useGradientThemeMenu) {
+            if (!applyGradientThemeMenuBackground()) {
+                titleBar.setBackgroundColor(context.primaryColor)
+                llBottomBg.setBackgroundColor(bgColor)
+            }
         } else {
             llBottomBg.setBackgroundColor(bgColor)
         }
@@ -253,14 +275,18 @@ class ReadMenu @JvmOverloads constructor(
     }
 
     private fun upColorConfig() {
-        bgColor = if (immersiveMenu) {
+        bgColor = if (useGradientThemeMenu) {
+            context.bottomBackground
+        } else if (immersiveMenu) {
             kotlin.runCatching {
                 ReadBookConfig.durConfig.curBgStr().toColorInt()
             }.getOrDefault(context.bottomBackground)
         } else {
             context.bottomBackground
         }
-        textColor = if (immersiveMenu) {
+        textColor = if (useGradientThemeMenu) {
+            context.getCompatColor(R.color.primaryText)
+        } else if (immersiveMenu) {
             ReadBookConfig.durConfig.curTextColor()
         } else {
             context.getPrimaryTextColor(ColorUtils.isColorLight(bgColor))
@@ -269,6 +295,58 @@ class ReadMenu @JvmOverloads constructor(
             .setDefaultColor(bgColor)
             .setPressedColor(ColorUtils.darkenColor(bgColor))
             .create()
+    }
+
+    private fun applyGradientThemeMenuBackground(): Boolean {
+        val metrics = activity?.windowManager?.windowSize ?: return false
+        val titleBackground = ThemeConfig.getBgImage(context, metrics)?.withoutMinimumSize()
+        val bottomBackground = ThemeConfig.getBgImage(context, metrics)?.withoutMinimumSize()
+        if (titleBackground == null || bottomBackground == null) {
+            return false
+        }
+        binding.titleBar.background = titleBackground
+        binding.titleBar.elevation = 0f
+        binding.llBottomBg.background = bottomBackground
+        return true
+    }
+
+    private fun Drawable.withoutMinimumSize(): Drawable {
+        val source = this
+        return object : Drawable() {
+            override fun draw(canvas: Canvas) {
+                source.bounds = bounds
+                source.draw(canvas)
+            }
+
+            override fun setAlpha(alpha: Int) {
+                source.alpha = alpha
+            }
+
+            override fun setColorFilter(colorFilter: ColorFilter?) {
+                source.colorFilter = colorFilter
+            }
+
+            @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+            override fun getOpacity(): Int {
+                return PixelFormat.TRANSLUCENT
+            }
+
+            override fun getIntrinsicWidth(): Int {
+                return -1
+            }
+
+            override fun getIntrinsicHeight(): Int {
+                return -1
+            }
+
+            override fun getMinimumWidth(): Int {
+                return 0
+            }
+
+            override fun getMinimumHeight(): Int {
+                return 0
+            }
+        }
     }
 
     fun upBrightnessState() {

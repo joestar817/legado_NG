@@ -164,6 +164,8 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             "1" -> false
             "2" -> true
             "3" -> false
+            "4" -> false
+            "5" -> false
             else -> sysConfiguration.isNightMode
         }
         set(value) {

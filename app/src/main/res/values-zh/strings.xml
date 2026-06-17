@@ -70,6 +70,7 @@
     <string name="book_source">书源</string>
     <string name="book_source_manage">书源管理</string>
     <string name="book_source_manage_desc">新建、导入、编辑或管理书源</string>
+    <string name="browse_history">浏览记录</string>
     <string name="setting">设置</string>
     <string name="theme_setting">主题设置</string>
     <string name="theme_setting_s">与界面/颜色相关的一些设置</string>
@@ -590,6 +591,7 @@
     <string name="move_to_group">移入分组</string>
     <string name="add_group">添加分组</string>
     <string name="remove_group">移除分组</string>
+    <string name="built_in_group">内置</string>
     <string name="add_replace_rule">新建替换</string>
     <string name="group">分组</string>
     <string name="group_s">分组：%s</string>

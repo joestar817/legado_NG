@@ -15,9 +15,11 @@
 
     <string-array name="theme_mode">
         <item>跟隨系統</item>
-        <item>亮色主題</item>
+        <item>原生主題</item>
         <item>暗色主題</item>
         <item>E-Ink(墨水螢幕)</item>
+        <item>暖色漸變</item>
+        <item>綠色漸變</item>
     </string-array>
 
     <string-array name="NavBarColors">

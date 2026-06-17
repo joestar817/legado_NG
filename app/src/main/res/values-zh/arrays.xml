@@ -21,9 +21,11 @@
 
     <string-array name="theme_mode">
         <item>跟随系统</item>
-        <item>亮色主题</item>
+        <item>原生主题</item>
         <item>暗色主题</item>
         <item>E-Ink(墨水屏)</item>
+        <item>暖色渐变</item>
+        <item>绿色渐变</item>
     </string-array>
 
     <string-array name="double_page_title">

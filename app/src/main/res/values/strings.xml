@@ -71,6 +71,7 @@
     <string name="book_source">Book sources</string>
     <string name="book_source_manage">Sources management</string>
     <string name="book_source_manage_desc">Create/Import/Edit/Manage Book sources</string>
+    <string name="browse_history">Browse history</string>
     <string name="setting">Settings</string>
     <string name="theme_setting">Theme settings</string>
     <string name="theme_setting_s">Some settings related to interface or color</string>
@@ -592,6 +593,7 @@
     <string name="move_to_group">Move to group</string>
     <string name="add_group">Add to Groups</string>
     <string name="remove_group">Remove from Groups</string>
+    <string name="built_in_group">Built-in</string>
     <string name="add_replace_rule">New replacement</string>
     <string name="group">Group</string>
     <string name="group_s">Group: %s</string>
@@ -1320,9 +1322,9 @@
     <string name="rule_sub_content">副文规则（subContent）</string>
     <string name="system_auto">跟随系统</string>
     <string name="sys_image_picker">系统图片选择器</string>
-    <string name="immersion_nav_bar">沉浸式操作栏</string>
-    <string name="day_nav_bar_immersion">白天操作栏颜色透明</string>
-    <string name="night_nav_bar_immersion">夜间操作栏颜色透明</string>
+    <string name="immersion_nav_bar">透明顶栏</string>
+    <string name="day_nav_bar_immersion">开启后白天操作栏透明，背景图透到顶部，主色调暂时禁用</string>
+    <string name="night_nav_bar_immersion">开启后夜间操作栏透明，背景图透到顶部，主色调暂时禁用</string>
     <string name="manual_input_img_src">手动输入图片链接</string>
     <string name="enter_img_src_path">请输入图片链接</string>
     <string name="empty_img_src_input">图片链接不能为空</string>

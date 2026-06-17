@@ -22,9 +22,11 @@
 
     <string-array name="theme_mode">
         <item>Theo hệ thống</item>
-        <item>Chế độ sáng</item>
+        <item>Native theme</item>
         <item>Chế độ tối</item>
         <item>Chế độ E-Ink</item>
+        <item>Warm gradient</item>
+        <item>Green gradient</item>
     </string-array>
 
     <string-array name="NavBarColors">

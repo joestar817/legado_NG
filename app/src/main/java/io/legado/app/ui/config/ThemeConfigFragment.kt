@@ -40,10 +40,12 @@ import io.legado.app.utils.FileUtils
 import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.externalFiles
+import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.inputStream
 import io.legado.app.utils.postEvent
+import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.putPrefInt
 import io.legado.app.utils.putPrefString
 import io.legado.app.utils.readUri
@@ -79,6 +81,7 @@ class ThemeConfigFragment : PreferenceFragment(),
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         addPreferencesFromResource(R.xml.pref_config_theme)
+        clearNonReadingNgBackgroundTheme()
         if (Build.VERSION.SDK_INT < 26) {
             preferenceScreen.removePreferenceRecursively(PreferKey.launcherIcon)
         }
@@ -86,6 +89,7 @@ class ThemeConfigFragment : PreferenceFragment(),
         upPreferenceSummary(PreferKey.bgImageN, getPrefString(PreferKey.bgImageN))
         upPreferenceSummary(PreferKey.barElevation, AppConfig.elevation.toString())
         upPreferenceSummary(PreferKey.fontScale)
+        updatePrimaryColorEnabled()
         findPreference<ColorPreference>(PreferKey.cBackground)?.let {
             it.onSaveColor = { color ->
                 if (!ColorUtils.isColorLight(color)) {
@@ -151,7 +155,8 @@ class ThemeConfigFragment : PreferenceFragment(),
             PreferKey.cAccent,
             PreferKey.cBackground,
             PreferKey.cBBackground,
-            PreferKey.tNavBar-> {
+            PreferKey.tNavBar -> {
+                updatePrimaryColorEnabled()
                 upTheme(false)
             }
 
@@ -160,6 +165,7 @@ class ThemeConfigFragment : PreferenceFragment(),
             PreferKey.cNBackground,
             PreferKey.cNBBackground,
             PreferKey.tNavBarN -> {
+                updatePrimaryColorEnabled()
                 upTheme(true)
             }
 
@@ -342,6 +348,33 @@ class ThemeConfigFragment : PreferenceFragment(),
 
             else -> preference.summary = value
         }
+    }
+
+    private fun clearNonReadingNgBackgroundTheme() {
+        if (AppConfig.themeMode == "4" || AppConfig.themeMode == "5") {
+            return
+        }
+        val hasBackground = !getPrefString(PreferKey.bgImage).isNullOrEmpty()
+                || !getPrefString(PreferKey.bgImageN).isNullOrEmpty()
+        val hasTransparentTopBar = getPrefBoolean(PreferKey.tNavBar, false)
+                || getPrefBoolean(PreferKey.tNavBarN, false)
+        removePref(PreferKey.bgImage)
+        removePref(PreferKey.bgImageN)
+        putPrefInt(PreferKey.bgImageBlurring, 0)
+        putPrefInt(PreferKey.bgImageNBlurring, 0)
+        putPrefBoolean(PreferKey.tNavBar, false)
+        putPrefBoolean(PreferKey.tNavBarN, false)
+        if (hasBackground || hasTransparentTopBar) {
+            ThemeConfig.applyTheme(requireContext())
+            recreateActivities()
+        }
+    }
+
+    private fun updatePrimaryColorEnabled() {
+        findPreference<ColorPreference>(PreferKey.cPrimary)?.isEnabled =
+            !getPrefBoolean(PreferKey.tNavBar, false)
+        findPreference<ColorPreference>(PreferKey.cNPrimary)?.isEnabled =
+            !getPrefBoolean(PreferKey.tNavBarN, false)
     }
 
     private fun setBgFromUri(uri: Uri, preferenceKey: String, success: () -> Unit) {

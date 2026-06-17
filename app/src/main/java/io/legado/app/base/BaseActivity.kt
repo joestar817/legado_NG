@@ -24,6 +24,7 @@ import io.legado.app.help.config.ThemeConfig
 import io.legado.app.lib.theme.ThemeStore
 import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.lib.theme.primaryColor
+import io.legado.app.lib.theme.transparentNavBar
 import io.legado.app.ui.widget.TitleBar
 import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.applyBackgroundTint
@@ -113,7 +114,7 @@ abstract class BaseActivity<VB : ViewBinding>(
 
     final override fun onCreateOptionsMenu(menu: Menu): Boolean {
         val bool = onCompatCreateOptionsMenu(menu)
-        menu.applyTint(this, toolBarTheme)
+        menu.applyTint(this, if (transparentNavBar) Theme.Light else toolBarTheme)
         return bool
     }
 
@@ -183,6 +184,8 @@ abstract class BaseActivity<VB : ViewBinding>(
             setLightStatusBar(false)
         } else if (toolBarTheme == Theme.Light) {
             setLightStatusBar(true)
+        } else if (transparentNavBar) {
+            setLightStatusBar(!AppConfig.isNightTheme)
         }
         upNavigationBarColor()
     }

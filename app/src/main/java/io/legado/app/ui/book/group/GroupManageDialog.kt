@@ -1,7 +1,9 @@
 package io.legado.app.ui.book.group
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
@@ -46,6 +48,7 @@ class GroupManageDialog : BaseDialogFragment(R.layout.dialog_recycler_view),
     private val viewModel: GroupViewModel by viewModels()
     private val binding by viewBinding(DialogRecyclerViewBinding::bind)
     private val adapter by lazy { GroupAdapter(requireContext()) }
+    private lateinit var itemTouchHelper: ItemTouchHelper
 
     override fun onStart() {
         super.onStart()
@@ -66,7 +69,8 @@ class GroupManageDialog : BaseDialogFragment(R.layout.dialog_recycler_view),
         binding.recyclerView.adapter = adapter
         val itemTouchCallback = ItemTouchCallback(adapter)
         itemTouchCallback.isCanDrag = true
-        ItemTouchHelper(itemTouchCallback).attachToRecyclerView(binding.recyclerView)
+        itemTouchHelper = ItemTouchHelper(itemTouchCallback)
+        itemTouchHelper.attachToRecyclerView(binding.recyclerView)
         binding.tvOk.setTextColor(requireContext().accentColor)
         binding.tvOk.visible()
         binding.tvOk.setOnClickListener {
@@ -126,8 +130,15 @@ class GroupManageDialog : BaseDialogFragment(R.layout.dialog_recycler_view),
             }
         }
 
+        @SuppressLint("ClickableViewAccessibility")
         override fun registerListener(holder: ItemViewHolder, binding: ItemBookGroupManageBinding) {
             binding.run {
+                ivDragHandle.setOnTouchListener { _, event ->
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                        itemTouchHelper.startDrag(holder)
+                    }
+                    false
+                }
                 tvEdit.setOnClickListener {
                     getItem(holder.layoutPosition)?.let { bookGroup ->
                         showDialogFragment(

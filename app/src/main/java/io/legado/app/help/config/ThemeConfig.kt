@@ -47,11 +47,16 @@ import java.io.FileOutputStream
 @Keep
 object ThemeConfig {
     const val configFileName = "themeConfig.json"
+    private const val ASSET_BACKGROUND_PREFIX = "asset://"
     val configFilePath = FileUtils.getPath(appCtx.filesDir, configFileName)
 
     val configList: ArrayList<Config> by lazy {
-        val cList = getConfigs() ?: DefaultData.themeConfigs
-        ArrayList(cList)
+        val savedConfigs = getConfigs()
+        ArrayList(savedConfigs ?: DefaultData.themeConfigs).apply {
+            if (savedConfigs != null) {
+                addBuiltInAssetThemes(this)
+            }
+        }
     }
 
     private var needClearImg = true
@@ -102,6 +107,65 @@ object ThemeConfig {
         return MD5Utils.md5Encode16(url) + suffix
     }
 
+    private fun getAssetToFile(assetPath: String): String {
+        val suffix = when {
+            assetPath.contains(".9.png", ignoreCase = true) -> ".9.png"
+            assetPath.endsWith(".png", ignoreCase = true) -> ".png"
+            assetPath.endsWith(".gif", ignoreCase = true) -> ".gif"
+            assetPath.endsWith(".webp", ignoreCase = true) -> ".webp"
+            assetPath.endsWith(".jpg", ignoreCase = true) -> ".jpg"
+            assetPath.endsWith(".jpeg", ignoreCase = true) -> ".jpg"
+            else -> ".png"
+        }
+        return MD5Utils.md5Encode16(assetPath) + suffix
+    }
+
+    private fun cachedBackgroundPath(context: Context, path: String, preferenceKey: String): String {
+        val fileRoot = context.externalFiles
+        return when {
+            path.startsWith("http") -> {
+                FileUtils.getPath(fileRoot, preferenceKey, getUrlToFile(path))
+            }
+
+            path.startsWith(ASSET_BACKGROUND_PREFIX) -> {
+                val assetPath = path.removePrefix(ASSET_BACKGROUND_PREFIX)
+                FileUtils.getPath(fileRoot, preferenceKey, getAssetToFile(assetPath))
+            }
+
+            else -> path
+        }
+    }
+
+    private fun copyAssetBackgroundIfNeed(
+        context: Context,
+        preferenceKey: String,
+        backgroundPath: String
+    ): String {
+        val assetPath = backgroundPath.removePrefix(ASSET_BACKGROUND_PREFIX)
+        val filePath = cachedBackgroundPath(context, backgroundPath, preferenceKey)
+        val file = File(filePath)
+        if (!file.exists() || file.length() == 0L) {
+            FileUtils.createFileIfNotExist(filePath)
+            context.assets.open(assetPath).use { inputStream ->
+                FileOutputStream(file).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+        }
+        return file.absolutePath
+    }
+
+    private fun addBuiltInAssetThemes(configs: MutableList<Config>) {
+        configs.removeAll { it.themeName == "阅读NG·背景一" || it.themeName == "阅读NG·背景二" }
+        DefaultData.themeConfigs
+            .filter { it.backgroundImgPath?.startsWith(ASSET_BACKGROUND_PREFIX) == true }
+            .forEach { builtInConfig ->
+                if (configs.none { it.themeName == builtInConfig.themeName }) {
+                    configs.add(builtInConfig)
+                }
+            }
+    }
+
     fun getBgImage(context: Context, metrics: DisplayMetrics): Drawable? {
         val themeMode = getTheme()
         val preferenceKey = when (themeMode) {
@@ -120,6 +184,9 @@ object ThemeConfig {
                 return null
             }
             path = filePath
+        }
+        if (path.startsWith(ASSET_BACKGROUND_PREFIX)) {
+            path = copyAssetBackgroundIfNeed(context, preferenceKey, path)
         }
         if (path.endsWith(".9.png")) {
             val bgDrawable = BitmapUtils.decodeNinePatchDrawable(path)
@@ -238,13 +305,13 @@ object ThemeConfig {
             val isNightTheme = config.isNightTheme
             val transparentNavBar = config.transparentNavBar
             val backgroundPath = config.backgroundImgPath
+            val preferenceKey = if (isNightTheme) {
+                PreferKey.bgImageN
+            } else {
+                PreferKey.bgImage
+            }
             if (backgroundPath != null && backgroundPath.startsWith("http")) {
                 val fileRoot = context.externalFiles
-                val preferenceKey = if (isNightTheme) {
-                    PreferKey.bgImageN
-                } else {
-                    PreferKey.bgImage
-                }
                 val name = getUrlToFile(backgroundPath)
                 val fileFold = File(fileRoot, preferenceKey)
                 if (!fileFold.exists()) {
@@ -272,6 +339,13 @@ object ThemeConfig {
                     return
                 }
             }
+            val savedBackgroundPath = when {
+                backgroundPath?.startsWith(ASSET_BACKGROUND_PREFIX) == true -> {
+                    copyAssetBackgroundIfNeed(context, preferenceKey, backgroundPath)
+                }
+
+                else -> backgroundPath
+            }
             val backgroundBlur = config.backgroundImgBlur
             if (isNightTheme) {
                 context.putPrefString(PreferKey.dNThemeName, config.themeName)
@@ -280,7 +354,7 @@ object ThemeConfig {
                 context.putPrefInt(PreferKey.cNBackground, background)
                 context.putPrefInt(PreferKey.cNBBackground, bBackground)
                 context.putPrefBoolean(PreferKey.tNavBarN, transparentNavBar)
-                context.putPrefString(PreferKey.bgImageN, backgroundPath)
+                context.putPrefString(PreferKey.bgImageN, savedBackgroundPath)
                 context.putPrefInt(PreferKey.bgImageNBlurring, backgroundBlur)
             } else {
                 context.putPrefString(PreferKey.dThemeName, config.themeName)
@@ -289,7 +363,7 @@ object ThemeConfig {
                 context.putPrefInt(PreferKey.cBackground, background)
                 context.putPrefInt(PreferKey.cBBackground, bBackground)
                 context.putPrefBoolean(PreferKey.tNavBar, transparentNavBar)
-                context.putPrefString(PreferKey.bgImage, backgroundPath)
+                context.putPrefString(PreferKey.bgImage, savedBackgroundPath)
                 context.putPrefInt(PreferKey.bgImageBlurring, backgroundBlur)
             }
             AppConfig.isNightTheme = isNightTheme
@@ -453,24 +527,13 @@ object ThemeConfig {
 
     fun clearBg(context: Context) {
         val (nightConfigs, dayConfigs) = configList.partition { it.isNightTheme }
-        val fileRoot = context.externalFiles
         val nightBackgroundImgPaths = nightConfigs.mapNotNull {
             val path = it.backgroundImgPath ?: return@mapNotNull null
-            if (path.startsWith("http")) {
-                val name = getUrlToFile(path)
-                FileUtils.getPath(fileRoot, PreferKey.bgImageN, name)
-            } else {
-                path
-            }
+            cachedBackgroundPath(context, path, PreferKey.bgImageN)
         }
         val dayBackgroundImgPaths = dayConfigs.mapNotNull {
             val path = it.backgroundImgPath ?: return@mapNotNull null
-            if (path.startsWith("http")) {
-                val name = getUrlToFile(path)
-                FileUtils.getPath(fileRoot, PreferKey.bgImage, name)
-            } else {
-                path
-            }
+            cachedBackgroundPath(context, path, PreferKey.bgImage)
         }
         appCtx.externalFiles.getFile(PreferKey.bgImage).listFiles()?.forEach {
             if (!dayBackgroundImgPaths.contains(it.absolutePath)) {
