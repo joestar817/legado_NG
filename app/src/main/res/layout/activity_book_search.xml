@@ -10,9 +10,14 @@
         android:id="@+id/title_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        app:contentInsetEnd="10dp"
+        app:contentInsetEndWithActions="10dp"
+        app:contentInsetLeft="0dp"
+        app:contentInsetStart="0dp"
         app:contentInsetStartWithNavigation="0dp"
-        app:contentLayout="@layout/view_search"
+        app:contentLayout="@layout/view_book_search"
         app:layout_constraintTop_toTopOf="parent"
+        app:navigationIcon="@drawable/ic_chevron_left_search"
         app:title="搜索" />
 
     <io.legado.app.ui.widget.anima.RefreshProgressBar

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="36dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <io.legado.app.ui.widget.SearchView
+        android:id="@+id/search_view"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="8dp"
+        android:layout_weight="1"
+        android:focusable="false"
+        android:imeOptions="actionSearch"
+        android:theme="?attr/actionBarStyle"
+        app:defaultQueryHint="搜索"
+        app:iconifiedByDefault="false"
+        app:queryBackground="@null"
+        app:searchHintIcon="@drawable/ic_search"
+        app:searchIcon="@null"
+        app:submitBackground="@null" />
+
+    <ImageButton
+        android:id="@+id/btn_search_more"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="@drawable/bg_bookshelf_top_action"
+        android:contentDescription="@string/menu"
+        android:padding="8dp"
+        android:scaleType="center"
+        android:src="@drawable/ic_grid_menu" />
+
+</LinearLayout>

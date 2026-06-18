@@ -5,10 +5,15 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
+import android.view.ViewGroup
 import android.view.View.GONE
 import android.view.View.VISIBLE
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.viewModels
+import androidx.appcompat.widget.ActionMenuView
+import androidx.appcompat.widget.PopupMenu
 import androidx.appcompat.widget.SearchView
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
@@ -29,12 +34,14 @@ import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.data.entities.SearchKeyword
 import io.legado.app.databinding.ActivityBookSearchBinding
+import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.Selector
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.primaryTextColor
+import io.legado.app.lib.theme.transparentNavBar
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.book.info.BookInfoActivity
 import io.legado.app.ui.book.source.manage.BookSourceActivity
@@ -42,6 +49,7 @@ import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.applyNavigationBarMargin
 import io.legado.app.utils.applyNavigationBarPadding
 import io.legado.app.utils.applyTint
+import io.legado.app.utils.dpToPx
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.gone
 import io.legado.app.utils.invisible
@@ -86,6 +94,9 @@ class SearchActivity : VMBaseActivity<ActivityBookSearchBinding, SearchViewModel
     private val searchView: SearchView by lazy {
         binding.titleBar.findViewById(R.id.search_view)
     }
+    private val searchMoreButton: ImageButton by lazy {
+        binding.titleBar.findViewById(R.id.btn_search_more)
+    }
     private var menu: Menu? = null
     private var groups: List<String>? = null
     private var historyFlowJob: Job? = null
@@ -112,10 +123,18 @@ class SearchActivity : VMBaseActivity<ActivityBookSearchBinding, SearchViewModel
         this.menu = menu
         precisionSearchMenuItem = menu.findItem(R.id.menu_precision_search)
         precisionSearchMenuItem?.isChecked = getPrefBoolean(PreferKey.precisionSearch)
+        binding.titleBar.toolbar.post {
+            applySearchTopBarStyle()
+        }
         return super.onCompatCreateOptionsMenu(menu)
     }
 
     override fun onMenuOpened(featureId: Int, menu: Menu): Boolean {
+        prepareSearchMenu(menu)
+        return super.onMenuOpened(featureId, menu)
+    }
+
+    private fun prepareSearchMenu(menu: Menu) {
         menu.transaction {
             menu.removeGroup(R.id.menu_group_1)
             menu.removeGroup(R.id.menu_group_2)
@@ -152,7 +171,6 @@ class SearchActivity : VMBaseActivity<ActivityBookSearchBinding, SearchViewModel
             menu.setGroupCheckable(R.id.menu_group_1, true, false)
             menu.setGroupCheckable(R.id.menu_group_2, true, true)
         }
-        return super.onMenuOpened(featureId, menu)
     }
 
     override fun onCompatOptionsItemSelected(item: MenuItem): Boolean {
@@ -184,9 +202,13 @@ class SearchActivity : VMBaseActivity<ActivityBookSearchBinding, SearchViewModel
     }
 
     private fun initSearchView() {
+        applySearchTopBarStyle()
         searchView.applyTint(primaryTextColor)
-        searchView.isSubmitButtonEnabled = true
+        searchView.isSubmitButtonEnabled = false
         searchView.queryHint = getString(R.string.search_book_key)
+        searchMoreButton.setOnClickListener {
+            showSearchMenu()
+        }
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String): Boolean {
                 searchView.clearFocus()
@@ -215,6 +237,89 @@ class SearchActivity : VMBaseActivity<ActivityBookSearchBinding, SearchViewModel
             }
         }
         visibleInputHelp(true)
+    }
+
+    private fun applySearchTopBarStyle() {
+        val searchBackground = if (isTransparentTopBar()) {
+            R.drawable.bg_bookshelf_top_search_transparent
+        } else {
+            R.drawable.bg_bookshelf_top_search
+        }
+        val actionBackground = if (isTransparentTopBar()) {
+            R.drawable.bg_bookshelf_top_action_transparent
+        } else {
+            R.drawable.bg_bookshelf_top_action
+        }
+        searchView.setBackgroundResource(searchBackground)
+        searchMoreButton.setBackgroundResource(actionBackground)
+        searchView.findViewById<ImageView>(androidx.appcompat.R.id.search_go_btn)?.gone()
+        binding.titleBar.toolbar.apply {
+            contentInsetStartWithNavigation = 0
+            setContentInsetsRelative(0, 0)
+            titleMarginStart = 0
+            titleMarginEnd = 0
+        }
+        binding.titleBar.toolbar.findNavigationButton()?.let { navigationButton ->
+            navigationButton.minimumWidth = 0
+            navigationButton.minimumHeight = 0
+            navigationButton.layoutParams = (navigationButton.layoutParams ?: ViewGroup.LayoutParams(
+                34.dpToPx(),
+                36.dpToPx()
+            )).apply {
+                width = 34.dpToPx()
+                height = 36.dpToPx()
+            }
+            navigationButton.setPadding(4.dpToPx(), 6.dpToPx(), 4.dpToPx(), 6.dpToPx())
+            navigationButton.scaleType = ImageView.ScaleType.CENTER
+        }
+        binding.titleBar.toolbar.findActionMenuView()?.let { actionMenuView ->
+            actionMenuView.gone()
+        }
+    }
+
+    private fun showSearchMenu() {
+        PopupMenu(this, searchMoreButton).apply {
+            menuInflater.inflate(R.menu.book_search, menu)
+            menu.findItem(R.id.menu_precision_search)?.isChecked =
+                getPrefBoolean(PreferKey.precisionSearch)
+            prepareSearchMenu(menu)
+            setOnMenuItemClickListener {
+                onCompatOptionsItemSelected(it)
+                true
+            }
+            show()
+        }
+    }
+
+    private fun isTransparentTopBar(): Boolean {
+        return transparentNavBar || getPrefBoolean(
+            if (AppConfig.isNightTheme) {
+                PreferKey.tNavBarN
+            } else {
+                PreferKey.tNavBar
+            },
+            false
+        )
+    }
+
+    private fun ViewGroup.findActionMenuView(): ActionMenuView? {
+        for (index in 0 until childCount) {
+            val child = getChildAt(index)
+            if (child is ActionMenuView) {
+                return child
+            }
+        }
+        return null
+    }
+
+    private fun ViewGroup.findNavigationButton(): ImageButton? {
+        for (index in 0 until childCount) {
+            val child = getChildAt(index)
+            if (child is ImageButton) {
+                return child
+            }
+        }
+        return null
     }
 
     private fun initRecyclerView() {
