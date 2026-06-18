@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/background"
+    android:orientation="horizontal"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    tools:ignore="HardcodedText">
+
+    <LinearLayout
+        android:id="@+id/layout_timeline"
+        android:layout_width="42dp"
+        android:layout_height="match_parent"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <View
+            android:id="@+id/view_line_top"
+            android:layout_width="2dp"
+            android:layout_height="10dp" />
+
+        <FrameLayout
+            android:layout_width="42dp"
+            android:layout_height="42dp">
+
+            <io.legado.app.ui.widget.anima.StepLoadingView
+                android:id="@+id/rotate_phase_loading"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/text_phase_marker"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:textColor="@android:color/white"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+        </FrameLayout>
+
+        <View
+            android:id="@+id/view_line_bottom"
+            android:layout_width="2dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:minHeight="30dp" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layout_phase"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_source_debug_card"
+        android:clickable="true"
+        android:elevation="1dp"
+        android:focusable="true"
+        android:foreground="?android:attr/selectableItemBackground"
+        android:minHeight="92dp"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/text_phase_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:singleLine="true"
+                android:textColor="@color/primaryText"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/text_phase_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="22dp"
+                android:layout_marginStart="6dp"
+                android:gravity="center"
+                android:minWidth="48dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:singleLine="true"
+                android:textColor="@color/secondaryText"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/text_phase_status"
+                android:layout_width="wrap_content"
+                android:layout_height="22dp"
+                android:layout_marginStart="6dp"
+                android:gravity="center"
+                android:minWidth="44dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:singleLine="true"
+                android:textColor="@android:color/white"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/text_phase_summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:textColor="@color/secondaryText"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/text_phase_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:textColor="@color/secondaryText"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/text_phase_detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:ellipsize="end"
+            android:maxLines="3"
+            android:textColor="@color/secondaryText"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/text_phase_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="点击查看原始日志"
+            android:textColor="@color/secondaryText"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+
+</LinearLayout>

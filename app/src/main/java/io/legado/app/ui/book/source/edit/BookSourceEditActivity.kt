@@ -37,6 +37,7 @@ import io.legado.app.ui.code.CodeEditActivity
 import io.legado.app.ui.file.HandleFileContract
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.qrcode.QrCodeResult
+import io.legado.app.ui.source.edit.SourceEditCodeHighlighter
 import io.legado.app.ui.widget.dialog.UrlOptionDialog
 import io.legado.app.ui.widget.dialog.VariableDialog
 import io.legado.app.ui.widget.keyboard.KeyboardToolPop
@@ -150,6 +151,9 @@ class BookSourceEditActivity :
                 putExtra("text", currentText)
                 putExtra("title", hint)
                 putExtra("cursorPosition", view.selectionStart)
+                SourceEditCodeHighlighter.languageNameOf(view.getTag(R.id.tag) as? String)?.let {
+                    putExtra("languageName", it)
+                }
             }
             textEditLauncher.launch(intent)
         }

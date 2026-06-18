@@ -2,6 +2,8 @@ package io.legado.app.ui.book.source.debug
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -17,6 +19,7 @@ import io.legado.app.lib.dialogs.selector
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.ui.qrcode.QrCodeResult
+import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.widget.dialog.TextDialog
 import io.legado.app.utils.applyNavigationBarPadding
 import io.legado.app.utils.launch
@@ -38,6 +41,15 @@ class BookSourceDebugActivity : VMBaseActivity<ActivitySourceDebugBinding, BookS
     private val searchView: SearchView by lazy {
         binding.titleBar.findViewById(R.id.search_view)
     }
+    private val autoScrollHandler = Handler(Looper.getMainLooper())
+    private val autoScrollRunnable = Runnable {
+        autoScrollScheduled = false
+        val target = adapter.itemCount - 1
+        if (target >= 0) {
+            binding.recyclerView.smoothScrollToPosition(target)
+        }
+    }
+    private var autoScrollScheduled = false
     private val qrCodeResult = registerForActivityResult(QrCodeResult()) {
         it?.let {
             startSearch(it)
@@ -48,20 +60,27 @@ class BookSourceDebugActivity : VMBaseActivity<ActivitySourceDebugBinding, BookS
         initRecyclerView()
         initSearchView()
         viewModel.init(intent.getStringExtra("key")) {
+            adapter.setSourceName(viewModel.bookSource?.getDisPlayNameGroup().orEmpty())
             initHelpView()
         }
         viewModel.observe { state, msg ->
             lifecycleScope.launch {
-                adapter.addItem(msg)
+                if (state in listOf(10, 20, 30, 40)) {
+                    adapter.addResponse(state, msg)
+                } else {
+                    adapter.addLog(state, msg)
+                }
                 if (state == -1 || state == 1000) {
                     binding.rotateLoading.gone()
                 }
+                scheduleScrollToLatestPhase()
             }
         }
     }
 
     private fun initRecyclerView() {
         binding.recyclerView.setEdgeEffectColor(primaryColor)
+        binding.recyclerView.itemAnimator = null
         binding.recyclerView.adapter = adapter
         binding.recyclerView.applyNavigationBarPadding()
         binding.rotateLoading.loadingColor = accentColor
@@ -130,7 +149,7 @@ class BookSourceDebugActivity : VMBaseActivity<ActivitySourceDebugBinding, BookS
             exploreKinds?.firstOrNull()?.let {
                 binding.textFx.text = "${it.title}::${it.url}"
                 if (it.title.startsWith("ERROR:")) {
-                    adapter.addItem("获取发现出错\n${it.url}")
+                    adapter.addLog(-1, "获取发现出错\n${it.url}")
                     openOrCloseHelp(false)
                     searchView.clearFocus()
                     return@launch
@@ -174,12 +193,22 @@ class BookSourceDebugActivity : VMBaseActivity<ActivitySourceDebugBinding, BookS
     }
 
     private fun startSearch(key: String) {
-        adapter.clearItems()
+        adapter.clearLogs()
+        adapter.setSourceName(viewModel.bookSource?.getDisPlayNameGroup().orEmpty())
         viewModel.startDebug(key, {
-            binding.rotateLoading.visible()
+            binding.rotateLoading.gone()
         }, {
             toastOnUi("未获取到书源")
         })
+    }
+
+    private fun scheduleScrollToLatestPhase() {
+        binding.recyclerView.post {
+            if (!autoScrollScheduled) {
+                autoScrollScheduled = true
+                autoScrollHandler.postDelayed(autoScrollRunnable, AUTO_SCROLL_DELAY)
+            }
+        }
     }
 
     override fun onCompatCreateOptionsMenu(menu: Menu): Boolean {
@@ -194,9 +223,10 @@ class BookSourceDebugActivity : VMBaseActivity<ActivitySourceDebugBinding, BookS
             R.id.menu_book_src -> showDialogFragment(TextDialog("html", viewModel.bookSrc))
             R.id.menu_toc_src -> showDialogFragment(TextDialog("html", viewModel.tocSrc))
             R.id.menu_content_src -> showDialogFragment(TextDialog("html", viewModel.contentSrc))
+            R.id.menu_network_log -> showDialogFragment(NetworkLogDialog())
             R.id.menu_refresh_explore -> lifecycleScope.launch {
                 viewModel.bookSource?.clearExploreKindsCache()
-                adapter.clearItems()
+                adapter.clearLogs()
                 openOrCloseHelp(true)
                 initExploreKinds()
             }
@@ -204,6 +234,16 @@ class BookSourceDebugActivity : VMBaseActivity<ActivitySourceDebugBinding, BookS
             R.id.menu_help -> showHelp("debugHelp")
         }
         return super.onCompatOptionsItemSelected(item)
+    }
+
+    override fun onDestroy() {
+        autoScrollHandler.removeCallbacks(autoScrollRunnable)
+        autoScrollScheduled = false
+        super.onDestroy()
+    }
+
+    private companion object {
+        private const val AUTO_SCROLL_DELAY = 120L
     }
 
 }

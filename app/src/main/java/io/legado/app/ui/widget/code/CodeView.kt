@@ -14,7 +14,8 @@ import android.text.style.ReplacementSpan
 import android.util.AttributeSet
 import androidx.annotation.ColorInt
 import io.legado.app.ui.widget.text.ScrollMultiAutoCompleteTextView
-import java.util.*
+import java.util.SortedMap
+import java.util.TreeMap
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 import kotlin.math.roundToInt
@@ -29,12 +30,13 @@ class CodeView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private var modified = true
     private var highlightWhileTextChanging = true
     private var hasErrors = false
+    private var maxHighlightLength = 4096
     private var mRemoveErrorsWhenTextChanged = true
     private val mUpdateHandler = Handler(Looper.getMainLooper())
     private var mAutoCompleteTokenizer: Tokenizer? = null
     private val displayDensity = resources.displayMetrics.density
     private val mErrorHashSet: SortedMap<Int, Int> = TreeMap()
-    private val mSyntaxPatternMap: MutableMap<Pattern, Int> = HashMap()
+    private val mSyntaxPatternMap: MutableMap<Pattern, Int> = linkedMapOf()
     private var mIndentCharacterList = mutableListOf('{', '+', '-', '*', '/', '=')
 
     private val mUpdateRunnable = Runnable {
@@ -217,7 +219,7 @@ class CodeView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     private fun highlight(editable: Editable): Editable {
         // if (editable.isEmpty() || editable.length > 1024) return editable
-        if (editable.length !in 1..4096) {
+        if (editable.length !in 1..maxHighlightLength) {
             return editable
         }
         try {
@@ -370,6 +372,10 @@ class CodeView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     fun setUpdateDelayTime(time: Int) {
         mUpdateDelayTime = time
+    }
+
+    fun setMaxHighlightLength(length: Int) {
+        maxHighlightLength = length
     }
 
     fun getUpdateDelayTime(): Int {

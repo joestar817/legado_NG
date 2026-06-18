@@ -11,9 +11,7 @@ import io.legado.app.R
 import io.legado.app.databinding.ItemSourceEditBinding
 import io.legado.app.databinding.ItemSourceEditCheckBoxBinding
 import io.legado.app.help.config.AppConfig
-import io.legado.app.ui.widget.code.addJsPattern
-import io.legado.app.ui.widget.code.addJsonPattern
-import io.legado.app.ui.widget.code.addLegadoPattern
+import io.legado.app.ui.source.edit.SourceEditCodeHighlighter
 import io.legado.app.ui.widget.text.EditEntity
 import io.legado.app.utils.isTrue
 
@@ -44,9 +42,6 @@ class RssSourceEditAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             else -> {
                 val binding = ItemSourceEditBinding
                     .inflate(LayoutInflater.from(parent.context), parent, false)
-                binding.editText.addLegadoPattern()
-                binding.editText.addJsonPattern()
-                binding.editText.addJsPattern()
                 EditTextViewHolder(binding)
             }
         }
@@ -67,7 +62,9 @@ class RssSourceEditAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         RecyclerView.ViewHolder(binding.root) {
 
         fun bind(editEntity: EditEntity) = binding.run {
+            editText.setTag(R.id.tag, editEntity.key)
             editText.maxLines = editEntityMaxLine
+            SourceEditCodeHighlighter.applyTo(editText, editEntity.key)
             if (editText.getTag(R.id.tag1) == null) {
                 val listener = object : View.OnAttachStateChangeListener {
                     override fun onViewAttachedToWindow(v: View) {
@@ -89,7 +86,9 @@ class RssSourceEditAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
                     editText.removeTextChangedListener(it)
                 }
             }
-            editText.setText(editEntity.value)
+            editEntity.value?.takeIf { it.isNotEmpty() }?.let {
+                editText.setTextHighlighted(it)
+            } ?: editText.setText("")
             textInputLayout.hint = editEntity.hint
             val textWatcher = object : TextWatcher {
                 override fun beforeTextChanged(

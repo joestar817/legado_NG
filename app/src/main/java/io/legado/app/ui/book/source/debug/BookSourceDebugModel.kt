@@ -48,8 +48,8 @@ class BookSourceDebugModel(application: Application) : BaseViewModel(application
             20 -> bookSrc = msg
             30 -> tocSrc = msg
             40 -> contentSrc = msg
-            else -> callback?.invoke(state, msg)
         }
+        callback?.invoke(state, msg)
     }
 
     override fun onCleared() {

@@ -8,6 +8,7 @@ import io.legado.app.base.BaseDialogFragment
 import io.legado.app.databinding.DialogCodeViewBinding
 import io.legado.app.help.IntentData
 import io.legado.app.lib.theme.primaryColor
+import io.legado.app.ui.widget.code.addDebugLogPattern
 import io.legado.app.ui.widget.code.addJsPattern
 import io.legado.app.ui.widget.code.addJsonPattern
 import io.legado.app.ui.widget.code.addLegadoPattern
@@ -18,11 +19,19 @@ import io.legado.app.utils.viewbindingdelegate.viewBinding
 
 class CodeDialog() : BaseDialogFragment(R.layout.dialog_code_view) {
 
-    constructor(code: String, disableEdit: Boolean = true, requestId: String? = null) : this() {
+    constructor(
+        code: String,
+        disableEdit: Boolean = true,
+        requestId: String? = null,
+        title: String? = null,
+        highlightMode: HighlightMode = HighlightMode.Default
+    ) : this() {
         arguments = Bundle().apply {
             putBoolean("disableEdit", disableEdit)
             putString("code", IntentData.put(code))
             putString("requestId", requestId)
+            putString("title", title)
+            putString("highlightMode", highlightMode.name)
         }
     }
 
@@ -35,17 +44,28 @@ class CodeDialog() : BaseDialogFragment(R.layout.dialog_code_view) {
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         binding.toolBar.setBackgroundColor(primaryColor)
+        arguments?.getString("title")?.let {
+            binding.toolBar.title = it
+        }
         if (arguments?.getBoolean("disableEdit") == true) {
-            binding.toolBar.title = "code view"
+            if (arguments?.getString("title").isNullOrBlank()) {
+                binding.toolBar.title = "code view"
+            }
+            binding.codeView.setMaxHighlightLength(64 * 1024)
             binding.codeView.disableEdit()
         } else {
             initMenu()
         }
-        binding.codeView.addLegadoPattern()
-        binding.codeView.addJsonPattern()
-        binding.codeView.addJsPattern()
+        when (arguments?.getString("highlightMode")) {
+            HighlightMode.DebugLog.name -> binding.codeView.addDebugLogPattern()
+            else -> {
+                binding.codeView.addLegadoPattern()
+                binding.codeView.addJsonPattern()
+                binding.codeView.addJsPattern()
+            }
+        }
         arguments?.getString("code")?.let {
-            binding.codeView.text = IntentData.get(it)
+            binding.codeView.setTextHighlighted(IntentData.get(it))
         }
     }
 
@@ -72,6 +92,11 @@ class CodeDialog() : BaseDialogFragment(R.layout.dialog_code_view) {
 
         fun onCodeSave(code: String, requestId: String?)
 
+    }
+
+    enum class HighlightMode {
+        Default,
+        DebugLog
     }
 
 }

@@ -10,9 +10,7 @@ import androidx.recyclerview.widget.RecyclerView
 import io.legado.app.R
 import io.legado.app.databinding.ItemSourceEditBinding
 import io.legado.app.help.config.AppConfig
-import io.legado.app.ui.widget.code.addJsPattern
-import io.legado.app.ui.widget.code.addJsonPattern
-import io.legado.app.ui.widget.code.addLegadoPattern
+import io.legado.app.ui.source.edit.SourceEditCodeHighlighter
 import io.legado.app.ui.widget.text.EditEntity
 
 class BookSourceEditAdapter : RecyclerView.Adapter<BookSourceEditAdapter.MyViewHolder>() {
@@ -29,9 +27,6 @@ class BookSourceEditAdapter : RecyclerView.Adapter<BookSourceEditAdapter.MyViewH
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MyViewHolder {
         val binding = ItemSourceEditBinding
             .inflate(LayoutInflater.from(parent.context), parent, false)
-        binding.editText.addLegadoPattern()
-        binding.editText.addJsonPattern()
-        binding.editText.addJsPattern()
         return MyViewHolder(binding)
     }
 
@@ -49,6 +44,7 @@ class BookSourceEditAdapter : RecyclerView.Adapter<BookSourceEditAdapter.MyViewH
         fun bind(editEntity: EditEntity) = binding.run {
             editText.setTag(R.id.tag, editEntity.key)
             editText.maxLines = editEntityMaxLine
+            SourceEditCodeHighlighter.applyTo(editText, editEntity.key)
             if (editText.getTag(R.id.tag1) == null) {
                 val listener = object : View.OnAttachStateChangeListener {
                     override fun onViewAttachedToWindow(v: View) {
@@ -70,7 +66,9 @@ class BookSourceEditAdapter : RecyclerView.Adapter<BookSourceEditAdapter.MyViewH
                     editText.removeTextChangedListener(it)
                 }
             }
-            editText.setText(editEntity.value)
+            editEntity.value?.takeIf { it.isNotEmpty() }?.let {
+                editText.setTextHighlighted(it)
+            } ?: editText.setText("")
             textInputLayout.hint = editEntity.hint
             val textWatcher = object : TextWatcher {
                 override fun beforeTextChanged(
