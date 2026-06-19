@@ -98,6 +98,13 @@
     <string name="retry">重试</string>
     <string name="web_service">Web 服务</string>
     <string name="web_service_desc">用浏览器写源或看书</string>
+    <string name="service_manage">服务管理</string>
+    <string name="service_manage_desc">管理 Web 服务、MCP 服务和端口</string>
+    <string name="mcp_service">MCP 服务</string>
+    <string name="mcp_service_desc">开发调试用，供 MCP 客户端连接</string>
+    <string name="mcp_service_url_format">%s/mcp</string>
+    <string name="mcp_port_title">MCP 端口</string>
+    <string name="mcp_port_summary">当前端口 %s</string>
     <string name="web_edit_source">Web 编辑书源</string>
     <string name="offline_cache">离线缓存</string>
     <string name="offline_cache_t">离线缓存</string>

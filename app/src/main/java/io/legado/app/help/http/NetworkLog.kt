@@ -8,12 +8,14 @@ import okhttp3.Response
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 
 object NetworkLog {
 
-    private const val MAX_LOG_SIZE = 500
-    private const val BODY_PREVIEW_SIZE = 512L * 1024L
+    const val MAX_LOG_SIZE = 500
+    const val BODY_PREVIEW_SIZE = 512L * 1024L
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    private val nextId = AtomicLong(0)
     private val items = arrayListOf<Entry>()
 
     val isEnabled: Boolean
@@ -21,6 +23,11 @@ object NetworkLog {
 
     val logs: List<Entry>
         @Synchronized get() = items.toList()
+
+    @Synchronized
+    fun find(id: Long): Entry? {
+        return items.firstOrNull { it.id == id }
+    }
 
     @Synchronized
     fun clear() {
@@ -36,6 +43,7 @@ object NetworkLog {
         if (!isEnabled) return
         add(
             Entry(
+                id = nextId.incrementAndGet(),
                 time = System.currentTimeMillis(),
                 source = currentSourceLabel(),
                 type = "OkHttp",
@@ -68,6 +76,7 @@ object NetworkLog {
         if (!isEnabled) return
         add(
             Entry(
+                id = nextId.incrementAndGet(),
                 time = System.currentTimeMillis(),
                 source = source ?: currentSourceLabel(),
                 type = type,
@@ -150,6 +159,7 @@ object NetworkLog {
     }
 
     data class Entry(
+        val id: Long,
         val time: Long,
         val source: String,
         val type: String,

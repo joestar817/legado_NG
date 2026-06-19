@@ -488,6 +488,9 @@
             android:name=".service.WebService"
             android:foregroundServiceType="dataSync" />
         <service
+            android:name=".service.McpService"
+            android:foregroundServiceType="dataSync" />
+        <service
             android:name=".service.WebTileService"
             android:exported="true"
             android:foregroundServiceType="dataSync"

@@ -78,6 +78,7 @@ class NetworkLogDialog : BaseDialogFragment(R.layout.dialog_recycler_view),
             item: NetworkLog.Entry,
             payloads: MutableList<Any>
         ) {
+            binding.textId.text = "#${item.id}"
             binding.textType.text = item.type
             binding.textType.background = tagBackground(item.type)
             binding.textTime.text = timeFormat.format(Date(item.time))
@@ -109,6 +110,7 @@ class NetworkLogDialog : BaseDialogFragment(R.layout.dialog_recycler_view),
                 appendSection(
                     "Overview",
                     buildString {
+                        append("#").append(id).append(' ')
                         append('[').append(timeFormat.format(Date(time))).append("] ")
                         append(type).append(' ')
                         append(method).append(' ')

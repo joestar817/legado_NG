@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <io.legado.app.lib.prefs.SwitchPreference
+        android:defaultValue="false"
+        android:key="webService"
+        android:summary="@string/web_service_desc"
+        android:title="@string/web_service"
+        app:iconSpaceReserved="false" />
+
+    <io.legado.app.lib.prefs.Preference
+        android:key="webPort"
+        android:title="@string/web_port_title"
+        app:iconSpaceReserved="false" />
+
+    <io.legado.app.lib.prefs.SwitchPreference
+        android:defaultValue="false"
+        android:key="mcpService"
+        android:summary="@string/mcp_service_desc"
+        android:title="@string/mcp_service"
+        app:iconSpaceReserved="false" />
+
+    <io.legado.app.lib.prefs.Preference
+        android:key="mcpPort"
+        android:title="@string/mcp_port_title"
+        app:iconSpaceReserved="false" />
+
+</androidx.preference.PreferenceScreen>

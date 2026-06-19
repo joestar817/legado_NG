@@ -42,12 +42,11 @@
         android:title="@string/theme_mode"
         app:iconSpaceReserved="false" />
 
-    <io.legado.app.lib.prefs.SwitchPreference
-        android:defaultValue="false"
+    <io.legado.app.lib.prefs.Preference
         android:icon="@drawable/ic_cfg_web"
-        android:key="webService"
-        android:summary="@string/web_service_desc"
-        android:title="@string/web_service"
+        android:key="serviceManage"
+        android:summary="@string/service_manage_desc"
+        android:title="@string/service_manage"
         app:allowDividerBelow="false"
         app:iconSpaceReserved="false" />
 
