@@ -115,17 +115,7 @@ class ExploreFragment() : VMBaseFragment<ExploreViewModel>(R.layout.fragment_exp
     }
 
     private fun applyTransparentModeUi() {
-        if (requireContext().transparentNavBar) {
-            binding.contentPanel.setBackgroundResource(
-                if (AppConfig.isNightTheme) {
-                    R.drawable.bg_main_content_panel_night
-                } else {
-                    R.drawable.bg_main_content_panel
-                }
-            )
-        } else {
-            binding.contentPanel.setBackgroundResource(R.color.transparent)
-        }
+        binding.contentPanel.setBackgroundResource(R.color.transparent)
     }
 
     private fun initRecyclerView() {

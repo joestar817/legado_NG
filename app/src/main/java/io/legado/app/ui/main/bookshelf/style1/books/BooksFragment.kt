@@ -171,10 +171,10 @@ class BooksFragment() : BaseFragment(R.layout.fragment_books),
                 } else {
                     when (position) {
                         0 -> {
-                            outRect.set(0, bookshelfMargin + 24, 0, bookshelfMargin)
+                            outRect.set(0, bookshelfMargin + 4, 0, bookshelfMargin)
                         }
                         itemCount - 1 -> {
-                            outRect.set(0, bookshelfMargin, 0, bookshelfMargin + 24)
+                            outRect.set(0, bookshelfMargin, 0, bookshelfMargin + 12)
                         }
                         else -> {
                             outRect.set(0, bookshelfMargin, 0, bookshelfMargin)

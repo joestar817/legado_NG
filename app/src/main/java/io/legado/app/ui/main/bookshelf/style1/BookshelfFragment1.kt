@@ -23,6 +23,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.databinding.FragmentBookshelf1Binding
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ThemeConfig
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.transparentNavBar
@@ -139,17 +140,7 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
     }
 
     private fun applyContentPanelBackground() {
-        binding.bookshelfContentPanel.setBackgroundResource(
-            if (isTransparentTopBar()) {
-                if (AppConfig.isNightTheme) {
-                    R.drawable.bg_main_content_panel_night
-                } else {
-                    R.drawable.bg_main_content_panel
-                }
-            } else {
-                R.color.transparent
-            }
-        )
+        binding.bookshelfContentPanel.setBackgroundResource(R.color.transparent)
     }
 
     private fun isTransparentTopBar(): Boolean {
@@ -375,7 +366,7 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
     }
 
     private fun isGradientTheme(): Boolean {
-        return AppConfig.themeMode == "4" || AppConfig.themeMode == "5"
+        return ThemeConfig.isReadingNgBackgroundTheme()
     }
 
     override fun onTabReselected(tab: TabLayout.Tab) {

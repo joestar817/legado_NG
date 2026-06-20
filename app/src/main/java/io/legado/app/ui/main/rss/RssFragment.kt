@@ -19,7 +19,6 @@ import io.legado.app.data.entities.RssSource
 import io.legado.app.databinding.FragmentRssBinding
 import io.legado.app.databinding.ItemRssBinding
 import io.legado.app.lib.dialogs.alert
-import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.primaryTextColor
 import io.legado.app.lib.theme.transparentNavBar
@@ -140,17 +139,7 @@ class RssFragment() : VMBaseFragment<RssViewModel>(R.layout.fragment_rss), MainF
     }
 
     private fun applyTransparentModeUi() {
-        if (requireContext().transparentNavBar) {
-            binding.contentPanel.setBackgroundResource(
-                if (AppConfig.isNightTheme) {
-                    R.drawable.bg_main_content_panel_night
-                } else {
-                    R.drawable.bg_main_content_panel
-                }
-            )
-        } else {
-            binding.contentPanel.setBackgroundResource(R.color.transparent)
-        }
+        binding.contentPanel.setBackgroundResource(R.color.transparent)
     }
 
     private fun initRecyclerView() {
