@@ -55,6 +55,55 @@ class ContentProcessor private constructor(
     private val contentReplaceRules = CopyOnWriteArrayList<ReplaceRule>()
     val removeSameTitleCache = hashSetOf<String>()
 
+    private fun String.limitLogText(maxLength: Int = 80): String {
+        return replace("\n", "\\n").let {
+            if (it.length > maxLength) {
+                it.take(maxLength) + "..."
+            } else {
+                it
+            }
+        }
+    }
+
+    private fun logReplaceRule(
+        rule: ReplaceRule,
+        chapter: BookChapter,
+        beforeLength: Int,
+        afterLength: Int,
+        sample: String?
+    ) {
+        AppLog.putDebug(
+            buildString {
+                append("替换净化调试: 命中规则\n")
+                append("书籍: ").append(bookName).append('\n')
+                append("书源: ").append(bookOrigin).append('\n')
+                append("章节: ").append(chapter.title).append('\n')
+                append("规则: ").append(rule.name).append(" #").append(rule.id).append('\n')
+                append("正则: ").append(rule.isRegex).append('\n')
+                append("pattern: ").append(rule.pattern.limitLogText()).append('\n')
+                append("replacement: ").append(rule.replacement.limitLogText()).append('\n')
+                append("长度: ").append(beforeLength).append(" -> ").append(afterLength)
+                sample?.let {
+                    append('\n').append("样例: ").append(it.limitLogText())
+                }
+            }
+        )
+    }
+
+    private fun logReplaceRuleMiss(rule: ReplaceRule, chapter: BookChapter) {
+        AppLog.putDebug(
+            buildString {
+                append("替换净化调试: 未命中规则\n")
+                append("书籍: ").append(bookName).append('\n')
+                append("书源: ").append(bookOrigin).append('\n')
+                append("章节: ").append(chapter.title).append('\n')
+                append("规则: ").append(rule.name).append(" #").append(rule.id).append('\n')
+                append("正则: ").append(rule.isRegex).append('\n')
+                append("pattern: ").append(rule.pattern.limitLogText())
+            }
+        )
+    }
+
     init {
         upReplaceRules()
         upRemoveSameTitle()
@@ -158,11 +207,26 @@ class ContentProcessor private constructor(
                 //替换
                 effectiveReplaceRules = arrayListOf()
                 mContent = mContent.lines().joinToString("\n") { it.trim() }
+                AppLog.putDebug(
+                    "替换净化调试: 开始正文替换\n" +
+                            "书籍: ${book.name}\n" +
+                            "书源: ${book.origin}\n" +
+                            "章节: ${chapter.title}\n" +
+                            "规则数量: ${getContentReplaceRules().size}\n" +
+                            "正文长度: ${mContent.length}"
+                )
                 getContentReplaceRules().forEach { item ->
                     if (item.pattern.isEmpty()) {
                         return@forEach
                     }
                     try {
+                        val beforeLength = mContent.length
+                        val sample = if (item.isRegex) {
+                            item.regex.find(mContent)?.value
+                        } else {
+                            val index = mContent.indexOf(item.pattern)
+                            if (index >= 0) item.pattern else null
+                        }
                         val tmp = if (item.isRegex) {
                             mContent.replace(
                                 item.name,
@@ -177,7 +241,10 @@ class ContentProcessor private constructor(
                         }
                         if (mContent != tmp) {
                             effectiveReplaceRules.add(item)
+                            logReplaceRule(item, chapter, beforeLength, tmp.length, sample)
                             mContent = tmp
+                        } else {
+                            logReplaceRuleMiss(item, chapter)
                         }
                     } catch (e: RegexTimeoutException) {
                         item.isEnabled = false

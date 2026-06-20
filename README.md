@@ -91,6 +91,7 @@
 # Grateful-感谢 [![](https://img.shields.io/badge/-Grateful-F5F5F5.svg)](#Grateful-感谢-)
 > * [gedoor/legado](https://github.com/gedoor/legado) — 阅读 3.0 原作者
 > * [Luoyacheng/legado](https://github.com/Luoyacheng/legado) — 阅读Sigma，NG 的直接上游
+> * [rikkahub/rikkahub](https://github.com/rikkahub/rikkahub) — AI 提供商抽象与多模型接入设计参考
 > * org.jsoup:jsoup
 > * cn.wanghaomiao:JsoupXpath
 > * com.jayway.jsonpath:json-path

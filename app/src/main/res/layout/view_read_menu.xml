@@ -138,6 +138,27 @@
 
     </LinearLayout>
 
+    <TextView
+        android:id="@+id/fabAiPurifyChapter"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginEnd="0dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_ai_sub_action"
+        android:contentDescription="@string/ai_purify_chapter"
+        android:elevation="2dp"
+        android:gravity="center"
+        android:minWidth="72dp"
+        android:singleLine="true"
+        android:text="@string/ai_purify_chapter"
+        android:textColor="@color/primaryText"
+        android:textSize="13sp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@+id/bottom_menu"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:ignore="UnusedAttribute"
+        tools:visibility="visible" />
+
     <LinearLayout
         android:id="@+id/bottom_menu"
         android:layout_width="match_parent"
@@ -151,14 +172,14 @@
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp">
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
 
             <com.google.android.material.floatingactionbutton.FloatingActionButton
                 android:id="@+id/fabSearch"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="16dp"
+                android:layout_margin="8dp"
                 android:contentDescription="@string/search_content"
                 android:src="@drawable/ic_search"
                 android:tint="@color/primaryText"
@@ -178,7 +199,7 @@
                 android:id="@+id/fabAutoPage"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="16dp"
+                android:layout_margin="8dp"
                 android:contentDescription="@string/auto_next_page"
                 android:src="@drawable/ic_auto_page"
                 android:tint="@color/primaryText"
@@ -198,7 +219,7 @@
                 android:id="@+id/fabReplaceRule"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="16dp"
+                android:layout_margin="8dp"
                 android:contentDescription="@string/replace_rule_title"
                 android:src="@drawable/ic_find_replace"
                 android:tint="@color/primaryText"
@@ -218,11 +239,31 @@
                 android:id="@+id/fabNightTheme"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="16dp"
+                android:layout_margin="8dp"
                 android:contentDescription="@string/dark_theme"
                 android:src="@drawable/ic_brightness"
                 android:tint="@color/primaryText"
                 android:tooltipText="@string/dark_theme"
+                app:backgroundTint="@color/background_menu"
+                app:elevation="2dp"
+                app:fabSize="mini"
+                app:pressedTranslationZ="2dp"
+                tools:ignore="UnusedAttribute" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1" />
+
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/fabAi"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="8dp"
+                android:contentDescription="@string/ai_actions"
+                android:src="@drawable/ic_ai"
+                android:tint="@color/primaryText"
+                android:tooltipText="@string/ai_actions"
                 app:backgroundTint="@color/background_menu"
                 app:elevation="2dp"
                 app:fabSize="mini"

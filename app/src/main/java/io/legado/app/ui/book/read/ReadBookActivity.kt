@@ -3,8 +3,12 @@ package io.legado.app.ui.book.read
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -12,6 +16,11 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.widget.CheckBox
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -33,10 +42,14 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookProgress
 import io.legado.app.data.entities.BookSource
+import io.legado.app.data.entities.ReplaceRule
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.IntentData
 import io.legado.app.help.TTS
+import io.legado.app.help.ai.AiConfig
+import io.legado.app.help.ai.AiPurifyHelper
+import io.legado.app.help.ai.AiPurifyResult
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.book.isAudio
@@ -105,6 +118,7 @@ import io.legado.app.ui.replace.ReplaceRuleActivity
 import io.legado.app.ui.replace.edit.ReplaceEditActivity
 import io.legado.app.ui.widget.PopupAction
 import io.legado.app.ui.widget.dialog.PhotoDialog
+import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.utils.ACache
 import io.legado.app.utils.Debounce
 import io.legado.app.utils.LogUtils
@@ -113,6 +127,7 @@ import io.legado.app.utils.StartActivityContract
 import io.legado.app.utils.applyOpenTint
 import io.legado.app.utils.buildMainHandler
 import io.legado.app.utils.dismissDialogFragment
+import io.legado.app.utils.dpToPx
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.hexString
@@ -223,6 +238,7 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
     private var menu: Menu? = null
     private var backupJob: Job? = null
+    private var aiPurifyJob: Job? = null
     private var tts: TTS? = null
     val textActionMenu: TextActionMenu by lazy {
         TextActionMenu(this, this)
@@ -896,6 +912,11 @@ class ReadBookActivity : BaseReadBookActivity(),
                 return true
             }
 
+            R.id.menu_ai_purify -> {
+                startAiPurifySelectedText()
+                return true
+            }
+
             R.id.menu_search_content -> {
                 viewModel.searchContentQuery = selectedText
                 openSearchActivity(selectedText)
@@ -908,6 +929,372 @@ class ReadBookActivity : BaseReadBookActivity(),
             }
         }
         return false
+    }
+
+    private fun startAiPurifySelectedText(text: String = selectedText) {
+        val source = AiPurifyHelper.normalizeSelectedText(text)
+        if (source.isBlank()) {
+            toastOnUi("选中文本为空")
+            return
+        }
+        aiPurifyJob?.cancel()
+        val waitDialog = WaitDialog(this).apply {
+            setText(R.string.ai_purify)
+            setOnCancelListener {
+                aiPurifyJob?.cancel()
+            }
+            show()
+        }
+        aiPurifyJob = lifecycleScope.launch {
+            try {
+                val result = withContext(IO) {
+                    AiPurifyHelper.purify(source)
+                }
+                waitDialog.dismiss()
+                if (AiConfig.purifyAutoApply && result.deletedPreview.isNotBlank()) {
+                    applyAiPurifyResult(result)
+                } else {
+                    showAiPurifyConfirmDialog(result)
+                }
+            } catch (e: Throwable) {
+                waitDialog.dismiss()
+                alert(titleResource = R.string.ai_purify) {
+                    setMessage(e.localizedMessage ?: e.toString())
+                    okButton()
+                }
+            }
+        }
+    }
+
+    private fun showAiPurifyConfirmDialog(result: AiPurifyResult) {
+        val risk = result.riskReason?.let { "\n风险：$it" }.orEmpty()
+        val deleted = result.deletedPreview.ifBlank { "无" }
+        alert(titleResource = R.string.ai_purify_confirm) {
+            setMessage(
+                "原文：\n${result.original.dialogPreview()}\n\n" +
+                    "净化后：\n${result.cleaned.dialogPreview()}\n\n" +
+                    "删除内容：$deleted$risk"
+            )
+            positiveButton(R.string.ai_purify_apply) {
+                applyAiPurifyResult(result)
+            }
+            neutralButton(R.string.ai_purify_retry) {
+                startAiPurifySelectedText(result.original)
+            }
+            cancelButton()
+        }
+    }
+
+    private fun applyAiPurifyResult(result: AiPurifyResult) {
+        if (result.original == result.cleaned) {
+            toastOnUi("AI 未删除任何内容")
+            return
+        }
+        applyAiPurifyResults(listOf(result))
+    }
+
+    private fun applyAiPurifyResults(results: List<AiPurifyResult>) {
+        val changedResults = results
+            .filter { it.original != it.cleaned }
+        if (changedResults.isEmpty()) {
+            toastOnUi("AI 未删除任何内容")
+            return
+        }
+        lifecycleScope.launch {
+            try {
+                withContext(IO) {
+                    val scope = currentReplaceScope()
+                    val maxOrder = appDb.replaceRuleDao.maxOrder
+                    val baseId = System.currentTimeMillis()
+                    val rules = changedResults.mapIndexed { index, result ->
+                        ReplaceRule(
+                            id = baseId + index,
+                            name = result.original.ruleNamePreview(),
+                            group = "AI净化",
+                            pattern = result.original,
+                            replacement = result.cleaned,
+                            scope = scope,
+                            scopeTitle = false,
+                            scopeContent = true,
+                            isEnabled = true,
+                            isRegex = false,
+                            timeoutMillisecond = 3000L,
+                            order = maxOrder + index + 1
+                        )
+                    }
+                    appDb.replaceRuleDao.insert(*rules.toTypedArray())
+                    ContentProcessor.upReplaceRules()
+                }
+                ReadBook.book?.let { book ->
+                    if (!book.getUseReplaceRule()) {
+                        book.setUseReplaceRule(true)
+                        ReadBook.saveRead()
+                        menu?.findItem(R.id.menu_enable_replace)?.isChecked = true
+                    }
+                }
+                viewModel.replaceRuleChanged()
+                toastOnUi(
+                    if (changedResults.size == 1) {
+                        getString(R.string.ai_purify_saved)
+                    } else {
+                        "已添加 ${changedResults.size} 条AI净化规则"
+                    }
+                )
+            } catch (e: Throwable) {
+                alert(titleResource = R.string.ai_purify) {
+                    setMessage(e.localizedMessage ?: e.toString())
+                    okButton()
+                }
+            }
+        }
+    }
+
+    override fun onClickAiPurifyChapter() {
+        startAiPurifyChapter()
+    }
+
+    private fun startAiPurifyChapter() {
+        val chapter = ReadBook.curTextChapter
+        if (chapter == null || !chapter.isCompleted) {
+            toastOnUi("章节还在加载，稍后再试")
+            return
+        }
+        val paragraphs = chapter.paragraphs
+            .map { AiPurifyHelper.normalizeSelectedText(it.text) }
+            .filter { it.isNotBlank() }
+        if (paragraphs.isEmpty()) {
+            toastOnUi("当前章节正文为空")
+            return
+        }
+        aiPurifyJob?.cancel()
+        val waitDialog = WaitDialog(this).apply {
+            setText(R.string.ai_purify_chapter)
+            setOnCancelListener {
+                aiPurifyJob?.cancel()
+            }
+            show()
+        }
+        aiPurifyJob = lifecycleScope.launch {
+            try {
+                val startedAt = SystemClock.elapsedRealtime()
+                val purifyResults = withContext(IO) {
+                    AiPurifyHelper.purifyParagraphs(paragraphs)
+                }
+                val elapsedMs = SystemClock.elapsedRealtime() - startedAt
+                val results = purifyResults.filter { it.deletedPreview.isNotBlank() }
+                waitDialog.dismiss()
+                when {
+                    results.isEmpty() -> toastOnUi("AI 未发现需要净化的内容")
+                    AiConfig.purifyAutoApply -> applyAiPurifyResults(results)
+                    else -> showAiPurifyChapterConfirmDialog(results, elapsedMs)
+                }
+            } catch (e: Throwable) {
+                waitDialog.dismiss()
+                alert(titleResource = R.string.ai_purify_chapter) {
+                    setMessage(e.localizedMessage ?: e.toString())
+                    okButton()
+                }
+            }
+        }
+    }
+
+    private fun showAiPurifyChapterConfirmDialog(results: List<AiPurifyResult>, elapsedMs: Long) {
+        val checkedItems = BooleanArray(results.size) { true }
+        alert(titleResource = R.string.ai_purify_chapter_confirm) {
+            setCustomView(buildAiPurifyChapterConfirmView(results, checkedItems, elapsedMs))
+            positiveButton(R.string.ai_purify_apply) {
+                val selected = results.filterIndexed { index, _ -> checkedItems[index] }
+                if (selected.isEmpty()) {
+                    toastOnUi("未选择净化规则")
+                } else {
+                    applyAiPurifyResults(selected)
+                }
+            }
+            cancelButton()
+        }
+    }
+
+    private fun buildAiPurifyChapterConfirmView(
+        results: List<AiPurifyResult>,
+        checkedItems: BooleanArray,
+        elapsedMs: Long
+    ): View {
+        val context = this
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 4.dpToPx(), 0, 0)
+        }
+        TextView(context).apply {
+            text = getString(
+                R.string.ai_purify_chapter_summary,
+                results.size,
+                formatAiPurifyElapsed(elapsedMs)
+            )
+            setTextColor(Color.parseColor("#5F6368"))
+            textSize = 12f
+            root.addView(
+                this,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    leftMargin = 2.dpToPx()
+                    rightMargin = 2.dpToPx()
+                    bottomMargin = 8.dpToPx()
+                }
+            )
+        }
+        val list = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        results.forEachIndexed { index, result ->
+            list.addView(createAiPurifyCandidateRow(index, result, checkedItems))
+        }
+        ScrollView(context).apply {
+            isFillViewport = false
+            addView(
+                list,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            root.addView(
+                this,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    320.dpToPx()
+                )
+            )
+        }
+        return root
+    }
+
+    private fun formatAiPurifyElapsed(elapsedMs: Long): String {
+        return getString(R.string.ai_purify_elapsed_seconds, elapsedMs / 1000f)
+    }
+
+    private fun createAiPurifyCandidateRow(
+        index: Int,
+        result: AiPurifyResult,
+        checkedItems: BooleanArray
+    ): View {
+        val context = this
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 6.dpToPx().toFloat()
+                setColor(Color.WHITE)
+                setStroke(1.dpToPx(), Color.parseColor("#E6E8EB"))
+            }
+            setPadding(10.dpToPx(), 8.dpToPx(), 10.dpToPx(), 8.dpToPx())
+        }
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val checkBox = CheckBox(context).apply {
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = 0
+            minimumHeight = 0
+            isChecked = checkedItems[index]
+            setOnCheckedChangeListener { _, isChecked ->
+                checkedItems[index] = isChecked
+            }
+        }
+        header.addView(
+            checkBox,
+            LinearLayout.LayoutParams(34.dpToPx(), 34.dpToPx()).apply {
+                rightMargin = 10.dpToPx()
+            }
+        )
+        header.addView(
+            TextView(context).apply {
+                text = "#${index + 1}"
+                setTextColor(Color.parseColor("#202124"))
+                textSize = 13f
+                typeface = Typeface.DEFAULT_BOLD
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        row.addView(
+            header,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        row.addView(createAiPurifyTextBlock(R.string.original_text, result.original))
+        row.addView(createAiPurifyTextBlock(R.string.ai_purify_cleaned_text, result.cleaned))
+        return row.apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 8.dpToPx()
+            }
+        }
+    }
+
+    private fun createAiPurifyTextBlock(labelRes: Int, content: String): View {
+        val context = this
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 8.dpToPx(), 0, 0)
+            addView(
+                TextView(context).apply {
+                    setText(labelRes)
+                    setTextColor(Color.parseColor("#5F6368"))
+                    textSize = 11f
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+            addView(
+                TextView(context).apply {
+                    text = content
+                    setTextColor(Color.parseColor("#202124"))
+                    textSize = 12f
+                    maxLines = 5
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextIsSelectable(true)
+                    setLineSpacing(1.dpToPx().toFloat(), 1.0f)
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = 2.dpToPx()
+                }
+            )
+        }
+    }
+
+    private fun currentReplaceScope(): String {
+        val scopes = arrayListOf<String>()
+        ReadBook.book?.name?.let { scopes.add(it) }
+        ReadBook.bookSource?.bookSourceUrl?.let { scopes.add(it) }
+        return scopes.joinToString(";")
+    }
+
+    private fun String.ruleNamePreview(): String {
+        val compact = replace("\n", " ").trim()
+        return "AI净化: " + if (compact.length <= 40) compact else compact.take(40) + "..."
+    }
+
+    private fun String.dialogPreview(maxLength: Int = 800): String {
+        return if (length <= maxLength) {
+            this
+        } else {
+            take(maxLength) + "\n..."
+        }
     }
 
     /**
@@ -1724,6 +2111,7 @@ class ReadBookActivity : BaseReadBookActivity(),
 
     override fun onDestroy() {
         super.onDestroy()
+        aiPurifyJob?.cancel()
         tts?.clearTts()
         textActionMenu.dismiss()
         popupAction.dismiss()

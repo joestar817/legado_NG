@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/ng_settings_group" />
+    <stroke
+        android:width="0.7dp"
+        android:color="@color/ng_settings_group_stroke" />
+    <corners android:radius="@dimen/ng_radius_xl" />
+</shape>

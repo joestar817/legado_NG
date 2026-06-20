@@ -54,6 +54,15 @@
         </attr>
     </declare-styleable>
 
+    <declare-styleable name="NgGlassLayout">
+        <attr name="ngGlassRadius" format="dimension" />
+        <attr name="ngGlassTintColor" format="color|reference" />
+        <attr name="ngGlassStrokeColor" format="color|reference" />
+        <attr name="ngGlassStrokeWidth" format="dimension" />
+        <attr name="ngGlassBlurRadius" format="dimension" />
+        <attr name="ngGlassDownSample" format="float" />
+    </declare-styleable>
+
     <attr name="titleBarStyle" format="reference" />
 
     <declare-styleable name="DynamicFrameLayout">

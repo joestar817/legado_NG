@@ -77,6 +77,7 @@ class ReadMenu @JvmOverloads constructor(
     private val binding = ViewReadMenuBinding.inflate(LayoutInflater.from(context), this, true)
     private var confirmSkipToChapter: Boolean = false
     private var isMenuOutAnimating = false
+    private var aiFabExpanded = false
     private val menuTopIn: Animation by lazy {
         loadAnimation(context, R.anim.anim_readbook_top_in)
     }
@@ -92,7 +93,7 @@ class ReadMenu @JvmOverloads constructor(
     private val immersiveMenu: Boolean
         get() = AppConfig.readBarStyleFollowPage && ReadBookConfig.durConfig.curBgType() == 0
     private val useGradientThemeMenu: Boolean
-        get() = !AppConfig.isEInkMode && (AppConfig.themeMode == "4" || AppConfig.themeMode == "5")
+        get() = !AppConfig.isEInkMode && ThemeConfig.isReadingNgBackgroundTheme()
     private var bgColor: Int = if (useGradientThemeMenu) {
         context.bottomBackground
     } else if (immersiveMenu) {
@@ -236,6 +237,14 @@ class ReadMenu @JvmOverloads constructor(
         fabReplaceRule.setColorFilter(textColor)
         fabNightTheme.backgroundTintList = bottomBackgroundList
         fabNightTheme.setColorFilter(textColor)
+        fabAi.backgroundTintList = bottomBackgroundList
+        fabAi.setColorFilter(textColor)
+        fabAiPurifyChapter.setTextColor(textColor)
+        fabAiPurifyChapter.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 14.dpToPx().toFloat()
+            setColor(bgColor)
+        }
         tvPre.setTextColor(textColor)
         tvNext.setTextColor(textColor)
         ivCatalog.setColorFilter(textColor, PorterDuff.Mode.SRC_IN)
@@ -461,6 +470,7 @@ class ReadMenu @JvmOverloads constructor(
         if (isMenuOutAnimating) {
             return
         }
+        setAiFabExpanded(false)
         callBack.onMenuHide()
         this.onMenuOutEnd = onMenuOutEnd
         if (this.isVisible) {
@@ -641,6 +651,17 @@ class ReadMenu @JvmOverloads constructor(
             ThemeConfig.applyDayNight(context)
         }
 
+        //AI功能
+        fabAi.setOnClickListener {
+            setAiFabExpanded(!aiFabExpanded)
+        }
+        fabAiPurifyChapter.setOnClickListener {
+            setAiFabExpanded(false)
+            runMenuOut {
+                callBack.onClickAiPurifyChapter()
+            }
+        }
+
         //上一章
         tvPre.setOnClickListener { ReadBook.moveToPrevChapter(upContent = true, toLast = false) }
 
@@ -738,6 +759,17 @@ class ReadMenu @JvmOverloads constructor(
         fabAutoPage.setColorFilter(textColor)
     }
 
+    private fun setAiFabExpanded(expanded: Boolean) = binding.run {
+        aiFabExpanded = expanded
+        if (expanded) {
+            fabAiPurifyChapter.visible()
+            fabAi.rotation = 45f
+        } else {
+            fabAiPurifyChapter.gone()
+            fabAi.rotation = 0f
+        }
+    }
+
     private fun upBrightnessVwPos() {
         if (AppConfig.brightnessVwPos) {
             binding.root.modifyBegin()
@@ -771,6 +803,7 @@ class ReadMenu @JvmOverloads constructor(
         fun skipToChapter(index: Int)
         fun onMenuShow()
         fun onMenuHide()
+        fun onClickAiPurifyChapter()
     }
 
 }
