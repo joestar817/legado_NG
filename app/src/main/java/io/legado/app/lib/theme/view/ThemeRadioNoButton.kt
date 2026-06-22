@@ -41,7 +41,7 @@ class ThemeRadioNoButton(context: Context, attrs: AttributeSet) :
                     Color.WHITE
                 }
                 background = Selector.shapeBuild()
-                    .setCornerRadius(2.dpToPx())
+                    .setCornerRadius(12.dpToPx())
                     .setStrokeWidth(2.dpToPx())
                     .setCheckedBgColor(accentColor)
                     .setCheckedStrokeColor(accentColor)
@@ -63,7 +63,7 @@ class ThemeRadioNoButton(context: Context, attrs: AttributeSet) :
                     Color.WHITE
                 }
                 background = Selector.shapeBuild()
-                    .setCornerRadius(2.dpToPx())
+                    .setCornerRadius(12.dpToPx())
                     .setStrokeWidth(2.dpToPx())
                     .setCheckedBgColor(accentColor)
                     .setCheckedStrokeColor(accentColor)

@@ -1,9 +1,9 @@
 [
   {
-    "bgStr": "#ffc0edc6",
+    "bgStr": "山水画.jpg",
     "bgStrEInk": "#FFFFFF",
     "bgStrNight": "#000000",
-    "bgType": 0,
+    "bgType": 1,
     "bgTypeEInk": 0,
     "bgTypeNight": 0,
     "darkStatusIcon": true,

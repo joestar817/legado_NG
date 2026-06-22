@@ -71,20 +71,25 @@
                 tools:visibility="visible"
                 tools:ignore="ContentDescription" />
 
-            <io.legado.app.ui.widget.text.AccentBgTextView
+            <androidx.appcompat.widget.AppCompatTextView
                 android:id="@+id/tv_source_action"
                 android:layout_width="wrap_content"
                 android:layout_height="0dp"
                 android:layout_margin="1dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:ellipsize="end"
+                android:focusable="true"
                 android:gravity="center"
                 android:maxWidth="120dp"
                 android:paddingLeft="6dp"
                 android:paddingRight="6dp"
+                android:singleLine="true"
                 android:text="@string/book_source"
+                android:textColor="@color/accent"
                 app:layout_constraintBottom_toBottomOf="@+id/tv_chapter_url"
                 app:layout_constraintRight_toRightOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                app:radius="2dp" />
+                app:layout_constraintTop_toTopOf="parent" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 

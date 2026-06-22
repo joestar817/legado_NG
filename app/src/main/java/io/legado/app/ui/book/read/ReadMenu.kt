@@ -111,10 +111,7 @@ class ReadMenu @JvmOverloads constructor(
         context.getPrimaryTextColor(ColorUtils.isColorLight(bgColor))
     }
 
-    private var bottomBackgroundList: ColorStateList = Selector.colorBuild()
-        .setDefaultColor(bgColor)
-        .setPressedColor(ColorUtils.darkenColor(bgColor))
-        .create()
+    private var bottomBackgroundList: ColorStateList = createFloatingButtonBackgroundList()
     private var onMenuOutEnd: (() -> Unit)? = null
     private val showBrightnessView
         get() = context.getPrefBoolean(
@@ -134,6 +131,23 @@ class ReadMenu @JvmOverloads constructor(
                 true
             }
         }
+    }
+
+    private fun createFloatingButtonBackgroundList(): ColorStateList {
+        val defaultColor = if (useGradientThemeMenu) {
+            ThemeConfig.getReadingNgImageSurfaceColor()
+        } else {
+            bgColor
+        }
+        val pressedColor = if (useGradientThemeMenu) {
+            ColorUtils.darkenColor(defaultColor)
+        } else {
+            ColorUtils.darkenColor(bgColor)
+        }
+        return Selector.colorBuild()
+            .setDefaultColor(defaultColor)
+            .setPressedColor(pressedColor)
+            .create()
     }
     private val menuInListener = object : Animation.AnimationListener {
         override fun onAnimationStart(animation: Animation) {
@@ -224,10 +238,10 @@ class ReadMenu @JvmOverloads constructor(
         } else if (useGradientThemeMenu) {
             if (!applyGradientThemeMenuBackground()) {
                 titleBar.setBackgroundColor(context.primaryColor)
-                llBottomBg.setBackgroundColor(bgColor)
+                ReadDrawerStyle.applyTopRoundedBackground(llBottomBg, bgColor)
             }
         } else {
-            llBottomBg.setBackgroundColor(bgColor)
+            ReadDrawerStyle.applyTopRoundedBackground(llBottomBg, bgColor)
         }
         fabSearch.backgroundTintList = bottomBackgroundList
         fabSearch.setColorFilter(textColor)
@@ -245,6 +259,7 @@ class ReadMenu @JvmOverloads constructor(
             cornerRadius = 6.dpToPx().toFloat()
             setColor(bgColor)
         }
+        tvSourceAction.setTextColor(context.accentColor)
         tvPre.setTextColor(textColor)
         tvNext.setTextColor(textColor)
         ivCatalog.setColorFilter(textColor, PorterDuff.Mode.SRC_IN)
@@ -300,10 +315,7 @@ class ReadMenu @JvmOverloads constructor(
         } else {
             context.getPrimaryTextColor(ColorUtils.isColorLight(bgColor))
         }
-        bottomBackgroundList = Selector.colorBuild()
-            .setDefaultColor(bgColor)
-            .setPressedColor(ColorUtils.darkenColor(bgColor))
-            .create()
+        bottomBackgroundList = createFloatingButtonBackgroundList()
     }
 
     private fun applyGradientThemeMenuBackground(): Boolean {
@@ -315,7 +327,7 @@ class ReadMenu @JvmOverloads constructor(
         }
         binding.titleBar.background = titleBackground
         binding.titleBar.elevation = 0f
-        binding.llBottomBg.background = bottomBackground
+        binding.llBottomBg.background = ReadDrawerStyle.wrapTopRounded(bottomBackground)
         return true
     }
 

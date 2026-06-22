@@ -76,6 +76,15 @@ object ThemeConfig {
         return readingNgBuiltInThemeNames.containsKey(themeMode)
     }
 
+    fun getReadingNgImageSurfaceColor(): Int {
+        return when (AppConfig.themeMode) {
+            "4" -> "#FFF1E8".toColorInt()
+            "5" -> "#EFF7EA".toColorInt()
+            "6" -> "#ECF1F5".toColorInt()
+            else -> "#EEEEEE".toColorInt()
+        }
+    }
+
     private fun getReadingNgBuiltInTheme(): Config? {
         val themeName = readingNgBuiltInThemeNames[AppConfig.themeMode] ?: return null
         return configList.firstOrNull { it.themeName == themeName && !it.isNightTheme }

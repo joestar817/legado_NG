@@ -14,7 +14,7 @@ import io.legado.app.utils.getCompatColor
 class AccentStrokeTextView(context: Context, attrs: AttributeSet) :
     AppCompatTextView(context, attrs) {
 
-    private var radius = 3.dpToPx()
+    private var radius = 12.dpToPx()
     private val isBottomBackground: Boolean
 
     init {

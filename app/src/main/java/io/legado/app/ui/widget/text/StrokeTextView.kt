@@ -13,7 +13,7 @@ import io.legado.app.utils.getCompatColor
 open class StrokeTextView(context: Context, attrs: AttributeSet?) :
     AppCompatTextView(context, attrs) {
 
-    private var radius = 1.dpToPx()
+    private var radius = 12.dpToPx()
     private val isBottomBackground: Boolean
 
     init {
