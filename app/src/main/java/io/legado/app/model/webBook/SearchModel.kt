@@ -10,7 +10,8 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.config.AppConfig
 import io.legado.app.ui.book.search.SearchScope
 import io.legado.app.utils.getPrefBoolean
-import io.legado.app.utils.mapParallelSafe
+import io.legado.app.utils.mapParallel
+import io.legado.app.utils.onEachIndexed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.Job
@@ -23,7 +24,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -86,17 +86,24 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
                 }
             }.onStart {
                 callBack.onSearchStart()
-            }.mapParallelSafe(threadCount) {
-                withTimeout(30000L) {
-                    WebBook.searchBookAwait(
-                        it, searchKey, searchPage,
-                        filter = { name, author, kind ->
-                            !precision || name.contains(searchKey) ||
-                                    author.contains(searchKey) ||
-                                    kind?.contains(searchKey) == true
-                        })
+            }.mapParallel(threadCount) { source ->
+                val items = try {
+                    withTimeout(30000L) {
+                        WebBook.searchBookAwait(
+                            source, searchKey, searchPage,
+                            filter = { name, author, kind ->
+                                !precision || name.contains(searchKey) ||
+                                        author.contains(searchKey) ||
+                                        kind?.contains(searchKey) == true
+                            })
+                    }
+                } catch (e: Throwable) {
+                    currentCoroutineContext().ensureActive()
+                    AppLog.put("书源搜索出错\n${source.bookSourceName}\n${e.localizedMessage}", e)
+                    emptyList()
                 }
-            }.onEach { items ->
+                source to items
+            }.onEachIndexed { index, (source, items) ->
                 for (book in items) {
                     book.releaseHtmlData()
                 }
@@ -105,6 +112,12 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
                 mergeItems(items, precision)
                 currentCoroutineContext().ensureActive()
                 callBack.onSearchSuccess(searchBooks)
+                callBack.onSearchProgress(
+                    searchBooks.size,
+                    index + 1,
+                    bookSourceParts.size,
+                    source.bookSourceName
+                )
             }.onCompletion {
                 if (it == null) callBack.onSearchFinish(searchBooks.isEmpty(), hasMore)
             }.catch {
@@ -220,6 +233,7 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
         fun getSearchScope(): SearchScope
         fun onSearchStart()
         fun onSearchSuccess(searchBooks: List<SearchBook>)
+        fun onSearchProgress(resultCount: Int, progress: Int, total: Int, sourceName: String) {}
         fun onSearchFinish(isEmpty: Boolean, hasMore: Boolean)
         fun onSearchCancel(exception: Throwable? = null)
     }

@@ -4,13 +4,18 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:layout_marginStart="12dp"
+    android:layout_marginTop="4dp"
+    android:layout_marginEnd="12dp"
+    android:layout_marginBottom="4dp"
+    android:background="@drawable/ng_bg_search_result_card"
+    android:padding="10dp"
     android:scrollbars="none">
 
     <io.legado.app.ui.widget.image.CoverImageView
         android:id="@+id/iv_cover"
-        android:layout_width="80dp"
-        android:layout_height="110dp"
-        android:layout_margin="8dp"
+        android:layout_width="78dp"
+        android:layout_height="104dp"
         android:contentDescription="@string/img_cover"
         android:scaleType="centerCrop"
         android:scrollbars="none"
@@ -23,9 +28,11 @@
 
     <io.legado.app.ui.widget.image.CircleImageView
         android:id="@+id/iv_in_bookshelf"
-        android:layout_width="8dp"
-        android:layout_height="8dp"
-        android:layout_margin="8dp"
+        android:layout_width="7dp"
+        android:layout_height="7dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="7dp"
+        android:layout_marginEnd="8dp"
         android:scaleType="centerCrop"
         android:scrollbars="none"
         android:src="@color/md_green_600"
@@ -37,7 +44,7 @@
         android:id="@+id/bv_originCount"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_margin="8dp"
+        android:layout_marginStart="8dp"
         android:scrollbars="none"
         app:layout_constraintRight_toRightOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
@@ -46,12 +53,14 @@
         android:id="@+id/tv_name"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_margin="8dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
         android:scrollbars="none"
         android:singleLine="true"
         android:text="@string/app_name"
         android:textColor="@color/primaryText"
-        android:textSize="16sp"
+        android:textSize="17sp"
+        android:textStyle="bold"
         app:layout_constraintEnd_toStartOf="@id/bv_originCount"
         app:layout_constraintStart_toEndOf="@+id/iv_in_bookshelf"
         app:layout_constraintTop_toTopOf="parent" />
@@ -59,8 +68,8 @@
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginStart="8dp"
-        android:layout_marginTop="3dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="6dp"
         android:orientation="vertical"
         android:scrollbars="none"
         app:layout_constraintBottom_toBottomOf="@id/iv_cover"
@@ -76,8 +85,8 @@
             android:lines="1"
             android:scrollbars="none"
             android:text="@string/author"
-            android:textColor="@color/primaryText"
-            android:textSize="12sp" />
+            android:textColor="@color/secondaryText"
+            android:textSize="13sp" />
 
         <io.legado.app.ui.widget.LabelsBar
             android:id="@+id/ll_kind"
@@ -94,7 +103,7 @@
             android:lines="1"
             android:scrollbars="none"
             android:text="@string/last_read"
-            android:textColor="@color/primaryText"
+            android:textColor="@color/secondaryText"
             android:textSize="12sp" />
 
         <io.legado.app.ui.widget.text.MultilineTextView

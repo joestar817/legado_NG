@@ -22,9 +22,33 @@
 
     <io.legado.app.ui.widget.anima.RefreshProgressBar
         android:id="@+id/refresh_progress_bar"
-        android:layout_width="match_parent"
-        android:layout_height="2dp"
-        app:layout_constraintTop_toBottomOf="@id/title_bar" />
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:bg_color="@android:color/transparent"
+        app:layout_constraintEnd_toEndOf="@id/tv_search_progress"
+        app:layout_constraintStart_toStartOf="@id/tv_search_progress"
+        app:second_color="@color/highlight"
+        app:layout_constraintTop_toBottomOf="@id/tv_search_progress" />
+
+    <io.legado.app.ui.book.search.SearchProgressTextView
+        android:id="@+id/tv_search_progress"
+        android:layout_width="0dp"
+        android:layout_height="30dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="16dp"
+        android:ellipsize="end"
+        android:gravity="center_vertical"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:singleLine="true"
+        android:textColor="@color/secondaryText"
+        android:textSize="12sp"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/title_bar"
+        tools:text="@string/change_source_progress" />
 
     <io.legado.app.ui.widget.dynamiclayout.DynamicFrameLayout
         android:id="@+id/content_view"
@@ -38,6 +62,8 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
+            android:paddingTop="2dp"
+            android:paddingBottom="10dp"
             tools:listitem="@layout/item_search" />
 
     </io.legado.app.ui.widget.dynamiclayout.DynamicFrameLayout>
@@ -52,7 +78,7 @@
         android:orientation="vertical"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/title_bar">
+        app:layout_constraintTop_toBottomOf="@id/refresh_progress_bar">
 
         <TextView
             android:id="@+id/tv_book_show"

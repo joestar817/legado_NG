@@ -29,6 +29,7 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
     val searchScope: SearchScope = SearchScope(AppConfig.searchScope)
     var searchFinishLiveData = MutableLiveData<Boolean>()
     var isSearchLiveData = MutableLiveData<Boolean>()
+    var searchProgressLiveData = MutableLiveData<SearchProgress?>()
     var searchKey: String = ""
     var hasMore = true
     private var searchID = 0L
@@ -46,14 +47,25 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
             searchBookLiveData.postValue(searchBooks)
         }
 
+        override fun onSearchProgress(
+            resultCount: Int,
+            progress: Int,
+            total: Int,
+            sourceName: String
+        ) {
+            searchProgressLiveData.postValue(SearchProgress(resultCount, progress, total, sourceName))
+        }
+
         override fun onSearchFinish(isEmpty: Boolean, hasMore: Boolean) {
             this@SearchViewModel.hasMore = hasMore
             isSearchLiveData.postValue(false)
+            searchProgressLiveData.postValue(null)
             searchFinishLiveData.postValue(isEmpty)
         }
 
         override fun onSearchCancel(exception: Throwable?) {
             isSearchLiveData.postValue(false)
+            searchProgressLiveData.postValue(null)
             exception?.let {
                 context.toastOnUi(it.localizedMessage)
             }
@@ -107,6 +119,7 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
             if (searchKey.isEmpty()) {
                 return@execute
             }
+            searchProgressLiveData.postValue(SearchProgress(0, 0, 0, ""))
             searchModel.search(searchID, searchKey)
         }
     }
@@ -158,5 +171,12 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
         super.onCleared()
         searchModel.close()
     }
+
+    data class SearchProgress(
+        val resultCount: Int,
+        val progress: Int,
+        val total: Int,
+        val sourceName: String
+    )
 
 }

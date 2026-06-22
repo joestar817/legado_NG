@@ -87,6 +87,7 @@ class SearchAdapter(context: Context, val callBack: CallBack) :
             bvOriginCount.setBadgeCount(searchBook.origins.size)
             upLasted(binding, searchBook.latestChapterTitle)
             tvIntroduce.text = searchBook.trimIntro(context)
+            llKind.textSize = 11f
             upKind(binding, searchBook.getKindList())
             ivCover.load(
                 searchBook,
