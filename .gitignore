@@ -22,3 +22,5 @@ package-lock.json
 .agent
 .claude
 AGENTS.md
+/data/
+/app/src/test/resources/ai-purify-fixtures/
