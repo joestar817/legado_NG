@@ -7,7 +7,7 @@
         android:id="@+id/menu_search"
         android:title="@string/search"
         android:visible="false"
-        app:actionViewClass="androidx.appcompat.widget.SearchView"
+        app:actionViewClass="io.legado.app.ui.widget.SearchView"
         app:showAsAction="always"
         tools:ignore="AlwaysShowAction"
         tools:visible="true" />

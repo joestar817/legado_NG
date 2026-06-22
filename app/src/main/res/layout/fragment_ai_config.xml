@@ -697,7 +697,7 @@
                 android:layout_width="26dp"
                 android:layout_height="26dp"
                 android:src="@drawable/ic_search"
-                android:tint="@color/ng_on_surface_variant" />
+                android:tint="@color/tv_text_summary" />
 
             <EditText
                 android:id="@+id/edit_search_provider"
@@ -708,8 +708,8 @@
                 android:background="@android:color/transparent"
                 android:hint="@string/ai_search_provider"
                 android:singleLine="true"
-                android:textColor="@color/ng_on_surface"
-                android:textColorHint="@color/ng_on_surface_variant"
+                android:textColor="@color/tv_text_summary"
+                android:textColorHint="@color/tv_text_summary"
                 android:textSize="16sp" />
 
         </LinearLayout>

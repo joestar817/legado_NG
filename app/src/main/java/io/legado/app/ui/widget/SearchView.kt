@@ -7,17 +7,19 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.text.Editable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
+import android.text.TextWatcher
 import android.text.style.ImageSpan
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View.OnFocusChangeListener
 import android.widget.TextView
 import androidx.appcompat.widget.SearchView
 import androidx.core.graphics.drawable.DrawableCompat
 import io.legado.app.R
-import io.legado.app.lib.theme.transparentNavBar
 import io.legado.app.utils.getCompatColor
 import io.legado.app.utils.printOnDebug
 
@@ -28,6 +30,7 @@ class SearchView @JvmOverloads constructor(
 ) : SearchView(context, attrs) {
     private var mSearchHintIcon: Drawable? = null
     private var textView: TextView? = null
+    private var textViewConfigured = false
 
     @SuppressLint("UseCompatLoadingForDrawables")
     override fun onLayout(
@@ -41,21 +44,21 @@ class SearchView @JvmOverloads constructor(
         try {
             if (textView == null) {
                 textView = findViewById(androidx.appcompat.R.id.search_src_text)
-                mSearchHintIcon = this.context.getDrawable(R.drawable.ic_search_hint)
             }
+            val hintColor = context.getCompatColor(R.color.tv_text_summary)
+            mSearchHintIcon = this.context.getDrawable(R.drawable.ic_search_hint)
+                ?.mutate()
+                ?.let { drawable ->
+                    DrawableCompat.wrap(drawable).apply {
+                        DrawableCompat.setTint(this, hintColor)
+                    }
+                }
             // 改变字体
             textView!!.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             textView!!.gravity = Gravity.CENTER_VERTICAL
-            if (context.transparentNavBar) {
-                val textColor = context.getCompatColor(R.color.primaryText)
-                textView!!.setTextColor(textColor)
-                textView!!.setHintTextColor(textColor)
-                mSearchHintIcon = mSearchHintIcon?.mutate()?.let { drawable ->
-                    DrawableCompat.wrap(drawable).apply {
-                        DrawableCompat.setTint(this, textColor)
-                    }
-                }
-            }
+            textView!!.setTextColor(hintColor)
+            textView!!.setHintTextColor(hintColor)
+            configureSearchTextView(textView!!)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 textView!!.isLocalePreferredLineHeightForMinimumUsed = false
             }
@@ -63,6 +66,25 @@ class SearchView @JvmOverloads constructor(
         } catch (e: Exception) {
             e.printOnDebug()
         }
+    }
+
+    private fun configureSearchTextView(view: TextView) {
+        if (textViewConfigured) {
+            return
+        }
+        textViewConfigured = true
+        view.onFocusChangeListener = OnFocusChangeListener { _, _ ->
+            updateQueryHint()
+        }
+        view.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+
+            override fun afterTextChanged(s: Editable?) {
+                updateQueryHint()
+            }
+        })
     }
 
     private fun getDecoratedHint(hintText: CharSequence): CharSequence {
@@ -81,7 +103,11 @@ class SearchView @JvmOverloads constructor(
 
     private fun updateQueryHint() {
         textView?.let {
-            it.hint = getDecoratedHint(queryHint ?: "")
+            it.hint = if (it.hasFocus() && it.text.isNullOrEmpty()) {
+                null
+            } else {
+                getDecoratedHint(queryHint ?: "")
+            }
         }
     }
 

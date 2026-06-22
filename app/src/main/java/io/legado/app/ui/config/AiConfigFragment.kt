@@ -233,10 +233,32 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
             refreshProviders()
             refreshMain()
         }
+        bindSearchEditText(binding.editSearchProvider)
         binding.editSearchProvider.doOnTextChanged { text, _, _, _ ->
             providerSearchQuery = text?.toString().orEmpty()
             refreshProviders()
         }
+    }
+
+    private fun bindSearchEditText(editText: EditText) {
+        val hint = editText.hint
+        val searchColor = ContextCompat.getColor(requireContext(), R.color.tv_text_summary)
+        editText.setTextColor(searchColor)
+        editText.setHintTextColor(searchColor)
+        fun updateHint() {
+            editText.hint = if (editText.hasFocus() && editText.text.isNullOrEmpty()) {
+                null
+            } else {
+                hint
+            }
+        }
+        editText.setOnFocusChangeListener { _, _ ->
+            updateHint()
+        }
+        editText.doOnTextChanged { _, _, _, _ ->
+            updateHint()
+        }
+        updateHint()
     }
 
     private fun initDetail() {

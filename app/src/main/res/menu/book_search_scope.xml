@@ -8,7 +8,7 @@
         android:title="@string/screen"
         android:icon="@drawable/ic_screen"
         android:visible="false"
-        app:actionViewClass="androidx.appcompat.widget.SearchView"
+        app:actionViewClass="io.legado.app.ui.widget.SearchView"
         app:showAsAction="always"
         tools:ignore="AlwaysShowAction" />
 
