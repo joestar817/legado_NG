@@ -145,6 +145,14 @@
     <string name="ai_purify_chapter_concurrency_limit_summary">Maximum concurrent model requests for chapter clean</string>
     <string name="ai_purify_chapter_retry_count">Chapter clean retry count</string>
     <string name="ai_purify_chapter_retry_count_summary">Retry count after one chapter fails to call or parse</string>
+    <string name="ai_purify_chapter_rule_types">Chapter rule types</string>
+    <string name="ai_purify_chapter_rule_types_summary">Enabled: %1$s</string>
+    <string name="ai_purify_chapter_rule_types_all">All enabled</string>
+    <string name="ai_purify_chapter_rule_types_none">All disabled</string>
+    <string name="ai_purify_chapter_rule_types_separator">, </string>
+    <string name="ai_purify_rule_type_typo_full">Typos</string>
+    <string name="ai_purify_rule_type_noise_full">Noise characters</string>
+    <string name="ai_purify_rule_type_ad_full">Ads</string>
     <string name="ai_purify_confirm">Confirm AI clean</string>
     <string name="ai_purify_apply">Apply</string>
     <string name="ai_purify_retry">Retry</string>

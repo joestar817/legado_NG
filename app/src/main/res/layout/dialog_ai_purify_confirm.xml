@@ -22,7 +22,7 @@
         android:layout_marginTop="12dp"
         android:fillViewport="false"
         android:overScrollMode="ifContentScrolls"
-        android:scrollbarStyle="outsideOverlay">
+        android:scrollbars="none">
 
         <LinearLayout
             android:layout_width="match_parent"

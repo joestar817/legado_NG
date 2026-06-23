@@ -144,6 +144,14 @@
     <string name="ai_purify_chapter_concurrency_limit_summary">同时调用模型的章节请求数</string>
     <string name="ai_purify_chapter_retry_count">章节净化失败重试</string>
     <string name="ai_purify_chapter_retry_count_summary">单章解析或调用失败后的重试次数</string>
+    <string name="ai_purify_chapter_rule_types">章节规则类型</string>
+    <string name="ai_purify_chapter_rule_types_summary">已开启：%1$s</string>
+    <string name="ai_purify_chapter_rule_types_all">全部开启</string>
+    <string name="ai_purify_chapter_rule_types_none">全部关闭</string>
+    <string name="ai_purify_chapter_rule_types_separator">、</string>
+    <string name="ai_purify_rule_type_typo_full">错别字</string>
+    <string name="ai_purify_rule_type_noise_full">异常字符</string>
+    <string name="ai_purify_rule_type_ad_full">广告</string>
     <string name="ai_purify_confirm">确认AI净化</string>
     <string name="ai_purify_apply">应用</string>
     <string name="ai_purify_retry">重试</string>

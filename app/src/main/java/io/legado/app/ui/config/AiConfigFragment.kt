@@ -11,14 +11,19 @@ import android.text.Spanned
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.Switch
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.core.widget.doOnTextChanged
@@ -44,6 +49,7 @@ import io.legado.app.databinding.ItemAiPromptBinding
 import io.legado.app.ui.widget.TitleBar
 import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.ui.widget.recycler.ItemTouchCallback
+import io.legado.app.utils.applyTint
 import io.legado.app.utils.hideSoftInput
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Job
@@ -121,6 +127,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         binding.layoutAiPurifyChapterIntercept.setOnClickListener {
             binding.switchAiPurifyChapterIntercept.isChecked =
                 !binding.switchAiPurifyChapterIntercept.isChecked
+        }
+        binding.layoutAiPurifyChapterRuleTypes.setOnClickListener {
+            showPurifyChapterRuleTypeDialog()
         }
         binding.switchAiPurifyAuto.setOnCheckedChangeListener { _, isChecked ->
             if (!ignorePurifyFormChanges) {
@@ -695,6 +704,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
             binding.imagePurifyChapterSampleLimitIcon.imageTintList = entryIconTint
             binding.imagePurifyChapterConcurrencyIcon.imageTintList = entryIconTint
             binding.imagePurifyChapterRetryIcon.imageTintList = entryIconTint
+            binding.imagePurifyChapterRuleTypesIcon.imageTintList = entryIconTint
             binding.switchAiPurifyAuto.isChecked = AiConfig.purifyAutoApply
             binding.switchAiPurifyIntercept.isChecked = AiConfig.purifyExceptionIntercept
             binding.switchAiPurifyChapterAuto.isChecked = AiConfig.purifyChapterAutoApply
@@ -729,6 +739,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
             ignorePurifyFormChanges = false
         }
         refreshPurifyAutoSummary()
+        refreshPurifyChapterRuleTypeSummary()
     }
 
     private fun refreshPurifyAutoSummary() {
@@ -746,6 +757,101 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
                 R.string.ai_purify_auto_apply_summary_off
             }
         )
+    }
+
+    private fun showPurifyChapterRuleTypeDialog() {
+        val paddingHorizontal = 24.dpToPx()
+        val paddingVertical = 8.dpToPx()
+        val switches = arrayListOf<Switch>()
+        val content = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(paddingHorizontal, paddingVertical, paddingHorizontal, paddingVertical)
+        }
+        switches += content.addPurifyChapterRuleTypeSwitch(
+            text = getString(R.string.ai_purify_rule_type_typo_full),
+            checked = AiConfig.purifyChapterRuleTypo
+        )
+        switches += content.addPurifyChapterRuleTypeSwitch(
+            text = getString(R.string.ai_purify_rule_type_noise_full),
+            checked = AiConfig.purifyChapterRuleNoise
+        )
+        switches += content.addPurifyChapterRuleTypeSwitch(
+            text = getString(R.string.ai_purify_rule_type_ad_full),
+            checked = AiConfig.purifyChapterRuleAd
+        )
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.ai_purify_chapter_rule_types)
+            .setView(content)
+            .setPositiveButton(R.string.sure, null)
+            .show()
+            .applyTint()
+        switches.forEach { switchView ->
+            switchView.setOnCheckedChangeListener { _, isChecked ->
+                when (switches.indexOf(switchView)) {
+                    0 -> AiConfig.purifyChapterRuleTypo = isChecked
+                    1 -> AiConfig.purifyChapterRuleNoise = isChecked
+                    2 -> AiConfig.purifyChapterRuleAd = isChecked
+                }
+                refreshPurifyChapterRuleTypeSummary()
+                refreshMain()
+            }
+        }
+    }
+
+    private fun LinearLayout.addPurifyChapterRuleTypeSwitch(
+        text: String,
+        checked: Boolean
+    ): Switch {
+        val switchView = Switch(requireContext()).apply {
+            isChecked = checked
+        }
+        val row = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 8.dpToPx(), 0, 8.dpToPx())
+            isClickable = true
+            setOnClickListener {
+                switchView.isChecked = !switchView.isChecked
+            }
+        }
+        row.addView(TextView(requireContext()).apply {
+            this.text = text
+            textSize = 16f
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        })
+        row.addView(switchView)
+        addView(row, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        return switchView
+    }
+
+    private fun refreshPurifyChapterRuleTypeSummary() {
+        val enabledLabels = listOfNotNull(
+            getString(R.string.ai_purify_rule_type_typo_full)
+                .takeIf { AiConfig.purifyChapterRuleTypo },
+            getString(R.string.ai_purify_rule_type_noise_full)
+                .takeIf { AiConfig.purifyChapterRuleNoise },
+            getString(R.string.ai_purify_rule_type_ad_full)
+                .takeIf { AiConfig.purifyChapterRuleAd }
+        )
+        binding.textAiPurifyChapterRuleTypesSummary.text = when (enabledLabels.size) {
+            0 -> getString(R.string.ai_purify_chapter_rule_types_none)
+            3 -> getString(R.string.ai_purify_chapter_rule_types_all)
+            else -> getString(
+                R.string.ai_purify_chapter_rule_types_summary,
+                enabledLabels.joinToString(getString(R.string.ai_purify_chapter_rule_types_separator))
+            )
+        }
+    }
+
+    private fun Int.dpToPx(): Int {
+        return (this * resources.displayMetrics.density + 0.5f).toInt()
     }
 
     private fun readProviderFromForm(): AiProviderSetting? {

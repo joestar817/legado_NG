@@ -118,6 +118,33 @@ object AiConfig {
             )
         }
 
+    var purifyChapterRuleTypo: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.aiPurifyChapterRuleTypo, true)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.aiPurifyChapterRuleTypo, value)
+        }
+
+    var purifyChapterRuleNoise: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.aiPurifyChapterRuleNoise, true)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.aiPurifyChapterRuleNoise, value)
+        }
+
+    var purifyChapterRuleAd: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.aiPurifyChapterRuleAd, true)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.aiPurifyChapterRuleAd, value)
+        }
+
+    fun isPurifyChapterRuleTypeEnabled(type: String): Boolean {
+        return when (type.trim().lowercase()) {
+            "typo" -> purifyChapterRuleTypo
+            "noise" -> purifyChapterRuleNoise
+            "ad" -> purifyChapterRuleAd
+            else -> false
+        }
+    }
+
     fun currentSetting(): AiProviderSetting {
         return AiProviderStore.activeProvider()
     }

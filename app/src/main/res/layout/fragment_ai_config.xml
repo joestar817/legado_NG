@@ -402,6 +402,47 @@
                 <View style="@style/Ng.SettingsItemGap" />
 
                 <LinearLayout
+                    android:id="@+id/layout_ai_purify_chapter_rule_types"
+                    style="@style/Ng.SettingsItem">
+
+                    <ImageView
+                        android:id="@+id/image_purify_chapter_rule_types_icon"
+                        style="@style/Ng.SettingsIconImage"
+                        android:layout_gravity="center_vertical"
+                        android:contentDescription="@string/ai_purify_chapter_rule_types"
+                        android:src="@drawable/ic_find_replace" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/ai_purify_chapter_rule_types" />
+
+                        <TextView
+                            android:id="@+id/text_ai_purify_chapter_rule_types_summary"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:maxLines="1" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="›"
+                        android:textColor="@color/ng_settings_arrow"
+                        android:textSize="30sp" />
+
+                </LinearLayout>
+
+                <View style="@style/Ng.SettingsItemGap" />
+
+                <LinearLayout
                     style="@style/Ng.SettingsItem"
                     android:clickable="false"
                     android:focusable="false"

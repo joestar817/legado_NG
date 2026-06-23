@@ -1479,17 +1479,55 @@ class ReadBookActivity : BaseReadBookActivity(),
         view.findViewById<TextView>(R.id.tv_chapter_model).text = model
         val selectedIndexes = candidates.indices.toMutableSet()
         val ruleCountView = view.findViewById<TextView>(R.id.tv_chapter_rule_count)
-        val updateRuleCount = {
+        val visibleRuleContentHeaderWidth = (
+            resources.displayMetrics.widthPixels -
+                48.dpToPx() -
+                40.dpToPx() -
+                8.dpToPx() -
+                36.dpToPx() -
+                42.dpToPx() -
+                48.dpToPx()
+            ).coerceAtLeast(120.dpToPx())
+        fun updateSelectionState() {
             ruleCountView.text = "${selectedIndexes.size}/${candidates.size}"
         }
-        updateRuleCount()
+        fun selectionActionText(): String {
+            return getString(
+                if (selectedIndexes.size == candidates.size) {
+                    R.string.revert_selection
+                } else {
+                    R.string.select_all
+                }
+            )
+        }
         val ruleTable = view.findViewById<LinearLayout>(R.id.layout_chapter_rule_table)
-        bindAiPurifyChapterRuleTable(
-            ruleTable = ruleTable,
-            candidates = candidates,
-            selectedIndexes = selectedIndexes,
-            onSelectionChanged = updateRuleCount
-        )
+        lateinit var bindRuleTable: () -> Unit
+        val toggleRuleSelection = {
+            if (selectedIndexes.size == candidates.size) {
+                selectedIndexes.clear()
+            } else {
+                selectedIndexes.clear()
+                selectedIndexes.addAll(candidates.indices)
+            }
+            bindRuleTable()
+            updateSelectionState()
+        }
+        bindRuleTable = {
+            bindAiPurifyChapterRuleTable(
+                ruleTable = ruleTable,
+                candidates = candidates,
+                selectedIndexes = selectedIndexes,
+                selectionActionText = selectionActionText(),
+                visibleContentHeaderWidth = visibleRuleContentHeaderWidth,
+                onSelectionAction = toggleRuleSelection,
+                onSelectionChanged = {
+                    bindRuleTable()
+                    updateSelectionState()
+                }
+            )
+        }
+        bindRuleTable()
+        updateSelectionState()
         view.prepareAiPurifyDialogSize(R.id.scroll_ai_purify_chapter_content)
         val dialog = AlertDialog.Builder(this)
             .setView(view)
@@ -1554,6 +1592,9 @@ class ReadBookActivity : BaseReadBookActivity(),
         ruleTable: LinearLayout,
         candidates: List<AiPurifyRuleCandidate>,
         selectedIndexes: MutableSet<Int>,
+        selectionActionText: String,
+        visibleContentHeaderWidth: Int,
+        onSelectionAction: () -> Unit,
         onSelectionChanged: () -> Unit
     ) {
         ruleTable.removeAllViews()
@@ -1563,7 +1604,10 @@ class ReadBookActivity : BaseReadBookActivity(),
                 hitCount = getString(R.string.ai_purify_rule_column_hit_count),
                 type = getString(R.string.ai_purify_rule_column_type),
                 content = getString(R.string.ai_purify_rule_column_content),
-                isHeader = true
+                isHeader = true,
+                applyHeaderText = selectionActionText,
+                contentHeaderWidthPx = visibleContentHeaderWidth,
+                onApplyHeaderClick = onSelectionAction
             )
         )
         candidates.forEachIndexed { index, candidate ->
@@ -1597,6 +1641,9 @@ class ReadBookActivity : BaseReadBookActivity(),
         type: String,
         content: String,
         isHeader: Boolean,
+        applyHeaderText: String? = null,
+        contentHeaderWidthPx: Int? = null,
+        onApplyHeaderClick: (() -> Unit)? = null,
         onCheckedChanged: ((Boolean) -> Unit)? = null
     ): View {
         return LinearLayout(this).apply {
@@ -1606,11 +1653,23 @@ class ReadBookActivity : BaseReadBookActivity(),
             addView(
                 if (checked == null) {
                     createAiPurifyTableText(
-                        text = getString(R.string.ai_purify_rule_column_apply),
-                        widthDp = 42,
+                        text = applyHeaderText ?: getString(R.string.ai_purify_rule_column_apply),
+                        widthDp = 36,
                         isHeader = isHeader,
                         gravityValue = Gravity.CENTER
-                    )
+                    ).apply {
+                        if (onApplyHeaderClick != null) {
+                            setTextColor(
+                                ContextCompat.getColor(
+                                    this@ReadBookActivity,
+                                    R.color.ng_error
+                                )
+                            )
+                            isClickable = true
+                            isFocusable = true
+                            setOnClickListener { onApplyHeaderClick.invoke() }
+                        }
+                    }
                 } else {
                     CheckBox(this@ReadBookActivity).apply {
                         isChecked = checked
@@ -1628,14 +1687,14 @@ class ReadBookActivity : BaseReadBookActivity(),
                         setPadding(0, 0, 0, 0)
                         scaleX = 0.82f
                         scaleY = 0.82f
-                        layoutParams = LinearLayout.LayoutParams(42.dpToPx(), 32.dpToPx())
+                        layoutParams = LinearLayout.LayoutParams(36.dpToPx(), 32.dpToPx())
                     }
                 }
             )
             addView(
                 createAiPurifyTableText(
                     hitCount,
-                    58,
+                    42,
                     isHeader = isHeader,
                     gravityValue = Gravity.CENTER
                 )
@@ -1643,7 +1702,7 @@ class ReadBookActivity : BaseReadBookActivity(),
             addView(
                 createAiPurifyTableText(
                     type,
-                    58,
+                    48,
                     isHeader = isHeader,
                     gravityValue = Gravity.CENTER
                 )
@@ -1653,7 +1712,8 @@ class ReadBookActivity : BaseReadBookActivity(),
                     content,
                     360,
                     isHeader = isHeader,
-                    gravityValue = Gravity.CENTER_VERTICAL
+                    gravityValue = if (isHeader) Gravity.CENTER else Gravity.CENTER_VERTICAL,
+                    fixedWidthPx = contentHeaderWidthPx
                 )
             )
         }
@@ -1664,7 +1724,8 @@ class ReadBookActivity : BaseReadBookActivity(),
         widthDp: Int,
         weight: Float = 0f,
         isHeader: Boolean,
-        gravityValue: Int
+        gravityValue: Int,
+        fixedWidthPx: Int? = null
     ): TextView {
         return TextView(this).apply {
             this.text = text
@@ -1680,10 +1741,12 @@ class ReadBookActivity : BaseReadBookActivity(),
             ellipsize = android.text.TextUtils.TruncateAt.END
             maxLines = 1
             setLineSpacing(1.dpToPx().toFloat(), 1.0f)
-            setPadding(4.dpToPx(), 6.dpToPx(), 4.dpToPx(), 6.dpToPx())
+            setPadding(2.dpToPx(), 6.dpToPx(), 2.dpToPx(), 6.dpToPx())
             minHeight = 30.dpToPx()
             layoutParams = if (weight > 0f) {
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, weight)
+            } else if (fixedWidthPx != null) {
+                LinearLayout.LayoutParams(fixedWidthPx, LinearLayout.LayoutParams.WRAP_CONTENT)
             } else {
                 LinearLayout.LayoutParams(widthDp.dpToPx(), LinearLayout.LayoutParams.WRAP_CONTENT)
             }
@@ -1715,7 +1778,9 @@ class ReadBookActivity : BaseReadBookActivity(),
         sampleResults: List<Pair<AiPurifyChapterSample, AiPurifyRuleGenerateResult>>
     ): List<AiPurifyRuleCandidate> {
         val sources = sampleResults.flatMap { (sample, _) -> sample.aiPurifyRuleSources() }
-        val directRules = sampleResults.flatMap { it.second.rules }
+        val directRules = sampleResults
+            .flatMap { it.second.rules }
+            .filter { AiConfig.isPurifyChapterRuleTypeEnabled(it.type) }
         val candidates = linkedMapOf<String, AiPurifyRuleCandidate>()
         val derivedRules = directRules
             .flatMap { it.derivedAiPurifyTypoRules() }
