@@ -763,6 +763,8 @@
     <string name="move_to_group">Move to group</string>
     <string name="add_group">Add to Groups</string>
     <string name="remove_group">Remove from Groups</string>
+    <string name="clear_group">Clear Groups</string>
+    <string name="auto_group">Auto Group</string>
     <string name="built_in_group">Built-in</string>
     <string name="add_replace_rule">New replacement</string>
     <string name="group">Group</string>

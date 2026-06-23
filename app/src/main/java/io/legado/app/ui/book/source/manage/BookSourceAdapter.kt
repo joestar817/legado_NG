@@ -1,18 +1,20 @@
 package io.legado.app.ui.book.source.manage
 
 import android.content.Context
-import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
 import android.widget.PopupMenu
+import android.widget.TextView
 import androidx.core.os.bundleOf
 import androidx.core.view.doOnLayout
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import io.legado.app.R
 import io.legado.app.base.adapter.ItemViewHolder
+import io.legado.app.constant.BookSourceType
 import io.legado.app.base.adapter.RecyclerAdapter
 import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.databinding.ItemBookSourceBinding
@@ -24,7 +26,6 @@ import io.legado.app.ui.widget.recycler.ItemTouchCallback
 import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.buildMainHandler
 import io.legado.app.utils.gone
-import io.legado.app.utils.invisible
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.visible
 import java.util.Collections
@@ -34,7 +35,7 @@ class BookSourceAdapter(
     context: Context,
     private val callBack: CallBack,
     private val recyclerView: RecyclerView
-) : RecyclerAdapter<BookSourcePart, ItemBookSourceBinding>(context),
+) : RecyclerAdapter<BookSourceListItem, ItemBookSourceBinding>(context),
     ItemTouchCallback.Callback {
 
     private val selected = linkedSetOf<BookSourcePart>()
@@ -43,47 +44,63 @@ class BookSourceAdapter(
     var showSourceHost = false
 
     val selection: List<BookSourcePart>
-        get() {
-            return getItems().filter {
-                selected.contains(it)
+        get() = selectableSources().filter { selected.contains(it) }
+
+    val sourceCount: Int
+        get() = selectableSources().size
+
+    val diffItemCallback = object : DiffUtil.ItemCallback<BookSourceListItem>() {
+
+        override fun areItemsTheSame(
+            oldItem: BookSourceListItem,
+            newItem: BookSourceListItem
+        ): Boolean {
+            return oldItem.sameItemKey == newItem.sameItemKey
+        }
+
+        override fun areContentsTheSame(
+            oldItem: BookSourceListItem,
+            newItem: BookSourceListItem
+        ): Boolean {
+            return oldItem == newItem && sectionSelectionSame(oldItem, newItem)
+        }
+
+        override fun getChangePayload(
+            oldItem: BookSourceListItem,
+            newItem: BookSourceListItem
+        ): Any? {
+            if (oldItem is BookSourceListItem.Section && newItem is BookSourceListItem.Section) {
+                val payload = Bundle()
+                if (oldItem.title != newItem.title || oldItem.sources.size != newItem.sources.size) {
+                    payload.putBoolean("upSection", true)
+                }
+                if (oldItem.expanded != newItem.expanded) {
+                    payload.putBoolean("expanded", true)
+                }
+                return if (payload.isEmpty) null else payload
             }
-        }
-
-    val diffItemCallback = object : DiffUtil.ItemCallback<BookSourcePart>() {
-
-        override fun areItemsTheSame(oldItem: BookSourcePart, newItem: BookSourcePart): Boolean {
-            return oldItem.bookSourceUrl == newItem.bookSourceUrl
-        }
-
-        override fun areContentsTheSame(oldItem: BookSourcePart, newItem: BookSourcePart): Boolean {
-            return oldItem.bookSourceName == newItem.bookSourceName
-                    && oldItem.bookSourceGroup == newItem.bookSourceGroup
-                    && oldItem.enabled == newItem.enabled
-                    && oldItem.enabledExplore == newItem.enabledExplore
-                    && oldItem.hasExploreUrl == newItem.hasExploreUrl
-        }
-
-        override fun getChangePayload(oldItem: BookSourcePart, newItem: BookSourcePart): Any? {
+            if (oldItem !is BookSourceListItem.Source || newItem !is BookSourceListItem.Source) {
+                return null
+            }
+            val oldSource = oldItem.source
+            val newSource = newItem.source
             val payload = Bundle()
-            if (oldItem.bookSourceName != newItem.bookSourceName
-                || oldItem.bookSourceGroup != newItem.bookSourceGroup
+            if (oldSource.bookSourceName != newSource.bookSourceName
+                || oldSource.bookSourceGroup != newSource.bookSourceGroup
+                || oldItem.inPanel != newItem.inPanel
             ) {
                 payload.putBoolean("upName", true)
             }
-            if (oldItem.enabled != newItem.enabled) {
-                payload.putBoolean("enabled", newItem.enabled)
-            }
-            if (oldItem.enabledExplore != newItem.enabledExplore ||
-                oldItem.hasExploreUrl != newItem.hasExploreUrl
+            if (oldSource.enabled != newSource.enabled) payload.putBoolean("upTags", true)
+            if (oldSource.hasSearchUrl != newSource.hasSearchUrl) payload.putBoolean("upTags", true)
+            if (oldSource.enabledExplore != newSource.enabledExplore ||
+                oldSource.hasExploreUrl != newSource.hasExploreUrl ||
+                oldSource.bookSourceType != newSource.bookSourceType
             ) {
-                payload.putBoolean("upExplore", true)
+                payload.putBoolean("upTags", true)
             }
-            if (payload.isEmpty) {
-                return null
-            }
-            return payload
+            return if (payload.isEmpty) null else payload
         }
-
     }
 
     override fun getViewBinding(parent: ViewGroup): ItemBookSourceBinding {
@@ -93,30 +110,70 @@ class BookSourceAdapter(
     override fun convert(
         holder: ItemViewHolder,
         binding: ItemBookSourceBinding,
-        item: BookSourcePart,
+        item: BookSourceListItem,
         payloads: MutableList<Any>
     ) {
         binding.run {
-            if (payloads.isEmpty()) {
-                root.setBackgroundColor(ColorUtils.withAlpha(context.backgroundColor, 0.5f))
-                cbBookSource.text = item.getDisPlayNameGroup()
-                swtEnabled.isChecked = item.enabled
-                cbBookSource.isChecked = selected.contains(item)
-                upCheckSourceMessage(binding, item)
-                upShowExplore(ivExplore, item)
-                upSourceHost(binding, holder.layoutPosition)
-            } else {
-                for (i in payloads.indices) {
-                    val bundle = payloads[i] as Bundle
-                    bundle.keySet().forEach {
-                        when (it) {
-                            "enabled" -> swtEnabled.isChecked = bundle.getBoolean("enabled")
-                            "upName" -> cbBookSource.text = item.getDisPlayNameGroup()
-                            "upExplore" -> upShowExplore(ivExplore, item)
-                            "selected" -> cbBookSource.isChecked = selected.contains(item)
-                            "checkSourceMessage" -> upCheckSourceMessage(binding, item)
-                            "upSourceHost" -> upSourceHost(binding, holder.layoutPosition)
-                        }
+            sectionContainer.isVisible = item is BookSourceListItem.Section
+            sourceContainer.isVisible = item is BookSourceListItem.Source
+            if (item is BookSourceListItem.Section) {
+                bindSection(item, payloads)
+                return
+            }
+            bindSource(holder, item as BookSourceListItem.Source, payloads)
+        }
+    }
+
+    private fun ItemBookSourceBinding.bindSection(
+        item: BookSourceListItem.Section,
+        payloads: MutableList<Any>
+    ) {
+        root.setBackgroundColor(ColorUtils.withAlpha(context.backgroundColor, 0.5f))
+        if (payloads.isEmpty()) {
+            tvSectionTitle.text = item.title
+            tvSectionCount.text = item.sources.size.toString()
+        } else {
+            payloads.filterIsInstance<Bundle>().forEach { bundle ->
+                if (bundle.containsKey("upSection")) {
+                    tvSectionTitle.text = item.title
+                    tvSectionCount.text = item.sources.size.toString()
+                }
+            }
+        }
+        ivSectionExpand.rotation = if (item.expanded) 0f else -90f
+        cbSection.isChecked = item.sources.isNotEmpty() && item.sources.all { selected.contains(it) }
+        viewSectionStatus.background = statusDotDrawable(isNormalSection(item.title))
+    }
+
+    private fun ItemBookSourceBinding.bindSource(
+        holder: ItemViewHolder,
+        item: BookSourceListItem.Source,
+        payloads: MutableList<Any>
+    ) {
+        val source = item.source
+        root.setBackgroundColor(ColorUtils.withAlpha(context.backgroundColor, 0.5f))
+        sourceContainer.minHeight = dp(56)
+        sourceContainer.setPadding(
+            dp(if (item.inPanel) 28 else 16),
+            dp(8),
+            dp(12),
+            dp(8)
+        )
+        if (payloads.isEmpty()) {
+            cbBookSource.text = source.getDisPlayNameGroup()
+            cbBookSource.isChecked = selected.contains(source)
+            upCheckSourceMessage(this, source)
+            upSourceTags(this, source)
+            upSourceHost(this, holder.layoutPosition)
+        } else {
+            payloads.filterIsInstance<Bundle>().forEach { bundle ->
+                bundle.keySet().forEach {
+                    when (it) {
+                        "upName" -> cbBookSource.text = source.getDisPlayNameGroup()
+                        "upTags" -> upSourceTags(this, source)
+                        "selected" -> cbBookSource.isChecked = selected.contains(source)
+                        "checkSourceMessage" -> upCheckSourceMessage(this, source)
+                        "upSourceHost" -> upSourceHost(this, holder.layoutPosition)
                     }
                 }
             }
@@ -125,25 +182,32 @@ class BookSourceAdapter(
 
     override fun registerListener(holder: ItemViewHolder, binding: ItemBookSourceBinding) {
         binding.apply {
-            swtEnabled.setOnUserCheckedChangeListener { checked ->
-                getItem(holder.layoutPosition)?.let {
-                    it.enabled = checked
-                    callBack.enable(checked, it)
+            sectionContainer.setOnClickListener {
+                (getItem(holder.layoutPosition) as? BookSourceListItem.Section)?.let {
+                    callBack.toggleSection(it.key)
+                }
+            }
+            cbSection.setOnClickListener {
+                toggleSectionSelection(holder.layoutPosition)
+            }
+            ivSectionMore.setOnClickListener {
+                (getItem(holder.layoutPosition) as? BookSourceListItem.Section)?.let {
+                    showSectionMenu(ivSectionMore, it)
+                }
+            }
+            ivSectionExpand.setOnClickListener {
+                (getItem(holder.layoutPosition) as? BookSourceListItem.Section)?.let {
+                    callBack.toggleSection(it.key)
                 }
             }
             cbBookSource.setOnUserCheckedChangeListener { checked ->
-                getItem(holder.layoutPosition)?.let {
+                (getItem(holder.layoutPosition) as? BookSourceListItem.Source)?.source?.let {
                     if (checked) {
                         selected.add(it)
                     } else {
                         selected.remove(it)
                     }
                     callBack.upCountView()
-                }
-            }
-            ivEdit.setOnClickListener {
-                getItem(holder.layoutPosition)?.let {
-                    callBack.edit(it)
                 }
             }
             ivMenuMore.setOnClickListener {
@@ -153,6 +217,7 @@ class BookSourceAdapter(
     }
 
     override fun onCurrentListChanged() {
+        selected.retainAll(selectableSources().toSet())
         callBack.upCountView()
         recyclerView.doOnLayout {
             handler.post {
@@ -162,9 +227,11 @@ class BookSourceAdapter(
     }
 
     private fun showMenu(view: View, position: Int) {
-        val source = getItem(position) ?: return
+        val source = (getItem(position) as? BookSourceListItem.Source)?.source ?: return
         val popupMenu = PopupMenu(context, view)
         popupMenu.inflate(R.menu.book_source_item)
+        popupMenu.menu.findItem(R.id.menu_enable).isVisible = !source.enabled
+        popupMenu.menu.findItem(R.id.menu_disable).isVisible = source.enabled
         popupMenu.menu.findItem(R.id.menu_top).isVisible = callBack.sort == BookSourceSort.Default
         popupMenu.menu.findItem(R.id.menu_bottom).isVisible =
             callBack.sort == BookSourceSort.Default
@@ -182,6 +249,9 @@ class BookSourceAdapter(
         loginMenu.isVisible = source.hasLoginUrl
         popupMenu.setOnMenuItemClickListener { menuItem ->
             when (menuItem.itemId) {
+                R.id.menu_enable -> callBack.enable(true, source)
+                R.id.menu_disable -> callBack.enable(false, source)
+                R.id.menu_edit -> callBack.edit(source)
                 R.id.menu_top -> callBack.toTop(source)
                 R.id.menu_bottom -> callBack.toBottom(source)
                 R.id.menu_login -> context.startActivity<SourceLoginActivity> {
@@ -205,23 +275,59 @@ class BookSourceAdapter(
         popupMenu.show()
     }
 
-    private fun upShowExplore(iv: ImageView, source: BookSourcePart) {
-        when {
-            !source.hasExploreUrl -> {
-                iv.invisible()
+    private fun showSectionMenu(view: View, item: BookSourceListItem.Section) {
+        val popupMenu = PopupMenu(context, view)
+        val hasDisabled = item.sources.any { !it.enabled }
+        val hasEnabled = item.sources.any { it.enabled }
+        if (hasDisabled) {
+            popupMenu.menu.add(0, R.id.menu_enable, 0, R.string.enable)
+        }
+        if (hasEnabled) {
+            popupMenu.menu.add(0, R.id.menu_disable, 1, R.string.replace_rule_disable)
+        }
+        popupMenu.menu.add(0, R.id.menu_del, 2, R.string.delete)
+        popupMenu.setOnMenuItemClickListener { menuItem ->
+            when (menuItem.itemId) {
+                R.id.menu_enable -> callBack.updateSectionEnabled(item.title, item.sources, true)
+                R.id.menu_disable -> callBack.updateSectionEnabled(item.title, item.sources, false)
+                R.id.menu_del -> callBack.deleteSection(item.title, item.sources)
             }
+            true
+        }
+        popupMenu.show()
+    }
 
-            source.enabledExplore -> {
-                iv.setColorFilter(Color.GREEN)
-                iv.visible()
-                iv.contentDescription = context.getString(R.string.tag_explore_enabled)
-            }
+    private fun upSourceTags(binding: ItemBookSourceBinding, source: BookSourcePart) = binding.run {
+        tvTagSearch.isVisible = source.hasSearchUrl
+        bindStateTag(tvTagSearch, source.enabled)
+        tvTagExplore.isVisible = source.hasExploreUrl
+        if (source.hasExploreUrl) {
+            bindStateTag(tvTagExplore, source.enabledExplore)
+            tvTagExplore.contentDescription = context.getString(
+                if (source.enabledExplore) {
+                    R.string.tag_explore_enabled
+                } else {
+                    R.string.tag_explore_disabled
+                }
+            )
+        }
+        bindTypeTag(tvTagImage, source.bookSourceType == BookSourceType.image)
+        bindTypeTag(
+            tvTagAudio,
+            source.bookSourceType == BookSourceType.audio || source.bookSourceType == BookSourceType.video
+        )
+    }
 
-            else -> {
-                iv.setColorFilter(Color.RED)
-                iv.visible()
-                iv.contentDescription = context.getString(R.string.tag_explore_disabled)
-            }
+    private fun bindStateTag(view: TextView, enabled: Boolean) {
+        view.setBackgroundResource(if (enabled) R.drawable.ng_bg_tag_success else R.drawable.ng_bg_tag_error)
+        view.setTextColor(context.getColor(if (enabled) R.color.ng_success else R.color.ng_error))
+    }
+
+    private fun bindTypeTag(view: TextView, visible: Boolean) {
+        view.isVisible = visible
+        if (visible) {
+            view.setBackgroundResource(R.drawable.ng_bg_tag_neutral)
+            view.setTextColor(context.getColor(R.color.ng_on_surface_variant))
         }
     }
 
@@ -245,7 +351,8 @@ class BookSourceAdapter(
     }
 
     private fun upSourceHost(binding: ItemBookSourceBinding, position: Int) = binding.run {
-        if (showSourceHost && isItemHeader(position)) {
+        val item = getItem(position) as? BookSourceListItem.Source
+        if (item != null && showSourceHost && isItemHeader(position)) {
             tvHostText.text = getHeaderText(position)
             tvHostText.visible()
         } else {
@@ -254,15 +361,13 @@ class BookSourceAdapter(
     }
 
     fun selectAll() {
-        getItems().forEach {
-            selected.add(it)
-        }
+        selectableSources().forEach { selected.add(it) }
         notifyItemRangeChanged(0, itemCount, bundleOf(Pair("selected", null)))
         callBack.upCountView()
     }
 
     fun revertSelection() {
-        getItems().forEach {
+        selectableSources().forEach {
             if (selected.contains(it)) {
                 selected.remove(it)
             } else {
@@ -275,16 +380,18 @@ class BookSourceAdapter(
 
     fun checkSelectedInterval() {
         val selectedPosition = linkedSetOf<Int>()
-        getItems().forEachIndexed { index, it ->
-            if (selected.contains(it)) {
+        getItems().forEachIndexed { index, item ->
+            val source = (item as? BookSourceListItem.Source)?.source
+            if (source != null && selected.contains(source)) {
                 selectedPosition.add(index)
             }
         }
+        if (selectedPosition.isEmpty()) return
         val minPosition = Collections.min(selectedPosition)
         val maxPosition = Collections.max(selectedPosition)
         val itemCount = maxPosition - minPosition + 1
         for (i in minPosition..maxPosition) {
-            getItem(i)?.let {
+            (getItem(i) as? BookSourceListItem.Source)?.source?.let {
                 selected.add(it)
             }
         }
@@ -293,11 +400,12 @@ class BookSourceAdapter(
     }
 
     fun getHeaderText(position: Int): String {
-        val source = getItem(position)!!
+        val source = (getItem(position) as? BookSourceListItem.Source)?.source ?: return "#"
         return callBack.getSourceHost(source.bookSourceUrl)
     }
 
     fun isItemHeader(position: Int): Boolean {
+        if (getItem(position) !is BookSourceListItem.Source) return false
         if (position == 0) return true
         val lastHost = getHeaderText(position - 1)
         val curHost = getHeaderText(position)
@@ -305,17 +413,18 @@ class BookSourceAdapter(
     }
 
     override fun swap(srcPosition: Int, targetPosition: Int): Boolean {
-        val srcItem = getItem(srcPosition)
-        val targetItem = getItem(targetPosition)
+        val srcItem = (getItem(srcPosition) as? BookSourceListItem.Source)?.source
+        val targetItem = (getItem(targetPosition) as? BookSourceListItem.Source)?.source
         if (srcItem != null && targetItem != null) {
             val srcOrder = srcItem.customOrder
             srcItem.customOrder = targetItem.customOrder
             targetItem.customOrder = srcOrder
             movedItems.add(srcItem)
             movedItems.add(targetItem)
+            swapItem(srcPosition, targetPosition)
+            return true
         }
-        swapItem(srcPosition, targetPosition)
-        return true
+        return false
     }
 
     private val movedItems = hashSetOf<BookSourcePart>()
@@ -327,8 +436,9 @@ class BookSourceAdapter(
                 sortNumberSet.add(it.customOrder)
             }
             if (movedItems.size > sortNumberSet.size) {
-                callBack.upOrder(getItems().mapIndexed { index, bookSourcePart ->
-                    bookSourcePart.customOrder = if (callBack.sortAscending) index else -index
+                callBack.upOrder(getItems().mapIndexedNotNull { index, item ->
+                    val bookSourcePart = (item as? BookSourceListItem.Source)?.source
+                    bookSourcePart?.customOrder = if (callBack.sortAscending) index else -index
                     bookSourcePart
                 })
             } else {
@@ -341,27 +451,107 @@ class BookSourceAdapter(
     val dragSelectCallback: DragSelectTouchHelper.Callback =
         object : DragSelectTouchHelper.AdvanceCallback<BookSourcePart>(Mode.ToggleAndReverse) {
             override fun currentSelectedId(): MutableSet<BookSourcePart> {
-                return selected
+                return selected.toMutableSet().apply {
+                    getItems().forEachIndexed { index, item ->
+                        val section = item as? BookSourceListItem.Section ?: return@forEachIndexed
+                        if (section.sources.isNotEmpty() && section.sources.all { selected.contains(it) }) {
+                            add(sectionItemId(index))
+                        }
+                    }
+                }
             }
 
             override fun getItemId(position: Int): BookSourcePart {
-                return getItem(position)!!
+                return (getItem(position) as? BookSourceListItem.Source)?.source
+                    ?: sectionItemId(position)
             }
 
             override fun updateSelectState(position: Int, isSelected: Boolean): Boolean {
-                getItem(position)?.let {
-                    if (isSelected) {
-                        selected.add(it)
-                    } else {
-                        selected.remove(it)
+                when (val item = getItem(position)) {
+                    is BookSourceListItem.Source -> {
+                        if (isSelected) {
+                            selected.add(item.source)
+                        } else {
+                            selected.remove(item.source)
+                        }
+                        notifyItemChanged(position, bundleOf(Pair("selected", null)))
+                        callBack.upCountView()
+                        return true
                     }
-                    notifyItemChanged(position, bundleOf(Pair("selected", null)))
-                    callBack.upCountView()
-                    return true
+
+                    is BookSourceListItem.Section -> {
+                        selectSection(position, isSelected)
+                        return true
+                    }
+
+                    else -> return false
                 }
-                return false
             }
         }
+
+    private fun sectionSelectionSame(
+        oldItem: BookSourceListItem,
+        newItem: BookSourceListItem
+    ): Boolean {
+        if (oldItem !is BookSourceListItem.Section || newItem !is BookSourceListItem.Section) {
+            return true
+        }
+        val oldSelected = oldItem.sources.isNotEmpty() && oldItem.sources.all { selected.contains(it) }
+        val newSelected = newItem.sources.isNotEmpty() && newItem.sources.all { selected.contains(it) }
+        return oldSelected == newSelected
+    }
+
+    private fun selectableSources(): List<BookSourcePart> {
+        return getItems()
+            .flatMap {
+                when (it) {
+                    is BookSourceListItem.Section -> it.sources
+                    is BookSourceListItem.Source -> listOf(it.source)
+                }
+            }
+            .distinctBy { it.bookSourceUrl }
+    }
+
+    private fun toggleSectionSelection(position: Int) {
+        val section = getItem(position) as? BookSourceListItem.Section ?: return
+        val isAllSelected = section.sources.isNotEmpty() && section.sources.all { selected.contains(it) }
+        selectSection(position, !isAllSelected)
+    }
+
+    private fun selectSection(position: Int, isSelected: Boolean) {
+        val section = getItem(position) as? BookSourceListItem.Section ?: return
+        if (isSelected) {
+            selected.addAll(section.sources)
+        } else {
+            selected.removeAll(section.sources.toSet())
+        }
+        notifyItemRangeChanged(0, itemCount, bundleOf(Pair("selected", null)))
+        callBack.upCountView()
+    }
+
+    private fun isNormalSection(title: String): Boolean {
+        val abnormalKeywords = listOf("失效", "异常", "错误", "无效", "规则为空")
+        if (title == "校验超时") {
+            return false
+        }
+        return abnormalKeywords.none { title.contains(it) }
+    }
+
+    private fun sectionItemId(position: Int): BookSourcePart {
+        val section = getItem(position) as? BookSourceListItem.Section
+        return BookSourcePart(bookSourceUrl = "__section_${section?.key ?: position}")
+    }
+
+    private fun dp(value: Int): Int {
+        return (value * context.resources.displayMetrics.density).toInt()
+    }
+
+    private fun statusDotDrawable(enabled: Boolean): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(context.getColor(if (enabled) R.color.success else R.color.error))
+        }
+    }
 
     interface CallBack {
         val sort: BookSourceSort
@@ -377,5 +567,30 @@ class BookSourceAdapter(
         fun enableExplore(enable: Boolean, bookSource: BookSourcePart)
         fun upCountView()
         fun getSourceHost(origin: String): String
+        fun toggleSection(key: String)
+        fun updateSectionEnabled(title: String, sources: List<BookSourcePart>, isEnabled: Boolean)
+        fun deleteSection(title: String, sources: List<BookSourcePart>)
+    }
+}
+
+sealed class BookSourceListItem {
+
+    abstract val sameItemKey: String
+
+    data class Section(
+        val key: String,
+        val title: String,
+        val sources: List<BookSourcePart>,
+        val expanded: Boolean
+    ) : BookSourceListItem() {
+        override val sameItemKey: String = "section:$key"
+    }
+
+    data class Source(
+        val sectionKey: String?,
+        val source: BookSourcePart,
+        val inPanel: Boolean
+    ) : BookSourceListItem() {
+        override val sameItemKey: String = "source:${sectionKey.orEmpty()}:${source.bookSourceUrl}"
     }
 }

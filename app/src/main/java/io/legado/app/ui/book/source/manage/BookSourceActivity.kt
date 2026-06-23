@@ -1,11 +1,13 @@
 package io.legado.app.ui.book.source.manage
 
 import android.annotation.SuppressLint
+import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.SubMenu
 import android.view.WindowManager
+import android.widget.TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
@@ -19,6 +21,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.ItemTouchHelper
 import com.google.android.material.snackbar.Snackbar
 import io.legado.app.R
+import io.legado.app.constant.AppPattern
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
@@ -32,6 +35,7 @@ import io.legado.app.help.config.LocalConfig
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.primaryTextColor
+import io.legado.app.lib.theme.secondaryTextColor
 import io.legado.app.model.CheckSource
 import io.legado.app.model.Debug
 import io.legado.app.ui.association.ImportBookSourceDialog
@@ -96,6 +100,11 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
     private var sourceFlowJob: Job? = null
     private var checkMessageRefreshJob: Job? = null
     private val groups = linkedSetOf<String>()
+    private var allSources: List<BookSourcePart> = emptyList()
+    private var currentSearchKey: String? = null
+    private var viewMode = BookSourceViewMode.LIST
+    private var sectionStateKey: String? = null
+    private val expandedSections = linkedSetOf<String>()
     private var groupMenu: SubMenu? = null
     override var sort = BookSourceSort.Default
         private set
@@ -147,6 +156,7 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         initRecyclerView()
         initSearchView()
+        initViewModes()
         upBookSource()
         initLiveDataGroup()
         initSelectActionBar()
@@ -257,7 +267,7 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
             R.id.menu_group_sources_by_domain -> {
                 item.isChecked = !item.isChecked
                 groupSourcesByDomain = item.isChecked
-                adapter.showSourceHost = item.isChecked
+                adapter.showSourceHost = item.isChecked && viewMode == BookSourceViewMode.LIST
                 upBookSource(searchView.query?.toString())
             }
 
@@ -289,8 +299,22 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
         searchView.setOnQueryTextListener(this)
     }
 
+    private fun initViewModes() {
+        viewModeViews().forEach { (mode, view) ->
+            view.setOnClickListener {
+                viewMode = mode
+                adapter.showSourceHost = groupSourcesByDomain && viewMode == BookSourceViewMode.LIST
+                itemTouchCallback.isCanDrag = canDragSources()
+                upViewModeViews()
+                submitBookSources()
+            }
+        }
+        upViewModeViews()
+    }
+
 
     private fun upBookSource(searchKey: String? = null) {
+        currentSearchKey = searchKey
         sourceFlowJob?.cancel()
         sourceFlowJob = lifecycleScope.launch {
             when {
@@ -384,12 +408,22 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
             ).catch {
                 AppLog.put("书源界面更新书源出错", it)
             }.flowOn(IO).conflate().collect { data ->
-                adapter.setItems(data, adapter.diffItemCallback, !Debug.isChecking)
-                itemTouchCallback.isCanDrag =
-                    sort == BookSourceSort.Default && !groupSourcesByDomain
+                allSources = data
+                submitBookSources()
+                itemTouchCallback.isCanDrag = canDragSources()
                 delay(500)
             }
         }
+    }
+
+    private fun submitBookSources() {
+        adapter.setItems(buildBookSourceItems(allSources), adapter.diffItemCallback, !Debug.isChecking)
+    }
+
+    private fun canDragSources(): Boolean {
+        return viewMode == BookSourceViewMode.LIST
+                && sort == BookSourceSort.Default
+                && !groupSourcesByDomain
     }
 
     override fun onResume() {
@@ -476,6 +510,8 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
             R.id.menu_bottom_sel -> viewModel.bottomSource(*adapter.selection.toTypedArray())
             R.id.menu_add_group -> selectionAddToGroups()
             R.id.menu_remove_group -> selectionRemoveFromGroups()
+            R.id.menu_clear_group -> viewModel.selectionClearGroups(adapter.selection)
+            R.id.menu_auto_group -> viewModel.selectionAutoGroup(adapter.selection)
             R.id.menu_export_selection -> viewModel.saveToFile(
                 adapter,
                 searchView.query?.toString(),
@@ -524,8 +560,15 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
                 val selectItems = adapter.selection
                 CheckSource.start(this@BookSourceActivity, selectItems)
                 val adapterItems = adapter.getItems()
-                val firstItem = adapterItems.indexOf(selectItems.firstOrNull())
-                val lastItem = adapterItems.indexOf(selectItems.lastOrNull())
+                val selectedUrls = selectItems.map { it.bookSourceUrl }.toSet()
+                val firstItem = adapterItems.indexOfFirst {
+                    (it as? BookSourceListItem.Source)?.source?.bookSourceUrl
+                        ?.let { url -> selectedUrls.contains(url) } == true
+                }
+                val lastItem = adapterItems.indexOfLast {
+                    (it as? BookSourceListItem.Source)?.source?.bookSourceUrl
+                        ?.let { url -> selectedUrls.contains(url) } == true
+                }
                 Debug.isChecking = firstItem >= 0 && lastItem >= 0
                 startCheckMessageRefreshJob(firstItem, lastItem)
             }
@@ -697,7 +740,7 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
 
     override fun upCountView() {
         binding.selectActionBar
-            .upCountView(adapter.selection.size, adapter.itemCount)
+            .upCountView(adapter.selection.size, adapter.sourceCount)
     }
 
     override fun getSourceHost(origin: String): String {
@@ -771,6 +814,122 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
         }
     }
 
+    override fun toggleSection(key: String) {
+        if (!expandedSections.add(key)) {
+            expandedSections.remove(key)
+        }
+        submitBookSources()
+    }
+
+    override fun updateSectionEnabled(
+        title: String,
+        sources: List<BookSourcePart>,
+        isEnabled: Boolean
+    ) {
+        viewModel.enable(isEnabled, sources)
+    }
+
+    override fun deleteSection(title: String, sources: List<BookSourcePart>) {
+        alert(R.string.draw) {
+            setMessage(getString(R.string.sure_del) + "\n" + title)
+            noButton()
+            yesButton {
+                viewModel.del(sources)
+            }
+        }
+    }
+
+    private fun buildBookSourceItems(sources: List<BookSourcePart>): List<BookSourceListItem> {
+        if (viewMode == BookSourceViewMode.LIST) {
+            return sources.map {
+                BookSourceListItem.Source(
+                    sectionKey = null,
+                    source = it,
+                    inPanel = false
+                )
+            }
+        }
+        if (viewMode == BookSourceViewMode.UNGROUPED) {
+            return sources
+                .filter { it.bookSourceGroup?.splitNotBlank(AppPattern.splitGroupRegex).isNullOrEmpty() }
+                .map {
+                    BookSourceListItem.Source(
+                        sectionKey = null,
+                        source = it,
+                        inPanel = false
+                    )
+                }
+        }
+        val sections = groupSections(sources)
+        if (sections.isEmpty()) return emptyList()
+        val newSectionStateKey = "${viewMode.name}:${currentSearchKey.orEmpty()}"
+        if (sectionStateKey != newSectionStateKey) {
+            sectionStateKey = newSectionStateKey
+            expandedSections.clear()
+            if (currentSearchKey?.isNotBlank() == true) {
+                expandedSections.addAll(sections.keys.map { it.key })
+            }
+        }
+        return buildList {
+            sections.forEach { (section, sectionSources) ->
+                val distinctSources = sectionSources.distinctBy { it.bookSourceUrl }
+                val expanded = expandedSections.contains(section.key)
+                add(
+                    BookSourceListItem.Section(
+                        key = section.key,
+                        title = section.title,
+                        sources = distinctSources,
+                        expanded = expanded
+                    )
+                )
+                if (expanded) {
+                    distinctSources.forEach { source ->
+                        add(
+                            BookSourceListItem.Source(
+                                sectionKey = section.key,
+                                source = source,
+                                inPanel = true
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun groupSections(sources: List<BookSourcePart>): Map<BookSourceSection, List<BookSourcePart>> {
+        return sources
+            .flatMap { source ->
+                val sourceGroups = source.bookSourceGroup?.splitNotBlank(AppPattern.splitGroupRegex).orEmpty()
+                if (sourceGroups.isEmpty()) {
+                    listOf(BookSourceSection("group:", getString(R.string.no_group), 0) to source)
+                } else {
+                    sourceGroups.map {
+                        BookSourceSection("group:$it", it, 1) to source
+                    }
+                }
+            }
+            .groupBy({ it.first }, { it.second })
+            .toSortedMap(compareBy<BookSourceSection> { it.rank }.thenBy { it.title })
+    }
+
+    private fun viewModeViews(): Map<BookSourceViewMode, TextView> {
+        return mapOf(
+            BookSourceViewMode.LIST to binding.viewModeList,
+            BookSourceViewMode.GROUP to binding.viewModeGroup,
+            BookSourceViewMode.UNGROUPED to binding.viewModeUngrouped
+        )
+    }
+
+    private fun upViewModeViews() {
+        viewModeViews().forEach { (mode, view) ->
+            val selected = mode == viewMode
+            view.background = null
+            view.typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            view.setTextColor(if (selected) primaryTextColor else secondaryTextColor)
+        }
+    }
+
     override fun finish() {
         if (searchView.query.isNullOrEmpty()) {
             super.finish()
@@ -785,5 +944,17 @@ class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceV
             Debug.debugMessageMap.clear()
         }
     }
+
+    enum class BookSourceViewMode {
+        LIST,
+        GROUP,
+        UNGROUPED
+    }
+
+    data class BookSourceSection(
+        val key: String,
+        val title: String,
+        val rank: Int
+    )
 
 }

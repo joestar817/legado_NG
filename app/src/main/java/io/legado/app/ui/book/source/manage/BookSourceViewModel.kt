@@ -4,6 +4,7 @@ import android.app.Application
 import android.text.TextUtils
 import io.legado.app.R
 import io.legado.app.base.BaseViewModel
+import io.legado.app.constant.BookSourceType
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.BookSourcePart
@@ -126,6 +127,34 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
         }
     }
 
+    fun selectionClearGroups(sources: List<BookSourcePart>) {
+        execute {
+            val array = sources.map {
+                it.copy(bookSourceGroup = "")
+            }
+            appDb.bookSourceDao.upGroup(array)
+        }
+    }
+
+    fun selectionAutoGroup(sources: List<BookSourcePart>) {
+        execute {
+            val array = sources.map {
+                it.copy(bookSourceGroup = autoGroupName(it.bookSourceType))
+            }
+            appDb.bookSourceDao.upGroup(array)
+        }
+    }
+
+    private fun autoGroupName(bookSourceType: Int): String {
+        return when (bookSourceType) {
+            BookSourceType.image -> "漫画"
+            BookSourceType.audio -> "音频"
+            BookSourceType.video -> "视频"
+            BookSourceType.file -> "其它"
+            else -> "小说"
+        }
+    }
+
     private fun saveToFile(sources: List<BookSource>, name: String, success: (file: File, name: String) -> Unit) {
         execute {
             val path = "${context.filesDir}/shareBookSource.json"
@@ -152,7 +181,8 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
         execute {
             val selection = adapter.selection
             val selectionSize = selection.size
-            val selectedRate = selectionSize.toFloat() / adapter.itemCount.toFloat()
+            val sourceCount = adapter.sourceCount
+            val selectedRate = if (sourceCount == 0) 0f else selectionSize.toFloat() / sourceCount.toFloat()
             val sources = if (selectedRate == 1f) {
                 getBookSources(searchKey, sortAscending, sort)
             } else if (selectedRate < 0.3) {

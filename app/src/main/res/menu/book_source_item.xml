@@ -2,6 +2,18 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
+        android:id="@+id/menu_enable"
+        android:title="@string/enable" />
+
+    <item
+        android:id="@+id/menu_disable"
+        android:title="@string/replace_rule_disable" />
+
+    <item
+        android:id="@+id/menu_edit"
+        android:title="@string/edit" />
+
+    <item
         android:id="@+id/menu_top"
         android:title="@string/to_top" />
 
