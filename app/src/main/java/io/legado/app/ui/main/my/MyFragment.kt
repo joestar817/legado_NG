@@ -123,6 +123,10 @@ class MyFragment() : BaseFragment(R.layout.fragment_my_config), MainFragmentInte
         }
 
         private fun applyStandardTheme() {
+            requireContext().putPrefInt(
+                PreferKey.cPrimary,
+                requireContext().getCompatColor(R.color.md_brown_500)
+            )
             requireContext().putPrefBoolean(PreferKey.tNavBar, false)
             requireContext().putPrefBoolean(PreferKey.tNavBarN, false)
             requireContext().removePref(PreferKey.bgImage)

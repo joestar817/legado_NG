@@ -34,6 +34,7 @@ import io.legado.app.ui.book.search.SearchActivity
 import io.legado.app.ui.main.bookshelf.BaseBookshelfFragment
 import io.legado.app.ui.main.bookshelf.style1.books.BooksFragment
 import io.legado.app.utils.dpToPx
+import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.getCompatColor
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.isCreated
@@ -334,7 +335,11 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         val selectedPosition = tabLayout.selectedTabPosition
         val gradientTheme = isGradientTheme()
         val normalTabTextColor = requireContext().getCompatColor(
-            if (isTransparentTopBar()) R.color.primaryText else R.color.white
+            if (isTransparentTopBar() || ColorUtils.isColorLight(primaryColor)) {
+                R.color.primaryText
+            } else {
+                R.color.white
+            }
         )
         for (i in 0 until tabLayout.tabCount) {
             val textView = tabLayout.getTabAt(i)?.customView as? TextView ?: continue

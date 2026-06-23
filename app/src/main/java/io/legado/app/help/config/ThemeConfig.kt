@@ -553,8 +553,15 @@ object ThemeConfig {
             }
 
             else -> {
-                val primary =
-                    getPrefInt(PreferKey.cPrimary, getCompatColor(R.color.md_brown_500))
+                val defaultPrimary = getCompatColor(R.color.md_brown_500)
+                val primary = getPrefInt(PreferKey.cPrimary, defaultPrimary).let { savedPrimary ->
+                    if (AppConfig.themeMode == "0" && savedPrimary == Color.WHITE) {
+                        putPrefInt(PreferKey.cPrimary, defaultPrimary)
+                        defaultPrimary
+                    } else {
+                        savedPrimary
+                    }
+                }
                 val accent =
                     getPrefInt(PreferKey.cAccent, getCompatColor(R.color.md_red_600))
                 var background =
