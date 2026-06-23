@@ -308,7 +308,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         fields.forEach { editText ->
             editText.doOnTextChanged { _, _, _, _ ->
                 if (!ignoreProviderFormChanges && currentPage == Page.DETAIL) {
-                    saveCurrentProvider(updateHeader = editText === binding.editProviderName)
+                    val provider = saveCurrentProvider(updateHeader = editText === binding.editProviderName)
+                    if (editText === binding.editApiKey && provider != null) {
+                        refreshModelSpinner(provider)
+                    }
                 }
             }
         }
@@ -823,6 +826,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
                     AiProviderStore.saveProvider(saved.copy(model = models.first().id))
                 }
                 refreshCurrentDetail()
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.ai_model_list_count, models.size.toString()),
+                    Toast.LENGTH_SHORT
+                ).show()
             } catch (e: Throwable) {
                 alert(getString(R.string.ai_fetch_models)) {
                     setMessage(getString(R.string.ai_test_failed, e.localizedMessage ?: e.toString()))
@@ -951,12 +959,17 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
     }
 
     private fun refreshModelSpinner(provider: AiProviderSetting) {
-        val options = buildList {
-            if (provider.model.isNotBlank()) {
-                add(provider.model)
+        val options = if (provider.apiKey.isBlank()) {
+            emptyList()
+        } else {
+            buildList {
+                if (provider.model.isNotBlank()) {
+                    add(provider.model)
+                }
+                addAll(provider.models.map { it.id }.filter { it.isNotBlank() })
             }
-            addAll(provider.models.map { it.id }.filter { it.isNotBlank() })
-        }.distinct()
+                .distinct()
+        }
         modelOptions = options
         val displayItems = if (options.isEmpty()) {
             listOf(getString(R.string.ai_model_list_empty))

@@ -6,6 +6,8 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import io.legado.app.help.http.await
 import io.legado.app.help.http.okHttpClient
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -32,18 +34,22 @@ internal fun String.ensureStartSlash(): String {
 }
 
 internal suspend fun OkHttpClient.executeJson(request: Request): JsonObject {
-    val response = newCall(request).await()
-    val body = response.body.string()
-    if (!response.isSuccessful) {
-        throw IllegalStateException("HTTP ${response.code}: ${body.take(500)}")
+    return withContext(IO) {
+        val response = newCall(request).await()
+        val body = response.body.string()
+        if (!response.isSuccessful) {
+            throw IllegalStateException("HTTP ${response.code}: ${body.take(500)}")
+        }
+        JsonParser.parseString(body).asJsonObject
     }
-    return JsonParser.parseString(body).asJsonObject
 }
 
 internal suspend fun OkHttpClient.executeJsonOrThrow(request: Request): Pair<Response, String> {
-    val response = newCall(request).await()
-    val body = response.body.string()
-    return response to body
+    return withContext(IO) {
+        val response = newCall(request).await()
+        val body = response.body.string()
+        response to body
+    }
 }
 
 internal fun JsonObject.stringOrNull(key: String): String? {

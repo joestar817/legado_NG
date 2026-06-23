@@ -1,8 +1,10 @@
 package io.legado.app.help.ai
 
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import io.legado.app.constant.PreferKey
 import io.legado.app.utils.GSON
-import io.legado.app.utils.fromJsonArray
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
@@ -65,9 +67,19 @@ object AiProviderStore {
         if (json.isBlank()) {
             return emptyList()
         }
-        return GSON.fromJsonArray<AiProviderSetting>(json).getOrDefault(emptyList())
+        return runCatching {
+            GSON.fromJson(json, JsonArray::class.java)
+                ?.mapNotNull { parseProvider(it) }
+                ?: emptyList()
+        }.getOrDefault(emptyList())
             .filter { it.id.isNotBlank() && it.baseUrl.isNotBlank() }
             .map { normalize(it) }
+    }
+
+    private fun parseProvider(element: JsonElement): AiProviderSetting? {
+        return runCatching {
+            GSON.fromJson(element, AiProviderSetting::class.java)
+        }.getOrNull()
     }
 
     private fun mergeWithDefaults(saved: List<AiProviderSetting>): List<AiProviderSetting> {
@@ -96,7 +108,7 @@ object AiProviderStore {
             apiKey = savedProvider.apiKey,
             baseUrl = savedProvider.baseUrl.ifBlank { default.baseUrl },
             model = savedProvider.model.ifBlank { default.model },
-            models = (savedProvider.models.ifEmpty { default.models }).filter { it.id.isNotBlank() },
+            models = normalizeModels(savedProvider.models.ifEmpty { default.models }),
             timeoutSeconds = savedProvider.timeoutSeconds.coerceIn(5, 600),
             chatCompletionsPath = savedProvider.chatCompletionsPath.ifBlank {
                 default.chatCompletionsPath
@@ -142,10 +154,48 @@ object AiProviderStore {
     private fun normalize(provider: AiProviderSetting): AiProviderSetting {
         return provider.copy(
             timeoutSeconds = provider.timeoutSeconds.coerceIn(5, 600),
-            models = provider.models.filter { it.id.isNotBlank() }
-                .distinctBy { it.id }
-                .sortedBy { it.id.lowercase() }
+            models = normalizeModels(provider.models)
         )
+    }
+
+    private fun normalizeModels(models: List<*>): List<AiModel> {
+        return models.mapNotNull { model ->
+            when (model) {
+                is AiModel -> model
+                is Map<*, *> -> model.toAiModel()
+                is JsonObject -> model.toAiModel()
+                is String -> AiModel(id = model)
+                else -> null
+            }
+        }.filter { it.id.isNotBlank() }
+            .distinctBy { it.id }
+            .sortedBy { it.id.lowercase() }
+    }
+
+    private fun Map<*, *>.toAiModel(): AiModel {
+        val id = stringValue("id")
+        return AiModel(
+            id = id,
+            name = stringValue("name").ifBlank { id },
+            ownedBy = stringValue("ownedBy").ifBlank { stringValue("owned_by") }
+        )
+    }
+
+    private fun JsonObject.toAiModel(): AiModel {
+        val id = stringValue("id")
+        return AiModel(
+            id = id,
+            name = stringValue("name").ifBlank { id },
+            ownedBy = stringValue("ownedBy").ifBlank { stringValue("owned_by") }
+        )
+    }
+
+    private fun Map<*, *>.stringValue(key: String): String {
+        return this[key]?.toString().orEmpty()
+    }
+
+    private fun JsonObject.stringValue(key: String): String {
+        return get(key)?.takeIf { !it.isJsonNull }?.asString.orEmpty()
     }
 
 }
