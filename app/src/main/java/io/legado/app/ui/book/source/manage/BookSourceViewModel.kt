@@ -139,20 +139,74 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
     fun selectionAutoGroup(sources: List<BookSourcePart>) {
         execute {
             val array = sources.map {
-                it.copy(bookSourceGroup = autoGroupName(it.bookSourceType))
+                val fullSource = appDb.bookSourceDao.getBookSource(it.bookSourceUrl)
+                it.copy(bookSourceGroup = autoGroupNames(it, fullSource))
             }
             appDb.bookSourceDao.upGroup(array)
         }
     }
 
-    private fun autoGroupName(bookSourceType: Int): String {
-        return when (bookSourceType) {
-            BookSourceType.image -> "漫画"
-            BookSourceType.audio -> "音频"
-            BookSourceType.video -> "视频"
-            BookSourceType.file -> "其它"
-            else -> "小说"
+    private fun autoGroupNames(source: BookSourcePart, fullSource: BookSource?): String {
+        val groups = arrayListOf(
+            when (source.bookSourceType) {
+                BookSourceType.image -> "漫画"
+                BookSourceType.audio -> "音频"
+                BookSourceType.video -> "视频"
+                BookSourceType.file -> "其它"
+                else -> "小说"
+            }
+        )
+        if (source.hasLoginUrl) {
+            groups.add("有登录入口")
         }
+        if (!source.hasSearchUrl) {
+            groups.add("无搜索")
+        }
+        if (source.hasExploreUrl) {
+            groups.add("有发现")
+        }
+        if (source.eventListener) {
+            groups.add("事件监听")
+        }
+        if (usesWebView(fullSource)) {
+            groups.add("WebView")
+        }
+        return TextUtils.join(",", groups)
+    }
+
+    private fun usesWebView(source: BookSource?): Boolean {
+        if (source == null) {
+            return false
+        }
+        if (!source.ruleContent?.webJs.isNullOrBlank()) {
+            return true
+        }
+        val ruleTexts = listOfNotNull(
+            source.bookUrlPattern,
+            source.jsLib,
+            source.header,
+            source.loginUrl,
+            source.loginUi,
+            source.loginCheckJs,
+            source.coverDecodeJs,
+            source.exploreUrl,
+            source.exploreScreen,
+            source.searchUrl,
+            source.ruleExplore?.let { GSON.toJson(it) },
+            source.ruleSearch?.let { GSON.toJson(it) },
+            source.ruleBookInfo?.let { GSON.toJson(it) },
+            source.ruleToc?.let { GSON.toJson(it) },
+            source.ruleContent?.let { GSON.toJson(it) },
+            source.ruleReview?.let { GSON.toJson(it) }
+        )
+        return ruleTexts.any { webViewRuleRegex.containsMatchIn(it) }
+    }
+
+    companion object {
+        private val webViewRuleRegex = Regex(
+            """@webjs:|["']?webView["']?\s*[:=]\s*(true|1|"true"|'true')|java\.webView(?:GetSource|GetOverrideUrl)?\s*\(|\bwebView(?:Await|GetSourceAwait|GetOverrideUrlAwait)?\s*\(""",
+            RegexOption.IGNORE_CASE
+        )
     }
 
     private fun saveToFile(sources: List<BookSource>, name: String, success: (file: File, name: String) -> Unit) {
