@@ -208,6 +208,44 @@
 - 整段删除确认
 - 标题优化确认
 
+### 通用弹窗外壳
+
+用于逐步统一日志、代码查看、导入预览、确认和输入类弹窗。
+
+结构：
+
+- window 背景必须透明，由弹窗根布局绘制大圆角承载面。
+- 根布局使用 `Ng.DialogRoot`，标题区使用 `Ng.DialogHeader` + `Ng.DialogTitle`。
+- 内容区使用 `Ng.DialogBody`，需要分块时使用 `Ng.DialogSection`。
+- 底部操作区使用 `Ng.DialogActionBar`，按钮使用 `Ng.DialogButton.Primary/Secondary`。
+- DialogFragment 在 `onStart()` 中调用 `applyNgDialogWindow()` 统一宽度、dim 和透明背景；长内容弹窗可用 `ngDialogMaxHeight()` 限制高度。
+
+推荐资源：
+
+- Kotlin helper：`io.legado.app.ui.widget.dialog.NgDialog`
+- Root：`@style/Ng.DialogRoot`
+- Header：`@style/Ng.DialogHeader`
+- Title：`@style/Ng.DialogTitle`
+- Body：`@style/Ng.DialogBody`
+- Section：`@style/Ng.DialogSection`
+- Action bar：`@style/Ng.DialogActionBar`
+- Buttons：`@style/Ng.DialogButton.Primary`、`@style/Ng.DialogButton.Secondary`
+
+迁移顺序：
+
+1. 日志和代码查看：`CodeDialog`、`AppLogDialog`、`NetworkLogDialog`、`CrashLogsDialog`。
+2. 文本查看：`TextDialog` 及 HTML/崩溃日志/帮助类内容。
+3. 导入预览和编辑类弹窗。
+4. 普通选择/输入 `AlertDialog`。
+5. 复杂业务弹窗，例如登录、TTS 编辑、规则编辑。
+
+约束：
+
+- 每批只迁移少量弹窗，迁移后由人工验收视觉和交互。
+- 公共外壳只处理视觉框架，不改变弹窗的数据、保存、删除、复制等业务行为。
+- 日志、代码、JSON 内容可以保持高信息密度，但不能贴边、不能使用旧 Toolbar 实色顶栏。
+- 日志、代码、JSON 长内容弹窗保留纵向滚动条；日志类窗口右上角可提供 `导出内容` 文字按钮，按钮颜色跟随主题强调色，导出应保留完整文本。
+
 ## 通用组件
 
 第一版 XML 资源已经落盘，后续新增或改造页面优先使用这些 `ng_*` 资源，不再新增功能私有的 `bg_ai_*`、`bg_xxx_card` 等重复资源，除非确有业务差异。

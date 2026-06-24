@@ -164,6 +164,77 @@
         <item name="android:includeFontPadding">false</item>
     </style>
 
+    <style name="Ng.DialogRoot">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:background">@drawable/ng_bg_dialog</item>
+        <item name="android:clipToOutline">true</item>
+    </style>
+
+    <style name="Ng.DialogHeader">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">@dimen/ng_dialog_padding</item>
+        <item name="android:paddingEnd">@dimen/ng_dialog_padding</item>
+        <item name="android:paddingTop">@dimen/ng_dialog_padding</item>
+        <item name="android:paddingBottom">12dp</item>
+    </style>
+
+    <style name="Ng.DialogTitle" parent="@style/Ng.Title">
+        <item name="android:textSize">24sp</item>
+    </style>
+
+    <style name="Ng.DialogBody">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">@dimen/ng_dialog_padding</item>
+        <item name="android:paddingEnd">@dimen/ng_dialog_padding</item>
+        <item name="android:paddingTop">@dimen/ng_space_s</item>
+        <item name="android:paddingBottom">@dimen/ng_space_l</item>
+    </style>
+
+    <style name="Ng.DialogSection">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/ng_bg_dialog_section</item>
+        <item name="android:padding">@dimen/ng_card_padding</item>
+    </style>
+
+    <style name="Ng.DialogActionBar">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/ng_bg_dialog_action_bar</item>
+        <item name="android:gravity">center_vertical|end</item>
+        <item name="android:paddingStart">@dimen/ng_dialog_padding</item>
+        <item name="android:paddingEnd">@dimen/ng_dialog_padding</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">@dimen/ng_dialog_padding</item>
+    </style>
+
+    <style name="Ng.DialogButton" parent="android:Widget.TextView">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">@dimen/ng_dialog_button_height</item>
+        <item name="android:gravity">center</item>
+        <item name="android:minWidth">96dp</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
+        <item name="android:textSize">17sp</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="Ng.DialogButton.Primary" parent="@style/Ng.DialogButton">
+        <item name="android:background">@drawable/ng_bg_button_primary</item>
+        <item name="android:textColor">@color/ng_on_primary</item>
+    </style>
+
+    <style name="Ng.DialogButton.Secondary" parent="@style/Ng.DialogButton">
+        <item name="android:background">@drawable/ng_bg_button_secondary</item>
+        <item name="android:textColor">@color/ng_primary</item>
+    </style>
+
     <style name="Ng.CardTitle" parent="android:Widget.TextView">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>

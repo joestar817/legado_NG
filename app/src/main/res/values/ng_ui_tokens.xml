@@ -48,6 +48,11 @@
     <dimen name="ng_radius_m">12dp</dimen>
     <dimen name="ng_radius_l">18dp</dimen>
     <dimen name="ng_radius_xl">24dp</dimen>
+    <dimen name="ng_dialog_radius">28dp</dimen>
+    <dimen name="ng_dialog_margin">16dp</dimen>
+    <dimen name="ng_dialog_padding">16dp</dimen>
+    <dimen name="ng_dialog_content_gap">12dp</dimen>
+    <dimen name="ng_dialog_button_height">48dp</dimen>
     <dimen name="ng_icon_size">44dp</dimen>
     <dimen name="ng_tag_height">24dp</dimen>
     <dimen name="ng_field_height">56dp</dimen>
