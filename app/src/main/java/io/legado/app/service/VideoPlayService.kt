@@ -234,12 +234,7 @@ class VideoPlayService : BaseService() {
         return super.onStartCommand(intent, flags, startId)
     }
 
-    @SuppressLint("UnspecifiedImmutableFlag")
     private fun initMediaSession() {
-        mediaSessionCompat.setFlags(
-            MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
-                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
-        )
         mediaSessionCompat.setCallback(object : MediaSessionCompat.Callback() {
             override fun onSeekTo(pos: Long) = playerView.seekTo(pos)
             override fun onPlay() = resume()

@@ -466,12 +466,7 @@ abstract class BaseReadAloudService : BaseService(),
     /**
      * 初始化MediaSession, 注册多媒体按钮
      */
-    @SuppressLint("UnspecifiedImmutableFlag")
     private fun initMediaSession() {
-        mediaSessionCompat.setFlags(
-            MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
-                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
-        )
         mediaSessionCompat.setCallback(object : MediaSessionCompat.Callback() {
             override fun onPlay() {
                 resumeReadAloud()
