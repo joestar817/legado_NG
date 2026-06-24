@@ -21,7 +21,6 @@ import io.legado.app.databinding.ItemBookSourceBinding
 import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.model.Debug
 import io.legado.app.ui.login.SourceLoginActivity
-import io.legado.app.ui.widget.recycler.DragSelectTouchHelper
 import io.legado.app.ui.widget.recycler.ItemTouchCallback
 import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.buildMainHandler
@@ -164,7 +163,7 @@ class BookSourceAdapter(
             cbBookSource.isChecked = selected.contains(source)
             upCheckSourceMessage(this, source)
             upSourceTags(this, source)
-            upSourceHost(this, holder.layoutPosition)
+            upSourceHost(this, holder)
         } else {
             payloads.filterIsInstance<Bundle>().forEach { bundle ->
                 bundle.keySet().forEach {
@@ -173,7 +172,7 @@ class BookSourceAdapter(
                         "upTags" -> upSourceTags(this, source)
                         "selected" -> cbBookSource.isChecked = selected.contains(source)
                         "checkSourceMessage" -> upCheckSourceMessage(this, source)
-                        "upSourceHost" -> upSourceHost(this, holder.layoutPosition)
+                        "upSourceHost" -> upSourceHost(this, holder)
                     }
                 }
             }
@@ -183,25 +182,27 @@ class BookSourceAdapter(
     override fun registerListener(holder: ItemViewHolder, binding: ItemBookSourceBinding) {
         binding.apply {
             sectionContainer.setOnClickListener {
-                (getItem(holder.layoutPosition) as? BookSourceListItem.Section)?.let {
+                (currentItem(holder) as? BookSourceListItem.Section)?.let {
                     callBack.toggleSection(it.key)
                 }
             }
             cbSection.setOnClickListener {
-                toggleSectionSelection(holder.layoutPosition)
+                (currentItem(holder) as? BookSourceListItem.Section)?.let {
+                    toggleSectionSelection(it)
+                }
             }
             ivSectionMore.setOnClickListener {
-                (getItem(holder.layoutPosition) as? BookSourceListItem.Section)?.let {
+                (currentItem(holder) as? BookSourceListItem.Section)?.let {
                     showSectionMenu(ivSectionMore, it)
                 }
             }
             ivSectionExpand.setOnClickListener {
-                (getItem(holder.layoutPosition) as? BookSourceListItem.Section)?.let {
+                (currentItem(holder) as? BookSourceListItem.Section)?.let {
                     callBack.toggleSection(it.key)
                 }
             }
             cbBookSource.setOnUserCheckedChangeListener { checked ->
-                (getItem(holder.layoutPosition) as? BookSourceListItem.Source)?.source?.let {
+                (currentItem(holder) as? BookSourceListItem.Source)?.source?.let {
                     if (checked) {
                         selected.add(it)
                     } else {
@@ -211,7 +212,10 @@ class BookSourceAdapter(
                 }
             }
             ivMenuMore.setOnClickListener {
-                showMenu(ivMenuMore, holder.layoutPosition)
+                val position = currentPosition(holder)
+                if (position != RecyclerView.NO_POSITION) {
+                    showMenu(ivMenuMore, position)
+                }
             }
         }
     }
@@ -350,7 +354,12 @@ class BookSourceAdapter(
             if (isFinalMessage || isEmpty || !Debug.isChecking) View.GONE else View.VISIBLE
     }
 
-    private fun upSourceHost(binding: ItemBookSourceBinding, position: Int) = binding.run {
+    private fun upSourceHost(binding: ItemBookSourceBinding, holder: ItemViewHolder) = binding.run {
+        val position = currentPosition(holder)
+        if (position == RecyclerView.NO_POSITION) {
+            tvHostText.gone()
+            return@run
+        }
         val item = getItem(position) as? BookSourceListItem.Source
         if (item != null && showSourceHost && isItemHeader(position)) {
             tvHostText.text = getHeaderText(position)
@@ -448,47 +457,6 @@ class BookSourceAdapter(
         }
     }
 
-    val dragSelectCallback: DragSelectTouchHelper.Callback =
-        object : DragSelectTouchHelper.AdvanceCallback<BookSourcePart>(Mode.ToggleAndReverse) {
-            override fun currentSelectedId(): MutableSet<BookSourcePart> {
-                return selected.toMutableSet().apply {
-                    getItems().forEachIndexed { index, item ->
-                        val section = item as? BookSourceListItem.Section ?: return@forEachIndexed
-                        if (section.sources.isNotEmpty() && section.sources.all { selected.contains(it) }) {
-                            add(sectionItemId(index))
-                        }
-                    }
-                }
-            }
-
-            override fun getItemId(position: Int): BookSourcePart {
-                return (getItem(position) as? BookSourceListItem.Source)?.source
-                    ?: sectionItemId(position)
-            }
-
-            override fun updateSelectState(position: Int, isSelected: Boolean): Boolean {
-                when (val item = getItem(position)) {
-                    is BookSourceListItem.Source -> {
-                        if (isSelected) {
-                            selected.add(item.source)
-                        } else {
-                            selected.remove(item.source)
-                        }
-                        notifyItemChanged(position, bundleOf(Pair("selected", null)))
-                        callBack.upCountView()
-                        return true
-                    }
-
-                    is BookSourceListItem.Section -> {
-                        selectSection(position, isSelected)
-                        return true
-                    }
-
-                    else -> return false
-                }
-            }
-        }
-
     private fun sectionSelectionSame(
         oldItem: BookSourceListItem,
         newItem: BookSourceListItem
@@ -512,14 +480,12 @@ class BookSourceAdapter(
             .distinctBy { it.bookSourceUrl }
     }
 
-    private fun toggleSectionSelection(position: Int) {
-        val section = getItem(position) as? BookSourceListItem.Section ?: return
+    private fun toggleSectionSelection(section: BookSourceListItem.Section) {
         val isAllSelected = section.sources.isNotEmpty() && section.sources.all { selected.contains(it) }
-        selectSection(position, !isAllSelected)
+        selectSection(section, !isAllSelected)
     }
 
-    private fun selectSection(position: Int, isSelected: Boolean) {
-        val section = getItem(position) as? BookSourceListItem.Section ?: return
+    private fun selectSection(section: BookSourceListItem.Section, isSelected: Boolean) {
         if (isSelected) {
             selected.addAll(section.sources)
         } else {
@@ -529,17 +495,22 @@ class BookSourceAdapter(
         callBack.upCountView()
     }
 
+    private fun currentItem(holder: ItemViewHolder): BookSourceListItem? {
+        val position = currentPosition(holder)
+        return if (position == RecyclerView.NO_POSITION) null else getItem(position)
+    }
+
+    private fun currentPosition(holder: ItemViewHolder): Int {
+        val position = holder.bindingAdapterPosition
+        return if (position in 0 until itemCount) position else RecyclerView.NO_POSITION
+    }
+
     private fun isNormalSection(title: String): Boolean {
         val abnormalKeywords = listOf("失效", "异常", "错误", "无效", "规则为空")
         if (title == "校验超时") {
             return false
         }
         return abnormalKeywords.none { title.contains(it) }
-    }
-
-    private fun sectionItemId(position: Int): BookSourcePart {
-        val section = getItem(position) as? BookSourceListItem.Section
-        return BookSourcePart(bookSourceUrl = "__section_${section?.key ?: position}")
     }
 
     private fun dp(value: Int): Int {

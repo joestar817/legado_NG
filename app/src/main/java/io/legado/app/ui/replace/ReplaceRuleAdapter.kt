@@ -16,7 +16,6 @@ import io.legado.app.base.adapter.RecyclerAdapter
 import io.legado.app.data.entities.ReplaceRule
 import io.legado.app.databinding.ItemReplaceRuleBinding
 import io.legado.app.lib.theme.backgroundColor
-import io.legado.app.ui.widget.recycler.DragSelectTouchHelper
 import io.legado.app.ui.widget.recycler.ItemTouchCallback
 import io.legado.app.utils.ColorUtils
 
@@ -180,25 +179,27 @@ class ReplaceRuleAdapter(context: Context, var callBack: CallBack) :
     override fun registerListener(holder: ItemViewHolder, binding: ItemReplaceRuleBinding) {
         binding.apply {
             sectionContainer.setOnClickListener {
-                (getItem(holder.layoutPosition) as? ReplaceRuleListItem.Section)?.let {
+                (currentItem(holder) as? ReplaceRuleListItem.Section)?.let {
                     callBack.toggleSection(it.key)
                 }
             }
             cbSection.setOnClickListener {
-                toggleSectionSelection(holder.layoutPosition)
+                (currentItem(holder) as? ReplaceRuleListItem.Section)?.let {
+                    toggleSectionSelection(it)
+                }
             }
             ivSectionMore.setOnClickListener {
-                (getItem(holder.layoutPosition) as? ReplaceRuleListItem.Section)?.let {
+                (currentItem(holder) as? ReplaceRuleListItem.Section)?.let {
                     showSectionMenu(ivSectionMore, it)
                 }
             }
             ivSectionExpand.setOnClickListener {
-                (getItem(holder.layoutPosition) as? ReplaceRuleListItem.Section)?.let {
+                (currentItem(holder) as? ReplaceRuleListItem.Section)?.let {
                     callBack.toggleSection(it.key)
                 }
             }
             cbName.setOnClickListener {
-                (getItem(holder.layoutPosition) as? ReplaceRuleListItem.Rule)?.let {
+                (currentItem(holder) as? ReplaceRuleListItem.Rule)?.let {
                     if (cbName.isChecked) {
                         selected.add(it.rule)
                     } else {
@@ -209,7 +210,10 @@ class ReplaceRuleAdapter(context: Context, var callBack: CallBack) :
                 callBack.upCountView()
             }
             ivMenuMore.setOnClickListener {
-                showRuleMenu(ivMenuMore, holder.layoutPosition)
+                val position = currentPosition(holder)
+                if (position != RecyclerView.NO_POSITION) {
+                    showRuleMenu(ivMenuMore, position)
+                }
             }
         }
     }
@@ -286,47 +290,6 @@ class ReplaceRuleAdapter(context: Context, var callBack: CallBack) :
         }
     }
 
-    val dragSelectCallback: DragSelectTouchHelper.Callback =
-        object : DragSelectTouchHelper.AdvanceCallback<ReplaceRule>(Mode.ToggleAndReverse) {
-            override fun currentSelectedId(): MutableSet<ReplaceRule> {
-                return selected.toMutableSet().apply {
-                    getItems().forEachIndexed { index, item ->
-                        val section = item as? ReplaceRuleListItem.Section ?: return@forEachIndexed
-                        if (section.rules.isNotEmpty() && section.rules.all { selected.contains(it) }) {
-                            add(sectionItemId(index))
-                        }
-                    }
-                }
-            }
-
-            override fun getItemId(position: Int): ReplaceRule {
-                return (getItem(position) as? ReplaceRuleListItem.Rule)?.rule
-                    ?: sectionItemId(position)
-            }
-
-            override fun updateSelectState(position: Int, isSelected: Boolean): Boolean {
-                when (val item = getItem(position)) {
-                    is ReplaceRuleListItem.Rule -> {
-                        if (isSelected) {
-                            selected.add(item.rule)
-                        } else {
-                            selected.remove(item.rule)
-                        }
-                        notifyItemRangeChanged(0, itemCount, bundleOf(Pair("selected", null)))
-                        callBack.upCountView()
-                        return true
-                    }
-
-                    is ReplaceRuleListItem.Section -> {
-                        selectSection(position, isSelected)
-                        return true
-                    }
-
-                    else -> return false
-                }
-            }
-        }
-
     private fun sectionSelectionSame(
         oldItem: ReplaceRuleListItem,
         newItem: ReplaceRuleListItem
@@ -350,14 +313,12 @@ class ReplaceRuleAdapter(context: Context, var callBack: CallBack) :
             .distinctBy { it.id }
     }
 
-    private fun toggleSectionSelection(position: Int) {
-        val section = getItem(position) as? ReplaceRuleListItem.Section ?: return
+    private fun toggleSectionSelection(section: ReplaceRuleListItem.Section) {
         val isAllSelected = section.rules.isNotEmpty() && section.rules.all { selected.contains(it) }
-        selectSection(position, !isAllSelected)
+        selectSection(section, !isAllSelected)
     }
 
-    private fun selectSection(position: Int, isSelected: Boolean) {
-        val section = getItem(position) as? ReplaceRuleListItem.Section ?: return
+    private fun selectSection(section: ReplaceRuleListItem.Section, isSelected: Boolean) {
         if (isSelected) {
             selected.addAll(section.rules)
         } else {
@@ -367,12 +328,14 @@ class ReplaceRuleAdapter(context: Context, var callBack: CallBack) :
         callBack.upCountView()
     }
 
-    private fun sectionItemId(position: Int): ReplaceRule {
-        val section = getItem(position) as? ReplaceRuleListItem.Section
-        return ReplaceRule(
-            id = Long.MIN_VALUE + position,
-            name = "__section_${section?.key ?: position}"
-        )
+    private fun currentItem(holder: ItemViewHolder): ReplaceRuleListItem? {
+        val position = currentPosition(holder)
+        return if (position == RecyclerView.NO_POSITION) null else getItem(position)
+    }
+
+    private fun currentPosition(holder: ItemViewHolder): Int {
+        val position = holder.bindingAdapterPosition
+        return if (position in 0 until itemCount) position else RecyclerView.NO_POSITION
     }
 
     private fun dp(value: Int): Int {
