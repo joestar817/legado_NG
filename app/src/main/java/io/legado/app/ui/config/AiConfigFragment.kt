@@ -22,7 +22,6 @@ import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
@@ -56,7 +55,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
 
-class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
+class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHandler {
 
     private enum class Page { MAIN, PROVIDERS, DETAIL, PROMPTS, PROMPT_DETAIL, PURIFY_SETTINGS }
 
@@ -85,13 +84,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         initPromptList()
         initPromptDetail()
         initPurifySettings()
-        initBack()
         showMain()
     }
 
     override fun onResume() {
         super.onResume()
-        bindTitleBarBack()
         refreshCurrentPage()
     }
 
@@ -380,23 +377,12 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         }
     }
 
-    private fun initBack() {
-        requireActivity().onBackPressedDispatcher.addCallback(
-            viewLifecycleOwner,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    navigateBack()
-                }
-            }
-        )
-        bindTitleBarBack()
-    }
-
-    private fun bindTitleBarBack() {
-        requireActivity().findViewById<TitleBar>(R.id.title_bar)
-            ?.setNavigationOnClickListener {
-                navigateBack()
-            }
+    override fun onConfigBackPressed(): Boolean {
+        if (currentPage == Page.MAIN) {
+            return false
+        }
+        navigateBack()
+        return true
     }
 
     private fun navigateBack() {
@@ -406,7 +392,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
             Page.PROVIDERS -> showMain()
             Page.PROMPTS -> showMain()
             Page.PURIFY_SETTINGS -> showMain()
-            Page.MAIN -> requireActivity().finish()
+            Page.MAIN -> Unit
         }
     }
 
@@ -430,7 +416,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         binding.layoutPromptList.isVisible = false
         binding.layoutPromptDetail.isVisible = false
         binding.layoutPurifySettings.isVisible = false
-        bindTitleBarBack()
         refreshMain()
     }
 
@@ -445,7 +430,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         binding.layoutPromptList.isVisible = false
         binding.layoutPromptDetail.isVisible = false
         binding.layoutPurifySettings.isVisible = false
-        bindTitleBarBack()
         refreshProviders()
     }
 
@@ -459,7 +443,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         binding.layoutPromptList.isVisible = false
         binding.layoutPromptDetail.isVisible = false
         binding.layoutPurifySettings.isVisible = false
-        bindTitleBarBack()
         refreshCurrentDetail()
     }
 
@@ -474,7 +457,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         binding.layoutPromptList.isVisible = true
         binding.layoutPromptDetail.isVisible = false
         binding.layoutPurifySettings.isVisible = false
-        bindTitleBarBack()
         refreshPrompts()
     }
 
@@ -489,7 +471,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         binding.layoutPromptList.isVisible = false
         binding.layoutPromptDetail.isVisible = true
         binding.layoutPurifySettings.isVisible = false
-        bindTitleBarBack()
         refreshPromptDetail()
     }
 
@@ -504,7 +485,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config) {
         binding.layoutPromptList.isVisible = false
         binding.layoutPromptDetail.isVisible = false
         binding.layoutPurifySettings.isVisible = true
-        bindTitleBarBack()
         refreshPurifySettings()
     }
 
