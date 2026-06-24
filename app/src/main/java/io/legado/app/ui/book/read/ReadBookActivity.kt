@@ -1479,15 +1479,6 @@ class ReadBookActivity : BaseReadBookActivity(),
         view.findViewById<TextView>(R.id.tv_chapter_model).text = model
         val selectedIndexes = candidates.indices.toMutableSet()
         val ruleCountView = view.findViewById<TextView>(R.id.tv_chapter_rule_count)
-        val visibleRuleContentHeaderWidth = (
-            resources.displayMetrics.widthPixels -
-                48.dpToPx() -
-                40.dpToPx() -
-                8.dpToPx() -
-                36.dpToPx() -
-                42.dpToPx() -
-                48.dpToPx()
-            ).coerceAtLeast(120.dpToPx())
         fun updateSelectionState() {
             ruleCountView.text = "${selectedIndexes.size}/${candidates.size}"
         }
@@ -1518,12 +1509,12 @@ class ReadBookActivity : BaseReadBookActivity(),
                 candidates = candidates,
                 selectedIndexes = selectedIndexes,
                 selectionActionText = selectionActionText(),
-                visibleContentHeaderWidth = visibleRuleContentHeaderWidth,
                 onSelectionAction = toggleRuleSelection,
                 onSelectionChanged = {
                     bindRuleTable()
                     updateSelectionState()
-                }
+                },
+                onRuleClick = ::showAiPurifyRuleDetailDialog
             )
         }
         bindRuleTable()
@@ -1593,9 +1584,9 @@ class ReadBookActivity : BaseReadBookActivity(),
         candidates: List<AiPurifyRuleCandidate>,
         selectedIndexes: MutableSet<Int>,
         selectionActionText: String,
-        visibleContentHeaderWidth: Int,
         onSelectionAction: () -> Unit,
-        onSelectionChanged: () -> Unit
+        onSelectionChanged: () -> Unit,
+        onRuleClick: (AiPurifyRuleCandidate) -> Unit
     ) {
         ruleTable.removeAllViews()
         ruleTable.addView(
@@ -1606,7 +1597,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                 content = getString(R.string.ai_purify_rule_column_content),
                 isHeader = true,
                 applyHeaderText = selectionActionText,
-                contentHeaderWidthPx = visibleContentHeaderWidth,
                 onApplyHeaderClick = onSelectionAction
             )
         )
@@ -1629,7 +1619,8 @@ class ReadBookActivity : BaseReadBookActivity(),
                             selectedIndexes.remove(index)
                         }
                         onSelectionChanged()
-                    }
+                    },
+                    onRowClick = { onRuleClick(candidate) }
                 )
             )
         }
@@ -1642,14 +1633,23 @@ class ReadBookActivity : BaseReadBookActivity(),
         content: String,
         isHeader: Boolean,
         applyHeaderText: String? = null,
-        contentHeaderWidthPx: Int? = null,
         onApplyHeaderClick: (() -> Unit)? = null,
-        onCheckedChanged: ((Boolean) -> Unit)? = null
+        onCheckedChanged: ((Boolean) -> Unit)? = null,
+        onRowClick: (() -> Unit)? = null
     ): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 1.dpToPx(), 0, 1.dpToPx())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            if (!isHeader && onRowClick != null) {
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { onRowClick.invoke() }
+            }
             addView(
                 if (checked == null) {
                     createAiPurifyTableText(
@@ -1710,10 +1710,10 @@ class ReadBookActivity : BaseReadBookActivity(),
             addView(
                 createAiPurifyTableText(
                     content,
-                    360,
+                    0,
+                    weight = 1f,
                     isHeader = isHeader,
-                    gravityValue = if (isHeader) Gravity.CENTER else Gravity.CENTER_VERTICAL,
-                    fixedWidthPx = contentHeaderWidthPx
+                    gravityValue = if (isHeader) Gravity.CENTER else Gravity.CENTER_VERTICAL
                 )
             )
         }
@@ -1753,6 +1753,167 @@ class ReadBookActivity : BaseReadBookActivity(),
         }
     }
 
+    private fun showAiPurifyRuleDetailDialog(candidate: AiPurifyRuleCandidate) {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.ng_bg_card)
+            setPadding(20.dpToPx(), 18.dpToPx(), 20.dpToPx(), 16.dpToPx())
+        }
+        root.addView(TextView(this).apply {
+            text = getString(R.string.ai_purify_rule_detail)
+            setTextColor(ContextCompat.getColor(this@ReadBookActivity, R.color.ng_on_surface))
+            textSize = 19f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        })
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 2.dpToPx(), 0, 2.dpToPx())
+            addView(
+                createAiPurifyRuleDetailSection(
+                    title = getString(R.string.original_text),
+                    text = candidate.pattern,
+                    titleColor = R.color.ng_on_surface_variant
+                )
+            )
+            addView(
+                createAiPurifyRuleDetailSection(
+                    title = getString(R.string.ai_purify_cleaned_text),
+                    text = candidate.replacement.ifBlank {
+                        getString(R.string.ai_purify_rule_deleted_result)
+                    },
+                    titleColor = R.color.ng_success
+                )
+            )
+            addView(
+                createAiPurifyRuleDetailSection(
+                    title = getString(R.string.ai_purify_deleted_content),
+                    text = candidate.aiPurifyRuleBriefContentSummary(),
+                    titleColor = R.color.ng_error
+                )
+            )
+        }
+        val scrollView = ScrollView(this).apply {
+            scrollBarStyle = View.SCROLLBARS_INSIDE_INSET
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(
+                content,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = 12.dpToPx()
+            }
+        }
+        root.addView(scrollView)
+
+        val closeButton = TextView(this).apply {
+            setText(R.string.close)
+            setTextColor(ContextCompat.getColor(this@ReadBookActivity, R.color.ng_error))
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setPadding(18.dpToPx(), 8.dpToPx(), 18.dpToPx(), 8.dpToPx())
+        }
+        root.addView(LinearLayout(this).apply {
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = 12.dpToPx()
+            }
+            addView(closeButton)
+        })
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(root)
+            .create()
+        closeButton.setOnClickListener {
+            dialog.dismiss()
+        }
+        dialog.setOnShowListener {
+            dialog.window?.run {
+                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                setLayout(
+                    resources.displayMetrics.widthPixels - 72.dpToPx(),
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+            scrollView.post {
+                val maxHeight = (resources.displayMetrics.heightPixels * 0.62f).toInt()
+                if (content.height > maxHeight) {
+                    scrollView.layoutParams = (scrollView.layoutParams as LinearLayout.LayoutParams).apply {
+                        height = maxHeight
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun createAiPurifyRuleDetailSection(
+        title: String,
+        text: String,
+        titleColor: Int
+    ): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.ng_bg_purify_panel)
+            setPadding(12.dpToPx(), 12.dpToPx(), 12.dpToPx(), 12.dpToPx())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = 10.dpToPx()
+            }
+            addView(LinearLayout(this@ReadBookActivity).apply {
+                gravity = Gravity.CENTER
+                orientation = LinearLayout.HORIZONTAL
+                addView(View(this@ReadBookActivity).apply {
+                    setBackgroundResource(R.drawable.ng_bg_purify_separator)
+                    layoutParams = LinearLayout.LayoutParams(0, 1.dpToPx(), 1f)
+                })
+                addView(TextView(this@ReadBookActivity).apply {
+                    this.text = title
+                    setTextColor(ContextCompat.getColor(this@ReadBookActivity, titleColor))
+                    textSize = 13f
+                    gravity = Gravity.CENTER
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        marginStart = 10.dpToPx()
+                        marginEnd = 10.dpToPx()
+                    }
+                })
+                addView(View(this@ReadBookActivity).apply {
+                    setBackgroundResource(R.drawable.ng_bg_purify_separator)
+                    layoutParams = LinearLayout.LayoutParams(0, 1.dpToPx(), 1f)
+                })
+            })
+            addView(TextView(this@ReadBookActivity).apply {
+                this.text = text
+                setTextColor(ContextCompat.getColor(this@ReadBookActivity, R.color.ng_on_surface))
+                textSize = 14f
+                setLineSpacing(2.dpToPx().toFloat(), 1f)
+                setTextIsSelectable(true)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = 8.dpToPx()
+                }
+            })
+        }
+    }
+
     private fun AiPurifyRuleCandidate.aiPurifyRuleTypeLabel(): String {
         return when (type) {
             "typo" -> getString(R.string.ai_purify_rule_type_typo)
@@ -1771,6 +1932,59 @@ class ReadBookActivity : BaseReadBookActivity(),
             getString(R.string.ai_purify_deleted_change, pattern)
         } else {
             getString(R.string.ai_purify_replaced_change, "$pattern -> $replacement")
+        }
+    }
+
+    private fun AiPurifyRuleCandidate.aiPurifyRuleBriefContentSummary(): String {
+        if (replacement.isEmpty()) {
+            return getString(R.string.ai_purify_deleted_change, pattern.compactAiPurifyRulePreview())
+        }
+        val diff = AiPurifyResult(
+            original = pattern,
+            cleaned = replacement,
+            deletedCount = 0,
+            replacementCount = 0,
+            deletedPreview = "",
+            replacementPreview = "",
+            canAutoApply = true,
+            riskReason = null,
+            model = null
+        ).toAiPurifyRuleDiff()
+        val changes = arrayListOf<String>()
+        val deletedPreview = diff.parts
+            .filter { it.replacement.isEmpty() }
+            .joinToString("") { it.pattern }
+            .compactAiPurifyRulePreview()
+        if (deletedPreview.isNotBlank()) {
+            changes.add(getString(R.string.ai_purify_deleted_change, deletedPreview))
+        }
+        val replacementPreview = diff.parts
+            .filter { it.replacement.isNotEmpty() }
+            .map {
+                val oldValue = (it.generalPattern ?: it.pattern).compactAiPurifyRulePreview(18)
+                val newValue = (it.generalReplacement ?: it.replacement).compactAiPurifyRulePreview(18)
+                "$oldValue -> $newValue"
+            }
+            .filterNot { it.isSameSideReplacementPreview() }
+            .joinToString("、")
+            .compactAiPurifyRulePreview()
+        if (replacementPreview.isNotBlank()) {
+            changes.add(getString(R.string.ai_purify_replaced_change, replacementPreview))
+        }
+        return changes.joinToString("\n").ifBlank {
+            getString(
+                R.string.ai_purify_replaced_change,
+                "${pattern.compactAiPurifyRulePreview(28)} -> ${replacement.compactAiPurifyRulePreview(28)}"
+            )
+        }
+    }
+
+    private fun String.compactAiPurifyRulePreview(maxLength: Int = 56): String {
+        val compact = replace("\n", "\\n").trim()
+        return if (compact.length <= maxLength) {
+            compact
+        } else {
+            compact.take(maxLength) + "..."
         }
     }
 

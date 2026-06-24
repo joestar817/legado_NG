@@ -199,6 +199,7 @@
     <string name="ai_purify_rule_type_ad">Ad</string>
     <string name="ai_purify_deleted_change">Deleted: %1$s</string>
     <string name="ai_purify_replaced_change">Replaced: %1$s</string>
+    <string name="ai_purify_rule_deleted_result">Deleted</string>
     <string name="ai_purify_change_content_none">No changed content</string>
     <string name="ai_purify_elapsed_seconds">%1$.1f s</string>
     <string name="ai_purify_elapsed">Elapsed</string>

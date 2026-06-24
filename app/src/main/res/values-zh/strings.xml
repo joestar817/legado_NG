@@ -198,6 +198,7 @@
     <string name="ai_purify_rule_type_ad">广告</string>
     <string name="ai_purify_deleted_change">删除：%1$s</string>
     <string name="ai_purify_replaced_change">替换：%1$s</string>
+    <string name="ai_purify_rule_deleted_result">已删除</string>
     <string name="ai_purify_change_content_none">无变更内容</string>
     <string name="ai_purify_elapsed_seconds">%1$.1f 秒</string>
     <string name="ai_purify_elapsed">耗时</string>

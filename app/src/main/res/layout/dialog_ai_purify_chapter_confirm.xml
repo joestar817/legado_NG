@@ -240,21 +240,11 @@
                 android:paddingEnd="4dp"
                 android:paddingBottom="6dp">
 
-                <HorizontalScrollView
+                <LinearLayout
+                    android:id="@+id/layout_chapter_rule_table"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:fillViewport="false"
-                    android:overScrollMode="ifContentScrolls"
-                    android:scrollbarStyle="outsideOverlay"
-                    android:scrollbars="horizontal">
-
-                    <LinearLayout
-                        android:id="@+id/layout_chapter_rule_table"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical" />
-
-                </HorizontalScrollView>
+                    android:orientation="vertical" />
 
             </FrameLayout>
 
