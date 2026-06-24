@@ -449,6 +449,14 @@
     <string name="dark_status_icon">Darken the status bar\'s icon color</string>
     <string name="content">Content</string>
     <string name="copy_text">Copy</string>
+    <string name="copy_content">Copy content</string>
+    <string name="export_content">Export content</string>
+    <string name="export_content_started">Exporting full text file</string>
+    <string name="export_failed">Export failed</string>
+    <string name="export_content_empty">No content to export</string>
+    <string name="log_feature_disabled">Feature is disabled</string>
+    <string name="log_empty">No logs yet</string>
+    <string name="large_text_preview_suffix">\n\n... Previewing first %1$d/%2$d chars. Use Export content for the full text.</string>
     <string name="download_all">Download all</string>
     <string name="content_sl">This is a test text, \n\u3000\u3000 just to show you the effect</string>
     <string name="text_bg_style">Color and background (long tap to customize)</string>

@@ -309,10 +309,49 @@ fun Context.shareWithQr(
 }
 
 fun Context.sendToClip(text: String) {
-    val clipData = ClipData.newPlainText(null, text)
-    clipboardManager.setPrimaryClip(clipData)
-    longToastOnUi(R.string.copy_complete)
+    if (text.toByteArray().size > CLIPBOARD_DIRECT_COPY_MAX_BYTES) {
+        exportTextContent(text)
+        return
+    }
+    if (setPrimaryClipSafely(text)) {
+        longToastOnUi(R.string.copy_complete)
+        return
+    }
+    exportTextContent(text)
 }
+
+private fun Context.setPrimaryClipSafely(text: String): Boolean {
+    return runCatching {
+        val clipData = ClipData.newPlainText(null, text)
+        clipboardManager.setPrimaryClip(clipData)
+    }.isSuccess
+}
+
+fun Context.exportTextContent(text: String, filePrefix: String = "legado-log") {
+    runCatching {
+        val dir = File(externalCacheDir ?: cacheDir, "share")
+        dir.mkdirs()
+        val file = File(dir, "$filePrefix-${System.currentTimeMillis()}.txt")
+        file.writeText(text)
+        val uri = FileProvider.getUriForFile(this, AppConst.authority, file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            type = "text/plain"
+            clipData = ClipData.newUri(contentResolver, file.name, uri)
+            putExtra(Intent.EXTRA_STREAM, uri)
+        }
+        val chooser = Intent.createChooser(intent, getString(R.string.share)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(chooser)
+        longToastOnUi(R.string.export_content_started)
+    }.onFailure {
+        longToastOnUi(R.string.export_failed)
+    }
+}
+
+private const val CLIPBOARD_DIRECT_COPY_MAX_BYTES = 64 * 1024
 
 fun Context.getClipText(): String? {
     clipboardManager.primaryClip?.let {

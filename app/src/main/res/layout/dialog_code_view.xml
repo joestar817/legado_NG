@@ -1,26 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:background="@color/background"
-    android:orientation="vertical">
+    style="@style/Ng.DialogRoot"
+    android:layout_height="match_parent">
 
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/tool_bar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:theme="?attr/actionBarStyle"
+        android:layout_height="58dp"
+        android:background="@android:color/transparent"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
         app:title="code edit"
         app:popupTheme="@style/AppTheme.PopupOverlay"
+        app:titleTextColor="@color/ng_on_surface"
         app:titleTextAppearance="@style/ToolbarTitle" />
 
-    <io.legado.app.ui.widget.code.CodeView
-        android:id="@+id/code_view"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:gravity="top|start"
-        android:padding="12dp" />
+        android:layout_height="0dp"
+        android:layout_marginStart="@dimen/ng_dialog_padding"
+        android:layout_marginEnd="@dimen/ng_dialog_padding"
+        android:layout_marginBottom="@dimen/ng_dialog_padding"
+        android:layout_weight="1"
+        android:background="@drawable/ng_bg_dialog_section"
+        android:padding="4dp">
+
+        <io.legado.app.ui.widget.code.CodeView
+            android:id="@+id/code_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/transparent"
+            android:gravity="top|start"
+            android:padding="4dp"
+            android:scrollbarStyle="insideInset"
+            android:scrollbars="vertical" />
+
+    </FrameLayout>
 
 </LinearLayout>
 

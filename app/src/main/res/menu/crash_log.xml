@@ -5,6 +5,11 @@
     tools:ignore="AlwaysShowAction">
 
     <item
+        android:id="@+id/menu_copy_content"
+        android:title="@string/export_content"
+        app:showAsAction="always" />
+
+    <item
         android:id="@+id/menu_clear"
         android:title="@string/clear"
         app:showAsAction="always" />

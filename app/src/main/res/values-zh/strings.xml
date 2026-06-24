@@ -447,6 +447,14 @@
     <string name="dark_status_icon">深色状态栏图标</string>
     <string name="content">内容</string>
     <string name="copy_text">拷贝内容</string>
+    <string name="copy_content">复制内容</string>
+    <string name="export_content">导出内容</string>
+    <string name="export_content_started">正在导出完整文本文件</string>
+    <string name="export_failed">导出失败</string>
+    <string name="export_content_empty">没有可导出的内容</string>
+    <string name="log_feature_disabled">功能未开启</string>
+    <string name="log_empty">暂无日志</string>
+    <string name="large_text_preview_suffix">\n\n……仅预览前 %1$d/%2$d 字符，全文请使用右上角导出内容</string>
     <string name="download_all">一键缓存</string>
     <string name="content_sl">这是一段测试文字\n\u3000\u3000只是让你看看效果的</string>
     <string name="text_bg_style">文字颜色和背景（长按自定义）</string>

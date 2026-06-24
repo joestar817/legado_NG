@@ -4,6 +4,9 @@ package io.legado.app.utils
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -79,6 +82,15 @@ fun Menu.iconItemOnLongClick(id: Int, function: (view: View) -> Unit) {
             setOnClickListener {
                 performIdentifierAction(id, 0)
             }
+        }
+    }
+}
+
+fun Menu.tintTitle(id: Int, color: Int): Menu = apply {
+    findItem(id)?.let { item ->
+        val title = item.title ?: return@let
+        item.title = SpannableString(title).apply {
+            setSpan(ForegroundColorSpan(color), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
 }

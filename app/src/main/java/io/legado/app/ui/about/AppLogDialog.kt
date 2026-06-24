@@ -12,50 +12,101 @@ import io.legado.app.base.BaseDialogFragment
 import io.legado.app.base.adapter.ItemViewHolder
 import io.legado.app.base.adapter.RecyclerAdapter
 import io.legado.app.constant.AppLog
-import io.legado.app.databinding.DialogRecyclerViewBinding
+import io.legado.app.databinding.DialogNgRecyclerViewBinding
 import io.legado.app.databinding.ItemAppLogBinding
-import io.legado.app.lib.theme.primaryColor
+import io.legado.app.help.config.AppConfig
+import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.widget.dialog.TextDialog
+import io.legado.app.ui.widget.dialog.applyNgDialogWindow
+import io.legado.app.ui.widget.dialog.ngDialogMaxHeight
+import io.legado.app.utils.applyTint
 import io.legado.app.utils.LogUtils
-import io.legado.app.utils.setLayout
+import io.legado.app.utils.exportTextContent
 import io.legado.app.utils.showDialogFragment
+import io.legado.app.utils.tintTitle
+import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import splitties.views.onClick
 import java.util.*
 
-class AppLogDialog : BaseDialogFragment(R.layout.dialog_recycler_view),
+class AppLogDialog : BaseDialogFragment(R.layout.dialog_ng_recycler_view),
     Toolbar.OnMenuItemClickListener {
 
-    private val binding by viewBinding(DialogRecyclerViewBinding::bind)
+    private val binding by viewBinding(DialogNgRecyclerViewBinding::bind)
     private val adapter by lazy {
         LogAdapter(requireContext())
     }
 
     override fun onStart() {
         super.onStart()
-        setLayout(0.9f, ViewGroup.LayoutParams.WRAP_CONTENT)
+        applyNgDialogWindow(height = ngDialogMaxHeight(0.82f))
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         binding.run {
-            toolBar.setBackgroundColor(primaryColor)
+            view.setBackgroundResource(R.drawable.ng_bg_dialog)
             toolBar.setTitle(R.string.log)
             toolBar.inflateMenu(R.menu.app_log)
+            toolBar.menu.applyTint(requireContext())
+            toolBar.menu.tintTitle(R.id.menu_copy_content, requireContext().accentColor)
+            toolBar.menu.tintTitle(R.id.menu_clear, requireContext().accentColor)
             toolBar.setOnMenuItemClickListener(this@AppLogDialog)
             recyclerView.layoutManager = LinearLayoutManager(requireContext())
             recyclerView.adapter = adapter
         }
-        adapter.setItems(AppLog.logs)
+        val logs = AppLog.logs
+        adapter.setItems(logs)
+        updateEmptyState(logs)
     }
 
     override fun onMenuItemClick(item: MenuItem?): Boolean {
         when (item?.itemId) {
+            R.id.menu_copy_content -> {
+                val logs = AppLog.logs
+                if (logs.isEmpty()) {
+                    requireContext().toastOnUi(R.string.export_content_empty)
+                    return true
+                }
+                requireContext().exportTextContent(
+                    formatLogs(logs),
+                    filePrefix = "legado-app-log"
+                )
+            }
             R.id.menu_clear -> {
                 AppLog.clear()
                 adapter.clearItems()
+                updateEmptyState(emptyList())
             }
         }
         return true
+    }
+
+    private fun updateEmptyState(logs: List<Triple<Long, String, Throwable?>>) {
+        val hasLogs = logs.isNotEmpty()
+        binding.toolBar.menu.findItem(R.id.menu_copy_content)?.isVisible = hasLogs
+        binding.recyclerView.visibility = if (hasLogs) View.VISIBLE else View.GONE
+        binding.tvMsg.visibility = if (hasLogs) View.GONE else View.VISIBLE
+        binding.tvMsg.setText(
+            if (AppConfig.recordLog) {
+                R.string.log_empty
+            } else {
+                R.string.log_feature_disabled
+            }
+        )
+    }
+
+    private fun formatLogs(logs: List<Triple<Long, String, Throwable?>>): String {
+        return logs.joinToString("\n\n") { item ->
+            buildString {
+                append(LogUtils.logTimeFormat.format(Date(item.first)))
+                append('\n')
+                append(item.second)
+                item.third?.let {
+                    append('\n')
+                    append(it.stackTraceToString())
+                }
+            }
+        }
     }
 
     inner class LogAdapter(context: Context) :

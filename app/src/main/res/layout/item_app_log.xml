@@ -2,20 +2,32 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="6dp"
-    android:background="?android:attr/selectableItemBackground"
-    android:orientation="vertical">
+    android:layout_marginStart="10dp"
+    android:layout_marginEnd="10dp"
+    android:layout_marginBottom="8dp"
+    android:background="@drawable/ng_bg_card"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?android:attr/selectableItemBackground"
+    android:orientation="vertical"
+    android:padding="12dp">
 
     <TextView
         android:id="@+id/text_time"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:textColor="@color/ng_on_surface_variant"
+        android:textSize="12sp" />
 
     <TextView
         android:id="@+id/text_message"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
         android:contentDescription="@string/log"
+        android:textColor="@color/ng_on_surface"
+        android:textSize="14sp"
         android:textIsSelectable="true"
         android:autoLink="web" />
 

@@ -13,7 +13,6 @@ import io.legado.app.base.adapter.ItemViewHolder
 import io.legado.app.base.adapter.RecyclerAdapter
 import io.legado.app.databinding.ItemBookSourceDebugBinding
 import io.legado.app.ui.widget.dialog.CodeDialog
-import io.legado.app.ui.widget.dialog.TextDialog
 import io.legado.app.utils.GSON
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.gone
@@ -128,19 +127,17 @@ class BookSourceDebugAdapter(context: Context) :
         val position = holder.layoutPosition
         if (position < 0) return
         (getItem(position) as? DebugItem.Phase)?.let { item ->
-            if (item.rawText.isNotBlank()) {
+            if (item.hasRawText) {
                 val activity = context as? AppCompatActivity ?: return@let
-                if (item.hasResponse) {
-                    activity.showDialogFragment(
-                        CodeDialog(
-                            code = item.rawText,
-                            title = item.title,
-                            highlightMode = CodeDialog.HighlightMode.DebugLog
-                        )
+                val rawText = phaseRawText(item.phaseId)
+                if (rawText.isBlank()) return@let
+                activity.showDialogFragment(
+                    CodeDialog(
+                        code = rawText,
+                        title = item.title,
+                        highlightMode = CodeDialog.HighlightMode.DebugLog
                     )
-                } else {
-                    activity.showDialogFragment(TextDialog(item.title, item.rawText))
-                }
+                )
             }
         }
     }
@@ -172,10 +169,14 @@ class BookSourceDebugAdapter(context: Context) :
         binding.textPhaseMeta.text = item.meta
         binding.textPhaseDetail.text = item.detail
         binding.textPhaseDetail.visible(item.detail.isNotBlank())
-        binding.textPhaseHint.visible(item.rawText.isNotBlank())
+        binding.textPhaseHint.visible(item.hasRawText)
     }
 
     private fun buildItems(): List<DebugItem> {
+        return buildItems(buildPhaseStates())
+    }
+
+    private fun buildPhaseStates(): List<PhaseState> {
         if (logs.isEmpty()) return emptyList()
         val type = DebugType.from(logs.firstOrNull()?.message.orEmpty())
         val phases = type.phases.map { PhaseState(it.id, it.title) }
@@ -219,7 +220,11 @@ class BookSourceDebugAdapter(context: Context) :
             }
         }
 
-        val visiblePhases = phases.filter { it.logs.isNotEmpty() || it.status != StepStatus.Pending }
+        return phases.filter { it.logs.isNotEmpty() || it.status != StepStatus.Pending }
+    }
+
+    private fun buildItems(visiblePhases: List<PhaseState>): List<DebugItem> {
+        if (visiblePhases.isEmpty()) return emptyList()
         val totalDuration = logs.mapNotNull { it.elapsedMs }.maxOrNull()
         return buildList {
             visiblePhases.forEachIndexed { index, phase ->
@@ -234,11 +239,12 @@ class BookSourceDebugAdapter(context: Context) :
                 val hasResponse = phase.responses.isNotEmpty()
                 add(
                     DebugItem.Phase(
+                        phaseId = phase.id,
                         title = phase.title,
                         status = phase.status,
                         summary = phaseSummary(phase),
                         detail = phaseDetail(phase),
-                        rawText = phaseRawText(phase, hasResponse),
+                        hasRawText = phaseHasRawText(phase),
                         hasResponse = hasResponse,
                         index = index,
                         isLast = index == visiblePhases.lastIndex,
@@ -253,6 +259,11 @@ class BookSourceDebugAdapter(context: Context) :
                 )
             }
         }
+    }
+
+    private fun phaseRawText(phaseId: String): String {
+        val phase = buildPhaseStates().firstOrNull { it.id == phaseId } ?: return ""
+        return phaseRawText(phase, phase.responses.isNotEmpty())
     }
 
     private fun phaseDuration(startMs: Long?, endMs: Long?, nextStartMs: Long?): Long? {
@@ -333,6 +344,10 @@ class BookSourceDebugAdapter(context: Context) :
         }
     }
 
+    private fun phaseHasRawText(phase: PhaseState): Boolean {
+        return sourceName.isNotBlank() || phase.logs.isNotEmpty() || phase.responses.isNotEmpty()
+    }
+
     private fun StringBuilder.appendRawSection(title: String, content: String, codeStyle: Boolean) {
         if (content.isBlank()) return
         if (isNotBlank()) append("\n\n")
@@ -341,7 +356,7 @@ class BookSourceDebugAdapter(context: Context) :
         } else {
             append("== ").append(title).append(" ==\n")
         }
-        append(content.limitRawSection())
+        append(content)
     }
 
     private fun formatResponseBody(body: String): FormattedBody {
@@ -407,16 +422,6 @@ class BookSourceDebugAdapter(context: Context) :
                 !endsWith("/>") &&
                 !contains("</") &&
                 !htmlVoidTagRegex.containsMatchIn(this)
-    }
-
-    private fun String.limitRawSection(): String {
-        if (length <= MAX_RAW_SECTION_CHARS) return this
-        return buildString {
-            append(take(MAX_RAW_SECTION_CHARS))
-            append("\n\n// ... 内容过长，已截断，原始长度 ")
-            append(length)
-            append(" 字符")
-        }
     }
 
     private fun detectPhase(type: DebugType, message: String, currentId: String): String {
@@ -630,11 +635,12 @@ class BookSourceDebugAdapter(context: Context) :
 
     sealed class DebugItem {
         data class Phase(
+            val phaseId: String,
             val title: String,
             val status: StepStatus,
             val summary: String,
             val detail: String,
-            val rawText: String,
+            val hasRawText: Boolean,
             val hasResponse: Boolean,
             val index: Int,
             val isLast: Boolean,
@@ -741,7 +747,6 @@ class BookSourceDebugAdapter(context: Context) :
     }
 
     private companion object {
-        private const val MAX_RAW_SECTION_CHARS = 128 * 1024
         private val htmlVoidTagRegex = Regex(
             "^<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\\b",
             RegexOption.IGNORE_CASE
