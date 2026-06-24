@@ -39,6 +39,7 @@
                 app:layout_constraintLeft_toLeftOf="parent"
                 app:layout_constraintRight_toLeftOf="@+id/tv_custom_btn"
                 app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
                 tools:visibility="visible"
                 tools:text="章节名" />
 
@@ -51,45 +52,46 @@
                 android:singleLine="true"
                 android:visibility="gone"
                 app:layout_constraintLeft_toLeftOf="parent"
-                app:layout_constraintRight_toLeftOf="@+id/tv_custom_btn"
+                app:layout_constraintRight_toRightOf="parent"
                 app:layout_constraintTop_toBottomOf="@+id/tv_chapter_name"
-                tools:visibility="visible"
                 tools:text="http" />
 
             <androidx.appcompat.widget.AppCompatImageView
                 android:id="@+id/tv_custom_btn"
-                android:layout_width="wrap_content"
-                android:layout_height="0dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:layout_margin="1dp"
                 android:paddingStart="8dp"
                 android:paddingEnd="4dp"
                 android:src="@drawable/ic_custom"
                 android:visibility="gone"
-                app:layout_constraintBottom_toBottomOf="@+id/tv_chapter_url"
+                app:layout_constraintBottom_toBottomOf="@+id/tv_source_action"
                 app:layout_constraintRight_toLeftOf="@+id/tv_source_action"
-                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintTop_toTopOf="@+id/tv_source_action"
                 tools:visibility="visible"
                 tools:ignore="ContentDescription" />
 
             <androidx.appcompat.widget.AppCompatTextView
                 android:id="@+id/tv_source_action"
                 android:layout_width="wrap_content"
-                android:layout_height="0dp"
+                android:layout_height="32dp"
                 android:layout_margin="1dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:clickable="true"
                 android:ellipsize="end"
                 android:focusable="true"
-                android:gravity="center"
-                android:maxWidth="120dp"
+                android:gravity="center_vertical|end"
+                android:maxWidth="240dp"
                 android:paddingLeft="6dp"
                 android:paddingRight="6dp"
                 android:singleLine="true"
                 android:text="@string/book_source"
                 android:textColor="@color/accent"
-                app:layout_constraintBottom_toBottomOf="@+id/tv_chapter_url"
+                android:textStyle="bold"
                 app:layout_constraintRight_toRightOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                tools:text="NovelHub · 总群四合一" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 

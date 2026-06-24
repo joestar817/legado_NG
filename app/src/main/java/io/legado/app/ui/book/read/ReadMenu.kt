@@ -5,20 +5,29 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.database.ContentObserver
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.PorterDuff
 import android.graphics.PixelFormat
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.provider.Settings
+import android.text.TextUtils
 import android.util.AttributeSet
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
 import android.view.animation.Animation
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.SeekBar
-import androidx.appcompat.widget.PopupMenu
+import android.widget.TextView
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import io.legado.app.R
@@ -118,17 +127,13 @@ class ReadMenu @JvmOverloads constructor(
             PreferKey.showBrightnessView,
             true
         )
-    private val sourceMenu by lazy {
-        PopupMenu(context, binding.tvSourceAction).apply {
-            inflate(R.menu.book_read_source)
-            setOnMenuItemClickListener {
-                when (it.itemId) {
-                    R.id.menu_login -> callBack.showLogin()
-                    R.id.menu_chapter_pay -> callBack.payAction()
-                    R.id.menu_edit_source -> callBack.openSourceEditActivity()
-                    R.id.menu_disable_source -> callBack.disableSource()
-                }
-                true
+    private val sourceActionPopup by lazy {
+        SourceActionPopup(context) {
+            when (it) {
+                R.id.menu_login -> callBack.showLogin()
+                R.id.menu_chapter_pay -> callBack.payAction()
+                R.id.menu_edit_source -> callBack.openSourceEditActivity()
+                R.id.menu_disable_source -> callBack.disableSource()
             }
         }
     }
@@ -154,11 +159,8 @@ class ReadMenu @JvmOverloads constructor(
             binding.tvSourceAction.text =
                 ReadBook.bookSource?.bookSourceName ?: context.getString(R.string.book_source)
             binding.tvSourceAction.isGone = ReadBook.isLocalBook
-            ReadBook.bookSource?.let {
-                if (it.customButton) {
-                    binding.tvCustomBtn.visibility = VISIBLE
-                }
-            }
+            binding.tvCustomBtn.isGone = ReadBook.isLocalBook ||
+                    ReadBook.bookSource?.customButton != true
             callBack.upSystemUiVisibility()
             binding.llBrightness.visible(showBrightnessView)
         }
@@ -509,15 +511,15 @@ class ReadMenu @JvmOverloads constructor(
             if (ReadBook.isLocalBook) {
                 return@OnClickListener
             }
+            val chapterUrl = tvChapterUrl.tag as? String ?: tvChapterUrl.text.toString()
             if (AppConfig.readUrlInBrowser) {
-                context.openUrl(tvChapterUrl.text.toString().substringBefore(",{"))
+                context.openUrl(chapterUrl.substringBefore(",{"))
             } else {
                 Coroutine.async {
                     context.startActivity<WebViewActivity> {
-                        val url = tvChapterUrl.text.toString()
                         val bookSource = ReadBook.bookSource
                         putExtra("title", tvChapterName.text)
-                        putExtra("url", url)
+                        putExtra("url", chapterUrl)
                         putExtra("sourceOrigin", bookSource?.bookSourceUrl)
                         putExtra("sourceName", bookSource?.bookSourceName)
                         putExtra("sourceType", bookSource?.getSourceType())
@@ -575,13 +577,11 @@ class ReadMenu @JvmOverloads constructor(
         }
         //书源操作
         tvSourceAction.onClick {
-            sourceMenu.menu.findItem(R.id.menu_login).isVisible =
-                !ReadBook.bookSource?.loginUrl.isNullOrEmpty()
-            sourceMenu.menu.findItem(R.id.menu_chapter_pay).isVisible =
-                !ReadBook.bookSource?.loginUrl.isNullOrEmpty()
-                        && ReadBook.curTextChapter?.isVip == true
-                        && ReadBook.curTextChapter?.isPay != true
-            sourceMenu.show()
+            val showLogin = !ReadBook.bookSource?.loginUrl.isNullOrEmpty()
+            val showChapterPay = showLogin
+                    && ReadBook.curTextChapter?.isVip == true
+                    && ReadBook.curTextChapter?.isPay != true
+            sourceActionPopup.show(binding.tvSourceAction, showLogin, showChapterPay)
         }
         //亮度跟随
         ivBrightnessAuto.setOnClickListener {
@@ -724,9 +724,11 @@ class ReadMenu @JvmOverloads constructor(
             binding.tvChapterName.text = it.title
             binding.tvChapterName.visible()
             if (!ReadBook.isLocalBook) {
-                binding.tvChapterUrl.text = it.chapter.getAbsoluteURL()
-                binding.tvChapterUrl.visible()
+                binding.tvChapterUrl.tag = it.chapter.getAbsoluteURL()
+                binding.tvChapterUrl.text = null
+                binding.tvChapterUrl.gone()
             } else {
+                binding.tvChapterUrl.tag = null
                 binding.tvChapterUrl.gone()
             }
             upSeekBar()
@@ -734,6 +736,7 @@ class ReadMenu @JvmOverloads constructor(
             binding.tvNext.isEnabled = ReadBook.durChapterIndex != ReadBook.simulatedChapterSize - 1
         } ?: let {
             binding.tvChapterName.gone()
+            binding.tvChapterUrl.tag = null
             binding.tvChapterUrl.gone()
         }
     }
@@ -794,6 +797,69 @@ class ReadMenu @JvmOverloads constructor(
                 .leftToLeftOf(R.id.ll_brightness, R.id.vw_menu_root)
                 .commit()
         }
+    }
+
+    private class SourceActionPopup(
+        context: Context,
+        private val onItemClick: (Int) -> Unit
+    ) : PopupWindow(160.dpToPx(), ViewGroup.LayoutParams.WRAP_CONTENT) {
+
+        private val menuLogin = createMenuItem(context, R.string.login, R.id.menu_login)
+        private val menuChapterPay = createMenuItem(
+            context,
+            R.string.chapter_pay,
+            R.id.menu_chapter_pay
+        )
+
+        init {
+            contentView = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 4.dpToPx(), 0, 4.dpToPx())
+                setBackgroundResource(R.drawable.bg_popup_menu)
+                addView(menuLogin)
+                addView(menuChapterPay)
+                addView(createMenuItem(context, R.string.edit_book_source, R.id.menu_edit_source))
+                addView(createMenuItem(context, R.string.disable_book_source, R.id.menu_disable_source))
+            }
+            isTouchable = true
+            isOutsideTouchable = true
+            isFocusable = true
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            elevation = 4.dpToPx().toFloat()
+        }
+
+        fun show(anchor: View, showLogin: Boolean, showChapterPay: Boolean) {
+            menuLogin.isVisible = showLogin
+            menuChapterPay.isVisible = showChapterPay
+            if (isShowing) {
+                dismiss()
+            }
+            showAsDropDown(anchor, anchor.width - width, 0)
+        }
+
+        private fun createMenuItem(context: Context, titleRes: Int, itemId: Int): TextView {
+            val outValue = TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
+            return TextView(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    44.dpToPx()
+                )
+                ellipsize = TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER_VERTICAL
+                maxLines = 1
+                setBackgroundResource(outValue.resourceId)
+                setPadding(16.dpToPx(), 0, 12.dpToPx(), 0)
+                setText(titleRes)
+                setTextColor(context.primaryTextColor)
+                textSize = 16f
+                setOnClickListener {
+                    dismiss()
+                    onItemClick(itemId)
+                }
+            }
+        }
+
     }
 
     interface CallBack {
