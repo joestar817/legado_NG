@@ -2,42 +2,56 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical">
+    style="@style/Ng.DialogRoot">
 
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/tool_bar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/background_menu"
-        android:elevation="5dp"
-        android:theme="?attr/actionBarStyle"
+        android:layout_height="58dp"
+        android:background="@android:color/transparent"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
         app:popupTheme="@style/AppTheme.PopupOverlay"
         app:title="@string/input_verification_code"
-        app:titleTextAppearance="@style/ToolbarTitle" />
+        app:subtitleTextColor="@color/ng_on_surface_variant"
+        app:titleTextAppearance="@style/ToolbarTitle"
+        app:titleTextColor="@color/ng_on_surface" />
 
-    <androidx.appcompat.widget.AppCompatImageView
-        android:id="@+id/verification_code_image_view"
-        android:layout_width="match_parent"
-        android:layout_height="100dp"
-        android:background="?android:attr/selectableItemBackgroundBorderless"
-        android:scaleType="fitCenter"
-        tools:ignore="UnusedAttribute" />
-
-    <io.legado.app.ui.widget.text.TextInputLayout
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:padding="3dp">
+        android:layout_marginStart="@dimen/ng_dialog_padding"
+        android:layout_marginEnd="@dimen/ng_dialog_padding"
+        android:layout_marginBottom="@dimen/ng_dialog_padding"
+        android:background="@drawable/ng_bg_dialog_section"
+        android:orientation="vertical"
+        android:padding="@dimen/ng_dialog_padding">
 
-        <io.legado.app.lib.theme.view.ThemeEditText
+        <androidx.appcompat.widget.AppCompatImageView
+            android:id="@+id/verification_code_image_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:adjustViewBounds="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:scaleType="fitCenter"
+            tools:ignore="UnusedAttribute" />
+
+        <androidx.appcompat.widget.AppCompatEditText
             android:id="@+id/verification_code"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="@dimen/ng_field_height"
+            android:layout_marginTop="@dimen/ng_space_l"
+            android:background="@drawable/ng_bg_outlined_field"
             android:hint="@string/verification_code"
+            android:imeOptions="actionDone"
+            android:paddingStart="@dimen/ng_space_l"
+            android:paddingEnd="@dimen/ng_space_l"
+            android:singleLine="true"
+            android:textColor="@color/ng_on_surface"
+            android:textColorHint="@color/ng_on_surface_variant"
             tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
 
-    </io.legado.app.ui.widget.text.TextInputLayout>
+    </LinearLayout>
 
 </LinearLayout>

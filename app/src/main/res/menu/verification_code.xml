@@ -11,13 +11,15 @@
         app:showAsAction="always" />
 
     <item
-        android:id="@+id/menu_disable_source"
-        android:title="@string/disable_source"
-        app:showAsAction="never" />
+        android:id="@+id/menu_refresh"
+        android:icon="@drawable/ic_refresh_black_24dp"
+        android:title="@string/refresh"
+        app:showAsAction="always" />
 
     <item
-        android:id="@+id/menu_delete_source"
-        android:title="@string/delete_source"
-        app:showAsAction="never" />
+        android:id="@+id/menu_source_actions"
+        android:icon="@drawable/ic_more_vert"
+        android:title="@string/more_menu"
+        app:showAsAction="always" />
 
 </menu>
