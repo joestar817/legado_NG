@@ -171,17 +171,24 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
         if (usesWebView(fullSource)) {
             groups.add("WebView")
         }
+        if (usesVerificationCode(fullSource)) {
+            groups.add("有验证码")
+        }
         return TextUtils.join(",", groups)
     }
 
     private fun usesWebView(source: BookSource?): Boolean {
-        if (source == null) {
-            return false
-        }
-        if (!source.ruleContent?.webJs.isNullOrBlank()) {
-            return true
-        }
-        val ruleTexts = listOfNotNull(
+        return autoGroupRuleTexts(source).any { webViewRuleRegex.containsMatchIn(it) }
+    }
+
+    private fun usesVerificationCode(source: BookSource?): Boolean {
+        return source.hasVerificationCodeText() &&
+                verificationCodeRuleTexts(source).any { hasActiveVerificationCodeCall(it) }
+    }
+
+    private fun autoGroupRuleTexts(source: BookSource?): List<String> {
+        source ?: return emptyList()
+        return listOfNotNull(
             source.bookUrlPattern,
             source.jsLib,
             source.header,
@@ -199,7 +206,53 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
             source.ruleContent?.let { GSON.toJson(it) },
             source.ruleReview?.let { GSON.toJson(it) }
         )
-        return ruleTexts.any { webViewRuleRegex.containsMatchIn(it) }
+    }
+
+    private fun verificationCodeRuleTexts(source: BookSource?): List<String> {
+        source ?: return emptyList()
+        return listOfNotNull(
+            source.ruleSearch?.let { GSON.toJson(it) },
+            source.ruleToc?.let { GSON.toJson(it) },
+            source.ruleContent?.let { GSON.toJson(it) }
+        )
+    }
+
+    private fun BookSource?.hasVerificationCodeText(): Boolean {
+        this ?: return false
+        return listOfNotNull(
+            bookSourceName,
+            bookSourceComment,
+            variableComment,
+            searchUrl,
+            ruleSearch?.let { GSON.toJson(it) },
+            ruleToc?.let { GSON.toJson(it) },
+            ruleContent?.let { GSON.toJson(it) }
+        ).any { it.contains("验证码") }
+    }
+
+    private fun hasActiveVerificationCodeCall(text: String): Boolean {
+        return verificationCodeRuleRegex.findAll(text).any {
+            !isInBlockComment(text, it.range.first) && !isInLineComment(text, it.range.first)
+        }
+    }
+
+    private fun isInBlockComment(text: String, index: Int): Boolean {
+        val openIndex = text.lastIndexOf("/*", index)
+        if (openIndex < 0) return false
+        val closeIndex = text.lastIndexOf("*/", index)
+        return closeIndex < openIndex
+    }
+
+    private fun isInLineComment(text: String, index: Int): Boolean {
+        val lineStart = text.lastIndexOf('\n', index).let { if (it < 0) 0 else it + 1 }
+        var commentIndex = text.indexOf("//", lineStart)
+        while (commentIndex in 0..<index) {
+            if (commentIndex == 0 || text[commentIndex - 1] != ':') {
+                return true
+            }
+            commentIndex = text.indexOf("//", commentIndex + 2)
+        }
+        return false
     }
 
     companion object {
@@ -207,6 +260,7 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
             """@webjs:|["']?webView["']?\s*[:=]\s*(true|1|"true"|'true')|java\.webView(?:GetSource|GetOverrideUrl)?\s*\(|\bwebView(?:Await|GetSourceAwait|GetOverrideUrlAwait)?\s*\(""",
             RegexOption.IGNORE_CASE
         )
+        private val verificationCodeRuleRegex = Regex("""java\.getVerificationCode\s*\(""")
     }
 
     private fun saveToFile(sources: List<BookSource>, name: String, success: (file: File, name: String) -> Unit) {
