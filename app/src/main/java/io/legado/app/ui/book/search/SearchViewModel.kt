@@ -33,6 +33,7 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
     var searchKey: String = ""
     var hasMore = true
     private var searchID = 0L
+    private var allSourcesTarget: Pair<String, String>? = null
     private val searchModel = SearchModel(viewModelScope, object : SearchModel.CallBack {
 
         override fun getSearchScope(): SearchScope {
@@ -44,7 +45,9 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
         }
 
         override fun onSearchSuccess(searchBooks: List<SearchBook>) {
-            searchBookLiveData.postValue(searchBooks)
+            allSourcesTarget?.let {
+                searchBookLiveData.postValue(getAllSources(it.first, it.second))
+            } ?: searchBookLiveData.postValue(searchBooks)
         }
 
         override fun onSearchProgress(
@@ -115,6 +118,7 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
                 searchBookLiveData.postValue(emptyList())
                 searchKey = key
                 hasMore = true
+                allSourcesTarget = null
             }
             if (searchKey.isEmpty()) {
                 return@execute
@@ -165,6 +169,19 @@ class SearchViewModel(application: Application) : BaseViewModel(application) {
         execute {
             appDb.searchKeywordDao.delete(searchKeyword)
         }
+    }
+
+    fun showAllSources(book: SearchBook) {
+        execute {
+            allSourcesTarget = book.name to book.author
+            getAllSources(book.name, book.author).let {
+                searchBookLiveData.postValue(it.ifEmpty { listOf(book) })
+            }
+        }
+    }
+
+    private fun getAllSources(name: String, author: String): List<SearchBook> {
+        return appDb.searchBookDao.getEnabledByNameAuthor(name, author)
     }
 
     override fun onCleared() {

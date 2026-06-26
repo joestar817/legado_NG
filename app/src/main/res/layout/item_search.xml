@@ -9,6 +9,7 @@
     android:layout_marginEnd="12dp"
     android:layout_marginBottom="4dp"
     android:background="@drawable/ng_bg_search_result_card"
+    android:minHeight="148dp"
     android:padding="10dp"
     android:scrollbars="none">
 
@@ -72,10 +73,11 @@
         android:layout_marginTop="6dp"
         android:orientation="vertical"
         android:scrollbars="none"
-        app:layout_constraintBottom_toBottomOf="@id/iv_cover"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintLeft_toRightOf="@+id/iv_cover"
         app:layout_constraintRight_toRightOf="@id/tv_name"
-        app:layout_constraintTop_toBottomOf="@+id/tv_name">
+        app:layout_constraintTop_toBottomOf="@+id/tv_name"
+        app:layout_constraintVertical_bias="0">
 
         <TextView
             android:id="@+id/tv_author"
@@ -85,6 +87,17 @@
             android:lines="1"
             android:scrollbars="none"
             android:text="@string/author"
+            android:textColor="@color/secondaryText"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tv_origin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:lines="1"
+            android:scrollbars="none"
+            android:text="@string/book_source"
             android:textColor="@color/secondaryText"
             android:textSize="13sp" />
 

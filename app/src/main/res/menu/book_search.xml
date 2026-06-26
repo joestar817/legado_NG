@@ -21,13 +21,14 @@
 
     <item
         android:id="@+id/menu_log"
+        android:orderInCategory="40"
         android:title="@string/log"
-        android:orderInCategory="9999"
         app:showAsAction="never" />
 
     <item
         android:id="@+id/menu_network_log"
         android:icon="@drawable/ic_cfg_about"
+        android:orderInCategory="50"
         android:title="@string/network_request_log"
         app:showAsAction="never" />
 

@@ -816,6 +816,7 @@
     <string name="enable_js">启用 JavaScript</string>
     <string name="load_with_base_url">加载 BaseUrl</string>
     <string name="all_source">全部书源</string>
+    <string name="all_origin">全部来源</string>
     <string name="cannot_empty">输入不能为空</string>
     <string name="clear_find_cache">清空发现缓存</string>
     <string name="edit_find">编辑发现</string>

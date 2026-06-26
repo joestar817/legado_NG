@@ -140,15 +140,26 @@ class SearchActivity : VMBaseActivity<ActivityBookSearchBinding, SearchViewModel
             menu.removeGroup(R.id.menu_group_1)
             menu.removeGroup(R.id.menu_group_2)
             var hasChecked = false
+            var sourceMenuOrder = 100
             val searchScopeNames = viewModel.searchScope.displayNames
             if (viewModel.searchScope.isSource()) {
-                menu.add(R.id.menu_group_1, Menu.NONE, Menu.NONE, searchScopeNames.first()).apply {
+                menu.add(
+                    R.id.menu_group_1,
+                    Menu.NONE,
+                    sourceMenuOrder++,
+                    searchScopeNames.first()
+                ).apply {
                     isChecked = true
                     hasChecked = true
                 }
             }
             val allSourceMenu =
-                menu.add(R.id.menu_group_2, R.id.menu_1, Menu.NONE, getString(R.string.all_source))
+                menu.add(
+                    R.id.menu_group_2,
+                    R.id.menu_1,
+                    sourceMenuOrder++,
+                    getString(R.string.all_source)
+                )
                     .apply {
                         if (searchScopeNames.isEmpty()) {
                             isChecked = true
@@ -157,12 +168,12 @@ class SearchActivity : VMBaseActivity<ActivityBookSearchBinding, SearchViewModel
                     }
             groups?.forEach {
                 if (searchScopeNames.contains(it)) {
-                    menu.add(R.id.menu_group_1, Menu.NONE, Menu.NONE, it).apply {
+                    menu.add(R.id.menu_group_1, Menu.NONE, sourceMenuOrder++, it).apply {
                         isChecked = true
                         hasChecked = true
                     }
                 } else {
-                    menu.add(R.id.menu_group_2, Menu.NONE, Menu.NONE, it)
+                    menu.add(R.id.menu_group_2, Menu.NONE, sourceMenuOrder++, it)
                 }
             }
             if (!hasChecked) {
@@ -593,6 +604,11 @@ class SearchActivity : VMBaseActivity<ActivityBookSearchBinding, SearchViewModel
             putExtra("author", author)
             putExtra("bookUrl", bookUrl)
         }
+    }
+
+    override fun showAllSources(book: SearchBook) {
+        viewModel.showAllSources(book)
+        visibleInputHelp(false)
     }
 
     /**

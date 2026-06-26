@@ -2,7 +2,11 @@ package io.legado.app.ui.book.search
 
 import android.content.Context
 import android.os.Bundle
+import android.view.Gravity
+import android.view.Menu
+import android.view.View
 import android.view.ViewGroup
+import androidx.appcompat.widget.PopupMenu
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import io.legado.app.R
@@ -38,6 +42,8 @@ class SearchAdapter(context: Context, val callBack: CallBack) :
             override fun getChangePayload(oldItem: SearchBook, newItem: SearchBook): Any {
                 val payload = Bundle()
                 payload.putInt("origins", newItem.origins.size)
+                if (oldItem.originName != newItem.originName)
+                    payload.putString("origin", newItem.originName)
                 if (oldItem.coverUrl != newItem.coverUrl)
                     payload.putString("cover", newItem.coverUrl)
                 if (oldItem.kind != newItem.kind)
@@ -77,12 +83,19 @@ class SearchAdapter(context: Context, val callBack: CallBack) :
                 callBack.showBookInfo(it.name, it.author, it.bookUrl)
             }
         }
+        binding.root.setOnLongClickListener {
+            getItem(holder.layoutPosition)?.let {
+                showMenu(binding.bvOriginCount, it)
+            }
+            true
+        }
     }
 
     private fun bind(binding: ItemSearchBinding, searchBook: SearchBook) {
         binding.run {
             tvName.text = searchBook.name
             tvAuthor.text = context.getString(R.string.author_show, searchBook.author)
+            tvOrigin.text = context.getString(R.string.origin_show, searchBook.originName)
             ivInBookshelf.isVisible = callBack.isInBookshelf(searchBook)
             bvOriginCount.setBadgeCount(searchBook.origins.size)
             upLasted(binding, searchBook.latestChapterTitle)
@@ -101,6 +114,8 @@ class SearchAdapter(context: Context, val callBack: CallBack) :
             bundle.keySet().forEach {
                 when (it) {
                     "origins" -> bvOriginCount.setBadgeCount(searchBook.origins.size)
+                    "origin" -> tvOrigin.text =
+                        context.getString(R.string.origin_show, searchBook.originName)
                     "last" -> upLasted(binding, searchBook.latestChapterTitle)
                     "intro" -> tvIntroduce.text = searchBook.trimIntro(context)
                     "kind" -> upKind(binding, searchBook.getKindList())
@@ -111,6 +126,23 @@ class SearchAdapter(context: Context, val callBack: CallBack) :
                     )
                 }
             }
+        }
+    }
+
+    private fun showMenu(view: View, searchBook: SearchBook) {
+        PopupMenu(context, view, Gravity.END).apply {
+            menu.add(Menu.NONE, R.id.menu_1, Menu.NONE, R.string.all_origin)
+            setOnMenuItemClickListener {
+                when (it.itemId) {
+                    R.id.menu_1 -> {
+                        callBack.showAllSources(searchBook)
+                        true
+                    }
+
+                    else -> false
+                }
+            }
+            show()
         }
     }
 
@@ -146,5 +178,10 @@ class SearchAdapter(context: Context, val callBack: CallBack) :
          * 显示书籍详情
          */
         fun showBookInfo(name: String, author: String, bookUrl: String)
+
+        /**
+         * 显示当前书籍的所有来源
+         */
+        fun showAllSources(book: SearchBook)
     }
 }
