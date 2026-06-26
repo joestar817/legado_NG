@@ -509,7 +509,7 @@ interface JsExtensions : JsEncodeUtils {
                     type = "JS",
                     method = "GET",
                     url = urlStr,
-                    requestHeaders = requestHeaders.formatNetworkHeaders(),
+                    requestHeaders = NetworkLog.formatHeaders(requestHeaders),
                     tookMs = networkElapsedMs(start),
                     error = e,
                     source = getTag()
@@ -522,10 +522,10 @@ interface JsExtensions : JsEncodeUtils {
                 type = "JS",
                 method = "GET",
                 url = urlStr,
-                requestHeaders = requestHeaders.formatNetworkHeaders(),
+                requestHeaders = NetworkLog.formatHeaders(requestHeaders),
                 statusCode = response.statusCode(),
                 tookMs = networkElapsedMs(start),
-                responseHeaders = response.headers().formatNetworkHeaders(),
+                responseHeaders = NetworkLog.formatHeaders(response.headers()),
                 responseBody = response.body(),
                 source = getTag()
             )
@@ -564,7 +564,7 @@ interface JsExtensions : JsEncodeUtils {
                     type = "JS",
                     method = "HEAD",
                     url = urlStr,
-                    requestHeaders = requestHeaders.formatNetworkHeaders(),
+                    requestHeaders = NetworkLog.formatHeaders(requestHeaders),
                     tookMs = networkElapsedMs(start),
                     error = e,
                     source = getTag()
@@ -577,10 +577,10 @@ interface JsExtensions : JsEncodeUtils {
                 type = "JS",
                 method = "HEAD",
                 url = urlStr,
-                requestHeaders = requestHeaders.formatNetworkHeaders(),
+                requestHeaders = NetworkLog.formatHeaders(requestHeaders),
                 statusCode = response.statusCode(),
                 tookMs = networkElapsedMs(start),
-                responseHeaders = response.headers().formatNetworkHeaders(),
+                responseHeaders = NetworkLog.formatHeaders(response.headers()),
                 source = getTag()
             )
         }
@@ -619,7 +619,7 @@ interface JsExtensions : JsEncodeUtils {
                     type = "JS",
                     method = "POST",
                     url = urlStr,
-                    requestHeaders = requestHeaders.formatNetworkHeaders(),
+                    requestHeaders = NetworkLog.formatHeaders(requestHeaders),
                     requestBody = body,
                     tookMs = networkElapsedMs(start),
                     error = e,
@@ -633,20 +633,16 @@ interface JsExtensions : JsEncodeUtils {
                 type = "JS",
                 method = "POST",
                 url = urlStr,
-                requestHeaders = requestHeaders.formatNetworkHeaders(),
+                requestHeaders = NetworkLog.formatHeaders(requestHeaders),
                 requestBody = body,
                 statusCode = response.statusCode(),
                 tookMs = networkElapsedMs(start),
-                responseHeaders = response.headers().formatNetworkHeaders(),
+                responseHeaders = NetworkLog.formatHeaders(response.headers()),
                 responseBody = response.body(),
                 source = getTag()
             )
         }
         return response
-    }
-
-    private fun Map<String, String>.formatNetworkHeaders(): String {
-        return entries.joinToString("\n") { "${it.key}: ${it.value}" }
     }
 
     private fun networkElapsedMs(start: Long): Long {

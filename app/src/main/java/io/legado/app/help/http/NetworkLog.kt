@@ -14,9 +14,42 @@ object NetworkLog {
 
     const val MAX_LOG_SIZE = 500
     const val BODY_PREVIEW_SIZE = 512L * 1024L
+    private const val REDACTED = "[已脱敏]"
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
     private val nextId = AtomicLong(0)
     private val items = arrayListOf<Entry>()
+    private val sensitiveHeaderNames = setOf(
+        "authorization",
+        "proxy-authorization",
+        "cookie",
+        "set-cookie",
+        "x-api-key",
+        "api-key",
+        "x-auth-token",
+        "x-access-token",
+        "x-csrf-token",
+        "csrf-token"
+    )
+    private val credentialQueryPattern = Regex(
+        "([?&](?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|auth|authorization|token|secret|password|passwd|pwd|session(?:id)?)=)[^&#\\s]*",
+        setOf(RegexOption.IGNORE_CASE)
+    )
+    private val quotedCredentialPattern = Regex(
+        "(\"(?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|auth|authorization|token|secret|password|passwd|pwd|session(?:id)?)\"\\s*:\\s*\")[^\"]*(\")",
+        setOf(RegexOption.IGNORE_CASE)
+    )
+    private val formCredentialPattern = Regex(
+        "((?:^|[&\\s])(?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|auth|authorization|token|secret|password|passwd|pwd|session(?:id)?)=)[^&\\s]*",
+        setOf(RegexOption.IGNORE_CASE)
+    )
+    private val bearerCredentialPattern = Regex(
+        "\\b(Bearer\\s+)[A-Za-z0-9._~+/=-]+",
+        setOf(RegexOption.IGNORE_CASE)
+    )
+    private val basicCredentialPattern = Regex(
+        "\\b(Basic\\s+)[A-Za-z0-9._~+/=-]+",
+        setOf(RegexOption.IGNORE_CASE)
+    )
 
     val isEnabled: Boolean
         get() = AppConfig.recordNetworkLog
@@ -48,12 +81,12 @@ object NetworkLog {
                 source = request.networkLogSource() ?: currentSourceLabel(),
                 type = "OkHttp",
                 method = request.method,
-                url = request.url.toString(),
+                url = redactUrlForLog(request.url.toString()),
                 statusCode = response?.code,
                 tookMs = tookMs,
-                requestHeaders = request.headers.format(),
+                requestHeaders = formatHeaders(request.headers),
                 requestBody = requestBodyText(request),
-                responseHeaders = response?.headers?.format(),
+                responseHeaders = response?.headers?.let { formatHeaders(it) },
                 responseBody = response?.previewBodyText(),
                 error = error?.stackTraceToString()
             )
@@ -81,13 +114,13 @@ object NetworkLog {
                 source = source ?: currentSourceLabel(),
                 type = type,
                 method = method,
-                url = url,
+                url = redactUrlForLog(url),
                 statusCode = statusCode,
                 tookMs = tookMs,
-                requestHeaders = requestHeaders,
-                requestBody = requestBody?.limitPreview(),
-                responseHeaders = responseHeaders,
-                responseBody = responseBody?.limitPreview(),
+                requestHeaders = requestHeaders?.redactHeaderBlockCredentials(),
+                requestBody = requestBody?.limitPreview()?.redactedForNetworkLog(),
+                responseHeaders = responseHeaders?.redactHeaderBlockCredentials(),
+                responseBody = responseBody?.limitPreview()?.redactedForNetworkLog(),
                 error = error?.stackTraceToString()
             )
         )
@@ -128,18 +161,81 @@ object NetworkLog {
         return tag(SourceLabel::class.java)?.value?.takeIf { it.isNotBlank() }
     }
 
-    private fun Headers.format(): String = buildString {
-        for (index in 0 until size) {
-            append(name(index)).append(": ").append(value(index)).append('\n')
+    fun formatHeaders(headers: Headers): String = buildString {
+        for (index in 0 until headers.size) {
+            val headerName = headers.name(index)
+            val headerValue = if (headerName.isSensitiveHeaderName()) {
+                REDACTED
+            } else {
+                headers.value(index).redactedForNetworkLog()
+            }
+            append(headerName).append(": ").append(headerValue).append('\n')
         }
     }.trimEnd()
+
+    fun formatHeaders(headers: Map<String, String>): String {
+        return headers.entries.joinToString("\n") { (name, value) ->
+            val headerValue = if (name.isSensitiveHeaderName()) {
+                REDACTED
+            } else {
+                value.redactedForNetworkLog()
+            }
+            "$name: $headerValue"
+        }
+    }
+
+    fun redactCredentialsForLog(text: String): String {
+        return text
+            .replace(quotedCredentialPattern) { match ->
+                match.groupValues[1] + REDACTED + match.groupValues[2]
+            }
+            .replace(formCredentialPattern) { match ->
+                match.groupValues[1] + REDACTED
+            }
+            .replace(bearerCredentialPattern) { match ->
+                match.groupValues[1] + REDACTED
+            }
+            .replace(basicCredentialPattern) { match ->
+                match.groupValues[1] + REDACTED
+            }
+    }
+
+    private fun String.redactedForNetworkLog(): String {
+        return redactCredentialsForLog(this)
+    }
+
+    private fun String.isSensitiveHeaderName(): Boolean {
+        return trim().lowercase(Locale.ROOT) in sensitiveHeaderNames
+    }
+
+    private fun String.redactHeaderBlockCredentials(): String {
+        return lineSequence().joinToString("\n") { line ->
+            val delimiterIndex = line.indexOf(':')
+            if (delimiterIndex <= 0) {
+                line.redactedForNetworkLog()
+            } else {
+                val name = line.substring(0, delimiterIndex)
+                if (name.isSensitiveHeaderName()) {
+                    "$name: $REDACTED"
+                } else {
+                    name + line.substring(delimiterIndex).redactedForNetworkLog()
+                }
+            }
+        }
+    }
+
+    fun redactUrlForLog(url: String): String {
+        return url.replace(credentialQueryPattern) { match ->
+            match.groupValues[1] + REDACTED
+        }
+    }
 
     private fun requestBodyText(request: Request): String? {
         val body = request.body ?: return null
         return runCatching {
             val buffer = okio.Buffer()
             body.writeTo(buffer)
-            buffer.readUtf8().limitPreview()
+            buffer.readUtf8().limitPreview().redactedForNetworkLog()
         }.getOrElse {
             "[request body unavailable: ${it.localizedMessage}]"
         }
@@ -149,10 +245,11 @@ object NetworkLog {
         return runCatching {
             val preview = peekBody(BODY_PREVIEW_SIZE)
             val text = preview.string()
+            val redactedText = text.redactedForNetworkLog()
             if (body.contentLength() > BODY_PREVIEW_SIZE) {
-                "$text\n[truncated at ${BODY_PREVIEW_SIZE} bytes]"
+                "$redactedText\n[truncated at ${BODY_PREVIEW_SIZE} bytes]"
             } else {
-                text
+                redactedText
             }
         }.getOrElse {
             "[response body unavailable: ${it.localizedMessage}]"
