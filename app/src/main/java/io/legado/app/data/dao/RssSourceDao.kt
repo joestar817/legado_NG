@@ -113,7 +113,7 @@ interface RssSourceDao {
     @Query("delete from rssSources where sourceUrl = :sourceUrl")
     fun delete(sourceUrl: String)
 
-    @Query("delete from rssSources where sourceGroup like 'legado'")
+    @Query("delete from rssSources")
     fun deleteDefault()
 
     @get:Query("select * from rssSources where sourceGroup is null or sourceGroup = ''")
