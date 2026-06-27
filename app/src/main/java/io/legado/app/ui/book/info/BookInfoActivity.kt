@@ -567,9 +567,9 @@ class BookInfoActivity :
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             background = getDrawable(R.drawable.ng_bg_book_detail_card)
-            setPadding(10.dpToPx(), 8.dpToPx(), 12.dpToPx(), 8.dpToPx())
-            layoutParams = LinearLayout.LayoutParams(154.dpToPx(), 64.dpToPx()).apply {
-                marginEnd = 10.dpToPx()
+            setPadding(8.dpToPx(), 8.dpToPx(), 10.dpToPx(), 8.dpToPx())
+            layoutParams = LinearLayout.LayoutParams(150.dpToPx(), 64.dpToPx()).apply {
+                marginEnd = 8.dpToPx()
             }
             setOnClickListener {
                 book?.let { openCharacterActivity(it, BookCharacterProfile.workKey(it.name, it.author)) }
@@ -583,7 +583,7 @@ class BookInfoActivity :
                 setTextColor(android.graphics.Color.WHITE)
                 setBackgroundResource(character.avatarBackground())
                 layoutParams = LinearLayout.LayoutParams(38.dpToPx(), 38.dpToPx()).apply {
-                    marginEnd = 10.dpToPx()
+                    marginEnd = 8.dpToPx()
                 }
             })
             addView(LinearLayout(this@BookInfoActivity).apply {

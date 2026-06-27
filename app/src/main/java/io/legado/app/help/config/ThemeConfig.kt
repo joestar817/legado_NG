@@ -140,6 +140,22 @@ object ThemeConfig {
             else -> backgroundPath
         }
         val needsApply = context.getPrefString(themeNameKey) != config.themeName ||
+                context.getPrefInt(
+                    if (targetNightTheme) PreferKey.cNPrimary else PreferKey.cPrimary,
+                    0
+                ) != config.primaryColor.toColorInt() ||
+                context.getPrefInt(
+                    if (targetNightTheme) PreferKey.cNAccent else PreferKey.cAccent,
+                    0
+                ) != config.accentColor.toColorInt() ||
+                context.getPrefInt(
+                    if (targetNightTheme) PreferKey.cNBackground else PreferKey.cBackground,
+                    0
+                ) != config.backgroundColor.toColorInt() ||
+                context.getPrefInt(
+                    if (targetNightTheme) PreferKey.cNBBackground else PreferKey.cBBackground,
+                    0
+                ) != config.bottomBackground.toColorInt() ||
                 context.getPrefString(backgroundKey).isNullOrBlank() ||
                 context.getPrefBoolean(transparentNavBarKey, false) != config.transparentNavBar
         if (!needsApply) {

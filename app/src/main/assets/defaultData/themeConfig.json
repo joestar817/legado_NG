@@ -35,11 +35,11 @@
     "themeName": "暖色渐变",
     "isNightTheme": false,
     "primaryColor": "#FFFFFF",
-    "accentColor": "#E53935",
+    "accentColor": "#f78e66",
     "backgroundColor": "#F5F5F5",
     "bottomBackground": "#EEEEEE",
     "transparentNavBar": true,
-    "backgroundImgPath": "asset://defaultData/theme/reading_ng_bg_1.png",
+    "backgroundImgPath": "asset://defaultData/theme/reading_ng_warm.png",
     "backgroundImgBlur": 0
   },
   {
@@ -57,7 +57,7 @@
     "themeName": "灰色雾霭",
     "isNightTheme": false,
     "primaryColor": "#FFFFFF",
-    "accentColor": "#E53935",
+    "accentColor": "#758db4",
     "backgroundColor": "#F5F5F5",
     "bottomBackground": "#EEEEEE",
     "transparentNavBar": true,
