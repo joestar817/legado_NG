@@ -2,85 +2,101 @@
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
+    style="@style/Ng.DialogRoot"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/background">
+    android:layout_height="match_parent">
 
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/tool_bar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/background_menu"
-        android:elevation="5dp"
+        android:layout_height="72dp"
+        android:background="@android:color/transparent"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
         android:theme="?attr/actionBarStyle"
         app:contentInsetStartWithNavigation="0dp"
         app:displayHomeAsUp="false"
         app:fitStatusBar="false"
         app:layout_constraintTop_toTopOf="parent"
         app:popupTheme="@style/AppTheme.PopupOverlay"
-        app:titleTextAppearance="@style/ToolbarTitle" />
+        app:titleTextAppearance="@style/ToolbarTitle">
+
+        <LinearLayout
+            android:id="@+id/title_group"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center_vertical|start"
+            android:layout_marginStart="72dp"
+            android:layout_marginEnd="172dp"
+            android:clickable="false"
+            android:focusable="false"
+            android:gravity="center_vertical"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:textColor="@color/ng_on_surface"
+                android:textSize="20sp"
+                tools:text="山河稷" />
+
+            <TextView
+                android:id="@+id/tv_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:textColor="@color/ng_on_surface_variant"
+                android:textSize="15sp"
+                tools:text="姬叉" />
+
+        </LinearLayout>
+
+    </androidx.appcompat.widget.Toolbar>
 
     <io.legado.app.ui.widget.anima.RefreshProgressBar
         android:id="@+id/refresh_progress_bar"
         android:layout_width="match_parent"
         android:layout_height="2dp"
+        app:bg_color="@android:color/transparent"
+        app:second_color="@color/highlight"
         app:layout_constraintTop_toBottomOf="@+id/tool_bar" />
 
     <io.legado.app.ui.widget.recycler.scroller.FastScrollRecyclerView
         android:id="@+id/recycler_view"
         android:layout_width="match_parent"
         android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:paddingTop="4dp"
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
-        app:layout_constraintBottom_toTopOf="@+id/ll_bottom_bar"
+        app:layout_constraintBottom_toTopOf="@+id/tv_search_progress"
         app:layout_constraintTop_toBottomOf="@+id/refresh_progress_bar" />
 
-    <LinearLayout
-        android:id="@+id/ll_bottom_bar"
-        android:layout_width="match_parent"
-        android:layout_height="36dp"
-        android:background="@color/background"
+    <io.legado.app.ui.book.search.SearchProgressTextView
+        android:id="@+id/tv_search_progress"
+        android:layout_width="0dp"
+        android:layout_height="30dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="10dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:ellipsize="end"
         android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingLeft="10dp"
-        android:paddingRight="10dp"
-        app:layout_constraintBottom_toBottomOf="parent">
-
-        <TextView
-            android:id="@+id/tv_dur"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:ellipsize="end"
-            android:gravity="center_vertical"
-            android:paddingLeft="10dp"
-            android:paddingRight="10dp"
-            android:singleLine="true"
-            android:textColor="@color/primaryText"
-            android:textSize="12sp" />
-
-        <androidx.appcompat.widget.AppCompatImageView
-            android:id="@+id/iv_top"
-            android:layout_width="36dp"
-            android:layout_height="match_parent"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/go_to_top"
-            android:src="@drawable/ic_arrow_drop_up"
-            android:tooltipText="@string/go_to_top"
-            app:tint="@color/primaryText"
-            tools:ignore="UnusedAttribute" />
-
-        <androidx.appcompat.widget.AppCompatImageView
-            android:id="@+id/iv_bottom"
-            android:layout_width="36dp"
-            android:layout_height="match_parent"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/go_to_bottom"
-            android:src="@drawable/ic_arrow_drop_down"
-            android:tooltipText="@string/go_to_bottom"
-            app:tint="@color/primaryText"
-            tools:ignore="UnusedAttribute" />
-    </LinearLayout>
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:singleLine="true"
+        android:textColor="@color/secondaryText"
+        android:textSize="12sp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        tools:text="@string/change_source_progress" />
 
 
 </androidx.constraintlayout.widget.ConstraintLayout>

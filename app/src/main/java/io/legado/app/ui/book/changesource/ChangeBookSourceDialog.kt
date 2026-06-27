@@ -4,7 +4,6 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
 import android.widget.ImageButton
 import androidx.appcompat.widget.SearchView
 import androidx.appcompat.widget.Toolbar
@@ -28,12 +27,13 @@ import io.legado.app.databinding.DialogBookChangeSourceBinding
 import io.legado.app.help.book.isWebFile
 import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.theme.elevation
 import io.legado.app.lib.theme.getPrimaryTextColor
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.book.source.manage.BookSourceActivity
+import io.legado.app.ui.widget.dialog.applyNgDialogWindow
+import io.legado.app.ui.widget.dialog.ngDialogMaxHeight
 import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.ui.widget.recycler.VerticalDivider
 import io.legado.app.utils.ColorUtils
@@ -42,7 +42,6 @@ import io.legado.app.utils.applyTint
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.getCompatDrawable
 import io.legado.app.utils.observeEvent
-import io.legado.app.utils.setLayout
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.transaction
 import io.legado.app.utils.viewbindingdelegate.viewBinding
@@ -99,11 +98,11 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
 
     override fun onStart() {
         super.onStart()
-        setLayout(1f, ViewGroup.LayoutParams.MATCH_PARENT)
+        applyNgDialogWindow(height = ngDialogMaxHeight(0.92f))
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
-        binding.toolBar.setBackgroundColor(primaryColor)
+        view.setBackgroundResource(R.drawable.ng_bg_dialog)
         viewModel.initData(arguments, callBack?.oldBook, activity is ReadBookActivity)
         showTitle()
         initMenu()
@@ -121,11 +120,13 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
     }
 
     private fun showTitle() {
-        binding.toolBar.title = viewModel.name
-        binding.toolBar.subtitle = viewModel.author
+        binding.toolBar.title = ""
+        binding.toolBar.subtitle = ""
+        binding.titleGroup.visibility = View.VISIBLE
+        binding.tvTitle.text = viewModel.name
+        binding.tvSubtitle.text = viewModel.author
         binding.toolBar.navigationIcon =
             getCompatDrawable(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
-        binding.toolBar.elevation = requireContext().elevation
     }
 
     private fun initMenu() {
@@ -169,6 +170,7 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
         searchView.setOnSearchClickListener {
             binding.toolBar.title = ""
             binding.toolBar.subtitle = ""
+            binding.titleGroup.visibility = View.GONE
             binding.toolBar.navigationIcon = null
         }
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
@@ -204,15 +206,10 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
     }
 
     private fun initBottomBar() {
-        binding.tvDur.text = callBack?.oldBook?.originName
-        binding.tvDur.setOnClickListener {
+        binding.tvSearchProgress.text = callBack?.oldBook?.originName
+        binding.tvSearchProgress.setProgress(0, 0)
+        binding.tvSearchProgress.setOnClickListener {
             scrollToDurSource()
-        }
-        binding.ivTop.setOnClickListener {
-            binding.recyclerView.scrollToPosition(0)
-        }
-        binding.ivBottom.setOnClickListener {
-            binding.recyclerView.scrollToPosition(adapter.itemCount - 1)
         }
     }
 
@@ -245,14 +242,14 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
                 viewModel.changeSourceProgress
                     .drop(1)
                     .collect { (count, name) ->
-                        binding.tvDur.text =
-                            getString(
-                                R.string.change_source_progress,
-                                adapter.itemCount,
-                                count,
-                                viewModel.totalSourceCount,
-                                name
-                            )
+                        binding.tvSearchProgress.text = getString(
+                            R.string.change_source_progress,
+                            adapter.itemCount,
+                            count,
+                            viewModel.totalSourceCount,
+                            name
+                        )
+                        binding.tvSearchProgress.setProgress(count, viewModel.totalSourceCount)
                         delay(500)
                     }
             }
