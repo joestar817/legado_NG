@@ -5,12 +5,8 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import android.view.View
 import android.widget.SeekBar
-import androidx.core.view.MenuProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.Preference
 import io.legado.app.R
@@ -38,14 +34,12 @@ import io.legado.app.ui.widget.seekbar.SeekBarChangeListener
 import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.MD5Utils
-import io.legado.app.utils.applyTint
 import io.legado.app.utils.externalFiles
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.inputStream
 import io.legado.app.utils.postEvent
-import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.putPrefInt
 import io.legado.app.utils.putPrefString
 import io.legado.app.utils.readUri
@@ -60,8 +54,7 @@ import java.io.FileOutputStream
 
 @Suppress("SameParameterValue")
 class ThemeConfigFragment : PreferenceFragment(),
-    SharedPreferences.OnSharedPreferenceChangeListener,
-    MenuProvider {
+    SharedPreferences.OnSharedPreferenceChangeListener {
 
     private val requestCodeBgLight = 121
     private val requestCodeBgDark = 122
@@ -82,7 +75,6 @@ class ThemeConfigFragment : PreferenceFragment(),
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         addPreferencesFromResource(R.xml.pref_config_theme)
         ConfigPreferenceStyle.applyTo(preferenceScreen)
-        clearNonReadingNgBackgroundTheme()
         if (Build.VERSION.SDK_INT < 26) {
             preferenceScreen.removePreferenceRecursively(PreferKey.launcherIcon)
         }
@@ -118,7 +110,6 @@ class ThemeConfigFragment : PreferenceFragment(),
         activity?.setTitle(R.string.theme_setting)
         ConfigPreferenceStyle.applyListStyle(this)
         listView.setEdgeEffectColor(primaryColor)
-        activity?.addMenuProvider(this, viewLifecycleOwner)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -129,22 +120,6 @@ class ThemeConfigFragment : PreferenceFragment(),
     override fun onDestroy() {
         super.onDestroy()
         preferenceManager.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(this)
-    }
-
-    override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
-        menuInflater.inflate(R.menu.theme_config, menu)
-        menu.applyTint(requireContext())
-    }
-
-    override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
-        when (menuItem.itemId) {
-            R.id.menu_theme_mode -> {
-                AppConfig.isNightTheme = !AppConfig.isNightTheme
-                ThemeConfig.applyDayNight(requireContext())
-                return true
-            }
-        }
-        return false
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
@@ -349,26 +324,6 @@ class ThemeConfigFragment : PreferenceFragment(),
             }
 
             else -> preference.summary = value
-        }
-    }
-
-    private fun clearNonReadingNgBackgroundTheme() {
-        if (ThemeConfig.isReadingNgBackgroundTheme()) {
-            return
-        }
-        val hasBackground = !getPrefString(PreferKey.bgImage).isNullOrEmpty()
-                || !getPrefString(PreferKey.bgImageN).isNullOrEmpty()
-        val hasTransparentTopBar = getPrefBoolean(PreferKey.tNavBar, false)
-                || getPrefBoolean(PreferKey.tNavBarN, false)
-        removePref(PreferKey.bgImage)
-        removePref(PreferKey.bgImageN)
-        putPrefInt(PreferKey.bgImageBlurring, 0)
-        putPrefInt(PreferKey.bgImageNBlurring, 0)
-        putPrefBoolean(PreferKey.tNavBar, false)
-        putPrefBoolean(PreferKey.tNavBarN, false)
-        if (hasBackground || hasTransparentTopBar) {
-            ThemeConfig.applyTheme(requireContext())
-            recreateActivities()
         }
     }
 

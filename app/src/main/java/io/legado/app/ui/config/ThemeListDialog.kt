@@ -11,28 +11,29 @@ import io.legado.app.R
 import io.legado.app.base.BaseDialogFragment
 import io.legado.app.base.adapter.ItemViewHolder
 import io.legado.app.base.adapter.RecyclerAdapter
-import io.legado.app.databinding.DialogRecyclerViewBinding
+import io.legado.app.databinding.DialogNgRecyclerViewBinding
 import io.legado.app.databinding.ItemThemeConfigBinding
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.theme.primaryColor
+import io.legado.app.ui.widget.dialog.applyNgDialogWindow
+import io.legado.app.ui.widget.dialog.ngDialogMaxHeight
 import io.legado.app.ui.widget.recycler.VerticalDivider
 import io.legado.app.utils.*
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 
-class ThemeListDialog : BaseDialogFragment(R.layout.dialog_recycler_view),
+class ThemeListDialog : BaseDialogFragment(R.layout.dialog_ng_recycler_view),
     Toolbar.OnMenuItemClickListener {
 
-    private val binding by viewBinding(DialogRecyclerViewBinding::bind)
+    private val binding by viewBinding(DialogNgRecyclerViewBinding::bind)
     private val adapter by lazy { Adapter(requireContext()) }
 
     override fun onStart() {
         super.onStart()
-        setLayout(0.9f, 0.9f)
+        applyNgDialogWindow(height = ngDialogMaxHeight(0.86f))
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
-        binding.toolBar.setBackgroundColor(primaryColor)
+        view.setBackgroundResource(R.drawable.ng_bg_dialog)
         binding.toolBar.setTitle(R.string.theme_list)
         initView()
         initMenu()

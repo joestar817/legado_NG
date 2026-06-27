@@ -64,7 +64,7 @@
 
 	<string-array name="theme_mode">
 		<item>Follow system</item>
-		<item>Native theme</item>
+		<item>Day theme</item>
 		<item>Dark mode</item>
 		<item>E-Ink mode</item>
 		<item>Warm gradient</item>

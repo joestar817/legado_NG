@@ -22,7 +22,7 @@
 
     <string-array name="theme_mode">
         <item>Theo hệ thống</item>
-        <item>Native theme</item>
+        <item>Day theme</item>
         <item>Chế độ tối</item>
         <item>Chế độ E-Ink</item>
         <item>Warm gradient</item>

@@ -59,6 +59,9 @@ object ThemeConfig {
         "5" to "竹影之韵",
         THEME_MODE_GRAY to "灰色雾霭"
     )
+    private val readingNgBuiltInThemeModes = readingNgBuiltInThemeNames
+        .entries
+        .associate { (mode, name) -> name to mode }
     val configFilePath = FileUtils.getPath(appCtx.filesDir, configFileName)
 
     val configList: ArrayList<Config> by lazy {
@@ -108,8 +111,6 @@ object ThemeConfig {
     private fun ensureThemeModePrefs(context: Context) {
         when (AppConfig.themeMode) {
             THEME_MODE_FOLLOW_SYSTEM -> ensureFollowSystemTheme(context)
-            THEME_MODE_NATIVE,
-            THEME_MODE_DARK -> ensureNativeTheme(context)
             THEME_MODE_EINK -> Unit
             else -> ensureReadingNgBuiltInTheme(context, AppConfig.themeMode, false)
         }
@@ -183,7 +184,7 @@ object ThemeConfig {
     }
 
     private fun ensureNativeTheme(context: Context) = with(context) {
-        putPrefString(PreferKey.dThemeName, "原生主题")
+        putPrefString(PreferKey.dThemeName, "默认")
         putPrefInt(PreferKey.cPrimary, getCompatColor(R.color.md_brown_500))
         putPrefInt(PreferKey.cAccent, getCompatColor(R.color.md_red_600))
         putPrefInt(PreferKey.cBackground, getCompatColor(R.color.md_grey_100))
@@ -191,7 +192,7 @@ object ThemeConfig {
         putPrefBoolean(PreferKey.tNavBar, false)
         putPrefString(PreferKey.bgImage, null)
         putPrefInt(PreferKey.bgImageBlurring, 0)
-        putPrefString(PreferKey.dNThemeName, "暗色主题")
+        putPrefString(PreferKey.dNThemeName, "黑白")
         putPrefInt(PreferKey.cNPrimary, getCompatColor(R.color.md_blue_grey_600))
         putPrefInt(PreferKey.cNAccent, getCompatColor(R.color.md_deep_orange_800))
         putPrefInt(PreferKey.cNBackground, getCompatColor(R.color.md_grey_900))
@@ -204,6 +205,7 @@ object ThemeConfig {
     fun applyThemeMode(context: Context, themeMode: String) {
         AppConfig.themeMode = themeMode
         AppConfig.isEInkMode = themeMode == THEME_MODE_EINK
+        context.putPrefString(PreferKey.themeMode, themeMode)
         when (themeMode) {
             THEME_MODE_FOLLOW_SYSTEM -> ensureFollowSystemTheme(context)
             THEME_MODE_NATIVE,
@@ -212,6 +214,15 @@ object ThemeConfig {
             else -> ensureReadingNgBuiltInTheme(context, themeMode, false)
         }
         applyDayNight(context)
+    }
+
+    private fun getThemeMode(config: Config): String {
+        readingNgBuiltInThemeModes[config.themeName]?.let { themeMode ->
+            if (!config.isNightTheme) {
+                return themeMode
+            }
+        }
+        return if (config.isNightTheme) THEME_MODE_DARK else THEME_MODE_NATIVE
     }
 
     fun isDarkTheme(): Boolean {
@@ -516,7 +527,11 @@ object ThemeConfig {
                 context.putPrefString(PreferKey.bgImage, savedBackgroundPath)
                 context.putPrefInt(PreferKey.bgImageBlurring, backgroundBlur)
             }
-            AppConfig.isNightTheme = isNightTheme
+            getThemeMode(config).let { themeMode ->
+                AppConfig.themeMode = themeMode
+                AppConfig.isEInkMode = themeMode == THEME_MODE_EINK
+                context.putPrefString(PreferKey.themeMode, themeMode)
+            }
             applyDayNight(context)
         } catch (e: Exception) {
             AppLog.put("设置主题出错\n$e", e, true)

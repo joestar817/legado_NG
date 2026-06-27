@@ -34,7 +34,7 @@
 
 	<string-array name="theme_mode">
 		<item>Adaptar do sistema</item>
-		<item>Native theme</item>
+		<item>Day theme</item>
 		<item>Tema Oscuro</item>
 		<item>Tema E-Ink</item>
 		<item>Warm gradient</item>
