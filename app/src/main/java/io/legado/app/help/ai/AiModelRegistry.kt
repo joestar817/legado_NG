@@ -305,6 +305,23 @@ object AiModelRegistry {
         visionInput()
     }
 
+    private val PADDLE_OCR_MODEL = defineAiModel {
+        tokens("paddleocr")
+        visionInput()
+    }
+
+    private val IMAGE_EDIT_MODEL = defineAiModel {
+        tokens("image", "edit")
+        imageEditOutput()
+    }
+
+    private val IMAGE_GENERATION_MODEL = defineAiModel {
+        tokens("image")
+        notTokens("embedding")
+        notTokens("reranker")
+        imageOutput()
+    }
+
     @Suppress("unused")
     private val DEEPSEEK_R1 = defineAiModelGroup {
         add(DEEPSEEK_R1_MODEL, DEEPSEEK_REASONER)
@@ -325,6 +342,39 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val QWEN_3_VL = defineAiModel {
+        tokens("qwen", "3", "vl")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val QWEN_3_VL_EMBEDDING = defineAiModel {
+        tokens("qwen", "3", "vl", "embedding")
+        visionEmbedding()
+    }
+
+    private val QWEN_3_VL_RERANKER = defineAiModel {
+        tokens("qwen", "3", "vl", "reranker")
+        visionEmbedding()
+    }
+
+    private val QWEN_3_OMNI = defineAiModel {
+        tokens("qwen", "3", "omni")
+        input(AiModelModality.TEXT, AiModelModality.IMAGE, AiModelModality.AUDIO)
+        output(AiModelModality.TEXT, AiModelModality.AUDIO)
+        toolReasoningAbility()
+    }
+
+    private val QWEN_3_EMBEDDING = defineAiModel {
+        tokens("qwen", "3", "embedding")
+        textEmbedding()
+    }
+
+    private val QWEN_3_RERANKER = defineAiModel {
+        tokens("qwen", "3", "reranker")
+        textEmbedding()
+    }
+
     private val QWEN_3_5 = defineAiModel {
         tokens("qwen", "3", "5")
         visionInput()
@@ -341,6 +391,11 @@ object AiModelRegistry {
         tokens("qwen", "3", "7")
         visionInput()
         toolReasoningAbility()
+    }
+
+    private val QWEN_2_5_INSTRUCT = defineAiModel {
+        tokens("qwen", "2", "5", "instruct")
+        toolAbility()
     }
 
     private val DOUBAO_1_6 = defineAiModel {
@@ -401,6 +456,20 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val GLM_4_5_V = defineAiModel {
+        tokens("glm", "4", "5", "v")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val GLM_4_BASE = defineAiModel {
+        tokens("glm", "4")
+        notTokens("glm", "4", "5")
+        notTokens("glm", "4", "6")
+        notTokens("glm", "4", "7")
+        toolAbility()
+    }
+
     private val GLM_4_6 = defineAiModel {
         tokens("glm", "4", "6")
         toolReasoningAbility()
@@ -418,6 +487,21 @@ object AiModelRegistry {
 
     private val GLM_5_1 = defineAiModel {
         tokens("glm", "5", "1")
+        toolReasoningAbility()
+    }
+
+    private val GLM_5_2 = defineAiModel {
+        tokens("glm", "5", "2")
+        toolReasoningAbility()
+    }
+
+    private val GLM_Z1 = defineAiModel {
+        tokens("glm", "z", "1")
+        toolReasoningAbility()
+    }
+
+    private val NEX_N2 = defineAiModel {
+        tokens("nex", "n", "2")
         toolReasoningAbility()
     }
 
@@ -440,6 +524,71 @@ object AiModelRegistry {
         tokens("minimax", "m", "3")
         visionInput()
         toolReasoningAbility()
+    }
+
+    private val LING_2 = defineAiModel {
+        tokens("ling", "flash|mini", "2")
+        toolReasoningAbility()
+    }
+
+    private val HUNYUAN_A13B = defineAiModel {
+        tokens("hunyuan", "a", "13", "b")
+        toolReasoningAbility()
+    }
+
+    private val HUNYUAN_MT = defineAiModel {
+        tokens("hunyuan", "mt")
+    }
+
+    private val SEED_OSS = defineAiModel {
+        tokens("seed", "oss")
+        toolReasoningAbility()
+    }
+
+    private val ASR_MODEL = defineAiModel {
+        tokens(aiTokenRegex("^(asr|sensevoice)$"))
+        speechRecognition()
+    }
+
+    private val TELE_SPEECH_ASR = defineAiModel {
+        tokens("telespeechasr")
+        speechRecognition()
+    }
+
+    private val SENSE_VOICE = defineAiModel {
+        tokens("sensevoicesmall")
+        speechRecognition()
+    }
+
+    private val TTS_MODEL = defineAiModel {
+        tokens(aiTokenRegex("^(tts|ttsd|cosyvoice)$"))
+        speechSynthesis()
+    }
+
+    private val BGE_EMBEDDING = defineAiModel {
+        tokens("bge")
+        notTokens("reranker")
+        textEmbedding()
+    }
+
+    private val BGE_RERANKER = defineAiModel {
+        tokens("bge", "reranker")
+        textEmbedding()
+    }
+
+    private val KOLORS_IMAGE = defineAiModel {
+        tokens("kolors")
+        imageOutput()
+    }
+
+    private val WAN_TEXT_TO_VIDEO = defineAiModel {
+        tokens("wan", "t", "2", "v")
+        textToVideo()
+    }
+
+    private val WAN_IMAGE_TO_VIDEO = defineAiModel {
+        tokens("wan", "i", "2", "v")
+        imageToVideo()
     }
 
     private val XIAOMI_MIMO_V2 = defineAiModel {
@@ -528,12 +677,22 @@ object AiModelRegistry {
         DEEPSEEK_V4_FLASH,
         DEEPSEEK_V4_PRO,
         OCR_MODEL,
+        PADDLE_OCR_MODEL,
+        IMAGE_EDIT_MODEL,
+        IMAGE_GENERATION_MODEL,
         DEEPSEEK_V3_1,
         DEEPSEEK_V3_2,
         QWEN_3,
+        QWEN_3_VL,
+        QWEN_3_VL_EMBEDDING,
+        QWEN_3_VL_RERANKER,
+        QWEN_3_OMNI,
+        QWEN_3_EMBEDDING,
+        QWEN_3_RERANKER,
         QWEN_3_5,
         QWEN_3_6,
         QWEN_3_7,
+        QWEN_2_5_INSTRUCT,
         DOUBAO_1_6,
         DOUBAO_1_8,
         GROK_4,
@@ -544,14 +703,32 @@ object AiModelRegistry {
         STEP_3_7_FLASH,
         INTERN_S1,
         GLM_4_5,
+        GLM_4_5_V,
+        GLM_4_BASE,
         GLM_4_6,
         GLM_4_7,
         GLM_5,
         GLM_5_1,
+        GLM_5_2,
+        GLM_Z1,
+        NEX_N2,
         MINIMAX_M2,
         MINIMAX_M2_5,
         MINIMAX_M2_7,
         MINIMAX_M3,
+        LING_2,
+        HUNYUAN_A13B,
+        HUNYUAN_MT,
+        SEED_OSS,
+        ASR_MODEL,
+        TELE_SPEECH_ASR,
+        SENSE_VOICE,
+        TTS_MODEL,
+        BGE_EMBEDDING,
+        BGE_RERANKER,
+        KOLORS_IMAGE,
+        WAN_TEXT_TO_VIDEO,
+        WAN_IMAGE_TO_VIDEO,
         XIAOMI_MIMO_V2,
         XIAOMI_MIMO_V2_PRO,
         XIAOMI_MIMO_V2_5,
@@ -581,11 +758,7 @@ object AiModelRegistry {
         val matches = resolveModels(modelId)
         val abilities = resolveAbilities(matches)
         return AiModelCapabilities(
-            type = when {
-                AiModelAbility.ASR in abilities -> AiModelType.ASR
-                AiModelAbility.TTS in abilities -> AiModelType.TTS
-                else -> null
-            },
+            type = resolveType(matches, abilities),
             inputModalities = resolveModalities(matches) { it.inputModalities },
             outputModalities = resolveModalities(matches) { it.outputModalities },
             abilities = abilities,
@@ -630,6 +803,19 @@ object AiModelRegistry {
         return matches
     }
 
+    private fun resolveType(
+        models: List<AiModelDefinition>,
+        abilities: List<AiModelAbility>
+    ): AiModelType? {
+        val explicitTypes = models.mapNotNull { it.type }.distinct()
+        return when {
+            explicitTypes.size == 1 -> explicitTypes.first()
+            AiModelAbility.ASR in abilities -> AiModelType.ASR
+            AiModelAbility.TTS in abilities -> AiModelType.TTS
+            else -> null
+        }
+    }
+
     private fun resolveModalities(
         models: List<AiModelDefinition>,
         selector: (AiModelDefinition) -> Set<AiModelModality>
@@ -663,7 +849,8 @@ object AiModelRegistry {
         return listOf(
             AiModelModality.TEXT,
             AiModelModality.IMAGE,
-            AiModelModality.AUDIO
+            AiModelModality.AUDIO,
+            AiModelModality.VIDEO
         ).filter { it in values }
     }
 
@@ -698,7 +885,52 @@ object AiModelRegistry {
     }
 
     private fun AiModelDefinitionBuilder.imageOutput() {
-        output(AiModelModality.TEXT, AiModelModality.IMAGE)
+        type(AiModelType.IMAGE)
+        output(AiModelModality.IMAGE)
+    }
+
+    private fun AiModelDefinitionBuilder.imageEditOutput() {
+        type(AiModelType.IMAGE)
+        input(AiModelModality.TEXT, AiModelModality.IMAGE)
+        output(AiModelModality.IMAGE)
+    }
+
+    private fun AiModelDefinitionBuilder.textToVideo() {
+        type(AiModelType.VIDEO)
+        input(AiModelModality.TEXT)
+        output(AiModelModality.VIDEO)
+    }
+
+    private fun AiModelDefinitionBuilder.imageToVideo() {
+        type(AiModelType.VIDEO)
+        input(AiModelModality.TEXT, AiModelModality.IMAGE)
+        output(AiModelModality.VIDEO)
+    }
+
+    private fun AiModelDefinitionBuilder.textEmbedding() {
+        type(AiModelType.EMBEDDING)
+        input(AiModelModality.TEXT)
+        output(AiModelModality.TEXT)
+    }
+
+    private fun AiModelDefinitionBuilder.visionEmbedding() {
+        type(AiModelType.EMBEDDING)
+        input(AiModelModality.TEXT, AiModelModality.IMAGE)
+        output(AiModelModality.TEXT)
+    }
+
+    private fun AiModelDefinitionBuilder.speechRecognition() {
+        type(AiModelType.ASR)
+        input(AiModelModality.AUDIO)
+        output(AiModelModality.TEXT)
+        asrAbility()
+    }
+
+    private fun AiModelDefinitionBuilder.speechSynthesis() {
+        type(AiModelType.TTS)
+        input(AiModelModality.TEXT)
+        output(AiModelModality.AUDIO)
+        ttsAbility()
     }
 
     private fun AiModelDefinitionBuilder.toolAbility() {

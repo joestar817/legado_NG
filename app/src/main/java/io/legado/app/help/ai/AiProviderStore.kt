@@ -391,6 +391,7 @@ object AiProviderStore {
         return when (value.lowercase()) {
             "image" -> AiModelType.IMAGE
             "embedding" -> AiModelType.EMBEDDING
+            "video" -> AiModelType.VIDEO
             "asr", "speech_to_text", "stt" -> AiModelType.ASR
             "tts", "text_to_speech", "voice" -> AiModelType.TTS
             else -> AiModelType.CHAT
@@ -408,6 +409,9 @@ object AiProviderStore {
             }
             if (values.any { it.equals("audio", ignoreCase = true) }) {
                 add(AiModelModality.AUDIO)
+            }
+            if (values.any { it.equals("video", ignoreCase = true) }) {
+                add(AiModelModality.VIDEO)
             }
         }
     }

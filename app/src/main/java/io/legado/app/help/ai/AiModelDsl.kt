@@ -6,6 +6,7 @@ internal interface AiModelSelector {
 
 internal class AiModelDefinition(
     private val matcher: AiTokenMatcher,
+    val type: AiModelType?,
     val inputModalities: Set<AiModelModality>,
     val outputModalities: Set<AiModelModality>,
     val abilities: Set<AiModelAbility>
@@ -46,6 +47,7 @@ internal fun aiTokenRegex(pattern: String): AiTokenSpec {
 internal class AiModelDefinitionBuilder {
 
     private val matchers = mutableListOf<AiTokenMatcher>()
+    private var type: AiModelType? = null
     private val inputModalities = mutableSetOf(AiModelModality.TEXT)
     private val outputModalities = mutableSetOf(AiModelModality.TEXT)
     private val abilities = mutableSetOf<AiModelAbility>()
@@ -70,6 +72,10 @@ internal class AiModelDefinitionBuilder {
         matchers += AiExactIdMatcher(id)
     }
 
+    fun type(type: AiModelType) {
+        this.type = type
+    }
+
     fun input(vararg modalities: AiModelModality) {
         inputModalities.clear()
         inputModalities.addAll(modalities)
@@ -92,6 +98,7 @@ internal class AiModelDefinitionBuilder {
         }
         return AiModelDefinition(
             matcher = matcher,
+            type = type,
             inputModalities = inputModalities.toSet(),
             outputModalities = outputModalities.toSet(),
             abilities = abilities.toSet()

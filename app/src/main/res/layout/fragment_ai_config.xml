@@ -1592,6 +1592,15 @@
                     android:gravity="center"
                     android:text="@string/ai_model_type_tts" />
 
+                <TextView
+                    android:id="@+id/segment_model_type_video"
+                    style="@style/Ng.SettingsTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/ai_model_type_video" />
+
             </LinearLayout>
 
             <TextView
@@ -1627,6 +1636,15 @@
                     android:gravity="center"
                     android:text="@string/ai_model_modality_image" />
 
+                <TextView
+                    android:id="@+id/segment_model_input_video"
+                    style="@style/Ng.SettingsTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/ai_model_modality_video" />
+
             </LinearLayout>
 
             <TextView
@@ -1661,6 +1679,15 @@
                     android:layout_weight="1"
                     android:gravity="center"
                     android:text="@string/ai_model_modality_image" />
+
+                <TextView
+                    android:id="@+id/segment_model_output_video"
+                    style="@style/Ng.SettingsTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/ai_model_modality_video" />
 
             </LinearLayout>
 

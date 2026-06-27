@@ -31,6 +31,9 @@ enum class AiModelType {
     @SerializedName("embedding")
     EMBEDDING,
 
+    @SerializedName("video")
+    VIDEO,
+
     @SerializedName("asr")
     ASR,
 
@@ -46,7 +49,10 @@ enum class AiModelModality {
     IMAGE,
 
     @SerializedName("audio")
-    AUDIO
+    AUDIO,
+
+    @SerializedName("video")
+    VIDEO
 }
 
 enum class AiModelAbility {

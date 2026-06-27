@@ -274,11 +274,13 @@
     <string name="ai_model_type_embedding">Embedding</string>
     <string name="ai_model_type_asr">ASR</string>
     <string name="ai_model_type_tts">TTS</string>
+    <string name="ai_model_type_video">Video</string>
     <string name="ai_model_input_modalities">Input modalities</string>
     <string name="ai_model_output_modalities">Output modalities</string>
     <string name="ai_model_abilities">Model abilities</string>
     <string name="ai_model_modality_text">Text</string>
     <string name="ai_model_modality_image">Image</string>
+    <string name="ai_model_modality_video">Video</string>
     <string name="ai_model_ability_asr">ASR</string>
     <string name="ai_model_ability_tts">TTS</string>
     <string name="ai_model_ability_tool">Tools</string>

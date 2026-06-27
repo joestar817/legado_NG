@@ -273,11 +273,13 @@
     <string name="ai_model_type_embedding">嵌入</string>
     <string name="ai_model_type_asr">ASR</string>
     <string name="ai_model_type_tts">TTS</string>
+    <string name="ai_model_type_video">视频</string>
     <string name="ai_model_input_modalities">输入形式</string>
     <string name="ai_model_output_modalities">输出形式</string>
     <string name="ai_model_abilities">模型能力</string>
     <string name="ai_model_modality_text">文本</string>
     <string name="ai_model_modality_image">图像</string>
+    <string name="ai_model_modality_video">视频</string>
     <string name="ai_model_ability_asr">ASR</string>
     <string name="ai_model_ability_tts">TTS</string>
     <string name="ai_model_ability_tool">工具调用</string>

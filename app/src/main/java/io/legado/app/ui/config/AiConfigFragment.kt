@@ -390,11 +390,16 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.segmentModelTypeTts.setOnClickListener {
             selectModelType(AiModelType.TTS, save = true)
         }
+        binding.segmentModelTypeVideo.setOnClickListener {
+            selectModelType(AiModelType.VIDEO, save = true)
+        }
         listOf(
             binding.segmentModelInputText,
             binding.segmentModelInputImage,
+            binding.segmentModelInputVideo,
             binding.segmentModelOutputText,
             binding.segmentModelOutputImage,
+            binding.segmentModelOutputVideo,
             binding.segmentModelAbilityTool,
             binding.segmentModelAbilityReasoning
         ).forEach { segment ->
@@ -857,6 +862,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiModelModality.TEXT in model.safeOutputModalities()
         sheetBinding.segmentModelOutputImage.isSelected =
             AiModelModality.IMAGE in model.safeOutputModalities()
+        sheetBinding.segmentModelInputVideo.isSelected =
+            AiModelModality.VIDEO in model.safeInputModalities()
+        sheetBinding.segmentModelOutputVideo.isSelected =
+            AiModelModality.VIDEO in model.safeOutputModalities()
         sheetBinding.segmentModelAbilityTool.isSelected =
             AiModelAbility.TOOL in model.safeAbilities()
         sheetBinding.segmentModelAbilityReasoning.isSelected =
@@ -876,11 +885,16 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         sheetBinding.segmentModelTypeTts.setOnClickListener {
             selectModelEditType(sheetBinding, AiModelType.TTS)
         }
+        sheetBinding.segmentModelTypeVideo.setOnClickListener {
+            selectModelEditType(sheetBinding, AiModelType.VIDEO)
+        }
         listOf(
             sheetBinding.segmentModelInputText,
             sheetBinding.segmentModelInputImage,
+            sheetBinding.segmentModelInputVideo,
             sheetBinding.segmentModelOutputText,
             sheetBinding.segmentModelOutputImage,
+            sheetBinding.segmentModelOutputVideo,
             sheetBinding.segmentModelAbilityTool,
             sheetBinding.segmentModelAbilityReasoning
         ).forEach { segment ->
@@ -901,13 +915,15 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         sheetBinding.segmentModelTypeEmbedding.isSelected = type == AiModelType.EMBEDDING
         sheetBinding.segmentModelTypeAsr.isSelected = type == AiModelType.ASR
         sheetBinding.segmentModelTypeTts.isSelected = type == AiModelType.TTS
-        val showChatCapabilities = type == AiModelType.CHAT
-        sheetBinding.textModelInputModalitiesLabel.isVisible = showChatCapabilities
-        sheetBinding.layoutModelInputModalities.isVisible = showChatCapabilities
-        sheetBinding.textModelOutputModalitiesLabel.isVisible = showChatCapabilities
-        sheetBinding.layoutModelOutputModalities.isVisible = showChatCapabilities
-        sheetBinding.textModelAbilitiesLabel.isVisible = showChatCapabilities
-        sheetBinding.layoutModelAbilities.isVisible = showChatCapabilities
+        sheetBinding.segmentModelTypeVideo.isSelected = type == AiModelType.VIDEO
+        val showModalities = type == AiModelType.CHAT || type == AiModelType.VIDEO
+        val showChatAbilities = type == AiModelType.CHAT
+        sheetBinding.textModelInputModalitiesLabel.isVisible = showModalities
+        sheetBinding.layoutModelInputModalities.isVisible = showModalities
+        sheetBinding.textModelOutputModalitiesLabel.isVisible = showModalities
+        sheetBinding.layoutModelOutputModalities.isVisible = showModalities
+        sheetBinding.textModelAbilitiesLabel.isVisible = showChatAbilities
+        sheetBinding.layoutModelAbilities.isVisible = showChatAbilities
         refreshModelEditSegmentStyles(sheetBinding)
     }
 
@@ -918,17 +934,20 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             sheetBinding.segmentModelTypeImage,
             sheetBinding.segmentModelTypeEmbedding,
             sheetBinding.segmentModelTypeAsr,
-            sheetBinding.segmentModelTypeTts
+            sheetBinding.segmentModelTypeTts,
+            sheetBinding.segmentModelTypeVideo
         )
         applyModelEditSegmentGroupStyles(
             sheetBinding.layoutModelInputModalities,
             sheetBinding.segmentModelInputText,
-            sheetBinding.segmentModelInputImage
+            sheetBinding.segmentModelInputImage,
+            sheetBinding.segmentModelInputVideo
         )
         applyModelEditSegmentGroupStyles(
             sheetBinding.layoutModelOutputModalities,
             sheetBinding.segmentModelOutputText,
-            sheetBinding.segmentModelOutputImage
+            sheetBinding.segmentModelOutputImage,
+            sheetBinding.segmentModelOutputVideo
         )
         applyModelEditSegmentGroupStyles(
             sheetBinding.layoutModelAbilities,
@@ -1020,6 +1039,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 AiModelModality.TEXT in model.safeOutputModalities()
             binding.segmentModelOutputImage.isSelected =
                 AiModelModality.IMAGE in model.safeOutputModalities()
+            binding.segmentModelInputVideo.isSelected =
+                AiModelModality.VIDEO in model.safeInputModalities()
+            binding.segmentModelOutputVideo.isSelected =
+                AiModelModality.VIDEO in model.safeOutputModalities()
             binding.segmentModelAbilityTool.isSelected = AiModelAbility.TOOL in model.safeAbilities()
             binding.segmentModelAbilityReasoning.isSelected =
                 AiModelAbility.REASONING in model.safeAbilities()
@@ -1036,13 +1059,15 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.segmentModelTypeEmbedding.isSelected = type == AiModelType.EMBEDDING
         binding.segmentModelTypeAsr.isSelected = type == AiModelType.ASR
         binding.segmentModelTypeTts.isSelected = type == AiModelType.TTS
-        val showChatCapabilities = type == AiModelType.CHAT
-        binding.textModelInputModalitiesLabel.isVisible = showChatCapabilities
-        binding.layoutModelInputModalities.isVisible = showChatCapabilities
-        binding.textModelOutputModalitiesLabel.isVisible = showChatCapabilities
-        binding.layoutModelOutputModalities.isVisible = showChatCapabilities
-        binding.textModelAbilitiesLabel.isVisible = showChatCapabilities
-        binding.layoutModelAbilities.isVisible = showChatCapabilities
+        binding.segmentModelTypeVideo.isSelected = type == AiModelType.VIDEO
+        val showModalities = type == AiModelType.CHAT || type == AiModelType.VIDEO
+        val showChatAbilities = type == AiModelType.CHAT
+        binding.textModelInputModalitiesLabel.isVisible = showModalities
+        binding.layoutModelInputModalities.isVisible = showModalities
+        binding.textModelOutputModalitiesLabel.isVisible = showModalities
+        binding.layoutModelOutputModalities.isVisible = showModalities
+        binding.textModelAbilitiesLabel.isVisible = showChatAbilities
+        binding.layoutModelAbilities.isVisible = showChatAbilities
         refreshModelSegmentStyles()
         if (save && !ignoreModelDetailChanges && currentPage == Page.MODEL_DETAIL) {
             saveCurrentModel()
@@ -1055,10 +1080,19 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             binding.segmentModelTypeImage,
             binding.segmentModelTypeEmbedding,
             binding.segmentModelTypeAsr,
-            binding.segmentModelTypeTts
+            binding.segmentModelTypeTts,
+            binding.segmentModelTypeVideo
         )
-        applySegmentStyles(binding.segmentModelInputText, binding.segmentModelInputImage)
-        applySegmentStyles(binding.segmentModelOutputText, binding.segmentModelOutputImage)
+        applySegmentStyles(
+            binding.segmentModelInputText,
+            binding.segmentModelInputImage,
+            binding.segmentModelInputVideo
+        )
+        applySegmentStyles(
+            binding.segmentModelOutputText,
+            binding.segmentModelOutputImage,
+            binding.segmentModelOutputVideo
+        )
         applySegmentStyles(binding.segmentModelAbilityTool, binding.segmentModelAbilityReasoning)
     }
 
@@ -1085,6 +1119,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             binding.segmentModelTypeEmbedding.isSelected -> AiModelType.EMBEDDING
             binding.segmentModelTypeAsr.isSelected -> AiModelType.ASR
             binding.segmentModelTypeTts.isSelected -> AiModelType.TTS
+            binding.segmentModelTypeVideo.isSelected -> AiModelType.VIDEO
             else -> AiModelType.CHAT
         }
     }
@@ -1095,6 +1130,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             sheetBinding.segmentModelTypeEmbedding.isSelected -> AiModelType.EMBEDDING
             sheetBinding.segmentModelTypeAsr.isSelected -> AiModelType.ASR
             sheetBinding.segmentModelTypeTts.isSelected -> AiModelType.TTS
+            sheetBinding.segmentModelTypeVideo.isSelected -> AiModelType.VIDEO
             else -> AiModelType.CHAT
         }
     }
@@ -2170,7 +2206,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return when (type) {
             AiModelType.CHAT -> normalizeModalities(
                 textChecked = binding.segmentModelInputText.isSelected,
-                imageChecked = binding.segmentModelInputImage.isSelected
+                imageChecked = binding.segmentModelInputImage.isSelected,
+                videoChecked = binding.segmentModelInputVideo.isSelected
+            )
+            AiModelType.VIDEO -> normalizeModalities(
+                textChecked = binding.segmentModelInputText.isSelected,
+                imageChecked = binding.segmentModelInputImage.isSelected,
+                videoChecked = binding.segmentModelInputVideo.isSelected
             )
 
             AiModelType.IMAGE,
@@ -2184,7 +2226,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return when (type) {
             AiModelType.CHAT -> normalizeModalities(
                 textChecked = binding.segmentModelOutputText.isSelected,
-                imageChecked = binding.segmentModelOutputImage.isSelected
+                imageChecked = binding.segmentModelOutputImage.isSelected,
+                videoChecked = binding.segmentModelOutputVideo.isSelected
+            )
+            AiModelType.VIDEO -> normalizeModalities(
+                textChecked = binding.segmentModelOutputText.isSelected,
+                imageChecked = binding.segmentModelOutputImage.isSelected,
+                videoChecked = binding.segmentModelOutputVideo.isSelected,
+                defaultModality = AiModelModality.VIDEO
             )
 
             AiModelType.IMAGE -> listOf(AiModelModality.IMAGE)
@@ -2202,7 +2251,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             }
 
             AiModelType.IMAGE,
-            AiModelType.EMBEDDING -> emptyList()
+            AiModelType.EMBEDDING,
+            AiModelType.VIDEO -> emptyList()
             AiModelType.ASR -> listOf(AiModelAbility.ASR)
             AiModelType.TTS -> listOf(AiModelAbility.TTS)
         }
@@ -2215,7 +2265,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return when (type) {
             AiModelType.CHAT -> normalizeModalities(
                 textChecked = sheetBinding.segmentModelInputText.isSelected,
-                imageChecked = sheetBinding.segmentModelInputImage.isSelected
+                imageChecked = sheetBinding.segmentModelInputImage.isSelected,
+                videoChecked = sheetBinding.segmentModelInputVideo.isSelected
+            )
+            AiModelType.VIDEO -> normalizeModalities(
+                textChecked = sheetBinding.segmentModelInputText.isSelected,
+                imageChecked = sheetBinding.segmentModelInputImage.isSelected,
+                videoChecked = sheetBinding.segmentModelInputVideo.isSelected
             )
 
             AiModelType.IMAGE,
@@ -2232,7 +2288,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return when (type) {
             AiModelType.CHAT -> normalizeModalities(
                 textChecked = sheetBinding.segmentModelOutputText.isSelected,
-                imageChecked = sheetBinding.segmentModelOutputImage.isSelected
+                imageChecked = sheetBinding.segmentModelOutputImage.isSelected,
+                videoChecked = sheetBinding.segmentModelOutputVideo.isSelected
+            )
+            AiModelType.VIDEO -> normalizeModalities(
+                textChecked = sheetBinding.segmentModelOutputText.isSelected,
+                imageChecked = sheetBinding.segmentModelOutputImage.isSelected,
+                videoChecked = sheetBinding.segmentModelOutputVideo.isSelected,
+                defaultModality = AiModelModality.VIDEO
             )
 
             AiModelType.IMAGE -> listOf(AiModelModality.IMAGE)
@@ -2255,7 +2318,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             }
 
             AiModelType.IMAGE,
-            AiModelType.EMBEDDING -> emptyList()
+            AiModelType.EMBEDDING,
+            AiModelType.VIDEO -> emptyList()
             AiModelType.ASR -> listOf(AiModelAbility.ASR)
             AiModelType.TTS -> listOf(AiModelAbility.TTS)
         }
@@ -2277,12 +2341,15 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun normalizeModalities(
         textChecked: Boolean,
-        imageChecked: Boolean
+        imageChecked: Boolean,
+        videoChecked: Boolean = false,
+        defaultModality: AiModelModality = AiModelModality.TEXT
     ): List<AiModelModality> {
         return buildList {
             if (textChecked) add(AiModelModality.TEXT)
             if (imageChecked) add(AiModelModality.IMAGE)
-        }.ifEmpty { listOf(AiModelModality.TEXT) }
+            if (videoChecked) add(AiModelModality.VIDEO)
+        }.ifEmpty { listOf(defaultModality) }
     }
 
     private fun List<AiModel>.updatedWithModel(model: AiModel): List<AiModel> {
@@ -2603,6 +2670,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     ) {
         TEXT(R.drawable.ic_ai_capability_text, R.string.ai_model_modality_text, 0xFF7C3AED.toInt()),
         VISION(R.drawable.ic_ai_capability_vision, R.string.ai_model_modality_image, 0xFFF59E0B.toInt()),
+        VIDEO(R.drawable.ic_ai_capability_video, R.string.ai_model_modality_video, 0xFFEA580C.toInt()),
         ASR(R.drawable.ic_ai_capability_asr, R.string.ai_model_ability_asr, 0xFFDB2777.toInt()),
         TTS(R.drawable.ic_ai_capability_tts, R.string.ai_model_ability_tts, 0xFF0891B2.toInt()),
         TOOL(R.drawable.ic_ai_capability_tool, R.string.ai_model_ability_tool, 0xFF2563EB.toInt()),
@@ -2658,6 +2726,12 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 || AiModelModality.IMAGE in safeOutputModalities()
             ) {
                 add(ModelCapabilityTag.VISION)
+            }
+            if (
+                AiModelModality.VIDEO in safeInputModalities()
+                || AiModelModality.VIDEO in safeOutputModalities()
+            ) {
+                add(ModelCapabilityTag.VIDEO)
             }
             if (AiModelAbility.TOOL in safeAbilities()) {
                 add(ModelCapabilityTag.TOOL)
