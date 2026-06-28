@@ -21,7 +21,6 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -81,6 +80,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         PROMPT_DETAIL,
         MODEL_SETTINGS,
         PURIFY_MODEL_SETTINGS,
+        ASSISTANT_MODEL_SETTINGS,
         PURIFY_SETTINGS
     }
     private enum class ProviderDetailTab { CONFIG, MODELS }
@@ -99,6 +99,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var modelSearchQuery: String = ""
     private var providerDetailTab = ProviderDetailTab.CONFIG
     private var requestJob: Job? = null
+    private var ignoreMainFormChanges = false
     private var ignoreProviderFormChanges = false
     private var ignorePurifyFormChanges = false
     private var ignorePromptHighlight = false
@@ -137,6 +138,24 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
         binding.layoutPromptEntry.setOnClickListener {
             showPromptList()
+        }
+        binding.layoutChatFab.setOnClickListener {
+            binding.switchChatFab.isChecked = !binding.switchChatFab.isChecked
+        }
+        binding.switchChatFab.setOnCheckedChangeListener { _, isChecked ->
+            if (!ignoreMainFormChanges) {
+                AiConfig.chatFabEnabled = isChecked
+                refreshMain()
+            }
+        }
+        binding.layoutInternalMcp.setOnClickListener {
+            binding.switchInternalMcp.isChecked = !binding.switchInternalMcp.isChecked
+        }
+        binding.switchInternalMcp.setOnCheckedChangeListener { _, isChecked ->
+            if (!ignoreMainFormChanges) {
+                AiConfig.internalMcpEnabled = isChecked
+                refreshMain()
+            }
         }
         binding.layoutPurifyEntry.setOnClickListener {
             showPurifySettings()
@@ -362,11 +381,20 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPurifyModelSettingsEntry.setOnClickListener {
             showPurifyModelSettings()
         }
+        binding.layoutAssistantModelSettingsEntry.setOnClickListener {
+            showAssistantModelSettings()
+        }
         binding.layoutPurifyModelEntry.setOnClickListener {
             showPurifyModelSelectDialog()
         }
         binding.layoutPurifyReasoningEntry.setOnClickListener {
             showPurifyReasoningDialog()
+        }
+        binding.layoutAssistantModelEntry.setOnClickListener {
+            showAssistantModelSelectDialog()
+        }
+        binding.layoutAssistantReasoningEntry.setOnClickListener {
+            showAssistantReasoningDialog()
         }
     }
 
@@ -500,6 +528,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             binding.layoutProviderList.isVisible -> Page.PROVIDERS
             binding.layoutPromptDetail.isVisible -> Page.PROMPT_DETAIL
             binding.layoutPromptList.isVisible -> Page.PROMPTS
+            binding.layoutAssistantModelSettings.isVisible -> Page.ASSISTANT_MODEL_SETTINGS
             binding.layoutPurifyModelSettings.isVisible -> Page.PURIFY_MODEL_SETTINGS
             binding.layoutModelSettings.isVisible -> Page.MODEL_SETTINGS
             binding.layoutPurifySettings.isVisible -> Page.PURIFY_SETTINGS
@@ -516,6 +545,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             Page.PROMPTS -> showMain()
             Page.MODEL_SETTINGS -> showMain()
             Page.PURIFY_MODEL_SETTINGS -> showModelSettings()
+            Page.ASSISTANT_MODEL_SETTINGS -> showModelSettings()
             Page.PURIFY_SETTINGS -> showMain()
             Page.MAIN -> Unit
         }
@@ -544,6 +574,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshMain()
     }
@@ -562,6 +593,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshAccentControls()
         refreshProviders()
@@ -584,6 +616,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshAccentControls()
         refreshCurrentDetail()
@@ -609,6 +642,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshPrompts()
     }
@@ -627,6 +661,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = true
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshPromptDetail()
     }
@@ -645,6 +680,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = true
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshModelSettings()
     }
@@ -663,6 +699,26 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = true
+        binding.layoutAssistantModelSettings.isVisible = false
+        binding.layoutPurifySettings.isVisible = false
+        refreshModelSettings()
+    }
+
+    private fun showAssistantModelSettings() {
+        currentPage = Page.ASSISTANT_MODEL_SETTINGS
+        currentProviderId = null
+        currentModelId = null
+        currentPrompt = null
+        setPageTitle(R.string.ai_assistant)
+        binding.layoutMainMenu.isVisible = false
+        binding.layoutProviderList.isVisible = false
+        binding.layoutProviderDetail.isVisible = false
+        binding.layoutModelDetail.isVisible = false
+        binding.layoutPromptList.isVisible = false
+        binding.layoutPromptDetail.isVisible = false
+        binding.layoutModelSettings.isVisible = false
+        binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutAssistantModelSettings.isVisible = true
         binding.layoutPurifySettings.isVisible = false
         refreshModelSettings()
     }
@@ -681,6 +737,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = true
         refreshPurifySettings()
     }
@@ -696,6 +753,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             Page.PROMPT_DETAIL -> refreshPromptDetail()
             Page.MODEL_SETTINGS -> refreshModelSettings()
             Page.PURIFY_MODEL_SETTINGS -> refreshModelSettings()
+            Page.ASSISTANT_MODEL_SETTINGS -> refreshModelSettings()
             Page.PURIFY_SETTINGS -> refreshPurifySettings()
         }
     }
@@ -724,18 +782,42 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.imageProviderEntryIcon.imageTintList = entryIconTint
         binding.imageModelEntryIcon.imageTintList = entryIconTint
         binding.imagePromptEntryIcon.imageTintList = entryIconTint
+        binding.imageChatFabIcon.imageTintList = entryIconTint
+        binding.imageInternalMcpIcon.imageTintList = entryIconTint
         binding.imagePurifyEntryIcon.imageTintList = entryIconTint
+        ignoreMainFormChanges = true
+        try {
+            binding.switchChatFab.isChecked = AiConfig.chatFabEnabled
+            binding.switchInternalMcp.isChecked = AiConfig.internalMcpEnabled
+        } finally {
+            ignoreMainFormChanges = false
+        }
         binding.textProviderEntrySummary.text = getString(
             R.string.ai_provider_menu_summary,
             providers.size.toString()
         )
         binding.textModelEntrySummary.text = getString(
             R.string.ai_model_settings_summary,
+            assistantModelSummaryText(),
             purifyModelSummaryText()
         )
         binding.textPromptEntrySummary.text = getString(
             R.string.ai_prompt_menu_summary,
             visibleAiPrompts().size.toString()
+        )
+        binding.textChatFabSummary.text = getString(
+            if (AiConfig.chatFabEnabled) {
+                R.string.ai_chat_fab_summary_on
+            } else {
+                R.string.ai_chat_fab_summary_off
+            }
+        )
+        binding.textInternalMcpSummary.text = getString(
+            if (AiConfig.internalMcpEnabled) {
+                R.string.ai_internal_mcp_summary_on
+            } else {
+                R.string.ai_internal_mcp_summary_off
+            }
         )
         binding.textPurifyEntrySummary.text = getString(
             R.string.ai_purify_settings_summary,
@@ -1467,18 +1549,31 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         val entryIconTint = ColorStateList.valueOf(color)
         binding.textModelSettingsSectionLabel.setTextColor(color)
         binding.textPurifyModelSettingsSectionLabel.setTextColor(color)
+        binding.textAssistantModelSettingsSectionLabel.setTextColor(color)
         binding.imagePurifyModelSettingsIcon.imageTintList = entryIconTint
+        binding.imageAssistantModelSettingsIcon.imageTintList = entryIconTint
         binding.imagePurifyModelIcon.imageTintList = entryIconTint
         binding.imagePurifyReasoningIcon.imageTintList = entryIconTint
+        binding.imageAssistantModelIcon.imageTintList = entryIconTint
+        binding.imageAssistantReasoningIcon.imageTintList = entryIconTint
         binding.textPurifyModelSettingsSummary.text = getString(
             R.string.ai_model_function_summary,
             purifyModelSummaryText(),
             purifyReasoningSummaryText()
         )
+        binding.textAssistantModelSettingsSummary.text = getString(
+            R.string.ai_model_function_summary,
+            assistantModelSummaryText(),
+            assistantReasoningSummaryText()
+        )
         binding.textPurifyModelSummary.text = purifyModelSummaryText()
         binding.textPurifyReasoningSummary.text = purifyReasoningSummaryText()
+        binding.textAssistantModelSummary.text = assistantModelSummaryText()
+        binding.textAssistantReasoningSummary.text = assistantReasoningSummaryText()
         val reasoningEnabled = selectedPurifyModel()?.model?.supportsReasoning() == true
         binding.layoutPurifyReasoningEntry.alpha = if (reasoningEnabled) 1f else 0.55f
+        val assistantReasoningEnabled = selectedAssistantModel()?.model?.supportsReasoning() == true
+        binding.layoutAssistantReasoningEntry.alpha = if (assistantReasoningEnabled) 1f else 0.55f
     }
 
     private fun purifyModelSummaryText(): String {
@@ -1509,6 +1604,34 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
+    private fun assistantModelSummaryText(): String {
+        val selected = selectedAssistantModel()
+        return when {
+            selected == null && AiConfig.assistantModelId.isBlank() ->
+                getString(R.string.ai_assistant_model_not_selected)
+            selected == null ->
+                getString(R.string.ai_assistant_model_unavailable)
+            else ->
+                getString(
+                    R.string.ai_purify_model_selected_summary,
+                    selected.model.displayName(),
+                    selected.provider.name
+                )
+        }
+    }
+
+    private fun assistantReasoningSummaryText(): String {
+        val selected = selectedAssistantModel()
+        return when {
+            selected == null -> getString(R.string.ai_assistant_reasoning_select_model_first)
+            !selected.model.supportsReasoning() -> getString(R.string.ai_assistant_reasoning_unsupported)
+            else -> getString(
+                R.string.ai_purify_reasoning_level_summary,
+                AiConfig.assistantReasoningLevel.displayName()
+            )
+        }
+    }
+
     private fun selectedPurifyModel(): PurifyModelOption? {
         val providerId = AiConfig.purifyProviderId
         val modelId = AiConfig.purifyModelId
@@ -1518,6 +1641,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         val provider = AiProviderStore.provider(providerId)?.takeIf { it.enabled } ?: return null
         val model = provider.purifyEligibleModels().firstOrNull { it.safeId() == modelId } ?: return null
         return PurifyModelOption(provider, model)
+    }
+
+    private fun selectedAssistantModel(): AiAssistantConfigUi.AssistantModelOption? {
+        return AiAssistantConfigUi.selectedModel()
     }
 
     private fun showPurifyModelSelectDialog() {
@@ -1688,7 +1815,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     orientation = LinearLayout.HORIZONTAL
                     setPadding(0, 6.dpToPx(), 0, 0)
                     model.capabilityTags().forEach {
-                        addView(createModelCapabilityTag(it))
+                        addView(createModelCapabilityTag(requireContext(), it))
                     }
                 })
             }
@@ -1711,6 +1838,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             ).apply {
                 bottomMargin = 12.dpToPx()
             }
+        }
+    }
+
+    private fun showAssistantModelSelectDialog() {
+        AiAssistantConfigUi.showModelSelectSheet(requireContext()) {
+            refreshModelSettings()
+            refreshMain()
         }
     }
 
@@ -1773,31 +1907,19 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             topMargin = 8.dpToPx()
             bottomMargin = 22.dpToPx()
         })
-        val seekBar = SeekBar(requireContext()).apply {
-            max = levels.lastIndex
-            progress = levels.indexOf(AiConfig.purifyReasoningLevel).coerceAtLeast(0)
-            progressTintList = ColorStateList.valueOf(accentColor)
-            thumbTintList = ColorStateList.valueOf(accentColor)
-            progressBackgroundTintList = ColorStateList.valueOf(
-                ColorUtils.setAlphaComponent(accentColor, 45)
-            )
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    val level = levels.getOrNull(progress) ?: AiReasoningLevel.AUTO
-                    AiConfig.purifyReasoningLevel = level
-                    currentLabel.text = level.displayName()
-                    refreshModelSettings()
-                    refreshMain()
-                }
-
-                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-                override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
-            })
+        val stepBar = ReasoningStepBar(requireContext()).apply {
+            stepCount = levels.size
+            selectedIndex = levels.indexOf(AiConfig.purifyReasoningLevel).coerceAtLeast(0)
+            stepColor = accentColor
+            onSelectedIndexChanged = { index ->
+                val level = levels.getOrNull(index) ?: AiReasoningLevel.AUTO
+                AiConfig.purifyReasoningLevel = level
+                currentLabel.text = level.displayName()
+                refreshModelSettings()
+                refreshMain()
+            }
         }
-        root.addView(seekBar, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        root.addReasoningStepBar(stepBar)
         root.addView(LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             levels.forEach { level ->
@@ -1829,6 +1951,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         dialog.show()
     }
 
+    private fun showAssistantReasoningDialog() {
+        AiAssistantConfigUi.showReasoningSheet(requireContext()) {
+            refreshModelSettings()
+            refreshMain()
+        }
+    }
+
     private fun AiProviderSetting.purifyEligibleModels(): List<AiModel> {
         val availableIds = effectiveAvailableModelIds().toSet()
         if (availableIds.isEmpty()) {
@@ -1836,17 +1965,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
         return displayModels()
             .filter { it.safeId() in availableIds }
-            .filter { it.supportsPurifyText() }
-    }
-
-    private fun AiModel.supportsPurifyText(): Boolean {
-        return safeType() == AiModelType.CHAT &&
-            AiModelModality.TEXT in safeInputModalities() &&
-            AiModelModality.TEXT in safeOutputModalities()
-    }
-
-    private fun AiModel.supportsReasoning(): Boolean {
-        return AiModelAbility.REASONING in safeAbilities()
+            .filter { it.supportsChatText() }
     }
 
     private fun AiReasoningLevel.displayName(): String {
@@ -1858,6 +1977,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiReasoningLevel.HIGH -> getString(R.string.ai_reasoning_level_high)
             AiReasoningLevel.ULTRA -> getString(R.string.ai_reasoning_level_ultra)
         }
+    }
+
+    private fun LinearLayout.addReasoningStepBar(stepBar: ReasoningStepBar) {
+        addView(stepBar, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            42.dpToPx()
+        ))
     }
 
     private data class PurifyModelOption(
@@ -2387,137 +2513,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return if (found) updated else listOf(model) + updated
     }
 
-    private fun AiProviderSetting.displayModels(): List<AiModel> {
-        if (apiKey.isBlank()) {
-            return emptyList()
-        }
-        return models
-            .filter { it.safeId().isNotBlank() }
-            .distinctBy { it.safeId() }
-    }
-
-    private fun AiProviderSetting.effectiveAvailableModelIds(): List<String> {
-        val cachedIds = models.map { it.safeId() }.filter { it.isNotBlank() }
-        return if (availableModelSelectionInitialized) {
-            availableModelIds.filter { it in cachedIds }
-        } else {
-            cachedIds
-        }
-    }
-
-    private fun AiModel.displayName(): String {
-        return safeDisplayName().ifBlank {
-            val rawName = safeName().ifBlank { safeId() }.trim()
-            rawName.substringAfterLast('/').ifBlank {
-                safeId().substringAfterLast('/').ifBlank { safeId() }
-            }
-        }
-    }
-
-    private fun AiModel.safeId(): String {
-        return runCatching { id }.getOrNull().orEmpty()
-    }
-
-    private fun AiModel.safeName(): String {
-        return runCatching { name }.getOrNull().orEmpty()
-    }
-
-    private fun AiModel.safeDisplayName(): String {
-        return runCatching { displayName }.getOrNull().orEmpty()
-    }
-
-    private fun AiModel.safeOwnedBy(): String {
-        return runCatching { ownedBy }.getOrNull().orEmpty()
-    }
-
-    private fun AiModel.safeType(): AiModelType {
-        return runCatching { type }.getOrNull() ?: AiModelType.CHAT
-    }
-
-    private fun AiModel.safeInputModalities(): List<AiModelModality> {
-        return runCatching { inputModalities }.getOrNull().orEmpty()
-    }
-
-    private fun AiModel.safeOutputModalities(): List<AiModelModality> {
-        return runCatching { outputModalities }.getOrNull().orEmpty()
-    }
-
-    private fun AiModel.safeAbilities(): List<AiModelAbility> {
-        return runCatching { abilities }.getOrNull().orEmpty()
-    }
-
-    private fun AiProviderSetting.iconRes(): Int {
-        return when (id) {
-            "openai" -> R.drawable.ic_provider_openai
-            "claude" -> R.drawable.ic_provider_claude
-            "gemini" -> R.drawable.ic_provider_gemini
-            "deepseek" -> R.drawable.ic_provider_deepseek
-            "xiaomi_mimo" -> R.drawable.ic_provider_mimo
-            "siliconflow" -> R.drawable.ic_provider_siliconflow
-            "openrouter" -> R.drawable.ic_provider_openrouter
-            "aliyun_bailian" -> R.drawable.ic_provider_aliyun
-            "volcengine" -> R.drawable.ic_provider_volcengine
-            "moonshot" -> R.drawable.ic_provider_moonshot
-            "zhipu" -> R.drawable.ic_provider_zhipu
-            else -> when (type) {
-                AiProviderType.OPENAI -> R.drawable.ic_provider_openai
-                AiProviderType.CLAUDE -> R.drawable.ic_provider_claude
-                AiProviderType.GOOGLE -> R.drawable.ic_provider_gemini
-            }
-        }
-    }
-
-    private fun AiModel.iconRes(defaultIconRes: Int): Int {
-        val modelName = listOf(safeId(), safeName(), safeOwnedBy())
-            .joinToString(" ")
-            .lowercase()
-        return when {
-            Regex("(gpt|openai|o\\d)").containsMatchIn(modelName) -> R.drawable.ic_provider_openai
-            Regex("(gemini|nano-banana)").containsMatchIn(modelName) -> R.drawable.ic_provider_gemini
-            Regex("google").containsMatchIn(modelName) -> R.drawable.ic_model_google
-            Regex("claude").containsMatchIn(modelName) -> R.drawable.ic_provider_claude
-            Regex("anthropic").containsMatchIn(modelName) -> R.drawable.ic_model_anthropic
-            Regex("deepseek").containsMatchIn(modelName) -> R.drawable.ic_provider_deepseek
-            Regex("grok").containsMatchIn(modelName) -> R.drawable.ic_model_grok
-            Regex("qwen|qwq|qvq").containsMatchIn(modelName) -> R.drawable.ic_model_qwen
-            Regex("doubao").containsMatchIn(modelName) -> R.drawable.ic_model_doubao
-            Regex("openrouter").containsMatchIn(modelName) -> R.drawable.ic_provider_openrouter
-            Regex("zhipu|智谱|glm").containsMatchIn(modelName) -> R.drawable.ic_provider_zhipu
-            Regex("mistral").containsMatchIn(modelName) -> R.drawable.ic_model_mistral
-            Regex("meta\\b|(?<!o)llama").containsMatchIn(modelName) -> R.drawable.ic_model_meta
-            Regex("hunyuan|tencent").containsMatchIn(modelName) -> R.drawable.ic_model_hunyuan
-            Regex("gemma").containsMatchIn(modelName) -> R.drawable.ic_model_gemma
-            Regex("perplexity").containsMatchIn(modelName) -> R.drawable.ic_model_perplexity
-            Regex("aliyun|阿里云|百炼").containsMatchIn(modelName) -> R.drawable.ic_provider_aliyun
-            Regex("bytedance|火山|seed").containsMatchIn(modelName) -> R.drawable.ic_provider_volcengine
-            Regex("silicon|硅基").containsMatchIn(modelName) -> R.drawable.ic_provider_siliconflow
-            Regex("aihubmix").containsMatchIn(modelName) -> R.drawable.ic_model_aihubmix
-            Regex("ollama").containsMatchIn(modelName) -> R.drawable.ic_model_ollama
-            Regex("github").containsMatchIn(modelName) -> R.drawable.ic_model_github
-            Regex("cloudflare").containsMatchIn(modelName) -> R.drawable.ic_model_cloudflare
-            Regex("minimax").containsMatchIn(modelName) -> R.drawable.ic_model_minimax
-            Regex("xai").containsMatchIn(modelName) -> R.drawable.ic_model_xai
-            Regex("juhenext").containsMatchIn(modelName) -> R.drawable.ic_model_juhenext
-            Regex("kimi").containsMatchIn(modelName) -> R.drawable.ic_model_kimi
-            Regex("moonshot|月之暗面").containsMatchIn(modelName) -> R.drawable.ic_provider_moonshot
-            Regex("302").containsMatchIn(modelName) -> R.drawable.ic_model_302ai
-            Regex("step|阶跃").containsMatchIn(modelName) -> R.drawable.ic_model_stepfun
-            Regex("intern|书生").containsMatchIn(modelName) -> R.drawable.ic_model_internlm
-            Regex("cohere|command-.+").containsMatchIn(modelName) -> R.drawable.ic_model_cohere
-            Regex("tavern").containsMatchIn(modelName) -> R.drawable.ic_model_tavern
-            Regex("cerebras").containsMatchIn(modelName) -> R.drawable.ic_model_cerebras
-            Regex("nvidia").containsMatchIn(modelName) -> R.drawable.ic_model_nvidia
-            Regex("ppio|派欧").containsMatchIn(modelName) -> R.drawable.ic_model_ppio
-            Regex("vercel").containsMatchIn(modelName) -> R.drawable.ic_model_vercel
-            Regex("groq").containsMatchIn(modelName) -> R.drawable.ic_model_groq
-            Regex("tokenpony|小马算力").containsMatchIn(modelName) -> R.drawable.ic_model_tokenpony
-            Regex("ling|ring|百灵").containsMatchIn(modelName) -> R.drawable.ic_model_ling
-            Regex("mimo|xiaomi|小米").containsMatchIn(modelName) -> R.drawable.ic_provider_mimo
-            Regex("longcat").containsMatchIn(modelName) -> R.drawable.ic_model_longcat
-            else -> defaultIconRes
-        }
-    }
-
     private fun AiProviderSetting.visibleModelCount(): Int {
         return if (apiKey.isBlank()) 0 else displayModels().size
     }
@@ -2671,7 +2666,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             binding.layoutTags.removeAllViews()
             item.capabilityTags().forEach { capability ->
                 binding.layoutTags.addView(
-                    createModelCapabilityTag(capability)
+                    createModelCapabilityTag(requireContext(), capability)
                 )
             }
         }
@@ -2681,85 +2676,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 getItemByLayoutPosition(holder.layoutPosition)?.let { item ->
                     item.safeId().takeIf { it.isNotBlank() }?.let(::showModelDetail)
                 }
-            }
-        }
-    }
-
-    private enum class ModelCapabilityTag(
-        val iconRes: Int,
-        val labelRes: Int,
-        val color: Int
-    ) {
-        TEXT(R.drawable.ic_ai_capability_text, R.string.ai_model_modality_text, 0xFF7C3AED.toInt()),
-        VISION(R.drawable.ic_ai_capability_vision, R.string.ai_model_modality_image, 0xFFF59E0B.toInt()),
-        VIDEO(R.drawable.ic_ai_capability_video, R.string.ai_model_modality_video, 0xFFEA580C.toInt()),
-        ASR(R.drawable.ic_ai_capability_asr, R.string.ai_model_ability_asr, 0xFFDB2777.toInt()),
-        TTS(R.drawable.ic_ai_capability_tts, R.string.ai_model_ability_tts, 0xFF0891B2.toInt()),
-        TOOL(R.drawable.ic_ai_capability_tool, R.string.ai_model_ability_tool, 0xFF2563EB.toInt()),
-        REASONING(
-            R.drawable.ic_ai_capability_reasoning,
-            R.string.ai_model_ability_reasoning,
-            0xFF16A34A.toInt()
-        )
-    }
-
-    private fun createModelCapabilityTag(
-        capability: ModelCapabilityTag
-    ): ImageView {
-        val view = ImageView(requireContext())
-        val tintColor = capability.color
-        val backgroundColor = ColorUtils.setAlphaComponent(tintColor, 24)
-        view.setImageResource(capability.iconRes)
-        view.imageTintList = ColorStateList.valueOf(tintColor)
-        view.background = GradientDrawable().apply {
-            cornerRadius = 5.dpToPx().toFloat()
-            setColor(backgroundColor)
-            setStroke(1.dpToPx(), tintColor)
-        }
-        view.contentDescription = getString(capability.labelRes)
-        view.scaleType = ImageView.ScaleType.CENTER_INSIDE
-        view.setPadding(3.dpToPx(), 3.dpToPx(), 3.dpToPx(), 3.dpToPx())
-        view.layoutParams = LinearLayout.LayoutParams(
-            20.dpToPx(),
-            20.dpToPx()
-        ).apply {
-            marginEnd = 4.dpToPx()
-        }
-        return view
-    }
-
-    private fun AiModel.capabilityTags(): List<ModelCapabilityTag> {
-        val abilities = safeAbilities()
-        if (AiModelAbility.ASR in abilities) {
-            return listOf(ModelCapabilityTag.ASR)
-        }
-        if (AiModelAbility.TTS in abilities) {
-            return listOf(ModelCapabilityTag.TTS)
-        }
-        return buildList {
-            if (
-                AiModelModality.TEXT in safeInputModalities()
-                || AiModelModality.TEXT in safeOutputModalities()
-            ) {
-                add(ModelCapabilityTag.TEXT)
-            }
-            if (
-                AiModelModality.IMAGE in safeInputModalities()
-                || AiModelModality.IMAGE in safeOutputModalities()
-            ) {
-                add(ModelCapabilityTag.VISION)
-            }
-            if (
-                AiModelModality.VIDEO in safeInputModalities()
-                || AiModelModality.VIDEO in safeOutputModalities()
-            ) {
-                add(ModelCapabilityTag.VIDEO)
-            }
-            if (AiModelAbility.TOOL in safeAbilities()) {
-                add(ModelCapabilityTag.TOOL)
-            }
-            if (AiModelAbility.REASONING in abilities) {
-                add(ModelCapabilityTag.REASONING)
             }
         }
     }

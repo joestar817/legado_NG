@@ -7,6 +7,7 @@ import com.google.gson.JsonParser
 import fi.iki.elonen.NanoHTTPD
 import io.legado.app.api.ReturnData
 import io.legado.app.api.controller.BookSourceController
+import io.legado.app.constant.AppLog
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.SearchBook
@@ -41,9 +42,15 @@ object McpServer {
     private const val MAX_NETWORK_LOG_LIMIT = 50
     private const val DEFAULT_NETWORK_LOG_BODY_CHARS = 16 * 1024
     private const val MAX_NETWORK_LOG_BODY_CHARS = 64 * 1024
+    private const val DEFAULT_DEBUG_LOG_LIMIT = 20
+    private const val MAX_DEBUG_LOG_LIMIT = 100
+    private const val DEFAULT_DEBUG_LOG_STACK_CHARS = 16 * 1024
+    private const val MAX_DEBUG_LOG_STACK_CHARS = 64 * 1024
     private val debugRunLock = Any()
 
     fun isEnabled(): Boolean = appCtx.getPrefBoolean(PreferKey.mcpService, false)
+
+    fun isInternalEnabled(): Boolean = appCtx.getPrefBoolean(PreferKey.aiInternalMcp, false)
 
     fun serve(method: NanoHTTPD.Method, uri: String, postData: String?): NanoHTTPD.Response {
         if (!isEnabled()) {
@@ -61,7 +68,18 @@ object McpServer {
             )
         }
         return when (method) {
-            NanoHTTPD.Method.POST -> servePost(postData)
+            NanoHTTPD.Method.POST -> {
+                val response = handleJsonRpc(postData)
+                if (response == null) {
+                    NanoHTTPD.newFixedLengthResponse(
+                        NanoHTTPD.Response.Status.ACCEPTED,
+                        MIME_TEXT,
+                        ""
+                    )
+                } else {
+                    jsonResponse(response)
+                }
+            }
             NanoHTTPD.Method.GET -> NanoHTTPD.newFixedLengthResponse(
                 NanoHTTPD.Response.Status.METHOD_NOT_ALLOWED,
                 MIME_TEXT,
@@ -75,26 +93,22 @@ object McpServer {
         }
     }
 
-    private fun servePost(postData: String?): NanoHTTPD.Response {
+    fun handleJsonRpc(postData: String?): JsonElement? {
         if (postData.isNullOrBlank()) {
-            return jsonResponse(errorResponse(null, -32700, "Parse error"))
+            return errorResponse(null, -32700, "Parse error")
         }
         val json = runCatching { JsonParser.parseString(postData) }.getOrElse {
-            return jsonResponse(errorResponse(null, -32700, "Parse error"))
+            return errorResponse(null, -32700, "Parse error")
         }
-        val response = when {
+        return handleJsonRpc(json)
+    }
+
+    fun handleJsonRpc(json: JsonElement): JsonElement? {
+        return when {
             json.isJsonArray -> handleBatch(json.asJsonArray)
             json.isJsonObject -> handleRequest(json.asJsonObject)
             else -> errorResponse(null, -32600, "Invalid Request")
         }
-        if (response == null) {
-            return NanoHTTPD.newFixedLengthResponse(
-                NanoHTTPD.Response.Status.ACCEPTED,
-                MIME_TEXT,
-                ""
-            )
-        }
-        return jsonResponse(response)
     }
 
     private fun handleBatch(batch: JsonArray): JsonElement {
@@ -281,8 +295,53 @@ object McpServer {
                 name = "network_log_clear",
                 description = "Clear the in-memory runtime network log window before reproducing an issue.",
                 properties = emptyMap()
+            ),
+            tool(
+                name = "debug_log_list",
+                description = "List recent in-memory app debug logs as compact summaries.",
+                properties = mapOf(
+                    "offset" to mapOf(
+                        "type" to "number",
+                        "default" to 0
+                    ),
+                    "limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_DEBUG_LOG_LIMIT,
+                        "maximum" to MAX_DEBUG_LOG_LIMIT
+                    ),
+                    "keyword" to stringSchema("Optional keyword matched against message or throwable stack."),
+                    "only_errors" to mapOf(
+                        "type" to "boolean",
+                        "default" to false
+                    )
+                )
+            ),
+            tool(
+                name = "debug_log_get",
+                description = "Get one in-memory app debug log detail by id.",
+                properties = mapOf(
+                    "id" to mapOf(
+                        "type" to "number",
+                        "description" to "Debug log id from debug_log_list"
+                    ),
+                    "include_stack" to mapOf(
+                        "type" to "boolean",
+                        "default" to true
+                    ),
+                    "stack_char_limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_DEBUG_LOG_STACK_CHARS,
+                        "maximum" to MAX_DEBUG_LOG_STACK_CHARS
+                    )
+                ),
+                required = listOf("id")
+            ),
+            tool(
+                name = "debug_log_clear",
+                description = "Clear the in-memory app debug log window.",
+                properties = emptyMap()
             )
-        )
+        ) + BookshelfMcpTools.tools() + SettingsMcpTools.tools()
     }
 
     private fun tool(
@@ -323,7 +382,7 @@ object McpServer {
                 "description" to "Minimal BookSource JSON schema for MCP clients",
                 "mimeType" to "application/schema+json"
             )
-        )
+        ) + BookshelfMcpTools.resources() + SettingsMcpTools.resources()
     }
 
     private fun readResource(params: JsonObject?): Map<String, Any> {
@@ -332,7 +391,9 @@ object McpServer {
         val text = when (uri) {
             "legado://api/mcp" -> GSON.toJson(apiSummary())
             "legado://schema/book-source" -> GSON.toJson(bookSourceSchema())
-            else -> throw IllegalArgumentException("Unknown resource: $uri")
+            else -> BookshelfMcpTools.readResource(uri)
+                ?: SettingsMcpTools.readResource(uri)
+                ?: throw IllegalArgumentException("Unknown resource: $uri")
         }
         return mapOf(
             "contents" to listOf(
@@ -356,6 +417,7 @@ object McpServer {
                 upstreamEndpoint = "native://mcp",
                 normalizedData = mapOf(
                     "mcp_service_enabled" to isEnabled(),
+                    "internal_mcp_enabled" to isInternalEnabled(),
                     "endpoint" to "/mcp"
                 )
             )
@@ -381,10 +443,16 @@ object McpServer {
             }
             "book_source_debug" -> runBookSourceDebug(arguments)
             "book_search" -> runBookSearch(arguments)
+            "bookshelf_search" -> runBookSearch(arguments)
             "network_log_list" -> listNetworkLogs(arguments)
             "network_log_get" -> getNetworkLog(arguments)
             "network_log_clear" -> clearNetworkLogs()
-            else -> throw IllegalArgumentException("Unknown tool: $name")
+            "debug_log_list" -> listDebugLogs(arguments)
+            "debug_log_get" -> getDebugLog(arguments)
+            "debug_log_clear" -> clearDebugLogs()
+            else -> BookshelfMcpTools.call(name, arguments)
+                ?: SettingsMcpTools.call(name, arguments)
+                ?: throw IllegalArgumentException("Unknown tool: $name")
         }
         val text = GSON.toJson(result)
         return mapOf(
@@ -635,6 +703,66 @@ object McpServer {
         )
     }
 
+    private fun listDebugLogs(arguments: JsonObject): Map<String, Any?> {
+        val offset = (arguments.get("offset").asIntOrNull() ?: 0).coerceAtLeast(0)
+        val limit = (arguments.get("limit").asIntOrNull() ?: DEFAULT_DEBUG_LOG_LIMIT)
+            .coerceIn(1, MAX_DEBUG_LOG_LIMIT)
+        val keyword = arguments.get("keyword").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        val onlyErrors = arguments.get("only_errors").asBooleanOrNull() ?: false
+        val allLogs = AppLog.logs
+        val filtered = allLogs.filter { entry ->
+            (!onlyErrors || entry.third != null) &&
+                    (keyword == null || entry.matchesDebugLogKeyword(keyword))
+        }
+        val page = filtered.drop(offset).take(limit).map { it.toDebugLogSummary() }
+        return toolResult(
+            ok = true,
+            upstreamEndpoint = "native://debugLog/list",
+            normalizedData = mapOf(
+                "logs" to page,
+                "offset" to offset,
+                "limit" to limit,
+                "total" to allLogs.size,
+                "filtered_total" to filtered.size,
+                "has_more" to (offset + page.size < filtered.size),
+                "max_log_size" to 100
+            )
+        )
+    }
+
+    private fun getDebugLog(arguments: JsonObject): Map<String, Any?> {
+        val id = arguments.get("id").asLongOrNull()
+            ?: throw IllegalArgumentException("id is required")
+        val includeStack = arguments.get("include_stack").asBooleanOrNull() ?: true
+        val stackCharLimit = (arguments.get("stack_char_limit").asIntOrNull()
+            ?: DEFAULT_DEBUG_LOG_STACK_CHARS).coerceIn(0, MAX_DEBUG_LOG_STACK_CHARS)
+        val entry = AppLog.logs.firstOrNull { it.first == id }
+            ?: return toolResult(
+                ok = false,
+                upstreamEndpoint = "native://debugLog/get",
+                normalizedData = null,
+                warnings = listOf("未找到调试日志，可能已被清空或挤出内存窗口")
+            )
+        return toolResult(
+            ok = true,
+            upstreamEndpoint = "native://debugLog/get",
+            normalizedData = entry.toDebugLogDetail(includeStack, stackCharLimit)
+        )
+    }
+
+    private fun clearDebugLogs(): Map<String, Any?> {
+        val before = AppLog.logs.size
+        AppLog.clear()
+        return toolResult(
+            ok = true,
+            upstreamEndpoint = "native://debugLog/clear",
+            normalizedData = mapOf(
+                "cleared" to before,
+                "remaining" to AppLog.logs.size
+            )
+        )
+    }
+
     private fun NetworkLog.Entry.toNetworkLogSummary(): Map<String, Any?> {
         return mapOf(
             "id" to id,
@@ -717,6 +845,59 @@ object McpServer {
         return SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(time))
     }
 
+    private fun Triple<Long, String, Throwable?>.toDebugLogSummary(): Map<String, Any?> {
+        val throwable = third
+        return mapOf(
+            "id" to first,
+            "time" to first,
+            "time_text" to formatNetworkLogTime(first),
+            "message_preview" to second.lineSequence().firstOrNull().orEmpty().limitMcpText(500),
+            "has_throwable" to (throwable != null),
+            "throwable_class" to throwable?.javaClass?.name,
+            "throwable_message" to throwable?.localizedMessage
+        )
+    }
+
+    private fun Triple<Long, String, Throwable?>.toDebugLogDetail(
+        includeStack: Boolean,
+        stackCharLimit: Int
+    ): Map<String, Any?> {
+        val throwable = third
+        val detail = linkedMapOf<String, Any?>(
+            "id" to first,
+            "time" to first,
+            "time_text" to formatNetworkLogTime(first),
+            "message" to second,
+            "has_throwable" to (throwable != null),
+            "throwable_class" to throwable?.javaClass?.name,
+            "throwable_message" to throwable?.localizedMessage
+        )
+        if (includeStack) {
+            val stack = throwable?.stackTraceToString()
+            detail["stack"] = stack.limitNetworkLogText(stackCharLimit)
+            detail["stack_chars"] = stack?.length ?: 0
+            detail["stack_truncated_by_mcp"] = (stack?.length ?: 0) > stackCharLimit
+        }
+        return detail
+    }
+
+    private fun Triple<Long, String, Throwable?>.matchesDebugLogKeyword(keyword: String): Boolean {
+        return sequenceOf(
+            second,
+            third?.javaClass?.name,
+            third?.localizedMessage,
+            third?.stackTraceToString()
+        ).filterNotNull().any { it.contains(keyword, ignoreCase = true) }
+    }
+
+    private fun String.limitMcpText(maxChars: Int): String {
+        return if (length > maxChars) {
+            take(maxChars) + "\n[truncated by MCP at $maxChars chars]"
+        } else {
+            this
+        }
+    }
+
     private fun toolResult(
         ok: Boolean,
         upstreamEndpoint: String,
@@ -742,7 +923,8 @@ object McpServer {
             "tools" to tools().mapNotNull { it["name"] },
             "resources" to resources().mapNotNull { it["uri"] },
             "notes" to listOf(
-                "P0 native MCP runs behind an independent debug switch.",
+                "External HTTP MCP runs behind the service management switch.",
+                "Built-in AI can use the same MCP handlers through an internal channel controlled by AI settings.",
                 "Authentication and read/write permission tiers are intentionally deferred.",
                 "This version returns JSON responses and does not implement SSE streaming."
             )

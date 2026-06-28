@@ -29,6 +29,18 @@ object AiConfig {
     private const val PARAGRAPH_OUTPUT_BUDGET_LIMIT = 6144
     private const val CHAPTER_OUTPUT_BUDGET_LIMIT = 12288
 
+    var internalMcpEnabled: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.aiInternalMcp, false)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.aiInternalMcp, value)
+        }
+
+    var chatFabEnabled: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.aiChatFab, false)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.aiChatFab, value)
+        }
+
     var purifyProviderId: String
         get() = appCtx.getPrefString(PreferKey.aiPurifyProviderId).orEmpty()
         set(value) {
@@ -45,6 +57,24 @@ object AiConfig {
         get() = AiReasoningLevel.from(appCtx.getPrefString(PreferKey.aiPurifyReasoningLevel))
         set(value) {
             appCtx.putPrefString(PreferKey.aiPurifyReasoningLevel, value.prefValue)
+        }
+
+    var assistantProviderId: String
+        get() = appCtx.getPrefString(PreferKey.aiAssistantProviderId).orEmpty()
+        set(value) {
+            appCtx.putPrefString(PreferKey.aiAssistantProviderId, value.trim())
+        }
+
+    var assistantModelId: String
+        get() = appCtx.getPrefString(PreferKey.aiAssistantModelId).orEmpty()
+        set(value) {
+            appCtx.putPrefString(PreferKey.aiAssistantModelId, value.trim())
+        }
+
+    var assistantReasoningLevel: AiReasoningLevel
+        get() = AiReasoningLevel.from(appCtx.getPrefString(PreferKey.aiAssistantReasoningLevel))
+        set(value) {
+            appCtx.putPrefString(PreferKey.aiAssistantReasoningLevel, value.prefValue)
         }
 
     val temperature: Float?
@@ -178,6 +208,32 @@ object AiConfig {
     fun savePurifyModel(providerId: String, modelId: String) {
         purifyProviderId = providerId
         purifyModelId = modelId
+    }
+
+    fun requireAssistantModel(): AiModelSelection {
+        val providerId = assistantProviderId
+        val modelId = assistantModelId
+        check(providerId.isNotBlank() && modelId.isNotBlank()) {
+            "请先在 AI 设置 > 模型设置 > AI助理 中选择聊天模型"
+        }
+        return AiModelSelection(providerId, modelId)
+    }
+
+    fun saveAssistantModel(providerId: String, modelId: String) {
+        assistantProviderId = providerId
+        assistantModelId = modelId
+    }
+
+    fun assistantChatParams(supportsReasoning: Boolean): AiTextParams {
+        val level = assistantReasoningLevel.takeIf { supportsReasoning } ?: AiReasoningLevel.OFF
+        val maxTokens = (4096 + level.reasoningReserve(4096)).coerceIn(4096, 8192)
+        return AiTextParams(
+            temperature = temperature,
+            maxTokens = maxTokens,
+            enableThinking = level != AiReasoningLevel.OFF && level != AiReasoningLevel.AUTO,
+            disableThinking = level == AiReasoningLevel.OFF,
+            reasoningEffort = level.reasoningEffort
+        )
     }
 
     fun purifyParagraphParams(

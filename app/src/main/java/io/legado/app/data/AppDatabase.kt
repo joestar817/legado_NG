@@ -9,6 +9,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
+import io.legado.app.data.dao.AiChatDao
 import io.legado.app.data.dao.BookChapterDao
 import io.legado.app.data.dao.BookCharacterDao
 import io.legado.app.data.dao.BookDao
@@ -31,6 +32,8 @@ import io.legado.app.data.dao.SearchBookDao
 import io.legado.app.data.dao.SearchKeywordDao
 import io.legado.app.data.dao.ServerDao
 import io.legado.app.data.dao.TxtTocRuleDao
+import io.legado.app.data.entities.AiChatConversation
+import io.legado.app.data.entities.AiChatMessageNode
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookCharacter
@@ -70,14 +73,15 @@ val appDb by lazy {
 }
 
 @Database(
-    version = 91,
+    version = 92,
     exportSchema = true,
     entities = [Book::class, BookGroup::class, BookSource::class, BookChapter::class,
         ReplaceRule::class, SearchBook::class, SearchKeyword::class, Cookie::class,
         RssSource::class, Bookmark::class, RssArticle::class, RssReadRecord::class,
         RssStar::class, TxtTocRule::class, ReadRecord::class, HttpTTS::class, Cache::class,
         RuleSub::class, DictRule::class, KeyboardAssist::class, Server::class,
-        BookCharacterProfile::class, BookCharacter::class],
+        BookCharacterProfile::class, BookCharacter::class,
+        AiChatConversation::class, AiChatMessageNode::class],
     views = [BookSourcePart::class],
     autoMigrations = [
         AutoMigration(from = 43, to = 44),
@@ -152,6 +156,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract val dictRuleDao: DictRuleDao
     abstract val keyboardAssistsDao: KeyboardAssistsDao
     abstract val serverDao: ServerDao
+    abstract val aiChatDao: AiChatDao
 
     companion object {
 

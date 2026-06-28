@@ -4,10 +4,13 @@ package io.legado.app.ui.main
 
 import android.os.Bundle
 import android.text.format.DateUtils
+import android.content.res.ColorStateList
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.ViewGroup
 import androidx.activity.addCallback
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.core.view.get
 import androidx.core.view.postDelayed
 import androidx.fragment.app.Fragment
@@ -24,18 +27,21 @@ import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.databinding.ActivityMainBinding
 import io.legado.app.help.AppWebDav
+import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.storage.Backup
 import io.legado.app.lib.dialogs.alert
+import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.about.CrashLogsDialog
 import io.legado.app.ui.association.ImportBookSourceDialog
 import io.legado.app.ui.association.ImportReplaceRuleDialog
 import io.legado.app.ui.association.ImportRssSourceDialog
+import io.legado.app.ui.config.AiChatActivity
 import io.legado.app.ui.main.bookshelf.BaseBookshelfFragment
 import io.legado.app.ui.main.bookshelf.style1.BookshelfFragment1
 import io.legado.app.ui.main.bookshelf.style2.BookshelfFragment2
@@ -47,9 +53,11 @@ import io.legado.app.ui.widget.text.BadgeView
 import io.legado.app.utils.isCreated
 import io.legado.app.utils.navigationBarHeight
 import io.legado.app.utils.observeEvent
+import io.legado.app.utils.dpToPx
 import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.setOnApplyWindowInsetsListenerCompat
 import io.legado.app.utils.showDialogFragment
+import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers.IO
@@ -61,6 +69,7 @@ import kotlin.coroutines.resume
 import androidx.core.view.get
 import io.legado.app.help.update.AppUpdate
 import io.legado.app.ui.about.UpdateDialog
+import kotlin.math.abs
 import kotlin.time.Duration.Companion.hours
 
 /**
@@ -84,9 +93,14 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     private var bookshelfReselected: Long = 0
     private var exploreReselected: Long = 0
     private var pagePosition = 0
+    private var aiChatSwipeStartX = 0f
+    private var aiChatSwipeStartY = 0f
+    private var aiChatSwipeStartedOnBookshelf = false
     private val fragmentMap = hashMapOf<Int, Fragment>()
     private var bottomMenuCount = 4
     private val EXIT_INTERVAL = 2000L
+    private val AI_CHAT_SWIPE_START_RATIO = 0.5f
+    private val AI_CHAT_SWIPE_DISTANCE_DP = 120
     private val realPositions = arrayOf(idBookshelf, idExplore, idRss, idMy)
     private val adapter by lazy {
         TabFragmentPageAdapter(supportFragmentManager)
@@ -149,6 +163,48 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshAiChatFab()
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        handleAiChatSwipe(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private fun handleAiChatSwipe(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                aiChatSwipeStartX = event.rawX
+                aiChatSwipeStartY = event.rawY
+                val startLimit = window.decorView.width * AI_CHAT_SWIPE_START_RATIO
+                aiChatSwipeStartedOnBookshelf = pagePosition == 0 && event.rawX <= startLimit
+            }
+
+            MotionEvent.ACTION_UP -> {
+                if (aiChatSwipeStartedOnBookshelf) {
+                    val dx = event.rawX - aiChatSwipeStartX
+                    val dy = event.rawY - aiChatSwipeStartY
+                    val isRightSwipe = dx >= AI_CHAT_SWIPE_DISTANCE_DP.dpToPx()
+                            && abs(dx) > abs(dy) * 1.8f
+                    if (isRightSwipe) {
+                        startActivity<AiChatActivity>()
+                    }
+                }
+                resetAiChatSwipe()
+            }
+
+            MotionEvent.ACTION_CANCEL -> resetAiChatSwipe()
+        }
+    }
+
+    private fun resetAiChatSwipe() {
+        aiChatSwipeStartX = 0f
+        aiChatSwipeStartY = 0f
+        aiChatSwipeStartedOnBookshelf = false
+    }
+
     override fun onNavigationItemSelected(item: MenuItem): Boolean = binding.run {
         when (item.itemId) {
             R.id.menu_bookshelf ->
@@ -201,6 +257,20 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             view.bottomPadding = height
             windowInsets.inset(0, 0, 0, height)
         }
+        fabAiChat.setOnClickListener {
+            startActivity<AiChatActivity>()
+        }
+        refreshAiChatFab()
+    }
+
+    private fun refreshAiChatFab() = binding.run {
+        fabAiChat.visibility = if (AiConfig.chatFabEnabled) {
+            android.view.View.VISIBLE
+        } else {
+            android.view.View.GONE
+        }
+        fabAiChat.backgroundTintList = ColorStateList.valueOf(accentColor)
+        fabAiChat.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(this@MainActivity, R.color.white))
     }
 
     /**

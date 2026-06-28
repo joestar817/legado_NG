@@ -20,7 +20,7 @@ object DatabaseMigrations {
             migration_31_32, migration_32_33, migration_33_34, migration_34_35,
             migration_35_36, migration_36_37, migration_37_38, migration_38_39,
             migration_39_40, migration_40_41, migration_41_42, migration_42_43,
-            migration_89_90, migration_90_91,
+            migration_89_90, migration_90_91, migration_91_92,
         )
     }
 
@@ -385,6 +385,40 @@ object DatabaseMigrations {
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookCharacters_workKey` ON `bookCharacters` (`workKey`)")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_bookCharacters_workKey_name` ON `bookCharacters` (`workKey`, `name`)")
+        }
+    }
+
+    private val migration_91_92 = object : Migration(91, 92) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `aiChatConversations` (
+                    `id` TEXT NOT NULL,
+                    `assistantId` TEXT NOT NULL DEFAULT 'default',
+                    `title` TEXT NOT NULL DEFAULT '',
+                    `createAt` INTEGER NOT NULL DEFAULT 0,
+                    `updateAt` INTEGER NOT NULL DEFAULT 0,
+                    `isPinned` INTEGER NOT NULL DEFAULT 0,
+                    `customSystemPrompt` TEXT NOT NULL DEFAULT '',
+                    `uploadMessages` TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `aiChatMessageNodes` (
+                    `id` TEXT NOT NULL,
+                    `conversationId` TEXT NOT NULL DEFAULT '',
+                    `nodeIndex` INTEGER NOT NULL DEFAULT 0,
+                    `messages` TEXT NOT NULL DEFAULT '[]',
+                    `selectIndex` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`id`),
+                    FOREIGN KEY(`conversationId`) REFERENCES `aiChatConversations`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_aiChatMessageNodes_conversationId` ON `aiChatMessageNodes` (`conversationId`)")
         }
     }
 

@@ -225,6 +225,9 @@
         <activity
             android:name=".ui.config.ConfigActivity"
             android:launchMode="standard" />
+        <activity
+            android:name=".ui.config.AiChatActivity"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
         <!-- 搜索界面 -->
         <activity
             android:name=".ui.book.search.SearchActivity"
