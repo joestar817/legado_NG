@@ -26,10 +26,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -159,6 +155,7 @@ import io.legado.app.help.ai.AiChatHistoryState
 import io.legado.app.help.ai.AiChatHistoryStore
 import io.legado.app.help.ai.AiChatMessageSnapshot
 import io.legado.app.help.ai.AiChatSessionSnapshot
+import io.legado.app.help.ai.AiChatStreamUpdate
 import io.legado.app.help.ai.AiChatTurnResult
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiSkillRegistry
@@ -182,7 +179,10 @@ import io.noties.markwon.Markwon
 import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.image.glide.GlideImagesPlugin
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -329,6 +329,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
     var activeSessionId by remember { mutableStateOf<String?>(null) }
     var input by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var sendingJob by remember { mutableStateOf<Job?>(null) }
+    var activeLoadingMessageId by remember { mutableStateOf<String?>(null) }
+    var activeLoadingStartedAt by remember { mutableStateOf<Long?>(null) }
+    var activeStreamContentTarget by remember { mutableStateOf("") }
+    var activeStreamReasoningTarget by remember { mutableStateOf("") }
+    var activeStreamToolTraceTarget by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedDrawerIndex by remember { mutableIntStateOf(2) }
     var configVersion by remember { mutableIntStateOf(0) }
     var previewMode by remember { mutableStateOf(false) }
@@ -355,6 +361,13 @@ private fun AiChatRoute(onBack: () -> Unit) {
     val currentTitle = sessions.firstOrNull { it.id == activeSessionId }?.title
         ?: messages.deriveChatTitle()
         ?: "新聊天"
+
+    fun updateMessage(id: String, transform: (ChatUiMessage) -> ChatUiMessage) {
+        val index = messages.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            messages[index] = transform(messages[index])
+        }
+    }
 
     LaunchedEffect(Unit) {
         val history = withContext(Dispatchers.IO) {
@@ -383,6 +396,50 @@ private fun AiChatRoute(onBack: () -> Unit) {
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
+    LaunchedEffect(activeLoadingMessageId, activeLoadingStartedAt, sending) {
+        val loadingId = activeLoadingMessageId ?: return@LaunchedEffect
+        val startedAt = activeLoadingStartedAt ?: return@LaunchedEffect
+        while (sending && activeLoadingMessageId == loadingId) {
+            updateMessage(loadingId) { message ->
+                if (message.loading) {
+                    message.copy(elapsedMs = System.currentTimeMillis() - startedAt)
+                } else {
+                    message
+                }
+            }
+            delay(250)
+        }
+    }
+    LaunchedEffect(activeLoadingMessageId, sending) {
+        val loadingId = activeLoadingMessageId ?: return@LaunchedEffect
+        while (sending && activeLoadingMessageId == loadingId) {
+            updateMessage(loadingId) { message ->
+                if (!message.loading) {
+                    message
+                } else {
+                    val visibleContent = message.content
+                        .takeUnless { it == "正在思考..." }
+                        .orEmpty()
+                    val nextContent = nextStreamingText(
+                        current = visibleContent,
+                        target = activeStreamContentTarget
+                    )
+                    val nextReasoning = nextStreamingText(
+                        current = message.reasoning.orEmpty(),
+                        target = activeStreamReasoningTarget
+                    )
+                    message.copy(
+                        content = nextContent.ifBlank { "正在思考..." },
+                        reasoning = nextReasoning.takeIf { it.isNotBlank() },
+                        toolTrace = activeStreamToolTraceTarget
+                            .takeIf { it.isNotEmpty() }
+                            ?: message.toolTrace
+                    )
+                }
+            }
+            delay(32)
         }
     }
     BackHandler(enabled = drawerState.isOpen) {
@@ -463,31 +520,65 @@ private fun AiChatRoute(onBack: () -> Unit) {
     fun sendCurrentMessages() {
         sending = true
         val loadingId = UUID.randomUUID().toString()
+        val startedAt = System.currentTimeMillis()
+        activeLoadingMessageId = loadingId
+        activeLoadingStartedAt = startedAt
+        activeStreamContentTarget = ""
+        activeStreamReasoningTarget = ""
+        activeStreamToolTraceTarget = emptyList()
+        val uploadMessageSizeBeforeSend = uploadMessages.size
         messages += ChatUiMessage(
             id = loadingId,
             role = ChatRole.ASSISTANT,
             content = "正在思考...",
+            elapsedMs = 0L,
             loading = true
         )
-        scope.launch {
-            val startedAt = System.currentTimeMillis()
-            val result = withContext(Dispatchers.IO) {
-                runCatching { chatClient.send(uploadMessages) }
+        sendingJob?.cancel()
+        sendingJob = scope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    chatClient.send(uploadMessages) { update: AiChatStreamUpdate ->
+                        scope.launch {
+                            if (activeLoadingMessageId == loadingId) {
+                                activeStreamContentTarget = update.content
+                                activeStreamReasoningTarget = update.reasoning.orEmpty()
+                                activeStreamToolTraceTarget = update.toolTrace
+                            }
+                        }
+                    }
+                }
             }
             val elapsedMs = System.currentTimeMillis() - startedAt
             messages.removeAll { it.id == loadingId }
             result.onSuccess {
                 messages += it.toUiMessage(elapsedMs)
             }.onFailure {
-                messages += ChatUiMessage(
-                    role = ChatRole.ASSISTANT,
-                    content = it.localizedMessage ?: it.toString(),
-                    meta = "error"
-                )
+                while (uploadMessages.size > uploadMessageSizeBeforeSend) {
+                    uploadMessages.removeAt(uploadMessages.lastIndex)
+                }
+                if (it !is CancellationException) {
+                    messages += ChatUiMessage(
+                        role = ChatRole.ASSISTANT,
+                        content = it.localizedMessage ?: it.toString(),
+                        meta = "error"
+                    )
+                }
             }
             persistActiveSession()
             sending = false
+            sendingJob = null
+            activeLoadingMessageId = null
+            activeLoadingStartedAt = null
+            activeStreamContentTarget = ""
+            activeStreamReasoningTarget = ""
+            activeStreamToolTraceTarget = emptyList()
         }
+    }
+
+    fun stopSending() {
+        if (!sending) return
+        sendingJob?.cancel()
     }
 
     fun sendMessage(messageOverride: String? = null) {
@@ -907,6 +998,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 },
                                 attachments = inputAttachments,
                                 onSend = ::sendMessage,
+                                onStop = ::stopSending,
                                 onModelClick = {
                                     AiAssistantConfigUi.showModelSelectSheet(context) {
                                         configVersion++
@@ -1713,9 +1805,32 @@ private fun RikkaMessageItem(
                 onExport = onExport
             )
         } else {
-            AssistantMessageHeader(message.loading)
+            AssistantMessageHeader()
             if (message.loading) {
                 ThinkingLoadingLine()
+                if (!message.reasoning.isNullOrBlank()) {
+                    ReasoningEntry(
+                        reasoning = message.reasoning,
+                        elapsedMs = message.elapsedMs,
+                        thinking = true,
+                        defaultExpanded = true
+                    )
+                }
+                val streamingContent = message.content
+                    .takeUnless { it == "正在思考..." }
+                    .orEmpty()
+                if (streamingContent.isNotBlank()) {
+                    MarkdownMessageText(
+                        content = streamingContent,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateContentSize()
+                            .padding(top = 2.dp)
+                    )
+                }
+                if (message.toolTrace.isNotEmpty()) {
+                    ToolTraceEntry(message.toolTrace)
+                }
             } else {
                 if (!message.reasoning.isNullOrBlank()) {
                     ReasoningEntry(
@@ -1817,14 +1932,13 @@ private fun ThinkingDots() {
 }
 
 @Composable
-private fun AssistantMessageHeader(loading: Boolean) {
+private fun AssistantMessageHeader() {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         RikkaAssistantAvatar(
             iconRes = currentAssistantModelIconRes(),
-            loading = loading,
             modifier = Modifier.size(28.dp)
         )
         Text(
@@ -1839,10 +1953,15 @@ private fun AssistantMessageHeader(loading: Boolean) {
 @Composable
 private fun ReasoningEntry(
     reasoning: String,
-    elapsedMs: Long?
+    elapsedMs: Long?,
+    thinking: Boolean = false,
+    defaultExpanded: Boolean = false
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val title = elapsedMs?.let { "已思考 ${formatElapsedSeconds(it)}" } ?: "思考内容"
+    var expanded by remember { mutableStateOf(defaultExpanded) }
+    val title = elapsedMs?.let {
+        val prefix = if (thinking) "思考中" else "已思考"
+        "$prefix ${formatElapsedSeconds(it)}"
+    } ?: "思考内容"
 
     InlineDetailEntry(
         label = title,
@@ -2673,6 +2792,7 @@ private fun RikkaChatInput(
     skillEnabled: Boolean,
     attachments: List<AiChatInputAttachment>,
     onSend: () -> Unit,
+    onStop: () -> Unit,
     onModelClick: () -> Unit,
     onReasoningClick: () -> Unit,
     onMcpClick: () -> Unit,
@@ -2754,7 +2874,9 @@ private fun RikkaChatInput(
                             onClick = onContextClick
                         )
                         Surface(
-                            onClick = onSend,
+                            onClick = {
+                                if (sending) onStop() else onSend()
+                            },
                             enabled = sending || value.isNotBlank(),
                             modifier = Modifier.size(38.dp),
                             shape = CircleShape,
@@ -3198,7 +3320,6 @@ private fun InputDrawableIcon(
 @Composable
 private fun RikkaAssistantAvatar(
     @DrawableRes iconRes: Int,
-    loading: Boolean,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -3207,24 +3328,11 @@ private fun RikkaAssistantAvatar(
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center
     ) {
-        AnimatedVisibility(
-            visible = loading,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut()
-        ) {
-            Icon(Icons.Rounded.Psychology, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        }
-        AnimatedVisibility(
-            visible = !loading,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut()
-        ) {
-            Image(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
-            )
-        }
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 
@@ -3260,6 +3368,24 @@ private fun formatElapsedSeconds(elapsedMs: Long): String {
 
 private fun formatElapsedCompact(elapsedMs: Long): String {
     return "%.1fs".format(elapsedMs / 1000.0)
+}
+
+private fun nextStreamingText(current: String, target: String): String {
+    if (target.isBlank() || current == target) {
+        return current
+    }
+    if (!target.startsWith(current)) {
+        return target
+    }
+    val remaining = target.length - current.length
+    val step = when {
+        remaining > 120 -> 16
+        remaining > 60 -> 10
+        remaining > 24 -> 6
+        remaining > 8 -> 3
+        else -> 1
+    }
+    return target.take(current.length + minOf(step, remaining))
 }
 
 private fun formatNumber(value: Int): String {

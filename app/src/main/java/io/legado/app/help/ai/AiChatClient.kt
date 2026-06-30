@@ -4,12 +4,21 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import io.legado.app.help.http.await
 import io.legado.app.web.mcp.McpInternalChannel
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import okhttp3.Request
 
 class AiChatClient {
 
-    suspend fun send(messages: MutableList<JsonObject>): AiChatTurnResult {
+    suspend fun send(
+        messages: MutableList<JsonObject>,
+        onStreamUpdate: (AiChatStreamUpdate) -> Unit = {}
+    ): AiChatTurnResult {
         val selection = runCatching { AiConfig.requireAssistantModel() }.getOrElse {
             throw IllegalStateException("请先在模型设置中选择聊天模型")
         }
@@ -39,8 +48,10 @@ class AiChatClient {
         var lastModel: String? = null
         var lastReasoning: String? = null
         var lastFinishReason: String? = null
-        repeat(MAX_TOOL_ROUNDS + 1) { round ->
-            val body = buildRequestBody(model, requestMessages, tools, params)
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val stream = setting.streamResponseEnabled
+            val body = buildRequestBody(model, requestMessages, tools, params, stream)
             val request = Request.Builder()
                 .url("${setting.baseUrl.trimEndSlash()}${setting.chatCompletionsPath.ensureStartSlash()}")
                 .apply {
@@ -51,31 +62,22 @@ class AiChatClient {
                 .addHeader("Content-Type", "application/json")
                 .post(jsonBody(body))
                 .build()
-            val (response, responseBody) = client.executeJsonOrThrow(request)
-            if (!response.isSuccessful) {
-                error("HTTP ${response.code}: ${responseBody.take(500)}")
+            val reasoningKey = AiModelRegistry.capabilities(model.id)
+                .reasoning
+                .reasoningOutputField
+                .ifBlank { "reasoning_content" }
+            val completion = if (stream) {
+                client.executeStreamChat(request, reasoningKey, onStreamUpdate)
+            } else {
+                client.executeJsonChat(request, reasoningKey)
             }
-            val json = JsonParser.parseString(responseBody).asJsonObject
-            lastModel = json.stringOrNull("model")
-            lastUsage = json.objectOrNull("usage")?.let {
-                AiChatUsage(
-                    promptTokens = it.intOrNull("prompt_tokens"),
-                    completionTokens = it.intOrNull("completion_tokens"),
-                    totalTokens = it.intOrNull("total_tokens")
-                )
-            }
-            val choice = json.arrayOrNull("choices")
-                ?.firstOrNull()
-                ?.takeIf { it.isJsonObject }
-                ?.asJsonObject
-                ?: error("OpenAI response missing choices")
-            val message = choice.objectOrNull("message")
-                ?: error("OpenAI response missing message")
-            val content = message.get("content").contentText()
-            lastReasoning = message.stringOrNull("reasoning_content")
-                ?: message.stringOrNull("reasoning")
-            lastFinishReason = choice.stringOrNull("finish_reason")
-            val toolCalls = message.arrayOrNull("tool_calls") ?: JsonArray()
+            lastModel = completion.model
+            lastUsage = completion.usage
+            lastReasoning = completion.reasoning
+            lastFinishReason = completion.finishReason
+            val message = completion.message
+            val content = completion.content
+            val toolCalls = completion.toolCalls
             if (toolCalls.size() == 0) {
                 requestMessages.add(uploadAssistantMessage(content, lastReasoning))
                 return AiChatTurnResult(
@@ -86,17 +88,6 @@ class AiChatClient {
                     usage = lastUsage,
                     toolTrace = toolTrace,
                     warnings = warnings
-                )
-            }
-            if (round >= MAX_TOOL_ROUNDS) {
-                return AiChatTurnResult(
-                    content = content.ifBlank { "工具调用轮数达到上限，已停止继续调用。" },
-                    reasoning = lastReasoning,
-                    model = lastModel ?: model.id,
-                    finishReason = lastFinishReason,
-                    usage = lastUsage,
-                    toolTrace = toolTrace,
-                    warnings = warnings + "工具调用轮数达到上限"
                 )
             }
             requestMessages.add(message.deepCopy().asJsonObject.apply {
@@ -121,6 +112,13 @@ class AiChatClient {
                     }
                 }
                 toolTrace.add("$toolName(${arguments.toString().take(120)})")
+                onStreamUpdate(
+                    AiChatStreamUpdate(
+                        content = content,
+                        reasoning = lastReasoning,
+                        toolTrace = toolTrace.toList()
+                    )
+                )
                 requestMessages.add(JsonObject().apply {
                     addProperty("role", "tool")
                     addProperty("tool_call_id", callId)
@@ -129,7 +127,6 @@ class AiChatClient {
                 })
             }
         }
-        error("unreachable")
     }
 
     fun newSystemMessage(): JsonObject {
@@ -162,7 +159,8 @@ class AiChatClient {
         model: AiModel,
         messages: List<JsonObject>,
         tools: List<McpChatTool>,
-        params: AiTextParams
+        params: AiTextParams,
+        stream: Boolean
     ): JsonObject {
         val reasoningOptions = AiModelRegistry.capabilities(model.id).reasoning
         return JsonObject().apply {
@@ -172,7 +170,7 @@ class AiChatClient {
             })
             params.temperature?.let { addProperty("temperature", it) }
             params.maxTokens?.let { addProperty("max_tokens", it) }
-            addProperty("stream", false)
+            addProperty("stream", stream)
             if (params.enableThinking && reasoningOptions.thinkingParam.isNotBlank()) {
                 add(reasoningOptions.thinkingParam, JsonObject().apply {
                     addProperty("type", "enabled")
@@ -198,6 +196,143 @@ class AiChatClient {
                         })
                     }
                 })
+            }
+        }
+    }
+
+    private suspend fun OkHttpClient.executeJsonChat(
+        request: Request,
+        reasoningKey: String
+    ): ChatCompletionSnapshot {
+        val (response, responseBody) = executeJsonOrThrow(request)
+        if (!response.isSuccessful) {
+            error("HTTP ${response.code}: ${responseBody.take(500)}")
+        }
+        val json = JsonParser.parseString(responseBody).asJsonObject
+        val choice = json.arrayOrNull("choices")
+            ?.firstOrNull()
+            ?.takeIf { it.isJsonObject }
+            ?.asJsonObject
+            ?: error("OpenAI response missing choices")
+        val message = choice.objectOrNull("message")
+            ?: error("OpenAI response missing message")
+        val usage = json.objectOrNull("usage")?.toChatUsage()
+        return ChatCompletionSnapshot(
+            message = message,
+            content = message.get("content").contentText(),
+            reasoning = message.stringOrNull(reasoningKey)
+                ?: message.stringOrNull("reasoning_content")
+                ?: message.stringOrNull("reasoning"),
+            model = json.stringOrNull("model"),
+            finishReason = choice.stringOrNull("finish_reason"),
+            usage = usage,
+            toolCalls = message.arrayOrNull("tool_calls") ?: JsonArray()
+        )
+    }
+
+    private suspend fun OkHttpClient.executeStreamChat(
+        request: Request,
+        reasoningKey: String,
+        onStreamUpdate: (AiChatStreamUpdate) -> Unit
+    ): ChatCompletionSnapshot {
+        return withContext(IO) {
+            val response = newCall(request).await()
+            response.use {
+                val responseBody = it.body
+                if (!it.isSuccessful) {
+                    error("HTTP ${it.code}: ${responseBody.string().take(500)}")
+                }
+                var model: String? = null
+                var finishReason: String? = null
+                var usage: AiChatUsage? = null
+                val contentBuilder = StringBuilder()
+                val reasoningBuilder = StringBuilder()
+                val toolCalls = linkedMapOf<Int, StreamToolCall>()
+                responseBody.charStream().buffered().useLines { lines ->
+                    lines.forEach { line ->
+                        currentCoroutineContext().ensureActive()
+                        val data = line.trim()
+                            .takeIf { line -> line.startsWith("data:") }
+                            ?.removePrefix("data:")
+                            ?.trim()
+                            ?: return@forEach
+                        if (data == "[DONE]") {
+                            return@forEach
+                        }
+                        val json = runCatching {
+                            JsonParser.parseString(data).asJsonObject
+                        }.getOrNull() ?: return@forEach
+                        model = json.stringOrNull("model") ?: model
+                        usage = json.objectOrNull("usage")?.toChatUsage() ?: usage
+                        val choice = json.arrayOrNull("choices")
+                            ?.firstOrNull()
+                            ?.takeIf { it.isJsonObject }
+                            ?.asJsonObject
+                            ?: return@forEach
+                        finishReason = choice.stringOrNull("finish_reason") ?: finishReason
+                        val delta = choice.objectOrNull("delta")
+                            ?: choice.objectOrNull("message")
+                            ?: JsonObject()
+                        val contentDelta = delta.get("content").contentText()
+                        if (contentDelta.isNotEmpty()) {
+                            contentBuilder.append(contentDelta)
+                        }
+                        val reasoningDelta = delta.stringOrNull(reasoningKey)
+                            ?: delta.stringOrNull("reasoning_content")
+                            ?: delta.stringOrNull("reasoning")
+                        if (!reasoningDelta.isNullOrEmpty()) {
+                            reasoningBuilder.append(reasoningDelta)
+                        }
+                        delta.arrayOrNull("tool_calls")?.forEach { item ->
+                            val obj = item.takeIf { call -> call.isJsonObject }
+                                ?.asJsonObject
+                                ?: return@forEach
+                            val index = obj.intOrNull("index") ?: toolCalls.size
+                            val toolCall = toolCalls.getOrPut(index) { StreamToolCall() }
+                            obj.stringOrNull("id")?.let { id -> toolCall.id = id }
+                            obj.stringOrNull("type")?.let { type -> toolCall.type = type }
+                            obj.objectOrNull("function")?.let { function ->
+                                function.stringOrNull("name")?.let { name ->
+                                    toolCall.name = name
+                                }
+                                function.stringOrNull("arguments")?.let { arguments ->
+                                    toolCall.arguments.append(arguments)
+                                }
+                            }
+                        }
+                        if (contentDelta.isNotEmpty() || !reasoningDelta.isNullOrEmpty()) {
+                            onStreamUpdate(
+                                AiChatStreamUpdate(
+                                    content = contentBuilder.toString(),
+                                    reasoning = reasoningBuilder.toString()
+                                        .takeIf { text -> text.isNotBlank() }
+                                )
+                            )
+                        }
+                    }
+                }
+                val toolCallArray = JsonArray().apply {
+                    toolCalls.toSortedMap().values.forEach { add(it.toJson()) }
+                }
+                val content = contentBuilder.toString()
+                val reasoning = reasoningBuilder.toString().takeIf { text -> text.isNotBlank() }
+                val message = JsonObject().apply {
+                    addProperty("role", "assistant")
+                    addProperty("content", content)
+                    reasoning?.let { value -> addProperty("reasoning_content", value) }
+                    if (toolCallArray.size() > 0) {
+                        add("tool_calls", toolCallArray)
+                    }
+                }
+                ChatCompletionSnapshot(
+                    message = message,
+                    content = content,
+                    reasoning = reasoning,
+                    model = model,
+                    finishReason = finishReason,
+                    usage = usage,
+                    toolCalls = toolCallArray
+                )
             }
         }
     }
@@ -240,6 +375,14 @@ class AiChatClient {
         }.getOrNull() ?: JsonObject()
     }
 
+    private fun JsonObject.toChatUsage(): AiChatUsage {
+        return AiChatUsage(
+            promptTokens = intOrNull("prompt_tokens"),
+            completionTokens = intOrNull("completion_tokens"),
+            totalTokens = intOrNull("total_tokens")
+        )
+    }
+
     private data class McpChatTool(
         val name: String,
         val modelName: String,
@@ -247,9 +390,36 @@ class AiChatClient {
         val inputSchema: JsonObject
     )
 
+    private data class ChatCompletionSnapshot(
+        val message: JsonObject,
+        val content: String,
+        val reasoning: String?,
+        val model: String?,
+        val finishReason: String?,
+        val usage: AiChatUsage?,
+        val toolCalls: JsonArray
+    )
+
+    private class StreamToolCall {
+        var id: String = ""
+        var type: String = "function"
+        var name: String = ""
+        val arguments: StringBuilder = StringBuilder()
+
+        fun toJson(): JsonObject {
+            return JsonObject().apply {
+                addProperty("id", id)
+                addProperty("type", type.ifBlank { "function" })
+                add("function", JsonObject().apply {
+                    addProperty("name", name)
+                    addProperty("arguments", arguments.toString())
+                })
+            }
+        }
+    }
+
     companion object {
         private const val MCP_TOOL_PREFIX = "mcp__legado__"
-        private const val MAX_TOOL_ROUNDS = 4
     }
 }
 
@@ -261,6 +431,12 @@ data class AiChatTurnResult(
     val usage: AiChatUsage?,
     val toolTrace: List<String>,
     val warnings: List<String>
+)
+
+data class AiChatStreamUpdate(
+    val content: String,
+    val reasoning: String?,
+    val toolTrace: List<String> = emptyList()
 )
 
 data class AiChatUsage(
