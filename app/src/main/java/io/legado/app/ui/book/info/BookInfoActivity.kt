@@ -213,6 +213,10 @@ class BookInfoActivity :
     private var menuCustomBtn: MenuItem? = null
     private var bookInfoMenu: Menu? = null
     private var characterPreviewJob: Job? = null
+    private var otherWorksRawBooks = emptyList<SearchBook>()
+    private var otherWorksGroupCounts = emptyMap<String, Int>()
+    private var otherWorksGroupPrimaryBookUrls = emptyMap<String, String>()
+    private val expandedOtherWorksKeys = linkedSetOf<String>()
     private val bookInfoPopupItemIds = intArrayOf(
         R.id.menu_upload,
         R.id.menu_refresh,
@@ -234,9 +238,12 @@ class BookInfoActivity :
             this,
             this,
             SearchAdapter.Config(
-                showOriginCount = false,
                 horizontalMarginDp = 0,
-                backgroundRes = R.drawable.ng_bg_search_result_card_compact
+                backgroundRes = R.drawable.ng_bg_search_result_card_compact,
+                showInBookshelf = false,
+                minOriginCount = 2,
+                originCountProvider = ::otherWorksGroupCount,
+                longClickEnabledProvider = ::canExpandOtherWorks
             )
         )
     }
@@ -680,26 +687,27 @@ class BookInfoActivity :
             BookInfoViewModel.OtherWorksState.Idle -> {
                 rvOtherWorks.gone()
                 tvOtherWorksState.gone()
-                otherWorksAdapter.setItems(emptyList())
+                resetOtherWorksDisplay()
             }
 
             BookInfoViewModel.OtherWorksState.Loading -> {
                 rvOtherWorks.gone()
                 tvOtherWorksState.visible()
                 tvOtherWorksState.text = getString(R.string.book_other_works_loading)
+                resetOtherWorksDisplay()
             }
 
             BookInfoViewModel.OtherWorksState.Empty -> {
                 rvOtherWorks.gone()
                 tvOtherWorksState.visible()
                 tvOtherWorksState.text = getString(R.string.book_other_works_empty)
-                otherWorksAdapter.setItems(emptyList())
+                resetOtherWorksDisplay()
             }
 
             is BookInfoViewModel.OtherWorksState.Success -> {
                 tvOtherWorksState.gone()
                 rvOtherWorks.visible()
-                otherWorksAdapter.setItems(state.books)
+                updateOtherWorksDisplay(state.books)
             }
 
             is BookInfoViewModel.OtherWorksState.Error -> {
@@ -707,8 +715,65 @@ class BookInfoActivity :
                 tvOtherWorksState.visible()
                 tvOtherWorksState.text =
                     getString(R.string.book_other_works_error, state.message)
+                resetOtherWorksDisplay()
             }
         }
+    }
+
+    private fun resetOtherWorksDisplay() {
+        otherWorksRawBooks = emptyList()
+        otherWorksGroupCounts = emptyMap()
+        otherWorksGroupPrimaryBookUrls = emptyMap()
+        expandedOtherWorksKeys.clear()
+        otherWorksAdapter.setItems(emptyList())
+    }
+
+    private fun updateOtherWorksDisplay(books: List<SearchBook>) {
+        otherWorksRawBooks = books
+        rebuildOtherWorksGroups()
+        otherWorksAdapter.setItems(buildOtherWorksItems())
+    }
+
+    private fun rebuildOtherWorksGroups() {
+        val groups = otherWorksRawBooks.groupBy(::otherWorksGroupKey)
+        otherWorksGroupCounts = groups.mapValues { it.value.size }
+        otherWorksGroupPrimaryBookUrls = groups.mapValues { it.value.first().bookUrl }
+        expandedOtherWorksKeys.retainAll(groups.keys)
+    }
+
+    private fun buildOtherWorksItems(): List<SearchBook> {
+        val items = arrayListOf<SearchBook>()
+        otherWorksRawBooks.groupBy(::otherWorksGroupKey).forEach { (key, books) ->
+            if (books.isEmpty()) {
+                return@forEach
+            }
+            items.add(books.first())
+            if (key in expandedOtherWorksKeys && books.size > 1) {
+                items.addAll(books.drop(1))
+            }
+        }
+        return items
+    }
+
+    private fun otherWorksGroupKey(book: SearchBook): String {
+        return "${book.name.trim()}\n${book.author.trim()}"
+    }
+
+    private fun otherWorksGroupCount(book: SearchBook): Int {
+        val key = otherWorksGroupKey(book)
+        if (key in expandedOtherWorksKeys) {
+            return 1
+        }
+        val primaryBookUrl = otherWorksGroupPrimaryBookUrls[key]
+        return if (primaryBookUrl == book.bookUrl) {
+            otherWorksGroupCounts[key] ?: 1
+        } else {
+            1
+        }
+    }
+
+    private fun canExpandOtherWorks(book: SearchBook): Boolean {
+        return (otherWorksGroupCounts[otherWorksGroupKey(book)] ?: 1) > 1
     }
 
     private fun observeCharacterPreview(book: Book) {
@@ -827,7 +892,13 @@ class BookInfoActivity :
     }
 
     override fun showAllSources(book: SearchBook) {
-        SearchActivity.start(this, book.name)
+        val key = otherWorksGroupKey(book)
+        if ((otherWorksGroupCounts[key] ?: 1) <= 1) {
+            return
+        }
+        if (expandedOtherWorksKeys.add(key)) {
+            otherWorksAdapter.setItems(buildOtherWorksItems())
+        }
     }
 
     private fun BookCharacter.avatarBackground(): Int {

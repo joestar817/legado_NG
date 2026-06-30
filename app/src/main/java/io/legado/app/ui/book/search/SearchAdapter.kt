@@ -33,6 +33,9 @@ class SearchAdapter(
                 return when {
                     oldItem.name != newItem.name -> false
                     oldItem.author != newItem.author -> false
+                    oldItem.bookUrl.isNotBlank() && newItem.bookUrl.isNotBlank() -> {
+                        oldItem.bookUrl == newItem.bookUrl
+                    }
                     else -> true
                 }
             }
@@ -91,6 +94,9 @@ class SearchAdapter(
             val position = holder.bindingAdapterPosition
             if (position == RecyclerView.NO_POSITION) return@setOnLongClickListener true
             getItem(position)?.let {
+                if (config.longClickEnabledProvider?.invoke(it) == false) {
+                    return@setOnLongClickListener false
+                }
                 callBack.showAllSources(it)
             }
             true
@@ -102,10 +108,14 @@ class SearchAdapter(
             tvName.text = searchBook.name
             tvAuthor.text = context.getString(R.string.author_show, searchBook.author)
             tvOrigin.text = context.getString(R.string.origin_show, searchBook.originName)
-            ivInBookshelf.isVisible = callBack.isInBookshelf(searchBook)
-            bvOriginCount.isVisible = config.showOriginCount
-            if (config.showOriginCount) {
-                bvOriginCount.setBadgeCount(searchBook.origins.size)
+            ivInBookshelf.isVisible = config.showInBookshelf && callBack.isInBookshelf(searchBook)
+            val originCount = originCount(searchBook)
+            val showOriginCount = showOriginCount(originCount)
+            bvOriginCount.isVisible = showOriginCount
+            if (showOriginCount) {
+                bvOriginCount.setBadgeCount(originCount)
+            } else {
+                bvOriginCount.setBadgeCount(0)
             }
             upLasted(binding, searchBook.latestChapterTitle)
             tvIntroduce.text = searchBook.trimIntro(context)
@@ -123,14 +133,22 @@ class SearchAdapter(
             bundle.keySet().forEach {
                 when (it) {
                     "origins" -> if (config.showOriginCount) {
-                        bvOriginCount.setBadgeCount(searchBook.origins.size)
+                        val originCount = originCount(searchBook)
+                        val showOriginCount = showOriginCount(originCount)
+                        bvOriginCount.isVisible = showOriginCount
+                        if (showOriginCount) {
+                            bvOriginCount.setBadgeCount(originCount)
+                        } else {
+                            bvOriginCount.setBadgeCount(0)
+                        }
                     }
                     "origin" -> tvOrigin.text =
                         context.getString(R.string.origin_show, searchBook.originName)
                     "last" -> upLasted(binding, searchBook.latestChapterTitle)
                     "intro" -> tvIntroduce.text = searchBook.trimIntro(context)
                     "kind" -> upKind(binding, searchBook.getKindList())
-                    "isInBookshelf" -> ivInBookshelf.isVisible = callBack.isInBookshelf(searchBook)
+                    "isInBookshelf" -> ivInBookshelf.isVisible =
+                        config.showInBookshelf && callBack.isInBookshelf(searchBook)
                     "cover" -> ivCover.load(
                         searchBook,
                         false
@@ -175,10 +193,22 @@ class SearchAdapter(
         }
     }
 
+    private fun originCount(searchBook: SearchBook): Int {
+        return config.originCountProvider?.invoke(searchBook) ?: searchBook.origins.size
+    }
+
+    private fun showOriginCount(originCount: Int): Boolean {
+        return config.showOriginCount && originCount >= config.minOriginCount
+    }
+
     data class Config(
         val showOriginCount: Boolean = true,
         val horizontalMarginDp: Int? = null,
-        val backgroundRes: Int? = null
+        val backgroundRes: Int? = null,
+        val showInBookshelf: Boolean = true,
+        val minOriginCount: Int = 1,
+        val originCountProvider: ((SearchBook) -> Int)? = null,
+        val longClickEnabledProvider: ((SearchBook) -> Boolean)? = null
     )
 
     interface CallBack {
