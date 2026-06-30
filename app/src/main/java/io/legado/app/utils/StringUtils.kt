@@ -3,6 +3,7 @@ package io.legado.app.utils
 import android.annotation.SuppressLint
 import android.text.TextUtils.isEmpty
 import android.util.Base64
+import io.legado.app.constant.AppPattern
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -266,6 +267,15 @@ object StringUtils {
             wordsS = wc
         }
         return wordsS
+    }
+
+    fun contentWordCount(content: String): Int {
+        val text = AppPattern.imgPattern.matcher(content).replaceAll("")
+        return text.replace(AppPattern.noWordCountRegex, "").length
+    }
+
+    fun contentWordCountFormat(content: String): String {
+        return wordCountFormat(contentWordCount(content))
     }
 
     /**
