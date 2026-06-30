@@ -2,16 +2,24 @@
 
 package io.legado.app.ui.main.bookshelf.style1
 
+import android.content.Context
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.TextUtils
+import android.util.TypedValue
 import android.view.Gravity
-import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.TextView
 import androidx.appcompat.widget.PopupMenu
 import androidx.appcompat.widget.SearchView
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentStatePagerAdapter
@@ -45,6 +53,95 @@ import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlin.collections.set
 
+private data class BookshelfMenuAction(
+    val itemId: Int,
+    val titleRes: Int,
+    val iconRes: Int,
+    val dividerBefore: Boolean = false
+)
+
+private class BookshelfActionPopup(
+    context: Context,
+    actions: List<BookshelfMenuAction>,
+    onActionClick: (BookshelfMenuAction) -> Unit
+) : PopupWindow(164.dpToPx(), ViewGroup.LayoutParams.WRAP_CONTENT) {
+
+    init {
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 6.dpToPx(), 0, 6.dpToPx())
+            background = GradientDrawable().apply {
+                setColor(context.getCompatColor(R.color.ng_surface_soft))
+                cornerRadius = 18.dpToPx().toFloat()
+            }
+        }
+        actions.forEach { action ->
+            if (action.dividerBefore) {
+                panel.addView(createDivider(context))
+            }
+            panel.addView(createActionRow(context, action) {
+                dismiss()
+                onActionClick(action)
+            })
+        }
+        contentView = panel
+        isFocusable = true
+        isOutsideTouchable = true
+        setBackgroundDrawable(ColorDrawable(0x00000000))
+        elevation = 8.dpToPx().toFloat()
+    }
+
+    fun show(anchor: View) {
+        showAsDropDown(anchor, anchor.width - width - 8.dpToPx(), 8.dpToPx())
+    }
+
+    private fun createActionRow(
+        context: Context,
+        action: BookshelfMenuAction,
+        onClick: () -> Unit
+    ): View {
+        val color = context.getCompatColor(R.color.ng_on_surface)
+        return LinearLayout(context).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(12.dpToPx(), 0, 12.dpToPx(), 0)
+            minimumHeight = 44.dpToPx()
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            addView(ImageView(context).apply {
+                setImageDrawable(ContextCompat.getDrawable(context, action.iconRes))
+                setColorFilter(color)
+            }, LinearLayout.LayoutParams(20.dpToPx(), 20.dpToPx()).apply {
+                marginEnd = 10.dpToPx()
+            })
+            addView(TextView(context).apply {
+                text = context.getString(action.titleRes)
+                setTextColor(color)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                includeFontPadding = false
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+    }
+
+    private fun createDivider(context: Context): View {
+        return View(context).apply {
+            setBackgroundColor(context.getCompatColor(R.color.ng_outline))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                1
+            ).apply {
+                leftMargin = 12.dpToPx()
+                rightMargin = 12.dpToPx()
+                topMargin = 3.dpToPx()
+                bottomMargin = 3.dpToPx()
+            }
+        }
+    }
+}
+
 /**
  * 书架界面
  */
@@ -58,6 +155,21 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         private const val GRADIENT_GROUP_SELECTED_COLOR = 0xDE000000.toInt()
         private const val GRADIENT_GROUP_UNSELECTED_COLOR = 0x8A000000.toInt()
         private val sortValues = intArrayOf(4, 0, 1, 2, 3, 5)
+        private val bookshelfMenuActions = listOf(
+            BookshelfMenuAction(R.id.menu_update_toc, R.string.update_toc, R.drawable.ic_refresh_black_24dp),
+            BookshelfMenuAction(R.id.menu_ai_assistant, R.string.ai_assistant, R.drawable.ic_ai),
+            BookshelfMenuAction(R.id.menu_add_local, R.string.book_local, R.drawable.ic_add, dividerBefore = true),
+            BookshelfMenuAction(R.id.menu_remote, R.string.add_remote_book, R.drawable.ic_add),
+            BookshelfMenuAction(R.id.menu_add_url, R.string.add_url, R.drawable.ic_add_online),
+            BookshelfMenuAction(R.id.menu_bookshelf_manage, R.string.bookshelf_management, R.drawable.ic_arrange, dividerBefore = true),
+            BookshelfMenuAction(R.id.menu_download, R.string.cache_export, R.drawable.ic_download_line),
+            BookshelfMenuAction(R.id.menu_group_manage, R.string.group_manage, R.drawable.ic_groups),
+            BookshelfMenuAction(R.id.menu_bookshelf_layout, R.string.bookshelf_layout, R.drawable.ic_view_quilt),
+            BookshelfMenuAction(R.id.menu_export_bookshelf, R.string.export_bookshelf, R.drawable.ic_export, dividerBefore = true),
+            BookshelfMenuAction(R.id.menu_import_bookshelf, R.string.import_bookshelf, R.drawable.ic_import),
+            BookshelfMenuAction(R.id.menu_log, R.string.log, R.drawable.ic_cfg_about, dividerBefore = true),
+            BookshelfMenuAction(R.id.menu_network_log, R.string.network_request_log, R.drawable.ic_cfg_about)
+        )
     }
 
     constructor(position: Int) : this() {
@@ -249,17 +361,9 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
     }
 
     private fun showBookshelfMenu(anchor: View) {
-        PopupMenu(requireContext(), anchor).apply {
-            menuInflater.inflate(R.menu.main_bookshelf, menu)
-            menu.findItem(R.id.menu_search)?.isVisible = false
-            setOnMenuItemClickListener(::onBookshelfMenuItemClick)
-            show()
-        }
-    }
-
-    private fun onBookshelfMenuItemClick(item: MenuItem): Boolean {
-        onCompatOptionsItemSelected(item)
-        return true
+        BookshelfActionPopup(requireContext(), bookshelfMenuActions) { action ->
+            handleBookshelfMenuItem(action.itemId)
+        }.show(anchor)
     }
 
     override fun onQueryTextSubmit(query: String?): Boolean {

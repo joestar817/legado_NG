@@ -21,5 +21,7 @@ data class AiChatConversation(
     @ColumnInfo(defaultValue = "")
     val customSystemPrompt: String = "",
     @ColumnInfo(defaultValue = "[]")
+    val loadedSkillIds: String = "[]",
+    @ColumnInfo(defaultValue = "[]")
     val uploadMessages: String = "[]"
 )

@@ -187,7 +187,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                     val isRightSwipe = dx >= AI_CHAT_SWIPE_DISTANCE_DP.dpToPx()
                             && abs(dx) > abs(dy) * 1.8f
                     if (isRightSwipe) {
-                        startActivity<AiChatActivity>()
+                        startBookshelfGenericAiChat()
                     }
                 }
                 resetAiChatSwipe()
@@ -256,9 +256,22 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             windowInsets.inset(0, 0, 0, height)
         }
         fabAiChat.setOnClickListener {
-            startActivity<AiChatActivity>()
+            if (pagePosition == 0) {
+                startBookshelfGenericAiChat()
+            } else {
+                startActivity<AiChatActivity>()
+            }
         }
         refreshAiChatFab()
+    }
+
+    private fun startBookshelfGenericAiChat() {
+        startActivity<AiChatActivity> {
+            putStringArrayListExtra(
+                AiChatActivity.EXTRA_AVAILABLE_CONTEXTS,
+                arrayListOf(AiChatActivity.CONTEXT_BOOKSHELF)
+            )
+        }
     }
 
     private fun refreshAiChatFab() = binding.run {

@@ -152,6 +152,8 @@ import androidx.core.content.FileProvider
 import com.bumptech.glide.Glide
 import com.google.gson.JsonObject
 import io.legado.app.R
+import io.legado.app.data.appDb
+import io.legado.app.data.entities.BookGroup
 import io.legado.app.help.ai.AiChatClient
 import io.legado.app.help.ai.AiChatHistoryState
 import io.legado.app.help.ai.AiChatHistoryStore
@@ -159,6 +161,14 @@ import io.legado.app.help.ai.AiChatMessageSnapshot
 import io.legado.app.help.ai.AiChatSessionSnapshot
 import io.legado.app.help.ai.AiChatTurnResult
 import io.legado.app.help.ai.AiConfig
+import io.legado.app.help.ai.AiSkillRegistry
+import io.legado.app.help.ai.AiSkillScope
+import io.legado.app.help.book.isAudio
+import io.legado.app.help.book.isImage
+import io.legado.app.help.book.isLocal
+import io.legado.app.help.book.isNotShelf
+import io.legado.app.help.book.isUpError
+import io.legado.app.help.book.isVideo
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.backgroundColor
@@ -192,6 +202,13 @@ import java.util.UUID
  */
 class AiChatActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_ENTRY = "entry"
+        const val EXTRA_AVAILABLE_CONTEXTS = "available_contexts"
+        const val ENTRY_BOOKSHELF = "bookshelf"
+        const val CONTEXT_BOOKSHELF = "bookshelf"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -206,6 +223,20 @@ class AiChatActivity : AppCompatActivity() {
         }
     }
 }
+
+private enum class AiChatInputAttachmentType {
+    CONTEXT,
+    SKILL
+}
+
+private data class AiChatInputAttachment(
+    val id: String,
+    val type: AiChatInputAttachmentType,
+    val title: String,
+    val subtitle: String,
+    val prompt: String,
+    val suggestions: List<String> = emptyList()
+)
 
 @Composable
 private fun RikkaChatTheme(content: @Composable () -> Unit) {
@@ -273,6 +304,24 @@ private fun AiChatRoute(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val chatClient = remember { AiChatClient() }
+    val entrySource = remember {
+        (context as? AiChatActivity)?.intent?.getStringExtra(AiChatActivity.EXTRA_ENTRY)
+    }
+    val entryAttachments = remember(entrySource) {
+        buildEntryInputAttachments(entrySource)
+    }
+    val availableContextAttachments = remember(entrySource) {
+        val contextSources = (context as? AiChatActivity)
+            ?.intent
+            ?.getStringArrayListExtra(AiChatActivity.EXTRA_AVAILABLE_CONTEXTS)
+            .orEmpty()
+        buildContextInputAttachments((listOfNotNull(entrySource) + contextSources).distinct())
+    }
+    val inputAttachments = remember(entrySource) {
+        mutableStateListOf<AiChatInputAttachment>().apply {
+            addAll(entryAttachments)
+        }
+    }
     val uploadMessages = remember { mutableStateListOf<JsonObject>() }
     val messages = remember { mutableStateListOf<ChatUiMessage>() }
     val sessions = remember { mutableStateListOf<AiChatSessionSnapshot>() }
@@ -287,6 +336,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
     var globalSearchQuery by remember { mutableStateOf("") }
     var exportSelectionMode by remember { mutableStateOf(false) }
     var exportFormatDialog by remember { mutableStateOf(false) }
+    var showContextAttachmentSheet by remember { mutableStateOf(false) }
+    var showSkillAttachmentSheet by remember { mutableStateOf(false) }
+    var contextPreviewAttachments by remember { mutableStateOf<List<AiChatInputAttachment>>(emptyList()) }
     val selectedExportMessageIds = remember { mutableStateListOf<String>() }
     val selectedModelLabel = remember(configVersion) {
         AiAssistantConfigUi.selectedModelLabel()
@@ -313,10 +365,17 @@ private fun AiChatRoute(onBack: () -> Unit) {
         val activeSession = history.activeSessionId
             ?.let { activeId -> history.sessions.firstOrNull { it.id == activeId } }
             ?: history.sessions.firstOrNull()
-        if (activeSession != null) {
+        if (entryAttachments.isNotEmpty()) {
+            activeSessionId = UUID.randomUUID().toString()
+            uploadMessages.clear()
+            uploadMessages += chatClient.newSystemMessage()
+            messages.clear()
+            selectedDrawerIndex = 2
+        } else if (activeSession != null) {
             activeSessionId = activeSession.id
             messages.replaceWith(activeSession.messages.map { it.toUiMessage() })
             uploadMessages.replaceUploadMessages(activeSession, chatClient)
+            inputAttachments.replaceWith(buildSkillInputAttachments(activeSession.loadedSkillIds))
         } else if (uploadMessages.isEmpty()) {
             uploadMessages += chatClient.newSystemMessage()
         }
@@ -372,6 +431,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             updatedAt = now,
             isPinned = oldSession?.isPinned ?: false,
             messages = visibleMessages.map { it.toSnapshot() },
+            loadedSkillIds = inputAttachments.loadedSkillIds(),
             uploadMessages = uploadMessages.map { it.deepCopy().asJsonObject }
         )
         sessions.removeAll { it.id == sessionId }
@@ -386,6 +446,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         uploadMessages.clear()
         uploadMessages += chatClient.newSystemMessage()
         messages.clear()
+        inputAttachments.clear()
         selectedDrawerIndex = 2
         saveHistory(activeSessionId)
     }
@@ -394,6 +455,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         activeSessionId = session.id
         messages.replaceWith(session.messages.map { it.toUiMessage() })
         uploadMessages.replaceUploadMessages(session, chatClient)
+        inputAttachments.replaceWith(buildSkillInputAttachments(session.loadedSkillIds))
         selectedDrawerIndex = 2
         saveHistory(session.id)
     }
@@ -428,9 +490,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
     }
 
-    fun sendMessage() {
+    fun sendMessage(messageOverride: String? = null) {
         if (sending) return
-        val content = input.trim()
+        val content = (messageOverride ?: input).trim()
         if (content.isBlank()) {
             Toast.makeText(context, R.string.ai_chat_empty, Toast.LENGTH_SHORT).show()
             return
@@ -438,7 +500,10 @@ private fun AiChatRoute(onBack: () -> Unit) {
         input = ""
         val userMessage = ChatUiMessage(role = ChatRole.USER, content = content)
         messages += userMessage
-        uploadMessages += chatClient.newUserMessage(content)
+        uploadMessages += chatClient.newUserMessage(
+            buildUserUploadContent(content, inputAttachments)
+        )
+        inputAttachments.removeAll { it.type == AiChatInputAttachmentType.CONTEXT }
         persistActiveSession()
         sendCurrentMessages()
     }
@@ -806,6 +871,30 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     onConfirm = ::confirmExportSelection
                                 )
                             }
+                            AiChatSkillSuggestionRow(
+                                visible = messages.isEmpty()
+                                        && input.isBlank()
+                                        && inputAttachments.any {
+                                    it.type == AiChatInputAttachmentType.SKILL
+                                            && it.suggestions.isNotEmpty()
+                                },
+                                suggestions = inputAttachments
+                                    .filter { it.type == AiChatInputAttachmentType.SKILL }
+                                    .flatMap { it.suggestions }
+                                    .distinct(),
+                                onSelect = { suggestion ->
+                                    sendMessage(suggestion)
+                                }
+                            )
+                            AiChatLoadedSkillBar(
+                                skills = inputAttachments.filter {
+                                    it.type == AiChatInputAttachmentType.SKILL
+                                },
+                                onRemove = { skill ->
+                                    inputAttachments.removeAll { it.id == skill.id }
+                                    persistActiveSession()
+                                }
+                            )
                             RikkaChatInput(
                                 value = input,
                                 onValueChange = { input = it },
@@ -813,6 +902,10 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 modelIconRes = selectedModelIconRes,
                                 reasoningEnabled = selectedReasoningEnabled,
                                 mcpEnabled = internalMcpEnabled,
+                                skillEnabled = inputAttachments.any {
+                                    it.type == AiChatInputAttachmentType.SKILL
+                                },
+                                attachments = inputAttachments,
                                 onSend = ::sendMessage,
                                 onModelClick = {
                                     AiAssistantConfigUi.showModelSelectSheet(context) {
@@ -828,6 +921,25 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     AiAssistantConfigUi.showInternalMcpSheet(context) {
                                         configVersion++
                                     }
+                                },
+                                onSkillClick = {
+                                    showSkillAttachmentSheet = true
+                                },
+                                onContextClick = {
+                                    val loadedContexts = inputAttachments.filter {
+                                        it.type == AiChatInputAttachmentType.CONTEXT
+                                    }
+                                    if (loadedContexts.isNotEmpty()) {
+                                        contextPreviewAttachments = loadedContexts
+                                    } else {
+                                        showContextAttachmentSheet = true
+                                    }
+                                },
+                                onContextPreview = { attachment ->
+                                    contextPreviewAttachments = listOf(attachment)
+                                },
+                                onRemoveAttachment = { attachment ->
+                                    inputAttachments.removeAll { it.id == attachment.id }
                                 }
                             )
                         }
@@ -867,6 +979,45 @@ private fun AiChatRoute(onBack: () -> Unit) {
         ChatExportFormatDialog(
             onDismiss = { exportFormatDialog = false },
             onExport = ::exportSelectedMessages
+        )
+    }
+    if (showContextAttachmentSheet) {
+        AiChatInputAttachmentSheet(
+            title = "添加上下文",
+            description = "上下文会显示在输入框内，并随下一条消息一次性发送给 AI。",
+            emptyText = "当前入口没有可添加的上下文",
+            availableAttachments = availableContextAttachments,
+            loadedAttachmentIds = inputAttachments.map { it.id }.toSet(),
+            onAdd = { attachment ->
+                if (inputAttachments.none { it.id == attachment.id }) {
+                    inputAttachments += attachment
+                }
+                showContextAttachmentSheet = false
+            },
+            onDismiss = { showContextAttachmentSheet = false }
+        )
+    }
+    if (contextPreviewAttachments.isNotEmpty()) {
+        AiChatContextPreviewSheet(
+            attachments = contextPreviewAttachments,
+            onDismiss = { contextPreviewAttachments = emptyList() }
+        )
+    }
+    if (showSkillAttachmentSheet) {
+        AiChatInputAttachmentSheet(
+            title = "加载技能",
+            description = "技能会作为可见加载项加入输入框，用于给普通聊天补充场景说明。",
+            emptyText = "暂无可在聊天中加载的技能",
+            availableAttachments = buildAgentSkillInputAttachments(),
+            loadedAttachmentIds = inputAttachments.map { it.id }.toSet(),
+            onAdd = { attachment ->
+                if (inputAttachments.none { it.id == attachment.id }) {
+                    inputAttachments += attachment
+                    persistActiveSession()
+                }
+                showSkillAttachmentSheet = false
+            },
+            onDismiss = { showSkillAttachmentSheet = false }
         )
     }
 }
@@ -2519,10 +2670,16 @@ private fun RikkaChatInput(
     @DrawableRes modelIconRes: Int,
     reasoningEnabled: Boolean,
     mcpEnabled: Boolean,
+    skillEnabled: Boolean,
+    attachments: List<AiChatInputAttachment>,
     onSend: () -> Unit,
     onModelClick: () -> Unit,
     onReasoningClick: () -> Unit,
-    onMcpClick: () -> Unit
+    onMcpClick: () -> Unit,
+    onSkillClick: () -> Unit,
+    onContextClick: () -> Unit,
+    onContextPreview: (AiChatInputAttachment) -> Unit,
+    onRemoveAttachment: (AiChatInputAttachment) -> Unit
 ) {
     Surface(color = Color.Transparent) {
         Column(
@@ -2538,6 +2695,16 @@ private fun RikkaChatInput(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
             ) {
                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    val contextAttachments = attachments.filter {
+                        it.type == AiChatInputAttachmentType.CONTEXT
+                    }
+                    if (contextAttachments.isNotEmpty()) {
+                        AiChatInputAttachmentRow(
+                            attachments = contextAttachments,
+                            onPreview = onContextPreview,
+                            onRemove = onRemoveAttachment
+                        )
+                    }
                     TextField(
                         value = value,
                         onValueChange = onValueChange,
@@ -2573,7 +2740,19 @@ private fun RikkaChatInput(
                                 active = mcpEnabled,
                                 onClick = onMcpClick
                             )
+                            InputDrawableIcon(
+                                iconRes = R.drawable.ic_ai_skill_puzzle,
+                                active = skillEnabled,
+                                onClick = onSkillClick
+                            )
                         }
+                        InputDrawableIcon(
+                            iconRes = R.drawable.ic_ai_context_menu,
+                            active = attachments.any {
+                                it.type == AiChatInputAttachmentType.CONTEXT
+                            },
+                            onClick = onContextClick
+                        )
                         Surface(
                             onClick = onSend,
                             enabled = sending || value.isNotBlank(),
@@ -2601,6 +2780,371 @@ private fun RikkaChatInput(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiChatLoadedSkillBar(
+    skills: List<AiChatInputAttachment>,
+    onRemove: (AiChatInputAttachment) -> Unit
+) {
+    AnimatedVisibility(visible = skills.isNotEmpty()) {
+        Surface(color = Color.Transparent) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Psychology,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "当前skill：${skills.joinToString("、") { it.title }}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                skills.forEach { skill ->
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .size(26.dp)
+                            .clickable { onRemove(skill) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiChatInputAttachmentRow(
+    attachments: List<AiChatInputAttachment>,
+    onPreview: (AiChatInputAttachment) -> Unit,
+    onRemove: (AiChatInputAttachment) -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 6.dp)
+            .horizontalScroll(rememberScrollState())
+    ) {
+        attachments.forEach { attachment ->
+            AiChatInputAttachmentChip(
+                attachment = attachment,
+                onPreview = { onPreview(attachment) },
+                onRemove = { onRemove(attachment) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiChatInputAttachmentChip(
+    attachment: AiChatInputAttachment,
+    onPreview: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Surface(
+        onClick = onPreview,
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 1.dp,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+    ) {
+        Row(
+            modifier = Modifier
+                .height(44.dp)
+                .padding(start = 8.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                modifier = Modifier.size(34.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = when (attachment.type) {
+                            AiChatInputAttachmentType.CONTEXT -> Icons.Rounded.Description
+                            AiChatInputAttachmentType.SKILL -> Icons.Rounded.Psychology
+                        },
+                        contentDescription = null,
+                        tint = if (attachment.type == AiChatInputAttachmentType.SKILL) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            Text(
+                text = attachment.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.widthIn(min = 40.dp, max = 180.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .size(26.dp)
+                    .clickable(onClick = onRemove),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AiChatContextPreviewSheet(
+    attachments: List<AiChatInputAttachment>,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "上下文内容",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "这些内容会随下一条消息一次性发送给 AI，可在输入框中移除。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                attachments.forEach { attachment ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = attachment.title,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = attachment.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Text(
+                                text = attachment.prompt,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AiChatInputAttachmentSheet(
+    title: String,
+    description: String,
+    emptyText: String,
+    availableAttachments: List<AiChatInputAttachment>,
+    loadedAttachmentIds: Set<String>,
+    onAdd: (AiChatInputAttachment) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            AiChatAttachmentSheetSection(
+                emptyText = emptyText,
+                attachments = availableAttachments,
+                loadedAttachmentIds = loadedAttachmentIds,
+                onAdd = onAdd
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun AiChatAttachmentSheetSection(
+    emptyText: String,
+    attachments: List<AiChatInputAttachment>,
+    loadedAttachmentIds: Set<String>,
+    onAdd: (AiChatInputAttachment) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (attachments.isEmpty()) {
+            Text(
+                text = emptyText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+            )
+        } else {
+            attachments.forEach { attachment ->
+                val loaded = attachment.id in loadedAttachmentIds
+                Surface(
+                    onClick = { if (!loaded) onAdd(attachment) },
+                    enabled = !loaded,
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = when (attachment.type) {
+                                AiChatInputAttachmentType.CONTEXT -> Icons.Rounded.Description
+                                AiChatInputAttachmentType.SKILL -> Icons.Rounded.Psychology
+                            },
+                            contentDescription = null,
+                            tint = if (attachment.type == AiChatInputAttachmentType.SKILL) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = attachment.title,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = attachment.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = if (loaded) "已添加" else "添加",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (loaded) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiChatSkillSuggestionRow(
+    visible: Boolean,
+    suggestions: List<String>,
+    onSelect: (String) -> Unit
+) {
+    AnimatedVisibility(visible = visible) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 4.dp)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            suggestions.forEach { suggestion ->
+                Surface(
+                    onClick = { onSelect(suggestion) },
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                ) {
+                    Text(
+                        text = suggestion,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }
@@ -2884,9 +3428,9 @@ private fun ChatUiMessage.sheetInfoText(): String {
     }
 }
 
-private fun MutableList<ChatUiMessage>.replaceWith(newMessages: List<ChatUiMessage>) {
+private fun <T> MutableList<T>.replaceWith(newItems: List<T>) {
     clear()
-    addAll(newMessages)
+    addAll(newItems)
 }
 
 private fun MutableList<AiChatSessionSnapshot>.sortChatSessions() {
@@ -2925,6 +3469,176 @@ private fun rebuildUploadMessages(
                 }
             }
         }
+    }
+}
+
+private fun buildEntryInputAttachments(entrySource: String?): List<AiChatInputAttachment> {
+    return when (entrySource) {
+        AiChatActivity.ENTRY_BOOKSHELF -> buildList {
+            add(buildBookshelfContextInputAttachment())
+            AiSkillRegistry.get(AiSkillRegistry.SKILL_BOOKSHELF_MANAGEMENT)
+                ?.let(::toSkillInputAttachment)
+                ?.let(::add)
+        }
+
+        else -> emptyList()
+    }
+}
+
+private fun buildContextInputAttachments(contextSources: List<String>): List<AiChatInputAttachment> {
+    return contextSources.distinct().mapNotNull { source ->
+        when (source) {
+            AiChatActivity.CONTEXT_BOOKSHELF -> buildBookshelfContextInputAttachment()
+            else -> null
+        }
+    }
+}
+
+private fun buildBookshelfContextInputAttachment(): AiChatInputAttachment {
+    return AiChatInputAttachment(
+        id = "context.bookshelf.current",
+        type = AiChatInputAttachmentType.CONTEXT,
+        title = "当前书架",
+        subtitle = "书架摘要，一次性附加",
+        prompt = buildBookshelfContextSummary()
+    )
+}
+
+private fun buildBookshelfContextSummary(): String {
+    val allBooks = appDb.bookDao.all
+    val shelfBooks = allBooks.filterNot { it.isNotShelf }
+    val groups = appDb.bookGroupDao.all
+    val customGroups = groups.filter { it.groupId > 0L }
+    val customGroupMask = customGroups.fold(0L) { acc, group -> acc or group.groupId }
+    val ungroupedCount = shelfBooks.count { book ->
+        customGroupMask == 0L || (book.group and customGroupMask) == 0L
+    }
+    val generatedAt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+    return buildString {
+        appendLine("# 当前书架摘要")
+        appendLine()
+        appendLine("- 生成时间：$generatedAt")
+        appendLine("- 图书总数：${allBooks.size}")
+        appendLine("- 正式书架图书：${shelfBooks.size}")
+        appendLine("- 临时/未加入书架图书：${allBooks.size - shelfBooks.size}")
+        appendLine("- 分组数量：${groups.size}（自定义 ${customGroups.size}）")
+        appendLine("- 未加入自定义分组：$ungroupedCount")
+        appendLine()
+        appendLine("## 类型分布")
+        appendLine()
+        appendLine("| 类型 | 数量 |")
+        appendLine("| --- | ---: |")
+        appendLine("| 文本/网络 | ${shelfBooks.count { !it.isLocal && !it.isAudio && !it.isVideo && !it.isImage }} |")
+        appendLine("| 本地 | ${shelfBooks.count { it.isLocal }} |")
+        appendLine("| 音频 | ${shelfBooks.count { it.isAudio }} |")
+        appendLine("| 视频 | ${shelfBooks.count { it.isVideo }} |")
+        appendLine("| 图片 | ${shelfBooks.count { it.isImage }} |")
+        appendLine("| 更新异常 | ${shelfBooks.count { it.isUpError }} |")
+        appendLine()
+        appendLine("## 自定义分组概况")
+        appendLine()
+        if (customGroups.isEmpty()) {
+            appendLine("- 暂无自定义分组")
+        } else {
+            appendLine("| 分组 | 图书数 |")
+            appendLine("| --- | ---: |")
+            customGroups.sortedWith(compareBy<BookGroup> { it.order }.thenBy { it.groupName })
+                .take(20)
+                .forEach { group ->
+                    val count = shelfBooks.count { (it.group and group.groupId) > 0L }
+                    appendLine("| ${group.groupName.escapeMarkdownCell()} | $count |")
+                }
+            if (customGroups.size > 20) {
+                appendLine()
+                appendLine("- 还有 ${customGroups.size - 20} 个自定义分组未列出")
+            }
+        }
+        appendTopCounts("作者分布 Top 8", shelfBooks.map { it.author.ifBlank { "未知作者" } })
+        appendTopCounts("来源分布 Top 8", shelfBooks.map { it.originName.ifBlank { it.origin.ifBlank { "未知来源" } } })
+    }
+}
+
+private fun StringBuilder.appendTopCounts(title: String, values: List<String>) {
+    val counts = values.groupingBy { it }.eachCount()
+        .toList()
+        .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
+        .take(8)
+    appendLine()
+    appendLine("## $title")
+    appendLine()
+    if (counts.isEmpty()) {
+        appendLine("- 暂无数据")
+        return
+    }
+    appendLine("| 名称 | 数量 |")
+    appendLine("| --- | ---: |")
+    counts.forEach { (name, count) ->
+        appendLine("| ${name.escapeMarkdownCell()} | $count |")
+    }
+}
+
+private fun String.escapeMarkdownCell(): String {
+    return replace("|", "\\|").replace("\n", " ")
+}
+
+private fun buildAgentSkillInputAttachments(): List<AiChatInputAttachment> {
+    return AiSkillRegistry.agentSkills().map(::toSkillInputAttachment)
+}
+
+private fun buildSkillInputAttachments(skillIds: List<String>): List<AiChatInputAttachment> {
+    return skillIds.distinct().mapNotNull { skillId ->
+        AiSkillRegistry.get(skillId)
+            ?.takeIf { it.scope == AiSkillScope.AGENT }
+            ?.let(::toSkillInputAttachment)
+    }
+}
+
+private fun toSkillInputAttachment(skill: io.legado.app.help.ai.AiSkillDefinition): AiChatInputAttachment {
+    return AiChatInputAttachment(
+        id = "skill.${skill.id}",
+        type = AiChatInputAttachmentType.SKILL,
+        title = skill.name,
+        subtitle = skill.summary,
+        prompt = skill.prompt,
+        suggestions = skill.suggestions
+    )
+}
+
+private fun List<AiChatInputAttachment>.loadedSkillIds(): List<String> {
+    return filter { it.type == AiChatInputAttachmentType.SKILL }
+        .map { it.id.removePrefix("skill.").trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+}
+
+private fun buildUserUploadContent(
+    userContent: String,
+    attachments: List<AiChatInputAttachment>
+): String {
+    if (attachments.isEmpty()) {
+        return userContent
+    }
+    val contexts = attachments.filter { it.type == AiChatInputAttachmentType.CONTEXT }
+    val skills = attachments.filter { it.type == AiChatInputAttachmentType.SKILL }
+    return buildString {
+        append("以下是用户在输入框中可见并随本次消息附带的 App 上下文与 Skill 说明。")
+        append("这些内容用于帮助你理解场景，不要在回复中逐字复述；用户可随时移除它们。\n\n")
+        if (contexts.isNotEmpty()) {
+            append("## App 上下文\n")
+            contexts.forEach { attachment ->
+                append("### ").append(attachment.title).append('\n')
+                append(attachment.prompt).append("\n\n")
+            }
+        }
+        if (skills.isNotEmpty()) {
+            append("## 已加载 Skill\n")
+            skills.forEach { attachment ->
+                append("### ").append(attachment.title).append('\n')
+                append(attachment.prompt).append("\n\n")
+            }
+        }
+        append("## 用户消息\n")
+        append(userContent)
     }
 }
 

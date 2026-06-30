@@ -113,7 +113,7 @@
                     style="@style/Ng.SettingsIconImage"
                     android:layout_gravity="center_vertical"
                     android:contentDescription="@string/ai_prompt_menu"
-                    android:src="@drawable/ic_ai_prompt" />
+                    android:src="@drawable/ic_ai_skill_puzzle" />
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -1107,6 +1107,30 @@
             android:layout_marginBottom="14dp"
             android:text="@string/ai_prompt_protocol_summary" />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:layout_marginBottom="12dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <io.legado.app.ui.widget.text.AccentStrokeTextView
+                android:id="@+id/button_add_skill"
+                style="@style/Ng.SmallButton.Secondary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:text="@string/ai_skill_add" />
+
+            <io.legado.app.ui.widget.text.AccentStrokeTextView
+                android:id="@+id/button_import_skill"
+                style="@style/Ng.SmallButton.Secondary"
+                android:layout_width="0dp"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:text="@string/ai_skill_import" />
+
+        </LinearLayout>
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recycler_prompts"
             android:layout_width="match_parent"
@@ -1141,43 +1165,124 @@
             android:maxLines="3"
             android:visibility="gone" />
 
-        <EditText
-            android:id="@+id/edit_prompt"
+        <FrameLayout
+            android:id="@+id/layout_prompt_editor_box"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:background="@drawable/ng_bg_outlined_field"
-            android:fontFamily="monospace"
-            android:gravity="top|start"
-            android:inputType="textMultiLine|textNoSuggestions"
-            android:minLines="12"
-            android:paddingStart="16dp"
-            android:paddingTop="14dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="14dp"
-            android:scrollbarStyle="insideInset"
-            android:scrollbars="vertical"
-            android:textColor="@color/ng_on_surface"
-            android:textColorHint="@color/ng_on_surface_variant"
-            android:textSize="13sp" />
+            android:background="@drawable/ng_bg_dialog_section"
+            android:padding="4dp">
 
-        <LinearLayout
-            style="@style/Ng.ActionBar"
-            android:gravity="center_vertical|end"
-            android:orientation="horizontal">
+            <ScrollView
+                android:id="@+id/scroll_prompt_markdown"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fillViewport="true"
+                android:scrollbarStyle="insideInset"
+                android:scrollbars="vertical">
 
-            <io.legado.app.ui.widget.text.AccentStrokeTextView
-                android:id="@+id/button_reset_prompt"
-                style="@style/Ng.SmallButton.Secondary"
-                android:text="@string/ai_prompt_reset" />
+                <TextView
+                    android:id="@+id/text_prompt_markdown"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="14dp"
+                    android:paddingTop="48dp"
+                    android:paddingEnd="14dp"
+                    android:paddingBottom="16dp"
+                    android:textColor="@color/ng_on_surface"
+                    android:textIsSelectable="true"
+                    android:textSize="16sp" />
 
-            <io.legado.app.ui.widget.text.AccentBgTextView
-                android:id="@+id/button_save_prompt"
-                style="@style/Ng.SmallButton.Primary"
-                android:layout_marginStart="16dp"
-                android:text="@string/save" />
+            </ScrollView>
 
-        </LinearLayout>
+            <EditText
+                android:id="@+id/edit_prompt"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@android:color/transparent"
+                android:fontFamily="monospace"
+                android:gravity="top|start"
+                android:inputType="textMultiLine|textNoSuggestions"
+                android:minLines="12"
+                android:paddingStart="14dp"
+                android:paddingTop="48dp"
+                android:paddingEnd="14dp"
+                android:paddingBottom="16dp"
+                android:scrollbarStyle="insideInset"
+                android:scrollbars="vertical"
+                android:textColor="@color/ng_on_surface"
+                android:textColorHint="@color/ng_on_surface_variant"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/layout_prompt_action_icons"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="10dp"
+                android:layout_marginEnd="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <io.legado.app.ui.widget.image.AccentStrokeImageButton
+                    android:id="@+id/button_edit_prompt"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:contentDescription="@string/edit"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_edit" />
+
+                <io.legado.app.ui.widget.image.AccentStrokeImageButton
+                    android:id="@+id/button_export_prompt"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="6dp"
+                    android:contentDescription="@string/ai_skill_export"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_export" />
+
+                <io.legado.app.ui.widget.image.AccentStrokeImageButton
+                    android:id="@+id/button_delete_prompt"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="6dp"
+                    android:contentDescription="@string/delete"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_outline_delete"
+                    android:visibility="gone" />
+
+                <io.legado.app.ui.widget.image.AccentStrokeImageButton
+                    android:id="@+id/button_cancel_prompt"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="6dp"
+                    android:contentDescription="@android:string/cancel"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_baseline_close"
+                    android:visibility="gone" />
+
+                <io.legado.app.ui.widget.image.AccentStrokeImageButton
+                    android:id="@+id/button_reset_prompt"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="6dp"
+                    android:contentDescription="@string/ai_prompt_reset"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_restore" />
+
+                <io.legado.app.ui.widget.image.AccentStrokeImageButton
+                    android:id="@+id/button_save_prompt"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="6dp"
+                    android:contentDescription="@string/save"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_save" />
+
+            </LinearLayout>
+
+        </FrameLayout>
+
 
     </LinearLayout>
 

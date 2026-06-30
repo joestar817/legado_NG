@@ -1,6 +1,7 @@
 package io.legado.app.ui.config
 
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.graphics.Color
 import android.content.res.ColorStateList
 import android.graphics.drawable.ColorDrawable
@@ -10,7 +11,9 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
+import android.text.SpannableString
 import android.text.Spanned
+import android.text.method.LinkMovementMethod
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
@@ -25,6 +28,7 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.isVisible
@@ -54,6 +58,10 @@ import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.AiReasoningLevel
+import io.legado.app.help.ai.AiSkillDefinition
+import io.legado.app.help.ai.AiSkillExistsException
+import io.legado.app.help.ai.AiSkillRegistry
+import io.legado.app.help.ai.AiSkillScope
 import io.legado.app.help.ai.normalizeAiApiPath
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.Selector
@@ -64,9 +72,19 @@ import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.ui.widget.recycler.ItemTouchCallback
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.hideSoftInput
+import io.legado.app.utils.share
 import io.legado.app.utils.viewbindingdelegate.viewBinding
+import io.noties.markwon.Markwon
+import io.noties.markwon.core.spans.EmphasisSpan
+import io.noties.markwon.ext.tables.TablePlugin
+import io.noties.markwon.html.HtmlPlugin
+import io.noties.markwon.image.glide.GlideImagesPlugin
+import com.bumptech.glide.Glide
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.DecimalFormat
 
 class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHandler {
@@ -94,7 +112,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var currentPage = Page.MAIN
     private var currentProviderId: String? = null
     private var currentModelId: String? = null
+    private var currentSkill: AiSkillDefinition? = null
     private var currentPrompt: AiPromptStore.Prompt? = null
+    private var promptDetailEditing = false
     private var providerSearchQuery: String = ""
     private var modelSearchQuery: String = ""
     private var providerDetailTab = ProviderDetailTab.CONFIG
@@ -106,6 +126,19 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var ignoreModelDetailChanges = false
     private var apiKeyVisible = false
     private val balanceNumberFormat by lazy { DecimalFormat("0.####") }
+    private val promptMarkwon by lazy {
+        Markwon.builder(requireContext())
+            .usePlugin(GlideImagesPlugin.create(Glide.with(requireContext())))
+            .usePlugin(HtmlPlugin.create())
+            .usePlugin(TablePlugin.create(requireContext()))
+            .build()
+    }
+    private val importSkillFileLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        importSkillFromUri(uri)
+    }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         initMain()
@@ -485,29 +518,67 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.recyclerPrompts.layoutManager = LinearLayoutManager(requireContext())
         promptAdapter.bindToRecyclerView(binding.recyclerPrompts)
         promptAdapter.setOnItemClickListener { _, item ->
-            showPromptDetail(item)
+            showSkillDetail(item)
+        }
+        binding.buttonAddSkill.setOnClickListener {
+            showManualSkillDialog()
+        }
+        binding.buttonImportSkill.setOnClickListener {
+            showImportSkillDialog()
         }
     }
 
     private fun initPromptDetail() {
         binding.editPrompt.typeface = Typeface.MONOSPACE
         binding.editPrompt.doOnTextChanged { _, _, _, _ ->
-            if (!ignorePromptHighlight) {
+            if (!ignorePromptHighlight && promptDetailEditing) {
                 highlightSkillMarkdown()
             }
         }
+        binding.buttonEditPrompt.setOnClickListener {
+            promptDetailEditing = true
+            updatePromptDetailMode()
+        }
+        binding.buttonCancelPrompt.setOnClickListener {
+            setSkillEditorText(currentSkillContent())
+            promptDetailEditing = false
+            updatePromptDetailMode()
+        }
         binding.buttonSavePrompt.setOnClickListener {
-            val prompt = currentPrompt ?: return@setOnClickListener
-            AiPromptStore.save(prompt, binding.editPrompt.text?.toString().orEmpty())
+            val skill = currentSkill ?: return@setOnClickListener
+            val prompt = currentPrompt
+            if (prompt != null) {
+                AiPromptStore.save(prompt, binding.editPrompt.text?.toString().orEmpty())
+            } else {
+                saveAgentSkillContent(skill.id, binding.editPrompt.text?.toString().orEmpty())
+            }
             Toast.makeText(requireContext(), R.string.ai_prompt_saved, Toast.LENGTH_SHORT).show()
-            showPromptList()
+            currentSkill = AiSkillRegistry.get(skill.id) ?: skill
+            setSkillEditorText(currentSkillContent())
+            promptDetailEditing = false
+            refreshPrompts()
+            updatePromptDetailMode()
         }
         binding.buttonResetPrompt.setOnClickListener {
-            val prompt = currentPrompt ?: return@setOnClickListener
-            AiPromptStore.reset(prompt)
-            setSkillEditorText(prompt.defaultPrompt)
+            val skill = currentSkill ?: return@setOnClickListener
+            val prompt = currentPrompt
+            if (prompt != null) {
+                AiPromptStore.reset(prompt)
+                setSkillEditorText(prompt.defaultPrompt)
+            } else if (skill.builtIn && AiSkillRegistry.resetBuiltIn(skill.id)) {
+                currentSkill = AiSkillRegistry.get(skill.id)
+                setSkillEditorText(currentSkill?.content.orEmpty())
+            }
+            refreshPrompts()
+            updatePromptDetailMode()
             Toast.makeText(requireContext(), R.string.ai_prompt_reset_done, Toast.LENGTH_SHORT)
                 .show()
+        }
+        binding.buttonExportPrompt.setOnClickListener {
+            exportCurrentSkill()
+        }
+        binding.buttonDeletePrompt.setOnClickListener {
+            confirmDeleteCurrentSkill()
         }
     }
 
@@ -564,6 +635,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentPage = Page.MAIN
         currentProviderId = null
         currentModelId = null
+        currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_setting)
         binding.layoutMainMenu.isVisible = true
@@ -583,6 +655,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentPage = Page.PROVIDERS
         currentProviderId = null
         currentModelId = null
+        currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_provider_menu)
         binding.layoutMainMenu.isVisible = false
@@ -606,6 +679,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentPage = Page.DETAIL
         currentProviderId = providerId
         currentModelId = null
+        currentSkill = null
         currentPrompt = null
         providerDetailTab = tab
         binding.layoutMainMenu.isVisible = false
@@ -632,6 +706,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentPage = Page.PROMPTS
         currentProviderId = null
         currentModelId = null
+        currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_prompt_menu)
         binding.layoutMainMenu.isVisible = false
@@ -647,12 +722,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         refreshPrompts()
     }
 
-    private fun showPromptDetail(prompt: AiPromptStore.Prompt) {
+    private fun showSkillDetail(skill: AiSkillDefinition) {
         currentPage = Page.PROMPT_DETAIL
         currentProviderId = null
         currentModelId = null
-        currentPrompt = prompt
-        setPageTitle(prompt.displayName())
+        currentSkill = skill
+        currentPrompt = skill.editablePrompt
+        promptDetailEditing = false
+        setPageTitle(skill.name)
         binding.layoutMainMenu.isVisible = false
         binding.layoutProviderList.isVisible = false
         binding.layoutProviderDetail.isVisible = false
@@ -670,6 +747,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentPage = Page.MODEL_SETTINGS
         currentProviderId = null
         currentModelId = null
+        currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_model_settings)
         binding.layoutMainMenu.isVisible = false
@@ -689,6 +767,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentPage = Page.PURIFY_MODEL_SETTINGS
         currentProviderId = null
         currentModelId = null
+        currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_purify)
         binding.layoutMainMenu.isVisible = false
@@ -708,6 +787,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentPage = Page.ASSISTANT_MODEL_SETTINGS
         currentProviderId = null
         currentModelId = null
+        currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_assistant)
         binding.layoutMainMenu.isVisible = false
@@ -727,6 +807,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentPage = Page.PURIFY_SETTINGS
         currentProviderId = null
         currentModelId = null
+        currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_purify_settings)
         binding.layoutMainMenu.isVisible = false
@@ -803,7 +884,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         )
         binding.textPromptEntrySummary.text = getString(
             R.string.ai_prompt_menu_summary,
-            visibleAiPrompts().size.toString()
+            visibleAiSkills().size.toString()
         )
         binding.textChatFabSummary.text = getString(
             if (AiConfig.chatFabEnabled) {
@@ -1272,18 +1353,198 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun refreshPrompts() {
-        promptAdapter.setItems(visibleAiPrompts())
+        promptAdapter.setItems(visibleAiSkills())
     }
 
-    private fun visibleAiPrompts(): List<AiPromptStore.Prompt> {
-        return AiPromptStore.Prompt.entries.toList()
+    private fun visibleAiSkills(): List<AiSkillDefinition> {
+        return AiSkillRegistry.all()
     }
 
     private fun refreshPromptDetail() {
-        val prompt = currentPrompt ?: return
-        binding.textPromptDetailTitle.text = prompt.displayName()
-        binding.textPromptDetailSummary.text = prompt.summary()
-        setSkillEditorText(AiPromptStore.prompt(prompt))
+        val skill = currentSkill ?: return
+        val prompt = skill.editablePrompt
+        binding.textPromptDetailTitle.text = skill.name
+        binding.textPromptDetailSummary.text = skill.summary
+        setSkillEditorText(prompt?.let { AiPromptStore.prompt(it) } ?: skill.content)
+        updatePromptDetailMode()
+    }
+
+    private fun updatePromptDetailMode() {
+        val skill = currentSkill ?: return
+        val prompt = skill.editablePrompt
+        binding.scrollPromptMarkdown.isVisible = !promptDetailEditing
+        binding.editPrompt.isVisible = promptDetailEditing
+        binding.editPrompt.isEnabled = promptDetailEditing
+        binding.buttonEditPrompt.isVisible = !promptDetailEditing
+        binding.buttonExportPrompt.isVisible = !promptDetailEditing
+        binding.buttonDeletePrompt.isVisible =
+            !promptDetailEditing && !skill.builtIn
+        binding.buttonCancelPrompt.isVisible = promptDetailEditing
+        binding.buttonSavePrompt.isVisible = promptDetailEditing
+        binding.buttonResetPrompt.isVisible =
+            promptDetailEditing && (prompt != null || skill.builtIn)
+    }
+
+    private fun showManualSkillDialog() {
+        val editText = EditText(requireContext()).apply {
+            minLines = 10
+            maxLines = 18
+            typeface = Typeface.MONOSPACE
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setSingleLine(false)
+            hint = getString(R.string.ai_skill_content_hint)
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.ai_skill_add)
+            .setView(editText)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                importSkillFromText(editText.text?.toString().orEmpty())
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+            .applyTint()
+    }
+
+    private fun showImportSkillDialog() {
+        val labels = arrayOf(
+            getString(R.string.ai_skill_import_file),
+            getString(R.string.ai_skill_import_github)
+        )
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.ai_skill_import)
+            .setItems(labels) { _, which ->
+                when (which) {
+                    0 -> importSkillFileLauncher.launch(arrayOf("text/*", "text/markdown", "application/octet-stream"))
+                    1 -> showImportSkillUrlDialog()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+            .applyTint()
+    }
+
+    private fun showImportSkillUrlDialog() {
+        val editText = EditText(requireContext()).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            hint = getString(R.string.ai_skill_github_url_hint)
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.ai_skill_import_github)
+            .setView(editText)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                importSkillFromUrl(editText.text?.toString().orEmpty())
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+            .applyTint()
+    }
+
+    private fun importSkillFromUri(uri: Uri) {
+        lifecycleScope.launch {
+            var content = ""
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    content = requireContext().contentResolver.openInputStream(uri)
+                        ?.bufferedReader()
+                        ?.use { it.readText() }
+                        .orEmpty()
+                    AiSkillRegistry.importFromText(content)
+                }
+            }
+            handleSkillImportResult(result) {
+                importSkillFromText(content, overwriteExisting = true)
+            }
+        }
+    }
+
+    private fun importSkillFromUrl(url: String, overwriteExisting: Boolean = false) {
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { AiSkillRegistry.importFromUrl(url, overwriteExisting) }
+            }
+            handleSkillImportResult(result) {
+                importSkillFromUrl(url, overwriteExisting = true)
+            }
+        }
+    }
+
+    private fun importSkillFromText(content: String, overwriteExisting: Boolean = false) {
+        val result = runCatching { AiSkillRegistry.importFromText(content, overwriteExisting) }
+        handleSkillImportResult(result) {
+            importSkillFromText(content, overwriteExisting = true)
+        }
+    }
+
+    private fun handleSkillImportResult(
+        result: Result<io.legado.app.data.entities.AiSkill>,
+        overwriteAction: (() -> Unit)? = null
+    ) {
+        result.onSuccess { skill ->
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.ai_skill_import_success, skill.name),
+                Toast.LENGTH_SHORT
+            ).show()
+            refreshPrompts()
+        }.onFailure { error ->
+            if (error is AiSkillExistsException && overwriteAction != null) {
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.ai_skill_overwrite_title)
+                    .setMessage(getString(R.string.ai_skill_overwrite_message, error.skillId))
+                    .setPositiveButton(android.R.string.ok) { _, _ -> overwriteAction() }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+                    .applyTint()
+                return@onFailure
+            }
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.ai_skill_import_failed, error.message.orEmpty()),
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun saveAgentSkillContent(skillId: String, content: String) {
+        AiSkillRegistry.saveSkillContent(skillId, content)
+    }
+
+    private fun currentSkillContent(): String {
+        val skill = currentSkill ?: return ""
+        return currentPrompt?.let { AiPromptStore.prompt(it) } ?: skill.content
+    }
+
+    private fun exportCurrentSkill() {
+        val skill = currentSkill ?: return
+        val dir = File(requireContext().cacheDir, "ai-skill-export").apply {
+            mkdirs()
+        }
+        val file = File(dir, "${skill.safeFileName()}.md")
+        file.writeText(AiSkillRegistry.exportContent(skill))
+        requireContext().share(file, "text/markdown")
+    }
+
+    private fun confirmDeleteCurrentSkill() {
+        val skill = currentSkill ?: return
+        if (skill.builtIn) {
+            Toast.makeText(requireContext(), R.string.ai_skill_builtin_delete_denied, Toast.LENGTH_SHORT)
+                .show()
+            return
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.ai_skill_delete_title)
+            .setMessage(getString(R.string.ai_skill_delete_message, skill.name))
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                if (AiSkillRegistry.deleteSkill(skill.id)) {
+                    Toast.makeText(requireContext(), R.string.ai_skill_delete_done, Toast.LENGTH_SHORT)
+                        .show()
+                    showPromptList()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+            .applyTint()
     }
 
     private fun setSkillEditorText(text: String) {
@@ -1294,7 +1555,24 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         } finally {
             ignorePromptHighlight = false
         }
+        renderPromptMarkdown(text)
         highlightSkillMarkdown()
+    }
+
+    private fun renderPromptMarkdown(text: String) {
+        binding.textPromptMarkdown.setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
+        binding.textPromptMarkdown.setLinkTextColor(accentColor)
+        binding.textPromptMarkdown.movementMethod = LinkMovementMethod.getInstance()
+        binding.textPromptMarkdown.text = promptMarkwon.toMarkdown(text.stripSkillFrontmatter()).withoutItalic()
+    }
+
+    private fun String.stripSkillFrontmatter(): String {
+        if (!startsWith("---")) {
+            return this
+        }
+        val end = Regex("""\r?\n---(?:\r?\n|$)""").find(this, startIndex = 3)
+            ?: return this
+        return substring(end.range.last + 1).trimStart('\r', '\n')
     }
 
     private fun highlightSkillMarkdown() {
@@ -2548,6 +2826,29 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
+    private fun AiSkillDefinition.iconText(): String {
+        return when (id) {
+            "paragraph_purify" -> "段"
+            "chapter_purify" -> "章"
+            AiSkillRegistry.SKILL_BOOKSHELF_MANAGEMENT -> "书"
+            else -> name.take(1).ifBlank { "技" }
+        }
+    }
+
+    private fun AiSkillDefinition.safeFileName(): String {
+        return id.ifBlank { name }
+            .replace(Regex("""[\\/:*?"<>|\s]+"""), "_")
+            .trim('_')
+            .ifBlank { "skill" }
+    }
+
+    private fun AiSkillScope.displayName(): String {
+        return when (this) {
+            AiSkillScope.APP -> "APP"
+            AiSkillScope.AGENT -> "Agent"
+        }
+    }
+
     private inner class AiProviderAdapter :
         RecyclerAdapter<AiProviderSetting, ItemAiProviderBinding>(requireContext()),
         ItemTouchCallback.Callback {
@@ -2681,7 +2982,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private inner class AiPromptAdapter :
-        RecyclerAdapter<AiPromptStore.Prompt, ItemAiPromptBinding>(requireContext()) {
+        RecyclerAdapter<AiSkillDefinition, ItemAiPromptBinding>(requireContext()) {
 
         override fun getViewBinding(parent: ViewGroup): ItemAiPromptBinding {
             return ItemAiPromptBinding.inflate(inflater, parent, false)
@@ -2690,13 +2991,29 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         override fun convert(
             holder: ItemViewHolder,
             binding: ItemAiPromptBinding,
-            item: AiPromptStore.Prompt,
+            item: AiSkillDefinition,
             payloads: MutableList<Any>
         ) {
             binding.textIcon.text = item.iconText()
-            binding.textName.text = item.displayName()
-            binding.textSummary.text = item.summary()
-            binding.textCustom.isVisible = AiPromptStore.isCustom(item)
+            binding.textName.text = item.name
+            binding.textSummary.text = item.summary
+            binding.textScope.text = item.scope.displayName()
+            binding.textScope.setBackgroundResource(
+                when (item.scope) {
+                    AiSkillScope.APP -> R.drawable.ng_bg_tag_neutral
+                    AiSkillScope.AGENT -> R.drawable.ng_bg_tag_info
+                }
+            )
+            binding.textScope.setTextColor(
+                ContextCompat.getColor(
+                    requireContext(),
+                    when (item.scope) {
+                        AiSkillScope.APP -> R.color.tv_text_summary
+                        AiSkillScope.AGENT -> R.color.ng_info
+                    }
+                )
+            )
+            binding.textCustom.isVisible = item.userModified || !item.builtIn
         }
 
         override fun registerListener(holder: ItemViewHolder, binding: ItemAiPromptBinding) {
@@ -2721,5 +3038,27 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         if (start < end && start >= 0 && end <= length) {
             setSpan(span, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
+    }
+
+    private fun Spanned.withoutItalic(): Spanned {
+        val spannable = SpannableString(this)
+        getSpans(0, length, EmphasisSpan::class.java).forEach { span ->
+            spannable.removeSpan(span)
+        }
+        getSpans(0, length, StyleSpan::class.java).forEach { span ->
+            when (span.style) {
+                Typeface.ITALIC -> spannable.removeSpan(span)
+                Typeface.BOLD_ITALIC -> {
+                    val start = getSpanStart(span)
+                    val end = getSpanEnd(span)
+                    val flags = getSpanFlags(span)
+                    spannable.removeSpan(span)
+                    if (start >= 0 && end >= 0) {
+                        spannable.setSpan(StyleSpan(Typeface.BOLD), start, end, flags)
+                    }
+                }
+            }
+        }
+        return spannable
     }
 }

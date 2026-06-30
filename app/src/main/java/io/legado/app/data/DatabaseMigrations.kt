@@ -20,7 +20,7 @@ object DatabaseMigrations {
             migration_31_32, migration_32_33, migration_33_34, migration_34_35,
             migration_35_36, migration_36_37, migration_37_38, migration_38_39,
             migration_39_40, migration_40_41, migration_41_42, migration_42_43,
-            migration_89_90, migration_90_91, migration_91_92,
+            migration_89_90, migration_90_91, migration_91_92, migration_92_93, migration_93_94,
         )
     }
 
@@ -419,6 +419,35 @@ object DatabaseMigrations {
                 """.trimIndent()
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_aiChatMessageNodes_conversationId` ON `aiChatMessageNodes` (`conversationId`)")
+        }
+    }
+
+    private val migration_92_93 = object : Migration(92, 93) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `aiSkills` (
+                    `id` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `description` TEXT NOT NULL,
+                    `content` TEXT NOT NULL,
+                    `scope` TEXT NOT NULL DEFAULT 'AGENT',
+                    `builtIn` INTEGER NOT NULL DEFAULT 0,
+                    `enabled` INTEGER NOT NULL DEFAULT 1,
+                    `customOrder` INTEGER NOT NULL DEFAULT 0,
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
+    private val migration_93_94 = object : Migration(93, 94) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `aiChatConversations` ADD COLUMN `loadedSkillIds` TEXT NOT NULL DEFAULT '[]'")
+            db.execSQL("ALTER TABLE `aiSkills` ADD COLUMN `userModified` INTEGER NOT NULL DEFAULT 0")
         }
     }
 

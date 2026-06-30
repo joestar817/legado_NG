@@ -22,6 +22,7 @@ object AiChatHistoryStore {
     private val lock = Any()
     private val messageListType = object : TypeToken<List<AiChatMessageSnapshot>>() {}.type
     private val uploadMessageListType = object : TypeToken<List<JsonObject>>() {}.type
+    private val stringListType = object : TypeToken<List<String>>() {}.type
 
     fun load(): AiChatHistoryState {
         return synchronized(lock) {
@@ -89,6 +90,7 @@ object AiChatHistoryStore {
             createAt = createdAt,
             updateAt = updatedAt,
             isPinned = isPinned,
+            loadedSkillIds = GSON.toJson(loadedSkillIds),
             uploadMessages = GSON.toJson(uploadMessages)
         )
     }
@@ -115,6 +117,7 @@ object AiChatHistoryStore {
             updatedAt = updateAt,
             isPinned = isPinned,
             messages = messages,
+            loadedSkillIds = loadedSkillIds.toStringList(),
             uploadMessages = uploadMessages.toUploadMessages()
         ).sanitize()
     }
@@ -131,6 +134,15 @@ object AiChatHistoryStore {
         }.getOrNull().orEmpty()
             .filter { it.has("role") }
             .map { it.deepCopy().asJsonObject }
+    }
+
+    private fun String.toStringList(): List<String> {
+        return runCatching {
+            GSON.fromJson<List<String>>(this, stringListType)
+        }.getOrNull().orEmpty()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
     }
 
     private fun AiChatHistoryState.sanitize(): AiChatHistoryState {
@@ -167,6 +179,7 @@ object AiChatHistoryStore {
         return copy(
             title = cleanTitle,
             messages = cleanMessages,
+            loadedSkillIds = loadedSkillIds.map { it.trim() }.filter { it.isNotBlank() }.distinct(),
             uploadMessages = uploadMessages.filter { it.has("role") }
         )
     }
@@ -194,6 +207,8 @@ data class AiChatSessionSnapshot(
     val isPinned: Boolean = false,
     @SerializedName("messages")
     val messages: List<AiChatMessageSnapshot>,
+    @SerializedName("loaded_skill_ids")
+    val loadedSkillIds: List<String> = emptyList(),
     @SerializedName("upload_messages")
     val uploadMessages: List<JsonObject> = emptyList()
 )

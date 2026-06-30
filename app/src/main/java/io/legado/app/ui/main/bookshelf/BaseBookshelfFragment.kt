@@ -27,6 +27,7 @@ import io.legado.app.ui.book.import.local.ImportBookActivity
 import io.legado.app.ui.book.import.remote.RemoteBookActivity
 import io.legado.app.ui.book.manage.BookshelfManageActivity
 import io.legado.app.ui.book.search.SearchActivity
+import io.legado.app.ui.config.AiChatActivity
 import io.legado.app.ui.file.HandleFileContract
 import io.legado.app.ui.main.MainFragmentInterface
 import io.legado.app.ui.main.MainViewModel
@@ -95,10 +96,17 @@ abstract class BaseBookshelfFragment(layoutId: Int) : VMBaseFragment<BookshelfVi
 
     override fun onCompatOptionsItemSelected(item: MenuItem) {
         super.onCompatOptionsItemSelected(item)
-        when (item.itemId) {
+        handleBookshelfMenuItem(item.itemId)
+    }
+
+    protected fun handleBookshelfMenuItem(itemId: Int) {
+        when (itemId) {
             R.id.menu_remote -> startActivity<RemoteBookActivity>()
             R.id.menu_search -> startActivity<SearchActivity>()
             R.id.menu_update_toc -> activityViewModel.upToc(books, onlyUpdateRead)
+            R.id.menu_ai_assistant -> startActivity<AiChatActivity> {
+                putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOKSHELF)
+            }
             R.id.menu_bookshelf_layout -> configBookshelf()
             R.id.menu_group_manage -> showDialogFragment<GroupManageDialog>()
             R.id.menu_add_local -> startActivity<ImportBookActivity>()

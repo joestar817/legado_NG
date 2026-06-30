@@ -17,6 +17,12 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/menu_ai_assistant"
+        android:icon="@drawable/ic_ai"
+        android:title="@string/ai_assistant"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/menu_add_local"
         android:icon="@drawable/ic_add"
         android:title="@string/book_local"

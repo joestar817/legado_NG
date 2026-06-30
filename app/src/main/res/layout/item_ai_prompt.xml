@@ -15,9 +15,43 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/text_name"
-            style="@style/Ng.CardTitle" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/text_name"
+                style="@style/Ng.CardTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1" />
+
+            <TextView
+                android:id="@+id/text_scope"
+                style="@style/Ng.Tag.Info"
+                android:layout_height="20dp"
+                android:layout_marginStart="8dp"
+                android:minWidth="34dp"
+                android:paddingStart="7dp"
+                android:paddingEnd="7dp"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/text_custom"
+                style="@style/Ng.Tag.Success"
+                android:layout_height="20dp"
+                android:layout_marginStart="5dp"
+                android:minWidth="34dp"
+                android:paddingStart="7dp"
+                android:paddingEnd="7dp"
+                android:text="@string/ai_prompt_custom"
+                android:textSize="10sp"
+                android:visibility="gone" />
+
+        </LinearLayout>
 
         <TextView
             android:id="@+id/text_summary"
@@ -27,11 +61,5 @@
             android:maxLines="1" />
 
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/text_custom"
-        style="@style/Ng.Tag.Success"
-        android:text="@string/ai_prompt_custom"
-        android:visibility="gone" />
 
 </LinearLayout>
