@@ -501,6 +501,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 saveCurrentProvider()
             }
         }
+        binding.switchStreamResponse.setOnCheckedChangeListener { _, _ ->
+            if (!ignoreProviderFormChanges && currentPage == Page.DETAIL) {
+                saveCurrentProvider()
+            }
+        }
     }
 
     private fun setupProviderFocusClear() {
@@ -931,6 +936,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         ignoreProviderFormChanges = true
         try {
             binding.switchEnabled.isChecked = provider.enabled
+            binding.switchStreamResponse.isChecked = provider.streamResponseEnabled
             binding.editProviderName.setText(provider.name)
             binding.textProviderTypeValue.text = provider.type.localizedDisplayName()
             binding.textProviderTypeLabel.isVisible = !provider.builtIn
@@ -948,6 +954,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             val openAiCompatible = provider.type == AiProviderType.OPENAI
             binding.textOpenaiPathLabel.isVisible = openAiCompatible
             binding.editChatPath.isVisible = openAiCompatible
+            binding.switchStreamResponse.isVisible = openAiCompatible
             refreshModelList(provider)
             updateApiKeyVisibility()
             updateCustomEndpointVisibility()
@@ -2302,7 +2309,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 binding.editBalanceUrl.text?.toString()?.trim().orEmpty()
             ),
             balanceJsonPath = binding.editBalanceJsonPath.text?.toString()?.trim().orEmpty(),
-            useCustomBalanceUrl = binding.switchCustomBalanceUrl.isChecked
+            useCustomBalanceUrl = binding.switchCustomBalanceUrl.isChecked,
+            streamResponseEnabled = binding.switchStreamResponse.isChecked
         )
     }
 

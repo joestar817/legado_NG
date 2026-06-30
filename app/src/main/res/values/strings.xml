@@ -364,6 +364,7 @@
     <string name="ai_temperature">Temperature</string>
     <string name="ai_timeout_seconds">API call timeout (seconds)</string>
     <string name="ai_timeout_seconds_summary">Current timeout %s seconds</string>
+    <string name="ai_stream_response">Supports streaming responses</string>
     <string name="ai_test_connection">Test connectivity</string>
     <string name="ai_test_connection_summary">Verify API key by requesting the models endpoint</string>
     <string name="ai_test_success">Response: %1$s\nModel: %2$s</string>

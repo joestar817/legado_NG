@@ -48,7 +48,9 @@ data class AiProviderSetting(
     @SerializedName(value = "balanceJsonPath", alternate = ["t"])
     val balanceJsonPath: String = "",
     @SerializedName(value = "useCustomBalanceUrl", alternate = ["u"])
-    val useCustomBalanceUrl: Boolean = false
+    val useCustomBalanceUrl: Boolean = false,
+    @SerializedName(value = "streamResponseEnabled", alternate = ["x"])
+    val streamResponseEnabled: Boolean = false
 )
 
 enum class AiProviderType(val prefValue: String, val displayName: String) {

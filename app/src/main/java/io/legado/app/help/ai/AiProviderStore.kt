@@ -156,7 +156,8 @@ object AiProviderStore {
                 savedProvider.balanceUrl.ifBlank { default.balanceUrl }
             ),
             balanceJsonPath = savedProvider.balanceJsonPath.ifBlank { default.balanceJsonPath },
-            useCustomBalanceUrl = savedProvider.useCustomBalanceUrl
+            useCustomBalanceUrl = savedProvider.useCustomBalanceUrl,
+            streamResponseEnabled = savedProvider.streamResponseEnabled
         )
     }
 
@@ -229,7 +230,8 @@ object AiProviderStore {
                 effortParam = nullableString(provider.effortParam),
                 reasoningOutputField = nullableString(provider.reasoningOutputField),
                 balanceUrl = normalizeAiApiPath(baseUrl, nullableString(provider.balanceUrl)),
-                balanceJsonPath = nullableString(provider.balanceJsonPath)
+                balanceJsonPath = nullableString(provider.balanceJsonPath),
+                streamResponseEnabled = provider.streamResponseEnabled
             )
         }.getOrNull()
     }

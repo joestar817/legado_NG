@@ -363,6 +363,7 @@
     <string name="ai_temperature">Temperature</string>
     <string name="ai_timeout_seconds">接口调用超时(秒)</string>
     <string name="ai_timeout_seconds_summary">当前超时 %s 秒</string>
+    <string name="ai_stream_response">支持流式响应</string>
     <string name="ai_test_connection">测试连通性</string>
     <string name="ai_test_connection_summary">通过模型列表接口验证 API Key</string>
     <string name="ai_test_success">响应：%1$s\n模型：%2$s</string>
