@@ -27,7 +27,7 @@
         app:bg_color="@android:color/transparent"
         app:layout_constraintEnd_toEndOf="@id/tv_search_progress"
         app:layout_constraintStart_toStartOf="@id/tv_search_progress"
-        app:second_color="@color/highlight"
+        app:second_color="?attr/colorAccent"
         app:layout_constraintTop_toBottomOf="@id/tv_search_progress" />
 
     <io.legado.app.ui.book.search.SearchProgressTextView

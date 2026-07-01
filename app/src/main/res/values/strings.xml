@@ -478,6 +478,9 @@
     <string name="aloud_stop">Speak Stopped</string>
     <string name="clear_cache">Clear cache</string>
     <string name="clear_cache_success">Cache cleared</string>
+    <string name="book_cache">Cache</string>
+    <string name="book_cache_label">Cache:</string>
+    <string name="book_cache_progress">%1$d/%2$d</string>
     <string name="action_save">Save</string>
     <string name="edit_source">Edit source</string>
     <string name="edit_book_source">Edit Book source</string>

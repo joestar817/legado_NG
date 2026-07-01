@@ -100,7 +100,6 @@
                                 android:id="@+id/tv_name"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginBottom="@dimen/ng_space_m"
                                 android:ellipsize="marquee"
                                 android:includeFontPadding="false"
                                 android:marqueeRepeatLimit="marquee_forever"
@@ -111,6 +110,19 @@
                                 android:textSize="17sp"
                                 android:textStyle="bold"
                                 tools:ignore="RtlHardcoded" />
+
+                            <TextView
+                                android:id="@+id/tv_author"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/ng_space_xs"
+                                android:layout_marginBottom="@dimen/ng_space_m"
+                                android:ellipsize="end"
+                                android:includeFontPadding="false"
+                                android:singleLine="true"
+                                android:textColor="@color/tv_text_summary"
+                                android:textSize="14sp"
+                                tools:text="@string/author_show" />
 
                             <io.legado.app.ui.widget.WrapLabelsBar
                                 android:id="@+id/lb_kind"
@@ -130,38 +142,6 @@
                         android:paddingTop="@dimen/ng_space_m"
                         android:paddingEnd="@dimen/ng_space_l"
                         android:paddingBottom="@dimen/ng_space_m">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal"
-                            android:paddingTop="5dp"
-                            android:paddingBottom="5dp"
-                            tools:ignore="UseCompoundDrawables">
-
-                            <ImageView
-                                android:layout_width="20dp"
-                                android:layout_height="20dp"
-                                android:contentDescription="@string/author"
-                                android:src="@drawable/ic_author"
-                                app:tint="@color/tv_text_summary" />
-
-                            <TextView
-                                android:id="@+id/tv_author"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="@dimen/ng_space_s"
-                                android:layout_weight="1"
-                                android:ellipsize="end"
-                                android:includeFontPadding="false"
-                                android:singleLine="true"
-                                android:text="@string/author"
-                                android:textColor="@color/tv_text_summary"
-                                android:textSize="14sp"
-                                tools:ignore="NestedWeights,RtlSymmetry" />
-
-                        </LinearLayout>
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -201,7 +181,8 @@
                                 android:background="?attr/selectableItemBackgroundBorderless"
                                 android:contentDescription="@string/change_origin"
                                 android:gravity="center"
-                                android:padding="5dp"
+                                android:padding="6dp"
+                                android:scaleType="centerInside"
                                 android:src="@drawable/ic_exchange"
                                 app:tint="@color/tv_text_summary" />
 
@@ -277,7 +258,8 @@
                                 android:background="?attr/selectableItemBackgroundBorderless"
                                 android:contentDescription="@string/change_group"
                                 android:gravity="center"
-                                android:padding="5dp"
+                                android:padding="6dp"
+                                android:scaleType="centerInside"
                                 android:src="@drawable/ic_groups"
                                 app:tint="@color/tv_text_summary" />
 
@@ -321,8 +303,67 @@
                                 android:background="?attr/selectableItemBackgroundBorderless"
                                 android:contentDescription="@string/view_toc"
                                 android:gravity="center"
-                                android:padding="5dp"
+                                android:padding="6dp"
+                                android:scaleType="centerInside"
                                 android:src="@drawable/ic_folder_open"
+                                app:tint="@color/tv_text_summary" />
+
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/ll_cache"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingTop="5dp"
+                            android:paddingBottom="5dp">
+
+                            <ImageView
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:contentDescription="@string/book_cache"
+                                android:src="@drawable/ic_cache_octicon"
+                                app:tint="@color/tv_text_summary" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/ng_space_s"
+                                android:includeFontPadding="false"
+                                android:singleLine="true"
+                                android:text="@string/book_cache_label"
+                                android:textColor="@color/tv_text_summary"
+                                android:textSize="14sp"
+                                tools:ignore="RtlSymmetry" />
+
+                            <io.legado.app.ui.book.search.SearchProgressTextView
+                                android:id="@+id/tv_cache"
+                                android:layout_width="0dp"
+                                android:layout_height="24dp"
+                                android:layout_weight="1"
+                                android:ellipsize="end"
+                                android:gravity="center_vertical"
+                                android:includeFontPadding="false"
+                                android:paddingStart="@dimen/ng_space_xs"
+                                android:paddingEnd="@dimen/ng_space_s"
+                                android:singleLine="true"
+                                android:textColor="@color/tv_text_summary"
+                                android:textSize="13sp"
+                                tools:ignore="NestedWeights,RtlSymmetry"
+                                tools:text="12/120" />
+
+                            <ImageButton
+                                android:id="@+id/tv_cache_book"
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_marginStart="@dimen/ng_space_s"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:contentDescription="@string/book_cache"
+                                android:gravity="center"
+                                android:padding="6dp"
+                                android:scaleType="centerInside"
+                                android:src="@drawable/ic_download_line"
                                 app:tint="@color/tv_text_summary" />
 
                         </LinearLayout>

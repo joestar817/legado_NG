@@ -23,6 +23,7 @@
         android:id="@+id/refresh_progress_bar"
         android:layout_width="match_parent"
         android:layout_height="2dp"
+        app:second_color="?attr/colorAccent"
         app:layout_constraintTop_toBottomOf="@+id/tool_bar" />
 
     <io.legado.app.ui.widget.recycler.scroller.FastScrollRecyclerView

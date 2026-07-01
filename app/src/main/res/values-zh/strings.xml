@@ -477,6 +477,9 @@
     <string name="aloud_stop">朗读停止</string>
     <string name="clear_cache">清理缓存</string>
     <string name="clear_cache_success">成功清理缓存</string>
+    <string name="book_cache">缓存</string>
+    <string name="book_cache_label">缓存：</string>
+    <string name="book_cache_progress">%1$d/%2$d</string>
     <string name="action_save">保存</string>
     <string name="edit_source">编辑源</string>
     <string name="edit_book_source">编辑书源</string>

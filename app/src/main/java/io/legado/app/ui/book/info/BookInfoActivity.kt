@@ -48,6 +48,7 @@ import io.legado.app.help.AppWebDav
 import io.legado.app.help.GlideImageGetter
 import io.legado.app.help.TextViewTagHandler
 import io.legado.app.help.WebCacheManager
+import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.addType
 import io.legado.app.help.book.getRemoteUrl
 import io.legado.app.help.book.isAudio
@@ -73,6 +74,7 @@ import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.lib.theme.bottomBackground
 import io.legado.app.lib.theme.getPrimaryTextColor
+import io.legado.app.model.CacheBook
 import io.legado.app.model.SourceCallBack
 import io.legado.app.model.remote.RemoteBookWebDav
 import io.legado.app.ui.about.AppLogDialog
@@ -253,6 +255,10 @@ class BookInfoActivity :
     override val viewModel by viewModels<BookInfoViewModel>()
     override val bindNgToolbarMenu: Boolean = false
     private var initIntroView = false
+    private var cacheProgressJob: Job? = null
+    private var cacheProgressBookUrl: String? = null
+    private var cacheProgressCached = 0
+    private var cacheProgressTotal = 0
     private val introTextView by lazy {
         initIntroView = true
         val inflater = LayoutInflater.from(this)
@@ -313,7 +319,10 @@ class BookInfoActivity :
         binding.tvToc.text = getString(R.string.toc_s, getString(R.string.loading))
         initOtherWorksView()
         viewModel.bookData.observe(this) { showBook(it) }
-        viewModel.chapterListData.observe(this) { upLoading(false, it) }
+        viewModel.chapterListData.observe(this) {
+            upLoading(false, it)
+            upCacheProgress(viewModel.getBook(false), it)
+        }
         viewModel.otherWorksData.observe(this) { showOtherWorks(it) }
         viewModel.bookshelfChanged.observe(this) {
             otherWorksAdapter.notifyItemRangeChanged(
@@ -597,6 +606,18 @@ class BookInfoActivity :
         }
     }
 
+        observeEvent<Pair<Book, BookChapter>>(EventBus.SAVE_CONTENT) { (eventBook, _) ->
+            if (eventBook.bookUrl == viewModel.getBook(false)?.bookUrl) {
+                upCacheProgress()
+            }
+        }
+
+        observeEvent<String>(EventBus.UP_DOWNLOAD) { bookUrl ->
+            if (bookUrl == viewModel.getBook(false)?.bookUrl) {
+                upCacheProgress()
+            }
+        }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (initIntroView && ev.action == MotionEvent.ACTION_DOWN) {
             currentFocus?.let {
@@ -647,7 +668,7 @@ class BookInfoActivity :
     private fun showBook(book: Book) = binding.run {
         showCover(book)
         (tvName as android.widget.TextView).text = book.name
-        tvAuthor.text = getString(R.string.author_show, book.getRealAuthor())
+        tvAuthor.text = book.getRealAuthor()
         tvOrigin.text = getString(R.string.origin_show, book.originName)
         tvLasted.text = getString(R.string.lasted_show, book.latestChapterTitle)
         showBookIntro(book)
@@ -655,9 +676,11 @@ class BookInfoActivity :
             llToc.gone()
             tvLasted.text = getString(R.string.lasted_show, "下载中...")
         } else {
+            llCache.gone()
             llToc.visible()
         }
         menuCustomBtn?.isVisible = viewModel.hasCustomBtn
+            llCache.visible()
         upTvBookshelf()
         upKinds(book)
         upGroup(book.group)
@@ -665,6 +688,7 @@ class BookInfoActivity :
         viewModel.prepareOtherWorks(book)
         if (book.isLocal || book.getRealAuthor().isBlank()) {
             llOtherWorks.gone()
+        upCacheProgress(book)
         } else {
             llOtherWorks.visible()
         }
@@ -1305,6 +1329,11 @@ class BookInfoActivity :
         refreshLayout?.setOnRefreshListener {
             refreshLayout.isRefreshing = false
             refreshBook()
+        tvCacheBook.setOnClickListener {
+            viewModel.getBook()?.let { book ->
+                startCacheBook(book)
+            }
+        }
         }
     }
 
@@ -1376,6 +1405,95 @@ class BookInfoActivity :
                     if (book.isLocal) {
                         checkBox = CheckBox(this@BookInfoActivity).apply {
                             setText(R.string.delete_book_file)
+    private fun upCacheProgress(
+        book: Book? = viewModel.getBook(false),
+        chapterList: List<BookChapter>? = viewModel.chapterListData.value
+    ) = binding.run {
+        if (book == null || book.isWebFile) {
+            cacheProgressJob?.cancel()
+            llCache.gone()
+            cacheProgressBookUrl = null
+            cacheProgressCached = 0
+            cacheProgressTotal = 0
+            return@run
+        }
+        llCache.visible()
+        val chapters = chapterList.orEmpty()
+        val total = when {
+            chapters.isNotEmpty() -> chapters.size
+            book.totalChapterNum > 0 -> book.totalChapterNum
+            else -> 0
+        }
+        val cacheEnabled = !book.isLocal && total > 0
+        tvCacheBook.isEnabled = cacheEnabled
+        tvCacheBook.alpha = if (cacheEnabled) 1f else 0.45f
+        if (book.isLocal) {
+            cacheProgressJob?.cancel()
+            showCacheProgress(total, total)
+            return@run
+        }
+        val isSameBook = cacheProgressBookUrl == book.bookUrl
+        if (!isSameBook) {
+            cacheProgressJob?.cancel()
+            showCacheProgress(0, total)
+        } else if (cacheProgressTotal != total) {
+            cacheProgressJob?.cancel()
+            showCacheProgress(cacheProgressCached.coerceAtMost(total), total)
+        } else if (cacheProgressJob?.isActive == true) {
+            return@run
+        }
+        if (chapters.isEmpty()) {
+            return@run
+        }
+        cacheProgressJob = lifecycleScope.launch {
+            val cachedCount = withContext(IO) {
+                val cacheFileNames = BookHelp.getChapterFiles(book)
+                chapters.count { it.isVolume || cacheFileNames.contains(it.getFileName()) }
+            }
+            if (viewModel.getBook(false)?.bookUrl == book.bookUrl) {
+                showCacheProgress(cachedCount, total)
+            }
+        }
+    }
+
+    private fun showCacheProgress(cached: Int, total: Int) = binding.run {
+        cacheProgressBookUrl = viewModel.getBook(false)?.bookUrl
+        cacheProgressCached = cached
+        cacheProgressTotal = total
+        tvCache.text = getString(R.string.book_cache_progress, cached, total)
+        tvCache.setProgress(cached, total)
+    }
+
+    private fun startCacheBook(book: Book) {
+        if (book.isLocal || book.isWebFile) {
+            return
+        }
+        val chapterList = viewModel.chapterListData.value
+        if (chapterList.isNullOrEmpty()) {
+            toastOnUi(R.string.chapter_list_empty)
+            return
+        }
+        val startCache = {
+            val end = chapterList.lastIndex.coerceAtLeast(book.lastChapterIndex)
+            CacheBook.cacheBookMap[book.bookUrl]?.let {
+                if (!it.isStop()) {
+                    CacheBook.remove(this, book.bookUrl)
+                } else {
+                    CacheBook.start(this, book, 0, end)
+                }
+            } ?: CacheBook.start(this, book, 0, end)
+        }
+        if (!viewModel.inBookshelf) {
+            viewModel.saveBook(book) {
+                viewModel.saveChapterList {
+                    startCache()
+                }
+            }
+        } else {
+            startCache()
+        }
+    }
+
                             isChecked = LocalConfig.deleteBookOriginal
                         }
                         val view = LinearLayout(this@BookInfoActivity).apply {
@@ -1590,3 +1708,4 @@ class BookInfoActivity :
     }
 
 }
+        cacheProgressJob?.cancel()
