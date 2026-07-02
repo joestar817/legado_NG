@@ -1076,7 +1076,6 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 selectedIndex = selectedDrawerIndex,
                 historyGroups = drawerHistoryGroups,
                 historyLoaded = historyLoaded,
-                drawerOpen = drawerState.isOpen,
                 activeSessionId = activeSessionId,
                 favoriteItems = drawerFavoriteItems,
                 backgroundDrawable = chatBackgroundDrawable,
@@ -1896,7 +1895,6 @@ private fun RikkaChatDrawer(
     selectedIndex: Int,
     historyGroups: List<DrawerHistoryGroup>,
     historyLoaded: Boolean,
-    drawerOpen: Boolean,
     activeSessionId: String?,
     favoriteItems: List<DrawerFavoriteItem>,
     backgroundDrawable: Drawable?,
@@ -1980,7 +1978,6 @@ private fun RikkaChatDrawer(
                         else -> DrawerHistoryContent(
                             groups = historyGroups,
                             historyLoaded = historyLoaded,
-                            drawerOpen = drawerOpen,
                             activeSessionId = activeSessionId,
                             manageMode = historyManageMode,
                             selectedIds = selectedHistoryIds,
@@ -2069,7 +2066,6 @@ private fun DrawerBottomActionButton(
 private fun DrawerHistoryContent(
     groups: List<DrawerHistoryGroup>,
     historyLoaded: Boolean,
-    drawerOpen: Boolean,
     activeSessionId: String?,
     manageMode: Boolean,
     selectedIds: Set<String>,
@@ -2084,14 +2080,11 @@ private fun DrawerHistoryContent(
     onDeleteSelected: () -> Unit,
     onNewChat: () -> Unit
 ) {
-    val collapsedGroups = remember { mutableStateListOf<String>() }
-    val totalCount = groups.sumOf { it.items.size }
-    LaunchedEffect(drawerOpen, groups.map { it.title }) {
-        if (drawerOpen) {
-            collapsedGroups.clear()
-            collapsedGroups.addAll(groups.map { it.title })
-        }
+    val groupTitles = groups.map { it.title }
+    val collapsedGroups = remember(groupTitles) {
+        mutableStateListOf(*groupTitles.toTypedArray())
     }
+    val totalCount = groups.sumOf { it.items.size }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 10.dp),
@@ -5209,7 +5202,8 @@ private fun ChatUiMessage.searchCorpus(): String {
         content,
         reasoning.orEmpty(),
         meta.orEmpty(),
-        toolTrace.joinToString("\n")
+        toolTrace.joinToString("\n"),
+        memoryTrace.joinToString("\n") { it.title + " " + it.detail.orEmpty() }
     ).joinToString("\n")
 }
 
@@ -5273,7 +5267,7 @@ private fun List<ChatUiMessage>.deriveChatTitle(): String? {
 private fun buildDrawerHistoryGroups(
     sessions: List<AiChatSessionSnapshot>
 ): List<DrawerHistoryGroup> {
-    val groupOrder = listOf("置顶", "书籍相关", "书架管理", "书源 / 调试", "普通聊天")
+    val groupOrder = listOf("置顶", "书籍相关", "书架管理", "普通聊天")
     val items = sessions.map { session ->
         val identity = session.drawerIdentity()
         DrawerHistoryItem(
@@ -5299,42 +5293,24 @@ private fun buildDrawerHistoryGroups(
 }
 
 private fun AiChatSessionSnapshot.drawerIdentity(): DrawerConversationIdentity {
-    val corpus = drawerCorpus()
-    val subject = extractChatSubject(corpus)
     val skillText = loadedSkillIds.joinToString("|").lowercase(Locale.ROOT)
+    val isCharacterCardEntry = skillText.hasDedicatedSkill("character_card_generate")
+    val isBookshelfManagementEntry = skillText.hasDedicatedSkill("bookshelf_management")
+    val subject = if (isCharacterCardEntry) {
+        extractChatSubject(drawerCorpus())
+    } else {
+        null
+    }
     val compactTitle = title.toCompactDrawerText()
     val scene = when {
-        skillText.contains("character") || corpus.contains("角色卡") -> DrawerScene(
+        isCharacterCardEntry -> DrawerScene(
             groupTitle = "书籍相关",
             title = "角色卡"
         )
 
-        skillText.contains("bookshelf") ||
-            corpus.contains("整理书架") ||
-            corpus.contains("书架分组") ||
-            corpus.contains("阅读偏好") ||
-            corpus.contains("长期未读") -> DrawerScene(
-                groupTitle = "书架管理",
-                title = when {
-                    corpus.contains("阅读偏好") -> "阅读偏好"
-                    corpus.contains("长期未读") -> "长期未读"
-                    else -> "书架整理"
-                }
-            )
-
-        corpus.contains("书源") || corpus.contains("调试日志") || corpus.contains("网络日志") -> DrawerScene(
-            groupTitle = "书源 / 调试",
-            title = when {
-                corpus.contains("网络日志") -> "网络日志分析"
-                corpus.contains("调试日志") -> "调试日志分析"
-                corpus.contains("书源") -> "书源分析"
-                else -> "调试分析"
-            }
-        )
-
-        subject != null -> DrawerScene(
-            groupTitle = "书籍相关",
-            title = compactTitle.takeUnless { it.isGenericChatTitle() } ?: "书籍讨论"
+        isBookshelfManagementEntry -> DrawerScene(
+            groupTitle = "书架管理",
+            title = "书架管理"
         )
 
         else -> DrawerScene(
@@ -5382,6 +5358,12 @@ private fun AiChatSessionSnapshot.drawerCorpus(): String {
         .take(4000)
 }
 
+private fun String.hasDedicatedSkill(skillId: String): Boolean {
+    return split('|').any { loadedId ->
+        loadedId.trim().replace('-', '_') == skillId
+    }
+}
+
 private fun extractChatSubject(text: String): String? {
     val patterns = listOf(
         Regex("《([^》]{1,40})》"),
@@ -5410,13 +5392,6 @@ private fun String.toCompactDrawerText(maxLength: Int = 24): String {
         ?.trim()
         ?.take(maxLength)
         .orEmpty()
-}
-
-private fun String.isGenericChatTitle(): Boolean {
-    return isBlank() ||
-        contains("当前书") ||
-        contains("生成角色卡") ||
-        contains("整理书架")
 }
 
 private fun formatDrawerHistoryTime(timeMillis: Long): String {
@@ -5676,7 +5651,7 @@ private fun AiChatMessageSnapshot.toUiMessage(): ChatUiMessage {
         meta = meta,
         reasoning = reasoning,
         toolTrace = toolTrace,
-        memoryTrace = memoryTrace,
+        memoryTrace = memoryTrace.orEmpty(),
         elapsedMs = elapsedMs,
         favorite = favorite
     )
