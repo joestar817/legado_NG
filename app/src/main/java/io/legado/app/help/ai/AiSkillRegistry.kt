@@ -37,6 +37,7 @@ object AiSkillRegistry {
     const val SKILL_PARAGRAPH_PURIFY = "paragraph_purify"
     const val SKILL_CHAPTER_PURIFY = "chapter_purify"
     const val SKILL_BOOKSHELF_MANAGEMENT = "bookshelf_management"
+    const val SKILL_CHARACTER_CARD_GENERATE = "character_card_generate"
     private const val MAX_SKILL_FILE_LENGTH = 512 * 1024
     private const val BUILT_IN_SKILL_ASSET_DIR = "skills"
 

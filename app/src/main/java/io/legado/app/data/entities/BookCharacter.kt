@@ -73,4 +73,10 @@ data class BookCharacter(
         const val AI = "ai"
         const val IMPORTED = "imported"
     }
+
+    fun displayIntro(): String? {
+        return intro?.takeIf { it.isNotBlank() }
+            ?: shortIntro?.takeIf { it.isNotBlank() }
+            ?: identity?.takeIf { it.isNotBlank() }
+    }
 }

@@ -34,27 +34,6 @@
                 android:inputType="text"
                 android:singleLine="true" />
 
-            <Spinner
-                android:id="@+id/spinner_gender"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="@dimen/ng_space_m" />
-
-            <Spinner
-                android:id="@+id/spinner_role"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="@dimen/ng_space_m" />
-
-            <EditText
-                android:id="@+id/edit_identity"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="@dimen/ng_space_m"
-                android:hint="@string/character_identity"
-                android:inputType="text"
-                android:singleLine="true" />
-
             <EditText
                 android:id="@+id/edit_aliases"
                 android:layout_width="match_parent"
@@ -64,14 +43,51 @@
                 android:inputType="text"
                 android:singleLine="true" />
 
-            <EditText
-                android:id="@+id/edit_short_intro"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:layout_marginTop="@dimen/ng_space_m"
-                android:hint="@string/character_short_intro"
-                android:inputType="text"
-                android:singleLine="true" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="72dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical"
+                    android:text="@string/character_gender"
+                    android:textColor="@color/primaryText"
+                    android:textSize="16sp" />
+
+                <Spinner
+                    android:id="@+id/spinner_gender"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="@dimen/ng_space_m"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="72dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical"
+                    android:text="@string/character_role"
+                    android:textColor="@color/primaryText"
+                    android:textSize="16sp" />
+
+                <Spinner
+                    android:id="@+id/spinner_role"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1" />
+
+            </LinearLayout>
 
             <EditText
                 android:id="@+id/edit_intro"

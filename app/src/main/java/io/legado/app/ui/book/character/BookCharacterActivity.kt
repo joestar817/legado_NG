@@ -19,6 +19,7 @@ import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.databinding.ActivityBookCharacterBinding
 import io.legado.app.databinding.ItemBookCharacterBinding
+import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.ui.widget.recycler.ItemTouchCallback
 import io.legado.app.utils.GSON
@@ -61,6 +62,7 @@ class BookCharacterActivity : BaseActivity<ActivityBookCharacterBinding>(),
         binding.recyclerView.adapter = adapter
         itemTouchCallback = ItemTouchCallback(this).apply {
             isCanDrag = true
+            isCanSwipe = true
         }
         ItemTouchHelper(itemTouchCallback).attachToRecyclerView(binding.recyclerView)
         adapter.setOnItemClickListener { _, item -> openEdit(item.id) }
@@ -70,6 +72,21 @@ class BookCharacterActivity : BaseActivity<ActivityBookCharacterBinding>(),
     override fun swap(srcPosition: Int, targetPosition: Int): Boolean {
         adapter.swapItem(srcPosition, targetPosition)
         return true
+    }
+
+    override fun getSwipeFlags(adapterPosition: Int, defaultFlags: Int): Int {
+        return ItemTouchHelper.RIGHT
+    }
+
+    override fun onSwiped(adapterPosition: Int, direction: Int) {
+        val character = adapter.getItems().getOrNull(adapterPosition)
+        if (character == null || direction != ItemTouchHelper.RIGHT) {
+            if (adapterPosition >= 0) {
+                adapter.notifyItemChanged(adapterPosition)
+            }
+            return
+        }
+        confirmDeleteCharacter(character, adapterPosition)
     }
 
     override fun onClearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
@@ -83,6 +100,20 @@ class BookCharacterActivity : BaseActivity<ActivityBookCharacterBinding>(),
         appDb.bookCharacterDao.updateCharacters(*sorted.toTypedArray())
         appDb.bookCharacterDao.updateCharacterCount(workKey, now)
         setResult(RESULT_OK)
+    }
+
+    private fun confirmDeleteCharacter(character: BookCharacter, adapterPosition: Int) {
+        alert(titleResource = R.string.draw) {
+            setMessage(getString(R.string.sure_del_any, character.name))
+            yesButton {
+                appDb.bookCharacterDao.deleteCharacter(character)
+                appDb.bookCharacterDao.updateCharacterCount(workKey)
+                setResult(RESULT_OK)
+            }
+            noButton {
+                adapter.notifyItemChanged(adapterPosition)
+            }
+        }
     }
 
     override fun onCompatCreateOptionsMenu(menu: Menu): Boolean {
@@ -142,13 +173,11 @@ class BookCharacterActivity : BaseActivity<ActivityBookCharacterBinding>(),
             tvName.text = item.name
             tvRole.text = BookCharacterLabels.roleLabel(context, item.roleTag)
             tvIdentity.text = buildList {
-                item.identity?.takeIf { it.isNotBlank() }?.let { add(it) }
                 aliases(item).takeIf { it.isNotEmpty() }?.let { add(it.joinToString(" / ")) }
             }.joinToString(" / ").ifBlank {
                 BookCharacterLabels.genderLabel(context, item.gender)
             }
-            tvIntro.text = item.shortIntro?.takeIf { it.isNotBlank() }
-                ?: item.intro?.takeIf { it.isNotBlank() }
+            tvIntro.text = item.displayIntro()
                 ?: ""
         }
 

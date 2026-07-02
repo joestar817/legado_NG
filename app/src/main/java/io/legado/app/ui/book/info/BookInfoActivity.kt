@@ -48,6 +48,7 @@ import io.legado.app.help.AppWebDav
 import io.legado.app.help.GlideImageGetter
 import io.legado.app.help.TextViewTagHandler
 import io.legado.app.help.WebCacheManager
+import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.addType
 import io.legado.app.help.book.getRemoteUrl
@@ -94,6 +95,7 @@ import io.legado.app.ui.book.search.SearchAdapter
 import io.legado.app.ui.association.OnLineImportActivity
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.book.toc.TocActivityResult
+import io.legado.app.ui.config.AiChatActivity
 import io.legado.app.ui.file.HandleFileContract
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.video.VideoPlayerActivity
@@ -604,7 +606,6 @@ class BookInfoActivity :
                 refreshToc()
             }
         }
-    }
 
         observeEvent<Pair<Book, BookChapter>>(EventBus.SAVE_CONTENT) { (eventBook, _) ->
             if (eventBook.bookUrl == viewModel.getBook(false)?.bookUrl) {
@@ -617,6 +618,7 @@ class BookInfoActivity :
                 upCacheProgress()
             }
         }
+    }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (initIntroView && ev.action == MotionEvent.ACTION_DOWN) {
@@ -674,21 +676,21 @@ class BookInfoActivity :
         showBookIntro(book)
         if (book.isWebFile) {
             llToc.gone()
+            llCache.gone()
             tvLasted.text = getString(R.string.lasted_show, "下载中...")
         } else {
-            llCache.gone()
             llToc.visible()
+            llCache.visible()
         }
         menuCustomBtn?.isVisible = viewModel.hasCustomBtn
-            llCache.visible()
         upTvBookshelf()
         upKinds(book)
         upGroup(book.group)
         observeCharacterPreview(book)
         viewModel.prepareOtherWorks(book)
+        upCacheProgress(book)
         if (book.isLocal || book.getRealAuthor().isBlank()) {
             llOtherWorks.gone()
-        upCacheProgress(book)
         } else {
             llOtherWorks.visible()
         }
@@ -803,7 +805,13 @@ class BookInfoActivity :
     private fun observeCharacterPreview(book: Book) {
         val workKey = BookCharacterProfile.workKey(book.name, book.author)
         characterPreviewJob?.cancel()
-        binding.llCharacterHeader?.setOnClickListener {
+        binding.ivCharacterAiAssistant.setOnClickListener {
+            openCharacterCardAiAssistant(book)
+        }
+        binding.llCharacterOpen.setOnClickListener {
+            openCharacterActivity(book, workKey)
+        }
+        binding.ivCharacterOpen.setOnClickListener {
             openCharacterActivity(book, workKey)
         }
         characterPreviewJob = lifecycleScope.launch {
@@ -819,9 +827,9 @@ class BookInfoActivity :
     }
 
     private fun showCharacterPreview(book: Book, workKey: String, characters: List<BookCharacter>) {
-        binding.llCharacters?.visible() ?: return
-        binding.tvCharacterCount?.text = getString(R.string.character_count_format, characters.size)
-        binding.llCharacterPreview?.removeAllViews()
+        binding.llCharacters.visible()
+        binding.tvCharacterCount.text = getString(R.string.character_count_format, characters.size)
+        binding.llCharacterPreview.removeAllViews()
         if (characters.isEmpty()) {
             val emptyView = TextView(this).apply {
                 text = getString(R.string.book_character_empty)
@@ -831,11 +839,11 @@ class BookInfoActivity :
                 setPadding(0, 6.dpToPx(), 0, 6.dpToPx())
                 setOnClickListener { openCharacterActivity(book, workKey) }
             }
-            binding.llCharacterPreview?.addView(emptyView)
+            binding.llCharacterPreview.addView(emptyView)
             return
         }
         characters.take(6).forEach { character ->
-            binding.llCharacterPreview?.addView(createCharacterPreviewView(character))
+            binding.llCharacterPreview.addView(createCharacterPreviewView(character))
         }
     }
 
@@ -884,8 +892,7 @@ class BookInfoActivity :
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     )
                 })
-                val intro = character.shortIntro?.takeIf { it.isNotBlank() }
-                    ?: character.identity?.takeIf { it.isNotBlank() }
+                val intro = character.displayIntro()
                     ?: BookCharacterLabels.roleLabel(this@BookInfoActivity, character.roleTag)
                 addView(TextView(this@BookInfoActivity).apply {
                     text = intro
@@ -939,6 +946,72 @@ class BookInfoActivity :
             putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, book.name)
             putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, book.author)
             putExtra(BookCharacterActivity.EXTRA_BOOK_URL, book.bookUrl)
+        }
+    }
+
+    private fun openCharacterCardAiAssistant(book: Book) {
+        val workKey = BookCharacterProfile.workKey(book.name, book.author)
+        val contextAttachment = GSON.toJson(
+            mapOf(
+                "id" to "book_detail_character_card",
+                "title" to "书籍详情：${book.name}",
+                "subtitle" to book.getRealAuthor(),
+                "prompt" to buildBookDetailAiContextPrompt(book, workKey)
+            )
+        )
+        startActivity<AiChatActivity> {
+            putStringArrayListExtra(
+                AiChatActivity.EXTRA_LOADED_SKILL_IDS,
+                arrayListOf(AiSkillRegistry.SKILL_CHARACTER_CARD_GENERATE)
+            )
+            putStringArrayListExtra(
+                AiChatActivity.EXTRA_CONTEXT_ATTACHMENTS,
+                arrayListOf(contextAttachment)
+            )
+            putExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, true)
+        }
+    }
+
+    private fun buildBookDetailAiContextPrompt(book: Book, workKey: String): String {
+        val intro = book.getDisplayIntro().orEmpty().toPlainBookIntro().limitAiContextText(1800)
+        return buildString {
+            appendLine("这是从书籍详情页进入 AI 助理时附带的当前书籍上下文。")
+            appendLine("这是专用入口，目标书籍已经明确，不需要再次询问用户是哪本书。")
+            appendLine()
+            appendLine("书名：${book.name}")
+            appendLine("作者：${book.getRealAuthor()}")
+            appendLine("book_url：${book.bookUrl}")
+            appendLine("work_key：$workKey")
+            appendLine("书源：${book.originName}")
+            book.kind?.takeIf { it.isNotBlank() }?.let { appendLine("分类：$it") }
+            book.wordCount?.takeIf { it.isNotBlank() }?.let { appendLine("字数：$it") }
+            appendLine("目录章节数：${book.totalChapterNum}")
+            book.durChapterTitle?.takeIf { it.isNotBlank() }?.let {
+                appendLine("当前阅读章节：第 ${book.durChapterIndex + 1} 章 $it")
+            }
+            book.latestChapterTitle?.takeIf { it.isNotBlank() }?.let {
+                appendLine("最新章节：$it")
+            }
+            if (intro.isNotBlank()) {
+                appendLine()
+                appendLine("书籍简介：")
+                appendLine(intro)
+            }
+        }
+    }
+
+    private fun String.toPlainBookIntro(): String {
+        return replace(Regex("""<use(html|web)>|</use(html|web)>|<md>|</md>"""), "")
+            .replace(Regex("""<[^>]+>"""), "")
+            .replace(Regex("""[ \t\r\n]+"""), " ")
+            .trim()
+    }
+
+    private fun String.limitAiContextText(maxLength: Int): String {
+        return if (length <= maxLength) {
+            this
+        } else {
+            take(maxLength).trimEnd() + "..."
         }
     }
 
@@ -1261,6 +1334,11 @@ class BookInfoActivity :
                 }
             }
         }
+        tvCacheBook.setOnClickListener {
+            viewModel.getBook()?.let { book ->
+                startCacheBook(book)
+            }
+        }
         tvChangeGroup.setOnClickListener {
             viewModel.getBook()?.let {
                 showDialogFragment(
@@ -1329,82 +1407,9 @@ class BookInfoActivity :
         refreshLayout?.setOnRefreshListener {
             refreshLayout.isRefreshing = false
             refreshBook()
-        tvCacheBook.setOnClickListener {
-            viewModel.getBook()?.let { book ->
-                startCacheBook(book)
-            }
-        }
         }
     }
 
-    private fun setSourceVariable() {
-        lifecycleScope.launch {
-            val source = viewModel.bookSource
-            if (source == null) {
-                toastOnUi("书源不存在")
-                return@launch
-            }
-            val comment =
-                source.getDisplayVariableComment("源变量可在js中通过source.getVariable()获取")
-            val variable = withContext(IO) { source.getVariable() }
-            showDialogFragment(
-                VariableDialog(
-                    getString(R.string.set_source_variable),
-                    source.getKey(),
-                    variable,
-                    comment
-                )
-            )
-        }
-    }
-
-    private fun setBookVariable() {
-        lifecycleScope.launch {
-            val source = viewModel.bookSource
-            if (source == null) {
-                toastOnUi("书源不存在")
-                return@launch
-            }
-            val book = viewModel.getBook() ?: return@launch
-            val variable = withContext(IO) { book.getCustomVariable() }
-            val comment = source.getDisplayVariableComment(
-                """书籍变量可在js中通过book.getVariable("custom")获取"""
-            )
-            showDialogFragment(
-                VariableDialog(
-                    getString(R.string.set_book_variable),
-                    book.bookUrl,
-                    variable,
-                    comment
-                )
-            )
-        }
-    }
-
-    override fun setVariable(key: String, variable: String?) {
-        when (key) {
-            viewModel.bookSource?.getKey() -> viewModel.bookSource?.setVariable(variable)
-            viewModel.bookData.value?.bookUrl -> viewModel.bookData.value?.let {
-                it.putCustomVariable(variable)
-                if (viewModel.inBookshelf) {
-                    viewModel.saveBook(it)
-                }
-            }
-        }
-    }
-
-    @SuppressLint("InflateParams")
-    private fun deleteBook() {
-        viewModel.getBook()?.let { book ->
-            if (LocalConfig.bookInfoDeleteAlert) {
-                alert(
-                    titleResource = R.string.draw,
-                    messageResource = R.string.sure_del
-                ) {
-                    var checkBox: CheckBox? = null
-                    if (book.isLocal) {
-                        checkBox = CheckBox(this@BookInfoActivity).apply {
-                            setText(R.string.delete_book_file)
     private fun upCacheProgress(
         book: Book? = viewModel.getBook(false),
         chapterList: List<BookChapter>? = viewModel.chapterListData.value
@@ -1494,6 +1499,74 @@ class BookInfoActivity :
         }
     }
 
+    private fun setSourceVariable() {
+        lifecycleScope.launch {
+            val source = viewModel.bookSource
+            if (source == null) {
+                toastOnUi("书源不存在")
+                return@launch
+            }
+            val comment =
+                source.getDisplayVariableComment("源变量可在js中通过source.getVariable()获取")
+            val variable = withContext(IO) { source.getVariable() }
+            showDialogFragment(
+                VariableDialog(
+                    getString(R.string.set_source_variable),
+                    source.getKey(),
+                    variable,
+                    comment
+                )
+            )
+        }
+    }
+
+    private fun setBookVariable() {
+        lifecycleScope.launch {
+            val source = viewModel.bookSource
+            if (source == null) {
+                toastOnUi("书源不存在")
+                return@launch
+            }
+            val book = viewModel.getBook() ?: return@launch
+            val variable = withContext(IO) { book.getCustomVariable() }
+            val comment = source.getDisplayVariableComment(
+                """书籍变量可在js中通过book.getVariable("custom")获取"""
+            )
+            showDialogFragment(
+                VariableDialog(
+                    getString(R.string.set_book_variable),
+                    book.bookUrl,
+                    variable,
+                    comment
+                )
+            )
+        }
+    }
+
+    override fun setVariable(key: String, variable: String?) {
+        when (key) {
+            viewModel.bookSource?.getKey() -> viewModel.bookSource?.setVariable(variable)
+            viewModel.bookData.value?.bookUrl -> viewModel.bookData.value?.let {
+                it.putCustomVariable(variable)
+                if (viewModel.inBookshelf) {
+                    viewModel.saveBook(it)
+                }
+            }
+        }
+    }
+
+    @SuppressLint("InflateParams")
+    private fun deleteBook() {
+        viewModel.getBook()?.let { book ->
+            if (LocalConfig.bookInfoDeleteAlert) {
+                alert(
+                    titleResource = R.string.draw,
+                    messageResource = R.string.sure_del
+                ) {
+                    var checkBox: CheckBox? = null
+                    if (book.isLocal) {
+                        checkBox = CheckBox(this@BookInfoActivity).apply {
+                            setText(R.string.delete_book_file)
                             isChecked = LocalConfig.deleteBookOriginal
                         }
                         val view = LinearLayout(this@BookInfoActivity).apply {
@@ -1695,6 +1768,7 @@ class BookInfoActivity :
      }
 
     override fun onDestroy() {
+        cacheProgressJob?.cancel()
         destroyWeb()
         super.onDestroy()
         if (initGetter) {
@@ -1708,4 +1782,3 @@ class BookInfoActivity :
     }
 
 }
-        cacheProgressJob?.cancel()
