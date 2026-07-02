@@ -111,6 +111,8 @@ class NgActionPopup(
                 val drawable = item.iconDrawable ?: item.iconRes
                     .takeIf { it != 0 }
                     ?.let { ContextCompat.getDrawable(context, it) }
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setPadding(2.dpToPx(), 2.dpToPx(), 2.dpToPx(), 2.dpToPx())
                 setImageDrawable(drawable?.mutate())
                 setColorFilter(color)
                 alpha = if (drawable == null) 0f else 1f
@@ -127,6 +129,8 @@ class NgActionPopup(
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             if (item.checked) {
                 addView(ImageView(context).apply {
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    setPadding(2.dpToPx(), 2.dpToPx(), 2.dpToPx(), 2.dpToPx())
                     setImageDrawable(ContextCompat.getDrawable(context, R.drawable.ic_check))
                     setColorFilter(color)
                 }, LinearLayout.LayoutParams(20.dpToPx(), 20.dpToPx()).apply {

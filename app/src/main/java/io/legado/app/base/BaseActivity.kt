@@ -10,6 +10,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
+import android.view.Window
 import android.widget.FrameLayout
 import androidx.activity.addCallback
 import androidx.annotation.RequiresApi
@@ -123,7 +124,10 @@ abstract class BaseActivity<VB : ViewBinding>(
                 context = this,
                 toolbar = findViewById<TitleBar>(R.id.title_bar)?.toolbar,
                 menu = menu,
-                prepareMenu = { onPrepareOptionsMenu(menu) },
+                prepareMenu = {
+                    onPrepareOptionsMenu(menu)
+                    onMenuOpened(Window.FEATURE_OPTIONS_PANEL, menu)
+                },
                 onItemClick = { onCompatOptionsItemSelected(it) }
             )
         }
