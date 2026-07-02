@@ -4,13 +4,18 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.google.gson.reflect.TypeToken
 import fi.iki.elonen.NanoHTTPD
 import io.legado.app.api.ReturnData
 import io.legado.app.api.controller.BookSourceController
+import io.legado.app.BuildConfig
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
+import io.legado.app.data.entities.AiChatConversation
+import io.legado.app.data.entities.AiChatMessageNode
 import io.legado.app.data.entities.SearchBook
+import io.legado.app.help.ai.AiChatMessageSnapshot
 import io.legado.app.help.http.NetworkLog
 import io.legado.app.model.Debug
 import io.legado.app.model.webBook.SearchModel
@@ -46,9 +51,22 @@ object McpServer {
     private const val MAX_DEBUG_LOG_LIMIT = 100
     private const val DEFAULT_DEBUG_LOG_STACK_CHARS = 16 * 1024
     private const val MAX_DEBUG_LOG_STACK_CHARS = 64 * 1024
+    private const val DEFAULT_AI_CHAT_CONVERSATION_LIMIT = 20
+    private const val MAX_AI_CHAT_CONVERSATION_LIMIT = 50
+    private const val DEFAULT_AI_CHAT_MESSAGE_LIMIT = 100
+    private const val MAX_AI_CHAT_MESSAGE_LIMIT = 300
+    private const val DEFAULT_AI_CHAT_TEXT_CHARS = 8 * 1024
+    private const val MAX_AI_CHAT_TEXT_CHARS = 64 * 1024
+    private const val DEFAULT_AI_CHAT_UPLOAD_CHARS = 16 * 1024
+    private const val MAX_AI_CHAT_UPLOAD_CHARS = 128 * 1024
+    private const val DEFAULT_BOOK_SOURCE_LIMIT = 100
+    private const val MAX_BOOK_SOURCE_LIMIT = 300
+    private const val DEFAULT_SEARCH_RESULT_LIMIT = 50
+    private const val MAX_SEARCH_RESULT_LIMIT = 200
     private val debugRunLock = Any()
+    private val aiChatMessageListType = object : TypeToken<List<AiChatMessageSnapshot>>() {}.type
 
-    fun isEnabled(): Boolean = appCtx.getPrefBoolean(PreferKey.mcpService, false)
+    fun isEnabled(): Boolean = BuildConfig.DEBUG || appCtx.getPrefBoolean(PreferKey.mcpService, false)
 
     fun isInternalEnabled(): Boolean = appCtx.getPrefBoolean(PreferKey.aiInternalMcp, false)
 
@@ -181,8 +199,23 @@ object McpServer {
             ),
             tool(
                 name = "book_source_list",
-                description = "List Legado book sources with basic identity fields only.",
-                properties = emptyMap()
+                description = "List Legado book sources with basic identity fields only. Default is paged to avoid large tool results.",
+                properties = mapOf(
+                    "offset" to mapOf(
+                        "type" to "number",
+                        "default" to 0
+                    ),
+                    "limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_BOOK_SOURCE_LIMIT,
+                        "maximum" to MAX_BOOK_SOURCE_LIMIT
+                    ),
+                    "keyword" to stringSchema("Optional keyword matched against source name, URL, group, or comment."),
+                    "enabled" to mapOf(
+                        "type" to "boolean",
+                        "description" to "Optional enabled-state filter"
+                    )
+                )
             ),
             tool(
                 name = "book_source_stats_get",
@@ -254,7 +287,7 @@ object McpServer {
             ),
             tool(
                 name = "book_search",
-                description = "Search books across enabled Legado book sources.",
+                description = "Search books across enabled Legado book sources. Returns compact result fields by default; pass include_detail=true only when intro/toc/source detail is needed for returned rows.",
                 properties = mapOf(
                     "key" to stringSchema("Book name, author, or keyword"),
                     "scope" to stringSchema("Optional Legado SearchScope string. Empty means all enabled sources."),
@@ -269,6 +302,20 @@ object McpServer {
                     "timeout_seconds" to mapOf(
                         "type" to "number",
                         "default" to 30
+                    ),
+                    "offset" to mapOf(
+                        "type" to "number",
+                        "default" to 0
+                    ),
+                    "limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_SEARCH_RESULT_LIMIT,
+                        "maximum" to MAX_SEARCH_RESULT_LIMIT
+                    ),
+                    "include_detail" to mapOf(
+                        "type" to "boolean",
+                        "default" to false,
+                        "description" to "Include intro/toc/source detail for returned rows"
                     )
                 ),
                 required = listOf("key")
@@ -328,6 +375,57 @@ object McpServer {
                 properties = emptyMap()
             ),
             tool(
+                name = "ai_chat_conversation_list",
+                description = "List persisted AI assistant chat conversations as compact summaries.",
+                properties = mapOf(
+                    "offset" to mapOf(
+                        "type" to "number",
+                        "default" to 0
+                    ),
+                    "limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_AI_CHAT_CONVERSATION_LIMIT,
+                        "maximum" to MAX_AI_CHAT_CONVERSATION_LIMIT
+                    ),
+                    "keyword" to stringSchema("Optional keyword matched against title, skill id, message content, reasoning, or tool trace."),
+                    "include_empty" to mapOf(
+                        "type" to "boolean",
+                        "default" to false
+                    )
+                )
+            ),
+            tool(
+                name = "ai_chat_conversation_get",
+                description = "Get one persisted AI assistant chat conversation with message history. Long text is capped by text_char_limit.",
+                properties = mapOf(
+                    "id" to stringSchema("Conversation id from ai_chat_conversation_list"),
+                    "message_offset" to mapOf(
+                        "type" to "number",
+                        "default" to 0
+                    ),
+                    "message_limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_AI_CHAT_MESSAGE_LIMIT,
+                        "maximum" to MAX_AI_CHAT_MESSAGE_LIMIT
+                    ),
+                    "text_char_limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_AI_CHAT_TEXT_CHARS,
+                        "maximum" to MAX_AI_CHAT_TEXT_CHARS
+                    ),
+                    "include_upload_messages" to mapOf(
+                        "type" to "boolean",
+                        "default" to false
+                    ),
+                    "upload_char_limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_AI_CHAT_UPLOAD_CHARS,
+                        "maximum" to MAX_AI_CHAT_UPLOAD_CHARS
+                    )
+                ),
+                required = listOf("id")
+            ),
+            tool(
                 name = "debug_log_list",
                 description = "List recent in-memory app debug logs as compact summaries.",
                 properties = mapOf(
@@ -372,7 +470,7 @@ object McpServer {
                 description = "Clear the in-memory app debug log window.",
                 properties = emptyMap()
             )
-        ) + BookshelfMcpTools.tools() + SettingsMcpTools.tools()
+        ) + BookshelfMcpTools.tools() + SettingsMcpTools.tools() + AgentMemoryMcpTools.tools()
     }
 
     private fun tool(
@@ -457,7 +555,7 @@ object McpServer {
                 upstreamEndpoint = "native://mcp",
                 normalizedData = apiSummary()
             )
-            "book_source_list" -> listBookSources()
+            "book_source_list" -> listBookSources(arguments)
             "book_source_stats_get" -> getBookSourceStats()
             "book_source_get" -> {
                 val url = arguments.get("url").asRequiredString("url")
@@ -481,11 +579,14 @@ object McpServer {
             "network_log_list" -> listNetworkLogs(arguments)
             "network_log_get" -> getNetworkLog(arguments)
             "network_log_clear" -> clearNetworkLogs()
+            "ai_chat_conversation_list" -> listAiChatConversations(arguments)
+            "ai_chat_conversation_get" -> getAiChatConversation(arguments)
             "debug_log_list" -> listDebugLogs(arguments)
             "debug_log_get" -> getDebugLog(arguments)
             "debug_log_clear" -> clearDebugLogs()
             else -> BookshelfMcpTools.call(name, arguments)
                 ?: SettingsMcpTools.call(name, arguments)
+                ?: AgentMemoryMcpTools.call(name, arguments)
                 ?: throw IllegalArgumentException("Unknown tool: $name")
         }
         val text = GSON.toJson(result)
@@ -606,6 +707,10 @@ object McpServer {
         val waitForFinish = arguments.get("wait_for_finish").asBooleanOrNull() ?: false
         val minResults = (arguments.get("min_results").asIntOrNull() ?: 1).coerceAtLeast(1)
         val timeoutSeconds = arguments.get("timeout_seconds").asDoubleOrNull() ?: 30.0
+        val offset = (arguments.get("offset").asIntOrNull() ?: 0).coerceAtLeast(0)
+        val limit = (arguments.get("limit").asIntOrNull() ?: DEFAULT_SEARCH_RESULT_LIMIT)
+            .coerceIn(1, MAX_SEARCH_RESULT_LIMIT)
+        val includeDetail = arguments.get("include_detail").asBooleanOrNull() ?: false
         val books = Collections.synchronizedList(mutableListOf<SearchBook>())
         val searchScope = SearchScope(scopeText)
         val sourceCount = searchScope.getBookSourceParts().size
@@ -640,7 +745,12 @@ object McpServer {
                 ok = false,
                 upstreamEndpoint = "native://searchBook",
                 normalizedData = mapOf(
-                    "books" to emptyList<SearchBook>(),
+                    "books" to emptyList<Map<String, Any?>>(),
+                    "offset" to offset,
+                    "limit" to limit,
+                    "total" to 0,
+                    "has_more" to false,
+                    "compact" to !includeDetail,
                     "done" to true,
                     "source_count" to 0,
                     "batch_count" to 0,
@@ -660,11 +770,19 @@ object McpServer {
         }
         val error = errorMessage.get()
         val isDone = done.get()
+        val page = bookSnapshot.drop(offset).take(limit).map { book ->
+            if (includeDetail) book.toMcpSearchDetail() else book.toMcpSearchSummary()
+        }
         return toolResult(
             ok = error == null,
             upstreamEndpoint = "native://searchBook",
             normalizedData = mapOf(
-                "books" to bookSnapshot,
+                "books" to page,
+                "offset" to offset,
+                "limit" to limit,
+                "total" to bookSnapshot.size,
+                "has_more" to (offset + page.size < bookSnapshot.size),
+                "compact" to !includeDetail,
                 "done" to isDone,
                 "source_count" to sourceCount,
                 "batch_count" to batchCount.get(),
@@ -696,21 +814,44 @@ object McpServer {
         )
     }
 
-    private fun listBookSources(): Map<String, Any?> {
-        val sources = appDb.bookSourceDao.all.map {
+    private fun listBookSources(arguments: JsonObject): Map<String, Any?> {
+        val offset = (arguments.get("offset").asIntOrNull() ?: 0).coerceAtLeast(0)
+        val limit = (arguments.get("limit").asIntOrNull() ?: DEFAULT_BOOK_SOURCE_LIMIT)
+            .coerceIn(1, MAX_BOOK_SOURCE_LIMIT)
+        val keyword = arguments.get("keyword").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        val enabled = arguments.get("enabled").asBooleanOrNull()
+        val filtered = appDb.bookSourceDao.all
+            .asSequence()
+            .filter { enabled == null || it.enabled == enabled }
+            .filter {
+                keyword == null ||
+                    it.bookSourceName.contains(keyword, ignoreCase = true) ||
+                    it.bookSourceUrl.contains(keyword, ignoreCase = true) ||
+                    it.bookSourceGroup.orEmpty().contains(keyword, ignoreCase = true) ||
+                    it.bookSourceComment.orEmpty().contains(keyword, ignoreCase = true)
+            }
+            .toList()
+        val sources = filtered.drop(offset).take(limit).map {
             mapOf(
                 "bookSourceComment" to it.bookSourceComment,
                 "bookSourceGroup" to it.bookSourceGroup,
                 "bookSourceName" to it.bookSourceName,
                 "bookSourceType" to it.bookSourceType,
-                "bookSourceUrl" to it.bookSourceUrl
+                "bookSourceUrl" to it.bookSourceUrl,
+                "enabled" to it.enabled
             )
         }
         return toolResult(
-            ok = sources.isNotEmpty(),
+            ok = filtered.isNotEmpty(),
             upstreamEndpoint = "native://bookSourceList",
-            normalizedData = sources,
-            warnings = if (sources.isEmpty()) listOf("设备源列表为空") else emptyList()
+            normalizedData = mapOf(
+                "sources" to sources,
+                "offset" to offset,
+                "limit" to limit,
+                "total" to filtered.size,
+                "has_more" to (offset + sources.size < filtered.size)
+            ),
+            warnings = if (filtered.isEmpty()) listOf("设备源列表为空或没有匹配结果") else emptyList()
         )
     }
 
@@ -810,6 +951,89 @@ object McpServer {
         )
     }
 
+    private fun listAiChatConversations(arguments: JsonObject): Map<String, Any?> {
+        val offset = (arguments.get("offset").asIntOrNull() ?: 0).coerceAtLeast(0)
+        val limit = (arguments.get("limit").asIntOrNull() ?: DEFAULT_AI_CHAT_CONVERSATION_LIMIT)
+            .coerceIn(1, MAX_AI_CHAT_CONVERSATION_LIMIT)
+        val keyword = arguments.get("keyword").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        val includeEmpty = arguments.get("include_empty").asBooleanOrNull() ?: false
+        val total = appDb.aiChatDao.countConversations()
+        val records = appDb.aiChatDao.getConversations((offset + limit + 100).coerceAtLeast(MAX_AI_CHAT_CONVERSATION_LIMIT))
+            .map { conversation ->
+                val messages = appDb.aiChatDao.getMessageNodes(conversation.id)
+                    .flatMap { it.toAiChatMessages() }
+                conversation to messages
+            }
+        val filtered = records.filter { (conversation, messages) ->
+            (includeEmpty || messages.isNotEmpty()) &&
+                    (keyword == null || conversation.matchesAiChatKeyword(keyword, messages))
+        }
+        val page = filtered.drop(offset).take(limit).map { (conversation, messages) ->
+            conversation.toAiChatConversationSummary(messages)
+        }
+        return toolResult(
+            ok = true,
+            upstreamEndpoint = "native://aiChat/conversationList",
+            normalizedData = mapOf(
+                "conversations" to page,
+                "offset" to offset,
+                "limit" to limit,
+                "total" to total,
+                "filtered_total" to filtered.size,
+                "has_more" to (offset + page.size < filtered.size)
+            )
+        )
+    }
+
+    private fun getAiChatConversation(arguments: JsonObject): Map<String, Any?> {
+        val id = arguments.get("id").asRequiredString("id")
+        val messageOffset = (arguments.get("message_offset").asIntOrNull() ?: 0).coerceAtLeast(0)
+        val messageLimit = (arguments.get("message_limit").asIntOrNull() ?: DEFAULT_AI_CHAT_MESSAGE_LIMIT)
+            .coerceIn(1, MAX_AI_CHAT_MESSAGE_LIMIT)
+        val textCharLimit = (arguments.get("text_char_limit").asIntOrNull() ?: DEFAULT_AI_CHAT_TEXT_CHARS)
+            .coerceIn(0, MAX_AI_CHAT_TEXT_CHARS)
+        val includeUploadMessages = arguments.get("include_upload_messages").asBooleanOrNull() ?: false
+        val uploadCharLimit = (arguments.get("upload_char_limit").asIntOrNull() ?: DEFAULT_AI_CHAT_UPLOAD_CHARS)
+            .coerceIn(0, MAX_AI_CHAT_UPLOAD_CHARS)
+        val conversation = appDb.aiChatDao.getConversation(id)
+            ?: return toolResult(
+                ok = false,
+                upstreamEndpoint = "native://aiChat/conversationGet",
+                normalizedData = null,
+                warnings = listOf("未找到 AI 聊天会话")
+            )
+        val messages = appDb.aiChatDao.getMessageNodes(id)
+            .flatMap { node ->
+                node.toAiChatMessages().mapIndexed { messageIndex, message ->
+                    node to (messageIndex to message)
+                }
+            }
+        val page = messages.drop(messageOffset).take(messageLimit).map { (node, indexedMessage) ->
+            val (messageIndex, message) = indexedMessage
+            message.toAiChatMessageDetail(node, messageIndex, textCharLimit)
+        }
+        val data = linkedMapOf<String, Any?>(
+            "conversation" to conversation.toAiChatConversationSummary(messages.map { it.second.second }),
+            "messages" to page,
+            "message_offset" to messageOffset,
+            "message_limit" to messageLimit,
+            "message_total" to messages.size,
+            "has_more_messages" to (messageOffset + page.size < messages.size),
+            "text_char_limit" to textCharLimit
+        )
+        if (includeUploadMessages) {
+            val uploadMessages = conversation.uploadMessages.limitMcpText(uploadCharLimit)
+            data["upload_messages_json"] = uploadMessages
+            data["upload_messages_chars"] = conversation.uploadMessages.length
+            data["upload_messages_truncated_by_mcp"] = conversation.uploadMessages.length > uploadCharLimit
+        }
+        return toolResult(
+            ok = true,
+            upstreamEndpoint = "native://aiChat/conversationGet",
+            normalizedData = data
+        )
+    }
+
     private fun listDebugLogs(arguments: JsonObject): Map<String, Any?> {
         val offset = (arguments.get("offset").asIntOrNull() ?: 0).coerceAtLeast(0)
         val limit = (arguments.get("limit").asIntOrNull() ?: DEFAULT_DEBUG_LOG_LIMIT)
@@ -868,6 +1092,97 @@ object McpServer {
                 "remaining" to AppLog.logs.size
             )
         )
+    }
+
+    private fun AiChatConversation.toAiChatConversationSummary(
+        messages: List<AiChatMessageSnapshot>
+    ): Map<String, Any?> {
+        val lastMessage = messages.lastOrNull()
+        val toolTraceCount = messages.sumOf { it.toolTrace.size }
+        return mapOf(
+            "id" to id,
+            "title" to title,
+            "assistant_id" to assistantId,
+            "create_at" to createAt,
+            "create_time_text" to formatMcpDateTime(createAt),
+            "update_at" to updateAt,
+            "update_time_text" to formatMcpDateTime(updateAt),
+            "is_pinned" to isPinned,
+            "loaded_skill_ids" to loadedSkillIds.toAiChatStringList(),
+            "message_count" to messages.size,
+            "user_message_count" to messages.count { it.role == AiChatMessageSnapshot.ROLE_USER },
+            "assistant_message_count" to messages.count { it.role == AiChatMessageSnapshot.ROLE_ASSISTANT },
+            "last_message_role" to lastMessage?.role,
+            "last_message_preview" to lastMessage?.content?.lineSequence()?.firstOrNull().orEmpty().limitMcpText(500),
+            "has_reasoning" to messages.any { !it.reasoning.isNullOrBlank() },
+            "tool_trace_count" to toolTraceCount,
+            "has_upload_messages" to (uploadMessages.isNotBlank() && uploadMessages != "[]")
+        )
+    }
+
+    private fun AiChatMessageSnapshot.toAiChatMessageDetail(
+        node: AiChatMessageNode,
+        messageIndex: Int,
+        textCharLimit: Int
+    ): Map<String, Any?> {
+        val reasoningText = reasoning
+        return mapOf(
+            "node_id" to node.id,
+            "node_index" to node.nodeIndex,
+            "select_index" to node.selectIndex,
+            "message_index" to messageIndex,
+            "id" to id,
+            "role" to role,
+            "content" to content.limitMcpText(textCharLimit),
+            "content_chars" to content.length,
+            "content_truncated_by_mcp" to (content.length > textCharLimit),
+            "meta" to meta,
+            "reasoning" to reasoningText?.limitMcpText(textCharLimit),
+            "reasoning_chars" to (reasoningText?.length ?: 0),
+            "reasoning_truncated_by_mcp" to ((reasoningText?.length ?: 0) > textCharLimit),
+            "tool_trace" to toolTrace.map { it.limitMcpText(textCharLimit) },
+            "tool_trace_count" to toolTrace.size,
+            "elapsed_ms" to elapsedMs,
+            "favorite" to favorite
+        )
+    }
+
+    private fun AiChatConversation.matchesAiChatKeyword(
+        keyword: String,
+        messages: List<AiChatMessageSnapshot>
+    ): Boolean {
+        return sequenceOf(
+            id,
+            title,
+            assistantId,
+            loadedSkillIds,
+            customSystemPrompt
+        ).any { it.contains(keyword, ignoreCase = true) } ||
+                messages.any { message ->
+                    sequenceOf(
+                        message.id,
+                        message.role,
+                        message.content,
+                        message.meta,
+                        message.reasoning,
+                        message.toolTrace.joinToString("\n")
+                    ).filterNotNull().any { it.contains(keyword, ignoreCase = true) }
+                }
+    }
+
+    private fun AiChatMessageNode.toAiChatMessages(): List<AiChatMessageSnapshot> {
+        return runCatching {
+            GSON.fromJson<List<AiChatMessageSnapshot>>(messages, aiChatMessageListType)
+        }.getOrNull().orEmpty()
+    }
+
+    private fun String.toAiChatStringList(): List<String> {
+        return runCatching {
+            JsonParser.parseString(this).asJsonArray
+        }.getOrNull()
+            ?.mapNotNull { it.asStringOrNull()?.trim() }
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
     }
 
     private fun NetworkLog.Entry.toNetworkLogSummary(): Map<String, Any?> {
@@ -948,8 +1263,42 @@ object McpServer {
         }
     }
 
+    private fun SearchBook.toMcpSearchSummary(): Map<String, Any?> {
+        return mapOf(
+            "book_url" to bookUrl,
+            "name" to name,
+            "author" to author,
+            "origin" to origin,
+            "origin_name" to originName,
+            "type" to type,
+            "kind" to kind,
+            "word_count" to wordCount,
+            "latest_chapter_title" to latestChapterTitle,
+            "respond_time" to respondTime
+        )
+    }
+
+    private fun SearchBook.toMcpSearchDetail(): Map<String, Any?> {
+        return toMcpSearchSummary() + mapOf(
+            "cover_url" to coverUrl,
+            "intro" to intro,
+            "toc_url" to tocUrl,
+            "origin_order" to originOrder,
+            "chapter_word_count" to chapterWordCount,
+            "chapter_word_count_text" to chapterWordCountText
+        )
+    }
+
     private fun formatNetworkLogTime(time: Long): String {
         return SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(time))
+    }
+
+    private fun formatMcpDateTime(time: Long): String {
+        return if (time > 0L) {
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date(time))
+        } else {
+            ""
+        }
     }
 
     private fun Triple<Long, String, Throwable?>.toDebugLogSummary(): Map<String, Any?> {

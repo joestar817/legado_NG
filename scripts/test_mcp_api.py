@@ -88,6 +88,12 @@ EXPECTED_TOOLS = {
     "network_log_list",
     "network_log_get",
     "network_log_clear",
+    "ai_chat_conversation_list",
+    "ai_chat_conversation_get",
+    "agent_memory_status_get",
+    "agent_memory_search",
+    "agent_memory_upsert",
+    "agent_memory_archive",
     "debug_log_list",
     "debug_log_get",
     "debug_log_clear",
@@ -104,6 +110,7 @@ BOOK_SOURCE_LIST_FIELDS = {
     "bookSourceName",
     "bookSourceType",
     "bookSourceUrl",
+    "enabled",
 }
 
 
@@ -210,6 +217,7 @@ class NativeMcpApiTest(unittest.TestCase):
     first_source_url: str | None
     first_full_source: dict[str, Any] | None
     first_book_url: str | None
+    first_book_work_key: str | None
     first_book_name: str | None
     first_book_author: str | None
 
@@ -221,6 +229,7 @@ class NativeMcpApiTest(unittest.TestCase):
         cls.first_source_url = None
         cls.first_full_source = None
         cls.first_book_url = None
+        cls.first_book_work_key = None
         cls.first_book_name = None
         cls.first_book_author = None
 
@@ -242,7 +251,8 @@ class NativeMcpApiTest(unittest.TestCase):
         cls.resources = {item.get("uri") for item in resources_result.get("resources", [])}
 
         list_result = cls.client.call_tool("book_source_list")
-        sources = list_result.get("normalized_data")
+        source_data = list_result.get("normalized_data")
+        sources = source_data.get("sources") if isinstance(source_data, dict) else None
         if isinstance(sources, list) and sources:
             cls.first_source_url = sources[0].get("bookSourceUrl")
 
@@ -251,6 +261,7 @@ class NativeMcpApiTest(unittest.TestCase):
         books = books_data.get("books") if isinstance(books_data, dict) else None
         if isinstance(books, list) and books:
             cls.first_book_url = books[0].get("book_url")
+            cls.first_book_work_key = books[0].get("work_key")
             cls.first_book_name = books[0].get("name")
             cls.first_book_author = books[0].get("author")
 
@@ -313,7 +324,14 @@ class NativeMcpApiTest(unittest.TestCase):
         structured = self.client.call_tool("book_source_list")
         self.assert_tool_ok_shape(structured)
         self.assertTrue(structured["ok"], structured.get("warnings"))
-        sources = structured["normalized_data"]
+        data = structured["normalized_data"]
+        self.assertIsInstance(data, dict)
+        self.assertIn("sources", data)
+        self.assertIn("offset", data)
+        self.assertIn("limit", data)
+        self.assertIn("total", data)
+        self.assertIn("has_more", data)
+        sources = data["sources"]
         self.assertIsInstance(sources, list)
         self.assertGreater(len(sources), 0)
         for source in sources[:20]:
@@ -332,7 +350,7 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assertIn("type_counts", stats_data)
         self.assertIn("group_counts", stats_data)
         self.assertIn("capability_counts", stats_data)
-        self.assertGreaterEqual(stats_data["total"], len(sources))
+        self.assertGreaterEqual(stats_data["total"], data["total"])
 
     def test_10_tool_book_source_get(self) -> None:
         if not self.first_source_url:
@@ -366,6 +384,7 @@ class NativeMcpApiTest(unittest.TestCase):
                 "key": Config.search_key,
                 "min_results": 1,
                 "timeout_seconds": Config.search_timeout_seconds,
+                "limit": max(Config.expected_search_min, 10),
             },
         )
         self.assert_tool_ok_shape(structured)
@@ -374,6 +393,11 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assertIn("done", data)
         self.assertIn("source_count", data)
         self.assertIn("batch_count", data)
+        self.assertIn("offset", data)
+        self.assertIn("limit", data)
+        self.assertIn("total", data)
+        self.assertIn("has_more", data)
+        self.assertTrue(data.get("compact"))
         self.assertIsInstance(data["books"], list)
         self.assertGreater(data["source_count"], 0)
         self.assertGreaterEqual(data["batch_count"], 1)
@@ -387,7 +411,7 @@ class NativeMcpApiTest(unittest.TestCase):
             joined = "\n".join(
                 " ".join(
                     str(book.get(field) or "")
-                    for field in ("name", "author", "kind", "intro")
+                    for field in ("name", "author", "kind", "latest_chapter_title")
                 )
                 for book in data["books"]
             )
@@ -497,7 +521,63 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assertEqual(detail_data.get("id"), item["id"])
         self.assertNotIn("stack", detail_data)
 
-    def test_16_tool_network_log_clear(self) -> None:
+    def test_16_tool_ai_chat_conversation_list_and_get(self) -> None:
+        structured = self.client.call_tool("ai_chat_conversation_list", {"limit": 5})
+        self.assert_tool_ok_shape(structured)
+        self.assertTrue(structured["ok"], structured.get("warnings"))
+        data = structured["normalized_data"]
+        for field in ("conversations", "offset", "limit", "total", "filtered_total", "has_more"):
+            self.assertIn(field, data)
+        self.assertLessEqual(data["limit"], 50)
+        self.assertIsInstance(data["conversations"], list)
+        if not data["conversations"]:
+            missing = self.client.call_tool("ai_chat_conversation_get", {"id": "__missing__"})
+            self.assert_tool_ok_shape(missing)
+            self.assertFalse(missing["ok"])
+            return
+        item = data["conversations"][0]
+        self.assertIn("id", item)
+        self.assertIn("title", item)
+        self.assertIn("message_count", item)
+        detail = self.client.call_tool(
+            "ai_chat_conversation_get",
+            {
+                "id": item["id"],
+                "message_limit": 3,
+                "text_char_limit": 2048,
+            },
+        )
+        self.assert_tool_ok_shape(detail)
+        self.assertTrue(detail["ok"], detail.get("warnings"))
+        detail_data = detail["normalized_data"]
+        self.assertIn("conversation", detail_data)
+        self.assertIn("messages", detail_data)
+        self.assertEqual(detail_data["conversation"].get("id"), item["id"])
+
+    def test_17_tool_agent_memory_status_and_search(self) -> None:
+        status = self.client.call_tool("agent_memory_status_get")
+        self.assert_tool_ok_shape(status)
+        self.assertTrue(status["ok"], status.get("warnings"))
+        status_data = status["normalized_data"]
+        self.assertIn("enabled", status_data)
+        self.assertIsInstance(status_data["enabled"], bool)
+        structured = self.client.call_tool(
+            "agent_memory_search",
+            {
+                "scope_type": "book",
+                "scope_key": "__mcp_test_missing__",
+                "domain": "character_card",
+                "limit": 5,
+            },
+        )
+        self.assert_tool_ok_shape(structured)
+        self.assertTrue(structured["ok"], structured.get("warnings"))
+        data = structured["normalized_data"]
+        for field in ("enabled", "memories", "offset", "limit", "total", "has_more"):
+            self.assertIn(field, data)
+        self.assertIsInstance(data["memories"], list)
+
+    def test_18_tool_network_log_clear(self) -> None:
         if not Config.clear_network_log:
             self.skipTest("--clear-network-log was not set")
         structured = self.client.call_tool("network_log_clear")
@@ -507,7 +587,7 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assertIn("cleared", data)
         self.assertEqual(data.get("remaining"), 0)
 
-    def test_17_bookshelf_read_only_tools(self) -> None:
+    def test_18_bookshelf_read_only_tools(self) -> None:
         groups = self.client.call_tool("bookshelf_group_list")
         self.assert_tool_ok_shape(groups)
         self.assertTrue(groups["ok"], groups.get("warnings"))
@@ -535,6 +615,7 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assert_tool_ok_shape(rules)
         self.assertTrue(rules["ok"], rules.get("warnings"))
         self.assertIn("rules", rules["normalized_data"])
+        self.assertTrue(rules["normalized_data"].get("compact"))
 
         bookmarks = self.client.call_tool("bookshelf_bookmark_list", {"limit": 3})
         self.assert_tool_ok_shape(bookmarks)
@@ -553,20 +634,44 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assert_tool_ok_shape(book)
         self.assertTrue(book["ok"], book.get("warnings"))
         self.assertEqual(book["normalized_data"].get("book_url"), self.first_book_url)
+        if self.first_book_work_key:
+            book_by_work = self.client.call_tool("bookshelf_book_get", {"work_key": self.first_book_work_key})
+            self.assert_tool_ok_shape(book_by_work)
+            self.assertTrue(book_by_work["ok"], book_by_work.get("warnings"))
+            self.assertEqual(book_by_work["normalized_data"].get("work_key"), self.first_book_work_key)
 
+        book_identity = {"work_key": self.first_book_work_key} if self.first_book_work_key else {"book_url": self.first_book_url}
         chapters = self.client.call_tool(
             "bookshelf_chapter_list",
-            {"book_url": self.first_book_url, "start": 0, "end": 5, "include_cache_status": True},
+            {**book_identity, "start": 0, "end": 5, "include_cache_status": True},
         )
         self.assert_tool_ok_shape(chapters)
         self.assertTrue(chapters["ok"], chapters.get("warnings"))
         chapter_data = chapters["normalized_data"]
         self.assertIn("chapters", chapter_data)
         self.assertIn("total", chapter_data)
+        self.assertIn("limit", chapter_data)
+        self.assertIn("has_more", chapter_data)
+        self.assertTrue(chapter_data.get("compact"))
+        for chapter in chapter_data["chapters"]:
+            self.assertIn("index", chapter)
+            self.assertIn("title", chapter)
+            self.assertNotIn("url", chapter)
+
+        detailed_chapters = self.client.call_tool(
+            "bookshelf_chapter_list",
+            {**book_identity, "start": 0, "limit": 1, "include_detail": True},
+        )
+        self.assert_tool_ok_shape(detailed_chapters)
+        self.assertTrue(detailed_chapters["ok"], detailed_chapters.get("warnings"))
+        detailed_data = detailed_chapters["normalized_data"]
+        self.assertFalse(detailed_data.get("compact"))
+        if detailed_data.get("chapters"):
+            self.assertIn("url", detailed_data["chapters"][0])
 
         cache = self.client.call_tool(
             "bookshelf_cache_status_get",
-            {"book_url": self.first_book_url, "start": 0, "end": 5},
+            {**book_identity, "start": 0, "end": 5},
         )
         self.assert_tool_ok_shape(cache)
         self.assertTrue(cache["ok"], cache.get("warnings"))
@@ -618,7 +723,7 @@ class NativeMcpApiTest(unittest.TestCase):
             self.assert_tool_ok_shape(window)
             self.assertIn("text", window["normalized_data"])
 
-    def test_18_bookshelf_write_tools(self) -> None:
+    def test_19_bookshelf_write_tools(self) -> None:
         if not Config.write:
             self.skipTest("--write was not set")
         if not self.first_book_url:
@@ -746,7 +851,7 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assertTrue(read_record_delete["ok"], read_record_delete.get("warnings"))
         self.assertGreaterEqual(read_record_delete["normalized_data"].get("deleted"), 1)
 
-    def test_19_settings_read_only_tools(self) -> None:
+    def test_20_settings_read_only_tools(self) -> None:
         stats = self.client.call_tool("settings_rule_stats_get")
         self.assert_tool_ok_shape(stats)
         self.assertTrue(stats["ok"], stats.get("warnings"))
@@ -759,6 +864,7 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assert_tool_ok_shape(toc)
         self.assertTrue(toc["ok"], toc.get("warnings"))
         self.assertIn("rules", toc["normalized_data"])
+        self.assertTrue(toc["normalized_data"].get("compact"))
 
         toc_rules = toc["normalized_data"]["rules"]
         if toc_rules:
@@ -771,6 +877,7 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assert_tool_ok_shape(replace)
         self.assertTrue(replace["ok"], replace.get("warnings"))
         self.assertIn("rules", replace["normalized_data"])
+        self.assertTrue(replace["normalized_data"].get("compact"))
 
         replace_rules = replace["normalized_data"]["rules"]
         if replace_rules:
@@ -783,6 +890,7 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assert_tool_ok_shape(dict_rules)
         self.assertTrue(dict_rules["ok"], dict_rules.get("warnings"))
         self.assertIn("rules", dict_rules["normalized_data"])
+        self.assertTrue(dict_rules["normalized_data"].get("compact"))
 
         rules = dict_rules["normalized_data"]["rules"]
         if rules:
@@ -791,7 +899,7 @@ class NativeMcpApiTest(unittest.TestCase):
             self.assertTrue(detail["ok"], detail.get("warnings"))
             self.assertEqual(detail["normalized_data"].get("name"), rules[0]["name"])
 
-    def test_20_settings_write_tools(self) -> None:
+    def test_21_settings_write_tools(self) -> None:
         if not Config.write:
             self.skipTest("--write was not set")
 
@@ -885,7 +993,7 @@ class NativeMcpApiTest(unittest.TestCase):
         self.assertTrue(dict_delete["ok"], dict_delete.get("warnings"))
         self.assertEqual(dict_delete["normalized_data"].get("deleted"), 1)
 
-    def test_21_unknown_method_error(self) -> None:
+    def test_22_unknown_method_error(self) -> None:
         request_id = 404
         response = self.client.post(
             {"jsonrpc": "2.0", "id": request_id, "method": "unknown/method", "params": {}}

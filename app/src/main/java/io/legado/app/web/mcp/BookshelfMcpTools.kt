@@ -36,6 +36,8 @@ object BookshelfMcpTools {
     private const val MAX_CONTENT_LIMIT = 120_000
     private const val DEFAULT_WINDOW_CHAPTERS = 1
     private const val MAX_WINDOW_CHAPTERS = 20
+    private const val DEFAULT_CHAPTER_LIST_LIMIT = 100
+    private const val MAX_CHAPTER_LIST_LIMIT = 300
     private const val MAX_CACHE_STATUS_CHAPTERS = 500
     private const val DRAFT_REPLACE_RULE_GROUP = "AI草稿"
 
@@ -91,18 +93,19 @@ object BookshelfMcpTools {
             ),
             tool(
                 name = "bookshelf_book_get",
-                description = "Get one bookshelf book by book_url, or by name and author.",
+                description = "Get one bookshelf book by stable work_key, by name and author, or by current source-specific book_url.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity, usually 'book name + newline + author'. Prefer this over book_url for AI workflows."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
                     "name" to stringSchema("Book.name"),
                     "author" to stringSchema("Book.author")
                 )
             ),
             tool(
                 name = "bookshelf_book_upsert",
-                description = "Create or replace one bookshelf book from a complete Book JSON object.",
+                description = "Create or replace one bookshelf book from a complete Book JSON object. Book.bookUrl is still required as the current source instance address; existing books are detected by bookUrl or by name+author.",
                 properties = mapOf(
-                    "book" to mapOf("type" to "object", "description" to "Complete Book fields")
+                    "book" to mapOf("type" to "object", "description" to "Complete Book fields. Must include current source-specific bookUrl, name, and author.")
                 ),
                 required = listOf("book")
             ),
@@ -135,53 +138,67 @@ object BookshelfMcpTools {
             ),
             tool(
                 name = "bookshelf_chapter_list",
-                description = "List chapters for one book. This only reads local toc/cache state and never fetches remote content.",
+                description = "List chapters for one book. Default returns a paged compact list only; pass start/limit/end and include_detail=true only when full chapter fields are needed. This only reads local toc/cache state and never fetches remote content.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this when available."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
+                    "name" to stringSchema("Book.name"),
+                    "author" to stringSchema("Book.author"),
                     "start" to numberSchema("Optional inclusive chapter index"),
-                    "end" to numberSchema("Optional exclusive chapter index"),
+                    "end" to numberSchema("Optional exclusive chapter index. Output is still capped by limit/max 300 unless include_all=true"),
+                    "limit" to numberSchema("Default 100, max 300. Prefer paging for long books"),
                     "keyword" to stringSchema("Optional chapter title keyword"),
-                    "include_cache_status" to booleanSchema("Include per-chapter cached/local availability")
-                ),
-                required = listOf("book_url")
+                    "include_cache_status" to booleanSchema("Include per-chapter cached/local availability"),
+                    "include_detail" to booleanSchema("Default false. When true includes url/base_url/resource_url/start/end/variable/tag fields for the returned page"),
+                    "include_all" to booleanSchema("Default false. Avoid in AI chat; allows returning the whole requested range")
+                )
             ),
             tool(
                 name = "bookshelf_chapter_content_get",
                 description = "Read cached or local chapter content for one chapter. This never triggers network fetching.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this when available."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
+                    "name" to stringSchema("Book.name"),
+                    "author" to stringSchema("Book.author"),
                     "chapter_index" to numberSchema("BookChapter.index"),
                     "include_title" to booleanSchema("Prefix title before content, default true"),
                     "char_limit" to numberSchema("Default 20000, max 120000")
                 ),
-                required = listOf("book_url", "chapter_index")
+                required = listOf("chapter_index")
             ),
             tool(
                 name = "bookshelf_text_window_get",
                 description = "Read a cached/local text window across adjacent chapters for AI context.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this when available."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
+                    "name" to stringSchema("Book.name"),
+                    "author" to stringSchema("Book.author"),
                     "start_chapter_index" to numberSchema("Inclusive chapter index"),
                     "chapter_count" to numberSchema("Default 1, max 20"),
                     "char_limit" to numberSchema("Default 20000, max 120000")
                 ),
-                required = listOf("book_url", "start_chapter_index")
+                required = listOf("start_chapter_index")
             ),
             tool(
                 name = "bookshelf_cache_status_get",
                 description = "Return cached/local availability for a chapter range without reading full bodies.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this when available."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
+                    "name" to stringSchema("Book.name"),
+                    "author" to stringSchema("Book.author"),
                     "start" to numberSchema("Optional inclusive chapter index"),
                     "end" to numberSchema("Optional exclusive chapter index")
-                ),
-                required = listOf("book_url")
+                )
             ),
             tool(
                 name = "bookshelf_bookmark_list",
                 description = "List bookmarks globally or for one book.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Optional Book.bookUrl used to resolve name/author"),
+                    "work_key" to stringSchema("Optional stable work identity used to resolve name/author"),
+                    "book_url" to stringSchema("Optional current Book.bookUrl used to resolve name/author"),
                     "name" to stringSchema("Optional Book.name filter"),
                     "author" to stringSchema("Optional Book.author filter"),
                     "keyword" to stringSchema("Optional keyword matched against chapterName, bookText, or content"),
@@ -197,9 +214,12 @@ object BookshelfMcpTools {
             ),
             tool(
                 name = "bookshelf_bookmark_upsert",
-                description = "Create or update one bookmark. Supplying book_url fills bookName/bookAuthor when omitted.",
+                description = "Create or update one bookmark. Supplying work_key, name/author, or book_url fills bookName/bookAuthor when omitted.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Optional Book.bookUrl"),
+                    "work_key" to stringSchema("Optional stable work identity"),
+                    "book_url" to stringSchema("Optional current Book.bookUrl"),
+                    "name" to stringSchema("Optional Book.name"),
+                    "author" to stringSchema("Optional Book.author"),
                     "bookmark" to mapOf("type" to "object")
                 ),
                 required = listOf("bookmark")
@@ -258,7 +278,8 @@ object BookshelfMcpTools {
                 name = "bookshelf_book_sources_get",
                 description = "List cached enabled source candidates for a book, usually produced by search/change-source flows.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this when available."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
                     "name" to stringSchema("Book.name"),
                     "author" to stringSchema("Book.author")
                 )
@@ -267,19 +288,20 @@ object BookshelfMcpTools {
                 name = "bookshelf_change_source_preview",
                 description = "Preview cached source candidates for a book. This does not apply source changes.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this when available."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
                     "name" to stringSchema("Book.name"),
                     "author" to stringSchema("Book.author")
                 )
             ),
             tool(
                 name = "bookshelf_character_profile_get",
-                description = "Get or optionally create the character profile for one book/work.",
+                description = "Get the character profile for one book/work. If create=true is supplied this is a write operation because it creates a profile row.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this over book_url for character profiles."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
                     "name" to stringSchema("Book.name"),
                     "author" to stringSchema("Book.author"),
-                    "work_key" to stringSchema("BookCharacterProfile.workKey"),
                     "create" to booleanSchema("Create profile when book identity is available")
                 )
             ),
@@ -287,10 +309,10 @@ object BookshelfMcpTools {
                 name = "bookshelf_character_list",
                 description = "List character cards for one book/work.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this over book_url for character profiles."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
                     "name" to stringSchema("Book.name"),
-                    "author" to stringSchema("Book.author"),
-                    "work_key" to stringSchema("BookCharacterProfile.workKey")
+                    "author" to stringSchema("Book.author")
                 )
             ),
             tool(
@@ -303,10 +325,10 @@ object BookshelfMcpTools {
                 name = "bookshelf_character_upsert",
                 description = "Create or update one character card for a book/work.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this over book_url for character profiles."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
                     "name" to stringSchema("Book.name"),
                     "author" to stringSchema("Book.author"),
-                    "work_key" to stringSchema("BookCharacterProfile.workKey"),
                     "character" to mapOf("type" to "object")
                 ),
                 required = listOf("character")
@@ -328,19 +350,19 @@ object BookshelfMcpTools {
             ),
             tool(
                 name = "bookshelf_character_draft_upsert",
-                description = "Create or update an AI/imported character draft for one book/work.",
+                description = "Write an AI/imported character record in draft state for one book/work. This persists data and is not a chat preview cache.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Book.bookUrl"),
+                    "work_key" to stringSchema("Stable work identity. Prefer this over book_url for character profiles."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
                     "name" to stringSchema("Book.name"),
                     "author" to stringSchema("Book.author"),
-                    "work_key" to stringSchema("BookCharacterProfile.workKey"),
                     "character" to mapOf("type" to "object")
                 ),
                 required = listOf("character")
             ),
             tool(
                 name = "bookshelf_character_draft_apply",
-                description = "Enable existing character drafts by id. Use after reviewing draft_upsert results.",
+                description = "Enable existing character draft records by id. This is a write operation and should only be called after explicit user confirmation.",
                 properties = mapOf(
                     "ids" to arraySchema("BookCharacter.id list"),
                     "enabled" to booleanSchema("Default true")
@@ -349,7 +371,7 @@ object BookshelfMcpTools {
             ),
             tool(
                 name = "bookshelf_character_draft_rollback",
-                description = "Delete character drafts by id. Intended for MCP-created drafts after external validation.",
+                description = "Delete character draft records by id. This is a write operation intended for rollback after explicit user request.",
                 properties = mapOf("ids" to arraySchema("BookCharacter.id list")),
                 required = listOf("ids")
             ),
@@ -357,7 +379,10 @@ object BookshelfMcpTools {
                 name = "bookshelf_replace_rule_list",
                 description = "List replace rules, optionally filtered by book scope, group, enabled state, or text scope.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Optional Book.bookUrl used to match scope/excludeScope"),
+                    "work_key" to stringSchema("Optional stable work identity used to resolve a book scope"),
+                    "book_url" to stringSchema("Optional current Book.bookUrl used to resolve a book scope"),
+                    "name" to stringSchema("Optional Book.name used with author to resolve a book scope"),
+                    "author" to stringSchema("Optional Book.author used with name to resolve a book scope"),
                     "group" to stringSchema("Optional group keyword"),
                     "scope" to stringSchema("Optional scope keyword"),
                     "enabled" to booleanSchema("Optional enabled filter"),
@@ -375,7 +400,10 @@ object BookshelfMcpTools {
                 name = "bookshelf_replace_rule_upsert",
                 description = "Create or update replacement rules, optionally scoped to one book.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Optional Book.bookUrl"),
+                    "work_key" to stringSchema("Optional stable work identity used to resolve the book name scope"),
+                    "book_url" to stringSchema("Optional current Book.bookUrl used to resolve the book name scope"),
+                    "name" to stringSchema("Optional Book.name used with author to resolve the book name scope"),
+                    "author" to stringSchema("Optional Book.author used with name to resolve the book name scope"),
                     "rule" to mapOf("type" to "object"),
                     "rules" to arraySchema("ReplaceRule objects")
                 )
@@ -397,16 +425,19 @@ object BookshelfMcpTools {
             ),
             tool(
                 name = "bookshelf_replace_rule_draft_upsert",
-                description = "Create or update replacement rule drafts. When book_url is supplied and scope is omitted, the book name is used as scope.",
+                description = "Write replacement rule records in draft group. This persists data and is not a chat preview cache. When book_url is supplied and scope is omitted, the book name is used as scope.",
                 properties = mapOf(
-                    "book_url" to stringSchema("Optional Book.bookUrl"),
+                    "work_key" to stringSchema("Optional stable work identity used to resolve the book name scope"),
+                    "book_url" to stringSchema("Optional current Book.bookUrl used to resolve the book name scope"),
+                    "name" to stringSchema("Optional Book.name used with author to resolve the book name scope"),
+                    "author" to stringSchema("Optional Book.author used with name to resolve the book name scope"),
                     "rule" to mapOf("type" to "object"),
                     "rules" to arraySchema("ReplaceRule objects")
                 )
             ),
             tool(
                 name = "bookshelf_replace_rule_draft_apply",
-                description = "Enable or disable existing replacement rule drafts by id.",
+                description = "Enable or disable existing replacement rule draft records by id. This is a write operation.",
                 properties = mapOf(
                     "ids" to arraySchema("ReplaceRule.id list"),
                     "enabled" to booleanSchema("Default true")
@@ -415,7 +446,7 @@ object BookshelfMcpTools {
             ),
             tool(
                 name = "bookshelf_replace_rule_rollback",
-                description = "Delete replacement rule drafts by id. Intended for MCP-created drafts after external validation.",
+                description = "Delete replacement rule draft records by id. This is a write operation intended for rollback after explicit user request.",
                 properties = mapOf("ids" to arraySchema("ReplaceRule.id list")),
                 required = listOf("ids")
             )
@@ -450,7 +481,7 @@ object BookshelfMcpTools {
                 "notes" to listOf(
                     "Chapter content tools only read cached or local book content.",
                     "Source change preview does not apply a source migration.",
-                    "Draft write tools persist data in the existing Legado tables and should be reviewed by callers."
+                    "Draft tools are still write tools: they persist rows in the existing Legado tables and are not chat preview storage."
                 ),
                 "tools" to tools().mapNotNull { it["name"] }
             )
@@ -667,7 +698,7 @@ object BookshelfMcpTools {
 
     private fun getBook(arguments: JsonObject): Map<String, Any?> {
         val book = resolveBook(arguments)
-            ?: return notFound("native://bookshelf/book", "未找到书籍，请检查 book_url 或 name/author")
+            ?: return notFound("native://bookshelf/book", "未找到书籍，请检查 work_key、book_url 或 name/author")
         return toolResult(
             ok = true,
             upstreamEndpoint = "native://bookshelf/book",
@@ -684,13 +715,15 @@ object BookshelfMcpTools {
         if (book.name.isBlank()) throw IllegalArgumentException("book.name is required")
         if (book.author.isBlank()) throw IllegalArgumentException("book.author is required")
         val existing = appDb.bookDao.getBook(book.bookUrl)
+            ?: appDb.bookDao.getBook(book.name, book.author)
         appDb.bookDao.insert(book)
         return toolResult(
             ok = true,
             upstreamEndpoint = "native://bookshelf/bookUpsert",
             normalizedData = mapOf(
                 "book" to appDb.bookDao.getBook(book.bookUrl)?.toMcpDetail(),
-                "created" to (existing == null)
+                "created" to (existing == null),
+                "replaced_book_url" to existing?.bookUrl?.takeIf { it != book.bookUrl }
             )
         )
     }
@@ -804,16 +837,26 @@ object BookshelfMcpTools {
 
     private fun listChapters(arguments: JsonObject): Map<String, Any?> {
         val book = resolveBook(arguments)
-            ?: return notFound("native://bookshelf/chapters", "未找到书籍，请检查 book_url")
+            ?: return notFound("native://bookshelf/chapters", "未找到书籍，请检查 work_key、book_url 或 name/author")
         val all = appDb.bookChapterDao.getChapterList(book.bookUrl)
         val start = (arguments.get("start").asIntOrNull() ?: 0).coerceAtLeast(0)
-        val end = (arguments.get("end").asIntOrNull() ?: all.size).coerceIn(start, all.size)
+        val includeAll = arguments.get("include_all").asBooleanOrNull() ?: false
+        val limit = if (includeAll) {
+            Int.MAX_VALUE
+        } else {
+            (arguments.get("limit").asIntOrNull() ?: DEFAULT_CHAPTER_LIST_LIMIT)
+                .coerceIn(1, MAX_CHAPTER_LIST_LIMIT)
+        }
+        val requestedEnd = arguments.get("end").asIntOrNull()
+            ?: min(all.size, start + limit)
+        val end = min(requestedEnd.coerceIn(start, all.size), start + limit)
         val keyword = arguments.get("keyword").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         val includeCacheStatus = arguments.get("include_cache_status").asBooleanOrNull() ?: false
+        val includeDetail = arguments.get("include_detail").asBooleanOrNull() ?: false
         val filtered = all.asSequence()
             .filter { it.index in start until end }
             .filter { keyword == null || it.title.contains(keyword, ignoreCase = true) }
-            .map { it.toMcpMap(book, includeCacheStatus) }
+            .map { it.toMcpMap(book, includeCacheStatus, includeDetail) }
             .toList()
         return toolResult(
             ok = true,
@@ -823,15 +866,24 @@ object BookshelfMcpTools {
                 "chapters" to filtered,
                 "start" to start,
                 "end" to end,
+                "limit" to limit.takeIf { it != Int.MAX_VALUE },
                 "total" to all.size,
-                "filtered_total" to filtered.size
-            )
+                "filtered_total" to filtered.size,
+                "has_more" to (end < all.size),
+                "compact" to !includeDetail,
+                "truncated_by_mcp" to (!includeAll && requestedEnd > end)
+            ),
+            warnings = if (!includeAll && (requestedEnd > end || end < all.size)) {
+                listOf("章节列表默认分页并使用精简字段；需要更多章节请用 start/limit 继续分页，确需完整字段再传 include_detail=true")
+            } else {
+                emptyList()
+            }
         )
     }
 
     private fun getChapterContent(arguments: JsonObject): Map<String, Any?> {
         val book = resolveBook(arguments)
-            ?: return notFound("native://bookshelf/chapterContent", "未找到书籍，请检查 book_url")
+            ?: return notFound("native://bookshelf/chapterContent", "未找到书籍，请检查 work_key、book_url 或 name/author")
         val chapterIndex = arguments.get("chapter_index").asIntOrNull()
             ?: throw IllegalArgumentException("chapter_index is required")
         val includeTitle = arguments.get("include_title").asBooleanOrNull() ?: true
@@ -852,7 +904,7 @@ object BookshelfMcpTools {
             upstreamEndpoint = "native://bookshelf/chapterContent",
             normalizedData = mapOf(
                 "book" to book.toMcpSummary(),
-                "chapter" to chapter.toMcpMap(book, includeCacheStatus = true),
+                "chapter" to chapter.toMcpMap(book, includeCacheStatus = true, includeDetail = true),
                 "has_content" to hasContent,
                 "content" to limited.text,
                 "content_chars" to (fullText?.length ?: 0),
@@ -868,7 +920,7 @@ object BookshelfMcpTools {
 
     private fun getTextWindow(arguments: JsonObject): Map<String, Any?> {
         val book = resolveBook(arguments)
-            ?: return notFound("native://bookshelf/textWindow", "未找到书籍，请检查 book_url")
+            ?: return notFound("native://bookshelf/textWindow", "未找到书籍，请检查 work_key、book_url 或 name/author")
         val start = arguments.get("start_chapter_index").asIntOrNull()
             ?: throw IllegalArgumentException("start_chapter_index is required")
         val chapterCount = (arguments.get("chapter_count").asIntOrNull() ?: DEFAULT_WINDOW_CHAPTERS)
@@ -930,7 +982,7 @@ object BookshelfMcpTools {
 
     private fun getCacheStatus(arguments: JsonObject): Map<String, Any?> {
         val book = resolveBook(arguments)
-            ?: return notFound("native://bookshelf/cacheStatus", "未找到书籍，请检查 book_url")
+            ?: return notFound("native://bookshelf/cacheStatus", "未找到书籍，请检查 work_key、book_url 或 name/author")
         val all = appDb.bookChapterDao.getChapterList(book.bookUrl)
         val start = (arguments.get("start").asIntOrNull() ?: 0).coerceAtLeast(0)
         val requestedEnd = arguments.get("end").asIntOrNull() ?: min(all.size, start + MAX_CACHE_STATUS_CHAPTERS)
@@ -1168,7 +1220,7 @@ object BookshelfMcpTools {
 
     private fun getBookSources(arguments: JsonObject): Map<String, Any?> {
         val book = resolveBook(arguments)
-            ?: return notFound("native://bookshelf/bookSources", "未找到书籍，请检查 book_url 或 name/author")
+            ?: return notFound("native://bookshelf/bookSources", "未找到书籍，请检查 work_key、book_url 或 name/author")
         val sources = appDb.searchBookDao.getEnabledByNameAuthor(book.name, book.author)
             .map { it.toMcpSourceCandidate(currentBook = book) }
         return toolResult(
@@ -1215,7 +1267,7 @@ object BookshelfMcpTools {
                 "work_key" to identity.workKey
             ),
             warnings = if (profile == null) {
-                listOf("未找到角色档案；传入 create=true 且提供 book_url 或 name/author 可创建")
+                listOf("未找到角色档案；传入 create=true 且提供 work_key、book_url 或 name/author 可创建")
             } else {
                 emptyList()
             }
@@ -1294,15 +1346,17 @@ object BookshelfMcpTools {
             roleTag = characterJson.get("role_tag").asStringOrNull()
                 ?: characterJson.get("roleTag").asStringOrNull()
                         ?: roleTag
-            this.identity = characterJson.get("identity").asStringOrNull() ?: this.identity
             aliasesJson = characterJson.get("aliases").asStringListOrNull()?.let { GSON.toJson(it) }
                 ?: characterJson.get("aliases_json").asStringOrNull()
                         ?: characterJson.get("aliasesJson").asStringOrNull()
                         ?: aliasesJson
-            intro = characterJson.get("intro").asStringOrNull() ?: intro
-            shortIntro = characterJson.get("short_intro").asStringOrNull()
+            intro = characterJson.get("intro").asStringOrNull()
+                ?: characterJson.get("short_intro").asStringOrNull()
                 ?: characterJson.get("shortIntro").asStringOrNull()
-                        ?: shortIntro
+                ?: characterJson.get("identity").asStringOrNull()
+                        ?: intro
+            this.identity = null
+            shortIntro = null
             avatarUri = characterJson.get("avatar_uri").asStringOrNull()
                 ?: characterJson.get("avatarUri").asStringOrNull()
                         ?: avatarUri
@@ -1391,10 +1445,11 @@ object BookshelfMcpTools {
     }
 
     private fun listReplaceRules(arguments: JsonObject): Map<String, Any?> {
-        val book = arguments.get("book_url").asStringOrNull()?.let { appDb.bookDao.getBook(it) }
+        val book = resolveBook(arguments)
         val group = arguments.get("group").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         val scope = arguments.get("scope").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         val enabled = arguments.get("enabled").asBooleanOrNull()
+        val includeDetail = arguments.get("include_detail").asBooleanOrNull() ?: false
         val offset = (arguments.get("offset").asIntOrNull() ?: 0).coerceAtLeast(0)
         val limit = (arguments.get("limit").asIntOrNull() ?: DEFAULT_LIST_LIMIT)
             .coerceIn(1, MAX_LIST_LIMIT)
@@ -1404,7 +1459,9 @@ object BookshelfMcpTools {
             .filter { scope == null || it.scope?.contains(scope, ignoreCase = true) == true }
             .filter { book == null || it.matchesBookScope(book) }
             .toList()
-        val page = filtered.drop(offset).take(limit).map { it.toMcpMap() }
+        val page = filtered.drop(offset).take(limit).map { rule ->
+            if (includeDetail) rule.toMcpMap() else rule.toMcpSummary()
+        }
         return toolResult(
             ok = true,
             upstreamEndpoint = "native://bookshelf/replaceRules",
@@ -1413,7 +1470,8 @@ object BookshelfMcpTools {
                 "offset" to offset,
                 "limit" to limit,
                 "total" to filtered.size,
-                "has_more" to (offset + page.size < filtered.size)
+                "has_more" to (offset + page.size < filtered.size),
+                "compact" to !includeDetail
             )
         )
     }
@@ -1439,7 +1497,7 @@ object BookshelfMcpTools {
     }
 
     private fun upsertReplaceRules(arguments: JsonObject, draft: Boolean): Map<String, Any?> {
-        val book = arguments.get("book_url").asStringOrNull()?.let { appDb.bookDao.getBook(it) }
+        val book = resolveBook(arguments)
         val ruleJsons = buildList {
             arguments.get("rule")?.takeIf { it.isJsonObject }?.asJsonObject?.let { add(it) }
             arguments.get("rules")?.takeIf { it.isJsonArray }?.asJsonArray?.forEach {
@@ -1580,13 +1638,21 @@ object BookshelfMcpTools {
     }
 
     private fun resolveBook(arguments: JsonObject): Book? {
-        arguments.get("book_url").asStringOrNull()?.takeIf { it.isNotBlank() }?.let {
-            return appDb.bookDao.getBook(it)
+        arguments.identityString("work_key", "workKey")?.let { workKey ->
+            return appDb.bookDao.all.firstOrNull { book -> book.matchesWorkKey(workKey) }
         }
-        val name = arguments.get("name").asStringOrNull()?.takeIf { it.isNotBlank() }
-        val author = arguments.get("author").asStringOrNull()?.takeIf { it.isNotBlank() }
+        arguments.identityString("book_url", "bookUrl")?.let { bookUrl ->
+            return appDb.bookDao.getBook(bookUrl)
+                ?: appDb.bookDao.all.firstOrNull { book -> book.bookUrl.sameIdentity(bookUrl) }
+        }
+        val name = arguments.identityString("name")
+        val author = arguments.identityString("author")
         if (name != null && author != null) {
             return appDb.bookDao.getBook(name, author)
+                ?: appDb.bookDao.all.firstOrNull { book ->
+                    book.matchesWorkKey(BookCharacterProfile.workKey(name, author)) ||
+                            (book.name.sameIdentity(name) && book.author.sameIdentity(author))
+                }
         }
         return null
     }
@@ -1599,18 +1665,41 @@ object BookshelfMcpTools {
                 book = book
             )
         }
-        arguments.get("work_key").asStringOrNull()?.takeIf { it.isNotBlank() }?.let {
+        arguments.identityString("work_key", "workKey")?.let {
             return WorkIdentity(workKey = it, book = null)
         }
-        val name = arguments.get("name").asStringOrNull()?.takeIf { it.isNotBlank() }
-        val author = arguments.get("author").asStringOrNull()?.takeIf { it.isNotBlank() }
+        val name = arguments.identityString("name")
+        val author = arguments.identityString("author")
         if (name != null && author != null) {
             return WorkIdentity(
                 workKey = BookCharacterProfile.workKey(name, author),
                 book = null
             )
         }
-        throw IllegalArgumentException("book_url, work_key, or name/author is required")
+        throw IllegalArgumentException("work_key, book_url, or name/author is required")
+    }
+
+    private fun JsonObject.identityString(vararg names: String): String? {
+        return names.asSequence()
+            .mapNotNull { get(it).asStringOrNull()?.normalizeIdentityInput() }
+            .firstOrNull { it.isNotBlank() }
+    }
+
+    private fun Book.matchesWorkKey(workKey: String): Boolean {
+        return BookCharacterProfile.workKey(name, author).sameIdentity(workKey)
+    }
+
+    private fun String.sameIdentity(other: String): Boolean {
+        return normalizeIdentityInput() == other.normalizeIdentityInput()
+    }
+
+    private fun String.normalizeIdentityInput(): String {
+        return trim()
+            .replace("\\r\\n", "\n")
+            .replace("\\n", "\n")
+            .replace("\\r", "\n")
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
     }
 
     private data class WorkIdentity(
@@ -1669,13 +1758,16 @@ object BookshelfMcpTools {
         )
     }
 
-    private fun Book.toMcpDetail(): Map<String, Any?> {
+    private fun Book.toMcpDetail(
+        includeIntro: Boolean = true,
+        includeReadConfig: Boolean = false
+    ): Map<String, Any?> {
         return toMcpSummary() + mapOf(
             "toc_url" to tocUrl,
             "cover_url" to coverUrl,
             "custom_cover_url" to customCoverUrl,
-            "intro" to intro,
-            "custom_intro" to customIntro,
+            "intro" to intro.takeIf { includeIntro },
+            "custom_intro" to customIntro.takeIf { includeIntro },
             "custom_tag" to customTag,
             "latest_chapter_time" to latestChapterTime,
             "last_check_time" to lastCheckTime,
@@ -1683,7 +1775,7 @@ object BookshelfMcpTools {
             "order" to order,
             "origin_order" to originOrder,
             "sync_time" to syncTime,
-            "read_config" to readConfig
+            "read_config" to readConfig.takeIf { includeReadConfig }
         )
     }
 
@@ -1700,22 +1792,28 @@ object BookshelfMcpTools {
         }
     }
 
-    private fun BookChapter.toMcpMap(book: Book, includeCacheStatus: Boolean): Map<String, Any?> {
+    private fun BookChapter.toMcpMap(
+        book: Book,
+        includeCacheStatus: Boolean,
+        includeDetail: Boolean
+    ): Map<String, Any?> {
         val map = linkedMapOf<String, Any?>(
             "index" to index,
             "title" to title,
-            "url" to url,
-            "book_url" to bookUrl,
-            "base_url" to baseUrl,
             "is_volume" to isVolume,
             "is_vip" to isVip,
-            "tag" to tag,
-            "word_count" to wordCount,
-            "resource_url" to resourceUrl,
-            "start" to start,
-            "end" to end,
-            "variable" to variable
+            "word_count" to wordCount
         )
+        if (includeDetail) {
+            map["url"] = url
+            map["book_url"] = bookUrl
+            map["base_url"] = baseUrl
+            map["tag"] = tag
+            map["resource_url"] = resourceUrl
+            map["start"] = start
+            map["end"] = end
+            map["variable"] = variable
+        }
         if (includeCacheStatus) {
             map["has_content"] = BookHelp.hasContent(book, this)
         }
@@ -1814,11 +1912,9 @@ object BookshelfMcpTools {
             "name" to name,
             "gender" to gender,
             "role_tag" to roleTag,
-            "identity" to identity,
             "aliases" to aliasesJson.parseStringList(),
             "aliases_json" to aliasesJson,
-            "intro" to intro,
-            "short_intro" to shortIntro,
+            "intro" to displayIntro(),
             "avatar_uri" to avatarUri,
             "portrait_uri" to portraitUri,
             "image_prompt" to imagePrompt,
@@ -1847,6 +1943,24 @@ object BookshelfMcpTools {
             "timeout_millisecond" to timeoutMillisecond,
             "order" to order,
             "is_valid" to isValid()
+        )
+    }
+
+    private fun ReplaceRule.toMcpSummary(): Map<String, Any?> {
+        return mapOf(
+            "id" to id,
+            "name" to name,
+            "group" to group,
+            "scope" to scope,
+            "scope_title" to scopeTitle,
+            "scope_content" to scopeContent,
+            "exclude_scope" to excludeScope,
+            "enabled" to isEnabled,
+            "is_regex" to isRegex,
+            "order" to order,
+            "is_valid" to isValid(),
+            "pattern_preview" to pattern.limitText(120).text,
+            "replacement_preview" to replacement.limitText(120).text
         )
     }
 

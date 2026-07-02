@@ -22,8 +22,8 @@ object SettingsMcpTools {
             ),
             tool(
                 name = "settings_txt_toc_rule_list",
-                description = "List TXT local-book table-of-contents rules.",
-                properties = listProperties()
+                description = "List TXT local-book table-of-contents rules. Default returns compact summaries; pass include_detail=true for full rule fields on the returned page.",
+                properties = listProperties(includeDetail = true)
             ),
             tool(
                 name = "settings_txt_toc_rule_get",
@@ -54,8 +54,8 @@ object SettingsMcpTools {
             ),
             tool(
                 name = "settings_replace_rule_list",
-                description = "List global replacement/purify rules.",
-                properties = listProperties() + mapOf(
+                description = "List global replacement/purify rules. Default returns compact summaries; pass include_detail=true for full pattern/replacement fields on the returned page.",
+                properties = listProperties(includeDetail = true) + mapOf(
                     "group" to stringSchema("Optional group keyword"),
                     "scope" to stringSchema("Optional scope keyword")
                 )
@@ -89,8 +89,8 @@ object SettingsMcpTools {
             ),
             tool(
                 name = "settings_dict_rule_list",
-                description = "List dictionary lookup rules.",
-                properties = listProperties()
+                description = "List dictionary lookup rules. Default returns compact summaries; pass include_detail=true for full URL/show rules on the returned page.",
+                properties = listProperties(includeDetail = true)
             ),
             tool(
                 name = "settings_dict_rule_get",
@@ -215,6 +215,7 @@ object SettingsMcpTools {
     private fun listTxtTocRules(arguments: JsonObject): Map<String, Any?> {
         val enabled = arguments.get("enabled").asBooleanOrNull()
         val keyword = arguments.get("keyword").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        val includeDetail = arguments.get("include_detail").asBooleanOrNull() ?: false
         val (offset, limit) = page(arguments)
         val filtered = appDb.txtTocRuleDao.all
             .asSequence()
@@ -224,10 +225,13 @@ object SettingsMcpTools {
         return pageResult(
             upstreamEndpoint = "native://settings/txtTocRules",
             itemsKey = "rules",
-            items = filtered.drop(offset).take(limit).map { it.toMcpMap() },
+            items = filtered.drop(offset).take(limit).map { rule ->
+                if (includeDetail) rule.toMcpMap() else rule.toMcpSummary()
+            },
             total = filtered.size,
             offset = offset,
-            limit = limit
+            limit = limit,
+            compact = !includeDetail
         )
     }
 
@@ -301,6 +305,7 @@ object SettingsMcpTools {
         val keyword = arguments.get("keyword").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         val group = arguments.get("group").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         val scope = arguments.get("scope").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        val includeDetail = arguments.get("include_detail").asBooleanOrNull() ?: false
         val (offset, limit) = page(arguments)
         val filtered = appDb.replaceRuleDao.all
             .asSequence()
@@ -316,10 +321,13 @@ object SettingsMcpTools {
         return pageResult(
             upstreamEndpoint = "native://settings/replaceRules",
             itemsKey = "rules",
-            items = filtered.drop(offset).take(limit).map { it.toMcpMap() },
+            items = filtered.drop(offset).take(limit).map { rule ->
+                if (includeDetail) rule.toMcpMap() else rule.toMcpSummary()
+            },
             total = filtered.size,
             offset = offset,
-            limit = limit
+            limit = limit,
+            compact = !includeDetail
         )
     }
 
@@ -405,6 +413,7 @@ object SettingsMcpTools {
     private fun listDictRules(arguments: JsonObject): Map<String, Any?> {
         val enabled = arguments.get("enabled").asBooleanOrNull()
         val keyword = arguments.get("keyword").asStringOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        val includeDetail = arguments.get("include_detail").asBooleanOrNull() ?: false
         val (offset, limit) = page(arguments)
         val filtered = appDb.dictRuleDao.all
             .asSequence()
@@ -414,10 +423,13 @@ object SettingsMcpTools {
         return pageResult(
             upstreamEndpoint = "native://settings/dictRules",
             itemsKey = "rules",
-            items = filtered.drop(offset).take(limit).map { it.toMcpMap() },
+            items = filtered.drop(offset).take(limit).map { rule ->
+                if (includeDetail) rule.toMcpMap() else rule.toMcpSummary()
+            },
             total = filtered.size,
             offset = offset,
-            limit = limit
+            limit = limit,
+            compact = !includeDetail
         )
     }
 
@@ -520,18 +532,21 @@ object SettingsMcpTools {
         items: List<Map<String, Any?>>,
         total: Int,
         offset: Int,
-        limit: Int
+        limit: Int,
+        compact: Boolean? = null
     ): Map<String, Any?> {
+        val data = linkedMapOf<String, Any?>(
+            itemsKey to items,
+            "offset" to offset,
+            "limit" to limit,
+            "total" to total,
+            "has_more" to (offset + items.size < total)
+        )
+        compact?.let { data["compact"] = it }
         return toolResult(
             true,
             upstreamEndpoint,
-            mapOf(
-                itemsKey to items,
-                "offset" to offset,
-                "limit" to limit,
-                "total" to total,
-                "has_more" to (offset + items.size < total)
-            )
+            data
         )
     }
 
@@ -562,6 +577,19 @@ object SettingsMcpTools {
         )
     }
 
+    private fun TxtTocRule.toMcpSummary(): Map<String, Any?> {
+        return mapOf(
+            "id" to id,
+            "name" to name,
+            "rule_preview" to rule.takePreview(),
+            "replacement_preview" to replacement.takePreview(),
+            "example_preview" to example.takePreview(),
+            "serial_number" to serialNumber,
+            "enabled" to enable,
+            "is_default" to (id < 0)
+        )
+    }
+
     private fun ReplaceRule.toMcpMap(): Map<String, Any?> {
         return mapOf(
             "id" to id,
@@ -581,11 +609,40 @@ object SettingsMcpTools {
         )
     }
 
+    private fun ReplaceRule.toMcpSummary(): Map<String, Any?> {
+        return mapOf(
+            "id" to id,
+            "name" to name,
+            "group" to group,
+            "pattern_preview" to pattern.takePreview(),
+            "replacement_preview" to replacement.takePreview(),
+            "scope" to scope,
+            "scope_title" to scopeTitle,
+            "scope_content" to scopeContent,
+            "exclude_scope" to excludeScope,
+            "enabled" to isEnabled,
+            "is_regex" to isRegex,
+            "timeout_millisecond" to timeoutMillisecond,
+            "order" to order,
+            "is_valid" to isValid()
+        )
+    }
+
     private fun DictRule.toMcpMap(): Map<String, Any?> {
         return mapOf(
             "name" to name,
             "url_rule" to urlRule,
             "show_rule" to showRule,
+            "enabled" to enabled,
+            "sort_number" to sortNumber
+        )
+    }
+
+    private fun DictRule.toMcpSummary(): Map<String, Any?> {
+        return mapOf(
+            "name" to name,
+            "url_rule_preview" to urlRule.takePreview(),
+            "show_rule_preview" to showRule.takePreview(),
             "enabled" to enabled,
             "sort_number" to sortNumber
         )
@@ -640,13 +697,17 @@ object SettingsMcpTools {
         )
     }
 
-    private fun listProperties(): Map<String, Any> {
-        return mapOf(
+    private fun listProperties(includeDetail: Boolean = false): Map<String, Any> {
+        val properties = linkedMapOf<String, Any>(
             "keyword" to stringSchema("Optional keyword filter"),
             "enabled" to booleanSchema("Optional enabled filter"),
             "offset" to numberSchema("Default 0"),
             "limit" to numberSchema("Default 50, max 200")
         )
+        if (includeDetail) {
+            properties["include_detail"] = booleanSchema("Default false. Include full rule fields for the returned page")
+        }
+        return properties
     }
 
     private fun stringSchema(description: String): Map<String, String> {
@@ -663,6 +724,11 @@ object SettingsMcpTools {
 
     private fun arraySchema(description: String): Map<String, Any> {
         return mapOf("type" to "array", "description" to description)
+    }
+
+    private fun String?.takePreview(maxChars: Int = 120): String? {
+        val value = this ?: return null
+        return if (value.length <= maxChars) value else value.take(maxChars) + "\n[truncated by MCP at $maxChars chars]"
     }
 
     private fun JsonElement?.asStringOrNull(): String? {
