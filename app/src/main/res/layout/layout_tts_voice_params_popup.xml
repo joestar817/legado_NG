@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/ng_bg_tts_param_popup"
+    android:orientation="vertical"
+    android:paddingStart="18dp"
+    android:paddingTop="14dp"
+    android:paddingEnd="18dp"
+    android:paddingBottom="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            style="@style/Ng.Label"
+            android:layout_width="40dp"
+            android:text="@string/tts_speed" />
+
+        <androidx.appcompat.widget.AppCompatSeekBar
+            android:id="@+id/seek_speed"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:max="100"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:progressDrawable="@drawable/ng_tts_param_seek_progress"
+            android:splitTrack="false"
+            android:thumb="@drawable/ng_tts_param_seek_thumb"
+            android:thumbTint="@color/white" />
+
+        <TextView
+            android:id="@+id/text_speed_value"
+            style="@style/Ng.SettingsSummary"
+            android:layout_width="36dp"
+            android:layout_marginStart="0dp"
+            android:gravity="end" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            style="@style/Ng.Label"
+            android:layout_width="40dp"
+            android:text="@string/tts_volume" />
+
+        <androidx.appcompat.widget.AppCompatSeekBar
+            android:id="@+id/seek_volume"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:max="100"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:progressDrawable="@drawable/ng_tts_param_seek_progress"
+            android:splitTrack="false"
+            android:thumb="@drawable/ng_tts_param_seek_thumb"
+            android:thumbTint="@color/white" />
+
+        <TextView
+            android:id="@+id/text_volume_value"
+            style="@style/Ng.SettingsSummary"
+            android:layout_width="36dp"
+            android:layout_marginStart="0dp"
+            android:gravity="end" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            style="@style/Ng.Label"
+            android:layout_width="40dp"
+            android:text="@string/tts_pitch" />
+
+        <androidx.appcompat.widget.AppCompatSeekBar
+            android:id="@+id/seek_pitch"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:max="100"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:progressDrawable="@drawable/ng_tts_param_seek_progress"
+            android:splitTrack="false"
+            android:thumb="@drawable/ng_tts_param_seek_thumb"
+            android:thumbTint="@color/white" />
+
+        <TextView
+            android:id="@+id/text_pitch_value"
+            style="@style/Ng.SettingsSummary"
+            android:layout_width="36dp"
+            android:layout_marginStart="0dp"
+            android:gravity="end" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layout_language_filter_section"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="top"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            style="@style/Ng.Label"
+            android:layout_width="40dp"
+            android:layout_height="30dp"
+            android:gravity="center_vertical"
+            android:text="@string/language" />
+
+        <com.google.android.flexbox.FlexboxLayout
+            android:id="@+id/layout_voice_language_filters"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:minHeight="30dp"
+            android:layout_weight="1"
+            app:alignItems="center"
+            app:flexDirection="row"
+            app:flexWrap="wrap" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layout_gender_filter_section"
+        android:layout_width="match_parent"
+        android:layout_height="30dp"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            style="@style/Ng.Label"
+            android:layout_width="40dp"
+            android:text="@string/character_gender" />
+
+        <HorizontalScrollView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:fadingEdgeLength="12dp"
+            android:overScrollMode="never"
+            android:requiresFadingEdge="horizontal"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/layout_voice_gender_filters"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+
+        </HorizontalScrollView>
+
+    </LinearLayout>
+
+</LinearLayout>

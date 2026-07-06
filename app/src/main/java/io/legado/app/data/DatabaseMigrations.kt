@@ -21,7 +21,7 @@ object DatabaseMigrations {
             migration_35_36, migration_36_37, migration_37_38, migration_38_39,
             migration_39_40, migration_40_41, migration_41_42, migration_42_43,
             migration_89_90, migration_90_91, migration_91_92, migration_92_93, migration_93_94,
-            migration_94_95,
+            migration_94_95, migration_95_96, migration_96_97, migration_97_98,
         )
     }
 
@@ -479,6 +479,51 @@ object DatabaseMigrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentMemories_scopeType_scopeKey` ON `agentMemories` (`scopeType`, `scopeKey`)")
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentMemories_domain_memoryType_status` ON `agentMemories` (`domain`, `memoryType`, `status`)")
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentMemories_updatedAt` ON `agentMemories` (`updatedAt`)")
+        }
+    }
+
+    private val migration_95_96 = object : Migration(95, 96) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `ttsVoices` (
+                    `engineId` TEXT NOT NULL,
+                    `id` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `language` TEXT,
+                    `gender` TEXT,
+                    `style` TEXT,
+                    `tagsJson` TEXT NOT NULL DEFAULT '[]',
+                    `sampleText` TEXT,
+                    `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`engineId`, `id`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_ttsVoices_engineId` ON `ttsVoices` (`engineId`)")
+        }
+    }
+
+    private val migration_96_97 = object : Migration(96, 97) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `ttsEngineRuntime` (
+                    `engineId` TEXT NOT NULL,
+                    `speed` INTEGER NOT NULL DEFAULT 50,
+                    `volume` INTEGER NOT NULL DEFAULT 50,
+                    `pitch` INTEGER NOT NULL DEFAULT 50,
+                    `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`engineId`)
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
+    private val migration_97_98 = object : Migration(97, 98) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `ttsVoices` ADD COLUMN `extraJson` TEXT NOT NULL DEFAULT '{}'")
         }
     }
 

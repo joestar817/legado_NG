@@ -11,6 +11,7 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.MediaHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
@@ -50,7 +51,11 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
     @Synchronized
     private fun initTts() {
         ttsInitFinish = false
-        val engine = GSON.fromJsonObject<SelectItem<String>>(ReadAloud.ttsEngine).getOrNull()?.value
+        val engine = if (ReadAloud.ttsEngineV2.type == TtsEngineType.SYSTEM) {
+            ReadAloud.ttsEngineV2.enginePackage
+        } else {
+            GSON.fromJsonObject<SelectItem<String>>(ReadAloud.ttsEngine).getOrNull()?.value
+        }
         LogUtils.d(TAG, "initTts engine:$engine")
         textToSpeech = if (engine.isNullOrBlank()) {
             TextToSpeech(this, this)
@@ -159,9 +164,21 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
                 initTts()
             }
         } else {
-            val speechRate = (AppConfig.ttsSpeechRate + 5) / 10f
-            textToSpeech?.setSpeechRate(speechRate)
+            textToSpeech?.setSpeechRate(systemSpeechRate())
+            textToSpeech?.setPitch(systemPitch())
         }
+    }
+
+    private fun systemSpeechRate(): Float {
+        val engineV2 = ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
+        val engineBaseRate = (engineV2?.effectiveSpeed() ?: 50) / 50f
+        val playerRate = (AppConfig.ttsSpeechRate + 5) / 10f
+        return (engineBaseRate * playerRate).coerceIn(0.1f, 5f)
+    }
+
+    private fun systemPitch(): Float {
+        val engineV2 = ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
+        return ((engineV2?.effectivePitch() ?: 50) / 50f).coerceIn(0.1f, 2f)
     }
 
     /**

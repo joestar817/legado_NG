@@ -34,6 +34,8 @@ import io.legado.app.data.dao.SearchBookDao
 import io.legado.app.data.dao.SearchKeywordDao
 import io.legado.app.data.dao.ServerDao
 import io.legado.app.data.dao.TxtTocRuleDao
+import io.legado.app.data.dao.TtsVoiceDao
+import io.legado.app.data.dao.TtsEngineRuntimeDao
 import io.legado.app.data.entities.AgentMemory
 import io.legado.app.data.entities.AiChatConversation
 import io.legado.app.data.entities.AiChatMessageNode
@@ -62,6 +64,8 @@ import io.legado.app.data.entities.SearchBook
 import io.legado.app.data.entities.SearchKeyword
 import io.legado.app.data.entities.Server
 import io.legado.app.data.entities.TxtTocRule
+import io.legado.app.data.entities.TtsVoiceEntity
+import io.legado.app.data.entities.TtsEngineRuntimeEntity
 import io.legado.app.help.DefaultData
 import org.intellij.lang.annotations.Language
 import splitties.init.appCtx
@@ -77,7 +81,7 @@ val appDb by lazy {
 }
 
 @Database(
-    version = 95,
+    version = 98,
     exportSchema = true,
     entities = [Book::class, BookGroup::class, BookSource::class, BookChapter::class,
         ReplaceRule::class, SearchBook::class, SearchKeyword::class, Cookie::class,
@@ -86,7 +90,7 @@ val appDb by lazy {
         RuleSub::class, DictRule::class, KeyboardAssist::class, Server::class,
         BookCharacterProfile::class, BookCharacter::class,
         AiChatConversation::class, AiChatMessageNode::class, AiSkill::class,
-        AgentMemory::class],
+        AgentMemory::class, TtsVoiceEntity::class, TtsEngineRuntimeEntity::class],
     views = [BookSourcePart::class],
     autoMigrations = [
         AutoMigration(from = 43, to = 44),
@@ -164,6 +168,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract val aiChatDao: AiChatDao
     abstract val aiSkillDao: AiSkillDao
     abstract val agentMemoryDao: AgentMemoryDao
+    abstract val ttsVoiceDao: TtsVoiceDao
+    abstract val ttsEngineRuntimeDao: TtsEngineRuntimeDao
 
     companion object {
 

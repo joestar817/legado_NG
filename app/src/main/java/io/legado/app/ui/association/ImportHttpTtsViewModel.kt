@@ -10,6 +10,7 @@ import io.legado.app.constant.AppLog
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.HttpTTS
 import io.legado.app.exception.NoStackTraceException
+import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.http.decompressed
 import io.legado.app.help.http.newCallResponseBody
 import io.legado.app.help.http.okHttpClient
@@ -59,7 +60,15 @@ class ImportHttpTtsViewModel(app: Application) : BaseViewModel(app) {
                     selectSource.add(allSources[index])
                 }
             }
-            appDb.httpTTSDao.insert(*selectSource.toTypedArray())
+            val legacySources = arrayListOf<HttpTTS>()
+            selectSource.forEach { source ->
+                if (TtsEngineStore.importLegacyHttpTts(source) == null) {
+                    legacySources.add(source)
+                }
+            }
+            if (legacySources.isNotEmpty()) {
+                appDb.httpTTSDao.insert(*legacySources.toTypedArray())
+            }
         }.onFinally {
             finally.invoke()
         }
@@ -115,10 +124,22 @@ class ImportHttpTtsViewModel(app: Application) : BaseViewModel(app) {
 
     private fun comparisonSource() {
         execute {
-            allSources.forEach {
-                val source = appDb.httpTTSDao.get(it.id)
+            allSources.forEach { importSource ->
+                if (TtsEngineStore.isLegacyMultiTtsForwarder(importSource)) {
+                    val v2Engine = TtsEngineStore.engine(TtsEngineStore.MULTITTS_FORWARDER_ID)
+                    checkSources.add(
+                        if (v2Engine == null) {
+                            null
+                        } else {
+                            importSource.copy(lastUpdateTime = Long.MAX_VALUE)
+                        }
+                    )
+                    selectStatus.add(v2Engine == null)
+                    return@forEach
+                }
+                val source = appDb.httpTTSDao.get(importSource.id)
                 checkSources.add(source)
-                selectStatus.add(source == null || source.lastUpdateTime < it.lastUpdateTime)
+                selectStatus.add(source == null || source.lastUpdateTime < importSource.lastUpdateTime)
             }
             successLiveData.postValue(allSources.size)
         }

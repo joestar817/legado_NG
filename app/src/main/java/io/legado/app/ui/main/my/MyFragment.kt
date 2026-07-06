@@ -173,6 +173,9 @@ class MyFragment() : BaseFragment(R.layout.fragment_my_config), MainFragmentInte
                 "aiConfig" -> startActivity<ConfigActivity> {
                     putExtra("configTag", ConfigTag.AI_CONFIG)
                 }
+                "ttsEngineConfig" -> startActivity<ConfigActivity> {
+                    putExtra("configTag", ConfigTag.TTS_ENGINE_CONFIG)
+                }
                 "serviceManage" -> startActivity<ConfigActivity> {
                     putExtra("configTag", ConfigTag.SERVICE_CONFIG)
                 }

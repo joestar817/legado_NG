@@ -54,7 +54,11 @@ object SourceEditCodeHighlighter {
         "ruleLink",
         "ruleContent",
         "contentWhitelist",
-        "contentBlacklist"
+        "contentBlacklist",
+        "url",
+        "voicesUrl",
+        "contentType",
+        "concurrentRate"
     )
 
     private val jsKeys = setOf(

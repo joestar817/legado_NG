@@ -13,22 +13,19 @@ import io.legado.app.R
 import io.legado.app.base.BasePrefDialogFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
-import io.legado.app.data.appDb
 import io.legado.app.help.IntentHelp
 import io.legado.app.help.config.AppConfig
-import io.legado.app.lib.dialogs.SelectItem
+import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.lib.prefs.SwitchPreference
 import io.legado.app.lib.prefs.fragment.PreferenceFragment
 import io.legado.app.lib.theme.primaryColor
-import io.legado.app.model.ReadAloud
 import io.legado.app.service.BaseReadAloudService
+import io.legado.app.ui.config.ConfigActivity
+import io.legado.app.ui.config.ConfigTag
 import io.legado.app.ui.widget.dialog.applyNgWindow
-import io.legado.app.utils.GSON
-import io.legado.app.utils.StringUtils
-import io.legado.app.utils.fromJsonObject
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.setEdgeEffectColor
-import io.legado.app.utils.showDialogFragment
+import io.legado.app.utils.startActivity
 
 class ReadAloudConfigDialog : BasePrefDialogFragment() {
     private val readAloudPreferTag = "readAloudPreferTag"
@@ -60,19 +57,11 @@ class ReadAloudConfigDialog : BasePrefDialogFragment() {
     }
 
     class ReadAloudPreferenceFragment : PreferenceFragment(),
-        SpeakEngineDialog.CallBack,
         SharedPreferences.OnSharedPreferenceChangeListener {
 
         private val speakEngineSummary: String
             get() {
-                val ttsEngine = ReadAloud.ttsEngine
-                    ?: return getString(R.string.system_tts)
-                if (StringUtils.isNumeric(ttsEngine)) {
-                    return appDb.httpTTSDao.getName(ttsEngine.toLong())
-                        ?: getString(R.string.system_tts)
-                }
-                return GSON.fromJsonObject<SelectItem<String>>(ttsEngine).getOrNull()?.title
-                    ?: getString(R.string.system_tts)
+                return TtsEngineStore.activeEngine().name
             }
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -102,7 +91,9 @@ class ReadAloudConfigDialog : BasePrefDialogFragment() {
 
         override fun onPreferenceTreeClick(preference: Preference): Boolean {
             when (preference.key) {
-                PreferKey.ttsEngine -> showDialogFragment(SpeakEngineDialog())
+                PreferKey.ttsEngine -> startActivity<ConfigActivity> {
+                    putExtra("configTag", ConfigTag.TTS_ENGINE_CONFIG)
+                }
                 "sysTtsConfig" -> IntentHelp.openTTSSetting()
             }
             return super.onPreferenceTreeClick(preference)
@@ -142,7 +133,7 @@ class ReadAloudConfigDialog : BasePrefDialogFragment() {
             }
         }
 
-        override fun upSpeakEngineSummary() {
+        private fun upSpeakEngineSummary() {
             upPreferenceSummary(
                 findPreference(PreferKey.ttsEngine),
                 speakEngineSummary

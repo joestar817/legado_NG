@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Ng.ProviderCard"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="18dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <HorizontalScrollView
+            android:id="@+id/scroll_header"
+            android:layout_width="match_parent"
+            android:layout_height="28dp"
+            android:fadingEdgeLength="10dp"
+            android:overScrollMode="never"
+            android:requiresFadingEdge="horizontal"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/text_name"
+                    style="@style/Ng.CardTitle"
+                    android:layout_width="wrap_content"
+                    android:ellipsize="end"
+                    android:singleLine="true" />
+
+                <ImageView
+                    android:id="@+id/image_gender"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_marginStart="8dp"
+                    android:contentDescription="@null"
+                    android:scaleType="centerInside"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/layout_language_tags"
+                    android:layout_width="wrap_content"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="6dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/layout_header_tags"
+                    android:layout_width="wrap_content"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="6dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal" />
+
+            </LinearLayout>
+
+        </HorizontalScrollView>
+
+        <HorizontalScrollView
+            android:id="@+id/scroll_tags"
+            android:layout_width="match_parent"
+            android:layout_height="24dp"
+            android:layout_marginTop="5dp"
+            android:fadingEdgeLength="12dp"
+            android:overScrollMode="never"
+            android:requiresFadingEdge="horizontal"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/layout_tags"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+
+        </HorizontalScrollView>
+
+    </LinearLayout>
+
+    <io.legado.app.lib.theme.view.ThemeSwitch
+        android:id="@+id/switch_enabled"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="4dp" />
+
+    <ImageView
+        android:id="@+id/image_preview"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@drawable/ng_bg_tts_preview_button"
+        android:contentDescription="@string/read_aloud"
+        android:padding="9dp"
+        android:src="@drawable/ic_tts_headphones"
+        android:tint="@color/ng_on_surface" />
+
+</LinearLayout>

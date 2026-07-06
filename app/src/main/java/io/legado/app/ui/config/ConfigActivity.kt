@@ -31,6 +31,7 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
             ConfigTag.OTHER_CONFIG -> replaceFragment<OtherConfigFragment>(configTag)
             ConfigTag.SERVICE_CONFIG -> replaceFragment<ServiceConfigFragment>(configTag)
             ConfigTag.AI_CONFIG -> replaceFragment<AiConfigFragment>(configTag)
+            ConfigTag.TTS_ENGINE_CONFIG -> replaceFragment<TtsEngineConfigFragment>(configTag)
             ConfigTag.THEME_CONFIG -> replaceFragment<ThemeConfigFragment>(configTag)
             ConfigTag.BACKUP_CONFIG -> replaceFragment<BackupConfigFragment>(configTag)
             ConfigTag.COVER_CONFIG -> replaceFragment<CoverConfigFragment>(configTag)
@@ -56,6 +57,11 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
     override fun setTitle(resId: Int) {
         super.setTitle(resId)
         binding.titleBar.setTitle(resId)
+    }
+
+    override fun setTitle(title: CharSequence?) {
+        super.setTitle(title)
+        binding.titleBar.title = title
     }
 
     inline fun <reified T : Fragment> replaceFragment(configTag: String) {

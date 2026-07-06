@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="7dp"
+    android:paddingBottom="3dp">
+
+    <TextView
+        android:id="@+id/text_label"
+        style="@style/Ng.Label"
+        android:layout_marginStart="12dp" />
+
+    <EditText
+        android:id="@+id/edit_text"
+        style="@style/Ng.OutlinedField.Compact"
+        android:layout_marginTop="6dp"
+        android:singleLine="true" />
+
+    <FrameLayout
+        android:id="@+id/layout_password"
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/ng_bg_tts_config_field"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/edit_password"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/transparent"
+            android:gravity="center_vertical"
+            android:includeFontPadding="false"
+            android:inputType="textPassword"
+            android:paddingStart="10dp"
+            android:paddingTop="0dp"
+            android:paddingEnd="42dp"
+            android:paddingBottom="0dp"
+            android:singleLine="true"
+            android:textColor="@color/ng_on_surface"
+            android:textColorHint="@color/ng_on_surface_variant"
+            android:textSize="13sp" />
+
+        <ImageButton
+            android:id="@+id/button_toggle_password"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_gravity="end|center_vertical"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/ai_api_key_toggle_visibility"
+            android:padding="7dp"
+            android:src="@drawable/ic_visibility_off"
+            android:tint="@color/ng_on_surface_variant" />
+
+    </FrameLayout>
+
+    <androidx.appcompat.widget.AppCompatSpinner
+        android:id="@+id/spinner_value"
+        style="@style/Ng.Spinner.Compact"
+        android:layout_marginTop="6dp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/layout_switch"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_marginTop="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/text_switch_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/ng_on_surface"
+            android:textSize="17sp" />
+
+        <io.legado.app.lib.theme.view.ThemeSwitch
+            android:id="@+id/switch_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="50dp"
+            android:showText="false" />
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -9,6 +9,9 @@ import io.legado.app.constant.IntentAction
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.HttpTTS
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.tts.TtsEngineSetting
+import io.legado.app.help.tts.TtsEngineStore
+import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.service.HttpReadAloudService
 import io.legado.app.service.TTSReadAloudService
@@ -22,9 +25,24 @@ import splitties.init.appCtx
 object ReadAloud {
     private var aloudClass: Class<*> = getReadAloudClass()
     val ttsEngine get() = ReadBook.book?.getTtsEngine() ?: AppConfig.ttsEngine
+    val ttsEngineV2: TtsEngineSetting get() = TtsEngineStore.activeEngine()
     var httpTTS: HttpTTS? = null
+    var httpTtsEngineV2: TtsEngineSetting? = null
 
     private fun getReadAloudClass(): Class<*> {
+        val engineV2 = TtsEngineStore.activeEngine()
+        if (engineV2.enabled) {
+            when (engineV2.type) {
+                TtsEngineType.SYSTEM -> {
+                    httpTtsEngineV2 = null
+                    return TTSReadAloudService::class.java
+                }
+                TtsEngineType.SCRIPT -> {
+                    httpTtsEngineV2 = engineV2
+                    return HttpReadAloudService::class.java
+                }
+            }
+        }
         val ttsEngine = ttsEngine
         if (ttsEngine.isNullOrBlank()) {
             return TTSReadAloudService::class.java
@@ -43,12 +61,20 @@ object ReadAloud {
         aloudClass = getReadAloudClass()
     }
 
+    fun refreshReadAloudClass() {
+        aloudClass = getReadAloudClass()
+    }
+
     fun play(
         context: Context,
         play: Boolean = true,
         pageIndex: Int = ReadBook.durPageIndex,
         startPos: Int = 0
     ) {
+        if (!TtsEngineStore.hasEnabledEngine()) {
+            context.toastOnUi("未启用朗读引擎")
+            return
+        }
         val intent = Intent(context, aloudClass)
         intent.action = IntentAction.play
         intent.putExtra("play", play)
@@ -113,6 +139,22 @@ object ReadAloud {
         if (BaseReadAloudService.isRun) {
             val intent = Intent(context, aloudClass)
             intent.action = IntentAction.nextParagraph
+            context.startForegroundServiceCompat(intent)
+        }
+    }
+
+    fun prevChapter(context: Context) {
+        if (BaseReadAloudService.isRun) {
+            val intent = Intent(context, aloudClass)
+            intent.action = IntentAction.prev
+            context.startForegroundServiceCompat(intent)
+        }
+    }
+
+    fun nextChapter(context: Context) {
+        if (BaseReadAloudService.isRun) {
+            val intent = Intent(context, aloudClass)
+            intent.action = IntentAction.next
             context.startForegroundServiceCompat(intent)
         }
     }

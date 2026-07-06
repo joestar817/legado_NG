@@ -45,6 +45,13 @@
             android:title="@string/ai_setting"
             app:iconSpaceReserved="false" />
 
+        <io.legado.app.lib.prefs.Preference
+            android:icon="@drawable/ic_ai_capability_tts"
+            android:key="ttsEngineConfig"
+            android:summary="@string/tts_engine_settings_summary"
+            android:title="@string/tts_engine_settings"
+            app:iconSpaceReserved="false" />
+
         <io.legado.app.lib.prefs.NameListPreference
             android:defaultValue="4"
             android:entries="@array/theme_mode"
