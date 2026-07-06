@@ -157,6 +157,7 @@ import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.visible
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -1008,18 +1009,15 @@ class ReadBookActivity : BaseReadBookActivity(),
                     AiPurifyHelper.purify(source)
                 }
                 val elapsedMs = SystemClock.elapsedRealtime() - startedAt
-                waitDialog.dismiss()
+                waitDialog.dismissSafely()
                 if (shouldAutoApplyAiPurifyResult(result)) {
                     applyAiPurifyResult(result)
                 } else {
                     showAiPurifyConfirmDialog(result, elapsedMs)
                 }
             } catch (e: Throwable) {
-                waitDialog.dismiss()
-                alert(titleResource = R.string.ai_purify) {
-                    setMessage(e.localizedMessage ?: e.toString())
-                    okButton()
-                }
+                waitDialog.dismissSafely()
+                showAiPurifyErrorIfNeeded(R.string.ai_purify, e)
             }
         }
     }
@@ -1056,7 +1054,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                 setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
             }
         }
-        dialog.show()
+        dialog.showSafely()
     }
 
     private fun View.prepareAiPurifyDialogSize(scrollViewId: Int) {
@@ -1088,6 +1086,53 @@ class ReadBookActivity : BaseReadBookActivity(),
             return false
         }
         return !AiConfig.purifyExceptionIntercept || result.canAutoApply
+    }
+
+    private fun shouldAutoApplyAiPurifyChapterCandidates(
+        sampleCount: Int,
+        candidates: List<AiPurifyRuleCandidate>
+    ): Boolean {
+        if (sampleCount != 1 || !AiConfig.purifyChapterAutoApply || candidates.isEmpty()) {
+            return false
+        }
+        return !AiConfig.purifyChapterExceptionIntercept
+    }
+
+    private fun canShowDialogSafely(): Boolean {
+        return !isFinishing && !isDestroyed
+    }
+
+    private fun Dialog.showSafely(): Boolean {
+        if (!canShowDialogSafely()) {
+            return false
+        }
+        return runCatching {
+            show()
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun Dialog.dismissSafely() {
+        runCatching {
+            if (isShowing) {
+                dismiss()
+            }
+        }
+    }
+
+    private fun showAiPurifyErrorIfNeeded(titleResource: Int, error: Throwable) {
+        if (error is CancellationException) {
+            return
+        }
+        if (!canShowDialogSafely()) {
+            return
+        }
+        runCatching {
+            alert(titleResource = titleResource) {
+                setMessage(error.localizedMessage ?: error.toString())
+                okButton()
+            }
+        }
     }
 
     private data class AiPurifyChapterSample(
@@ -1191,10 +1236,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                     }
                 )
             } catch (e: Throwable) {
-                alert(titleResource = R.string.ai_purify) {
-                    setMessage(e.localizedMessage ?: e.toString())
-                    okButton()
-                }
+                showAiPurifyErrorIfNeeded(R.string.ai_purify, e)
             }
         }
     }
@@ -1247,10 +1289,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                     }
                 )
             } catch (e: Throwable) {
-                alert(titleResource = R.string.ai_purify) {
-                    setMessage(e.localizedMessage ?: e.toString())
-                    okButton()
-                }
+                showAiPurifyErrorIfNeeded(R.string.ai_purify, e)
             }
         }
     }
@@ -1276,8 +1315,9 @@ class ReadBookActivity : BaseReadBookActivity(),
             dialog.dismiss()
             showAiPurifyCustomChapterRangeDialog()
         }
-        dialog.show()
-        dialog.applyNgWindow()
+        if (dialog.showSafely()) {
+            dialog.applyNgWindow()
+        }
     }
 
     private fun showAiPurifyCustomChapterRangeDialog() {
@@ -1316,8 +1356,9 @@ class ReadBookActivity : BaseReadBookActivity(),
                 }
             }
         }
-        dialog.show()
-        dialog.applyNgWindow()
+        if (dialog.showSafely()) {
+            dialog.applyNgWindow()
+        }
     }
 
     private fun startAiPurifyChapter() {
@@ -1388,13 +1429,13 @@ class ReadBookActivity : BaseReadBookActivity(),
                 }
                 val elapsedMs = SystemClock.elapsedRealtime() - startedAt
                 val candidates = buildAiPurifyRuleCandidatesFromGenerated(ruleResults)
-                waitDialog.dismiss()
+                waitDialog.dismissSafely()
                 if (failures.isNotEmpty()) {
                     toastOnUi("已跳过 ${failures.size} 章失败结果，可重试")
                 }
                 when {
                     candidates.isEmpty() -> toastOnUi("AI 未生成可应用的净化规则")
-                    sampleCount == 1 && AiConfig.purifyChapterAutoApply ->
+                    shouldAutoApplyAiPurifyChapterCandidates(sampleCount, candidates) ->
                         applyAiPurifyRuleCandidates(candidates)
                     else -> showAiPurifyChapterConfirmDialog(
                         candidates = candidates,
@@ -1407,11 +1448,8 @@ class ReadBookActivity : BaseReadBookActivity(),
                     )
                 }
             } catch (e: Throwable) {
-                waitDialog.dismiss()
-                alert(titleResource = R.string.ai_purify_chapter) {
-                    setMessage(e.localizedMessage ?: e.toString())
-                    okButton()
-                }
+                waitDialog.dismissSafely()
+                showAiPurifyErrorIfNeeded(R.string.ai_purify_chapter, e)
             }
         }
     }
@@ -1560,7 +1598,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                 setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
             }
         }
-        dialog.show()
+        dialog.showSafely()
     }
 
     private fun formatAiPurifyModels(results: List<AiPurifyResult>): String {
@@ -1869,7 +1907,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                 }
             }
         }
-        dialog.show()
+        dialog.showSafely()
     }
 
     private fun createAiPurifyRuleDetailSection(
