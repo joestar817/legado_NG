@@ -423,6 +423,7 @@ object TtsEngineStore {
             ReadAloud.httpTtsEngineV2 = updated?.takeIf {
                 it.type == TtsEngineType.SCRIPT
             }
+            ReadAloud.upTtsSpeechRate(appCtx)
         }
         return updated
     }

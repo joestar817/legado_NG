@@ -11,6 +11,7 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.MediaHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.model.ReadAloud
@@ -158,27 +159,42 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
      * 更新朗读速度
      */
     override fun upSpeechRate(reset: Boolean) {
-        if (AppConfig.ttsFlowSys) {
-            if (reset) {
-                clearTTS()
-                initTts()
-            }
-        } else {
-            textToSpeech?.setSpeechRate(systemSpeechRate())
-            textToSpeech?.setPitch(systemPitch())
+        if (reset) {
+            clearTTS()
+            initTts()
+        }
+        val engine = ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
+        val engineBaseRate = systemEngineBaseRate(engine)
+        val enginePitch = systemEnginePitch(engine)
+        if (!AppConfig.ttsFlowSys || engineBaseRate != 1f) {
+            textToSpeech?.setSpeechRate(systemSpeechRate(engineBaseRate))
+        }
+        if (enginePitch != 1f) {
+            textToSpeech?.setPitch(enginePitch)
         }
     }
 
-    private fun systemSpeechRate(): Float {
-        val engineV2 = ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
-        val engineBaseRate = (engineV2?.effectiveSpeed() ?: 50) / 50f
-        val playerRate = (AppConfig.ttsSpeechRate + 5) / 10f
+    private fun systemSpeechRate(engineBaseRate: Float = systemEngineBaseRate()): Float {
+        val playerRate = if (AppConfig.ttsFlowSys) {
+            1f
+        } else {
+            (AppConfig.ttsSpeechRate + 5) / 10f
+        }
         return (engineBaseRate * playerRate).coerceIn(0.1f, 5f)
     }
 
-    private fun systemPitch(): Float {
-        val engineV2 = ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
-        return ((engineV2?.effectivePitch() ?: 50) / 50f).coerceIn(0.1f, 2f)
+    private fun systemEngineBaseRate(
+        engine: TtsEngineSetting? =
+            ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
+    ): Float {
+        return ((engine?.effectiveSpeed() ?: 50) / 50f).coerceIn(0.1f, 5f)
+    }
+
+    private fun systemEnginePitch(
+        engine: TtsEngineSetting? =
+            ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
+    ): Float {
+        return ((engine?.effectivePitch() ?: 50) / 50f).coerceIn(0.1f, 2f)
     }
 
     /**
