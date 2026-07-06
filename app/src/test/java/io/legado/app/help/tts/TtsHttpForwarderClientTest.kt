@@ -103,6 +103,32 @@ class TtsHttpForwarderClientTest {
     }
 
     @Test
+    fun parseVoices_readsStyleOptionsFromExtra() {
+        val voices = TtsHttpForwarderClient.parseVoices(
+            """
+            [
+              {
+                "id": "v1",
+                "name": "鹿游",
+                "extra": {
+                  "styles": [
+                    { "id": "angry", "name": "愤怒", "value": "angry" },
+                    { "id": "calm", "name": "平静", "value": "calm" }
+                  ]
+                }
+              }
+            ]
+            """.trimIndent()
+        )
+
+        val styles = voices[0].styleOptions()
+        assertEquals(2, styles.size)
+        assertEquals("angry", styles[0].id)
+        assertEquals("愤怒", styles[0].displayName)
+        assertEquals("calm", voices[0].styleById("calm")?.scriptValue)
+    }
+
+    @Test
     fun parseVoices_rejectsMultiTtsCatalogResponse() {
         val voices = TtsHttpForwarderClient.parseVoices(
             """
@@ -169,6 +195,14 @@ class TtsHttpForwarderClientTest {
     fun audioCacheKey_changesWithVoice() {
         val key1 = TtsScriptEngineClient.audioCacheKey(engine, "文本", "voice-a")
         val key2 = TtsScriptEngineClient.audioCacheKey(engine, "文本", "voice-b")
+
+        assertNotEquals(key1, key2)
+    }
+
+    @Test
+    fun audioCacheKey_changesWithStyle() {
+        val key1 = TtsScriptEngineClient.audioCacheKey(engine, "文本", "voice-a", "angry")
+        val key2 = TtsScriptEngineClient.audioCacheKey(engine, "文本", "voice-a", "calm")
 
         assertNotEquals(key1, key2)
     }
@@ -265,6 +299,32 @@ class TtsHttpForwarderClientTest {
     }
 
     @Test
+    fun nextEdgeProxyBuiltInEngine_declaresStyleOptions() {
+        val engine = scriptEngineFromAssetFile("next_edge_proxy.js")
+
+        assertEquals(TtsEngineStore.NEXT_EDGE_PROXY_ID, engine.id)
+        assertEquals("Next Edge TTS", engine.name)
+        assertEquals(TtsEngineType.SCRIPT, engine.type)
+        assertEquals(false, engine.enabled)
+        assertEquals("audio/mpeg", engine.contentType)
+        assertTrue(engine.supportsVoiceFetch())
+        assertTrue(engine.script.contains("// @version 1.0.5"))
+        assertEquals("前不见古人，后不见来者。念天地之悠悠，独怆然而涕下。", engine.sampleText)
+        assertTrue(engine.script.contains("STYLE_NAMES"))
+        assertTrue(engine.script.contains("profile: \"少女感-温柔旁白\""))
+        assertTrue(engine.script.contains("profile: \"女童/少女-稚嫩清亮\""))
+        assertTrue(engine.script.contains("categories: [\"News\", \"Novel\"]"))
+        assertTrue(engine.script.contains("selected_style"))
+        assertTrue(engine.script.contains("style_value"))
+        assertFalse(engine.script.contains("0.5s"))
+        assertFalse(engine.script.contains("0.7s"))
+        assertFalse(engine.script.contains("0.9s"))
+        assertFalse(engine.script.contains("sample_text: \"前不见古人，后不见来者。念天地之悠悠，独怆然而涕下。\""))
+        assertTrue(engine.script.contains("zh-CN-XiaoxiaoNeural"))
+        assertTrue(engine.script.contains("function synthesize(text, voice, params, options, ctx)"))
+    }
+
+    @Test
     fun scriptMetadata_parsesHeaderComments() {
         val metadata = TtsEngineStore.parseScriptMetadata(
             """
@@ -275,6 +335,7 @@ class TtsHttpForwarderClientTest {
             // @defaultSpeed 42
             // @defaultVolume 60
             // @defaultPitch 55
+            // @sampleText 试听文本
             function options() { return []; }
             """.trimIndent()
         )
@@ -285,6 +346,7 @@ class TtsHttpForwarderClientTest {
         assertEquals("42", metadata["defaultspeed"])
         assertEquals("60", metadata["defaultvolume"])
         assertEquals("55", metadata["defaultpitch"])
+        assertEquals("试听文本", metadata["sampletext"])
     }
 
     @Test
@@ -296,6 +358,7 @@ class TtsHttpForwarderClientTest {
             // @defaultSpeed 42
             // @defaultVolume 60
             // @defaultPitch 55
+            // @sampleText 试听文本
             function synthesize(text, voice, params, options, ctx) { return {}; }
             """.trimIndent()
         )!!
@@ -303,6 +366,20 @@ class TtsHttpForwarderClientTest {
         assertEquals(42, engine.defaultSpeed)
         assertEquals(60, engine.defaultVolume)
         assertEquals(55, engine.defaultPitch)
+        assertEquals("试听文本", engine.sampleText)
+    }
+
+    @Test
+    fun scriptEngineFromScript_leavesSampleTextBlankWhenHeaderMissing() {
+        val engine = TtsEngineStore.scriptEngineFromScript(
+            """
+            // @name 示例
+            // @uuid demo_tts_without_sample
+            function synthesize(text, voice, params, options, ctx) { return {}; }
+            """.trimIndent()
+        )!!
+
+        assertEquals(null, engine.sampleText)
     }
 
     @Test

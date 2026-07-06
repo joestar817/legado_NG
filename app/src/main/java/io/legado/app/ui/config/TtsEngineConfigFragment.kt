@@ -9,6 +9,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.text.Editable
 import android.text.InputType
@@ -60,8 +61,11 @@ import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.help.tts.TtsScriptEngineClient
 import io.legado.app.help.tts.TtsScriptOptionValue
 import io.legado.app.help.tts.TtsVoice
+import io.legado.app.help.tts.TtsVoiceStyle
 import io.legado.app.help.tts.previewText
+import io.legado.app.help.tts.styleOptions
 import io.legado.app.lib.dialogs.alert
+import io.legado.app.lib.dialogs.selector
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.widget.NgActionPopup
 import io.legado.app.ui.widget.NgActionPopupItem
@@ -72,7 +76,9 @@ import io.legado.app.ui.widget.code.addJsPattern
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.dpToPx
+import io.legado.app.utils.getPrefString
 import io.legado.app.utils.isAbsUrl
+import io.legado.app.utils.putPrefString
 import io.legado.app.utils.readText
 import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.toastOnUi
@@ -154,6 +160,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         binding.buttonTabConfig.setOnClickListener { showDetailTab(DetailTab.CONFIG) }
         binding.buttonTabVoices.setOnClickListener { showDetailTab(DetailTab.VOICES) }
         binding.buttonConfigSource.setOnClickListener { showConfigSourceMode(!sourceMode) }
+        binding.buttonTestConfig.setOnClickListener { testCurrentEngineConnection() }
         binding.buttonSaveConfig.setOnClickListener { saveCurrentEngine() }
         binding.buttonVoiceParams.setOnClickListener { toggleVoiceParamPanel() }
         binding.buttonToggleAllVoices.setOnClickListener { toggleAllVoicesEnabled() }
@@ -513,11 +520,14 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     private fun engineFromForm(source: TtsEngineSetting): TtsEngineSetting {
+        val script = binding.editScriptCode.text?.toString()?.takeIf { it.isNotBlank() }
+            ?: source.script
+        val metadata = TtsEngineStore.parseScriptMetadata(script)
         return source.copy(
             name = configValue("name").ifBlank { source.name },
             enabled = binding.switchEnabled.isChecked,
-            script = binding.editScriptCode.text?.toString()?.takeIf { it.isNotBlank() }
-                ?: source.script,
+            script = script,
+            sampleText = metadata["sampletext"]?.takeIf { it.isNotBlank() },
             optionValues = configEntities
                 .filter { it.isOption }
                 .associate { it.key.removePrefix("option:") to it.value.orEmpty() },
@@ -1072,15 +1082,64 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         val voices = engine.effectiveVoices()
         val selectedVoice = voice ?: voices.firstOrNull { it.id == engine.activeVoiceId }
             ?: voices.firstOrNull()
+        val styles = selectedVoice?.styleOptions().orEmpty()
+        val styleId = selectedVoice?.let { savedPreviewStyleId(engine, it, styles) }
+        previewVoice(engine, selectedVoice, styleId = styleId)
+    }
+
+    private fun showPreviewStyleSelector(
+        engine: TtsEngineSetting,
+        voice: TtsVoice,
+        styles: List<TtsVoiceStyle>
+    ) {
+        val context = context ?: return
+        val items = buildList<CharSequence> {
+            add("默认")
+            styles.forEach { add(it.displayName) }
+        }
+        context.selector("试听风格", items) { _, index ->
+            previewVoice(
+                engine = engine,
+                voice = voice,
+                styleId = styles.getOrNull(index - 1)?.id
+            )
+            requireContext().putPrefString(
+                previewStylePrefKey(engine),
+                styles.getOrNull(index - 1)?.id.orEmpty()
+            )
+        }
+    }
+
+    private fun savedPreviewStyleId(
+        engine: TtsEngineSetting,
+        voice: TtsVoice,
+        styles: List<TtsVoiceStyle>
+    ): String? {
+        val saved = requireContext().getPrefString(previewStylePrefKey(engine)).orEmpty()
+        if (saved.isBlank()) return null
+        return saved.takeIf { styleId -> styles.any { it.id == styleId || it.value == styleId } }
+    }
+
+    private fun previewStylePrefKey(engine: TtsEngineSetting): String {
+        return "ttsPreviewStyle:${engine.id}"
+    }
+
+    private fun previewVoice(
+        engine: TtsEngineSetting,
+        voice: TtsVoice?,
+        styleId: String?
+    ) {
+        val context = context ?: return
         lifecycleScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     val response = TtsScriptEngineClient.getSynthesisResponse(
                         engine = engine,
-                        text = TtsScriptEngineClient.sampleText(selectedVoice),
-                        voiceId = selectedVoice?.id
+                        text = TtsScriptEngineClient.sampleText(engine, voice),
+                        voiceId = voice?.id,
+                        styleId = styleId
                     )
-                    File(requireContext().cacheDir, "tts_preview_${engine.id}.audio").apply {
+                    File(context.cacheDir, "tts_preview_${engine.id}.audio").apply {
                         outputStream().use { out ->
                             response.body.byteStream().use { input ->
                                 input.copyTo(out)
@@ -1089,14 +1148,60 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                     }
                 }
             }.onSuccess { file ->
+                if (!isAdded) return@onSuccess
                 previewPlayer?.release()
-                previewPlayer = ExoPlayer.Builder(requireContext()).build().apply {
+                previewPlayer = ExoPlayer.Builder(context).build().apply {
                     setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
                     prepare()
                     play()
                 }
             }.onFailure {
-                requireContext().toastOnUi("试听失败：${it.localizedMessage ?: it.javaClass.simpleName}")
+                context.toastOnUi("试听失败：${it.localizedMessage ?: it.javaClass.simpleName}")
+            }
+        }
+    }
+
+    private fun testCurrentEngineConnection() {
+        val engine = saveCurrentEngine(showToast = false)?.takeIf { it.isScriptEngine } ?: return
+        val voice = engine.effectiveVoices().firstOrNull { it.id == engine.activeVoiceId }
+            ?: engine.effectiveVoices().firstOrNull()
+        val styleId = voice?.let { savedPreviewStyleId(engine, it, it.styleOptions()) }
+        val context = context ?: return
+        context.toastOnUi("正在测试接口...")
+        lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val started = SystemClock.elapsedRealtime()
+                    val response = TtsScriptEngineClient.getSynthesisResponse(
+                        engine = engine,
+                        text = TtsScriptEngineClient.sampleText(engine, voice),
+                        voiceId = voice?.id,
+                        styleId = styleId
+                    )
+                    response.use {
+                        val contentType = it.header("Content-Type").orEmpty()
+                        val normalizedContentType = contentType.substringBefore(";")
+                        if (normalizedContentType == "application/json" ||
+                            normalizedContentType.startsWith("text/")
+                        ) {
+                            error(it.body.string().take(200))
+                        }
+                        val firstBytes = ByteArray(512)
+                        val readBytes = it.body.byteStream().use { input ->
+                            input.read(firstBytes)
+                        }
+                        if (readBytes <= 0) {
+                            error("接口未返回音频内容")
+                        }
+                        val elapsed = SystemClock.elapsedRealtime() - started
+                        "接口可用：${elapsed}ms，$normalizedContentType"
+                    }
+                }
+            }
+            result.onSuccess {
+                context.toastOnUi(it)
+            }.onFailure {
+                context.toastOnUi("接口测试失败：${it.localizedMessage ?: it.javaClass.simpleName}")
             }
         }
     }
@@ -1740,6 +1845,20 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                 getItemByLayoutPosition(holder.layoutPosition)?.let {
                     previewCurrentVoice(it)
                 }
+            }
+            binding.imagePreview.setOnLongClickListener {
+                showPreviewClickFeedback(binding.imagePreview)
+                getItemByLayoutPosition(holder.layoutPosition)?.let { voice ->
+                    val engine = currentEngineId?.let { id -> TtsEngineStore.engine(id) }
+                        ?: return@setOnLongClickListener true
+                    val styles = voice.styleOptions()
+                    if (styles.isEmpty()) {
+                        requireContext().toastOnUi("当前发音人没有可选风格")
+                    } else {
+                        showPreviewStyleSelector(engine, voice, styles)
+                    }
+                }
+                true
             }
         }
 

@@ -144,6 +144,15 @@
                 android:text="@string/tts_source_mode" />
 
             <io.legado.app.ui.widget.text.AccentStrokeTextView
+                android:id="@+id/button_test_config"
+                style="@style/Ng.SmallButton.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:text="测试" />
+
+            <io.legado.app.ui.widget.text.AccentStrokeTextView
                 android:id="@+id/button_save_config"
                 style="@style/Ng.SmallButton.Secondary"
                 android:layout_width="0dp"

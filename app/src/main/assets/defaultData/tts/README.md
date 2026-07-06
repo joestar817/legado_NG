@@ -16,10 +16,22 @@ App 主动调用的协议函数只有：
 - `@enabled`：默认是否启用。
 - `@cookieJar`：是否启用内部 CookieJar。
 - `@audioType`：默认音频 MIME 类型，旧 `@contentType` 仍兼容。
+- `@sampleText`：该脚本的默认试听文本。发音人未提供 `sample_text` 时，试听优先使用这里的文本，再回落到 App 内置默认文本。
 
 `options()` 支持 `text/password/number/select/boolean`。`select.values` 可以是字符串数组，也可以是 `{ label, value }` 数组，保存时只保存 `value`。
 
 `voices(options, ctx)` 必须返回标准发音人数组。App 不解析服务商私有响应格式；如果远端接口返回 `catalog`、map、嵌套对象或其它结构，脚本需要先在 `voices()` 内转换成标准数组再返回。发音人必填字段是 `id/name`，可选字段是 `language/gender/style/tags/sample_text/extra`，其中 `extra` 会原样传回 `synthesize()`。
+
+如果发音人支持风格，建议在 `extra.styles` 中放置数组：
+
+```json
+[
+  { "id": "angry", "name": "愤怒", "value": "angry" },
+  { "id": "calm", "name": "平静", "value": "calm" }
+]
+```
+
+用户在试听时选择风格后，App 会在传给 `synthesize()` 的 `voice` 对象里附加 `style_id`、`style_value`、`style_tag` 和 `selected_style`。脚本需要合成风格参数时优先读取 `voice.style_value` 或 `voice.selected_style.value`；未选择时这些字段为空。
 
 注意：`java.ajax()` 等 Java 侧能力返回到 Rhino 后，不要依赖 `typeof value === "string"` 判断。需要解析 JSON 时建议先写 `JSON.parse(String(value || "{}"))`。
 

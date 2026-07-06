@@ -34,9 +34,83 @@ data class TtsVoice(
     val extra: JsonObject? = null
 )
 
+data class TtsVoiceStyle(
+    @SerializedName("id")
+    val id: String,
+    @SerializedName("name")
+    val name: String,
+    @SerializedName("value")
+    val value: String? = null,
+    @SerializedName("tag")
+    val tag: String? = null
+) {
+    val displayName: String
+        get() = name.ifBlank { value?.takeIf { it.isNotBlank() } ?: id }
+
+    val scriptValue: String
+        get() = value ?: id
+}
+
 fun TtsVoice.previewText(): String {
     sampleText?.takeIf { it.isNotBlank() }?.let { return it }
     return DEFAULT_TTS_PREVIEW_TEXT
+}
+
+fun TtsVoice.styleOptions(): List<TtsVoiceStyle> {
+    val styles = extra?.get("styles") ?: return emptyList()
+    val parsed = when {
+        styles.isJsonArray -> styles.asJsonArray.mapIndexedNotNull { index, element ->
+            element.toStyleOption(index.toString())
+        }
+        styles.isJsonObject -> styles.asJsonObject.entrySet().mapNotNull { entry ->
+            entry.value.toStyleOption(entry.key)
+        }
+        styles.isJsonPrimitive -> styles.asString
+            .split(",", "，", "|", "/")
+            .mapNotNull { value ->
+                value.trim().takeIf { it.isNotBlank() }?.let {
+                    TtsVoiceStyle(id = it, name = it, value = it)
+                }
+            }
+        else -> emptyList()
+    }
+    return parsed
+        .filter { it.id.isNotBlank() && it.displayName.isNotBlank() }
+        .distinctBy { it.id }
+}
+
+fun TtsVoice.styleById(styleId: String?): TtsVoiceStyle? {
+    val target = styleId?.takeIf { it.isNotBlank() } ?: return null
+    return styleOptions().firstOrNull { it.id == target || it.value == target }
+}
+
+private fun JsonElement.toStyleOption(defaultId: String): TtsVoiceStyle? {
+    return when {
+        isJsonPrimitive -> asString.trim().takeIf { it.isNotBlank() }?.let {
+            TtsVoiceStyle(id = defaultId.ifBlank { it }, name = it, value = it)
+        }
+        isJsonObject -> {
+            val obj = asJsonObject
+            val id = obj.stringValue("id")
+                ?: obj.stringValue("value")
+                ?: obj.stringValue("name")
+                ?: defaultId
+            val name = obj.stringValue("name")
+                ?: obj.stringValue("label")
+                ?: id
+            TtsVoiceStyle(
+                id = id,
+                name = name,
+                value = obj.stringValue("value"),
+                tag = obj.stringValue("tag")
+            )
+        }
+        else -> null
+    }
+}
+
+private fun JsonObject.stringValue(name: String): String? {
+    return get(name)?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
 }
 
 data class TtsEngineSetting(
@@ -74,6 +148,8 @@ data class TtsEngineSetting(
     override var jsLib: String? = null,
     @SerializedName(value = "enabledCookieJar", alternate = ["enabled_cookie_jar"])
     override var enabledCookieJar: Boolean? = false,
+    @SerializedName(value = "sampleText", alternate = ["sample_text"])
+    val sampleText: String? = null,
     @SerializedName(value = "voicesUrl", alternate = ["voices_url"])
     val voicesUrl: String? = null,
     @SerializedName(value = "voicesParser", alternate = ["voices_parser"])

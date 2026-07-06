@@ -29,6 +29,7 @@ object TtsEngineStore {
     const val BAIDU_TTS_ID = "baidu_tts"
     const val ALIYUN_TTS_ID = "aliyun_tts"
     const val NEXT_FORWARDER_ID = "next_forwarder"
+    const val NEXT_EDGE_PROXY_ID = "next_edge_proxy"
     const val OPTIONS_EXAMPLE_ID = "script_options_example"
     const val STATIC_VOICES_EXAMPLE_ID = "script_static_voices_example"
     const val CUSTOM_HTTP_ID = "custom_http_forwarder"
@@ -44,6 +45,7 @@ object TtsEngineStore {
         "http://localhost:8774/forward?volume={{speakVolume}}&speed={{speakSpeed}}&pitch={{speakPitch}}&voice={{voiceId}}&text={{java.encodeURI(speakText)}}"
     private val DEFAULT_SCRIPT_ASSETS = listOf(
         "multitts_forwarder.js",
+        "next_edge_proxy.js",
         "script_options_example.js",
         "static_voices_example.js"
     )
@@ -521,16 +523,18 @@ object TtsEngineStore {
         } else {
             url
         }
+        val replaceScript = shouldReplaceDefaultScriptWith(builtIn)
         return copy(
             url = updatedUrl,
-            script = if (shouldReplaceDefaultScriptWith(builtIn)) {
+            script = if (replaceScript) {
                 builtIn.script
             } else {
                 script
             },
             defaultSpeed = builtIn.defaultSpeed,
             defaultVolume = builtIn.defaultVolume,
-            defaultPitch = builtIn.defaultPitch
+            defaultPitch = builtIn.defaultPitch,
+            sampleText = if (replaceScript) builtIn.sampleText else sampleText
         )
     }
 
@@ -558,7 +562,18 @@ object TtsEngineStore {
         val shouldUpdateStaticPreviewText = id == STATIC_VOICES_EXAMPLE_ID &&
                 script.contains("sample_text: \"这是一段朗读试听。\"") &&
                 builtIn.script.contains(DEFAULT_TTS_PREVIEW_TEXT)
-        return shouldUpdateMultiTtsTemplate || shouldUpdateStaticPreviewText
+        val shouldUpdateNextEdgeProxy = id == NEXT_EDGE_PROXY_ID &&
+                (
+                        script.contains("// @version 1.0.0") ||
+                                script.contains("// @version 1.0.1") ||
+                                script.contains("// @version 1.0.2") ||
+                                script.contains("// @version 1.0.3") ||
+                                script.contains("// @version 1.0.4")
+                        ) &&
+                builtIn.script.contains("// @version 1.0.5")
+        return shouldUpdateMultiTtsTemplate ||
+                shouldUpdateStaticPreviewText ||
+                shouldUpdateNextEdgeProxy
     }
 
     private fun TtsEngineSetting.shouldClearVoiceCacheFor(updated: TtsEngineSetting): Boolean {
@@ -860,6 +875,7 @@ object TtsEngineStore {
                 ?: metadata["contenttype"]?.takeIf { it.isNotBlank() }
                 ?: "audio/x-wav",
             enabledCookieJar = metadata["cookiejar"].toScriptBoolean(defaultValue = false),
+            sampleText = metadata["sampletext"]?.takeIf { it.isNotBlank() },
             defaultSpeed = metadata["defaultspeed"].toScriptInt(defaultValue = 50),
             defaultVolume = metadata["defaultvolume"].toScriptInt(defaultValue = 50),
             defaultPitch = metadata["defaultpitch"].toScriptInt(defaultValue = 50),
@@ -943,6 +959,7 @@ object TtsEngineStore {
     private fun defaultTemplateIds(): Set<String> {
         return setOf(
             MULTITTS_FORWARDER_ID,
+            NEXT_EDGE_PROXY_ID,
             OPTIONS_EXAMPLE_ID,
             STATIC_VOICES_EXAMPLE_ID
         )

@@ -25,6 +25,12 @@ object TtsScriptEngineClient {
         return voice?.previewText() ?: DEFAULT_TTS_PREVIEW_TEXT
     }
 
+    fun sampleText(engine: TtsEngineSetting, voice: TtsVoice?): String {
+        voice?.sampleText?.takeIf { it.isNotBlank() }?.let { return it }
+        engine.sampleText?.takeIf { it.isNotBlank() }?.let { return it }
+        return DEFAULT_TTS_PREVIEW_TEXT
+    }
+
     fun loadOptions(engine: TtsEngineSetting): List<TtsScriptOption> {
         val result = callEngineFunction(engine, "options")
             ?: return emptyList()
@@ -52,6 +58,7 @@ object TtsScriptEngineClient {
         engine: TtsEngineSetting,
         text: String,
         voiceId: String? = engine.activeVoiceId,
+        styleId: String? = null,
         speed: Int = engine.effectiveSpeed(),
         volume: Int = engine.effectiveVolume(),
         pitch: Int = engine.effectivePitch(),
@@ -70,7 +77,7 @@ object TtsScriptEngineClient {
             functionName = "synthesize",
             arguments = listOf(
                 GSON.toJson(text),
-                GSON.toJson(voice.toScriptVoiceArg()),
+                GSON.toJson(voice.toScriptVoiceArg(voice?.styleById(styleId))),
                 GSON.toJson(params),
                 GSON.toJson(options),
                 GSON.toJson(extensionContext(engine))
@@ -158,6 +165,7 @@ object TtsScriptEngineClient {
         engine: TtsEngineSetting,
         text: String,
         voiceId: String? = engine.activeVoiceId,
+        styleId: String? = null,
         speed: Int = engine.effectiveSpeed(),
         volume: Int = engine.effectiveVolume(),
         pitch: Int = engine.effectivePitch(),
@@ -167,6 +175,7 @@ object TtsScriptEngineClient {
             engine = engine,
             text = text,
             voiceId = voiceId,
+            styleId = styleId,
             speed = speed,
             volume = volume,
             pitch = pitch,
@@ -178,6 +187,7 @@ object TtsScriptEngineClient {
         engine: TtsEngineSetting,
         text: String,
         voiceId: String? = engine.activeVoiceId,
+        styleId: String? = null,
         speed: Int = engine.effectiveSpeed(),
         volume: Int = engine.effectiveVolume(),
         pitch: Int = engine.effectivePitch()
@@ -187,6 +197,7 @@ object TtsScriptEngineClient {
             MD5Utils.md5Encode16(engine.script),
             GSON.toJson(engine.optionValues),
             voiceId.orEmpty(),
+            styleId.orEmpty(),
             speed.coerceIn(0, 100).toString(),
             volume.coerceIn(0, 100).toString(),
             pitch.coerceIn(0, 100).toString(),
@@ -235,13 +246,17 @@ object TtsScriptEngineClient {
         )
     }
 
-    private fun TtsVoice?.toScriptVoiceArg(): Map<String, Any?> {
+    private fun TtsVoice?.toScriptVoiceArg(selectedStyle: TtsVoiceStyle?): Map<String, Any?> {
         return mapOf(
             "id" to this?.id.orEmpty(),
             "name" to this?.name.orEmpty(),
             "language" to this?.language,
             "gender" to this?.gender,
-            "style" to this?.style,
+            "style" to (selectedStyle?.displayName ?: this?.style),
+            "style_id" to selectedStyle?.id,
+            "style_value" to selectedStyle?.scriptValue,
+            "style_tag" to selectedStyle?.tag,
+            "selected_style" to selectedStyle,
             "tags" to this?.tags.orEmpty(),
             "sample_text" to this?.sampleText,
             "extra" to this?.extra
