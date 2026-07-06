@@ -28,3 +28,4 @@ AGENTS.md
 /app/src/test/resources/ai-purify-fixtures/
 .codex-remote-attachments
 .codex
+*.log

@@ -1,7 +1,6 @@
 package io.legado.app.help.http
 
 import io.legado.app.help.config.AppConfig
-import io.legado.app.model.ReadBook
 import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
@@ -14,8 +13,9 @@ object NetworkLog {
 
     const val MAX_LOG_SIZE = 500
     const val BODY_PREVIEW_SIZE = 512L * 1024L
+    private const val DEFAULT_SOURCE = "全局"
     private const val REDACTED = "[已脱敏]"
-    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT)
     private val nextId = AtomicLong(0)
     private val items = arrayListOf<Entry>()
     private val sensitiveHeaderNames = setOf(
@@ -78,7 +78,7 @@ object NetworkLog {
             Entry(
                 id = nextId.incrementAndGet(),
                 time = System.currentTimeMillis(),
-                source = request.networkLogSource() ?: currentSourceLabel(),
+                source = displaySource(request.networkLogSource()),
                 type = "OkHttp",
                 method = request.method,
                 url = redactUrlForLog(request.url.toString()),
@@ -111,7 +111,7 @@ object NetworkLog {
             Entry(
                 id = nextId.incrementAndGet(),
                 time = System.currentTimeMillis(),
-                source = source ?: currentSourceLabel(),
+                source = displaySource(source),
                 type = type,
                 method = method,
                 url = redactUrlForLog(url),
@@ -134,21 +134,8 @@ object NetworkLog {
         }
     }
 
-    private fun currentSourceLabel(): String {
-        val book = ReadBook.book
-        val source = ReadBook.bookSource?.getTag()
-        val chapter = ReadBook.curTextChapter?.chapter?.title
-        return buildString {
-            source?.takeIf { it.isNotBlank() }?.let { append(it) }
-            book?.name?.takeIf { it.isNotBlank() }?.let {
-                if (isNotEmpty()) append(" / ")
-                append(it)
-            }
-            chapter?.takeIf { it.isNotBlank() }?.let {
-                if (isNotEmpty()) append(" / ")
-                append(it)
-            }
-        }.ifBlank { "全局" }
+    internal fun displaySource(source: String?): String {
+        return source?.takeIf { it.isNotBlank() } ?: DEFAULT_SOURCE
     }
 
     data class SourceLabel(val value: String)

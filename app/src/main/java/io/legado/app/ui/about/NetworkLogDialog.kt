@@ -1,13 +1,13 @@
 package io.legado.app.ui.about
 
 import android.content.Context
-import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.widget.Toolbar
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.gson.JsonParser
@@ -43,7 +43,7 @@ class NetworkLogDialog : BaseDialogFragment(R.layout.dialog_ng_recycler_view),
 
     private val binding by viewBinding(DialogNgRecyclerViewBinding::bind)
     private val adapter by lazy { NetworkLogAdapter(requireContext()) }
-    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT)
     private val exportEntries = mutableMapOf<String, NetworkLog.Entry>()
 
     override fun onStart() {
@@ -238,7 +238,7 @@ class NetworkLogDialog : BaseDialogFragment(R.layout.dialog_ng_recycler_view),
             item: NetworkLog.Entry,
             payloads: MutableList<Any>
         ) {
-            binding.textId.text = "#${item.id}"
+            binding.textId.text = context.getString(R.string.network_log_id, item.id)
             binding.textType.text = item.type
             binding.textType.background = tagBackground(item.type)
             binding.textTime.text = formatTime(item.time)
@@ -293,10 +293,9 @@ class NetworkLogDialog : BaseDialogFragment(R.layout.dialog_ng_recycler_view),
                 return
             }
             val color = when {
-                error -> Color.parseColor("#D93025")
-                statusCode in 200..399 -> Color.parseColor("#34A853")
-                statusCode != null -> Color.parseColor("#D93025")
-                else -> Color.parseColor("#D93025")
+                error -> "#D93025".toColorInt()
+                statusCode in 200..399 -> "#34A853".toColorInt()
+                else -> "#D93025".toColorInt()
             }
             binding.layoutStatus.visibility = View.VISIBLE
             binding.viewStatusDot.background = dotBackground(color)
@@ -306,10 +305,10 @@ class NetworkLogDialog : BaseDialogFragment(R.layout.dialog_ng_recycler_view),
 
         private fun tagBackground(type: String): GradientDrawable {
             val color = when (type) {
-                "OkHttp" -> Color.parseColor("#2E7D32")
-                "WebView" -> Color.parseColor("#1565C0")
-                "JS" -> Color.parseColor("#6A1B9A")
-                else -> Color.parseColor("#5F6368")
+                "OkHttp" -> "#2E7D32".toColorInt()
+                "WebView" -> "#1565C0".toColorInt()
+                "JS" -> "#6A1B9A".toColorInt()
+                else -> "#5F6368".toColorInt()
             }
             return GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE

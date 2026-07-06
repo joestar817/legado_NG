@@ -112,6 +112,7 @@
     <string name="record_network_log_summary">Record requests sent by Reading for source and runtime debugging.</string>
     <string name="network_request_log">Network log</string>
     <string name="network_request_log_summary">View recent requests recorded by the app.</string>
+    <string name="network_log_id">#%1$d</string>
     <string name="about">About</string>
     <string name="exit">Exit</string>
     <string name="exit_no_save">It has not been saved. Do you want to continue editing?</string>

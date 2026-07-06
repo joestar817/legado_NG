@@ -62,4 +62,11 @@ class NetworkLogTest {
             redacted
         )
     }
+
+    @Test
+    fun displaySourceUsesGlobalWhenSourceIsMissing() {
+        assertEquals("全局", NetworkLog.displaySource(null))
+        assertEquals("全局", NetworkLog.displaySource(""))
+        assertEquals("书源 / 书名 / 章节", NetworkLog.displaySource("书源 / 书名 / 章节"))
+    }
 }
