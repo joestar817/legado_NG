@@ -147,6 +147,12 @@
                 android:name="com.samsung.android.support.REMOTE_ACTION"
                 android:resource="@xml/spen_remote_actions" />
         </activity>
+        <!-- 听书播放页 -->
+        <activity
+            android:name=".ui.book.read.aloud.ReadAloudPlayerActivity"
+            android:configChanges="locale|keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|uiMode"
+            android:exported="false"
+            android:launchMode="singleTop" />
 
         <!-- 阅读漫画界面 -->
         <activity

@@ -92,6 +92,7 @@ import io.legado.app.ui.book.bookmark.BookmarkDialog
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.changesource.ChangeChapterSourceDialog
 import io.legado.app.ui.book.info.BookInfoActivity
+import io.legado.app.ui.book.read.aloud.ReadAloudPlayerActivity
 import io.legado.app.ui.book.read.config.AutoReadDialog
 import io.legado.app.ui.book.read.config.BgTextConfigDialog.Companion.BG_COLOR
 import io.legado.app.ui.book.read.config.BgTextConfigDialog.Companion.TEXT_ACCENT_COLOR
@@ -312,11 +313,6 @@ class ReadBookActivity : BaseReadBookActivity(),
             //拦截返回供恢复阅读进度
             if (ReadBook.lastBookProgress != null && confirmRestoreProcess != false) {
                 restoreLastBookProcess()
-                return@addCallback
-            }
-            if (BaseReadAloudService.isPlay()) {
-                ReadAloud.pause(this@ReadBookActivity)
-                toastOnUi(R.string.read_aloud_pause)
                 return@addCallback
             }
             if (isAutoPage) {
@@ -2791,7 +2787,6 @@ class ReadBookActivity : BaseReadBookActivity(),
 
     override fun showActionMenu() {
         when {
-            BaseReadAloudService.isRun -> showReadAloudDialog()
             isAutoPage -> showDialogFragment<AutoReadDialog>()
             isShowingSearchResult -> binding.searchMenu.runMenuIn()
             else -> binding.readMenu.runMenuIn()
@@ -3089,6 +3084,42 @@ class ReadBookActivity : BaseReadBookActivity(),
      * 朗读按钮
      */
     override fun onClickReadAloud() {
+        autoPageStop()
+        startActivity<ReadAloudPlayerActivity>()
+        if (!BaseReadAloudService.isRun) {
+            binding.root.post {
+                startReadAloudFromCurrentPosition()
+            }
+        }
+    }
+
+    private fun startReadAloudFromCurrentPosition() {
+        if (BaseReadAloudService.isRun) {
+            return
+        }
+        ReadAloud.upReadAloudClass()
+        val scrollPageAnim = ReadBook.pageAnim() == 3
+        if (scrollPageAnim) {
+            val pos = binding.readView.getReadAloudPos()
+            if (pos != null) {
+                val (index, line) = pos
+                if (ReadBook.durChapterIndex != index) {
+                    ReadBook.openChapter(index, line.chapterPosition, false) {
+                        ReadBook.readAloud(startPos = line.pagePosition)
+                    }
+                } else {
+                    ReadBook.durChapterPos = line.chapterPosition
+                    ReadBook.readAloud(startPos = line.pagePosition)
+                }
+            } else {
+                ReadBook.readAloud()
+            }
+        } else {
+            ReadBook.readAloud()
+        }
+    }
+
+    private fun toggleReadAloud() {
         autoPageStop()
         when {
             !BaseReadAloudService.isRun -> {
@@ -3416,7 +3447,7 @@ class ReadBookActivity : BaseReadBookActivity(),
         observeEvent<Int>(EventBus.BATTERY_CHANGED) { readView.upBattery(it) }
         observeEvent<Boolean>(EventBus.MEDIA_BUTTON) {
             if (it) {
-                onClickReadAloud()
+                toggleReadAloud()
             } else {
                 ReadBook.readAloud(!BaseReadAloudService.pause)
             }
@@ -3478,6 +3509,9 @@ class ReadBookActivity : BaseReadBookActivity(),
         }
         observeEvent<Boolean>(EventBus.UPDATE_READ_ACTION_BAR) {
             readMenu.reset()
+        }
+        observeEvent<Boolean>(EventBus.READ_ALOUD_OPEN_PLAYER) {
+            startActivity<ReadAloudPlayerActivity>()
         }
         observeEvent<Boolean>(EventBus.UP_SEEK_BAR) {
             readMenu.upSeekBar()

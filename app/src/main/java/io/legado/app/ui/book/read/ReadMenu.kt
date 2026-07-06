@@ -674,9 +674,8 @@ class ReadMenu @JvmOverloads constructor(
 
         //朗读
         llReadAloud.setOnClickListener {
-            runMenuOut {
-                callBack.onClickReadAloud()
-            }
+            callBack.onClickReadAloud()
+            runMenuOut()
         }
         llReadAloud.onLongClick {
             runMenuOut {

@@ -173,6 +173,10 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
     }
 
     fun resetReplaceRuleStateAfterResume() {
+        if (BaseReadAloudService.isRun) {
+            AppLog.putDebug("替换净化调试: 朗读运行中跳过进入阅读页重置")
+            return
+        }
         scheduleReplaceRuleStateReset("onResume", force = true)
     }
 

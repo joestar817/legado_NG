@@ -26,6 +26,7 @@ import io.legado.app.lib.theme.ThemeStore
 import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.transparentNavBar
+import io.legado.app.ui.book.read.aloud.ReadAloudMiniPlayer
 import io.legado.app.ui.widget.NgMenuPopup
 import io.legado.app.ui.widget.TitleBar
 import io.legado.app.utils.ColorUtils
@@ -35,6 +36,7 @@ import io.legado.app.utils.applyTint
 import io.legado.app.utils.disableAutoFill
 import io.legado.app.utils.fullScreen
 import io.legado.app.utils.hideSoftInput
+import io.legado.app.utils.observeEvent
 import io.legado.app.utils.setLightStatusBar
 import io.legado.app.utils.setNavigationBarColorAuto
 import io.legado.app.utils.setStatusBarColorAuto
@@ -96,6 +98,7 @@ abstract class BaseActivity<VB : ViewBinding>(
             finish()
         }
         observeLiveBus()
+        observeReadAloudMiniPlayer()
         onActivityCreated(savedInstanceState)
     }
 
@@ -220,6 +223,25 @@ abstract class BaseActivity<VB : ViewBinding>(
     }
 
     open fun observeLiveBus() {
+    }
+
+    private fun observeReadAloudMiniPlayer() {
+        observeEvent<Int>(io.legado.app.constant.EventBus.ALOUD_STATE) {
+            ReadAloudMiniPlayer.refresh(this)
+        }
+        observeEvent<Int>(io.legado.app.constant.EventBus.TTS_PROGRESS) {
+            ReadAloudMiniPlayer.refresh(this)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        ReadAloudMiniPlayer.attach(this)
+    }
+
+    override fun onDestroy() {
+        ReadAloudMiniPlayer.detach(this)
+        super.onDestroy()
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {

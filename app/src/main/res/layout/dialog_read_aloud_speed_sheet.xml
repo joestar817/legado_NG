@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root_view"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/ng_bg_read_aloud_sheet"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingTop="18dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="28dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/tv_title"
+            style="@style/Ng.Title"
+            android:layout_width="match_parent"
+            android:gravity="center" />
+    </LinearLayout>
+
+    <LinearLayout
+        style="@style/Ng.DialogSection"
+        android:layout_marginTop="16dp"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="24dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:text="慢" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:text="快" />
+        </LinearLayout>
+
+        <io.legado.app.lib.theme.view.ThemeSeekBar
+            android:id="@+id/seek_speed"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:max="45" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="28dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:text="0.5x" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="1x" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="1.5x" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="2x" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="2.5x" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="3x" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="3.5x" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="4x" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="4.5x" />
+
+            <TextView
+                style="@style/Ng.SettingsSummary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:text="5x" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

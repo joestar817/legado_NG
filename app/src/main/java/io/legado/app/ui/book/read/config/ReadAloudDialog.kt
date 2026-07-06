@@ -108,7 +108,13 @@ class ReadAloudDialog : BaseDialogFragment(R.layout.dialog_read_aloud) {
             ReadAloud.stop(requireContext())
             dismissAllowingStateLoss()
         }
-        ivPlayPause.setOnClickListener { callBack?.onClickReadAloud() }
+        ivPlayPause.setOnClickListener {
+            if (BaseReadAloudService.pause) {
+                ReadAloud.resume(requireContext())
+            } else {
+                ReadAloud.pause(requireContext())
+            }
+        }
         ivPlayPrev.setOnClickListener { ReadAloud.prevParagraph(requireContext()) }
         ivPlayNext.setOnClickListener { ReadAloud.nextParagraph(requireContext()) }
         llCatalog.setOnClickListener { callBack?.openChapterList() }

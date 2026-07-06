@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <group
+        android:name="bar_1"
+        android:pivotX="2.4"
+        android:pivotY="12">
+        <path
+            android:fillColor="@android:color/black"
+            android:pathData="M1,6h2.8v12h-2.8z" />
+    </group>
+
+    <group
+        android:name="bar_2"
+        android:pivotX="7.2"
+        android:pivotY="12">
+        <path
+            android:fillColor="@android:color/black"
+            android:pathData="M5.8,6h2.8v12h-2.8z" />
+    </group>
+
+    <group
+        android:name="bar_3"
+        android:pivotX="12"
+        android:pivotY="12">
+        <path
+            android:fillColor="@android:color/black"
+            android:pathData="M10.6,6h2.8v12h-2.8z" />
+    </group>
+
+    <group
+        android:name="bar_4"
+        android:pivotX="16.8"
+        android:pivotY="12">
+        <path
+            android:fillColor="@android:color/black"
+            android:pathData="M15.4,6h2.8v12h-2.8z" />
+    </group>
+
+    <group
+        android:name="bar_5"
+        android:pivotX="21.6"
+        android:pivotY="12">
+        <path
+            android:fillColor="@android:color/black"
+            android:pathData="M20.2,6h2.8v12h-2.8z" />
+    </group>
+</vector>

@@ -416,4 +416,5 @@
         <item name="android:textColor">@color/ng_on_surface</item>
         <item name="android:textStyle">bold</item>
     </style>
+
 </resources>

@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/ng_bg_read_aloud_sheet"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingTop="18dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="24dp">
+
+    <TextView
+        android:id="@+id/tv_title"
+        style="@style/Ng.Title"
+        android:layout_width="match_parent"
+        android:text="@string/aloud_config" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="18dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:fadingEdgeLength="24dp"
+        android:overScrollMode="never"
+        android:requiresFadingEdge="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/Ng.SettingsSectionLabel"
+                android:text="播放设置" />
+
+            <LinearLayout
+                style="@style/Ng.DialogSection"
+                android:orientation="vertical"
+                android:padding="0dp">
+
+                <LinearLayout
+                    android:id="@+id/item_ignore_audio_focus"
+                    style="@style/Ng.SettingsItem"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/ignore_audio_focus_title" />
+
+                        <TextView
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/ignore_audio_focus_summary" />
+                    </LinearLayout>
+
+                    <io.legado.app.lib.theme.view.ThemeSwitch
+                        android:id="@+id/switch_ignore_audio_focus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/item_pause_on_call"
+                    style="@style/Ng.SettingsItem"
+                    android:layout_marginTop="6dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/pause_read_aloud_while_phone_calls_title" />
+
+                        <TextView
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/pause_read_aloud_while_phone_calls_summary" />
+                    </LinearLayout>
+
+                    <io.legado.app.lib.theme.view.ThemeSwitch
+                        android:id="@+id/switch_pause_on_call"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/item_wake_lock"
+                    style="@style/Ng.SettingsItem"
+                    android:layout_marginTop="6dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/read_aloud_wake_lock" />
+
+                        <TextView
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/read_aloud_wake_lock_summary" />
+                    </LinearLayout>
+
+                    <io.legado.app.lib.theme.view.ThemeSwitch
+                        android:id="@+id/switch_wake_lock"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/item_media_button_per_next"
+                    style="@style/Ng.SettingsItem"
+                    android:layout_marginTop="6dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/pref_media_button_per_next" />
+
+                        <TextView
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/pref_media_button_per_next_summary" />
+                    </LinearLayout>
+
+                    <io.legado.app.lib.theme.view.ThemeSwitch
+                        android:id="@+id/switch_media_button_per_next"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/item_read_by_page"
+                    style="@style/Ng.SettingsItem"
+                    android:layout_marginTop="6dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/read_aloud_by_page" />
+
+                        <TextView
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/read_aloud_by_page_summary" />
+                    </LinearLayout>
+
+                    <io.legado.app.lib.theme.view.ThemeSwitch
+                        android:id="@+id/switch_read_by_page"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/item_skip_chapter_title"
+                    style="@style/Ng.SettingsItem"
+                    android:layout_marginTop="6dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/skip_read_aloud_chapter_title" />
+
+                        <TextView
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/skip_read_aloud_chapter_title_summary" />
+                    </LinearLayout>
+
+                    <io.legado.app.lib.theme.view.ThemeSwitch
+                        android:id="@+id/switch_skip_chapter_title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/item_stream_audio"
+                    style="@style/Ng.SettingsItem"
+                    android:layout_marginTop="6dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/stream_read_aloud_audio" />
+
+                        <TextView
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/stream_read_aloud_audio_summary" />
+                    </LinearLayout>
+
+                    <io.legado.app.lib.theme.view.ThemeSwitch
+                        android:id="@+id/switch_stream_audio"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                style="@style/Ng.SettingsSectionLabel"
+                android:layout_marginTop="18dp"
+                android:text="@string/speak_engine" />
+
+            <LinearLayout
+                style="@style/Ng.DialogSection"
+                android:orientation="vertical"
+                android:padding="0dp">
+
+                <LinearLayout
+                    android:id="@+id/item_engine"
+                    style="@style/Ng.SettingsItem"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/speak_engine" />
+
+                        <TextView
+                            android:id="@+id/tv_engine_summary"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="›"
+                        android:textColor="@color/ng_on_surface_variant"
+                        android:textSize="28sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/item_system_tts"
+                    style="@style/Ng.SettingsItem"
+                    android:layout_marginTop="6dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/sys_tts_config" />
+
+                        <TextView
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/sys_tts_config_summary" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="›"
+                        android:textColor="@color/ng_on_surface_variant"
+                        android:textSize="28sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout
+        style="@style/Ng.DialogSection"
+        android:layout_marginTop="18dp"
+        android:orientation="vertical"
+        android:padding="0dp">
+
+        <TextView
+            android:id="@+id/item_stop"
+            style="@style/Ng.SettingsItem"
+            android:text="停止朗读"
+            android:textColor="@color/ng_error"
+            android:textSize="16sp" />
+    </LinearLayout>
+</LinearLayout>
