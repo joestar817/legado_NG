@@ -90,9 +90,10 @@ class ReadAloudTimerSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_time
             }
 
             override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val safeContext = this@ReadAloudTimerSheet.context ?: return
                 val minute = seekBar.progress.coerceIn(0, seekBar.max)
                 AppConfig.ttsTimer = minute
-                ReadAloud.setTimer(requireContext(), minute)
+                ReadAloud.setTimer(safeContext, minute)
                 upStateText(minute, applied = true)
             }
         })
@@ -119,11 +120,13 @@ class ReadAloudSpeedSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_spee
             }
 
             override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val safeContext = this@ReadAloudSpeedSheet.context ?: return
+                AppConfig.ttsFlowSys = false
                 AppConfig.ttsSpeechRate = seekBar.progress
-                ReadAloud.upTtsSpeechRate(requireContext())
+                ReadAloud.upTtsSpeechRate(safeContext)
                 if (BaseReadAloudService.isPlay()) {
-                    ReadAloud.pause(requireContext())
-                    ReadAloud.resume(requireContext())
+                    ReadAloud.pause(safeContext)
+                    ReadAloud.resume(safeContext)
                 }
             }
         })
@@ -162,14 +165,16 @@ class ReadAloudMoreSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_more_
         }
         syncPauseOnCallState()
         itemEngine.setOnClickListener {
-            requireContext().startActivity<ConfigActivity> {
+            val safeContext = context ?: return@setOnClickListener
+            safeContext.startActivity<ConfigActivity> {
                 putExtra("configTag", ConfigTag.TTS_ENGINE_CONFIG)
             }
             dismissAllowingStateLoss()
         }
         itemSystemTts.setOnClickListener { IntentHelp.openTTSSetting() }
         itemStop.setOnClickListener {
-            ReadAloud.stop(requireContext())
+            val safeContext = context ?: return@setOnClickListener
+            ReadAloud.stop(safeContext)
             dismissAllowingStateLoss()
             activity?.finish()
         }
@@ -182,9 +187,10 @@ class ReadAloudMoreSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_more_
         defaultValue: Boolean = false,
         afterChanged: () -> Unit = {}
     ) {
-        switch.isChecked = requireContext().getPrefBoolean(key, defaultValue)
+        val safeContext = row.context
+        switch.isChecked = safeContext.getPrefBoolean(key, defaultValue)
         switch.setOnCheckedChangeListener { _, isChecked ->
-            requireContext().putPrefBoolean(key, isChecked)
+            safeContext.putPrefBoolean(key, isChecked)
             afterChanged()
         }
         row.setOnClickListener {
@@ -195,7 +201,7 @@ class ReadAloudMoreSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_more_
     }
 
     private fun syncPauseOnCallState() = binding.run {
-        val enabled = requireContext().getPrefBoolean(PreferKey.ignoreAudioFocus, false)
+        val enabled = itemPauseOnCall.context.getPrefBoolean(PreferKey.ignoreAudioFocus, false)
         itemPauseOnCall.isEnabled = enabled
         switchPauseOnCall.isEnabled = enabled
         itemPauseOnCall.alpha = if (enabled) 1f else 0.42f
