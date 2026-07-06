@@ -12,7 +12,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Switch
@@ -20,8 +19,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
-import androidx.core.widget.NestedScrollView
-import androidx.core.widget.doOnTextChanged
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
@@ -35,6 +32,7 @@ import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.AiReasoningLevel
 import io.legado.app.lib.theme.accentColor
+import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.utils.applyTint
 
 object AiAssistantConfigUi {
@@ -75,73 +73,14 @@ object AiAssistantConfigUi {
         context: Context,
         onChanged: () -> Unit
     ) {
-        val dialog = BottomSheetDialog(context)
-        val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24.dpToPx(context), 14.dpToPx(context), 24.dpToPx(context), 18.dpToPx(context))
-            background = GradientDrawable().apply {
-                cornerRadii = floatArrayOf(
-                    28.dpToPx(context).toFloat(), 28.dpToPx(context).toFloat(),
-                    28.dpToPx(context).toFloat(), 28.dpToPx(context).toFloat(),
-                    0f, 0f,
-                    0f, 0f
-                )
-                setColor(ContextCompat.getColor(context, R.color.ng_surface_soft))
-            }
+        val sheet = NgLongListBottomSheet(
+            context = context,
+            searchHint = context.getString(R.string.ai_assistant_model_search_hint)
+        )
+        sheet.setScrollableContent { container, query, dialog ->
+            renderModelOptions(context, container, query, dialog, onChanged)
         }
-        val searchEdit = EditText(context).apply {
-            background = GradientDrawable().apply {
-                cornerRadius = 28.dpToPx(context).toFloat()
-                setColor(ContextCompat.getColor(context, R.color.ng_neutral_container))
-            }
-            hint = context.getString(R.string.ai_assistant_model_search_hint)
-            setSingleLine(true)
-            setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
-            setHintTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
-            textSize = 16f
-            compoundDrawablePadding = 10.dpToPx(context)
-            setPadding(18.dpToPx(context), 0, 18.dpToPx(context), 0)
-        }
-        root.addView(searchEdit, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            52.dpToPx(context)
-        ).apply {
-            bottomMargin = 16.dpToPx(context)
-        })
-        val listScroll = NestedScrollView(context).apply {
-            isFillViewport = false
-            clipToPadding = false
-            setPadding(0, 0, 0, 10.dpToPx(context))
-        }
-        val listContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        listScroll.addView(listContainer)
-        root.addView(listScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            0
-        ).apply {
-            weight = 1f
-        })
-        fun render(query: String) {
-            renderModelOptions(context, listContainer, query, dialog, onChanged)
-        }
-        searchEdit.doOnTextChanged { text, _, _, _ ->
-            render(text?.toString().orEmpty())
-        }
-        dialog.setContentView(root)
-        dialog.setOnShowListener {
-            val sheet = dialog.findViewById<View>(
-                com.google.android.material.R.id.design_bottom_sheet
-            ) ?: return@setOnShowListener
-            sheet.setBackgroundColor(Color.TRANSPARENT)
-            sheet.layoutParams = sheet.layoutParams.apply {
-                height = (context.resources.displayMetrics.heightPixels * 0.88f).toInt()
-            }
-            BottomSheetBehavior.from(sheet).state = BottomSheetBehavior.STATE_EXPANDED
-        }
-        render("")
-        dialog.show()
+        sheet.show()
     }
 
     fun showReasoningSheet(

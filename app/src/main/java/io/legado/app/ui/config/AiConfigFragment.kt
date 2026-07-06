@@ -73,6 +73,7 @@ import io.legado.app.lib.theme.Selector
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.databinding.ItemAiPromptBinding
 import io.legado.app.ui.widget.TitleBar
+import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.ui.widget.recycler.ItemTouchCallback
@@ -2274,73 +2275,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun showPurifyModelSelectDialog() {
-        val dialog = BottomSheetDialog(requireContext())
-        val root = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24.dpToPx(), 14.dpToPx(), 24.dpToPx(), 18.dpToPx())
-            background = GradientDrawable().apply {
-                cornerRadii = floatArrayOf(
-                    28.dpToPx().toFloat(), 28.dpToPx().toFloat(),
-                    28.dpToPx().toFloat(), 28.dpToPx().toFloat(),
-                    0f, 0f,
-                    0f, 0f
-                )
-                setColor(ContextCompat.getColor(requireContext(), R.color.ng_surface_soft))
-            }
+        val sheet = NgLongListBottomSheet(
+            context = requireContext(),
+            searchHint = getString(R.string.ai_purify_model_search_hint)
+        )
+        sheet.setScrollableContent { container, query, dialog ->
+            renderPurifyModelOptions(container, query, dialog)
         }
-        val searchEdit = EditText(requireContext()).apply {
-            background = GradientDrawable().apply {
-                cornerRadius = 28.dpToPx().toFloat()
-                setColor(ContextCompat.getColor(requireContext(), R.color.ng_neutral_container))
-            }
-            hint = getString(R.string.ai_purify_model_search_hint)
-            setSingleLine(true)
-            setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
-            setHintTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant))
-            textSize = 16f
-            compoundDrawablePadding = 10.dpToPx()
-            setPadding(18.dpToPx(), 0, 18.dpToPx(), 0)
-        }
-        root.addView(searchEdit, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            52.dpToPx()
-        ).apply {
-            bottomMargin = 16.dpToPx()
-        })
-        val listScroll = androidx.core.widget.NestedScrollView(requireContext()).apply {
-            isFillViewport = false
-            clipToPadding = false
-            setPadding(0, 0, 0, 10.dpToPx())
-        }
-        val listContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        listScroll.addView(listContainer)
-        root.addView(listScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            0
-        ).apply {
-            weight = 1f
-        })
-        fun render(query: String) {
-            renderPurifyModelOptions(listContainer, query, dialog)
-        }
-        searchEdit.doOnTextChanged { text, _, _, _ ->
-            render(text?.toString().orEmpty())
-        }
-        dialog.setContentView(root)
-        dialog.setOnShowListener {
-            val sheet = dialog.findViewById<View>(
-                com.google.android.material.R.id.design_bottom_sheet
-            ) ?: return@setOnShowListener
-            sheet.setBackgroundColor(Color.TRANSPARENT)
-            sheet.layoutParams = sheet.layoutParams.apply {
-                height = (resources.displayMetrics.heightPixels * 0.88f).toInt()
-            }
-            BottomSheetBehavior.from(sheet).state = BottomSheetBehavior.STATE_EXPANDED
-        }
-        render("")
-        dialog.show()
+        sheet.show()
     }
 
     private fun renderPurifyModelOptions(
