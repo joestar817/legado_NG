@@ -3,7 +3,8 @@ name: Test Build
 on:
   push:
     branches:
-      - main
+      - release
+      - 'beta-*'
     paths:
       - '**'
       # - '!**/assets/**'
@@ -13,11 +14,6 @@ on:
   pull_request:
     paths-ignore:
       - '**/modules/web/**'
-  workflow_run:
-    workflows: [Build Web]
-    branches: [main]
-    types:
-      - completed
   workflow_dispatch:
 
 concurrency:
@@ -31,93 +27,80 @@ jobs:
 
   prepare:
     runs-on: ubuntu-latest
-    if: ${{ !startsWith(github.event.head_commit.message, 'Merge pull request') }}
     outputs:
       version: ${{ steps.set-ver.outputs.version }}
       versionL: ${{ steps.set-ver.outputs.versionL }}
-      updateLog_updated: ${{ steps.updateLog.outputs.updated }}
-      updateLog_content: ${{ steps.updateLog.outputs.body }}
+      channel: ${{ steps.release-info.outputs.channel }}
+      publish: ${{ steps.release-info.outputs.publish }}
+      prerelease: ${{ steps.release-info.outputs.prerelease }}
+      tag_name: ${{ steps.release-info.outputs.tag_name }}
+      release_body: ${{ steps.release-info.outputs.body }}
       build_matrix: ${{ steps.set-matrix.outputs.build_matrix }}
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 20
+          fetch-depth: 0
       - id: set-ver
         run: |
           echo "version=$(date -d "8 hour" -u +3.%y.%m%d%H)" >> $GITHUB_OUTPUT
           echo "versionL=$(date -d "8 hour" -u +3.%y.%m%d%H%M)" >> $GITHUB_OUTPUT
-      - id: updateLog
-        env:
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
+      - id: release-info
         run: |
-          git fetch --unshallow --depth=20 origin main 2>/dev/null || git fetch --depth=20 origin main 2>/dev/null || true
-          UPDATED_CONTENT=""
-          IS_MERGE_PR=false
-          if [[ -n "$COMMIT_MSG" ]]; then
-            if [[ "$COMMIT_MSG" =~ ^"Merge pull request" ]] || 
-              [[ "$COMMIT_MSG" =~ ^"Merge branch" ]] || 
-              [[ "$COMMIT_MSG" =~ ^"Sync upstream" ]]; then
-              IS_MERGE_PR=true
-            fi
+          REF_NAME="${GITHUB_REF_NAME}"
+          CHANNEL="beta"
+          PUBLISH="false"
+          PRERELEASE="true"
+          TAG_NAME="beta"
+
+          if [[ "$REF_NAME" == "release" ]]; then
+            CHANNEL="release"
+            PUBLISH="true"
+            PRERELEASE="false"
+            TAG_NAME="${{ steps.set-ver.outputs.version }}"
+          elif [[ "$REF_NAME" == beta-* ]]; then
+            CHANNEL="beta"
+            PUBLISH="true"
+            PRERELEASE="true"
+            TAG_NAME="beta"
           fi
 
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null)
-          UPDATE_LOG_CHANGED=$(echo "$CHANGED_FILES" | grep -q "app/src/main/assets/updateLog.md" && echo "yes" || echo "no")
-          CRONET_JSON_CHANGED=$(echo "$CHANGED_FILES" | grep -q "app/src/main/assets/cronet.json" && echo "yes" || echo "no")
-
-          echo "DEBUG: CHANGED_FILES=$CHANGED_FILES"
-
-          if [ "$UPDATE_LOG_CHANGED" = "yes" ] && [ "$CRONET_JSON_CHANGED" = "no" ]; then
-            echo "updated=yes" >> $GITHUB_OUTPUT
-            if [ -f "app/src/main/assets/updateLog.md" ]; then
-              UPDATED_CONTENT=$(awk '
-              /^\*\*20/ && !found {
-                found=1
-              }
-              found {
-                if (NF == 0) exit
-                print
-              }
-              ' app/src/main/assets/updateLog.md)
-              if [ -z "$UPDATED_CONTENT" ]; then
-                UPDATED_CONTENT=$(head -n 10 app/src/main/assets/updateLog.md)
-              fi
+          if [[ "$CHANNEL" == "release" ]]; then
+            LAST_TAG=$(git tag --list '3.*' --sort=-v:refname | head -n 1)
+            if [ -n "$LAST_TAG" ]; then
+              COMMIT_RANGE="$LAST_TAG..HEAD"
+            else
+              COMMIT_RANGE="HEAD~20..HEAD"
             fi
-            echo "DEBUG: UPDATED_CONTENT (from updateLog.md)="
-            echo "$UPDATED_CONTENT"
-          elif [ "$IS_MERGE_PR" = true ]; then
-              UPDATED_CONTENT="$COMMIT_MSG"
-              echo "DEBUG: UPDATED_CONTENT (from commit msg)=$UPDATED_CONTENT"
+          elif git rev-parse -q --verify refs/tags/beta >/dev/null; then
+            COMMIT_RANGE="beta..HEAD"
+          elif [ "${{ github.event_name }}" == "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            COMMIT_RANGE="${{ github.event.before }}..${{ github.sha }}"
           else
-            if [ "${{ github.event_name }}" == "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
-              BEFORE_SHA="${{ github.event.before }}"
-              AFTER_SHA="${{ github.event.after }}"
-              COMMIT_RANGE="$BEFORE_SHA..$AFTER_SHA"
-              echo "DEBUG: COMMIT_RANGE=$COMMIT_RANGE"
-              if git rev-parse "$COMMIT_RANGE" >/dev/null 2>&1; then
-                UPDATED_CONTENT=$(git log $COMMIT_RANGE --pretty=format:"* %s" --reverse 2>/dev/null | grep -v "^* Merge" || echo "* $COMMIT_MSG")
-                echo "DEBUG: UPDATED_CONTENT (from commit range) set"
-              else
-                UPDATED_CONTENT=$(git log -10 --pretty=format:"* %s (%h)" --reverse 2>/dev/null | grep -v "^* Merge")
-                echo "DEBUG: UPDATED_CONTENT (from recent logs) set"
-              fi
-              echo "$UPDATED_CONTENT"
-            fi
+            COMMIT_RANGE="HEAD~20..HEAD"
+          fi
+
+          echo "DEBUG: REF_NAME=$REF_NAME"
+          echo "DEBUG: CHANNEL=$CHANNEL PUBLISH=$PUBLISH PRERELEASE=$PRERELEASE TAG_NAME=$TAG_NAME"
+          echo "DEBUG: COMMIT_RANGE=$COMMIT_RANGE"
+
+          UPDATED_CONTENT=""
+          if git rev-parse "$COMMIT_RANGE" >/dev/null 2>&1; then
+            UPDATED_CONTENT=$(git log "$COMMIT_RANGE" --pretty=format:"* %s" --reverse 2>/dev/null \
+              | grep -vE '^\* (Merge|Sync upstream)' \
+              | grep -vE '^\* $' || true)
+          else
+            echo "DEBUG: invalid commit range, fallback to last commit"
           fi
 
           if [ -z "$UPDATED_CONTENT" ]; then
-            echo "DEBUG: fallback to last commit body"
-            UPDATED_CONTENT=$(git log -1 --pretty=%B)
-          fi
-
-          if [[ "$UPDATED_CONTENT" =~ ^"Bump web" ]]; then
-            PREVIOUS_COMMIT_BODY=$(git log --skip=1 -1 --pretty=%B)
-            UPDATED_CONTENT=$(printf "* %s\n* %s" "$UPDATED_CONTENT" "$PREVIOUS_COMMIT_BODY")
-            echo "DEBUG: Updated content with previous commit message for Bump web"
+            UPDATED_CONTENT=$(git log -1 --pretty=format:"* %s")
           fi
 
           CONTENT_JSON=$(echo "$UPDATED_CONTENT" | jq -Rs . 2>/dev/null || echo "\"Error generating update content\"")
-          echo "DEBUG: CONTENT_JSON=$CONTENT_JSON"
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "publish=$PUBLISH" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "body=$CONTENT_JSON" >> $GITHUB_OUTPUT
       - id: set-matrix
         run: |
@@ -134,6 +117,7 @@ jobs:
       type: ${{ matrix.type }}
       VERSION: ${{ needs.prepare.outputs.version }}
       VERSIONL: ${{ needs.prepare.outputs.versionL }}
+      CHANNEL: ${{ needs.prepare.outputs.channel }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -147,6 +131,15 @@ jobs:
         run: |
           echo "清空18PlusList.txt"
           echo "">$GITHUB_WORKSPACE/app/src/main/assets/18PlusList.txt
+      - name: Generate Runtime Update Log
+        env:
+          UPDATE_LOG_CONTENT: ${{ fromJSON(needs.prepare.outputs.release_body) }}
+        run: |
+          {
+            echo "**$(date -d "8 hour" -u +%Y-%m-%d)**"
+            echo
+            printf '%s\n' "$UPDATE_LOG_CONTENT"
+          } > "$GITHUB_WORKSPACE/app/src/main/assets/updateLog.md"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
@@ -175,11 +168,7 @@ jobs:
       - name: Build With Gradle
         continue-on-error: true
         run: |
-          if [ "${{ needs.prepare.outputs.updateLog_updated }}" == 'yes' ]; then
-            typeName="release"
-          else
-            typeName="beta"
-          fi
+          typeName="${{ env.CHANNEL }}"
           echo "统一版本号"
           sed "/def version/c def version = \"${{ env.VERSION }}\"" $GITHUB_WORKSPACE/app/build.gradle  -i
           echo "开始${{ env.product }}$typeName构建"
@@ -207,7 +196,7 @@ jobs:
       - name: Upload Missing Rules File To Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: legado.${{ env.product }}.${{ env.type }}.mapping.missing_rules
+          name: legado.${{ env.product }}.${{ env.CHANNEL }}.mapping.missing_rules
           if-no-files-found: ignore
           path: ${{ github.workspace }}/mapping/missing_rules.txt
 
@@ -226,20 +215,20 @@ jobs:
       - name: Upload App To Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: legado.${{ env.product }}.${{ env.type }}
+          name: legado.${{ env.product }}.${{ env.CHANNEL }}
           if-no-files-found: ignore
           path: ${{ github.workspace }}/apk/*.apk
 
       - name: Upload Mapping File To Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: legado.${{ env.product }}.${{ env.type }}.mapping
+          name: legado.${{ env.product }}.${{ env.CHANNEL }}.mapping
           if-no-files-found: ignore
           path: ${{ github.workspace }}/mapping/mapping.txt
 
-  prerelease:
+  publish:
     needs: [ prepare, build ]
-    if: github.event_name != 'pull_request' && github.repository == 'joestar817/legado_NG'
+    if: github.event_name != 'pull_request' && github.repository == 'joestar817/legado_NG' && needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
@@ -256,21 +245,8 @@ jobs:
           mv */*.apk .
           rm -rf */
 
-      - name: Publish Official Release
-        if: needs.prepare.outputs.updateLog_updated == 'yes'
-        uses: softprops/action-gh-release@v2
-        with:
-          name: legado_ng_${{ env.VERSION }}
-          tag_name: ${{ env.VERSION }}
-          body: |
-            ### 更新内容
-            ${{ fromJSON(needs.prepare.outputs.updateLog_content) }}
-          prerelease: false
-          files: ${{ github.workspace }}/apk/*.apk
-          fail_on_unmatched_files: true
-
-      - name: Delete Pre-Release
-        if: needs.prepare.outputs.updateLog_updated != 'yes'
+      - name: Delete Beta Release
+        if: needs.prepare.outputs.channel == 'beta'
         run: |
           if gh release view beta &>/dev/null; then
             gh release delete beta -y
@@ -279,22 +255,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Create or update beta tag
-        if: needs.prepare.outputs.updateLog_updated != 'yes'
+        if: needs.prepare.outputs.channel == 'beta'
         uses: richardsimko/update-tag@v1
         with:
           tag_name: beta
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish Pre-Release
-        if: needs.prepare.outputs.updateLog_updated != 'yes'
+      - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           name: legado_ng_${{ env.VERSION }}
-          tag_name: beta
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
           body: |
             ### 更新内容
-            ${{ fromJSON(needs.prepare.outputs.updateLog_content) }}
-          prerelease: true
+            ${{ fromJSON(needs.prepare.outputs.release_body) }}
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
           files: ${{ github.workspace }}/apk/*.apk
           fail_on_unmatched_files: true
