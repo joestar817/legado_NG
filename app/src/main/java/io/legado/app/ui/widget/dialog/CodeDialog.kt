@@ -29,12 +29,14 @@ class CodeDialog() : BaseDialogFragment(R.layout.dialog_code_view) {
         requestId: String? = null,
         title: String? = null,
         highlightMode: HighlightMode = HighlightMode.Default,
-        exportCode: String? = null
+        exportCode: String? = null,
+        exportFilePrefix: String = "legado-code"
     ) : this() {
         arguments = Bundle().apply {
             putBoolean("disableEdit", disableEdit)
             putString("code", IntentData.put(code))
             exportCode?.let { putString("exportCode", IntentData.put(it)) }
+            putString("exportFilePrefix", exportFilePrefix)
             putString("requestId", requestId)
             putString("title", title)
             putString("highlightMode", highlightMode.name)
@@ -110,7 +112,8 @@ class CodeDialog() : BaseDialogFragment(R.layout.dialog_code_view) {
                         if (isAdded) {
                             requireContext().exportTextContent(
                                 content,
-                                filePrefix = "legado-code"
+                                filePrefix = arguments?.getString("exportFilePrefix")
+                                    ?: "legado-code"
                             )
                         }
                     }

@@ -6,7 +6,7 @@
 
     <item
         android:id="@+id/menu_copy_content"
-        android:title="@string/export_content"
+        android:title="@string/export_all"
         app:showAsAction="always" />
 
     <item

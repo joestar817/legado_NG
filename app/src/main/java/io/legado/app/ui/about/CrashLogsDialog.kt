@@ -20,7 +20,7 @@ import io.legado.app.databinding.DialogNgRecyclerViewBinding
 import io.legado.app.databinding.ItemNgLogFileBinding
 import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.theme.accentColor
-import io.legado.app.ui.widget.dialog.TextDialog
+import io.legado.app.ui.widget.dialog.CodeDialog
 import io.legado.app.ui.widget.dialog.applyNgDialogWindow
 import io.legado.app.ui.widget.dialog.ngDialogMaxHeight
 import io.legado.app.utils.applyTint
@@ -93,10 +93,26 @@ class CrashLogsDialog : BaseDialogFragment(R.layout.dialog_ng_recycler_view),
     private fun showLogFile(fileDoc: FileDoc) {
         viewModel.readFile(fileDoc) {
             if (lifecycleScope.isActive) {
-                showDialogFragment(TextDialog(fileDoc.name, it))
+                val content = formatLogContent(fileDoc.name, it)
+                showDialogFragment(
+                    CodeDialog(
+                        code = content,
+                        title = getString(R.string.crash_log),
+                        highlightMode = CodeDialog.HighlightMode.DebugLog,
+                        exportCode = content,
+                        exportFilePrefix = "legado-crash-log"
+                    )
+                )
             }
         }
 
+    }
+
+    private fun formatLogContent(fileName: String, content: String): String {
+        return buildString {
+            append("// ===== ").append(fileName).append(" =====\n")
+            append(content)
+        }
     }
 
     inner class LogAdapter : RecyclerAdapter<FileDoc, ItemNgLogFileBinding>(requireContext()) {
