@@ -79,6 +79,7 @@ import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.ui.widget.recycler.ItemTouchCallback
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.hideSoftInput
+import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.share
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import io.noties.markwon.Markwon
@@ -130,6 +131,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var providerSearchQuery: String = ""
     private var modelSearchQuery: String = ""
     private var providerDetailTab = ProviderDetailTab.CONFIG
+    private val autoFetchedModelProviderIds = hashSetOf<String>()
     private var requestJob: Job? = null
     private var ignoreMainFormChanges = false
     private var ignoreProviderFormChanges = false
@@ -392,6 +394,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         setupProviderAutoSave()
         setupProviderFocusClear()
         binding.recyclerModels.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerModels.setEdgeEffectColor(accentColor)
         modelAdapter.bindToRecyclerView(binding.recyclerModels)
         modelAdapter.onToggleModel = { model, checked ->
             toggleAvailableModel(model, checked)
@@ -418,9 +421,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.buttonProviderTabModels.setOnClickListener {
             showProviderDetailTab(ProviderDetailTab.MODELS)
         }
-        binding.buttonFetchModels.setOnClickListener {
-            fetchModels()
-        }
+        binding.refreshModels.setColorSchemeColors(accentColor)
+        binding.refreshModels.setOnRefreshListener { fetchModels() }
         binding.buttonTestConnection.setOnClickListener {
             testConnection()
         }
@@ -882,7 +884,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun refreshAccentControls() {
         val color = accentColor
         applyAccentIconButton(binding.buttonAddProvider, color)
-        applyAccentIconButton(binding.buttonFetchModels, color)
     }
 
     private fun applyAccentIconButton(button: ImageView, color: Int) {
@@ -1223,7 +1224,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun refreshProviders() {
-        val providers = AiProviderStore.providers()
+        val allProviders = AiProviderStore.providers()
+        autoFetchedModelProviderIds.retainAll(allProviders.mapTo(hashSetOf()) { it.id })
+        val providers = allProviders
             .filter {
                 providerSearchQuery.isBlank()
                     || it.name.contains(providerSearchQuery, ignoreCase = true)
@@ -1285,6 +1288,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         )
         binding.buttonProviderTabConfig.setBackgroundResource(android.R.color.transparent)
         binding.buttonProviderTabModels.setBackgroundResource(android.R.color.transparent)
+        if (tab == ProviderDetailTab.MODELS) {
+            maybeAutoFetchModels()
+        }
     }
 
     private fun refreshCurrentModelDetail() {
@@ -2678,18 +2684,35 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return rect.contains(rawX, rawY)
     }
 
+    private fun maybeAutoFetchModels() {
+        val provider = currentProviderId?.let { AiProviderStore.provider(it) } ?: return
+        val hasInitializedModels = provider.availableModelSelectionInitialized &&
+            provider.displayModels().isNotEmpty()
+        if (
+            provider.apiKey.isBlank() ||
+            hasInitializedModels ||
+            !autoFetchedModelProviderIds.add(provider.id)
+        ) {
+            return
+        }
+        fetchModels()
+    }
+
     private fun fetchModels() {
-        val provider = saveCurrentProvider() ?: return
+        val provider = saveCurrentProvider()
+        if (provider == null) {
+            binding.refreshModels.isRefreshing = false
+            return
+        }
         if (provider.apiKey.isBlank()) {
+            binding.refreshModels.isRefreshing = false
             alert(getString(R.string.ai_fetch_models)) {
                 setMessage(getString(R.string.ai_api_key_required))
                 okButton()
             }
             return
         }
-        waitDialog.setText(R.string.ai_fetch_models)
-        waitDialog.setOnCancelListener { requestJob?.cancel() }
-        waitDialog.show()
+        binding.refreshModels.isRefreshing = true
         requestJob?.cancel()
         requestJob = lifecycleScope.launch {
             try {
@@ -2711,7 +2734,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     okButton()
                 }
             } finally {
-                waitDialog.dismiss()
+                binding.refreshModels.isRefreshing = false
             }
         }
     }

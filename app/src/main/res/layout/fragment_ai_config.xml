@@ -1866,15 +1866,6 @@
 
                 </LinearLayout>
 
-                <io.legado.app.ui.widget.image.AccentStrokeImageButton
-                    android:id="@+id/button_fetch_models"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
-                    android:layout_marginStart="8dp"
-                    android:contentDescription="@string/ai_fetch_models"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_refresh_black_24dp" />
-
             </LinearLayout>
 
             <LinearLayout
@@ -1906,15 +1897,22 @@
 
             </LinearLayout>
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/recycler_models"
+            <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+                android:id="@+id/refresh_models"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_marginTop="6dp"
-                android:layout_weight="1"
-                android:clipToPadding="false"
-                android:nestedScrollingEnabled="true"
-                android:paddingBottom="12dp" />
+                android:layout_weight="1">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recycler_models"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:nestedScrollingEnabled="true"
+                    android:paddingBottom="12dp" />
+
+            </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
         </LinearLayout>
 
