@@ -437,9 +437,6 @@ data class Book(
             ReadBook.book = null
         }
         appDb.bookDao.delete(this)
-        if (appDb.bookDao.countByNameAuthor(name, author) == 0) {
-            appDb.bookCharacterDao.deleteProfile(BookCharacterProfile.workKey(name, author))
-        }
     }
 
     @Suppress("ConstPropertyName")

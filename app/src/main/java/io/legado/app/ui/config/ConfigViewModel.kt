@@ -5,6 +5,7 @@ import android.content.Context
 import io.legado.app.R
 import io.legado.app.base.BaseViewModel
 import io.legado.app.data.appDb
+import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
 import io.legado.app.utils.FileUtils
@@ -25,9 +26,19 @@ class ConfigViewModel(application: Application) : BaseViewModel(application) {
         execute {
             BookHelp.clearCache()
             FileUtils.delete(context.cacheDir.absolutePath)
+            clearUnlinkedCharacterProfiles()
         }.onSuccess {
             context.toastOnUi(R.string.clear_cache_success)
         }
+    }
+
+    private fun clearUnlinkedCharacterProfiles() {
+        val linkedWorkKeys = appDb.bookDao.all
+            .map { BookCharacterProfile.workKey(it.name, it.author) }
+            .toHashSet()
+        appDb.bookCharacterDao.getProfiles()
+            .filterNot { it.workKey in linkedWorkKeys }
+            .forEach { appDb.bookCharacterDao.deleteProfile(it.workKey) }
     }
 
     fun clearWebViewData() {

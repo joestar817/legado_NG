@@ -20,6 +20,9 @@ interface BookCharacterDao {
     @Query("select * from bookCharacterProfiles where workKey = :workKey")
     fun flowProfile(workKey: String): Flow<BookCharacterProfile?>
 
+    @Query("select * from bookCharacterProfiles")
+    fun getProfiles(): List<BookCharacterProfile>
+
     @Query("select * from bookCharacters where workKey = :workKey order by sortOrder asc, id asc")
     fun getCharacters(workKey: String): List<BookCharacter>
 
