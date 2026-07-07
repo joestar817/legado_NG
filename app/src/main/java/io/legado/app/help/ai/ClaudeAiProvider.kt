@@ -45,7 +45,7 @@ class ClaudeAiProvider : AiProvider {
             .joinToString("\n") { it.content }
         val requestBody = JsonObject().apply {
             addProperty("model", setting.model)
-            addProperty("max_tokens", params.maxTokens ?: 2048)
+            params.maxTokens?.let { addProperty("max_tokens", it) }
             params.temperature?.let { addProperty("temperature", it) }
             if (systemText.isNotBlank()) {
                 addProperty("system", systemText)

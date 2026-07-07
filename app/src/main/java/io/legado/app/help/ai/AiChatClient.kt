@@ -562,7 +562,7 @@ class AiChatClient {
             model = model,
             messages = memoryMessages,
             tools = emptyList(),
-            params = AiTextParams(temperature = 0f, maxTokens = 512, disableThinking = true),
+            params = AiTextParams(temperature = 0f, disableThinking = true),
             stream = false
         )
         val request = Request.Builder()

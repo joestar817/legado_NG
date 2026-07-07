@@ -248,10 +248,8 @@ object AiConfig {
 
     fun assistantChatParams(supportsReasoning: Boolean): AiTextParams {
         val level = assistantReasoningLevel.takeIf { supportsReasoning } ?: AiReasoningLevel.OFF
-        val maxTokens = (4096 + level.reasoningReserve(4096)).coerceIn(4096, 8192)
         return AiTextParams(
             temperature = temperature,
-            maxTokens = maxTokens,
             enableThinking = level != AiReasoningLevel.OFF && level != AiReasoningLevel.AUTO,
             disableThinking = level == AiReasoningLevel.OFF,
             reasoningEffort = level.reasoningEffort

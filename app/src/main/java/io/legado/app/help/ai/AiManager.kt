@@ -54,7 +54,7 @@ object AiManager {
                 AiMessage(AiMessage.Role.SYSTEM, "You are a connection test endpoint. Reply with OK only."),
                 AiMessage(AiMessage.Role.USER, "Reply OK.")
             ),
-            params = AiTextParams(temperature = 0f, maxTokens = 64, disableThinking = true)
+            params = AiTextParams(temperature = 0f, disableThinking = true)
         )
         check(result.content.isNotBlank()) {
             val reasoning = result.reasoning.orEmpty().take(160)
