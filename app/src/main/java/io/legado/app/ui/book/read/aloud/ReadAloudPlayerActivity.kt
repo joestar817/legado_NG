@@ -1,5 +1,7 @@
 package io.legado.app.ui.book.read.aloud
 
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.graphics.drawable.Animatable
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -10,6 +12,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.view.animation.LinearInterpolator
 import android.widget.SeekBar
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
@@ -82,6 +85,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     private var touchDownY = 0f
     private var storyboardPreviewJob: Job? = null
     private var storyboardPreviewPlayer: ExoPlayer? = null
+    private var storyboardLoadingAnimator: ObjectAnimator? = null
     private val storyboardAdapter by lazy { StoryboardAdapter() }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
@@ -116,6 +120,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         ).into(ivCover)
         recyclerStoryboard.layoutManager = LinearLayoutManager(this@ReadAloudPlayerActivity)
         recyclerStoryboard.adapter = storyboardAdapter
+        ivStoryboardLoading.imageTintList = ColorStateList.valueOf(accentColor)
     }
 
     private fun bindActions() = binding.run {
@@ -557,7 +562,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         storyboardLoadedChapterIndex = chapterIndex
         storyboardLoadingChapterIndex = chapterIndex
         binding.tvStoryboardTitle.text = chapter.title
-        binding.tvStoryboardSummary.text = "正在生成 AI 分镜…"
+        setStoryboardLoading(true, "正在生成 AI 分镜…")
         storyboardAdapter.submitRows(emptyList())
         storyboardLoadJob?.cancel()
         storyboardLoadJob = lifecycleScope.launch {
@@ -585,6 +590,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
             result
                 .onSuccess { renderStoryboard(it) }
                 .onFailure {
+                    setStoryboardLoading(false)
                     binding.tvStoryboardSummary.text = "AI 分镜生成失败：${it.localizedMessage ?: "未知错误"}"
                     storyboardAdapter.submitRows(emptyList())
                 }
@@ -595,12 +601,14 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     }
 
     private fun renderEmptyStoryboard() = binding.run {
+        setStoryboardLoading(false)
         tvStoryboardTitle.text = "分镜"
         tvStoryboardSummary.text = "暂无可分析的当前章节"
         storyboardAdapter.submitRows(emptyList())
     }
 
     private fun renderStoryboard(storyboard: ChapterStoryboard) = binding.run {
+        setStoryboardLoading(false)
         val rows = storyboard.scenes.flatMap { scene ->
             val segments = scene.segments.filterNot { it.isChapterTitleSegment(storyboard.chapterTitle) }
             listOf(StoryboardRow.Scene(scene)) + segments.map { StoryboardRow.Segment(it) }
@@ -615,6 +623,37 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         tvStoryboardTitle.text = storyboard.chapterTitle
         tvStoryboardSummary.text = "${storyboard.scenes.size} 个分镜 · $visibleSegments 个片段 · 对白 $visibleDialogueCount · 心声 $visibleThoughtCount"
         storyboardAdapter.submitRows(rows)
+    }
+
+    private fun setStoryboardLoading(loading: Boolean, message: String = "") = binding.run {
+        layoutStoryboardLoading.isVisible = loading
+        recyclerStoryboard.isVisible = !loading
+        tvStoryboardSummary.isVisible = !loading
+        if (loading) {
+            tvStoryboardLoading.text = message
+            startStoryboardLoadingAnimation()
+        } else {
+            stopStoryboardLoadingAnimation()
+        }
+    }
+
+    private fun startStoryboardLoadingAnimation() {
+        val icon = binding.ivStoryboardLoading
+        if (storyboardLoadingAnimator?.isStarted == true) return
+        icon.rotation = 0f
+        storyboardLoadingAnimator = ObjectAnimator.ofFloat(icon, "rotation", 0f, 360f).apply {
+            duration = 750L
+            interpolator = LinearInterpolator()
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.RESTART
+            start()
+        }
+    }
+
+    private fun stopStoryboardLoadingAnimation() = binding.run {
+        storyboardLoadingAnimator?.cancel()
+        storyboardLoadingAnimator = null
+        ivStoryboardLoading.rotation = 0f
     }
 
     private fun StoryboardSegment.isChapterTitleSegment(chapterTitle: String): Boolean {
@@ -938,6 +977,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
 
     override fun onDestroy() {
         stopStoryboardPreview()
+        stopStoryboardLoadingAnimation()
         super.onDestroy()
     }
 }
