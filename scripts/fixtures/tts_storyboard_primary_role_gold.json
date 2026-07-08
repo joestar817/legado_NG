@@ -1,0 +1,100 @@
+{
+  "name": "主要角色对白归因首批 gold",
+  "description": "用于验证 tts_storyboard unit 归因协议。expected 覆盖每个本地候选 unit；未列出的候选会计入 fixture 错误。",
+  "knownCharacters": [
+    {"characterId": 1, "name": "陈升", "aliases": ["升子"], "role": "主角"},
+    {"characterId": 2, "name": "赵文博", "aliases": ["博子", "同桌"], "role": "同桌"},
+    {"characterId": 3, "name": "刘翠霞", "aliases": ["刘老师", "老师"], "role": "老师"},
+    {"characterId": 4, "name": "沈言卿", "aliases": ["沈大校花"], "role": "女主"},
+    {"characterId": 5, "name": "陈小杏", "aliases": ["妈妈"], "role": "母亲"},
+    {"characterId": 6, "name": "方启慧", "aliases": [], "role": "同学"}
+  ],
+  "cases": [
+    {
+      "id": "internet_bar_dialogue",
+      "title": "网吧连续对白",
+      "paragraphs": [
+        "一小时后，网吧里。",
+        "“升子，你怎么变这么菜？”",
+        "在陈升被爆头很多次后，赵文博终于吐槽。",
+        "“脑子里全是分数。”陈升耸耸肩，装作一脸无奈。",
+        "绝不可能承认自己32岁的灵魂已经是个手残。",
+        "提到分数，赵文博也放下手中的鼠标，“升子，你给自己估分多少？”",
+        "“不好说，600-630之间吧。”陈升坦言。",
+        "英语肯定掉链子，但作文肯定补上了。",
+        "理综是自己的强项，自不消说。",
+        "“卧槽！升子，你是吃了仙丹还是怎么了？”赵文博目瞪口呆，“你学神附体了？”",
+        "“哈，就预测一下，想好事又不掉肉。”陈升嘴角带笑。",
+        "赵文博有点发愣，他估分不超过580。",
+        "“升子，我信你，咱俩这分差，估计要各奔东西了，想想还真舍不得。”赵文博突然伤感起来。",
+        "两人没了上网的兴趣，网吧也不待了，直接闪人。"
+      ],
+      "expected": [
+        {"text": "“升子，你怎么变这么菜？”", "roleType": "character", "characterName": "赵文博", "status": "assigned"},
+        {"text": "“脑子里全是分数。”", "roleType": "character", "characterName": "陈升", "status": "assigned"},
+        {"text": "“升子，你给自己估分多少？”", "roleType": "character", "characterName": "赵文博", "status": "assigned"},
+        {"text": "“不好说，600-630之间吧。”", "roleType": "character", "characterName": "陈升", "status": "assigned"},
+        {"text": "“卧槽！升子，你是吃了仙丹还是怎么了？”", "roleType": "character", "characterName": "赵文博", "status": "assigned"},
+        {"text": "“你学神附体了？”", "roleType": "character", "characterName": "赵文博", "status": "assigned"},
+        {"text": "“哈，就预测一下，想好事又不掉肉。”", "roleType": "character", "characterName": "陈升", "status": "assigned"},
+        {"text": "“升子，我信你，咱俩这分差，估计要各奔东西了，想想还真舍不得。”", "roleType": "character", "characterName": "赵文博", "status": "assigned"}
+      ]
+    },
+    {
+      "id": "colon_and_citation",
+      "title": "冒号和引用",
+      "paragraphs": [
+        "前面黑板上写着大大的一行字：",
+        "“2010年5月27日，离高考还有10天。”",
+        "方启慧揶揄的声音在身后响起，把出神的沈言卿吓了一跳。",
+        "她脸上微红，矢口否认道：",
+        "“哪有，我是想考试的事走神了。”",
+        "他在女孩微信中的备注是：优质舔狗三型-升。",
+        "她心里慌乱地想：肯定是他！怎么办？",
+        "有些同学那渴望的眼神，就差喊上一句：快读啊，我们等着呢！",
+        "德国4:1英格兰！"
+      ],
+      "expected": [
+        {"text": "“2010年5月27日，离高考还有10天。”", "roleType": "narrator", "characterName": "", "status": "assigned"},
+        {"text": "“哪有，我是想考试的事走神了。”", "roleType": "character", "characterName": "沈言卿", "status": "assigned"},
+        {"text": "肯定是他！怎么办？", "roleType": "thought", "characterName": "沈言卿", "status": "assigned"},
+        {"text": "快读啊，我们等着呢！", "roleType": "narrator", "characterName": "", "status": "assigned"}
+      ]
+    },
+    {
+      "id": "mother_backward_attribution",
+      "title": "后向归因和环境声",
+      "paragraphs": [
+        "陈升有些紧张地敲响了302的门，“笃笃笃！”",
+        "“谁啊？”里面传出妈妈陈小杏久违了的年轻声音。",
+        "“不小心忘带了。”陈升心头既激动，又愧疚。",
+        "“妈妈，今天有点想你！”陈升伸手想抱抱。",
+        "“哼，你还会想我呢！”陈小杏冷哼一声。"
+      ],
+      "expected": [
+        {"text": "“笃笃笃！”", "roleType": "narrator", "characterName": "", "status": "assigned"},
+        {"text": "“谁啊？”", "roleType": "character", "characterName": "陈小杏", "status": "assigned"},
+        {"text": "“不小心忘带了。”", "roleType": "character", "characterName": "陈升", "status": "assigned"},
+        {"text": "“妈妈，今天有点想你！”", "roleType": "character", "characterName": "陈升", "status": "assigned"},
+        {"text": "“哼，你还会想我呢！”", "roleType": "character", "characterName": "陈小杏", "status": "assigned"}
+      ]
+    },
+    {
+      "id": "teacher_stage_dialogue",
+      "title": "讲台老师归因",
+      "paragraphs": [
+        "刘翠霞哒哒走上讲台，面色沉静，开口道：“陈升，你站起来。”",
+        "陈升闻声起立，全班同学皆投来惊疑的目光。",
+        "“你上来，把这篇好文章读一下。”刘翠霞拿出一张纸，淡淡说道。",
+        "自己当年是在一种什么样的精神状态下，才会写出如此直白表达癖好的“情书”？",
+        "“念啊！”刘翠霞用指关节敲了敲讲台。"
+      ],
+      "expected": [
+        {"text": "“陈升，你站起来。”", "roleType": "character", "characterName": "刘翠霞", "status": "assigned"},
+        {"text": "“你上来，把这篇好文章读一下。”", "roleType": "character", "characterName": "刘翠霞", "status": "assigned"},
+        {"text": "“情书”", "roleType": "narrator", "characterName": "", "status": "assigned"},
+        {"text": "“念啊！”", "roleType": "character", "characterName": "刘翠霞", "status": "assigned"}
+      ]
+    }
+  ]
+}
