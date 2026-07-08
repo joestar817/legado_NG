@@ -365,6 +365,10 @@ data class TextPage(
     }
 
     fun upRenderHeight() {
+        if (lines.isEmpty()) {
+            renderHeight = 0
+            return
+        }
         renderHeight = ceil(lines.last().lineBottom).toInt()
         if (leftLineSize > 0 && leftLineSize != lines.size) {
             val leftHeight = ceil(lines[leftLineSize - 1].lineBottom).toInt()

@@ -6,11 +6,13 @@ import android.graphics.drawable.Animatable
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.util.TypedValue
+import android.view.Choreographer
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -35,6 +37,7 @@ import io.legado.app.databinding.ItemBookStoryboardSegmentBinding
 import io.legado.app.help.ai.AiTtsStoryboardHelper
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ThemeConfig
 import io.legado.app.help.tts.ReadAloudTtsRouter
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.help.tts.TtsEngineStore
@@ -95,6 +98,11 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     private val storyboardAdapter by lazy { StoryboardAdapter() }
     private val lyricsAdapter by lazy { LyricsAdapter() }
 
+    override fun upBackgroundImage() {
+        window.decorView.setBackgroundColor(ThemeConfig.getReadingNgImageSurfaceColor())
+        super.upBackgroundImage()
+    }
+
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         bindView()
         bindActions()
@@ -102,6 +110,10 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         refreshStaticState()
         refreshPlayState()
         refreshProgress(ReadBook.durChapterPos)
+        if (intent.getBooleanExtra(ReadAloudLauncher.EXTRA_AUTO_START, false)) {
+            intent.removeExtra(ReadAloudLauncher.EXTRA_AUTO_START)
+            startReadAloudAfterContentReady()
+        }
     }
 
     override fun onResume() {
@@ -119,15 +131,24 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         progressChapter.thumb = readAloudSeekThumb()
         progressChapter.thumbTintList = null
         progressChapter.thumbOffset = 11.dp
-        val book = ReadBook.book
-        BookCover.load(
-            context = this@ReadAloudPlayerActivity,
-            path = book?.getDisplayCover(),
-            sourceOrigin = ReadBook.bookSource?.bookSourceUrl
-        ).into(ivCover)
+        ivCover.setImageDrawable(null)
+        runAfterFirstFrame {
+            val book = ReadBook.book
+            BookCover.load(
+                context = this@ReadAloudPlayerActivity,
+                path = book?.getDisplayCover(),
+                sourceOrigin = ReadBook.bookSource?.bookSourceUrl
+            ).placeholder(ColorDrawable(Color.TRANSPARENT)).into(ivCover)
+        }
         recyclerStoryboard.layoutManager = LinearLayoutManager(this@ReadAloudPlayerActivity)
         recyclerStoryboard.adapter = lyricsAdapter
         ivStoryboardLoading.imageTintList = ColorStateList.valueOf(accentColor)
+    }
+
+    private fun runAfterFirstFrame(block: () -> Unit) {
+        Choreographer.getInstance().postFrameCallback {
+            binding.root.post(block)
+        }
     }
 
     private fun bindActions() = binding.run {
@@ -374,8 +395,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
                     toastOnUi("未启用朗读引擎")
                     return
                 }
-                setPlayButtonLoading(true)
-                ReadBook.readAloud(play = true, startPos = currentPageStartPos())
+                startReadAloudAfterContentReady()
             }
             BaseReadAloudService.pause -> {
                 setPlayButtonLoading(true)
@@ -460,6 +480,35 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
                 setPlayButtonLoading(false)
             }
             binding.root.postDelayed({ switchingChapter = false }, 1200L)
+        }
+    }
+
+    private fun startReadAloudAfterContentReady() {
+        if (!TtsEngineStore.hasEnabledEngine()) {
+            toastOnUi("未启用朗读引擎")
+            return
+        }
+        setPlayButtonLoading(true)
+        lifecycleScope.launch {
+            val prepared = ReadAloudLauncher.loadCurrentChapter(this@ReadAloudPlayerActivity)
+            if (!prepared) {
+                setPlayButtonLoading(false)
+                refreshStaticState()
+                toastOnUi(ReadBook.msg ?: "加载正文失败")
+                return@launch
+            }
+            cachedChapterIndex = -1
+            cachedParagraphs = emptyList()
+            lastParagraphIndex = -1
+            lastProgress = -1
+            refreshStaticState()
+            refreshProgress(ReadBook.durChapterPos)
+            switchingChapter = true
+            ReadAloud.upReadAloudClass()
+            ReadBook.readAloud(play = true, startPos = currentPageStartPos())
+            binding.root.postDelayed({
+                switchingChapter = false
+            }, 1200L)
         }
     }
 

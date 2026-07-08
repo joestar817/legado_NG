@@ -92,7 +92,7 @@ import io.legado.app.ui.book.bookmark.BookmarkDialog
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.changesource.ChangeChapterSourceDialog
 import io.legado.app.ui.book.info.BookInfoActivity
-import io.legado.app.ui.book.read.aloud.ReadAloudPlayerActivity
+import io.legado.app.ui.book.read.aloud.ReadAloudLauncher
 import io.legado.app.ui.book.read.config.AutoReadDialog
 import io.legado.app.ui.book.read.config.BgTextConfigDialog.Companion.BG_COLOR
 import io.legado.app.ui.book.read.config.BgTextConfigDialog.Companion.TEXT_ACCENT_COLOR
@@ -2708,7 +2708,8 @@ class ReadBookActivity : BaseReadBookActivity(),
      * 内容加载完成
      */
     override fun contentLoadFinish() {
-        if (intent.getBooleanExtra("readAloud", false)) {
+        val startReadAloud = intent.getBooleanExtra("readAloud", false)
+        if (startReadAloud) {
             intent.removeExtra("readAloud")
             ReadBook.readAloud()
         }
@@ -3123,7 +3124,7 @@ class ReadBookActivity : BaseReadBookActivity(),
      */
     override fun onClickReadAloud() {
         autoPageStop()
-        startActivity<ReadAloudPlayerActivity>()
+        ReadAloudLauncher.openPlayer(this)
         if (!BaseReadAloudService.isRun) {
             binding.root.post {
                 startReadAloudFromCurrentPosition()
@@ -3549,7 +3550,7 @@ class ReadBookActivity : BaseReadBookActivity(),
             readMenu.reset()
         }
         observeEvent<Boolean>(EventBus.READ_ALOUD_OPEN_PLAYER) {
-            startActivity<ReadAloudPlayerActivity>()
+            ReadAloudLauncher.openPlayer(this@ReadBookActivity)
         }
         observeEvent<Boolean>(EventBus.UP_SEEK_BAR) {
             readMenu.upSeekBar()

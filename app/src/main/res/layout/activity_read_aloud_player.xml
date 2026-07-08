@@ -35,8 +35,7 @@
                 android:layout_height="match_parent"
                 android:clipToOutline="true"
                 android:outlineProvider="background"
-                android:scaleType="centerCrop"
-                android:src="@drawable/icon_read_book" />
+                android:scaleType="centerCrop" />
         </FrameLayout>
 
         <TextView
