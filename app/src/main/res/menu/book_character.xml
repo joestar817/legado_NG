@@ -3,6 +3,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
+        android:id="@+id/menu_tts"
+        android:icon="@drawable/ic_tts_headphones"
+        android:title="@string/character_tts_bindings"
+        app:showAsAction="always" />
+
+    <item
         android:id="@+id/menu_add"
         android:icon="@drawable/ic_add"
         android:title="@string/add_character"

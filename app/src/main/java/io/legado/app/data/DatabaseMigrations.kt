@@ -21,7 +21,8 @@ object DatabaseMigrations {
             migration_35_36, migration_36_37, migration_37_38, migration_38_39,
             migration_39_40, migration_40_41, migration_41_42, migration_42_43,
             migration_89_90, migration_90_91, migration_91_92, migration_92_93, migration_93_94,
-            migration_94_95, migration_95_96, migration_96_97, migration_97_98,
+            migration_94_95, migration_95_96, migration_96_97, migration_97_98, migration_98_99,
+            migration_99_100,
         )
     }
 
@@ -524,6 +525,67 @@ object DatabaseMigrations {
     private val migration_97_98 = object : Migration(97, 98) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE `ttsVoices` ADD COLUMN `extraJson` TEXT NOT NULL DEFAULT '{}'")
+        }
+    }
+
+    private val migration_98_99 = object : Migration(98, 99) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `bookCharacterTtsBindings` (
+                    `workKey` TEXT NOT NULL DEFAULT '',
+                    `targetType` TEXT NOT NULL DEFAULT 'character',
+                    `targetId` INTEGER NOT NULL DEFAULT 0,
+                    `engineId` TEXT NOT NULL DEFAULT '',
+                    `voiceId` TEXT,
+                    `styleId` TEXT,
+                    `emotionStyleMapJson` TEXT NOT NULL DEFAULT '{}',
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`workKey`, `targetType`, `targetId`),
+                    FOREIGN KEY(`workKey`) REFERENCES `bookCharacterProfiles`(`workKey`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookCharacterTtsBindings_workKey` ON `bookCharacterTtsBindings` (`workKey`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_bookCharacterTtsBindings_workKey_targetType_targetId` ON `bookCharacterTtsBindings` (`workKey`, `targetType`, `targetId`)")
+        }
+    }
+
+    private val migration_99_100 = object : Migration(99, 100) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `bookCharacterTtsBindings_new` (
+                    `workKey` TEXT NOT NULL DEFAULT '',
+                    `targetType` TEXT NOT NULL DEFAULT 'character',
+                    `targetId` INTEGER NOT NULL DEFAULT 0,
+                    `engineId` TEXT NOT NULL DEFAULT '',
+                    `voiceId` TEXT,
+                    `emotionStyleMapJson` TEXT NOT NULL DEFAULT '{}',
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`workKey`, `targetType`, `targetId`),
+                    FOREIGN KEY(`workKey`) REFERENCES `bookCharacterProfiles`(`workKey`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT OR REPLACE INTO `bookCharacterTtsBindings_new` (
+                    `workKey`, `targetType`, `targetId`, `engineId`, `voiceId`,
+                    `emotionStyleMapJson`, `createdAt`, `updatedAt`
+                )
+                SELECT
+                    `workKey`, `targetType`, `targetId`, `engineId`, `voiceId`,
+                    `emotionStyleMapJson`, `createdAt`, `updatedAt`
+                FROM `bookCharacterTtsBindings`
+                """.trimIndent()
+            )
+            db.execSQL("DROP TABLE `bookCharacterTtsBindings`")
+            db.execSQL("ALTER TABLE `bookCharacterTtsBindings_new` RENAME TO `bookCharacterTtsBindings`")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookCharacterTtsBindings_workKey` ON `bookCharacterTtsBindings` (`workKey`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_bookCharacterTtsBindings_workKey_targetType_targetId` ON `bookCharacterTtsBindings` (`workKey`, `targetType`, `targetId`)")
         }
     }
 

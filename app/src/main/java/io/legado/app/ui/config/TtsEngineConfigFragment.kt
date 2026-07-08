@@ -502,12 +502,15 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         configAdapter.editEntities = configEntities
     }
 
-    private fun saveCurrentEngine(showToast: Boolean = true): TtsEngineSetting? {
+    private fun saveCurrentEngine(
+        showToast: Boolean = true,
+        restartReadAloud: Boolean = true
+    ): TtsEngineSetting? {
         val source = currentEngineId?.let { TtsEngineStore.engine(it) }
             ?: draftEngine?.takeIf { it.id == currentEngineId }
             ?: return null
         val updated = engineFromForm(source)
-        TtsEngineStore.saveEngine(updated)
+        TtsEngineStore.saveEngine(updated, restartReadAloud)
         val effective = TtsEngineStore.engine(updated.id) ?: updated
         draftEngine = null
         activity?.setTitle(effective.name)
@@ -1028,7 +1031,10 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     private fun fetchVoices() {
-        val engine = saveCurrentEngine(showToast = false)?.takeIf { it.isScriptEngine } ?: return
+        val engine = saveCurrentEngine(
+            showToast = false,
+            restartReadAloud = false
+        )?.takeIf { it.isScriptEngine } ?: return
         if (!engine.supportsVoiceFetch()) {
             binding.refreshVoices.isRefreshing = false
             binding.textVoiceMessage.isVisible = false
@@ -1050,7 +1056,11 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                         requireContext().toastOnUi("未获取到发音人")
                         return@onSuccess
                     }
-                    val updated = TtsEngineStore.upsertVoiceList(engine.id, voices)
+                    val updated = TtsEngineStore.upsertVoiceList(
+                        engine.id,
+                        voices,
+                        restartReadAloud = false
+                    )
                     if (updated != null) {
                         val effectiveVoices = updated.effectiveVoices()
                         setVoiceItems(effectiveVoices)
@@ -1078,7 +1088,10 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             previewSystemVoice(currentEngine)
             return
         }
-        val engine = saveCurrentEngine(showToast = false)?.takeIf { it.isScriptEngine } ?: return
+        val engine = saveCurrentEngine(
+            showToast = false,
+            restartReadAloud = false
+        )?.takeIf { it.isScriptEngine } ?: return
         val voices = engine.effectiveVoices()
         val selectedVoice = voice ?: voices.firstOrNull { it.id == engine.activeVoiceId }
             ?: voices.firstOrNull()
@@ -1162,7 +1175,10 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     private fun testCurrentEngineConnection() {
-        val engine = saveCurrentEngine(showToast = false)?.takeIf { it.isScriptEngine } ?: return
+        val engine = saveCurrentEngine(
+            showToast = false,
+            restartReadAloud = false
+        )?.takeIf { it.isScriptEngine } ?: return
         val voice = engine.effectiveVoices().firstOrNull { it.id == engine.activeVoiceId }
             ?: engine.effectiveVoices().firstOrNull()
         val styleId = voice?.let { savedPreviewStyleId(engine, it, it.styleOptions()) }

@@ -366,6 +366,15 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
 
     val speechRatePlay: Int get() = if (ttsFlowSys) defaultSpeechRate else ttsSpeechRate
 
+    var readAloudScenarioMode: Int
+        get() = appCtx.getPrefInt(PreferKey.readAloudScenarioMode, 0)
+        set(value) {
+            appCtx.putPrefInt(PreferKey.readAloudScenarioMode, value.coerceIn(0, 1))
+        }
+
+    val readAloudMultiRole: Boolean
+        get() = readAloudScenarioMode == 1
+
     var chineseConverterType: Int
         get() = appCtx.getPrefInt(PreferKey.chineseConverterType)
         set(value) {

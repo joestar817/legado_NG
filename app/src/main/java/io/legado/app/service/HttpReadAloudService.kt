@@ -30,17 +30,29 @@ import io.legado.app.R
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.AppPattern
 import io.legado.app.constant.Status
+import io.legado.app.data.appDb
 import io.legado.app.data.entities.HttpTTS
+import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.exception.NoStackTraceException
+import io.legado.app.help.ai.AiConfig
+import io.legado.app.help.ai.AiTtsStoryboardHelper
+import io.legado.app.help.book.BookHelp
+import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.exoplayer.InputStreamDataSource
 import io.legado.app.help.http.okHttpClient
+import io.legado.app.help.tts.ReadAloudTtsRouter
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsScriptEngineClient
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
+import io.legado.app.model.CacheBook
 import io.legado.app.model.analyzeRule.AnalyzeUrl
+import io.legado.app.ui.book.character.ChapterStoryboard
+import io.legado.app.ui.book.character.StoryboardSegment
+import io.legado.app.ui.book.character.StoryboardSegmentType
+import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.MD5Utils
@@ -55,6 +67,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -99,6 +113,9 @@ class HttpReadAloudService : BaseReadAloudService(),
     private var playIndexJob: Job? = null
     private var downloadErrorNo: Int = 0
     private var playErrorNo = 0
+    private var ttsRouter: ReadAloudTtsRouter? = null
+    private var speakItems: List<SpeakItem> = emptyList()
+    private var speakItemIndex = 0
     private val downloadTaskActiveLock = Mutex()
 
     override fun onCreate() {
@@ -142,16 +159,49 @@ class HttpReadAloudService : BaseReadAloudService(),
     override fun playStop() {
         exoPlayer.stop()
         playIndexJob?.cancel()
+        speakItems = emptyList()
+        speakItemIndex = 0
     }
 
     private fun updateNextPos() {
-        readAloudNumber += contentList[nowSpeak].length + 1 - paragraphStartPos
-        paragraphStartPos = 0
-        if (nowSpeak < contentList.lastIndex) {
-            nowSpeak++
+        if (speakItems.isNotEmpty()) {
+            updateNextPosBySpeakItem()
         } else {
-            nextChapter()
+            advanceReadAloudPosition()
         }
+    }
+
+    private fun updateNextPosBySpeakItem() {
+        val currentItem = speakItems.getOrNull(speakItemIndex)
+        if (currentItem == null) {
+            advanceReadAloudPosition()
+            return
+        }
+        if (speakItemIndex < speakItems.lastIndex) {
+            val nextItem = speakItems[speakItemIndex + 1]
+            speakItemIndex++
+            if (nextItem.paragraphIndex == currentItem.paragraphIndex) {
+                upTtsProgress(currentParagraphBaseNumber() + nextItem.start + 1)
+                return
+            }
+            advanceToParagraph(nextItem.paragraphIndex)
+        } else {
+            advanceToParagraph(currentItem.paragraphIndex + 1)
+            speakItems = emptyList()
+            speakItemIndex = 0
+        }
+    }
+
+    private fun advanceToParagraph(paragraphIndex: Int) {
+        while (nowSpeak < paragraphIndex && nowSpeak in contentList.indices) {
+            if (!advanceReadAloudPosition()) {
+                return
+            }
+        }
+    }
+
+    private fun currentParagraphBaseNumber(): Int {
+        return readAloudNumber - paragraphStartPos
     }
 
     private fun downloadAndPlayAudios() {
@@ -160,23 +210,31 @@ class HttpReadAloudService : BaseReadAloudService(),
         downloadTask = execute {
             downloadTaskActiveLock.withLock {
                 ensureActive()
+                ttsRouter = ReadAloudTtsRouter.createForCurrentBook()
                 val httpTts = ReadAloud.httpTTS
                 val engineV2 = ReadAloud.httpTtsEngineV2
                 if (httpTts == null && engineV2 == null) {
                     throw NoStackTraceException("tts is null")
                 }
-                contentList.forEachIndexed { index, content ->
+                val storyboard = loadCurrentAiStoryboard()
+                speakItems = buildSpeakItems(storyboard)
+                speakItemIndex = 0
+                if (speakItems.isEmpty()) {
+                    nextChapter()
+                    return@execute
+                }
+                speakItems.forEach { item ->
                     ensureActive()
-                    if (index < nowSpeak) return@forEachIndexed
-                    val text = getReadAloudText(index)
-                    val fileName = md5SpeakFileName(text)
+                    val text = item.text
+                    val route = routeFor(engineV2, item.segment)
+                    val fileName = md5SpeakFileName(text, route)
                     val speakText = text.replace(AppPattern.notReadAloudRegex, "")
                     if (speakText.isEmpty()) {
-                        AppLog.put("阅读段落内容为空，使用无声音频代替。\n朗读文本：$content")
+                        AppLog.put("阅读片段内容为空，使用无声音频代替。\n朗读文本：${item.sourceText}")
                         createSilentSound(fileName)
                     } else if (!hasSpeakFile(fileName)) {
                         runCatching {
-                            val inputStream = getSpeakStream(httpTts, engineV2, speakText)
+                            val inputStream = getSpeakStream(httpTts, engineV2, speakText, route)
                             if (inputStream != null) {
                                 createSpeakFile(fileName, inputStream)
                             } else {
@@ -205,20 +263,28 @@ class HttpReadAloudService : BaseReadAloudService(),
 
     private suspend fun preDownloadAudios(httpTts: HttpTTS?, engineV2: TtsEngineSetting?) {
         val textChapter = ReadBook.nextTextChapter ?: return
+        val storyboard = preGenerateAiStoryboards()
         val contentList = textChapter.getNeedReadAloud(0, readAloudByPage, 0, 1)
             .splitToSequence("\n")
             .filter { it.isNotEmpty() }
-            .take(10)
             .toList()
-        contentList.forEach { content ->
+        val preDownloadItems = buildSpeakItemsForContent(
+            paragraphs = contentList,
+            storyboard = storyboard,
+            startParagraphIndex = 0,
+            maxItems = 10
+        )
+        preDownloadItems.forEach { item ->
             currentCoroutineContext().ensureActive()
-            val fileName = md5SpeakFileName(content, textChapter)
+            val content = item.text
+            val route = routeFor(engineV2, item.segment)
+            val fileName = md5SpeakFileName(content, route, textChapter)
             val speakText = content.replace(AppPattern.notReadAloudRegex, "")
             if (speakText.isEmpty()) {
                 createSilentSound(fileName)
             } else if (!hasSpeakFile(fileName)) {
                 runCatching {
-                    val inputStream = getSpeakStream(httpTts, engineV2, speakText)
+                    val inputStream = getSpeakStream(httpTts, engineV2, speakText, route)
                     if (inputStream != null) {
                         createSpeakFile(fileName, inputStream)
                     } else {
@@ -235,6 +301,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         downloadTask = execute {
             downloadTaskActiveLock.withLock {
                 ensureActive()
+                ttsRouter = ReadAloudTtsRouter.createForCurrentBook()
                 val httpTts = ReadAloud.httpTTS
                 val engineV2 = ReadAloud.httpTtsEngineV2
                 if (httpTts == null && engineV2 == null) {
@@ -246,16 +313,23 @@ class HttpReadAloudService : BaseReadAloudService(),
                         downloader.download(null)
                     }
                 }
-                contentList.forEachIndexed { index, content ->
+                val storyboard = loadCurrentAiStoryboard()
+                speakItems = buildSpeakItems(storyboard)
+                speakItemIndex = 0
+                if (speakItems.isEmpty()) {
+                    nextChapter()
+                    return@execute
+                }
+                speakItems.forEach { item ->
                     ensureActive()
-                    if (index < nowSpeak) return@forEachIndexed
-                    val text = getReadAloudText(index)
+                    val text = item.text
                     val speakText = text.replace(AppPattern.notReadAloudRegex, "")
                     if (speakText.isEmpty()) {
-                        AppLog.put("阅读段落内容为空，使用无声音频代替。\n朗读文本：$content")
+                        AppLog.put("阅读片段内容为空，使用无声音频代替。\n朗读文本：${item.sourceText}")
                     }
-                    val fileName = md5SpeakFileName(text)
-                    val dataSourceFactory = createDataSourceFactory(httpTts, engineV2, speakText)
+                    val route = routeFor(engineV2, item.segment)
+                    val fileName = md5SpeakFileName(text, route)
+                    val dataSourceFactory = createDataSourceFactory(httpTts, engineV2, speakText, route)
                     val downloader = createDownloader(dataSourceFactory, fileName)
                     downloaderChannel.send(downloader)
                     val mediaSource = createMediaSource(dataSourceFactory, fileName)
@@ -276,16 +350,24 @@ class HttpReadAloudService : BaseReadAloudService(),
         downloaderChannel: Channel<Downloader>
     ) {
         val textChapter = ReadBook.nextTextChapter ?: return
+        val storyboard = preGenerateAiStoryboards()
         val contentList = textChapter.getNeedReadAloud(0, readAloudByPage, 0, 1)
             .splitToSequence("\n")
             .filter { it.isNotEmpty() }
-            .take(10)
             .toList()
-        contentList.forEach { content ->
+        val preDownloadItems = buildSpeakItemsForContent(
+            paragraphs = contentList,
+            storyboard = storyboard,
+            startParagraphIndex = 0,
+            maxItems = 10
+        )
+        preDownloadItems.forEach { item ->
             currentCoroutineContext().ensureActive()
-            val fileName = md5SpeakFileName(content, textChapter)
+            val content = item.text
+            val route = routeFor(engineV2, item.segment)
+            val fileName = md5SpeakFileName(content, route, textChapter)
             val speakText = content.replace(AppPattern.notReadAloudRegex, "")
-            val dataSourceFactory = createDataSourceFactory(httpTts, engineV2, speakText)
+            val dataSourceFactory = createDataSourceFactory(httpTts, engineV2, speakText, route)
             val downloader = createDownloader(dataSourceFactory, fileName)
             downloaderChannel.send(downloader)
         }
@@ -294,7 +376,8 @@ class HttpReadAloudService : BaseReadAloudService(),
     private fun createDataSourceFactory(
         httpTts: HttpTTS?,
         engineV2: TtsEngineSetting?,
-        speakText: String
+        speakText: String,
+        route: ReadAloudTtsRouter.Route?
     ): CacheDataSource.Factory {
         val upstreamFactory = DataSource.Factory {
             InputStreamDataSource {
@@ -303,7 +386,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                 } else {
                     kotlin.runCatching {
                         runBlocking(lifecycleScope.coroutineContext[Job]!!) {
-                            getSpeakStream(httpTts, engineV2, speakText)
+                            getSpeakStream(httpTts, engineV2, speakText, route)
                         }
                     }.onFailure {
                         when (it) {
@@ -340,20 +423,24 @@ class HttpReadAloudService : BaseReadAloudService(),
     private suspend fun getSpeakStream(
         httpTts: HttpTTS?,
         engineV2: TtsEngineSetting?,
-        speakText: String
+        speakText: String,
+        route: ReadAloudTtsRouter.Route?
     ): InputStream? {
         while (true) {
             try {
-                if (engineV2 != null) {
+                val routedEngine = route?.engine ?: engineV2
+                if (routedEngine != null) {
                     val response = TtsScriptEngineClient.getSynthesisResponse(
-                        engine = engineV2,
+                        engine = routedEngine,
                         text = speakText,
-                        speed = effectiveEngineSpeed(engineV2),
+                        voiceId = route?.voiceId ?: routedEngine.activeVoiceId,
+                        styleId = route?.styleId,
+                        speed = effectiveEngineSpeed(routedEngine),
                         coroutineContext = currentCoroutineContext()
                     )
                     response.headers["Content-Type"]?.let { contentType ->
                         val normalizedContentType = contentType.substringBefore(";")
-                        val expected = engineV2.contentType.orEmpty()
+                        val expected = routedEngine.contentType.orEmpty()
                         if (normalizedContentType == "application/json" ||
                             normalizedContentType.startsWith("text/")
                         ) {
@@ -462,21 +549,239 @@ class HttpReadAloudService : BaseReadAloudService(),
         return null
     }
 
-    private fun md5SpeakFileName(content: String, textChapter: TextChapter? = this.textChapter): String {
-        ReadAloud.httpTtsEngineV2?.let { engine ->
+    private suspend fun loadCurrentAiStoryboard(): ChapterStoryboard? {
+        if (!AppConfig.readAloudMultiRole) {
+            return null
+        }
+        val book = ReadBook.book ?: return null
+        val chapter = textChapter ?: return null
+        val content = AiTtsStoryboardHelper.readAloudContentFromChapter(chapter, readAloudByPage)
+            .takeIf { it.isNotBlank() } ?: return null
+        val workKey = BookCharacterProfile.workKey(book.name, book.author)
+        val characters = appDb.bookCharacterDao.getCharacters(workKey)
+        return runCatching {
+            AiTtsStoryboardHelper.getOrGenerate(
+                book = book,
+                chapterIndex = ReadBook.durChapterIndex,
+                chapterTitle = chapter.title,
+                content = content,
+                characters = characters
+            )
+        }.onFailure {
+            AppLog.put("AI听书分镜生成失败，已回退旁白朗读\n${it.localizedMessage}", it)
+        }.getOrNull()
+    }
+
+    private suspend fun preGenerateAiStoryboards(): ChapterStoryboard? {
+        if (!AppConfig.readAloudMultiRole) {
+            return null
+        }
+        val preloadCount = AiConfig.readAloudStoryboardPreloadCount
+        if (preloadCount <= 0) {
+            return null
+        }
+        val book = ReadBook.book ?: return null
+        val workKey = BookCharacterProfile.workKey(book.name, book.author)
+        val characters = appDb.bookCharacterDao.getCharacters(workKey)
+        var nextStoryboard: ChapterStoryboard? = null
+        val maxChapterIndex = minOf(
+            ReadBook.durChapterIndex + preloadCount,
+            ReadBook.chapterSize - 1
+        )
+        for (chapterIndex in (ReadBook.durChapterIndex + 1)..maxChapterIndex) {
+            currentCoroutineContext().ensureActive()
+            val chapter = loadStoryboardTextChapter(chapterIndex) ?: continue
+            val content = AiTtsStoryboardHelper.readAloudContentFromChapter(chapter, readAloudByPage)
+                .takeIf { it.isNotBlank() } ?: continue
+            val storyboard = runCatching {
+                AiTtsStoryboardHelper.getOrGenerate(
+                    book = book,
+                    chapterIndex = chapterIndex,
+                    chapterTitle = chapter.title,
+                    content = content,
+                    characters = characters
+                )
+            }.onFailure {
+                AppLog.put("AI听书分镜预处理失败，章节 $chapterIndex\n${it.localizedMessage}", it)
+            }.getOrNull()
+            if (chapterIndex == ReadBook.durChapterIndex + 1) {
+                nextStoryboard = storyboard
+            }
+        }
+        return nextStoryboard
+    }
+
+    private suspend fun loadStoryboardTextChapter(chapterIndex: Int): TextChapter? {
+        textChapter?.takeIf { chapterIndex == ReadBook.durChapterIndex }?.let {
+            return it
+        }
+        if (chapterIndex !in 0 until ReadBook.chapterSize) {
+            return null
+        }
+        val book = ReadBook.book ?: return null
+        val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, chapterIndex) ?: return null
+        val rawContent = BookHelp.getContent(book, chapter) ?: run {
+            val bookSource = ReadBook.bookSource ?: return null
+            CacheBook.getOrCreate(bookSource, book).downloadAwait(chapter)
+        }
+        val contentProcessor = ContentProcessor.get(book.name, book.origin)
+        val displayTitle = chapter.getDisplayTitle(
+            contentProcessor.getTitleReplaceRules(),
+            book.getUseReplaceRule(),
+            replaceBook = book.toReplaceBook()
+        )
+        val contents = contentProcessor.getContent(
+            book,
+            chapter,
+            rawContent,
+            includeTitle = false
+        )
+        return ChapterProvider.getTextChapterAsync(
+            lifecycleScope,
+            book,
+            chapter,
+            displayTitle,
+            contents,
+            ReadBook.simulatedChapterSize
+        ).also { generated ->
+            generated.layoutChannel.receiveAsFlow().collect()
+        }
+    }
+
+    private fun buildSpeakItems(storyboard: ChapterStoryboard?): List<SpeakItem> {
+        return buildSpeakItemsForContent(
+            paragraphs = contentList,
+            storyboard = storyboard,
+            startParagraphIndex = nowSpeak,
+            maxItems = Int.MAX_VALUE
+        )
+    }
+
+    private fun buildSpeakItemsForContent(
+        paragraphs: List<String>,
+        storyboard: ChapterStoryboard?,
+        startParagraphIndex: Int,
+        maxItems: Int
+    ): List<SpeakItem> {
+        val items = arrayListOf<SpeakItem>()
+        paragraphs.forEachIndexed { index, originalText ->
+            if (index < startParagraphIndex || items.size >= maxItems) return@forEachIndexed
+            val readableStart = if (paragraphs === contentList) {
+                readableStartOffset(index, originalText)
+            } else {
+                0
+            }
+            if (readableStart >= originalText.length) return@forEachIndexed
+            val paragraphSegments = AiTtsStoryboardHelper.segmentsForParagraph(
+                storyboard = storyboard,
+                paragraphIndex = index,
+                fallbackText = originalText
+            )
+            val paragraphItems = paragraphSegments.mapNotNull { segment ->
+                segment.toSpeakItem(index, originalText, readableStart)
+            }
+            if (paragraphItems.isNotEmpty()) {
+                items += paragraphItems.take(maxItems - items.size)
+            } else {
+                val readable = if (paragraphs === contentList) {
+                    getReadAloudText(index)
+                } else {
+                    originalText
+                }
+                if (readable.isNotBlank()) {
+                    items += SpeakItem(
+                        paragraphIndex = index,
+                        text = readable,
+                        start = readableStart,
+                        end = originalText.length,
+                        sourceText = originalText,
+                        segment = StoryboardSegment(
+                            type = StoryboardSegmentType.NARRATION,
+                            paragraphIndex = index,
+                            text = readable,
+                            speakerName = null,
+                            evidence = "旁白",
+                            start = readableStart,
+                            end = originalText.length
+                        )
+                    )
+                }
+            }
+        }
+        return items
+    }
+
+    private fun StoryboardSegment.toSpeakItem(
+        paragraphIndex: Int,
+        originalText: String,
+        readableStart: Int
+    ): SpeakItem? {
+        val safeStart = maxOf(start, readableStart).coerceIn(0, originalText.length)
+        val safeEnd = end.coerceIn(0, originalText.length)
+        if (safeEnd <= safeStart) return null
+        val speakText = originalText.substring(safeStart, safeEnd)
+        if (speakText.isBlank()) return null
+        return SpeakItem(
+            paragraphIndex = paragraphIndex,
+            text = speakText,
+            start = safeStart,
+            end = safeEnd,
+            sourceText = originalText,
+            segment = copy(
+                paragraphIndex = paragraphIndex,
+                text = speakText,
+                start = safeStart,
+                end = safeEnd
+            )
+        )
+    }
+
+    private fun readableStartOffset(index: Int, originalText: String): Int {
+        val readableText = getReadAloudText(index)
+        if (readableText.isBlank()) {
+            return originalText.length
+        }
+        if (readableText == originalText) {
+            return 0
+        }
+        if (originalText.endsWith(readableText)) {
+            return originalText.length - readableText.length
+        }
+        return originalText.indexOf(readableText).takeIf { it >= 0 } ?: 0
+    }
+
+    private fun routeFor(
+        engineV2: TtsEngineSetting?,
+        segment: StoryboardSegment?
+    ): ReadAloudTtsRouter.Route? {
+        val baseEngine = engineV2 ?: return null
+        return ttsRouter?.route(segment, baseEngine)
+    }
+
+    private fun md5SpeakFileName(
+        content: String,
+        route: ReadAloudTtsRouter.Route?,
+        textChapter: TextChapter? = this.textChapter
+    ): String {
+        val scenarioMode = if (AppConfig.readAloudMultiRole) "multi" else "single"
+        (route?.engine ?: ReadAloud.httpTtsEngineV2)?.let { engine ->
             val effectiveSpeed = effectiveEngineSpeed(engine)
             return MD5Utils.md5Encode16(textChapter?.title ?: "") + "_" +
                     MD5Utils.md5Encode16(
-                        TtsScriptEngineClient.audioCacheKey(
-                            engine = engine,
-                            text = content,
-                            voiceId = engine.activeVoiceId,
-                            speed = effectiveSpeed
-                        )
+                        listOf(
+                            scenarioMode,
+                            TtsScriptEngineClient.audioCacheKey(
+                                engine = engine,
+                                text = content,
+                                voiceId = route?.voiceId ?: engine.activeVoiceId,
+                                styleId = route?.styleId,
+                                speed = effectiveSpeed
+                            )
+                        ).joinToString("-|-")
                     )
         }
         return MD5Utils.md5Encode16(textChapter?.title ?: "") + "_" +
-                MD5Utils.md5Encode16("${ReadAloud.httpTTS?.url}-|-$speechRate-|-$content")
+                MD5Utils.md5Encode16("$scenarioMode-|-${ReadAloud.httpTTS?.url}-|-$speechRate-|-$content")
     }
 
     private fun effectiveEngineSpeed(engine: TtsEngineSetting): Int {
@@ -555,23 +860,28 @@ class HttpReadAloudService : BaseReadAloudService(),
         playIndexJob?.cancel()
         val textChapter = textChapter ?: return
         playIndexJob = lifecycleScope.launch {
-            upTtsProgress(readAloudNumber + 1)
+            val activeItem = speakItems.getOrNull(speakItemIndex)
+            val progressBase = activeItem
+                ?.takeIf { it.paragraphIndex == nowSpeak }
+                ?.let { currentParagraphBaseNumber() + it.start }
+                ?: readAloudNumber
+            upTtsProgress(progressBase + 1)
             if (exoPlayer.duration <= 0) {
                 return@launch
             }
-            val speakTextLength = contentList[nowSpeak].length
+            val speakTextLength = activeItem?.text?.length ?: contentList[nowSpeak].length
             if (speakTextLength <= 0) {
                 return@launch
             }
-            val sleep = exoPlayer.duration / speakTextLength
+            val sleep = maxOf(1L, exoPlayer.duration / speakTextLength)
             val start = speakTextLength * exoPlayer.currentPosition / exoPlayer.duration
-            for (i in start..contentList[nowSpeak].length) {
+            for (i in start..speakTextLength.toLong()) {
                 if (pageIndex + 1 < textChapter.pageSize
-                    && readAloudNumber + i > textChapter.getReadLength(pageIndex + 1)
+                    && progressBase + i > textChapter.getReadLength(pageIndex + 1)
                 ) {
                     pageIndex++
                     ReadBook.moveToNextPage()
-                    upTtsProgress(readAloudNumber + i.toInt())
+                    upTtsProgress(progressBase + i.toInt())
                 }
                 delay(sleep)
             }
@@ -682,5 +992,14 @@ class HttpReadAloudService : BaseReadAloudService(),
             return C.TIME_UNSET
         }
     }
+
+    private data class SpeakItem(
+        val paragraphIndex: Int,
+        val text: String,
+        val start: Int,
+        val end: Int,
+        val sourceText: String,
+        val segment: StoryboardSegment?
+    )
 
 }

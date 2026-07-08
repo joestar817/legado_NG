@@ -14,10 +14,13 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.AiChatConversation
 import io.legado.app.data.entities.AiChatMessageNode
+import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.help.ai.AiChatMessageSnapshot
+import io.legado.app.help.ai.AiTtsStoryboardHelper
 import io.legado.app.help.http.NetworkLog
 import io.legado.app.model.Debug
+import io.legado.app.model.ReadBook
 import io.legado.app.model.webBook.SearchModel
 import io.legado.app.ui.book.search.SearchScope
 import io.legado.app.utils.GSON
@@ -59,6 +62,14 @@ object McpServer {
     private const val MAX_AI_CHAT_TEXT_CHARS = 64 * 1024
     private const val DEFAULT_AI_CHAT_UPLOAD_CHARS = 16 * 1024
     private const val MAX_AI_CHAT_UPLOAD_CHARS = 128 * 1024
+    private const val DEFAULT_STORYBOARD_PARAGRAPH_LIMIT = 40
+    private const val MAX_STORYBOARD_PARAGRAPH_LIMIT = 300
+    private const val DEFAULT_STORYBOARD_UNIT_LIMIT = 120
+    private const val MAX_STORYBOARD_UNIT_LIMIT = 500
+    private const val DEFAULT_STORYBOARD_SEGMENT_LIMIT = 120
+    private const val MAX_STORYBOARD_SEGMENT_LIMIT = 500
+    private const val DEFAULT_STORYBOARD_TEXT_CHARS = 160
+    private const val MAX_STORYBOARD_TEXT_CHARS = 2000
     private const val DEFAULT_BOOK_SOURCE_LIMIT = 100
     private const val MAX_BOOK_SOURCE_LIMIT = 300
     private const val DEFAULT_SEARCH_RESULT_LIMIT = 50
@@ -375,6 +386,36 @@ object McpServer {
                 properties = emptyMap()
             ),
             tool(
+                name = "read_aloud_storyboard_debug_get",
+                description = "Return the current read-aloud chapter AI storyboard debug snapshot. This is read-only and does not call the model.",
+                properties = mapOf(
+                    "include_storyboard" to mapOf(
+                        "type" to "boolean",
+                        "default" to true
+                    ),
+                    "paragraph_limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_STORYBOARD_PARAGRAPH_LIMIT,
+                        "maximum" to MAX_STORYBOARD_PARAGRAPH_LIMIT
+                    ),
+                    "unit_limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_STORYBOARD_UNIT_LIMIT,
+                        "maximum" to MAX_STORYBOARD_UNIT_LIMIT
+                    ),
+                    "segment_limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_STORYBOARD_SEGMENT_LIMIT,
+                        "maximum" to MAX_STORYBOARD_SEGMENT_LIMIT
+                    ),
+                    "text_char_limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_STORYBOARD_TEXT_CHARS,
+                        "maximum" to MAX_STORYBOARD_TEXT_CHARS
+                    )
+                )
+            ),
+            tool(
                 name = "ai_chat_conversation_list",
                 description = "List persisted AI assistant chat conversations as compact summaries.",
                 properties = mapOf(
@@ -579,6 +620,7 @@ object McpServer {
             "network_log_list" -> listNetworkLogs(arguments)
             "network_log_get" -> getNetworkLog(arguments)
             "network_log_clear" -> clearNetworkLogs()
+            "read_aloud_storyboard_debug_get" -> getReadAloudStoryboardDebug(arguments)
             "ai_chat_conversation_list" -> listAiChatConversations(arguments)
             "ai_chat_conversation_get" -> getAiChatConversation(arguments)
             "debug_log_list" -> listDebugLogs(arguments)
@@ -948,6 +990,84 @@ object McpServer {
                 "cleared" to before,
                 "remaining" to NetworkLog.logs.size
             )
+        )
+    }
+
+    private fun getReadAloudStoryboardDebug(arguments: JsonObject): Map<String, Any?> {
+        val includeStoryboard = arguments.get("include_storyboard").asBooleanOrNull() ?: true
+        val paragraphLimit = (arguments.get("paragraph_limit").asIntOrNull()
+            ?: DEFAULT_STORYBOARD_PARAGRAPH_LIMIT).coerceIn(1, MAX_STORYBOARD_PARAGRAPH_LIMIT)
+        val unitLimit = (arguments.get("unit_limit").asIntOrNull()
+            ?: DEFAULT_STORYBOARD_UNIT_LIMIT).coerceIn(1, MAX_STORYBOARD_UNIT_LIMIT)
+        val segmentLimit = (arguments.get("segment_limit").asIntOrNull()
+            ?: DEFAULT_STORYBOARD_SEGMENT_LIMIT).coerceIn(1, MAX_STORYBOARD_SEGMENT_LIMIT)
+        val textCharLimit = (arguments.get("text_char_limit").asIntOrNull()
+            ?: DEFAULT_STORYBOARD_TEXT_CHARS).coerceIn(0, MAX_STORYBOARD_TEXT_CHARS)
+        val book = ReadBook.book
+            ?: return toolResult(
+                ok = false,
+                upstreamEndpoint = "native://readAloud/storyboardDebug",
+                normalizedData = null,
+                warnings = listOf("当前没有打开的书籍")
+            )
+        val chapter = ReadBook.curTextChapter
+            ?: return toolResult(
+                ok = false,
+                upstreamEndpoint = "native://readAloud/storyboardDebug",
+                normalizedData = mapOf(
+                    "book" to mapOf(
+                        "name" to book.name,
+                        "author" to book.author,
+                        "book_url" to book.bookUrl
+                    ),
+                    "chapter_index" to ReadBook.durChapterIndex
+                ),
+                warnings = listOf("当前章节内容尚未加载")
+            )
+        val readAloudContent = AiTtsStoryboardHelper.readAloudContentFromChapter(chapter)
+        val rawContent = chapter.getContent()
+        val workKey = BookCharacterProfile.workKey(book.name, book.author)
+        val characters = if (workKey.isBlank()) {
+            emptyList()
+        } else {
+            appDb.bookCharacterDao.getCharacters(workKey)
+        }
+        val data = linkedMapOf<String, Any?>(
+            "read_aloud_source" to mapOf(
+                "content_chars" to readAloudContent.length,
+                "paragraph_count" to AiTtsStoryboardHelper.paragraphsFromContent(readAloudContent).size,
+                "preview" to readAloudContent.limitMcpText(textCharLimit)
+            ),
+            "raw_chapter_source" to mapOf(
+                "content_chars" to rawContent.length,
+                "preview" to rawContent.limitMcpText(textCharLimit)
+            ),
+            "storyboard_snapshot" to AiTtsStoryboardHelper.debugSnapshot(
+                book = book,
+                chapterIndex = ReadBook.durChapterIndex,
+                chapterTitle = chapter.title,
+                content = readAloudContent,
+                characters = characters,
+                includeStoryboard = includeStoryboard,
+                paragraphLimit = paragraphLimit,
+                unitLimit = unitLimit,
+                segmentLimit = segmentLimit,
+                textCharLimit = textCharLimit
+            )
+        )
+        val warnings = buildList {
+            if (readAloudContent.isBlank()) {
+                add("当前朗读源为空")
+            }
+            if (readAloudContent != rawContent) {
+                add("朗读源与原章节正文不完全一致，可能包含朗读过滤或分页处理")
+            }
+        }
+        return toolResult(
+            ok = true,
+            upstreamEndpoint = "native://readAloud/storyboardDebug",
+            normalizedData = data,
+            warnings = warnings
         )
     }
 

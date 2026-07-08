@@ -9,6 +9,7 @@ import androidx.room.Transaction
 import androidx.room.Update
 import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookCharacterProfile
+import io.legado.app.data.entities.BookCharacterTtsBinding
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -29,6 +30,12 @@ interface BookCharacterDao {
     @Query("select * from bookCharacters where workKey = :workKey order by sortOrder asc, id asc")
     fun flowCharacters(workKey: String): Flow<List<BookCharacter>>
 
+    @Query("select * from bookCharacterTtsBindings where workKey = :workKey")
+    fun getTtsBindings(workKey: String): List<BookCharacterTtsBinding>
+
+    @Query("select * from bookCharacterTtsBindings where workKey = :workKey")
+    fun flowTtsBindings(workKey: String): Flow<List<BookCharacterTtsBinding>>
+
     @Query("select * from bookCharacters where id = :id")
     fun getCharacter(id: Long): BookCharacter?
 
@@ -47,8 +54,14 @@ interface BookCharacterDao {
     @Update
     fun updateCharacters(vararg characters: BookCharacter)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertTtsBinding(binding: BookCharacterTtsBinding)
+
     @Delete
     fun deleteCharacter(character: BookCharacter)
+
+    @Query("delete from bookCharacterTtsBindings where workKey = :workKey and targetType = :targetType and targetId = :targetId")
+    fun deleteTtsBinding(workKey: String, targetType: String, targetId: Long)
 
     @Query("delete from bookCharacterProfiles where workKey = :workKey")
     fun deleteProfile(workKey: String)

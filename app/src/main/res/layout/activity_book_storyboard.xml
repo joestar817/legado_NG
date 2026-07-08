@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".ui.book.character.BookStoryboardActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <io.legado.app.ui.widget.TitleBar
+            android:id="@+id/title_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:title="@string/book_storyboard" />
+
+        <TextView
+            android:id="@+id/tv_summary"
+            style="@style/Ng.Summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="@dimen/ng_page_padding"
+            android:paddingTop="@dimen/ng_space_s"
+            android:paddingEnd="@dimen/ng_page_padding"
+            android:paddingBottom="@dimen/ng_space_s"
+            android:textSize="14sp"
+            tools:text="第1章 · 5 个分镜 · 38 个片段 · 对白 16 · 心声 2" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler_view"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingStart="@dimen/ng_page_padding"
+            android:paddingTop="@dimen/ng_space_xs"
+            android:paddingEnd="@dimen/ng_page_padding"
+            android:paddingBottom="@dimen/ng_space_l"
+            tools:listitem="@layout/item_book_storyboard_segment" />
+
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_empty"
+        style="@style/Ng.Summary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:padding="@dimen/ng_page_padding"
+        android:text="@string/book_storyboard_empty"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
+</FrameLayout>

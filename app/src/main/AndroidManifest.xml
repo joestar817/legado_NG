@@ -180,6 +180,12 @@
             android:name=".ui.book.character.BookCharacterActivity"
             android:launchMode="singleTop" />
         <activity
+            android:name=".ui.book.character.BookCharacterTtsActivity"
+            android:launchMode="singleTop" />
+        <activity
+            android:name=".ui.book.character.BookStoryboardActivity"
+            android:launchMode="singleTop" />
+        <activity
             android:name=".ui.book.character.BookCharacterEditActivity"
             android:windowSoftInputMode="adjustResize|stateHidden" />
         <!-- 音频播放界面 -->

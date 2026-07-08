@@ -76,6 +76,7 @@ import io.legado.app.ui.widget.TitleBar
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.WaitDialog
+import io.legado.app.ui.widget.number.NumberPickerDialog
 import io.legado.app.ui.widget.recycler.ItemTouchCallback
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.hideSoftInput
@@ -111,6 +112,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         PROMPT_DETAIL,
         MODEL_SETTINGS,
         PURIFY_MODEL_SETTINGS,
+        READ_ALOUD_MODEL_SETTINGS,
         ASSISTANT_MODEL_SETTINGS,
         PURIFY_SETTINGS
     }
@@ -226,6 +228,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
         binding.layoutPurifyEntry.setOnClickListener {
             showPurifyModelSettings()
+        }
+        binding.layoutReadAloudEntry.setOnClickListener {
+            showReadAloudModelSettings()
         }
         binding.layoutPurifySettingsEntry.setOnClickListener {
             showPurifySettings()
@@ -460,6 +465,15 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPurifyReasoningEntry.setOnClickListener {
             showPurifyReasoningDialog()
         }
+        binding.layoutReadAloudStoryboardModelEntry.setOnClickListener {
+            showReadAloudStoryboardModelSelectDialog()
+        }
+        binding.layoutReadAloudStoryboardPreloadEntry.setOnClickListener {
+            showReadAloudStoryboardPreloadDialog()
+        }
+        binding.layoutReadAloudStoryboardReasoningEntry.setOnClickListener {
+            showReadAloudStoryboardReasoningDialog()
+        }
         binding.layoutAssistantModelEntry.setOnClickListener {
             showAssistantModelSelectDialog()
         }
@@ -642,6 +656,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             binding.layoutPromptDetail.isVisible -> Page.PROMPT_DETAIL
             binding.layoutPromptList.isVisible -> Page.PROMPTS
             binding.layoutAssistantModelSettings.isVisible -> Page.ASSISTANT_MODEL_SETTINGS
+            binding.layoutReadAloudModelSettings.isVisible -> Page.READ_ALOUD_MODEL_SETTINGS
             binding.layoutPurifyModelSettings.isVisible -> Page.PURIFY_MODEL_SETTINGS
             binding.layoutModelSettings.isVisible -> Page.MODEL_SETTINGS
             binding.layoutPurifySettings.isVisible -> Page.PURIFY_SETTINGS
@@ -658,6 +673,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             Page.PROMPTS -> showMain()
             Page.MODEL_SETTINGS -> showMain()
             Page.PURIFY_MODEL_SETTINGS -> showMain()
+            Page.READ_ALOUD_MODEL_SETTINGS -> showMain()
             Page.ASSISTANT_MODEL_SETTINGS -> showMain()
             Page.PURIFY_SETTINGS -> showPurifyModelSettings()
             Page.MAIN -> Unit
@@ -688,6 +704,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutReadAloudModelSettings.isVisible = false
         binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshMain()
@@ -708,6 +725,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutReadAloudModelSettings.isVisible = false
         binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshAccentControls()
@@ -732,6 +750,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutReadAloudModelSettings.isVisible = false
         binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshAccentControls()
@@ -759,6 +778,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutReadAloudModelSettings.isVisible = false
         binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshPrompts()
@@ -780,6 +800,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = true
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutReadAloudModelSettings.isVisible = false
         binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshPromptDetail()
@@ -800,6 +821,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = true
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutReadAloudModelSettings.isVisible = false
         binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshModelSettings()
@@ -820,6 +842,28 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = true
+        binding.layoutReadAloudModelSettings.isVisible = false
+        binding.layoutAssistantModelSettings.isVisible = false
+        binding.layoutPurifySettings.isVisible = false
+        refreshModelSettings()
+    }
+
+    private fun showReadAloudModelSettings() {
+        currentPage = Page.READ_ALOUD_MODEL_SETTINGS
+        currentProviderId = null
+        currentModelId = null
+        currentSkill = null
+        currentPrompt = null
+        setPageTitle(R.string.ai_read_aloud)
+        binding.layoutMainMenu.isVisible = false
+        binding.layoutProviderList.isVisible = false
+        binding.layoutProviderDetail.isVisible = false
+        binding.layoutModelDetail.isVisible = false
+        binding.layoutPromptList.isVisible = false
+        binding.layoutPromptDetail.isVisible = false
+        binding.layoutModelSettings.isVisible = false
+        binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutReadAloudModelSettings.isVisible = true
         binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = false
         refreshModelSettings()
@@ -840,6 +884,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutReadAloudModelSettings.isVisible = false
         binding.layoutAssistantModelSettings.isVisible = true
         binding.layoutPurifySettings.isVisible = false
         refreshModelSettings()
@@ -860,6 +905,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutPromptDetail.isVisible = false
         binding.layoutModelSettings.isVisible = false
         binding.layoutPurifyModelSettings.isVisible = false
+        binding.layoutReadAloudModelSettings.isVisible = false
         binding.layoutAssistantModelSettings.isVisible = false
         binding.layoutPurifySettings.isVisible = true
         refreshPurifySettings()
@@ -876,6 +922,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             Page.PROMPT_DETAIL -> refreshPromptDetail()
             Page.MODEL_SETTINGS -> refreshModelSettings()
             Page.PURIFY_MODEL_SETTINGS -> refreshModelSettings()
+            Page.READ_ALOUD_MODEL_SETTINGS -> refreshModelSettings()
             Page.ASSISTANT_MODEL_SETTINGS -> refreshModelSettings()
             Page.PURIFY_SETTINGS -> refreshPurifySettings()
         }
@@ -1029,6 +1076,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.imagePromptEntryIcon.imageTintList = entryIconTint
         binding.imageChatFabIcon.imageTintList = entryIconTint
         binding.imagePurifyEntryIcon.imageTintList = entryIconTint
+        binding.imageReadAloudEntryIcon.imageTintList = entryIconTint
         ignoreMainFormChanges = true
         try {
             binding.switchChatFab.isChecked = AiConfig.chatFabEnabled
@@ -1078,6 +1126,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             R.string.ai_model_function_summary,
             purifyModelSummaryText(),
             purifyReasoningSummaryText()
+        )
+        binding.textReadAloudEntrySummary.text = getString(
+            R.string.ai_model_function_summary,
+            readAloudStoryboardModelSummaryText(),
+            readAloudStoryboardReasoningSummaryText()
         )
     }
 
@@ -2145,12 +2198,16 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         val entryIconTint = ColorStateList.valueOf(color)
         binding.textModelSettingsSectionLabel.setTextColor(color)
         binding.textPurifyModelSettingsSectionLabel.setTextColor(color)
+        binding.textReadAloudModelSettingsSectionLabel.setTextColor(color)
         binding.textAssistantModelSettingsSectionLabel.setTextColor(color)
         binding.imagePurifyModelSettingsIcon.imageTintList = entryIconTint
         binding.imageAssistantModelSettingsIcon.imageTintList = entryIconTint
         binding.imagePurifyModelIcon.imageTintList = entryIconTint
         binding.imagePurifyReasoningIcon.imageTintList = entryIconTint
         binding.imagePurifySettingsEntryIcon.imageTintList = entryIconTint
+        binding.imageReadAloudStoryboardModelIcon.imageTintList = entryIconTint
+        binding.imageReadAloudStoryboardPreloadIcon.imageTintList = entryIconTint
+        binding.imageReadAloudStoryboardReasoningIcon.imageTintList = entryIconTint
         binding.imageAssistantModelIcon.imageTintList = entryIconTint
         binding.imageAssistantReasoningIcon.imageTintList = entryIconTint
         binding.imageInternalMcpIcon.imageTintList = entryIconTint
@@ -2175,6 +2232,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         )
         binding.textPurifyModelSummary.text = purifyModelSummaryText()
         binding.textPurifyReasoningSummary.text = purifyReasoningSummaryText()
+        binding.textReadAloudStoryboardModelSummary.text = readAloudStoryboardModelSummaryText()
+        binding.textReadAloudStoryboardPreloadSummary.text = getString(
+            R.string.ai_read_aloud_storyboard_preload_summary,
+            AiConfig.readAloudStoryboardPreloadCount
+        )
+        binding.textReadAloudStoryboardReasoningSummary.text =
+            readAloudStoryboardReasoningSummaryText()
         binding.textPurifySettingsEntrySummary.text = getString(
             R.string.ai_purify_settings_summary,
             getString(if (AiConfig.purifyAutoApply) R.string.enabled else R.string.disabled),
@@ -2205,6 +2269,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             operationPermissionModeSummary(AiConfig.operationPermissionMode)
         val reasoningEnabled = selectedPurifyModel()?.model?.supportsReasoning() == true
         binding.layoutPurifyReasoningEntry.alpha = if (reasoningEnabled) 1f else 0.55f
+        val readAloudReasoningEnabled =
+            selectedReadAloudStoryboardModel()?.model?.supportsReasoning() == true
+        binding.layoutReadAloudStoryboardReasoningEntry.alpha =
+            if (readAloudReasoningEnabled) 1f else 0.55f
         val assistantReasoningEnabled = selectedAssistantModel()?.model?.supportsReasoning() == true
         binding.layoutAssistantReasoningEntry.alpha = if (assistantReasoningEnabled) 1f else 0.55f
     }
@@ -2265,6 +2333,35 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
+    private fun readAloudStoryboardModelSummaryText(): String {
+        val selected = selectedReadAloudStoryboardModel()
+        return when {
+            selected == null && AiConfig.readAloudStoryboardModelId.isBlank() ->
+                getString(R.string.ai_read_aloud_storyboard_model_not_selected)
+            selected == null ->
+                getString(R.string.ai_read_aloud_storyboard_model_unavailable)
+            else ->
+                getString(
+                    R.string.ai_purify_model_selected_summary,
+                    selected.model.displayName(),
+                    selected.provider.name
+                )
+        }
+    }
+
+    private fun readAloudStoryboardReasoningSummaryText(): String {
+        val selected = selectedReadAloudStoryboardModel()
+        return when {
+            selected == null -> getString(R.string.ai_read_aloud_reasoning_select_model_first)
+            !selected.model.supportsReasoning() ->
+                getString(R.string.ai_read_aloud_reasoning_unsupported)
+            else -> getString(
+                R.string.ai_purify_reasoning_level_summary,
+                AiConfig.readAloudStoryboardReasoningLevel.displayName()
+            )
+        }
+    }
+
     private fun selectedPurifyModel(): PurifyModelOption? {
         val providerId = AiConfig.purifyProviderId
         val modelId = AiConfig.purifyModelId
@@ -2273,6 +2370,18 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
         val provider = AiProviderStore.provider(providerId)?.takeIf { it.enabled } ?: return null
         val model = provider.purifyEligibleModels().firstOrNull { it.safeId() == modelId } ?: return null
+        return PurifyModelOption(provider, model)
+    }
+
+    private fun selectedReadAloudStoryboardModel(): PurifyModelOption? {
+        val providerId = AiConfig.readAloudStoryboardProviderId
+        val modelId = AiConfig.readAloudStoryboardModelId
+        if (providerId.isBlank() || modelId.isBlank()) {
+            return null
+        }
+        val provider = AiProviderStore.provider(providerId)?.takeIf { it.enabled } ?: return null
+        val model = provider.purifyEligibleModels().firstOrNull { it.safeId() == modelId }
+            ?: return null
         return PurifyModelOption(provider, model)
     }
 
@@ -2287,6 +2396,17 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         )
         sheet.setScrollableContent { container, query, dialog ->
             renderPurifyModelOptions(container, query, dialog)
+        }
+        sheet.show()
+    }
+
+    private fun showReadAloudStoryboardModelSelectDialog() {
+        val sheet = NgLongListBottomSheet(
+            context = requireContext(),
+            searchHint = getString(R.string.ai_read_aloud_storyboard_model_search_hint)
+        )
+        sheet.setScrollableContent { container, query, dialog ->
+            renderReadAloudStoryboardModelOptions(container, query, dialog)
         }
         sheet.show()
     }
@@ -2316,6 +2436,35 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             container.addView(createPurifyProviderHeader(provider))
             models.forEach { model ->
                 container.addView(createPurifyModelCard(provider, model, dialog))
+            }
+        }
+    }
+
+    private fun renderReadAloudStoryboardModelOptions(
+        container: LinearLayout,
+        query: String,
+        dialog: BottomSheetDialog
+    ) {
+        container.removeAllViews()
+        val normalizedQuery = query.trim()
+        val groupedOptions = purifyModelOptions(normalizedQuery)
+        if (groupedOptions.isEmpty()) {
+            container.addView(TextView(requireContext()).apply {
+                text = getString(R.string.ai_read_aloud_storyboard_model_empty)
+                setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant))
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setPadding(0, 44.dpToPx(), 0, 44.dpToPx())
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            return
+        }
+        groupedOptions.forEach { (provider, models) ->
+            container.addView(createPurifyProviderHeader(provider))
+            models.forEach { model ->
+                container.addView(createReadAloudStoryboardModelCard(provider, model, dialog))
             }
         }
     }
@@ -2352,6 +2501,30 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         dialog: BottomSheetDialog
     ): LinearLayout {
         val selected = AiConfig.purifyProviderId == provider.id && AiConfig.purifyModelId == model.safeId()
+        return createTextTaskModelCard(provider, model, selected, dialog) {
+            AiConfig.savePurifyModel(provider.id, model.safeId())
+        }
+    }
+
+    private fun createReadAloudStoryboardModelCard(
+        provider: AiProviderSetting,
+        model: AiModel,
+        dialog: BottomSheetDialog
+    ): LinearLayout {
+        val selected = AiConfig.readAloudStoryboardProviderId == provider.id &&
+            AiConfig.readAloudStoryboardModelId == model.safeId()
+        return createTextTaskModelCard(provider, model, selected, dialog) {
+            AiConfig.saveReadAloudStoryboardModel(provider.id, model.safeId())
+        }
+    }
+
+    private fun createTextTaskModelCard(
+        provider: AiProviderSetting,
+        model: AiModel,
+        selected: Boolean,
+        dialog: BottomSheetDialog,
+        onSelect: () -> Unit
+    ): LinearLayout {
         return LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -2363,7 +2536,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             }
             setPadding(14.dpToPx(), 12.dpToPx(), 14.dpToPx(), 12.dpToPx())
             setOnClickListener {
-                AiConfig.savePurifyModel(provider.id, model.safeId())
+                onSelect()
                 refreshModelSettings()
                 refreshMain()
                 dialog.dismiss()
@@ -2450,6 +2623,49 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             refreshModelSettings()
             refreshMain()
         }
+    }
+
+    private fun showReadAloudStoryboardReasoningDialog() {
+        val selected = selectedReadAloudStoryboardModel()
+        if (selected == null) {
+            Toast.makeText(
+                requireContext(),
+                R.string.ai_read_aloud_reasoning_select_model_first,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        if (!selected.model.supportsReasoning()) {
+            Toast.makeText(
+                requireContext(),
+                R.string.ai_read_aloud_reasoning_unsupported,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        showReasoningLevelDialog(
+            title = getString(R.string.ai_read_aloud_reasoning_title),
+            description = getString(R.string.ai_read_aloud_reasoning_desc),
+            currentLevel = AiConfig.readAloudStoryboardReasoningLevel,
+            iconTintWhenOff = true
+        ) { level ->
+            AiConfig.readAloudStoryboardReasoningLevel = level
+            refreshModelSettings()
+            refreshMain()
+        }
+    }
+
+    private fun showReadAloudStoryboardPreloadDialog() {
+        NumberPickerDialog(requireContext())
+            .setTitle(getString(R.string.ai_read_aloud_storyboard_preload_count))
+            .setMinValue(AiConfig.MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT)
+            .setMaxValue(AiConfig.MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT)
+            .setValue(AiConfig.readAloudStoryboardPreloadCount)
+            .show { value ->
+                AiConfig.readAloudStoryboardPreloadCount = value
+                refreshModelSettings()
+                refreshMain()
+            }
     }
 
     private fun showAssistantReasoningDialog() {

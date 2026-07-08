@@ -122,6 +122,10 @@ class BookCharacterActivity : BaseActivity<ActivityBookCharacterBinding>(),
     }
 
     override fun onCompatOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.menu_tts) {
+            openTtsBindings()
+            return true
+        }
         if (item.itemId == R.id.menu_add) {
             openEdit(0L)
             return true
@@ -153,6 +157,16 @@ class BookCharacterActivity : BaseActivity<ActivityBookCharacterBinding>(),
                 .putExtra(EXTRA_BOOK_AUTHOR, bookAuthor)
                 .putExtra(EXTRA_BOOK_URL, bookUrl)
                 .putExtra(EXTRA_CHARACTER_ID, characterId)
+        )
+    }
+
+    private fun openTtsBindings() {
+        startActivity(
+            Intent(this, BookCharacterTtsActivity::class.java)
+                .putExtra(EXTRA_WORK_KEY, workKey)
+                .putExtra(EXTRA_BOOK_NAME, bookName)
+                .putExtra(EXTRA_BOOK_AUTHOR, bookAuthor)
+                .putExtra(EXTRA_BOOK_URL, bookUrl)
         )
     }
 

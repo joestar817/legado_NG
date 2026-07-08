@@ -121,7 +121,7 @@ object TtsEngineStore {
         return engines().firstOrNull { it.id == id }
     }
 
-    fun saveEngine(engine: TtsEngineSetting) {
+    fun saveEngine(engine: TtsEngineSetting, restartReadAloud: Boolean = true) {
         val wasActive = activeEngineId() == engine.id
         val previous = engine(engine.id)
         val currentEngines = engines()
@@ -136,7 +136,7 @@ object TtsEngineStore {
             appDb.ttsVoiceDao.deleteByEngine(engine.id)
         }
         val effectiveEngine = TtsEngineStore.engine(engine.id) ?: engine
-        if (wasActive) {
+        if (wasActive && restartReadAloud) {
             if (effectiveEngine.enabled) {
                 ReadAloud.httpTtsEngineV2 = effectiveEngine.takeIf {
                     it.type == TtsEngineType.SCRIPT
@@ -265,7 +265,11 @@ object TtsEngineStore {
         return engine(engineId)
     }
 
-    fun upsertVoiceList(engineId: String, voices: List<TtsVoice>): TtsEngineSetting? {
+    fun upsertVoiceList(
+        engineId: String,
+        voices: List<TtsVoice>,
+        restartReadAloud: Boolean = true
+    ): TtsEngineSetting? {
         val engine = engine(engineId) ?: return null
         val now = System.currentTimeMillis()
         appDb.ttsVoiceDao.replaceForEngine(
@@ -276,7 +280,7 @@ object TtsEngineStore {
             ?.takeIf { voiceId -> voices.any { it.id == voiceId } }
             ?: voices.firstOrNull()?.id
         val updated = engine.copy(activeVoiceId = activeVoiceId)
-        saveEngine(updated)
+        saveEngine(updated, restartReadAloud)
         return updated.copy(runtimeVoices = voices, lastVoiceUpdateTime = now)
     }
 

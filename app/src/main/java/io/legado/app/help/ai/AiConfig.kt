@@ -26,8 +26,9 @@ object AiConfig {
     const val DEFAULT_PURIFY_CHAPTER_RETRY_COUNT = 3
     const val MIN_PURIFY_CHAPTER_RETRY_COUNT = 0
     const val MAX_PURIFY_CHAPTER_RETRY_COUNT = 10
-    private const val PARAGRAPH_OUTPUT_BUDGET_LIMIT = 6144
-    private const val CHAPTER_OUTPUT_BUDGET_LIMIT = 12288
+    const val DEFAULT_READ_ALOUD_STORYBOARD_PRELOAD_COUNT = 3
+    const val MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT = 0
+    const val MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT = 5
 
     var internalMcpEnabled: Boolean
         get() = appCtx.getPrefBoolean(PreferKey.aiInternalMcp, false)
@@ -79,6 +80,44 @@ object AiConfig {
         get() = AiReasoningLevel.from(appCtx.getPrefString(PreferKey.aiPurifyReasoningLevel))
         set(value) {
             appCtx.putPrefString(PreferKey.aiPurifyReasoningLevel, value.prefValue)
+        }
+
+    var readAloudStoryboardProviderId: String
+        get() = appCtx.getPrefString(PreferKey.aiReadAloudStoryboardProviderId).orEmpty()
+        set(value) {
+            appCtx.putPrefString(PreferKey.aiReadAloudStoryboardProviderId, value.trim())
+        }
+
+    var readAloudStoryboardModelId: String
+        get() = appCtx.getPrefString(PreferKey.aiReadAloudStoryboardModelId).orEmpty()
+        set(value) {
+            appCtx.putPrefString(PreferKey.aiReadAloudStoryboardModelId, value.trim())
+        }
+
+    var readAloudStoryboardReasoningLevel: AiReasoningLevel
+        get() = AiReasoningLevel.from(
+            appCtx.getPrefString(PreferKey.aiReadAloudStoryboardReasoningLevel)
+        )
+        set(value) {
+            appCtx.putPrefString(PreferKey.aiReadAloudStoryboardReasoningLevel, value.prefValue)
+        }
+
+    var readAloudStoryboardPreloadCount: Int
+        get() = appCtx.getPrefInt(
+            PreferKey.aiReadAloudStoryboardPreloadCount,
+            DEFAULT_READ_ALOUD_STORYBOARD_PRELOAD_COUNT
+        ).coerceIn(
+            MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT,
+            MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT
+        )
+        set(value) {
+            appCtx.putPrefInt(
+                PreferKey.aiReadAloudStoryboardPreloadCount,
+                value.coerceIn(
+                    MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT,
+                    MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT
+                )
+            )
         }
 
     var assistantProviderId: String
@@ -232,6 +271,20 @@ object AiConfig {
         purifyModelId = modelId
     }
 
+    fun requireReadAloudStoryboardModel(): AiModelSelection {
+        val providerId = readAloudStoryboardProviderId
+        val modelId = readAloudStoryboardModelId
+        check(providerId.isNotBlank() && modelId.isNotBlank()) {
+            "请先在 AI 设置 > AI听书 > 分镜模型 中选择模型"
+        }
+        return AiModelSelection(providerId, modelId)
+    }
+
+    fun saveReadAloudStoryboardModel(providerId: String, modelId: String) {
+        readAloudStoryboardProviderId = providerId
+        readAloudStoryboardModelId = modelId
+    }
+
     fun requireAssistantModel(): AiModelSelection {
         val providerId = assistantProviderId
         val modelId = assistantModelId
@@ -260,10 +313,7 @@ object AiConfig {
         inputLength: Int,
         supportsReasoning: Boolean
     ): AiTextParams {
-        val baseBudget = (inputLength * 2 + 256).coerceIn(512, 4096)
         return purifyTextParams(
-            baseOutputBudget = baseBudget,
-            outputBudgetLimit = PARAGRAPH_OUTPUT_BUDGET_LIMIT,
             supportsReasoning = supportsReasoning
         )
     }
@@ -273,25 +323,30 @@ object AiConfig {
         paragraphCount: Int,
         supportsReasoning: Boolean
     ): AiTextParams {
-        val baseBudget = (sourceLength + paragraphCount * 64 + 512).coerceIn(1024, 8192)
         return purifyTextParams(
-            baseOutputBudget = baseBudget,
-            outputBudgetLimit = CHAPTER_OUTPUT_BUDGET_LIMIT,
             supportsReasoning = supportsReasoning
         )
     }
 
-    private fun purifyTextParams(
-        baseOutputBudget: Int,
-        outputBudgetLimit: Int,
+    fun readAloudStoryboardParams(
+        targetUnitCount: Int,
         supportsReasoning: Boolean
     ): AiTextParams {
-        val level = purifyReasoningLevel.takeIf { supportsReasoning } ?: AiReasoningLevel.OFF
-        val outputBudget = (baseOutputBudget + level.reasoningReserve(baseOutputBudget))
-            .coerceIn(baseOutputBudget, outputBudgetLimit)
+        val level = readAloudStoryboardReasoningLevel
+            .takeIf { supportsReasoning }
+            ?: AiReasoningLevel.OFF
         return AiTextParams(
             temperature = 0f,
-            maxTokens = outputBudget,
+            enableThinking = level != AiReasoningLevel.OFF && level != AiReasoningLevel.AUTO,
+            disableThinking = level == AiReasoningLevel.OFF,
+            reasoningEffort = level.reasoningEffort
+        )
+    }
+
+    private fun purifyTextParams(supportsReasoning: Boolean): AiTextParams {
+        val level = purifyReasoningLevel.takeIf { supportsReasoning } ?: AiReasoningLevel.OFF
+        return AiTextParams(
+            temperature = 0f,
             enableThinking = level != AiReasoningLevel.OFF && level != AiReasoningLevel.AUTO,
             disableThinking = level == AiReasoningLevel.OFF,
             reasoningEffort = level.reasoningEffort
