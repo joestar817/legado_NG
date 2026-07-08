@@ -783,6 +783,7 @@ internal fun AiProviderSetting.iconRes(): Int {
         "volcengine" -> R.drawable.ic_provider_volcengine
         "moonshot" -> R.drawable.ic_provider_moonshot
         "zhipu" -> R.drawable.ic_provider_zhipu
+        "sensenova" -> R.drawable.ic_provider_sensenova
         else -> when (type) {
             AiProviderType.OPENAI -> R.drawable.ic_provider_openai
             AiProviderType.CLAUDE -> R.drawable.ic_provider_claude
@@ -821,6 +822,9 @@ internal fun AiModel.iconRes(defaultIconRes: Int): Int {
         Regex("cloudflare").containsMatchIn(modelName) -> R.drawable.ic_model_cloudflare
         Regex("minimax").containsMatchIn(modelName) -> R.drawable.ic_model_minimax
         Regex("xai").containsMatchIn(modelName) -> R.drawable.ic_model_xai
+        Regex("sensenova|商汤|sensetime").containsMatchIn(modelName) -> {
+            R.drawable.ic_provider_sensenova
+        }
         Regex("juhenext").containsMatchIn(modelName) -> R.drawable.ic_model_juhenext
         Regex("kimi").containsMatchIn(modelName) -> R.drawable.ic_model_kimi
         Regex("moonshot|月之暗面").containsMatchIn(modelName) -> R.drawable.ic_provider_moonshot

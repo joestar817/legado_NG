@@ -545,6 +545,12 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val SENSENOVA_6_7_FLASH_LITE = defineAiModel {
+        tokens("sensenova", "6", "7", "flash", "lite")
+        visionInput()
+        reasoningAbility()
+    }
+
     private val ASR_MODEL = defineAiModel {
         tokens(aiTokenRegex("^(asr|sensevoice)$"))
         speechRecognition()
@@ -720,6 +726,7 @@ object AiModelRegistry {
         HUNYUAN_A13B,
         HUNYUAN_MT,
         SEED_OSS,
+        SENSENOVA_6_7_FLASH_LITE,
         ASR_MODEL,
         TELE_SPEECH_ASR,
         SENSE_VOICE,
@@ -752,6 +759,10 @@ object AiModelRegistry {
         XIAOMI_MIMO_V2_PRO,
         XIAOMI_MIMO_V2_5,
         XIAOMI_MIMO_V2_5_PRO
+    )
+
+    private val SENSENOVA_REASONING_MODELS = setOf(
+        SENSENOVA_6_7_FLASH_LITE
     )
 
     fun capabilities(modelId: String): AiModelCapabilities {
@@ -838,6 +849,10 @@ object AiModelRegistry {
             models.any { it in XIAOMI_MIMO_MODELS } -> AiModelReasoningOptions(
                 thinkingParam = "thinking",
                 reasoningOutputField = "reasoning_content"
+            )
+
+            models.any { it in SENSENOVA_REASONING_MODELS } -> AiModelReasoningOptions(
+                reasoningOutputField = "reasoning"
             )
 
             else -> AiModelReasoningOptions()

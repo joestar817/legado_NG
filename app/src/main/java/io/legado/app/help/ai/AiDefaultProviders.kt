@@ -68,6 +68,26 @@ object AiDefaultProviders {
             enabled = true
         ),
         AiProviderSetting(
+            id = "sensenova",
+            type = AiProviderType.OPENAI,
+            name = "商汤",
+            baseUrl = "https://token.sensenova.cn/v1",
+            model = "sensenova-6.7-flash-lite",
+            models = listOf(
+                AiModel(
+                    id = "sensenova-6.7-flash-lite",
+                    name = "SenseNova 6.7 Flash-Lite",
+                    ownedBy = "SenseNova",
+                    inputModalities = listOf(AiModelModality.TEXT, AiModelModality.IMAGE),
+                    outputModalities = listOf(AiModelModality.TEXT),
+                    abilities = listOf(AiModelAbility.REASONING)
+                )
+            ),
+            modelsUrl = "/models",
+            streamResponseEnabled = true,
+            enabled = true
+        ),
+        AiProviderSetting(
             id = "aliyun_bailian",
             type = AiProviderType.OPENAI,
             name = "阿里云百炼",
