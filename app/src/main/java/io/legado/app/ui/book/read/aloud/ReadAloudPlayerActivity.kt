@@ -959,8 +959,8 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         fun bind(segment: StoryboardSegment) = binding.run {
             val identity = when (segment.type) {
                 StoryboardSegmentType.NARRATION -> "旁白"
-                StoryboardSegmentType.DIALOGUE -> segment.speakerName ?: "待确认说话人"
-                StoryboardSegmentType.THOUGHT -> segment.speakerName ?: "心声"
+                StoryboardSegmentType.DIALOGUE -> segment.speakerName ?: segment.virtualSpeakerName()
+                StoryboardSegmentType.THOUGHT -> segment.speakerName ?: segment.virtualSpeakerName()
             }
             val evidence = segment.evidence.trim()
             tvType.text = identity
@@ -972,6 +972,14 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
             btnPreview.background = accentCircleBackground()
             btnPreview.imageTintList = ColorStateList.valueOf(accentColor)
             btnPreview.setOnClickListener { previewStoryboardSegment(segment) }
+        }
+    }
+
+    private fun StoryboardSegment.virtualSpeakerName(): String {
+        return when (speakerGender) {
+            StoryboardSegment.SpeakerGender.MALE -> "对白男"
+            StoryboardSegment.SpeakerGender.FEMALE -> "对白女"
+            else -> if (type == StoryboardSegmentType.THOUGHT) "心声" else "待确认说话人"
         }
     }
 

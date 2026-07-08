@@ -32,9 +32,16 @@ data class StoryboardSegment(
     val speakerName: String?,
     val evidence: String,
     val speakerId: Long? = null,
+    val speakerGender: String = SpeakerGender.UNKNOWN,
     val start: Int = 0,
     val end: Int = start + text.length
-)
+) {
+    object SpeakerGender {
+        const val MALE = "male"
+        const val FEMALE = "female"
+        const val UNKNOWN = "unknown"
+    }
+}
 
 enum class StoryboardSegmentType {
     NARRATION,

@@ -41,6 +41,8 @@ data class BookCharacterTtsBinding(
     object TargetType {
         const val NARRATOR = "narrator"
         const val CHARACTER = "character"
+        const val DIALOGUE_MALE = "dialogue_male"
+        const val DIALOGUE_FEMALE = "dialogue_female"
     }
 
     companion object {
@@ -57,6 +59,22 @@ data class BookCharacterTtsBinding(
                 workKey = workKey,
                 targetType = TargetType.CHARACTER,
                 targetId = characterId
+            )
+        }
+
+        fun dialogueMale(workKey: String): BookCharacterTtsBinding {
+            return BookCharacterTtsBinding(
+                workKey = workKey,
+                targetType = TargetType.DIALOGUE_MALE,
+                targetId = 0L
+            )
+        }
+
+        fun dialogueFemale(workKey: String): BookCharacterTtsBinding {
+            return BookCharacterTtsBinding(
+                workKey = workKey,
+                targetType = TargetType.DIALOGUE_FEMALE,
+                targetId = 0L
             )
         }
     }

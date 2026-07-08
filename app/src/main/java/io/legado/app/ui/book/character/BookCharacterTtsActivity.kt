@@ -92,6 +92,7 @@ class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBinding>()
                 binding.tvSummary.text = getString(
                     R.string.character_tts_summary,
                     1,
+                    2,
                     characters.count { it.enabled }
                 )
                 if (rows.isEmpty()) {
@@ -112,6 +113,18 @@ class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBinding>()
             add(
                 Row.Narrator(
                     binding = bindingMap[BookCharacterTtsBinding.TargetType.NARRATOR to 0L]
+                )
+            )
+            add(
+                Row.DialogueFallback(
+                    gender = BookCharacter.Gender.MALE,
+                    binding = bindingMap[BookCharacterTtsBinding.TargetType.DIALOGUE_MALE to 0L]
+                )
+            )
+            add(
+                Row.DialogueFallback(
+                    gender = BookCharacter.Gender.FEMALE,
+                    binding = bindingMap[BookCharacterTtsBinding.TargetType.DIALOGUE_FEMALE to 0L]
                 )
             )
             characters.filter { it.enabled }.forEach { character ->
@@ -203,6 +216,7 @@ class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBinding>()
     private fun Row.binding(): BookCharacterTtsBinding? {
         return when (this) {
             is Row.Narrator -> binding
+            is Row.DialogueFallback -> binding
             is Row.Character -> binding
         }
     }
@@ -210,6 +224,11 @@ class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBinding>()
     private fun Row.newBinding(): BookCharacterTtsBinding {
         return when (this) {
             is Row.Narrator -> BookCharacterTtsBinding.narrator(workKey)
+            is Row.DialogueFallback -> if (gender == BookCharacter.Gender.MALE) {
+                BookCharacterTtsBinding.dialogueMale(workKey)
+            } else {
+                BookCharacterTtsBinding.dialogueFemale(workKey)
+            }
             is Row.Character -> BookCharacterTtsBinding.character(workKey, character.id)
         }
     }
@@ -217,6 +236,11 @@ class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBinding>()
     private fun Row.target(): Pair<String, Long> {
         return when (this) {
             is Row.Narrator -> BookCharacterTtsBinding.TargetType.NARRATOR to 0L
+            is Row.DialogueFallback -> if (gender == BookCharacter.Gender.MALE) {
+                BookCharacterTtsBinding.TargetType.DIALOGUE_MALE to 0L
+            } else {
+                BookCharacterTtsBinding.TargetType.DIALOGUE_FEMALE to 0L
+            }
             is Row.Character -> BookCharacterTtsBinding.TargetType.CHARACTER to character.id
         }
     }
@@ -244,6 +268,42 @@ class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBinding>()
                         ?: getString(R.string.character_tts_follow_global, globalVoiceLabel())
                     tvStyle.text = bindingStyleLabel(item.binding)
                         ?: getString(R.string.character_tts_narrator_style)
+                    tvAction.text = getString(R.string.character_tts_select_voice)
+                }
+                is Row.DialogueFallback -> {
+                    val male = item.gender == BookCharacter.Gender.MALE
+                    tvAvatar.text = getString(
+                        if (male) {
+                            R.string.character_tts_dialogue_male_avatar
+                        } else {
+                            R.string.character_tts_dialogue_female_avatar
+                        }
+                    )
+                    tvAvatar.setBackgroundResource(
+                        if (male) {
+                            R.drawable.bg_character_avatar_male
+                        } else {
+                            R.drawable.bg_character_avatar_female
+                        }
+                    )
+                    tvName.text = getString(
+                        if (male) {
+                            R.string.character_tts_dialogue_male
+                        } else {
+                            R.string.character_tts_dialogue_female
+                        }
+                    )
+                    tvRole.text = getString(R.string.character_tts_dialogue_fallback)
+                    tvVoice.text = bindingVoiceLabel(item.binding)
+                        ?: getString(R.string.character_tts_unbound)
+                    tvStyle.text = bindingStyleLabel(item.binding)
+                        ?: getString(
+                            if (male) {
+                                R.string.character_tts_dialogue_male_hint
+                            } else {
+                                R.string.character_tts_dialogue_female_hint
+                            }
+                        )
                     tvAction.text = getString(R.string.character_tts_select_voice)
                 }
                 is Row.Character -> {
@@ -298,6 +358,10 @@ class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBinding>()
 
     private sealed interface Row {
         data class Narrator(val binding: BookCharacterTtsBinding?) : Row
+        data class DialogueFallback(
+            val gender: String,
+            val binding: BookCharacterTtsBinding?
+        ) : Row
         data class Character(
             val character: BookCharacter,
             val binding: BookCharacterTtsBinding?

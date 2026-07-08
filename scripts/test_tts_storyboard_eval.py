@@ -91,6 +91,7 @@ class TtsStoryboardEvalTest(unittest.TestCase):
                     "roleType": "character",
                     "characterName": "陈小杏",
                     "characterId": 1,
+                    "speakerGender": "female",
                     "status": "assigned",
                     "confidence": 0.9,
                     "evidence": "后文声音: 陈小杏",
@@ -101,6 +102,7 @@ class TtsStoryboardEvalTest(unittest.TestCase):
                     "roleType": "character",
                     "characterName": "陈升",
                     "characterId": 2,
+                    "speakerGender": "male",
                     "status": "assigned",
                     "confidence": 0.8,
                     "evidence": "",
@@ -127,6 +129,7 @@ class TtsStoryboardEvalTest(unittest.TestCase):
                     "roleType": "character",
                     "characterName": "陈小杏",
                     "characterId": 1,
+                    "speakerGender": "female",
                     "status": "assigned",
                     "confidence": 0.9,
                     "evidence": "后文声音: 陈小杏",
@@ -140,6 +143,81 @@ class TtsStoryboardEvalTest(unittest.TestCase):
         self.assertTrue(audit["cacheable"])
         self.assertEqual(audit["missing_target_count"], 0)
         self.assertEqual(audit["text_leak_count"], 0)
+        self.assertEqual(audit["invalid_schema_count"], 0)
+
+    def test_validation_accepts_unknown_dialogue_with_gender(self) -> None:
+        chapter = storyboard.Chapter(1, "校验", "“你是谁？”屋里传出一道年轻男声。")
+        payload = storyboard.build_storyboard_payload(chapter, max_chars=1000)
+        unit_id = payload["targetUnitIds"][0]
+        result = {
+            "units": [
+                {
+                    "unitId": unit_id,
+                    "roleType": "character",
+                    "characterName": "",
+                    "characterId": 0,
+                    "speakerGender": "male",
+                    "status": "unknown",
+                    "confidence": 0.72,
+                    "evidence": "后文声音: 年轻男声",
+                }
+            ],
+            "newCharacters": [],
+        }
+
+        audit = storyboard.validate_storyboard_result(payload, result)
+
+        self.assertTrue(audit["cacheable"])
+        self.assertEqual(audit["invalid_schema_count"], 0)
+
+    def test_validation_accepts_unknown_dialogue_with_display_name(self) -> None:
+        chapter = storyboard.Chapter(1, "校验", "柳烟儿冷哼一声：“这是我们请来的丹师。”")
+        payload = storyboard.build_storyboard_payload(chapter, max_chars=1000)
+        unit_id = payload["targetUnitIds"][0]
+        result = {
+            "units": [
+                {
+                    "unitId": unit_id,
+                    "roleType": "character",
+                    "characterName": "柳烟儿",
+                    "characterId": 0,
+                    "speakerGender": "female",
+                    "status": "unknown",
+                    "confidence": 0.95,
+                    "evidence": "前文动作: 柳烟儿",
+                }
+            ],
+            "newCharacters": [],
+        }
+
+        audit = storyboard.validate_storyboard_result(payload, result)
+
+        self.assertTrue(audit["cacheable"])
+        self.assertEqual(audit["invalid_schema_count"], 0)
+
+    def test_validation_accepts_assigned_missing_character_with_gender_fallback(self) -> None:
+        chapter = storyboard.Chapter(1, "校验", "身后下属厉声道：“你敢！”")
+        payload = storyboard.build_storyboard_payload(chapter, max_chars=1000)
+        unit_id = payload["targetUnitIds"][0]
+        result = {
+            "units": [
+                {
+                    "unitId": unit_id,
+                    "roleType": "character",
+                    "characterName": "",
+                    "characterId": 0,
+                    "speakerGender": "male",
+                    "status": "assigned",
+                    "confidence": 0.9,
+                    "evidence": "前文声音: 身后下属",
+                }
+            ],
+            "newCharacters": [],
+        }
+
+        audit = storyboard.validate_storyboard_result(payload, result)
+
+        self.assertTrue(audit["cacheable"])
         self.assertEqual(audit["invalid_schema_count"], 0)
 
 

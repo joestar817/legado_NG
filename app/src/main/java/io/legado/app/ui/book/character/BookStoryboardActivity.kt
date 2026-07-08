@@ -170,7 +170,7 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>() {
             tvSpeaker.text = when (segment.type) {
                 StoryboardSegmentType.NARRATION -> getString(R.string.book_storyboard_narrator)
                 else -> segment.speakerName
-                    ?: getString(R.string.book_storyboard_unknown_speaker)
+                    ?: segment.virtualSpeakerName()
             }
             tvText.text = segment.text
             tvEvidence.text = getString(
@@ -196,6 +196,14 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>() {
                 )
                 StoryboardSegmentType.DIALOGUE -> ColorUtils.withAlpha(primaryColor, 0.18f)
                 StoryboardSegmentType.THOUGHT -> ColorUtils.withAlpha(accentColor, 0.18f)
+            }
+        }
+
+        private fun StoryboardSegment.virtualSpeakerName(): String {
+            return when (speakerGender) {
+                StoryboardSegment.SpeakerGender.MALE -> getString(R.string.character_tts_dialogue_male)
+                StoryboardSegment.SpeakerGender.FEMALE -> getString(R.string.character_tts_dialogue_female)
+                else -> getString(R.string.book_storyboard_unknown_speaker)
             }
         }
     }

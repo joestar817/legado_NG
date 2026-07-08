@@ -21,12 +21,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splitties.init.appCtx
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 
 object AiTtsStoryboardHelper {
 
     private const val SKILL_ASSET = "skills/tts_storyboard.md"
     private const val CACHE_DIR = "ai_tts_storyboard"
-    private const val CACHE_VERSION = 2
+    private const val CACHE_VERSION = 3
     private const val MEMORY_CACHE_TTL = 5 * 60 * 1000L
     private val quotePairs = mapOf(
         '“' to '”',
@@ -52,11 +53,36 @@ object AiTtsStoryboardHelper {
         "text", "input", "content", "sourceText", "source_text", "output", "ranges", "start", "end"
     )
     private val unitKeys = setOf(
-        "unitId", "roleType", "characterName", "characterId", "status", "confidence", "evidence"
+        "unitId", "roleType", "characterName", "characterId", "speakerGender",
+        "status", "confidence", "evidence"
     )
     private val rootKeys = setOf("units", "newCharacters")
     private val roleTypes = setOf("narrator", "character", "thought", "other")
     private val statuses = setOf("assigned", "unknown")
+    private val speakerGenders = setOf(
+        StoryboardSegment.SpeakerGender.MALE,
+        StoryboardSegment.SpeakerGender.FEMALE,
+        StoryboardSegment.SpeakerGender.UNKNOWN
+    )
+    private val speechCuePatterns = listOf(
+        Regex("([\\u4e00-\\u9fffA-Za-z0-9·]{2,12})(?:冷哼一声|冷哼|说道|说|问道|问|喊道|喊|叫道|叫|道|开口|吐槽|坦言|回答|答道|回道|回复|说了句|补了一句|顿足|大怒|断然道|淡淡道|悠悠道|笑道|叹了口气|摆摆手|失笑)"),
+        Regex("(?:前文|后文|动作|主语|对话承接)[:：]\\s*([\\u4e00-\\u9fffA-Za-z0-9·]{2,12})(?:冷哼一声|冷哼|说道|说|问道|问|喊道|喊|叫道|叫|道|开口|吐槽|坦言|回答|答道|回道|回复|说了句|补了一句|顿足|大怒|断然道|淡淡道|悠悠道|笑道|叹了口气|摆摆手|失笑)")
+    )
+    private val voiceCuePatterns = listOf(
+        Regex("(?:妈妈|父亲|母亲|姐姐|妹妹|哥哥|弟弟)?([\\u4e00-\\u9fffA-Za-z0-9·]{2,12})(?:的)?(?:声音|话音)"),
+        Regex("(?:说话的便是|说话的是|便是|来自)(?:那|这|一个|一位)?([\\u4e00-\\u9fffA-Za-z0-9·]{2,12}(?:男子|女子|男人|女人|男声|女声)?)")
+    )
+    private val femaleSpeakerWords = listOf("女", "娘", "妈", "姐", "妹", "妻", "妾", "姑娘", "小姐", "夫人")
+    private val maleSpeakerWords = listOf("男", "父", "爹", "爸", "哥", "弟", "兄", "叔", "伯", "先生", "公子", "男子")
+    private val genericSpeakerWords = listOf(
+        "下属", "有人", "众人", "路人", "男子", "女子", "男人", "女人", "男声", "女声",
+        "年轻", "中年", "老者", "少年", "少女", "身后", "屋里", "里面", "门外"
+    )
+    private val genericSpeakerSuffixes = setOf("前文", "后文", "声音", "动作", "主语", "对话承接")
+    private val invalidSpeakerNames = setOf(
+        "前文", "后文", "声音", "话音", "动作", "主语", "对话承接", "冷哼一声",
+        "冷哼", "说道", "说", "问道", "问", "喊道", "喊", "叫道", "叫", "道"
+    )
     private val cacheMutex = Mutex()
     private val memoryCache = linkedMapOf<String, MemoryCacheEntry>()
     private val inFlightRequests = hashMapOf<String, CompletableDeferred<GenerateResult>>()
@@ -89,12 +115,12 @@ object AiTtsStoryboardHelper {
         try {
             val result = generate(request)
             cacheMutex.withLock {
-                memoryCache[request.cacheKey] = MemoryCacheEntry(
-                    cache = result.cache,
-                    expiresAt = System.currentTimeMillis() + MEMORY_CACHE_TTL
-                )
-                trimMemoryCache()
                 if (result.cacheable) {
+                    memoryCache[request.cacheKey] = MemoryCacheEntry(
+                        cache = result.cache,
+                        expiresAt = System.currentTimeMillis() + MEMORY_CACHE_TTL
+                    )
+                    trimMemoryCache()
                     cacheFile.parentFile?.mkdirs()
                     cacheFile.writeText(GSON.toJson(result.cache), Charsets.UTF_8)
                 }
@@ -250,6 +276,7 @@ object AiTtsStoryboardHelper {
                     "role_type" to it.roleType,
                     "character_name" to it.characterName,
                     "character_id" to it.characterId,
+                    "speaker_gender" to it.speakerGender,
                     "status" to it.status,
                     "confidence" to it.confidence,
                     "evidence" to it.evidence.limitDebugText(textCharLimit)
@@ -276,6 +303,7 @@ object AiTtsStoryboardHelper {
                             "type" to segment.type.name.lowercase(),
                             "speaker_id" to segment.speakerId,
                             "speaker_name" to segment.speakerName,
+                            "speaker_gender" to segment.speakerGender,
                             "paragraph_index" to segment.paragraphIndex,
                             "start" to segment.start,
                             "end" to segment.end,
@@ -332,6 +360,9 @@ object AiTtsStoryboardHelper {
             )
         }
         val assignments = result.getOrElse { error ->
+            if (error is CancellationException) {
+                throw error
+            }
             io.legado.app.constant.AppLog.put(
                 "AI听书分镜整章请求失败，已临时回退旁白\n${error.localizedMessage}",
                 error
@@ -384,8 +415,9 @@ object AiTtsStoryboardHelper {
         }
         return parseAndValidate(
             raw = result.content,
-            targetUnitIds = targetUnits.map { it.unitId },
-            allowNewCharacters = false
+            targetUnits = targetUnits,
+            allowNewCharacters = false,
+            knownCharacters = request.characters.map { it.toKnownCharacter() }
         )
     }
 
@@ -399,6 +431,7 @@ object AiTtsStoryboardHelper {
             roleType = "narrator",
             characterName = "",
             characterId = 0L,
+            speakerGender = StoryboardSegment.SpeakerGender.UNKNOWN,
             status = "unknown",
             confidence = 0f,
             evidence = "$chunkLabel 请求失败，回退旁白$message"
@@ -425,6 +458,7 @@ object AiTtsStoryboardHelper {
                         character.id,
                         character.name,
                         character.aliasesJson.orEmpty(),
+                        character.gender,
                         character.roleTag
                     ).joinToString("|")
                 }
@@ -678,14 +712,16 @@ object AiTtsStoryboardHelper {
             characterId = id,
             name = name,
             aliases = aliases,
+            gender = gender,
             role = roleTag
         )
     }
 
     private fun parseAndValidate(
         raw: String,
-        targetUnitIds: List<String>,
-        allowNewCharacters: Boolean
+        targetUnits: List<CandidateUnit>,
+        allowNewCharacters: Boolean,
+        knownCharacters: List<KnownCharacter> = emptyList()
     ): List<ModelUnitResult> {
         val json = normalizeModelOutput(raw).extractJsonObjectCandidate()
         check(json.isNotBlank()) { "AI 未返回 JSON 对象" }
@@ -703,7 +739,9 @@ object AiTtsStoryboardHelper {
             }
         }
         val output = GSON.fromJson(json, StoryboardModelOutput::class.java)
+        val targetUnitIds = targetUnits.map { it.unitId }
         val targetSet = targetUnitIds.toSet()
+        val targetMap = targetUnits.associateBy { it.unitId }
         val seen = output.units.map { it.unitId }
         val missing = targetUnitIds.filter { it !in seen }
         val duplicated = seen.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
@@ -711,24 +749,149 @@ object AiTtsStoryboardHelper {
         check(missing.isEmpty()) { "AI 漏掉目标 unit：${missing.take(3).joinToString()}" }
         check(duplicated.isEmpty()) { "AI 重复返回 unit：${duplicated.take(3).joinToString()}" }
         check(unknown.isEmpty()) { "AI 返回未知 unit：${unknown.take(3).joinToString()}" }
-        return output.units.onEachIndexed { index, unit ->
+        val knownIndex = knownCharacterIndex(knownCharacters)
+        return output.units.mapIndexed { index, unit ->
             val item = unitsElement.asJsonArray[index].asJsonObject
             val extraKeys = item.keySet() - unitKeys
             check(extraKeys.isEmpty()) { "AI 返回 unit 额外字段：${extraKeys.joinToString()}" }
             check(unit.roleType in roleTypes) { "AI 返回非法 roleType：${unit.roleType}" }
             check(unit.status in statuses) { "AI 返回非法 status：${unit.status}" }
+            check(unit.speakerGender in speakerGenders) { "AI 返回非法 speakerGender：${unit.speakerGender}" }
             check(unit.confidence in 0f..1f) { "AI 返回非法 confidence：${unit.confidence}" }
-            if (unit.roleType == "narrator" || unit.roleType == "other" || unit.status == "unknown") {
-                check(unit.characterName.isBlank() && unit.characterId == 0L) {
-                    "旁白/未知 unit 不允许携带角色"
+            normalizeModelUnit(unit, knownIndex, targetMap[unit.unitId])
+        }
+    }
+
+    private fun knownCharacterIndex(knownCharacters: List<KnownCharacter>): KnownCharacterIndex {
+        val byId = knownCharacters
+            .filter { it.characterId > 0L }
+            .associateBy { it.characterId }
+        val byName = buildMap {
+            knownCharacters.forEach { character ->
+                val names = buildList {
+                    add(character.name)
+                    addAll(character.aliases)
                 }
-            }
-            if ((unit.roleType == "character" || unit.roleType == "thought") && unit.status == "assigned") {
-                check(unit.characterName.isNotBlank() || unit.characterId > 0L) {
-                    "已归因角色 unit 缺少角色"
+                names.forEach { name ->
+                    val key = name.trim()
+                    if (key.isNotBlank()) {
+                        put(key, character)
+                    }
                 }
             }
         }
+        return KnownCharacterIndex(byId, byName)
+    }
+
+    private fun normalizeModelUnit(
+        unit: ModelUnitResult,
+        knownIndex: KnownCharacterIndex,
+        candidateUnit: CandidateUnit?
+    ): ModelUnitResult {
+        if (unit.roleType == "narrator" || unit.roleType == "other") {
+            return unit.copy(
+                characterName = "",
+                characterId = 0L,
+                speakerGender = StoryboardSegment.SpeakerGender.UNKNOWN,
+                status = "unknown"
+            )
+        }
+        val modelDisplayName = unit.characterName
+            .trim()
+            .takeIf { it.isValidSpeakerName(unit.speakerGender) }
+            .orEmpty()
+        val displayName = modelDisplayName
+            .ifBlank { inferSpeakerDisplayName(unit, candidateUnit) }
+        val known = knownIndex.byId[unit.characterId]
+            ?: displayName.takeIf { it.isNotBlank() }?.let { knownIndex.byName[it] }
+        if (known != null) {
+            return unit.copy(
+                characterName = known.name,
+                characterId = known.characterId,
+                speakerGender = known.gender.takeIf { it in speakerGenders && it != StoryboardSegment.SpeakerGender.UNKNOWN }
+                    ?: unit.speakerGender,
+                status = "assigned"
+            )
+        }
+        val genderFallback = unit.speakerGender == StoryboardSegment.SpeakerGender.MALE ||
+            unit.speakerGender == StoryboardSegment.SpeakerGender.FEMALE
+        if (genderFallback) {
+            return unit.copy(
+                characterName = displayName,
+                characterId = 0L,
+                status = "unknown"
+            )
+        }
+        return unit.copy(
+            roleType = "narrator",
+            characterName = "",
+            characterId = 0L,
+            speakerGender = StoryboardSegment.SpeakerGender.UNKNOWN,
+            status = "unknown"
+        )
+    }
+
+    private fun inferSpeakerDisplayName(
+        unit: ModelUnitResult,
+        candidateUnit: CandidateUnit?
+    ): String {
+        if (candidateUnit == null) return ""
+        val sources = listOf(
+            unit.evidence,
+            candidateUnit.cueBefore,
+            candidateUnit.cueAfter
+        )
+        return sources.firstNotNullOfOrNull { source ->
+            inferSpeakerNameFromText(source, unit.speakerGender)
+        }.orEmpty()
+    }
+
+    private fun inferSpeakerNameFromText(text: String, speakerGender: String): String? {
+        val value = text
+            .replace('\n', ' ')
+            .replace('　', ' ')
+            .trim()
+        if (value.isBlank()) return null
+        speechCuePatterns.forEach { pattern ->
+            pattern.findAll(value).lastOrNull()?.let { match ->
+                val name = match.groupValues.getOrNull(1)?.cleanSpeakerName().orEmpty()
+                if (name.isValidSpeakerName(speakerGender)) return name
+            }
+        }
+        voiceCuePatterns.forEach { pattern ->
+            pattern.findAll(value).lastOrNull()?.let { match ->
+                val name = match.groupValues.getOrNull(1)?.cleanSpeakerName().orEmpty()
+                if (name.isValidSpeakerName(speakerGender)) return name
+            }
+        }
+        return null
+    }
+
+    private fun String?.cleanSpeakerName(): String {
+        return orEmpty()
+            .trim()
+            .trim('“', '”', '‘', '’', '"', '\'', '：', ':', '，', ',', '。', '、')
+            .replace(Regex("^(?:前文|后文|声音|动作|主语|称呼|对话承接)[:：]\\s*"), "")
+            .replace(Regex("^(?:那|这|一个|一位|那个|这个)"), "")
+            .trim()
+            .take(12)
+    }
+
+    private fun String.isValidSpeakerName(speakerGender: String): Boolean {
+        if (isBlank()) return false
+        if (length !in 2..12) return false
+        if (any { it.isWhitespace() }) return false
+        if (genericSpeakerWords.any { contains(it) }) return false
+        if (contains('：') || contains(':') || contains('，') || contains('。')) return false
+        if (this in invalidSpeakerNames) return false
+        if (speakerGender == StoryboardSegment.SpeakerGender.FEMALE &&
+            femaleSpeakerWords.any { contains(it) }
+        ) return true
+        if (speakerGender == StoryboardSegment.SpeakerGender.MALE &&
+            maleSpeakerWords.any { contains(it) }
+        ) return true
+        return any { it in '\u4e00'..'\u9fff' } &&
+            !genericSpeakerSuffixes.any { this == it }
     }
 
     private fun StoryboardCache.toChapterStoryboard(): ChapterStoryboard {
@@ -756,10 +919,14 @@ object AiTtsStoryboardHelper {
                 addNarrationSegment(paragraph, cursor, range.start, segments)
             }
             val assignment = assignmentMap[unit.unitId]
+            val roleType = assignment?.roleType
+            val assignedOrGenderFallback = assignment?.status == "assigned" ||
+                assignment?.speakerGender == StoryboardSegment.SpeakerGender.MALE ||
+                assignment?.speakerGender == StoryboardSegment.SpeakerGender.FEMALE
             val type = when {
-                assignment?.status == "assigned" && assignment.roleType == "character" ->
+                assignedOrGenderFallback && roleType == "character" ->
                     StoryboardSegmentType.DIALOGUE
-                assignment?.status == "assigned" && assignment.roleType == "thought" ->
+                assignedOrGenderFallback && roleType == "thought" ->
                     StoryboardSegmentType.THOUGHT
                 else -> StoryboardSegmentType.NARRATION
             }
@@ -767,7 +934,9 @@ object AiTtsStoryboardHelper {
                 type = type,
                 paragraphIndex = paragraph.paragraphIndex,
                 text = paragraph.text.substring(range.start, range.end.coerceAtMost(paragraph.text.length)),
-                speakerName = assignment?.characterName?.takeIf { type != StoryboardSegmentType.NARRATION },
+                speakerName = assignment?.characterName
+                    ?.trim()
+                    ?.takeIf { type != StoryboardSegmentType.NARRATION && it.isNotBlank() },
                 evidence = when {
                     type == StoryboardSegmentType.NARRATION &&
                         assignment?.evidence?.isNotBlank() == true -> assignment.evidence
@@ -776,6 +945,11 @@ object AiTtsStoryboardHelper {
                     else -> "AI归因"
                 },
                 speakerId = assignment?.characterId?.takeIf { it > 0L && type != StoryboardSegmentType.NARRATION },
+                speakerGender = if (type == StoryboardSegmentType.NARRATION) {
+                    StoryboardSegment.SpeakerGender.UNKNOWN
+                } else {
+                    assignment?.speakerGender ?: StoryboardSegment.SpeakerGender.UNKNOWN
+                },
                 start = range.start,
                 end = range.end
             )
@@ -823,6 +997,7 @@ object AiTtsStoryboardHelper {
                 last.type == segment.type &&
                 last.speakerId == segment.speakerId &&
                 last.speakerName == segment.speakerName &&
+                last.speakerGender == segment.speakerGender &&
                 last.end == segment.start
             ) {
                 result[result.lastIndex] = last.copy(
@@ -865,7 +1040,7 @@ object AiTtsStoryboardHelper {
         return groups.mapIndexed { index, group ->
             val segments = group.flatMap { paragraphSegments[it.paragraphIndex].orEmpty() }
             val names = segments
-                .mapNotNull { it.speakerName }
+                .mapNotNull { it.speakerName ?: it.virtualSpeakerName() }
                 .distinct()
             val summary = segments.firstOrNull { it.type == StoryboardSegmentType.NARRATION }?.text
                 ?: group.firstOrNull()?.text.orEmpty()
@@ -880,6 +1055,17 @@ object AiTtsStoryboardHelper {
                 characters = names,
                 segments = segments
             )
+        }
+    }
+
+    private fun StoryboardSegment.virtualSpeakerName(): String? {
+        if (type != StoryboardSegmentType.DIALOGUE && type != StoryboardSegmentType.THOUGHT) {
+            return null
+        }
+        return when (speakerGender) {
+            StoryboardSegment.SpeakerGender.MALE -> "对白男"
+            StoryboardSegment.SpeakerGender.FEMALE -> "对白女"
+            else -> null
         }
     }
 
@@ -1125,8 +1311,15 @@ object AiTtsStoryboardHelper {
         val name: String,
         @SerializedName("aliases")
         val aliases: List<String>,
+        @SerializedName("gender")
+        val gender: String,
         @SerializedName("role")
         val role: String
+    )
+
+    private data class KnownCharacterIndex(
+        val byId: Map<Long, KnownCharacter>,
+        val byName: Map<String, KnownCharacter>
     )
 
     private data class StoryboardModelOutput(
@@ -1145,6 +1338,8 @@ object AiTtsStoryboardHelper {
         val characterName: String = "",
         @SerializedName("characterId")
         val characterId: Long = 0L,
+        @SerializedName("speakerGender")
+        val speakerGender: String = StoryboardSegment.SpeakerGender.UNKNOWN,
         @SerializedName("status")
         val status: String = "",
         @SerializedName("confidence")

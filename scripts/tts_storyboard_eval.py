@@ -65,6 +65,7 @@ UNIT_KEYS = {
     "roleType",
     "characterName",
     "characterId",
+    "speakerGender",
     "status",
     "confidence",
     "evidence",
@@ -72,6 +73,7 @@ UNIT_KEYS = {
 ROOT_KEYS = {"units", "newCharacters"}
 ROLE_TYPES = {"narrator", "character", "thought", "other"}
 STATUSES = {"assigned", "unknown"}
+SPEAKER_GENDERS = {"male", "female", "unknown"}
 DIALOGUE_CUES = (
     "说",
     "说道",
@@ -337,7 +339,7 @@ def build_storyboard_payload(
 def parse_known_characters(values: list[str]) -> list[dict[str, Any]]:
     characters: list[dict[str, Any]] = []
     for raw in values:
-        parts = raw.split(":", 3)
+        parts = raw.split(":", 4)
         if len(parts) < 2:
             raise ValueError(f"bad --character value: {raw}")
         character_id = int(parts[0])
@@ -347,12 +349,20 @@ def parse_known_characters(values: list[str]) -> list[dict[str, Any]]:
             for alias in (parts[2].split(",") if len(parts) >= 3 and parts[2].strip() else [])
             if alias.strip()
         ]
-        role = parts[3].strip() if len(parts) >= 4 else ""
+        gender = "unknown"
+        role = ""
+        if len(parts) >= 4:
+            if parts[3].strip() in SPEAKER_GENDERS:
+                gender = parts[3].strip()
+                role = parts[4].strip() if len(parts) >= 5 else ""
+            else:
+                role = parts[3].strip()
         characters.append(
             {
                 "characterId": character_id,
                 "name": name,
                 "aliases": aliases,
+                "gender": gender,
                 "role": role,
             }
         )
@@ -627,6 +637,9 @@ def validate_storyboard_result(
         status = item.get("status")
         if status not in STATUSES:
             invalid_schema.append(f"units[{index}]:bad_status={status}")
+        speaker_gender = item.get("speakerGender")
+        if speaker_gender not in SPEAKER_GENDERS:
+            invalid_schema.append(f"units[{index}]:bad_speakerGender={speaker_gender}")
         confidence = item.get("confidence")
         if not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1:
             invalid_schema.append(f"units[{index}]:bad_confidence={confidence}")
@@ -634,12 +647,19 @@ def validate_storyboard_result(
         character_id = item.get("characterId")
         if not isinstance(character_id, int):
             invalid_schema.append(f"units[{index}]:bad_characterId={character_id}")
-        if role_type in ("narrator", "other") or status == "unknown":
+        if role_type in ("narrator", "other"):
             if character_name or character_id not in (0, None):
                 invalid_schema.append(f"units[{index}]:character_must_be_blank")
+        if role_type in ("narrator", "other") and speaker_gender != "unknown":
+            invalid_schema.append(f"units[{index}]:narrator_gender_must_be_unknown")
         if role_type in ("character", "thought") and status == "assigned":
-            if not character_name and character_id in (0, None):
+            if not character_name and character_id in (0, None) and speaker_gender not in ("male", "female"):
                 invalid_schema.append(f"units[{index}]:assigned_character_missing")
+        if role_type in ("character", "thought") and status == "unknown":
+            if character_id not in (0, None):
+                invalid_schema.append(f"units[{index}]:unknown_character_id_must_be_zero")
+            if speaker_gender == "unknown":
+                invalid_schema.append(f"units[{index}]:unknown_dialogue_gender_missing")
         if unit_id in known_ids and not leak_paths:
             valid_units.append(item)
     duplicate_ids = sorted({unit_id for unit_id in seen if unit_id and seen.count(unit_id) > 1})
@@ -752,6 +772,7 @@ def write_report(
                 "   result: "
                 f"{resolution.get('roleType')} / {resolution.get('status')} / "
                 f"{resolution.get('characterName') or '-'} / "
+                f"{resolution.get('speakerGender') or '-'} / "
                 f"{resolution.get('confidence')} / {resolution.get('evidence') or '-'}"
             )
         else:

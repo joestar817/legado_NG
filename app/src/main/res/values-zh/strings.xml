@@ -79,7 +79,7 @@
     <string name="character_role_unknown">未知</string>
     <string name="character_name_empty">角色名称不能为空。</string>
     <string name="character_tts_bindings">角色朗读</string>
-    <string name="character_tts_summary">旁白 %1$d 个 · 角色 %2$d 个</string>
+    <string name="character_tts_summary">旁白 %1$d 个 · 兜底 %2$d 个 · 角色 %3$d 个</string>
     <string name="character_tts_empty">还没有启用的角色。</string>
     <string name="character_tts_narrator">旁白</string>
     <string name="character_tts_narrator_style">情绪风格：生成语音时按情景调度</string>
@@ -90,6 +90,13 @@
     <string name="character_tts_fallback_narrator">选择发音人前默认使用旁白</string>
     <string name="character_tts_select_voice">选择</string>
     <string name="character_tts_narrator_avatar">旁</string>
+    <string name="character_tts_dialogue_male">对白男</string>
+    <string name="character_tts_dialogue_female">对白女</string>
+    <string name="character_tts_dialogue_fallback">兜底</string>
+    <string name="character_tts_dialogue_male_avatar">男</string>
+    <string name="character_tts_dialogue_female_avatar">女</string>
+    <string name="character_tts_dialogue_male_hint">不确定男性对白兜底</string>
+    <string name="character_tts_dialogue_female_hint">不确定女性对白兜底</string>
     <string name="character_tts_search_voice">搜索引擎或发音人</string>
     <string name="character_tts_no_voice_options">没有可选发音人。</string>
     <string name="character_tts_system_default_voice">默认发音人</string>

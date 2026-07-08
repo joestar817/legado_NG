@@ -80,7 +80,7 @@
     <string name="character_role_unknown">Unknown role</string>
     <string name="character_name_empty">Character name cannot be empty.</string>
     <string name="character_tts_bindings">Character voices</string>
-    <string name="character_tts_summary">%1$d narrator · %2$d characters</string>
+    <string name="character_tts_summary">%1$d narrator · %2$d fallbacks · %3$d characters</string>
     <string name="character_tts_empty">No enabled characters yet.</string>
     <string name="character_tts_narrator">Narrator</string>
     <string name="character_tts_narrator_style">Emotion style: scheduled while generating speech</string>
@@ -91,6 +91,13 @@
     <string name="character_tts_fallback_narrator">Uses narrator voice until a voice is selected</string>
     <string name="character_tts_select_voice">Select</string>
     <string name="character_tts_narrator_avatar">N</string>
+    <string name="character_tts_dialogue_male">Dialogue male</string>
+    <string name="character_tts_dialogue_female">Dialogue female</string>
+    <string name="character_tts_dialogue_fallback">Fallback</string>
+    <string name="character_tts_dialogue_male_avatar">M</string>
+    <string name="character_tts_dialogue_female_avatar">F</string>
+    <string name="character_tts_dialogue_male_hint">Fallback for uncertain male dialogue</string>
+    <string name="character_tts_dialogue_female_hint">Fallback for uncertain female dialogue</string>
     <string name="character_tts_search_voice">Search engine or voice</string>
     <string name="character_tts_no_voice_options">No available voices.</string>
     <string name="character_tts_system_default_voice">Default voice</string>
