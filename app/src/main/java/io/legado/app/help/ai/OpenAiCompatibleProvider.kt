@@ -42,7 +42,7 @@ class OpenAiCompatibleProvider : AiProvider {
         messages: List<AiMessage>,
         params: AiTextParams
     ): AiTextResult {
-        val reasoningOptions = AiModelRegistry.capabilities(setting.model).reasoning
+        val reasoningOptions = setting.reasoningOptions(setting.model)
         val requestBody = JsonObject().apply {
             addProperty("model", setting.model)
             add("messages", JsonArray().apply {
@@ -71,6 +71,8 @@ class OpenAiCompatibleProvider : AiProvider {
             }
             if (params.enableThinking && reasoningOptions.effortParam.isNotBlank()) {
                 addProperty(reasoningOptions.effortParam, params.reasoningEffort ?: "high")
+            } else if (params.disableThinking && reasoningOptions.effortParam.isNotBlank()) {
+                addProperty(reasoningOptions.effortParam, "none")
             }
             addProperty("stream", false)
         }
@@ -121,12 +123,59 @@ class OpenAiCompatibleProvider : AiProvider {
             ?.mapNotNull { item ->
                 val obj = item.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
                 val id = obj.stringOrNull("id") ?: return@mapNotNull null
+                val clearCapabilities = AiModelRegistry.shouldClearDeclaredCapabilities(id)
                 AiModel(
                     id = id,
                     name = obj.stringOrNull("name") ?: id,
-                    ownedBy = obj.stringOrNull("owned_by").orEmpty()
+                    ownedBy = obj.stringOrNull("owned_by").orEmpty(),
+                    inputModalities = if (clearCapabilities) {
+                        emptyList()
+                    } else {
+                        obj.stringArrayOrEmpty("input_modalities").toModelModalities()
+                    },
+                    outputModalities = if (clearCapabilities) {
+                        emptyList()
+                    } else {
+                        obj.stringArrayOrEmpty("output_modalities").toModelModalities()
+                    },
+                    abilities = if (clearCapabilities) {
+                        emptyList()
+                    } else {
+                        obj.stringArrayOrEmpty("supported_features").toModelAbilities()
+                    }
                 )
             }
             ?: emptyList()
+    }
+
+    private fun JsonObject.stringArrayOrEmpty(key: String): List<String> {
+        return arrayOrNull(key)
+            ?.mapNotNull { item ->
+                item.takeIf { it.isJsonPrimitive }?.asString?.trim()
+            }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+    }
+
+    private fun List<String>.toModelAbilities(): List<AiModelAbility> {
+        val values = map { it.lowercase() }.toSet()
+        return buildList {
+            if ("tools" in values || "tool" in values || "function_calling" in values) {
+                add(AiModelAbility.TOOL)
+            }
+            if ("reasoning" in values) {
+                add(AiModelAbility.REASONING)
+            }
+        }
+    }
+
+    private fun List<String>.toModelModalities(): List<AiModelModality> {
+        val values = map { it.lowercase() }.toSet()
+        return buildList {
+            if ("text" in values) add(AiModelModality.TEXT)
+            if ("image" in values) add(AiModelModality.IMAGE)
+            if ("audio" in values) add(AiModelModality.AUDIO)
+            if ("video" in values) add(AiModelModality.VIDEO)
+        }
     }
 }

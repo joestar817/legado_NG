@@ -2,6 +2,9 @@ package io.legado.app.help.ai
 
 import com.google.gson.annotations.SerializedName
 
+internal const val AI_PROVIDER_DEFAULT_TIMEOUT_SECONDS = 180
+internal const val AI_PROVIDER_LEGACY_DEFAULT_TIMEOUT_SECONDS = 60
+
 data class AiProviderSetting(
     @SerializedName(value = "id", alternate = ["a"])
     val id: String,
@@ -26,7 +29,7 @@ data class AiProviderSetting(
     @SerializedName(value = "availableModelSelectionInitialized", alternate = ["w"])
     val availableModelSelectionInitialized: Boolean = false,
     @SerializedName(value = "timeoutSeconds", alternate = ["j"])
-    val timeoutSeconds: Int = 60,
+    val timeoutSeconds: Int = AI_PROVIDER_DEFAULT_TIMEOUT_SECONDS,
     @SerializedName(value = "chatCompletionsPath", alternate = ["k"])
     val chatCompletionsPath: String = "/chat/completions",
     @SerializedName(value = "modelsUrl", alternate = ["l"])

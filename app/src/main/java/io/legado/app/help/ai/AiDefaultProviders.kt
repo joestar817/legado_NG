@@ -80,10 +80,12 @@ object AiDefaultProviders {
                     ownedBy = "SenseNova",
                     inputModalities = listOf(AiModelModality.TEXT, AiModelModality.IMAGE),
                     outputModalities = listOf(AiModelModality.TEXT),
-                    abilities = listOf(AiModelAbility.REASONING)
+                    abilities = listOf(AiModelAbility.TOOL, AiModelAbility.REASONING)
                 )
             ),
             modelsUrl = "/models",
+            effortParam = "reasoning_effort",
+            reasoningOutputField = "reasoning",
             streamResponseEnabled = true,
             enabled = true
         ),

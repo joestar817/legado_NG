@@ -16,6 +16,10 @@ data class AiModelReasoningOptions(
 
 object AiModelRegistry {
 
+    fun shouldClearDeclaredCapabilities(modelId: String): Boolean {
+        return modelId.equals("sensenova-u1-fast", ignoreCase = true)
+    }
+
     private val GPT4O = defineAiModel {
         tokens("gpt", "4", "o")
         visionInput()
@@ -548,7 +552,7 @@ object AiModelRegistry {
     private val SENSENOVA_6_7_FLASH_LITE = defineAiModel {
         tokens("sensenova", "6", "7", "flash", "lite")
         visionInput()
-        reasoningAbility()
+        toolReasoningAbility()
     }
 
     private val ASR_MODEL = defineAiModel {
@@ -778,6 +782,13 @@ object AiModelRegistry {
     }
 
     fun enrich(model: AiModel): AiModel {
+        if (shouldClearDeclaredCapabilities(model.id)) {
+            return model.copy(
+                inputModalities = emptyList(),
+                outputModalities = emptyList(),
+                abilities = emptyList()
+            )
+        }
         val inferred = capabilities(model.id)
         val inferredType = inferred.type
         return model.copy(

@@ -54,7 +54,7 @@ class AiChatClient {
         while (true) {
             currentCoroutineContext().ensureActive()
             val stream = setting.streamResponseEnabled
-            val body = buildRequestBody(model, requestMessages, tools, params, stream)
+            val body = buildRequestBody(setting, model, requestMessages, tools, params, stream)
             val request = Request.Builder()
                 .url("${setting.baseUrl.trimEndSlash()}${setting.chatCompletionsPath.ensureStartSlash()}")
                 .apply {
@@ -65,8 +65,7 @@ class AiChatClient {
                 .addHeader("Content-Type", "application/json")
                 .post(jsonBody(body))
                 .build()
-            val reasoningKey = AiModelRegistry.capabilities(model.id)
-                .reasoning
+            val reasoningKey = setting.reasoningOptions(model.id)
                 .reasoningOutputField
                 .ifBlank { "reasoning_content" }
             val completion = if (stream) {
@@ -202,13 +201,14 @@ class AiChatClient {
     }
 
     private fun buildRequestBody(
+        setting: AiProviderSetting,
         model: AiModel,
         messages: List<JsonObject>,
         tools: List<McpChatTool>,
         params: AiTextParams,
         stream: Boolean
     ): JsonObject {
-        val reasoningOptions = AiModelRegistry.capabilities(model.id).reasoning
+        val reasoningOptions = setting.reasoningOptions(model.id)
         return JsonObject().apply {
             addProperty("model", model.id)
             add("messages", JsonArray().apply {
@@ -228,6 +228,8 @@ class AiChatClient {
             }
             if (params.enableThinking && reasoningOptions.effortParam.isNotBlank()) {
                 addProperty(reasoningOptions.effortParam, params.reasoningEffort ?: "high")
+            } else if (params.disableThinking && reasoningOptions.effortParam.isNotBlank()) {
+                addProperty(reasoningOptions.effortParam, "none")
             }
             if (tools.isNotEmpty()) {
                 add("tools", JsonArray().apply {
@@ -335,12 +337,16 @@ class AiChatClient {
                                 ?: return@forEach
                             val index = obj.intOrNull("index") ?: toolCalls.size
                             val toolCall = toolCalls.getOrPut(index) { StreamToolCall() }
-                            obj.stringOrNull("id")?.let { id -> toolCall.id = id }
-                            obj.stringOrNull("type")?.let { type -> toolCall.type = type }
+                            obj.stringOrNull("id")
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { id -> toolCall.id = id }
+                            obj.stringOrNull("type")
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { type -> toolCall.type = type }
                             obj.objectOrNull("function")?.let { function ->
-                                function.stringOrNull("name")?.let { name ->
-                                    toolCall.name = name
-                                }
+                                function.stringOrNull("name")
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let { name -> toolCall.name = name }
                                 function.stringOrNull("arguments")?.let { arguments ->
                                     toolCall.arguments.append(arguments)
                                 }
@@ -559,6 +565,7 @@ class AiChatClient {
             }
         )
         val body = buildRequestBody(
+            setting = setting,
             model = model,
             messages = memoryMessages,
             tools = emptyList(),
@@ -575,8 +582,7 @@ class AiChatClient {
             .addHeader("Content-Type", "application/json")
             .post(jsonBody(body))
             .build()
-        val reasoningKey = AiModelRegistry.capabilities(model.id)
-            .reasoning
+        val reasoningKey = setting.reasoningOptions(model.id)
             .reasoningOutputField
             .ifBlank { "reasoning_content" }
         val completion = client.executeJsonChat(request, reasoningKey)

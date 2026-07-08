@@ -142,7 +142,7 @@ object AiProviderStore {
             availableModelIds = normalizeModelIds(savedProvider.availableModelIds),
             availableModelSelectionInitialized =
                 savedProvider.availableModelSelectionInitialized,
-            timeoutSeconds = savedProvider.timeoutSeconds.coerceIn(5, 600),
+            timeoutSeconds = mergeTimeoutSeconds(default, savedProvider),
             chatCompletionsPath = savedProvider.chatCompletionsPath.ifBlank {
                 default.chatCompletionsPath
             },
@@ -173,7 +173,10 @@ object AiProviderStore {
         val apiKey = appCtx.getPrefString(PreferKey.aiApiKey).orEmpty()
         val baseUrl = appCtx.getPrefString(PreferKey.aiBaseUrl).orEmpty()
         val model = appCtx.getPrefString(PreferKey.aiModel).orEmpty()
-        val timeoutSeconds = appCtx.getPrefInt(PreferKey.aiTimeoutSeconds, 60).coerceIn(5, 600)
+        val timeoutSeconds = appCtx.getPrefInt(
+            PreferKey.aiTimeoutSeconds,
+            AI_PROVIDER_DEFAULT_TIMEOUT_SECONDS
+        ).coerceIn(5, 600)
         val enabled = appCtx.getPrefBoolean(PreferKey.aiEnabled, true)
         return defaults.map { provider ->
             if (provider.id != targetId) {
@@ -203,6 +206,22 @@ object AiProviderStore {
             modelsUrl = normalizeAiApiPath(provider.baseUrl, provider.modelsUrl),
             balanceUrl = normalizeAiApiPath(provider.baseUrl, provider.balanceUrl)
         )
+    }
+
+    private fun mergeTimeoutSeconds(
+        default: AiProviderSetting,
+        savedProvider: AiProviderSetting
+    ): Int {
+        val savedTimeout = savedProvider.timeoutSeconds.coerceIn(5, 600)
+        return if (
+            default.builtIn &&
+            savedProvider.builtIn &&
+            savedTimeout == AI_PROVIDER_LEGACY_DEFAULT_TIMEOUT_SECONDS
+        ) {
+            default.timeoutSeconds.coerceIn(5, 600)
+        } else {
+            savedTimeout
+        }
     }
 
     private fun sanitize(provider: AiProviderSetting): AiProviderSetting? {
@@ -302,8 +321,21 @@ object AiProviderStore {
                 else -> null
             }
         }.filter { it.id.isNotBlank() }
+            .map { it.withClearedCapabilitiesIfNeeded() }
             .distinctBy { it.id }
             .sortedBy { it.id.lowercase() }
+    }
+
+    private fun AiModel.withClearedCapabilitiesIfNeeded(): AiModel {
+        return if (AiModelRegistry.shouldClearDeclaredCapabilities(id)) {
+            copy(
+                inputModalities = emptyList(),
+                outputModalities = emptyList(),
+                abilities = emptyList()
+            )
+        } else {
+            this
+        }
     }
 
     private fun AiModel.normalizedModel(): AiModel? {
