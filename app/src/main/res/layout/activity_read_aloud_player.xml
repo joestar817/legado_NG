@@ -271,29 +271,31 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:includeFontPadding="false"
+            android:gravity="center"
             android:maxLines="1"
-            android:text="分镜"
+            android:text="原文"
             android:textColor="@color/ng_on_surface"
-            android:textSize="22sp"
+            android:textSize="19sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tv_storyboard_summary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="12dp"
             android:ellipsize="end"
+            android:gravity="center"
             android:includeFontPadding="false"
-            android:maxLines="2"
+            android:maxLines="1"
             android:textColor="@color/ng_on_surface_variant"
             android:textSize="14sp"
-            tools:text="5 个分镜 · 38 个片段 · 对白 16 · 心声 2" />
+            tools:text="当前章节 · 109 个段落" />
 
         <FrameLayout
             android:id="@+id/layout_storyboard_content"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="20dp"
             android:layout_weight="1">
 
             <androidx.recyclerview.widget.RecyclerView
@@ -302,7 +304,8 @@
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
                 android:overScrollMode="never"
-                tools:listitem="@layout/item_book_storyboard_segment" />
+                android:paddingTop="96dp"
+                android:paddingBottom="180dp" />
 
             <LinearLayout
                 android:id="@+id/layout_storyboard_loading"
@@ -337,9 +340,9 @@
     <LinearLayout
         android:id="@+id/layout_page_dots"
         android:layout_width="wrap_content"
-        android:layout_height="24dp"
+        android:layout_height="18dp"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="46dp"
+        android:layout_marginTop="50dp"
         android:gravity="center"
         android:orientation="horizontal"
         android:visibility="gone">
@@ -348,17 +351,15 @@
             android:id="@+id/dot_player"
             android:layout_width="18dp"
             android:layout_height="4dp"
-            android:background="@drawable/ng_bg_read_aloud_page_line"
-            android:alpha="1" />
+            android:background="@drawable/ng_bg_read_aloud_page_line" />
 
         <View
             android:id="@+id/dot_storyboard"
             android:layout_width="5dp"
             android:layout_height="5dp"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="8dp"
             android:background="@drawable/ng_bg_read_aloud_page_dot"
             android:alpha="0.35" />
-
     </LinearLayout>
 
     <ImageButton

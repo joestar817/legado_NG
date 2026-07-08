@@ -17,7 +17,8 @@ data class AiTextParams(
     val maxTokens: Int? = null,
     val enableThinking: Boolean = false,
     val disableThinking: Boolean = false,
-    val reasoningEffort: String? = null
+    val reasoningEffort: String? = null,
+    val jsonResponse: Boolean = false
 )
 
 data class AiTextResult(

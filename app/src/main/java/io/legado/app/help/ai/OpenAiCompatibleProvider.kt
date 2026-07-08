@@ -55,6 +55,11 @@ class OpenAiCompatibleProvider : AiProvider {
             })
             params.temperature?.let { addProperty("temperature", it) }
             params.maxTokens?.let { addProperty("max_tokens", it) }
+            if (params.jsonResponse) {
+                add("response_format", JsonObject().apply {
+                    addProperty("type", "json_object")
+                })
+            }
             if (params.enableThinking && reasoningOptions.thinkingParam.isNotBlank()) {
                 add(reasoningOptions.thinkingParam, JsonObject().apply {
                     addProperty("type", "enabled")

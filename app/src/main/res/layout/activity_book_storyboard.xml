@@ -7,51 +7,110 @@
     tools:context=".ui.book.character.BookStoryboardActivity">
 
     <LinearLayout
+        android:id="@+id/page_storyboard"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingTop="82dp"
+        android:paddingEnd="28dp"
+        android:paddingBottom="24dp">
 
-        <io.legado.app.ui.widget.TitleBar
-            android:id="@+id/title_bar"
+        <TextView
+            android:id="@+id/tv_chapter_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:title="@string/book_storyboard" />
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="分镜"
+            android:textColor="@color/ng_on_surface"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            tools:text="第二章 该走的是你们" />
 
         <TextView
             android:id="@+id/tv_summary"
-            style="@style/Ng.Summary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="@dimen/ng_page_padding"
-            android:paddingTop="@dimen/ng_space_s"
-            android:paddingEnd="@dimen/ng_page_padding"
-            android:paddingBottom="@dimen/ng_space_s"
+            android:layout_marginTop="10dp"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:textColor="@color/ng_on_surface_variant"
             android:textSize="14sp"
-            tools:text="第1章 · 5 个分镜 · 38 个片段 · 对白 16 · 心声 2" />
+            tools:text="5 个分镜 · 38 个片段 · 对白 16 · 心声 2" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recycler_view"
+        <FrameLayout
+            android:id="@+id/layout_storyboard_content"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:paddingStart="@dimen/ng_page_padding"
-            android:paddingTop="@dimen/ng_space_xs"
-            android:paddingEnd="@dimen/ng_page_padding"
-            android:paddingBottom="@dimen/ng_space_l"
-            tools:listitem="@layout/item_book_storyboard_segment" />
+            android:layout_marginTop="18dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recycler_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                tools:listitem="@layout/item_book_storyboard_segment" />
+
+            <LinearLayout
+                android:id="@+id/layout_storyboard_loading"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/iv_storyboard_loading"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:contentDescription="@string/loading"
+                    android:src="@drawable/ic_storyboard_loading_spinner" />
+
+                <TextView
+                    android:id="@+id/tv_storyboard_loading"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:includeFontPadding="false"
+                    android:text="正在生成 AI 分镜…"
+                    android:textColor="@color/ng_on_surface_variant"
+                    android:textSize="15sp" />
+
+            </LinearLayout>
+
+        </FrameLayout>
 
     </LinearLayout>
 
+    <ImageButton
+        android:id="@+id/btn_close"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="start|top"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="32dp"
+        android:background="@drawable/ng_bg_read_aloud_top_button"
+        android:contentDescription="@string/back"
+        android:foreground="?android:attr/selectableItemBackgroundBorderless"
+        android:padding="8dp"
+        android:src="@drawable/ic_chevron_left_search"
+        app:tint="@color/ng_on_surface" />
+
     <TextView
         android:id="@+id/tv_empty"
-        style="@style/Ng.Summary"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:gravity="center"
         android:padding="@dimen/ng_page_padding"
         android:text="@string/book_storyboard_empty"
+        android:textColor="@color/ng_on_surface_variant"
         android:textSize="15sp"
         android:visibility="gone" />
 

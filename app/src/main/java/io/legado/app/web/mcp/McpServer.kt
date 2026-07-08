@@ -393,6 +393,11 @@ object McpServer {
                         "type" to "boolean",
                         "default" to true
                     ),
+                    "include_payload" to mapOf(
+                        "type" to "boolean",
+                        "default" to false,
+                        "description" to "Include the exact model request payload used by the App."
+                    ),
                     "paragraph_limit" to mapOf(
                         "type" to "number",
                         "default" to DEFAULT_STORYBOARD_PARAGRAPH_LIMIT,
@@ -995,6 +1000,7 @@ object McpServer {
 
     private fun getReadAloudStoryboardDebug(arguments: JsonObject): Map<String, Any?> {
         val includeStoryboard = arguments.get("include_storyboard").asBooleanOrNull() ?: true
+        val includePayload = arguments.get("include_payload").asBooleanOrNull() ?: false
         val paragraphLimit = (arguments.get("paragraph_limit").asIntOrNull()
             ?: DEFAULT_STORYBOARD_PARAGRAPH_LIMIT).coerceIn(1, MAX_STORYBOARD_PARAGRAPH_LIMIT)
         val unitLimit = (arguments.get("unit_limit").asIntOrNull()
@@ -1049,6 +1055,7 @@ object McpServer {
                 content = readAloudContent,
                 characters = characters,
                 includeStoryboard = includeStoryboard,
+                includePayload = includePayload,
                 paragraphLimit = paragraphLimit,
                 unitLimit = unitLimit,
                 segmentLimit = segmentLimit,

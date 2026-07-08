@@ -29,6 +29,7 @@ import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookChapter
+import io.legado.app.databinding.DialogReadAloudModeSheetBinding
 import io.legado.app.databinding.DialogReadAloudMoreSheetBinding
 import io.legado.app.databinding.DialogReadAloudSpeedSheetBinding
 import io.legado.app.databinding.DialogReadAloudTimerSheetBinding
@@ -56,6 +57,7 @@ import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.startActivity
+import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -142,6 +144,104 @@ class ReadAloudSpeedSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_spee
 
     private fun upTitle(progress: Int) {
         binding.tvTitle.text = "语速 ${(progress + 5) / 10f}x"
+    }
+}
+
+class ReadAloudModeSheet(
+    private val activity: ReadAloudPlayerActivity
+) : ReadAloudBottomSheet(R.layout.dialog_read_aloud_mode_sheet) {
+
+    private val binding by viewBinding(DialogReadAloudModeSheetBinding::bind)
+
+    override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) = binding.run {
+        seekStoryboardMode.applyReadAloudSliderStyle()
+        seekStoryboardMode.tickMarkTintList = ColorStateList.valueOf(view.context.accentColor)
+        renderState()
+        switchMultiRole.setOnUserCheckedChangeListener { isChecked ->
+            activity.setMultiRoleEnabled(isChecked)
+            renderState()
+        }
+        itemMultiRole.setOnClickListener {
+            activity.setMultiRoleEnabled(!AppConfig.readAloudMultiRole)
+            renderState()
+        }
+        itemStoryboardResult.setOnClickListener {
+            activity.openStoryboardResult()
+            dismissAllowingStateLoss()
+        }
+        seekStoryboardMode.setOnSeekBarChangeListener(object : SeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                updateStoryboardModeText(StoryboardTtsMode.from(progress))
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val mode = StoryboardTtsMode.from(seekBar.progress)
+                if (mode.available) {
+                    AppConfig.readAloudStoryboardMode = mode.value
+                } else {
+                    toastOnUi("该分镜模式暂未实现")
+                    AppConfig.readAloudStoryboardMode = StoryboardTtsMode.BASIC.value
+                }
+                renderState()
+            }
+        })
+    }
+
+    private fun renderState() = binding.run {
+        val multiRole = AppConfig.readAloudMultiRole
+        switchMultiRole.isChecked = multiRole
+        textMultiRoleSummary.text = if (multiRole) {
+            "已开启，使用角色音色和分镜路由"
+        } else {
+            "关闭时使用单人朗读"
+        }
+        val storedMode = StoryboardTtsMode.from(AppConfig.readAloudStoryboardMode)
+        val mode = if (storedMode.available) storedMode else StoryboardTtsMode.BASIC
+        if (mode != storedMode) {
+            AppConfig.readAloudStoryboardMode = mode.value
+        }
+        seekStoryboardMode.progress = mode.value
+        updateStoryboardModeText(mode)
+        val storyboardAlpha = if (multiRole) 1f else 0.42f
+        listOf(itemStoryboardResult, layoutStoryboardMode).forEach { row ->
+            row.isEnabled = multiRole
+            row.alpha = storyboardAlpha
+        }
+        seekStoryboardMode.isEnabled = multiRole
+    }
+
+    private fun updateStoryboardModeText(mode: StoryboardTtsMode) = binding.run {
+        tvStoryboardModeTitle.text = mode.title
+        tvStoryboardModeSummary.text = mode.summary
+        val safeContext = tvStoryboardModeTitle.context
+        val activeColor = safeContext.accentColor
+        val inactiveColor = ContextCompat.getColor(safeContext, R.color.ng_on_surface_variant)
+        listOf(
+            tvStoryboardModeBasic to StoryboardTtsMode.BASIC,
+            tvStoryboardModeAdvanced to StoryboardTtsMode.ADVANCED,
+            tvStoryboardModeDirector to StoryboardTtsMode.DIRECTOR,
+            tvStoryboardModeActor to StoryboardTtsMode.ACTOR
+        ).forEach { (label, labelMode) ->
+            label.setTextColor(if (mode == labelMode) activeColor else inactiveColor)
+        }
+    }
+}
+
+private enum class StoryboardTtsMode(
+    val value: Int,
+    val title: String,
+    val summary: String,
+    val available: Boolean
+) {
+    BASIC(0, "基础模式", "只做对白拆分和角色音色路由", true),
+    ADVANCED(1, "进阶模式", "对白前加入短风格标签，后续实现", false),
+    DIRECTOR(2, "导演模式", "附加角色、场景和表演指导，后续实现", false),
+    ACTOR(3, "演员模式", "逐句生成表演标签，后续实现", false);
+
+    companion object {
+        fun from(value: Int): StoryboardTtsMode {
+            return entries.firstOrNull { it.value == value } ?: BASIC
+        }
     }
 }
 

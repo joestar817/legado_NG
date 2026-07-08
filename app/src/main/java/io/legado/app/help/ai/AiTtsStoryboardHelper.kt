@@ -27,7 +27,7 @@ object AiTtsStoryboardHelper {
 
     private const val SKILL_ASSET = "skills/tts_storyboard.md"
     private const val CACHE_DIR = "ai_tts_storyboard"
-    private const val CACHE_VERSION = 3
+    private const val CACHE_VERSION = 5
     private const val MEMORY_CACHE_TTL = 5 * 60 * 1000L
     private val quotePairs = mapOf(
         '“' to '”',
@@ -63,25 +63,6 @@ object AiTtsStoryboardHelper {
         StoryboardSegment.SpeakerGender.MALE,
         StoryboardSegment.SpeakerGender.FEMALE,
         StoryboardSegment.SpeakerGender.UNKNOWN
-    )
-    private val speechCuePatterns = listOf(
-        Regex("([\\u4e00-\\u9fffA-Za-z0-9·]{2,12})(?:冷哼一声|冷哼|说道|说|问道|问|喊道|喊|叫道|叫|道|开口|吐槽|坦言|回答|答道|回道|回复|说了句|补了一句|顿足|大怒|断然道|淡淡道|悠悠道|笑道|叹了口气|摆摆手|失笑)"),
-        Regex("(?:前文|后文|动作|主语|对话承接)[:：]\\s*([\\u4e00-\\u9fffA-Za-z0-9·]{2,12})(?:冷哼一声|冷哼|说道|说|问道|问|喊道|喊|叫道|叫|道|开口|吐槽|坦言|回答|答道|回道|回复|说了句|补了一句|顿足|大怒|断然道|淡淡道|悠悠道|笑道|叹了口气|摆摆手|失笑)")
-    )
-    private val voiceCuePatterns = listOf(
-        Regex("(?:妈妈|父亲|母亲|姐姐|妹妹|哥哥|弟弟)?([\\u4e00-\\u9fffA-Za-z0-9·]{2,12})(?:的)?(?:声音|话音)"),
-        Regex("(?:说话的便是|说话的是|便是|来自)(?:那|这|一个|一位)?([\\u4e00-\\u9fffA-Za-z0-9·]{2,12}(?:男子|女子|男人|女人|男声|女声)?)")
-    )
-    private val femaleSpeakerWords = listOf("女", "娘", "妈", "姐", "妹", "妻", "妾", "姑娘", "小姐", "夫人")
-    private val maleSpeakerWords = listOf("男", "父", "爹", "爸", "哥", "弟", "兄", "叔", "伯", "先生", "公子", "男子")
-    private val genericSpeakerWords = listOf(
-        "下属", "有人", "众人", "路人", "男子", "女子", "男人", "女人", "男声", "女声",
-        "年轻", "中年", "老者", "少年", "少女", "身后", "屋里", "里面", "门外"
-    )
-    private val genericSpeakerSuffixes = setOf("前文", "后文", "声音", "动作", "主语", "对话承接")
-    private val invalidSpeakerNames = setOf(
-        "前文", "后文", "声音", "话音", "动作", "主语", "对话承接", "冷哼一声",
-        "冷哼", "说道", "说", "问道", "问", "喊道", "喊", "叫道", "叫", "道"
     )
     private val cacheMutex = Mutex()
     private val memoryCache = linkedMapOf<String, MemoryCacheEntry>()
@@ -193,6 +174,7 @@ object AiTtsStoryboardHelper {
         content: String,
         characters: List<BookCharacter>,
         includeStoryboard: Boolean,
+        includePayload: Boolean = false,
         paragraphLimit: Int,
         unitLimit: Int,
         segmentLimit: Int,
@@ -314,6 +296,9 @@ object AiTtsStoryboardHelper {
                     ?.toList()
                     .orEmpty()
             )
+        }
+        if (includePayload) {
+            data["payload"] = request.toPayload(request.units)
         }
         return data
     }
@@ -741,7 +726,6 @@ object AiTtsStoryboardHelper {
         val output = GSON.fromJson(json, StoryboardModelOutput::class.java)
         val targetUnitIds = targetUnits.map { it.unitId }
         val targetSet = targetUnitIds.toSet()
-        val targetMap = targetUnits.associateBy { it.unitId }
         val seen = output.units.map { it.unitId }
         val missing = targetUnitIds.filter { it !in seen }
         val duplicated = seen.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
@@ -758,7 +742,7 @@ object AiTtsStoryboardHelper {
             check(unit.status in statuses) { "AI 返回非法 status：${unit.status}" }
             check(unit.speakerGender in speakerGenders) { "AI 返回非法 speakerGender：${unit.speakerGender}" }
             check(unit.confidence in 0f..1f) { "AI 返回非法 confidence：${unit.confidence}" }
-            normalizeModelUnit(unit, knownIndex, targetMap[unit.unitId])
+            normalizeModelUnit(unit, knownIndex)
         }
     }
 
@@ -785,8 +769,7 @@ object AiTtsStoryboardHelper {
 
     private fun normalizeModelUnit(
         unit: ModelUnitResult,
-        knownIndex: KnownCharacterIndex,
-        candidateUnit: CandidateUnit?
+        knownIndex: KnownCharacterIndex
     ): ModelUnitResult {
         if (unit.roleType == "narrator" || unit.roleType == "other") {
             return unit.copy(
@@ -796,14 +779,9 @@ object AiTtsStoryboardHelper {
                 status = "unknown"
             )
         }
-        val modelDisplayName = unit.characterName
-            .trim()
-            .takeIf { it.isValidSpeakerName(unit.speakerGender) }
-            .orEmpty()
-        val displayName = modelDisplayName
-            .ifBlank { inferSpeakerDisplayName(unit, candidateUnit) }
+        val modelDisplayName = unit.characterName.trim()
         val known = knownIndex.byId[unit.characterId]
-            ?: displayName.takeIf { it.isNotBlank() }?.let { knownIndex.byName[it] }
+            ?: modelDisplayName.takeIf { it.isNotBlank() }?.let { knownIndex.byName[it] }
         if (known != null) {
             return unit.copy(
                 characterName = known.name,
@@ -817,7 +795,7 @@ object AiTtsStoryboardHelper {
             unit.speakerGender == StoryboardSegment.SpeakerGender.FEMALE
         if (genderFallback) {
             return unit.copy(
-                characterName = displayName,
+                characterName = modelDisplayName,
                 characterId = 0L,
                 status = "unknown"
             )
@@ -829,69 +807,6 @@ object AiTtsStoryboardHelper {
             speakerGender = StoryboardSegment.SpeakerGender.UNKNOWN,
             status = "unknown"
         )
-    }
-
-    private fun inferSpeakerDisplayName(
-        unit: ModelUnitResult,
-        candidateUnit: CandidateUnit?
-    ): String {
-        if (candidateUnit == null) return ""
-        val sources = listOf(
-            unit.evidence,
-            candidateUnit.cueBefore,
-            candidateUnit.cueAfter
-        )
-        return sources.firstNotNullOfOrNull { source ->
-            inferSpeakerNameFromText(source, unit.speakerGender)
-        }.orEmpty()
-    }
-
-    private fun inferSpeakerNameFromText(text: String, speakerGender: String): String? {
-        val value = text
-            .replace('\n', ' ')
-            .replace('　', ' ')
-            .trim()
-        if (value.isBlank()) return null
-        speechCuePatterns.forEach { pattern ->
-            pattern.findAll(value).lastOrNull()?.let { match ->
-                val name = match.groupValues.getOrNull(1)?.cleanSpeakerName().orEmpty()
-                if (name.isValidSpeakerName(speakerGender)) return name
-            }
-        }
-        voiceCuePatterns.forEach { pattern ->
-            pattern.findAll(value).lastOrNull()?.let { match ->
-                val name = match.groupValues.getOrNull(1)?.cleanSpeakerName().orEmpty()
-                if (name.isValidSpeakerName(speakerGender)) return name
-            }
-        }
-        return null
-    }
-
-    private fun String?.cleanSpeakerName(): String {
-        return orEmpty()
-            .trim()
-            .trim('“', '”', '‘', '’', '"', '\'', '：', ':', '，', ',', '。', '、')
-            .replace(Regex("^(?:前文|后文|声音|动作|主语|称呼|对话承接)[:：]\\s*"), "")
-            .replace(Regex("^(?:那|这|一个|一位|那个|这个)"), "")
-            .trim()
-            .take(12)
-    }
-
-    private fun String.isValidSpeakerName(speakerGender: String): Boolean {
-        if (isBlank()) return false
-        if (length !in 2..12) return false
-        if (any { it.isWhitespace() }) return false
-        if (genericSpeakerWords.any { contains(it) }) return false
-        if (contains('：') || contains(':') || contains('，') || contains('。')) return false
-        if (this in invalidSpeakerNames) return false
-        if (speakerGender == StoryboardSegment.SpeakerGender.FEMALE &&
-            femaleSpeakerWords.any { contains(it) }
-        ) return true
-        if (speakerGender == StoryboardSegment.SpeakerGender.MALE &&
-            maleSpeakerWords.any { contains(it) }
-        ) return true
-        return any { it in '\u4e00'..'\u9fff' } &&
-            !genericSpeakerSuffixes.any { this == it }
     }
 
     private fun StoryboardCache.toChapterStoryboard(): ChapterStoryboard {

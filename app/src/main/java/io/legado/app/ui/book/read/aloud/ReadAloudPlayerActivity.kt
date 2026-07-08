@@ -5,13 +5,18 @@ import android.animation.ValueAnimator
 import android.graphics.drawable.Animatable
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.widget.TextView
+import androidx.core.content.ContextCompat
 import android.view.animation.LinearInterpolator
 import android.widget.SeekBar
 import androidx.core.view.isVisible
@@ -43,6 +48,7 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.ui.book.character.ChapterStoryboard
 import io.legado.app.ui.book.character.BookCharacterActivity
+import io.legado.app.ui.book.character.BookStoryboardActivity
 import io.legado.app.ui.book.character.BookCharacterTtsActivity
 import io.legado.app.ui.book.character.StoryboardScene
 import io.legado.app.ui.book.character.StoryboardSegment
@@ -87,6 +93,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     private var storyboardPreviewPlayer: ExoPlayer? = null
     private var storyboardLoadingAnimator: ObjectAnimator? = null
     private val storyboardAdapter by lazy { StoryboardAdapter() }
+    private val lyricsAdapter by lazy { LyricsAdapter() }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         bindView()
@@ -119,7 +126,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
             sourceOrigin = ReadBook.bookSource?.bookSourceUrl
         ).into(ivCover)
         recyclerStoryboard.layoutManager = LinearLayoutManager(this@ReadAloudPlayerActivity)
-        recyclerStoryboard.adapter = storyboardAdapter
+        recyclerStoryboard.adapter = lyricsAdapter
         ivStoryboardLoading.imageTintList = ColorStateList.valueOf(accentColor)
     }
 
@@ -138,7 +145,12 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         actionOriginal.root.setOnClickListener { openOriginal() }
         cardEngine.setOnClickListener { openVoiceOrRoleBindings() }
         actionCatalog.root.setOnClickListener { openChapterList() }
-        actionCharacter.root.setOnClickListener { toggleScenarioMode() }
+        actionCharacter.root.setOnClickListener {
+            ReadAloudModeSheet(this@ReadAloudPlayerActivity).show(
+                supportFragmentManager,
+                "readAloudMode"
+            )
+        }
         btnPlay.setOnClickListener { togglePlay() }
         btnPrev.setOnClickListener { ReadAloud.prevChapter(this@ReadAloudPlayerActivity) }
         btnNext.setOnClickListener { ReadAloud.nextChapter(this@ReadAloudPlayerActivity) }
@@ -179,8 +191,8 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         actionOriginal.tvLabel.text = "原文"
         actionMore.ivIcon.setImageResource(R.drawable.ic_more_horiz)
         actionMore.tvLabel.text = getString(R.string.more)
-        actionCharacter.ivIcon.setImageResource(R.drawable.ic_read_aloud_user_outline)
-        actionCharacter.tvLabel.text = "单人"
+        actionCharacter.ivIcon.setImageResource(R.drawable.ic_read_aloud_mode_settings)
+        actionCharacter.tvLabel.text = "模式"
         actionCatalog.ivIcon.setImageResource(R.drawable.ic_toc)
         actionCatalog.tvLabel.text = getString(R.string.chapter_list)
     }
@@ -191,11 +203,8 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         tvChapter.text = chapter?.title ?: "正在准备朗读"
         tvBook.text = book?.name?.takeIf { it.isNotBlank() } ?: "阅读NG"
         val multiRole = AppConfig.readAloudMultiRole
-        actionCharacter.ivIcon.setImageResource(
-            if (multiRole) R.drawable.ic_read_aloud_users_outline
-            else R.drawable.ic_read_aloud_user_outline
-        )
-        actionCharacter.tvLabel.text = if (multiRole) "多人" else "单人"
+        actionCharacter.ivIcon.setImageResource(R.drawable.ic_read_aloud_mode_settings)
+        actionCharacter.tvLabel.text = "模式"
         actionSpeed.tvLabel.text = speedLabel()
         val engine = runCatching { TtsEngineStore.activeEngine() }.getOrNull()
         val voice = runCatching { engine?.activeVoice()?.name }.getOrNull()
@@ -239,6 +248,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         if (index == lastParagraphIndex) return
         lastParagraphIndex = index
         syncParagraphSeekBar(index)
+        syncLyrics(index)
         binding.tvSubtitle.text = cachedParagraphs.getOrNull(index)?.text ?: "正在准备朗读..."
     }
 
@@ -259,6 +269,8 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
                 ParagraphSummary(paragraph.chapterIndices, text)
             }
         }
+        lyricsAdapter.submitItems(cachedParagraphs)
+        updateLyricsHeader()
         syncParagraphSeekBar(0)
         return cachedParagraphs.isNotEmpty()
     }
@@ -282,11 +294,44 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         }
     }
 
+    private fun updateLyricsPage() {
+        val chapter = ReadBook.curTextChapter
+        binding.layoutStoryboardLoading.isVisible = false
+        binding.recyclerStoryboard.isVisible = true
+        binding.tvStoryboardSummary.isVisible = true
+        binding.tvStoryboardTitle.text = chapter?.title ?: "原文"
+        if (!ensureParagraphCache()) {
+            lyricsAdapter.submitItems(emptyList())
+            binding.tvStoryboardSummary.text = "暂无当前章节正文"
+            return
+        }
+        val index = currentParagraphIndex(ReadBook.durChapterPos)
+        syncLyrics(index)
+    }
+
+    private fun updateLyricsHeader() = binding.run {
+        tvStoryboardTitle.text = ReadBook.curTextChapter?.title ?: "原文"
+        tvStoryboardSummary.text = "当前章节 · ${cachedParagraphs.size} 个段落"
+    }
+
+    private fun syncLyrics(index: Int) {
+        if (cachedParagraphs.isEmpty()) return
+        val safeIndex = index.coerceIn(0, cachedParagraphs.lastIndex)
+        lyricsAdapter.setActiveIndex(safeIndex)
+        if (playerPage == PlayerPage.STORYBOARD) {
+            binding.recyclerStoryboard.post {
+                (binding.recyclerStoryboard.layoutManager as? LinearLayoutManager)
+                    ?.scrollToPositionWithOffset(safeIndex, 150.dp)
+            }
+        }
+    }
+
     private fun previewSeekParagraph(index: Int) {
         if (cachedParagraphs.isEmpty()) return
         val safeIndex = index.coerceIn(0, cachedParagraphs.lastIndex)
         pendingSeekParagraphIndex = safeIndex
         lastParagraphIndex = safeIndex
+        syncLyrics(safeIndex)
         binding.tvSubtitle.text = cachedParagraphs[safeIndex].text
     }
 
@@ -432,8 +477,9 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         }
     }
 
-    private fun toggleScenarioMode() {
-        val targetMode = if (AppConfig.readAloudMultiRole) 0 else 1
+    fun setMultiRoleEnabled(enabled: Boolean) {
+        if (AppConfig.readAloudMultiRole == enabled) return
+        val targetMode = if (enabled) 1 else 0
         val wasRun = BaseReadAloudService.isRun
         val wasPlaying = BaseReadAloudService.isRun && !BaseReadAloudService.pause
         val startPos = currentPageStartPos()
@@ -442,9 +488,6 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         storyboardLoadingChapterIndex = -1
         storyboardLoadedChapterIndex = -1
         AppConfig.readAloudScenarioMode = targetMode
-        if (!AppConfig.readAloudMultiRole) {
-            playerPage = PlayerPage.PLAYER
-        }
         refreshStaticState()
         if (wasRun) {
             switchingVoice = true
@@ -462,9 +505,9 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         }
         toastOnUi(
             if (AppConfig.readAloudMultiRole) {
-                "已切换多人情景"
+                "已开启多人模式"
             } else {
-                "已切换单人情景"
+                "已切换单人模式"
             }
         )
     }
@@ -478,17 +521,13 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     }
 
     private fun refreshPlayerPage() = binding.run {
-        val multiRole = AppConfig.readAloudMultiRole
-        layoutPageDots.isVisible = multiRole
-        if (!multiRole) {
-            playerPage = PlayerPage.PLAYER
-        }
         pagePlayer.isVisible = playerPage == PlayerPage.PLAYER
-        pageStoryboard.isVisible = playerPage == PlayerPage.STORYBOARD && multiRole
+        pageStoryboard.isVisible = playerPage == PlayerPage.STORYBOARD
+        layoutPageDots.isVisible = true
         dotPlayer.setPageIndicatorSelected(playerPage == PlayerPage.PLAYER)
         dotStoryboard.setPageIndicatorSelected(playerPage == PlayerPage.STORYBOARD)
-        if (playerPage == PlayerPage.STORYBOARD && multiRole) {
-            loadStoryboard()
+        if (playerPage == PlayerPage.STORYBOARD) {
+            updateLyricsPage()
         }
     }
 
@@ -532,7 +571,6 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     }
 
     private fun showPage(page: PlayerPage) {
-        if (!AppConfig.readAloudMultiRole && page != PlayerPage.PLAYER) return
         if (playerPage == page) return
         playerPage = page
         refreshPlayerPage()
@@ -820,6 +858,17 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         }
     }
 
+    fun openStoryboardResult() {
+        ReadBook.book?.let {
+            startActivity<BookStoryboardActivity> {
+                putExtra(BookCharacterActivity.EXTRA_WORK_KEY, BookCharacterProfile.workKey(it.name, it.author))
+                putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, it.name)
+                putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, it.author)
+                putExtra(BookCharacterActivity.EXTRA_BOOK_URL, it.bookUrl)
+            }
+        } ?: toastOnUi("当前书籍为空")
+    }
+
     fun openEngineConfig() {
         startActivity<ConfigActivity> {
             putExtra("configTag", ConfigTag.TTS_ENGINE_CONFIG)
@@ -852,7 +901,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (AppConfig.readAloudMultiRole && !paragraphSeeking) {
+        if (!paragraphSeeking) {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     touchDownX = ev.x
@@ -892,6 +941,74 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     private sealed interface StoryboardRow {
         data class Scene(val scene: StoryboardScene) : StoryboardRow
         data class Segment(val segment: StoryboardSegment) : StoryboardRow
+    }
+
+    private inner class LyricsAdapter : RecyclerView.Adapter<LyricsAdapter.LyricHolder>() {
+
+        private val items = mutableListOf<ParagraphSummary>()
+        private var activeIndex = -1
+
+        fun submitItems(newItems: List<ParagraphSummary>) {
+            items.clear()
+            items.addAll(newItems)
+            activeIndex = activeIndex.coerceIn(-1, items.lastIndex)
+            notifyDataSetChanged()
+        }
+
+        fun setActiveIndex(index: Int) {
+            if (activeIndex == index) return
+            val oldIndex = activeIndex
+            activeIndex = index
+            if (oldIndex in items.indices) {
+                notifyItemChanged(oldIndex)
+            }
+            if (index in items.indices) {
+                notifyItemChanged(index)
+            }
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): LyricHolder {
+            return LyricHolder(TextView(parent.context))
+        }
+
+        override fun onBindViewHolder(holder: LyricHolder, position: Int) {
+            holder.bind(items[position], active = position == activeIndex)
+        }
+
+        override fun getItemCount(): Int = items.size
+
+        inner class LyricHolder(
+            private val textView: TextView
+        ) : RecyclerView.ViewHolder(textView) {
+
+            fun bind(item: ParagraphSummary, active: Boolean) {
+                textView.text = item.text
+                textView.gravity = Gravity.CENTER
+                textView.includeFontPadding = false
+                textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (active) 23f else 22f)
+                textView.typeface = if (active) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                textView.setTextColor(
+                    if (active) {
+                        ContextCompat.getColor(this@ReadAloudPlayerActivity, R.color.ng_on_surface)
+                    } else {
+                        ColorUtils.withAlpha(
+                            ContextCompat.getColor(
+                                this@ReadAloudPlayerActivity,
+                                R.color.ng_on_surface
+                            ),
+                            0.38f
+                        )
+                    }
+                )
+                textView.layoutParams = RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = 14.dp
+                    bottomMargin = 14.dp
+                }
+            }
+        }
     }
 
     private inner class StoryboardAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {

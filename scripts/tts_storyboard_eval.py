@@ -167,14 +167,20 @@ class CandidateUnit:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--book", required=True, help="TXT novel path")
+    parser.add_argument("--book", help="TXT novel path")
+    parser.add_argument(
+        "--mcp-snapshot",
+        help="MCP read_aloud_storyboard_debug_get JSON snapshot with include_payload=true",
+    )
     parser.add_argument("--chapters", default="1", help="Chapter range, e.g. 1 or 1-3")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--api-url", default=API_URL)
     parser.add_argument("--api-key-env", default="SILICONFLOW_API_KEY")
     parser.add_argument("--out", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--max-chars", type=int, default=7000)
-    parser.add_argument("--max-tokens", type=int, default=2048)
+    parser.add_argument("--max-tokens", type=int)
+    parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--top-p", type=float)
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--sleep", type=float, default=0.5)
     parser.add_argument("--retries", type=int, default=2)
@@ -196,6 +202,17 @@ def parse_args() -> argparse.Namespace:
         choices=("true", "false", "omit"),
         default="omit",
         help="Optional Qwen3-style enable_thinking parameter.",
+    )
+    parser.add_argument(
+        "--thinking-param",
+        choices=("omit", "enable_thinking", "thinking"),
+        default="omit",
+        help="Optional provider thinking switch field. Use 'thinking' to match App DeepSeek-compatible requests.",
+    )
+    parser.add_argument(
+        "--thinking-state",
+        choices=("enabled", "disabled"),
+        default="disabled",
     )
     return parser.parse_args()
 
@@ -255,10 +272,14 @@ def request_storyboard(
     api_key: str,
     model: str,
     payload: dict[str, Any],
-    max_tokens: int,
+    max_tokens: int | None,
+    temperature: float,
+    top_p: float | None,
     timeout: int,
     json_mode: bool,
     enable_thinking: str,
+    thinking_param: str,
+    thinking_state: str,
     retries: int,
     retry_sleep: float,
 ) -> tuple[dict[str, Any], str]:
@@ -268,15 +289,21 @@ def request_storyboard(
             {"role": "system", "content": build_system_prompt()},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ],
-        "temperature": 0.1,
-        "top_p": 0.7,
-        "max_tokens": max_tokens,
+        "temperature": temperature,
         "stream": False,
     }
+    if top_p is not None:
+        request_payload["top_p"] = top_p
+    if max_tokens is not None:
+        request_payload["max_tokens"] = max_tokens
     if json_mode:
         request_payload["response_format"] = {"type": "json_object"}
     if enable_thinking != "omit":
         request_payload["enable_thinking"] = enable_thinking == "true"
+    if thinking_param == "enable_thinking":
+        request_payload["enable_thinking"] = thinking_state == "enabled"
+    elif thinking_param == "thinking":
+        request_payload["thinking"] = {"type": thinking_state}
     body = json.dumps(request_payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         api_url,
@@ -334,6 +361,39 @@ def build_storyboard_payload(
         "units": [unit.to_payload() for unit in units],
         "targetUnitIds": [unit.unit_id for unit in units],
     }
+
+
+def payload_from_mcp_snapshot(path: Path) -> tuple[Chapter, dict[str, Any]]:
+    root = json.loads(path.read_text(encoding="utf-8-sig"))
+    data = root
+    if isinstance(root, dict) and isinstance(root.get("result"), dict):
+        data = root["result"]
+    if isinstance(data, dict) and isinstance(data.get("structuredContent"), dict):
+        data = data["structuredContent"]
+    if isinstance(data, dict) and isinstance(data.get("structured_content"), dict):
+        data = data["structured_content"]
+    if isinstance(data, dict) and isinstance(data.get("normalized_data"), dict):
+        data = data["normalized_data"]
+    if isinstance(data, dict) and isinstance(data.get("normalizedData"), dict):
+        data = data["normalizedData"]
+    snapshot = data.get("storyboard_snapshot") if isinstance(data, dict) else None
+    if not isinstance(snapshot, dict):
+        snapshot = data
+    payload = snapshot.get("payload") if isinstance(snapshot, dict) else None
+    if not isinstance(payload, dict):
+        raise ValueError(
+            "MCP snapshot does not contain storyboard_snapshot.payload; "
+            "call read_aloud_storyboard_debug_get with include_payload=true"
+        )
+    chapter_data = payload.get("chapter") or {}
+    context = payload.get("contextParagraphs") or []
+    content = "\n".join(str(item.get("text") or "") for item in context if isinstance(item, dict))
+    chapter = Chapter(
+        index=int(chapter_data.get("index") or 0),
+        title=str(chapter_data.get("title") or path.stem),
+        content=content,
+    )
+    return chapter, payload
 
 
 def parse_known_characters(values: list[str]) -> list[dict[str, Any]]:
@@ -790,17 +850,26 @@ def main() -> int:
     if not api_key:
         print(f"missing env: {args.api_key_env}", file=sys.stderr)
         return 2
-    book_path = Path(args.book)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    chapters = split_chapters(read_text(book_path))
-    indexes = parse_range(args.chapters, len(chapters))
-    known_characters = parse_known_characters(args.character)
+    cases: list[tuple[Chapter, dict[str, Any]]] = []
+    if args.mcp_snapshot:
+        cases.append(payload_from_mcp_snapshot(Path(args.mcp_snapshot)))
+    else:
+        if not args.book:
+            print("missing --book or --mcp-snapshot", file=sys.stderr)
+            return 2
+        book_path = Path(args.book)
+        chapters = split_chapters(read_text(book_path))
+        indexes = parse_range(args.chapters, len(chapters))
+        known_characters = parse_known_characters(args.character)
+        for index in indexes:
+            chapter = chapters[index - 1]
+            payload = build_storyboard_payload(chapter, args.max_chars, known_characters)
+            cases.append((chapter, payload))
     summary: list[dict[str, Any]] = []
-    for index in indexes:
-        chapter = chapters[index - 1]
+    for chapter, payload in cases:
         print(f"request chapter {chapter.index}: {chapter.title}", flush=True)
-        payload = build_storyboard_payload(chapter, args.max_chars, known_characters)
         (out_dir / f"chapter_{chapter.index:03d}.payload.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -817,9 +886,13 @@ def main() -> int:
                 model=args.model,
                 payload=payload,
                 max_tokens=args.max_tokens,
+                temperature=args.temperature,
+                top_p=args.top_p,
                 timeout=args.timeout,
                 json_mode=args.json_mode,
                 enable_thinking=args.enable_thinking,
+                thinking_param=args.thinking_param,
+                thinking_state=args.thinking_state,
                 retries=args.retries,
                 retry_sleep=args.retry_sleep,
             )
