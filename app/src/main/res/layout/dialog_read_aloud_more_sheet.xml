@@ -263,6 +263,20 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
+
+                <TextView
+                    android:id="@+id/item_stop"
+                    style="@style/Ng.SettingsItem"
+                    android:layout_marginTop="6dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:gravity="center_vertical"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:text="停止朗读"
+                    android:textColor="@color/ng_error"
+                    android:textSize="16sp" />
             </LinearLayout>
 
             <TextView
@@ -344,18 +358,4 @@
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
-
-    <LinearLayout
-        style="@style/Ng.DialogSection"
-        android:layout_marginTop="18dp"
-        android:orientation="vertical"
-        android:padding="0dp">
-
-        <TextView
-            android:id="@+id/item_stop"
-            style="@style/Ng.SettingsItem"
-            android:text="停止朗读"
-            android:textColor="@color/ng_error"
-            android:textSize="16sp" />
-    </LinearLayout>
 </LinearLayout>

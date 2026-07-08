@@ -1,7 +1,11 @@
 package io.legado.app.ui.book.read.aloud
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
@@ -43,8 +47,10 @@ import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.config.ConfigActivity
 import io.legado.app.ui.config.ConfigTag
 import io.legado.app.ui.config.TtsVoiceCardBinder
+import io.legado.app.ui.config.TtsVoicePreviewController
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.ui.widget.seekbar.SeekBarChangeListener
+import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.postEvent
@@ -76,6 +82,7 @@ class ReadAloudTimerSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_time
     private val binding by viewBinding(DialogReadAloudTimerSheetBinding::bind)
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) = binding.run {
+        seekTimer.applyReadAloudSliderStyle()
         val activeMinute = BaseReadAloudService.timeMinute
         val initialMinute = if (activeMinute > 0) {
             activeMinute
@@ -112,6 +119,7 @@ class ReadAloudSpeedSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_spee
     private val binding by viewBinding(DialogReadAloudSpeedSheetBinding::bind)
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) = binding.run {
+        seekSpeed.applyReadAloudSliderStyle()
         seekSpeed.progress = AppConfig.ttsSpeechRate.coerceIn(0, seekSpeed.max)
         upTitle(seekSpeed.progress)
         seekSpeed.setOnSeekBarChangeListener(object : SeekBarChangeListener {
@@ -134,6 +142,38 @@ class ReadAloudSpeedSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_spee
 
     private fun upTitle(progress: Int) {
         binding.tvTitle.text = "语速 ${(progress + 5) / 10f}x"
+    }
+}
+
+private fun SeekBar.applyReadAloudSliderStyle() {
+    val accent = context.accentColor
+    val trackBackgroundTint = ColorStateList.valueOf(ColorUtils.adjustAlpha(accent, 0.18f))
+    progressDrawable = ContextCompat.getDrawable(context, R.drawable.ng_read_aloud_progress)?.mutate()
+    progressTintList = ColorStateList.valueOf(accent)
+    progressBackgroundTintList = trackBackgroundTint
+    secondaryProgressTintList = trackBackgroundTint
+    thumb = readAloudSheetSeekThumb(context, accent)
+    thumbTintList = null
+    thumbOffset = 11.dpToPx()
+    splitTrack = false
+}
+
+private fun readAloudSheetSeekThumb(context: Context, accent: Int): LayerDrawable {
+    val outerSize = 22.dpToPx()
+    val innerInset = 4.dpToPx()
+    val outer = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(Color.WHITE)
+        setStroke(1.dpToPx(), ColorUtils.withAlpha(accent, 0.18f))
+        setSize(outerSize, outerSize)
+    }
+    val inner = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(accent)
+        setSize(14.dpToPx(), 14.dpToPx())
+    }
+    return LayerDrawable(arrayOf(outer, inner)).apply {
+        setLayerInset(1, innerInset, innerInset, innerInset, innerInset)
     }
 }
 
@@ -339,10 +379,23 @@ class ReadAloudVoiceSheet(
     private lateinit var sheet: NgLongListBottomSheet
     private lateinit var recyclerVoices: RecyclerView
     private lateinit var textEmpty: TextView
+    private val previewController by lazy {
+        TtsVoicePreviewController(
+            context = activity,
+            lifecycleScope = activity.lifecycleScope,
+            beforePreview = {
+                activity.stopStoryboardPreview()
+                if (BaseReadAloudService.isPlay()) {
+                    ReadAloud.pause(activity)
+                }
+            }
+        )
+    }
     private val adapter by lazy {
         ReadAloudVoiceAdapter(
             context = activity,
-            onSelect = ::selectVoice
+            onSelect = ::selectVoice,
+            onPreview = ::previewVoice
         )
     }
 
@@ -382,6 +435,9 @@ class ReadAloudVoiceSheet(
             )
         }
         sheet.setContent(content, ::renderVoiceOptions)
+        sheet.dialog.setOnDismissListener {
+            releasePreview()
+        }
         sheet.show()
     }
 
@@ -464,6 +520,14 @@ class ReadAloudVoiceSheet(
                 sheet.dismiss()
             }
         }
+    }
+
+    private fun previewVoice(option: VoiceOption) {
+        previewController.preview(option.engine, option.voice, option.systemDefault)
+    }
+
+    private fun releasePreview() {
+        previewController.release()
     }
 }
 
@@ -588,7 +652,8 @@ private data class VoiceOption(
 
 private class ReadAloudVoiceAdapter(
     private val context: Context,
-    private val onSelect: (VoiceOption) -> Unit
+    private val onSelect: (VoiceOption) -> Unit,
+    private val onPreview: (VoiceOption) -> Unit
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val items = mutableListOf<VoiceSheetItem>()
@@ -659,17 +724,37 @@ private class ReadAloudVoiceAdapter(
                 isSystemEngine = option.systemDefault,
                 showControls = false
             )
+            switchEnabled.isVisible = false
+            imagePreview.isVisible = true
+            imagePreview.imageTintList = ColorStateList.valueOf(
+                ContextCompat.getColor(context, R.color.ng_on_surface)
+            )
+            val contentArea = root.getChildAt(0)
             root.alpha = 1f
-            root.isClickable = true
-            root.isFocusable = true
-            root.setOnClickListener { onSelect(option) }
+            root.isClickable = false
+            root.isFocusable = false
+            root.setOnClickListener(null)
+            contentArea.isClickable = true
+            contentArea.isFocusable = true
+            contentArea.setOnClickListener { onSelect(option) }
             listOf(scrollHeader, scrollTags).forEach { scrollView ->
                 scrollView.setOnTouchListener { _, event ->
                     if (event.action == MotionEvent.ACTION_UP) {
-                        root.performClick()
+                        contentArea.performClick()
                     }
                     true
                 }
+            }
+            imagePreview.setOnClickListener {
+                it.animate().cancel()
+                it.scaleX = 0.9f
+                it.scaleY = 0.9f
+                it.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(160L)
+                    .start()
+                onPreview(option)
             }
             root.layoutParams = RecyclerView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,

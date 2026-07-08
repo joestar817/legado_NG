@@ -8,55 +8,57 @@
     android:background="@android:color/transparent">
 
     <LinearLayout
+        android:id="@+id/page_player"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:paddingStart="28dp"
-        android:paddingTop="84dp"
+        android:paddingTop="70dp"
         android:paddingEnd="28dp"
         android:paddingBottom="16dp">
 
-        <LinearLayout
-            android:layout_width="172dp"
-            android:layout_height="200dp"
+        <FrameLayout
+            android:id="@+id/card_cover"
+            android:layout_width="164dp"
+            android:layout_height="218dp"
             android:layout_gravity="center_horizontal"
-            android:background="@drawable/ng_bg_read_aloud_cover_glass"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:paddingStart="12dp"
-            android:paddingTop="12dp"
-            android:paddingEnd="12dp"
-            android:paddingBottom="10dp">
+            android:background="@drawable/ng_bg_read_aloud_player_cover"
+            android:clickable="true"
+            android:clipToOutline="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            android:outlineProvider="background">
 
             <ImageView
                 android:id="@+id/iv_cover"
-                android:layout_width="108dp"
-                android:layout_height="144dp"
-                android:background="@drawable/ng_bg_read_aloud_player_cover"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:clipToOutline="true"
                 android:outlineProvider="background"
                 android:scaleType="centerCrop"
                 android:src="@drawable/icon_read_book" />
+        </FrameLayout>
 
-            <TextView
-                android:id="@+id/tv_book"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:ellipsize="end"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:textColor="@color/ng_on_surface_variant"
-                android:textSize="14sp"
-                tools:text="山河稷 · 姬叉" />
-        </LinearLayout>
+        <TextView
+            android:id="@+id/tv_book"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:lineSpacingExtra="3dp"
+            android:maxLines="2"
+            android:textColor="@color/ng_on_surface"
+            android:textSize="19sp"
+            android:textStyle="bold"
+            tools:text="我上讲台念情书，高冷校花后悔了" />
 
         <LinearLayout
             android:id="@+id/card_subtitle"
             android:layout_width="match_parent"
-            android:layout_height="172dp"
-            android:layout_marginTop="20dp"
+            android:layout_height="196dp"
+            android:layout_marginTop="12dp"
             android:background="@drawable/ng_bg_read_aloud_subtitle_card"
             android:clickable="true"
             android:focusable="true"
@@ -90,16 +92,17 @@
                 android:ellipsize="end"
                 android:gravity="center"
                 android:lineSpacingExtra="6dp"
-                android:maxLines="3"
+                android:maxLines="4"
                 android:text="正在准备朗读..."
                 android:textColor="@color/ng_on_surface"
-                android:textSize="17sp" />
+                android:textSize="17sp"
+                tools:text="脚步声忽然停住，一个严肃板正的短发中年女人走进教室。她的目光扫过讲台，声音不高，却让全班瞬间安静下来。" />
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="58dp"
-            android:layout_marginTop="14dp"
+            android:layout_marginTop="10dp"
             android:gravity="center"
             android:orientation="horizontal">
 
@@ -112,6 +115,13 @@
 
             <include
                 android:id="@+id/action_speed"
+                layout="@layout/view_read_aloud_player_quick_action"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1" />
+
+            <include
+                android:id="@+id/action_refresh"
                 layout="@layout/view_read_aloud_player_quick_action"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
@@ -134,51 +144,34 @@
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="6dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <ImageButton
-                android:id="@+id/btn_prev_paragraph"
-                android:layout_width="42dp"
-                android:layout_height="40dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/prev_sentence"
-                android:padding="9dp"
-                android:src="@drawable/ic_read_aloud_fast_rewind"
-                app:tint="@color/ng_on_surface_variant" />
-
-            <ProgressBar
+            <SeekBar
                 android:id="@+id/progress_chapter"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="0dp"
-                android:layout_height="4dp"
-                android:layout_weight="1"
-                android:max="100"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:max="1"
+                android:maxHeight="6dp"
+                android:minHeight="6dp"
+                android:progress="0"
                 android:progressDrawable="@drawable/ng_read_aloud_progress"
-                android:progress="0" />
-
-            <ImageButton
-                android:id="@+id/btn_next_paragraph"
-                android:layout_width="42dp"
-                android:layout_height="40dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/next_sentence"
-                android:padding="9dp"
-                android:src="@drawable/ic_read_aloud_fast_forward"
-                app:tint="@color/ng_on_surface_variant" />
+                android:splitTrack="false"
+                android:thumb="@drawable/ng_read_aloud_seek_thumb"
+                android:thumbOffset="11dp" />
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="76dp"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:gravity="center"
             android:orientation="horizontal">
 
             <include
-                android:id="@+id/action_bookmark"
+                android:id="@+id/action_character"
                 layout="@layout/view_read_aloud_player_action"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
@@ -188,7 +181,7 @@
                 android:id="@+id/btn_prev"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/ng_bg_read_aloud_action_circle"
                 android:contentDescription="@string/previous_chapter"
                 android:padding="12dp"
                 android:src="@drawable/ic_skip_previous"
@@ -209,7 +202,7 @@
                 android:id="@+id/btn_next"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/ng_bg_read_aloud_action_circle"
                 android:contentDescription="@string/next_chapter"
                 android:padding="12dp"
                 android:src="@drawable/ic_skip_next"
@@ -228,7 +221,7 @@
             android:layout_width="wrap_content"
             android:layout_height="42dp"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="12dp"
             android:background="@drawable/ng_bg_read_aloud_engine_pill"
             android:clickable="true"
             android:focusable="true"
@@ -259,6 +252,80 @@
                 android:src="@drawable/ic_refresh_black_24dp"
                 app:tint="@color/ng_on_surface_variant" />
         </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/page_storyboard"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingTop="82dp"
+        android:paddingEnd="28dp"
+        android:paddingBottom="24dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tv_storyboard_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="分镜"
+            android:textColor="@color/ng_on_surface"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_storyboard_summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:textColor="@color/ng_on_surface_variant"
+            android:textSize="14sp"
+            tools:text="5 个分镜 · 38 个片段 · 对白 16 · 心声 2" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler_storyboard"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="18dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:overScrollMode="never"
+            tools:listitem="@layout/item_book_storyboard_segment" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layout_page_dots"
+        android:layout_width="wrap_content"
+        android:layout_height="24dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="46dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/dot_player"
+            android:layout_width="18dp"
+            android:layout_height="4dp"
+            android:background="@drawable/ng_bg_read_aloud_page_line"
+            android:alpha="1" />
+
+        <View
+            android:id="@+id/dot_storyboard"
+            android:layout_width="5dp"
+            android:layout_height="5dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/ng_bg_read_aloud_page_dot"
+            android:alpha="0.35" />
+
     </LinearLayout>
 
     <ImageButton

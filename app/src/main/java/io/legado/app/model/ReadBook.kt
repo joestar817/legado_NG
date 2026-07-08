@@ -1023,7 +1023,7 @@ object ReadBook : CoroutineScope by MainScope() {
                 durChapterIndex = simulatedChapterSize - 1
             }
             callBack?.upMenuView()
-            if (callBack == null) {
+            if (callBack == null && !BaseReadAloudService.isRun) {
                 clearTextChapter()
             } else if (loadContent) {
                 loadContent(true)
