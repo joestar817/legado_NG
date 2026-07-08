@@ -513,6 +513,7 @@
     <string name="pt_hide_status_bar">隐藏状态栏</string>
     <string name="ps_hide_status_bar">阅读界面隐藏状态栏</string>
     <string name="read_aloud">朗读</string>
+    <string name="book_info_listen">听书</string>
     <string name="read_aloud_t">正在朗读</string>
     <string name="read_aloud_s">点击打开阅读界面</string>
     <string name="audio_play">播放</string>

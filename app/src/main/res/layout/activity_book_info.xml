@@ -566,7 +566,7 @@
         <LinearLayout
             android:id="@+id/fl_action"
             android:layout_width="match_parent"
-            android:layout_height="64dp"
+            android:layout_height="58dp"
             android:background="@color/transparent"
             android:gravity="center_vertical"
             android:orientation="horizontal"
@@ -576,29 +576,25 @@
             android:paddingBottom="@dimen/ng_space_s"
             app:layout_constraintBottom_toBottomOf="parent">
 
-            <io.legado.app.ui.widget.text.AccentStrokeTextView
+            <io.legado.app.ui.book.info.BookInfoActionButton
                 android:id="@+id/tv_shelf"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="@string/remove_from_bookshelf"
-                android:textSize="15sp" />
+                android:layout_height="42dp"
+                android:layout_weight="1" />
 
-            <io.legado.app.ui.widget.text.AccentBgTextView
+            <io.legado.app.ui.book.info.BookInfoActionButton
+                android:id="@+id/tv_listen"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_marginStart="@dimen/ng_space_s"
+                android:layout_weight="1" />
+
+            <io.legado.app.ui.book.info.BookInfoActionButton
                 android:id="@+id/tv_read"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="42dp"
                 android:layout_marginStart="@dimen/ng_space_s"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="@string/reading"
-                android:textSize="15sp"
-                app:radius="@dimen/ng_radius_m" />
+                android:layout_weight="1.18" />
 
         </LinearLayout>
 

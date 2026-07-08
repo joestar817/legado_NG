@@ -135,6 +135,7 @@
     <string name="pt_hide_status_bar">隱藏狀態欄</string>
     <string name="ps_hide_status_bar">閱讀介面隱藏狀態欄</string>
     <string name="read_aloud">朗讀</string>
+    <string name="book_info_listen">聽書</string>
     <string name="read_aloud_t">正在朗讀</string>
     <string name="read_aloud_s">點擊打開閱讀介面</string>
     <string name="audio_play">播放</string>

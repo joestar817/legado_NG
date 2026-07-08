@@ -3,6 +3,7 @@ package io.legado.app.ui.book.info
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -76,6 +77,7 @@ import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.lib.theme.bottomBackground
 import io.legado.app.lib.theme.getPrimaryTextColor
 import io.legado.app.model.CacheBook
+import io.legado.app.model.ReadBook
 import io.legado.app.model.SourceCallBack
 import io.legado.app.model.remote.RemoteBookWebDav
 import io.legado.app.ui.about.AppLogDialog
@@ -90,6 +92,7 @@ import io.legado.app.ui.book.info.edit.BookInfoEditActivity
 import io.legado.app.ui.book.manga.ReadMangaActivity
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadBookActivity.Companion.RESULT_DELETED
+import io.legado.app.ui.book.read.aloud.ReadAloudLauncher
 import io.legado.app.ui.book.search.SearchActivity
 import io.legado.app.ui.book.search.SearchAdapter
 import io.legado.app.ui.association.OnLineImportActivity
@@ -315,9 +318,7 @@ class BookInfoActivity :
             if (isPortrait) android.graphics.Color.TRANSPARENT else bottomBackground
         )
         binding.vwBg.applyNavigationBarPadding()
-        binding.tvShelf.setTextColor(
-            if (isPortrait) accentColor else getPrimaryTextColor(ColorUtils.isColorLight(bottomBackground))
-        )
+        styleBottomActionButtons(isPortrait)
         binding.tvToc.text = getString(R.string.toc_s, getString(R.string.loading))
         initOtherWorksView()
         viewModel.bookData.observe(this) { showBook(it) }
@@ -1239,11 +1240,32 @@ class BookInfoActivity :
 
     private fun upTvBookshelf() {
         if (viewModel.inBookshelf) {
-            binding.tvShelf.text = getString(R.string.remove_from_bookshelf)
+            binding.tvShelf.setActionText(getString(R.string.remove_from_bookshelf))
+            binding.tvShelf.setActionIcon(R.drawable.ic_book_info_delete)
         } else {
-            binding.tvShelf.text = getString(R.string.add_to_bookshelf)
+            binding.tvShelf.setActionText(getString(R.string.add_to_bookshelf))
+            binding.tvShelf.setActionIcon(R.drawable.ic_add)
         }
         editMenuItem?.isVisible = viewModel.inBookshelf
+    }
+
+    private fun styleBottomActionButtons(isPortrait: Boolean) = binding.run {
+        val accent = accentColor
+        val outlineBackground = if (isPortrait) {
+            ColorUtils.withAlpha(Color.WHITE, 0.82f)
+        } else {
+            ColorUtils.withAlpha(bottomBackground, 0.9f)
+        }
+        tvShelf.applyOutlineStyle(accent, outlineBackground)
+        tvShelf.setActionTextSize(14f)
+        tvListen.applyOutlineStyle(accent, outlineBackground)
+        tvListen.setActionIcon(R.drawable.ic_tts_headphones)
+        tvListen.setActionText(getString(R.string.book_info_listen))
+        tvListen.setActionTextSize(14f)
+        tvRead.applyFilledStyle(accent)
+        tvRead.setActionIcon(R.drawable.ic_book_info_read)
+        tvRead.setActionText(getString(R.string.reading))
+        tvRead.setActionTextSize(15f)
     }
 
     private fun upGroup(groupId: Long) {
@@ -1282,6 +1304,17 @@ class BookInfoActivity :
                     }
                 } else {
                     readBook(book)
+                }
+            }
+        }
+        tvListen.setOnClickListener {
+            viewModel.getBook()?.let { book ->
+                if (book.isWebFile) {
+                    showWebFileDownloadAlert {
+                        readAloudBook(it)
+                    }
+                } else {
+                    readAloudBook(book)
                 }
             }
         }
@@ -1680,6 +1713,36 @@ class BookInfoActivity :
         } else {
             viewModel.saveBook(book) {
                 startReadActivity(book)
+            }
+        }
+    }
+
+    private fun readAloudBook(book: Book) {
+        if (!viewModel.inBookshelf) {
+            book.addType(BookType.notShelf)
+            viewModel.saveBook(book) {
+                viewModel.saveChapterList {
+                    startReadAloudPlayer(book)
+                }
+            }
+        } else {
+            viewModel.saveBook(book) {
+                startReadAloudPlayer(book)
+            }
+        }
+    }
+
+    private fun startReadAloudPlayer(book: Book) {
+        lifecycleScope.launch {
+            val prepared = ReadAloudLauncher.prepareState(
+                book = book,
+                inBookshelf = viewModel.inBookshelf,
+                chapterChanged = chapterChanged
+            )
+            if (prepared) {
+                ReadAloudLauncher.openPlayer(this@BookInfoActivity, autoStart = true)
+            } else {
+                toastOnUi(ReadBook.msg ?: "初始化听书失败")
             }
         }
     }
