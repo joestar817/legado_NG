@@ -26,10 +26,8 @@ object TtsEngineStore {
 
     const val SYSTEM_DEFAULT_ID = "system_default"
     const val MULTITTS_FORWARDER_ID = "multitts_forwarder"
-    const val BAIDU_TTS_ID = "baidu_tts"
-    const val ALIYUN_TTS_ID = "aliyun_tts"
-    const val NEXT_FORWARDER_ID = "next_forwarder"
     const val NEXT_EDGE_PROXY_ID = "next_edge_proxy"
+    const val MIMO_V25_TTS_ID = "mimo_v25_tts"
     const val OPTIONS_EXAMPLE_ID = "script_options_example"
     const val STATIC_VOICES_EXAMPLE_ID = "script_static_voices_example"
     const val CUSTOM_HTTP_ID = "custom_http_forwarder"
@@ -46,15 +44,14 @@ object TtsEngineStore {
     private val DEFAULT_SCRIPT_ASSETS = listOf(
         "multitts_forwarder.js",
         "next_edge_proxy.js",
+        "mimo_v25_tts.js",
         "script_options_example.js",
         "static_voices_example.js"
     )
 
     fun engines(): List<TtsEngineSetting> {
         val savedEngines = savedEnginesWithSystemDefaultDisabled()
-        val retiredIds = retiredTemplateIds()
-        val visibleSavedEngines = savedEngines.filterNot { it.id in retiredIds }
-        val saved = visibleSavedEngines.associateBy { it.id }
+        val saved = savedEngines.associateBy { it.id }
         val deletedIds = deletedEngineIds()
         val builtInEngines = builtInEngines().filterNot { it.id in deletedIds }
         val builtInIds = builtInEngines.mapTo(hashSetOf()) { it.id }
@@ -86,11 +83,10 @@ object TtsEngineStore {
             .filterNot { savedEngine ->
                 savedEngine.id in builtInIds ||
                         savedEngine.id in deletedIds ||
-                        savedEngine.id in retiredIds ||
                         savedEngine.id.startsWith(SYSTEM_ENGINE_PREFIX)
             }
         val allById = (merged + custom).associateBy { it.id }
-        val savedOrder = visibleSavedEngines.map { it.id }.filter { it in allById }
+        val savedOrder = savedEngines.map { it.id }.filter { it in allById }
         val remainingOrder = allById.keys.filterNot { it in savedOrder }
         return (savedOrder + remainingOrder).mapNotNull { allById[it] }
             .map { it.withRuntimeState() }
@@ -969,11 +965,4 @@ object TtsEngineStore {
         )
     }
 
-    private fun retiredTemplateIds(): Set<String> {
-        return setOf(
-            BAIDU_TTS_ID,
-            ALIYUN_TTS_ID,
-            NEXT_FORWARDER_ID
-        )
-    }
 }
