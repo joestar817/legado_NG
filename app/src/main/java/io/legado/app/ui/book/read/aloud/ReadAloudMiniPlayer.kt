@@ -2,10 +2,11 @@ package io.legado.app.ui.book.read.aloud
 
 import android.animation.ObjectAnimator
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.Outline
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -82,17 +83,22 @@ object ReadAloudMiniPlayer {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = capsuleBackground(activity.accentColor)
-            elevation = 6.dpToPx().toFloat()
-            setPadding(5.dpToPx(), 5.dpToPx(), 7.dpToPx(), 5.dpToPx())
+            elevation = 2.dpToPx().toFloat()
+            setPadding(5.dpToPx(), 5.dpToPx(), 9.dpToPx(), 5.dpToPx())
             isClickable = true
             isFocusable = true
         }
         installDragTouch(activity, capsule, capsule) {
-            activity.startActivity(Intent(activity, ReadAloudPlayerActivity::class.java))
+            ReadAloudLauncher.openPlayer(activity)
         }
         val cover = ImageView(activity).apply {
             id = R.id.iv_read_aloud_mini_cover
             scaleType = ImageView.ScaleType.CENTER_CROP
+            background = circleBackground(
+                ColorUtils.setAlphaComponent(Color.WHITE, (255 * 0.12f).toInt()),
+                Color.WHITE
+            )
+            setPadding(1.dpToPx(), 1.dpToPx(), 1.dpToPx(), 1.dpToPx())
             clipToOutline = true
             outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: Outline) {
@@ -101,12 +107,12 @@ object ReadAloudMiniPlayer {
             }
         }
         installDragTouch(activity, capsule, cover) {
-            activity.startActivity(Intent(activity, ReadAloudPlayerActivity::class.java))
+            ReadAloudLauncher.openPlayer(activity)
         }
         capsule.addView(cover, LinearLayout.LayoutParams(42.dpToPx(), 42.dpToPx()))
         val play = ImageButton(activity).apply {
             id = R.id.btn_read_aloud_mini_play
-            background = circleBackground(ColorUtils.setAlphaComponent(Color.WHITE, 42), Color.WHITE)
+            background = playButtonBackground(activity.accentColor)
             setColorFilter(Color.WHITE)
             setPadding(11.dpToPx(), 11.dpToPx(), 11.dpToPx(), 11.dpToPx())
         }
@@ -125,16 +131,22 @@ object ReadAloudMiniPlayer {
         )
         val close = ImageButton(activity).apply {
             id = R.id.btn_read_aloud_mini_close
-            setImageResource(R.drawable.ic_baseline_close)
+            setImageResource(R.drawable.ic_read_aloud_mini_close)
             setBackgroundColor(Color.TRANSPARENT)
             setColorFilter(Color.WHITE)
-            setPadding(10.dpToPx(), 10.dpToPx(), 10.dpToPx(), 10.dpToPx())
+            scaleType = ImageView.ScaleType.CENTER
+            setPadding(0, 0, 0, 0)
         }
         installDragTouch(activity, capsule, close) {
             ReadAloud.stop(activity)
             detach(activity)
         }
-        capsule.addView(close, LinearLayout.LayoutParams(38.dpToPx(), 38.dpToPx()))
+        capsule.addView(
+            close,
+            LinearLayout.LayoutParams(30.dpToPx(), 30.dpToPx()).apply {
+                marginStart = 8.dpToPx()
+            }
+        )
         capsule.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -243,14 +255,58 @@ object ReadAloudMiniPlayer {
         cover.rotation = 0f
     }
 
-    private fun capsuleBackground(accent: Int): GradientDrawable {
-        val fill = ColorUtils.setAlphaComponent(accent, (255 * 0.82f).toInt())
-        val stroke = ColorUtils.setAlphaComponent(Color.WHITE, (255 * 0.28f).toInt())
-        return GradientDrawable().apply {
+    private fun capsuleBackground(accent: Int): Drawable {
+        val halo = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = 28.dpToPx().toFloat()
-            setColor(fill)
-            setStroke(1.dpToPx(), stroke)
+            setColor(
+                ColorUtils.setAlphaComponent(
+                    ColorUtils.blendARGB(accent, Color.WHITE, 0.34f),
+                    (255 * 0.14f).toInt()
+                )
+            )
+        }
+        val fill = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                ColorUtils.setAlphaComponent(
+                    ColorUtils.blendARGB(accent, Color.WHITE, 0.30f),
+                    (255 * 0.38f).toInt()
+                ),
+                ColorUtils.setAlphaComponent(accent, (255 * 0.34f).toInt()),
+                ColorUtils.setAlphaComponent(
+                    ColorUtils.blendARGB(accent, Color.BLACK, 0.04f),
+                    (255 * 0.36f).toInt()
+                )
+            )
+        ).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 28.dpToPx().toFloat()
+        }
+        val topGlow = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                ColorUtils.setAlphaComponent(Color.WHITE, (255 * 0.08f).toInt()),
+                Color.TRANSPARENT
+            )
+        ).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 28.dpToPx().toFloat()
+        }
+        val lowerShade = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                Color.TRANSPARENT,
+                ColorUtils.setAlphaComponent(Color.BLACK, (255 * 0.03f).toInt())
+            )
+        ).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 28.dpToPx().toFloat()
+        }
+        return LayerDrawable(arrayOf(halo, fill, topGlow, lowerShade)).apply {
+            setLayerInset(1, 1.dpToPx(), 1.dpToPx(), 1.dpToPx(), 1.dpToPx())
+            setLayerInset(2, 8.dpToPx(), 3.dpToPx(), 8.dpToPx(), 40.dpToPx())
+            setLayerInset(3, 3.dpToPx(), 28.dpToPx(), 3.dpToPx(), 3.dpToPx())
         }
     }
 
@@ -258,7 +314,31 @@ object ReadAloudMiniPlayer {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(fill)
-            setStroke(2.dpToPx(), ColorUtils.setAlphaComponent(stroke, (255 * 0.48f).toInt()))
+            setStroke(1.dpToPx(), ColorUtils.setAlphaComponent(stroke, (255 * 0.20f).toInt()))
         }
     }
+
+    private fun playButtonBackground(accent: Int): Drawable {
+        val softHalo = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(ColorUtils.setAlphaComponent(Color.WHITE, (255 * 0.08f).toInt()))
+        }
+        val glass = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                ColorUtils.setAlphaComponent(Color.WHITE, (255 * 0.12f).toInt()),
+                ColorUtils.setAlphaComponent(
+                    ColorUtils.blendARGB(accent, Color.WHITE, 0.20f),
+                    (255 * 0.10f).toInt()
+                )
+            )
+        ).apply {
+            shape = GradientDrawable.OVAL
+            setStroke(2.dpToPx(), ColorUtils.setAlphaComponent(Color.WHITE, (255 * 0.58f).toInt()))
+        }
+        return LayerDrawable(arrayOf(softHalo, glass)).apply {
+            setLayerInset(1, 3.dpToPx(), 3.dpToPx(), 3.dpToPx(), 3.dpToPx())
+        }
+    }
+
 }
