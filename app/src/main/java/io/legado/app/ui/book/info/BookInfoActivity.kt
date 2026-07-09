@@ -1240,10 +1240,10 @@ class BookInfoActivity :
 
     private fun upTvBookshelf() {
         if (viewModel.inBookshelf) {
-            binding.tvShelf.setActionText(getString(R.string.remove_from_bookshelf))
+            binding.tvShelf.setActionText(getString(R.string.delete))
             binding.tvShelf.setActionIcon(R.drawable.ic_book_info_delete)
         } else {
-            binding.tvShelf.setActionText(getString(R.string.add_to_bookshelf))
+            binding.tvShelf.setActionText(getString(R.string.bookshelf))
             binding.tvShelf.setActionIcon(R.drawable.ic_add)
         }
         editMenuItem?.isVisible = viewModel.inBookshelf

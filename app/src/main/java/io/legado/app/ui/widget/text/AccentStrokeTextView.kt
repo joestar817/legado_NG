@@ -16,12 +16,15 @@ class AccentStrokeTextView(context: Context, attrs: AttributeSet) :
 
     private var radius = 12.dpToPx()
     private val isBottomBackground: Boolean
+    private val useSurfaceBackground: Boolean
 
     init {
         val typedArray = context.obtainStyledAttributes(attrs, R.styleable.AccentStrokeTextView)
         radius = typedArray.getDimensionPixelOffset(R.styleable.StrokeTextView_radius, radius)
         isBottomBackground =
             typedArray.getBoolean(R.styleable.StrokeTextView_isBottomBackground, false)
+        useSurfaceBackground =
+            typedArray.getBoolean(R.styleable.AccentStrokeTextView_useSurfaceBackground, false)
         typedArray.recycle()
         upStyle()
     }
@@ -42,13 +45,21 @@ class AccentStrokeTextView(context: Context, attrs: AttributeSet) :
         } else {
             ThemeStore.accentColor(context)
         }
-        background = Selector.shapeBuild()
+        val white = context.getCompatColor(R.color.white)
+        val backgroundBuilder = Selector.shapeBuild()
             .setCornerRadius(radius)
             .setStrokeWidth(1.dpToPx())
             .setDisabledStrokeColor(disableColor)
             .setDefaultStrokeColor(accentColor)
-            .setPressedBgColor(context.getCompatColor(R.color.transparent30))
-            .create()
+        if (useSurfaceBackground) {
+            backgroundBuilder
+                .setDefaultBgColor(ColorUtils.withAlpha(white, 0.86f))
+                .setDisabledBgColor(ColorUtils.withAlpha(white, 0.58f))
+                .setPressedBgColor(ColorUtils.withAlpha(white, 0.96f))
+        } else {
+            backgroundBuilder.setPressedBgColor(context.getCompatColor(R.color.transparent30))
+        }
+        background = backgroundBuilder.create()
         setTextColor(
             Selector.colorBuild()
                 .setDefaultColor(accentColor)
