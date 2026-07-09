@@ -175,7 +175,6 @@
 	<string-array name="language">
 		<item>Auto</item>
 		<item>Simplified_Chinese</item>
-		<item>Traditional_Chinese</item>
 		<item>English</item>
 	</string-array>
 

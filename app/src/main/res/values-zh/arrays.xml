@@ -110,7 +110,6 @@
     <string-array name="language">
         <item>跟随系统</item>
         <item>简体中文</item>
-        <item>繁体中文</item>
         <item>英文</item>
     </string-array>
 

@@ -77,7 +77,6 @@ object AppContextWrapper {
     private fun getSetLocale(context: Context): Locale {
         return when (context.getPrefString(PreferKey.language)) {
             "zh" -> Locale.SIMPLIFIED_CHINESE
-            "tw" -> Locale.TRADITIONAL_CHINESE
             "en" -> Locale.ENGLISH
             else -> getSystemLocale()
         }
