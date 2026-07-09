@@ -10,7 +10,8 @@ import io.legado.app.data.entities.Book
 import io.legado.app.databinding.ItemBookshelfList2Binding
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.config.AppConfig
-import io.legado.app.utils.invisible
+import io.legado.app.ui.main.bookshelf.bookshelfAuthorText
+import io.legado.app.utils.gone
 import io.legado.app.utils.toTimeAgo
 import splitties.views.onLongClick
 
@@ -36,7 +37,7 @@ class BooksAdapterList2(
     ) = binding.run {
         if (payloads.isEmpty()) {
             tvName.text = item.name
-            tvAuthor.text = item.author
+            tvAuthor.text = item.bookshelfAuthorText(context)
             tvRead.text = item.durChapterTitle
             tvLast.text = item.latestChapterTitle
             ivCover.load(item, false)
@@ -48,7 +49,7 @@ class BooksAdapterList2(
                 bundle.keySet().forEach {
                     when (it) {
                         "name" -> tvName.text = item.name
-                        "author" -> tvAuthor.text = item.author
+                        "author" -> tvAuthor.text = item.bookshelfAuthorText(context)
                         "dur" -> tvRead.text = item.durChapterTitle
                         "last" -> tvLast.text = item.latestChapterTitle
                         "cover" -> ivCover.load(
@@ -58,7 +59,10 @@ class BooksAdapterList2(
                             lifecycle
                         )
 
-                        "refresh" -> upRefresh(binding, item)
+                        "refresh" -> {
+                            tvAuthor.text = item.bookshelfAuthorText(context)
+                            upRefresh(binding, item)
+                        }
                         "lastUpdateTime" -> upLastUpdateTime(binding, item)
                     }
                 }
@@ -68,16 +72,11 @@ class BooksAdapterList2(
 
     private fun upRefresh(binding: ItemBookshelfList2Binding, item: Book) {
         if (!item.isLocal && callBack.isUpdate(item.bookUrl)) {
-            binding.bvUnread.invisible()
+            binding.bvUnread.gone()
             binding.rlLoading.visible()
         } else {
             binding.rlLoading.gone()
-            if (AppConfig.showUnread) {
-                binding.bvUnread.setHighlight(item.lastCheckCount > 0)
-                binding.bvUnread.setBadgeCount(item.getUnreadChapterNum())
-            } else {
-                binding.bvUnread.invisible()
-            }
+            binding.bvUnread.gone()
         }
     }
 
@@ -104,6 +103,11 @@ class BooksAdapterList2(
                 getItem(holder.layoutPosition)?.let {
                     callBack.openBookInfo(it)
                 }
+            }
+        }
+        binding.ivBookMore.setOnClickListener {
+            getItem(holder.layoutPosition)?.let {
+                callBack.openBookActions(it)
             }
         }
     }

@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.graphics.Rect
 import android.os.Bundle
 import android.view.View
+import android.widget.CheckBox
+import android.widget.LinearLayout
 import androidx.appcompat.widget.SearchView
 import androidx.core.view.isGone
 import androidx.lifecycle.Lifecycle
@@ -13,28 +15,57 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.legado.app.R
 import io.legado.app.constant.AppLog
+import io.legado.app.constant.BookType
 import io.legado.app.constant.EventBus
+import io.legado.app.constant.IntentAction
 import io.legado.app.data.AppDatabase
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
+import io.legado.app.data.entities.BookChapter
+import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookGroup
+import io.legado.app.data.entities.BookSource
 import io.legado.app.databinding.FragmentBookshelf2Binding
+import io.legado.app.help.book.isLocal
+import io.legado.app.help.book.removeType
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.LocalConfig
+import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.primaryColor
+import io.legado.app.model.CacheBook
+import io.legado.app.model.ReadBook
+import io.legado.app.model.SourceCallBack
+import io.legado.app.model.localBook.LocalBook
+import io.legado.app.service.ExportBookService
+import io.legado.app.ui.book.character.BookCharacterActivity
+import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
+import io.legado.app.ui.file.HandleFileContract
 import io.legado.app.ui.book.group.GroupEditDialog
 import io.legado.app.ui.book.info.BookInfoActivity
+import io.legado.app.ui.book.read.aloud.ReadAloudLauncher
 import io.legado.app.ui.book.search.SearchActivity
 import io.legado.app.ui.main.bookshelf.BaseBookshelfFragment
+import io.legado.app.ui.main.bookshelf.BookshelfBookActionSheet
+import io.legado.app.ui.main.bookshelf.BookshelfBookGroupSheet
+import io.legado.app.utils.ACache
+import io.legado.app.utils.FileDoc
+import io.legado.app.utils.checkWrite
 import io.legado.app.utils.cnCompare
+import io.legado.app.utils.dpToPx
 import io.legado.app.utils.flowWithLifecycleAndDatabaseChangeFirst
+import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.observeEvent
+import io.legado.app.utils.postEvent
 import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.startActivityForBook
+import io.legado.app.utils.startService
+import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
@@ -42,6 +73,7 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 /**
@@ -49,7 +81,9 @@ import kotlin.math.max
  */
 class BookshelfFragment2() : BaseBookshelfFragment(R.layout.fragment_bookshelf2),
     SearchView.OnQueryTextListener,
-    BaseBooksAdapter.CallBack {
+    BaseBooksAdapter.CallBack,
+    BookshelfBookActionSheet.Callback,
+    ChangeBookSourceDialog.CallBack {
 
     constructor(position: Int) : this() {
         val bundle = Bundle()
@@ -75,6 +109,17 @@ class BookshelfFragment2() : BaseBookshelfFragment(R.layout.fragment_bookshelf2)
     private val bookshelfMargin by lazy { AppConfig.bookshelfMargin }
     private var itemCount = 0
     private var totalRows = 0
+    private var actionBook: Book? = null
+    private var exportBook: Book? = null
+    private val exportBookPathKey = "exportBookPath"
+    private val exportDir = registerForActivityResult(HandleFileContract()) { result ->
+        val book = exportBook ?: return@registerForActivityResult
+        result.uri?.let { uri ->
+            val path = if (uri.isContentScheme()) uri.toString() else uri.path ?: uri.toString()
+            ACache.get().put(exportBookPathKey, path)
+            startExportBook(book, path)
+        }
+    }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         setSupportToolbar(binding.titleBar.toolbar)
@@ -266,6 +311,156 @@ class BookshelfFragment2() : BaseBookshelfFragment(R.layout.fragment_bookshelf2)
             }
 
             is BookGroup -> showDialogFragment(GroupEditDialog(item))
+        }
+    }
+
+    override fun onBookActionClick(book: Book) {
+        actionBook = book
+        BookshelfBookActionSheet(this, book, this).show()
+    }
+
+    override fun onDetail(book: Book) {
+        startActivity<BookInfoActivity> {
+            putExtra("name", book.name)
+            putExtra("author", book.author)
+        }
+    }
+
+    override fun onCharacters(book: Book) {
+        startActivity<BookCharacterActivity> {
+            putExtra(BookCharacterActivity.EXTRA_WORK_KEY, BookCharacterProfile.workKey(book.name, book.author))
+            putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, book.name)
+            putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, book.author)
+            putExtra(BookCharacterActivity.EXTRA_BOOK_URL, book.bookUrl)
+        }
+    }
+
+    override fun onGroup(book: Book) {
+        BookshelfBookGroupSheet(this, book).show()
+    }
+
+    override fun onExport(book: Book) {
+        exportBook = book
+        val path = ACache.get().getAsString(exportBookPathKey)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val canWrite = if (path.isNullOrEmpty()) {
+                false
+            } else {
+                withContext(IO) {
+                    kotlin.runCatching { FileDoc.fromDir(path).checkWrite() }.getOrDefault(false)
+                }
+            }
+            if (canWrite && path != null) {
+                startExportBook(book, path)
+            } else {
+                exportDir.launch {
+                    mode = HandleFileContract.DIR
+                    requestCode = 0
+                }
+            }
+        }
+    }
+
+    private fun startExportBook(book: Book, path: String) {
+        val exportType = when (AppConfig.exportType) {
+            1 -> "epub"
+            else -> "txt"
+        }
+        requireContext().startService<ExportBookService> {
+            action = IntentAction.start
+            putExtra("bookUrl", book.bookUrl)
+            putExtra("exportType", exportType)
+            putExtra("exportPath", path)
+        }
+        toastOnUi(R.string.export_wait)
+    }
+
+    override fun onListen(book: Book) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val prepared = ReadAloudLauncher.prepareState(
+                book = book,
+                inBookshelf = true,
+                chapterChanged = false
+            )
+            if (prepared) {
+                ReadAloudLauncher.openPlayer(requireContext(), autoStart = true)
+            } else {
+                toastOnUi(ReadBook.msg ?: "初始化听书失败")
+            }
+        }
+    }
+
+    override fun onDownload(book: Book) {
+        if (book.isLocal) {
+            toastOnUi(R.string.local_book)
+            return
+        }
+        CacheBook.cacheBookMap[book.bookUrl]?.let {
+            if (!it.isStop()) {
+                CacheBook.remove(requireContext(), book.bookUrl)
+            } else {
+                CacheBook.start(requireContext(), book, 0, book.lastChapterIndex)
+            }
+        } ?: CacheBook.start(requireContext(), book, 0, book.lastChapterIndex)
+    }
+
+    override fun onChangeSource(book: Book) {
+        actionBook = book
+        showDialogFragment(ChangeBookSourceDialog(book.name, book.author))
+    }
+
+    override fun onDelete(book: Book) {
+        alert(
+            titleResource = R.string.draw,
+            messageResource = R.string.sure_del
+        ) {
+            var checkBox: CheckBox? = null
+            if (book.isLocal) {
+                checkBox = CheckBox(requireContext()).apply {
+                    setText(R.string.delete_book_file)
+                    isChecked = LocalConfig.deleteBookOriginal
+                }
+                customView {
+                    LinearLayout(requireContext()).apply {
+                        setPadding(16.dpToPx(), 0, 16.dpToPx(), 0)
+                        addView(checkBox)
+                    }
+                }
+            }
+            yesButton {
+                checkBox?.let {
+                    LocalConfig.deleteBookOriginal = it.isChecked
+                }
+                deleteBook(book, checkBox?.isChecked == true)
+            }
+            noButton()
+        }
+    }
+
+    private fun deleteBook(book: Book, deleteOriginal: Boolean) {
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            val source = appDb.bookSourceDao.getBookSource(book.origin)
+            SourceCallBack.callBackBook(SourceCallBack.DEL_BOOK_SHELF, source, book)
+            book.delete()
+            if (book.isLocal) {
+                LocalBook.deleteBook(book, deleteOriginal)
+            }
+            postEvent(EventBus.UP_BOOKSHELF, book.bookUrl)
+        }
+    }
+
+    override val oldBook: Book?
+        get() = actionBook
+
+    override fun changeTo(source: BookSource, book: Book, toc: List<BookChapter>) {
+        val oldBook = actionBook ?: return
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            book.removeType(BookType.updateError)
+            oldBook.delete()
+            appDb.bookDao.insert(book)
+            appDb.bookChapterDao.insert(*toc.toTypedArray())
+            postEvent(EventBus.SOURCE_CHANGED, book.bookUrl)
+            postEvent(EventBus.UP_BOOKSHELF, book.bookUrl)
         }
     }
 

@@ -11,8 +11,8 @@ import io.legado.app.databinding.ItemBookshelfListBinding
 import io.legado.app.databinding.ItemBookshelfListGroupBinding
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.config.AppConfig
+import io.legado.app.ui.main.bookshelf.bookshelfAuthorText
 import io.legado.app.utils.gone
-import io.legado.app.utils.invisible
 import io.legado.app.utils.visible
 import splitties.views.onLongClick
 
@@ -59,7 +59,7 @@ class BooksAdapterList(context: Context, callBack: CallBack) :
 
         fun onBind(item: Book, position: Int) = binding.run {
             tvName.text = item.name
-            tvAuthor.text = item.author
+            tvAuthor.text = item.bookshelfAuthorText(context)
             tvRead.text = item.durChapterTitle
             tvLast.text = item.latestChapterTitle
             ivCover.load(item, false)
@@ -79,7 +79,7 @@ class BooksAdapterList(context: Context, callBack: CallBack) :
                     bundle.keySet().forEach {
                         when (it) {
                             "name" -> tvName.text = item.name
-                            "author" -> tvAuthor.text = item.author
+                            "author" -> tvAuthor.text = item.bookshelfAuthorText(context)
                             "dur" -> tvRead.text = item.durChapterTitle
                             "last" -> tvLast.text = item.latestChapterTitle
                             "cover" -> ivCover.load(
@@ -87,7 +87,10 @@ class BooksAdapterList(context: Context, callBack: CallBack) :
                                 false
                             )
 
-                            "refresh" -> upRefresh(this, item)
+                            "refresh" -> {
+                                tvAuthor.text = item.bookshelfAuthorText(context)
+                                upRefresh(this, item)
+                            }
                         }
                     }
                 }
@@ -101,20 +104,18 @@ class BooksAdapterList(context: Context, callBack: CallBack) :
             binding.root.onLongClick {
                 callBack.onItemLongClick(item)
             }
+            binding.ivBookMore.setOnClickListener {
+                (item as? Book)?.let(callBack::onBookActionClick)
+            }
         }
 
         private fun upRefresh(binding: ItemBookshelfListBinding, item: Book) {
             if (!item.isLocal && callBack.isUpdate(item.bookUrl)) {
-                binding.bvUnread.invisible()
+                binding.bvUnread.gone()
                 binding.rlLoading.visible()
             } else {
                 binding.rlLoading.gone()
-                if (AppConfig.showUnread) {
-                    binding.bvUnread.setHighlight(item.lastCheckCount > 0)
-                    binding.bvUnread.setBadgeCount(item.getUnreadChapterNum())
-                } else {
-                    binding.bvUnread.invisible()
-                }
+                binding.bvUnread.gone()
             }
         }
 
@@ -128,7 +129,7 @@ class BooksAdapterList(context: Context, callBack: CallBack) :
 
         fun onBind(item: Book, position: Int) = binding.run {
             tvName.text = item.name
-            tvAuthor.text = item.author
+            tvAuthor.text = item.bookshelfAuthorText(context)
             tvRead.text = item.durChapterTitle
             tvLast.text = item.latestChapterTitle
             ivCover.load(item, false)
@@ -147,7 +148,7 @@ class BooksAdapterList(context: Context, callBack: CallBack) :
                     bundle.keySet().forEach {
                         when (it) {
                             "name" -> tvName.text = item.name
-                            "author" -> tvAuthor.text = item.author
+                            "author" -> tvAuthor.text = item.bookshelfAuthorText(context)
                             "dur" -> tvRead.text = item.durChapterTitle
                             "last" -> tvLast.text = item.latestChapterTitle
                             "cover" -> ivCover.load(
@@ -155,7 +156,10 @@ class BooksAdapterList(context: Context, callBack: CallBack) :
                                 false
                             )
 
-                            "refresh" -> upRefresh(this, item)
+                            "refresh" -> {
+                                tvAuthor.text = item.bookshelfAuthorText(context)
+                                upRefresh(this, item)
+                            }
                         }
                     }
                 }
@@ -169,20 +173,18 @@ class BooksAdapterList(context: Context, callBack: CallBack) :
             binding.root.onLongClick {
                 callBack.onItemLongClick(item)
             }
+            binding.ivBookMore.setOnClickListener {
+                (item as? Book)?.let(callBack::onBookActionClick)
+            }
         }
 
         private fun upRefresh(binding: ItemBookshelfList2Binding, item: Book) {
             if (!item.isLocal && callBack.isUpdate(item.bookUrl)) {
-                binding.bvUnread.invisible()
+                binding.bvUnread.gone()
                 binding.rlLoading.visible()
             } else {
                 binding.rlLoading.gone()
-                if (AppConfig.showUnread) {
-                    binding.bvUnread.setHighlight(item.lastCheckCount > 0)
-                    binding.bvUnread.setBadgeCount(item.getUnreadChapterNum())
-                } else {
-                    binding.bvUnread.invisible()
-                }
+                binding.bvUnread.gone()
             }
         }
 

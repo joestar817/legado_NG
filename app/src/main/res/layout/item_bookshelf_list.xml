@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/cv_content"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="100dp"
     android:layout_marginStart="16dp"
     android:layout_marginTop="2dp"
     android:layout_marginEnd="16dp"
@@ -12,7 +12,6 @@
     android:background="@drawable/ng_bg_bookshelf_card"
     android:clickable="true"
     android:focusable="true"
-    android:minHeight="100dp"
     android:paddingStart="10dp"
     android:paddingTop="7dp"
     android:paddingEnd="14dp"
@@ -35,11 +34,11 @@
 
     <FrameLayout
         android:id="@+id/fl_has_new"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="4dp"
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:layout_marginEnd="2dp"
         app:layout_constraintBottom_toBottomOf="@+id/tv_name"
-        app:layout_constraintRight_toRightOf="parent"
+        app:layout_constraintRight_toLeftOf="@+id/iv_book_more"
         app:layout_constraintTop_toTopOf="@+id/tv_name">
 
         <io.legado.app.ui.widget.text.BadgeView
@@ -205,5 +204,19 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="0.0"
         tools:layout_editor_absoluteX="0dp" />
+
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/iv_book_more"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/more"
+        android:elevation="1dp"
+        android:padding="6dp"
+        android:src="@drawable/ic_more_horiz"
+        app:layout_constraintBottom_toBottomOf="@+id/tv_name"
+        app:layout_constraintRight_toRightOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/tv_name"
+        app:tint="@color/tv_text_summary" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -68,7 +68,8 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
 
     private val binding by viewBinding(DialogBookChangeSourceBinding::bind)
     private val groups = linkedSetOf<String>()
-    private val callBack: CallBack? get() = activity as? CallBack
+    private val callBack: CallBack?
+        get() = parentFragment as? CallBack ?: activity as? CallBack
     private val viewModel: ChangeBookSourceViewModel by viewModels()
     private val waitDialog by lazy { WaitDialog(requireContext()) }
     private val adapter by lazy { ChangeBookSourceAdapter(requireContext(), viewModel, this) }

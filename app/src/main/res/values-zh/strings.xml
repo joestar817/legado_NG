@@ -125,6 +125,14 @@
     <string name="bookshelf_empty">书架还空着，先去搜索书籍或从发现里添加吧！</string>
     <string name="action_search">搜索</string>
     <string name="action_download">下载</string>
+    <string name="action_detail">详情</string>
+    <string name="action_character">角色</string>
+    <string name="bookshelf_move_to_group">移动到分组</string>
+    <string name="bookshelf_new_group">新建分组</string>
+    <string name="bookshelf_new_group_hint">20字以内，支持汉字、字母或数字</string>
+    <string name="bookshelf_group_book_count">%1$d本</string>
+    <string name="book_group_full">分组数量已达上限</string>
+    <string name="group_name_empty">分组名称不能为空</string>
     <string name="layout_list">列表</string>
     <string name="layout_grid2">网格二列</string>
     <string name="layout_grid3">网格三列</string>
@@ -1280,6 +1288,8 @@
     <string name="export_all">导出所有</string>
     <string name="complete">完成</string>
     <string name="show_unread">显示未读标志</string>
+    <string name="bookshelf_unread_chapters">%1$d章未读</string>
+    <string name="bookshelf_author_unread">%1$s · %2$d章未读</string>
     <string name="use_default_cover">总是使用默认封面</string>
     <string name="use_default_cover_s">总是显示默认封面（不显示网络封面）</string>
     <string name="title_font_size">字号</string>

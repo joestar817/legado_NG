@@ -90,6 +90,7 @@ abstract class BaseBooksAdapter<VB : ViewBinding>(context: Context) :
     interface CallBack {
         fun open(book: Book)
         fun openBookInfo(book: Book)
+        fun openBookActions(book: Book)
         fun isUpdate(bookUrl: String): Boolean
     }
 }
