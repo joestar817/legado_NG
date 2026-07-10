@@ -85,6 +85,10 @@ abstract class BaseReadAloudService : BaseService(),
         var timeMinute: Int = 0
             private set
 
+        @JvmStatic
+        var activeBookUrl: String? = null
+            private set
+
         fun isPlay(): Boolean {
             return isRun && !pause
         }
@@ -194,6 +198,7 @@ abstract class BaseReadAloudService : BaseService(),
         }
         isRun = false
         pause = true
+        activeBookUrl = null
         abandonFocus()
         unregisterReceiver(broadcastReceiver)
         postEvent(EventBus.ALOUD_STATE, Status.STOP)
@@ -237,6 +242,7 @@ abstract class BaseReadAloudService : BaseService(),
             if (!textChapter.isCompleted) {
                 return@execute
             }
+            activeBookUrl = ReadBook.book?.bookUrl
             readAloudNumber = textChapter.getReadLength(pageIndex) + startPos
             readAloudByPage = getPrefBoolean(PreferKey.readAloudByPage)
             contentList = textChapter.getNeedReadAloud(0, readAloudByPage, 0)

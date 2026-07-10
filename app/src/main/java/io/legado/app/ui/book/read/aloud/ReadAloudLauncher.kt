@@ -1,5 +1,6 @@
 package io.legado.app.ui.book.read.aloud
 
+import android.content.Intent
 import android.content.Context
 import android.app.Activity
 import io.legado.app.constant.AppLog
@@ -99,9 +100,15 @@ object ReadAloudLauncher {
     @Suppress("DEPRECATION")
     fun openPlayer(context: Context, autoStart: Boolean = false) {
         context.startActivity<ReadAloudPlayerActivity> {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra(EXTRA_AUTO_START, autoStart)
+            putExtra(EXTRA_BOOK_URL, ReadBook.book?.bookUrl)
         }
         (context as? Activity)?.overridePendingTransition(0, 0)
+    }
+
+    fun markPlayerDerived(intent: Intent) {
+        intent.putExtra(EXTRA_SUPPRESS_MINI_PLAYER, true)
     }
 
     private fun initBookState(book: Book): Boolean {
@@ -188,4 +195,6 @@ object ReadAloudLauncher {
     }
 
     const val EXTRA_AUTO_START = "autoStartReadAloud"
+    const val EXTRA_BOOK_URL = "readAloudBookUrl"
+    const val EXTRA_SUPPRESS_MINI_PLAYER = "suppressReadAloudMiniPlayer"
 }

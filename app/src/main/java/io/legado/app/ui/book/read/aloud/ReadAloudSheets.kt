@@ -307,6 +307,7 @@ class ReadAloudMoreSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_more_
         itemEngine.setOnClickListener {
             val safeContext = context ?: return@setOnClickListener
             safeContext.startActivity<ConfigActivity> {
+                ReadAloudLauncher.markPlayerDerived(this)
                 putExtra("configTag", ConfigTag.TTS_ENGINE_CONFIG)
             }
             dismissAllowingStateLoss()

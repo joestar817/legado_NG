@@ -49,6 +49,8 @@ import io.legado.app.ui.book.audio.AudioPlayActivity
 import io.legado.app.ui.video.VideoPlayerActivity
 import io.legado.app.ui.book.manga.ReadMangaActivity
 import io.legado.app.ui.book.read.ReadBookActivity
+import io.legado.app.ui.book.read.aloud.ReadAloudLauncher
+import io.legado.app.ui.book.read.aloud.ReadAloudPlayerActivity
 import splitties.systemservices.clipboardManager
 import splitties.systemservices.connectivityManager
 import splitties.systemservices.uiModeManager
@@ -60,6 +62,7 @@ inline fun <reified A : Activity> Context.startActivity(configIntent: Intent.() 
     val intent = Intent(this, A::class.java)
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     intent.apply(configIntent)
+    inheritReadAloudMiniScope(intent, A::class.java)
     startActivity(intent)
 }
 
@@ -77,7 +80,23 @@ fun Context.startActivityForBook(
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     intent.putExtra("bookUrl", book.bookUrl)
     intent.apply(configIntent)
+    inheritReadAloudMiniScope(intent, cls)
     startActivity(intent)
+}
+
+fun Context.inheritReadAloudMiniScope(intent: Intent, target: Class<*>) {
+    val source = this as? Activity ?: return
+    val suppressMini = source.intent?.getBooleanExtra(
+        ReadAloudLauncher.EXTRA_SUPPRESS_MINI_PLAYER,
+        false
+    ) == true
+    if (!suppressMini || intent.hasExtra(ReadAloudLauncher.EXTRA_SUPPRESS_MINI_PLAYER)) {
+        return
+    }
+    if (target == ReadBookActivity::class.java || target == ReadAloudPlayerActivity::class.java) {
+        return
+    }
+    ReadAloudLauncher.markPlayerDerived(intent)
 }
 
 

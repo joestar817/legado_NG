@@ -38,7 +38,7 @@ object ReadAloudMiniPlayer {
     private var savedY: Float? = null
 
     fun attach(activity: Activity) {
-        if (activity is ReadAloudPlayerActivity) {
+        if (!shouldShowOn(activity)) {
             detach(activity)
             return
         }
@@ -54,7 +54,7 @@ object ReadAloudMiniPlayer {
     fun refresh(activity: Activity) {
         val content = activity.findViewById<FrameLayout>(android.R.id.content) ?: return
         val view = content.findViewById<View>(TAG_ID) ?: return
-        view.isVisible = BaseReadAloudService.isRun && activity !is ReadAloudPlayerActivity
+        view.isVisible = BaseReadAloudService.isRun && shouldShowOn(activity)
         if (!view.isVisible) return
         val cover = view.findViewById<ImageView>(R.id.iv_read_aloud_mini_cover)
         val play = view.findViewById<ImageButton>(R.id.btn_read_aloud_mini_play)
@@ -67,6 +67,16 @@ object ReadAloudMiniPlayer {
         play.setImageResource(
             if (BaseReadAloudService.isPlay()) R.drawable.ic_pause_24dp else R.drawable.ic_play_24dp
         )
+    }
+
+    private fun shouldShowOn(activity: Activity): Boolean {
+        if (activity is ReadAloudPlayerActivity) {
+            return false
+        }
+        return activity.intent?.getBooleanExtra(
+            ReadAloudLauncher.EXTRA_SUPPRESS_MINI_PLAYER,
+            false
+        ) != true
     }
 
     fun detach(activity: Activity) {

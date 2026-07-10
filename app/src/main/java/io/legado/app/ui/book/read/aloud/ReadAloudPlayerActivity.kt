@@ -2,6 +2,7 @@ package io.legado.app.ui.book.read.aloud
 
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.content.Intent
 import android.graphics.drawable.Animatable
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -110,10 +111,43 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
         refreshStaticState()
         refreshPlayState()
         refreshProgress(ReadBook.durChapterPos)
+        consumeAutoStart(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        refreshStaticState()
+        refreshPlayState()
+        refreshProgress(ReadBook.durChapterPos)
+        consumeAutoStart(intent)
+    }
+
+    private fun consumeAutoStart(intent: Intent) {
         if (intent.getBooleanExtra(ReadAloudLauncher.EXTRA_AUTO_START, false)) {
             intent.removeExtra(ReadAloudLauncher.EXTRA_AUTO_START)
+            if (isCurrentBookAlreadyReading(intent)) {
+                if (BaseReadAloudService.pause) {
+                    ReadAloud.resume(this)
+                }
+                setPlayButtonLoading(false)
+                refreshStaticState()
+                refreshPlayState()
+                refreshProgress(ReadBook.durChapterPos)
+                return
+            }
             startReadAloudAfterContentReady()
         }
+    }
+
+    private fun isCurrentBookAlreadyReading(intent: Intent): Boolean {
+        if (!BaseReadAloudService.isRun) {
+            return false
+        }
+        val targetBookUrl = intent.getStringExtra(ReadAloudLauncher.EXTRA_BOOK_URL)
+            ?: ReadBook.book?.bookUrl
+            ?: return false
+        return BaseReadAloudService.activeBookUrl == targetBookUrl
     }
 
     override fun onResume() {
@@ -889,6 +923,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     private fun openBookInfo() {
         ReadBook.book?.let {
             startActivity<io.legado.app.ui.book.info.BookInfoActivity> {
+                ReadAloudLauncher.markPlayerDerived(this)
                 putExtra("name", it.name)
                 putExtra("author", it.author)
                 putExtra("bookUrl", it.bookUrl)
@@ -899,6 +934,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     private fun openCharacterTtsBindings() {
         ReadBook.book?.let {
             startActivity<BookCharacterTtsActivity> {
+                ReadAloudLauncher.markPlayerDerived(this)
                 putExtra(BookCharacterActivity.EXTRA_WORK_KEY, BookCharacterProfile.workKey(it.name, it.author))
                 putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, it.name)
                 putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, it.author)
@@ -910,6 +946,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     fun openStoryboardResult() {
         ReadBook.book?.let {
             startActivity<BookStoryboardActivity> {
+                ReadAloudLauncher.markPlayerDerived(this)
                 putExtra(BookCharacterActivity.EXTRA_WORK_KEY, BookCharacterProfile.workKey(it.name, it.author))
                 putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, it.name)
                 putExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR, it.author)
@@ -920,6 +957,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
 
     fun openEngineConfig() {
         startActivity<ConfigActivity> {
+            ReadAloudLauncher.markPlayerDerived(this)
             putExtra("configTag", ConfigTag.TTS_ENGINE_CONFIG)
         }
     }
