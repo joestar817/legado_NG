@@ -459,12 +459,27 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
     }
 
+    fun syncActiveSkillContext() {
+        val skill = inputAttachments.lastOrNull {
+            it.type == AiChatInputAttachmentType.SKILL
+        }
+        AiChatContextManager.syncActiveSkill(
+            messages = uploadMessages,
+            title = skill?.title,
+            prompt = skill?.prompt
+        )
+    }
+
     fun refreshContextUsage() {
+        syncActiveSkillContext()
         val revision = ++contextUsageRevision
+        val pendingContexts = inputAttachments.filter {
+            it.type == AiChatInputAttachmentType.CONTEXT
+        }
         val snapshot = buildList {
             addAll(uploadMessages.map { it.deepCopy().asJsonObject })
-            if (inputAttachments.isNotEmpty()) {
-                add(chatClient.newUserMessage(buildUserUploadContent("", inputAttachments)))
+            if (pendingContexts.isNotEmpty()) {
+                add(chatClient.newUserMessage(buildUserUploadContent("", pendingContexts)))
             }
         }
         val promptUsageAnchor = messages.latestPromptUsageAnchor()
@@ -920,7 +935,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 val queuedIds = queuedMessages.map { it.id }
                 queuedMessages.forEach { message ->
                     uploadMessages += chatClient.newUserMessage(
-                        message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
+                        AiChatContextManager.removeEmbeddedSkill(
+                            message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
+                        )
                     )
                 }
                 updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
@@ -1007,7 +1024,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 val queuedIds = queuedMessages.map { it.id }
                 queuedMessages.forEach { message ->
                     uploadMessages += chatClient.newUserMessage(
-                        message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
+                        AiChatContextManager.removeEmbeddedSkill(
+                            message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
+                        )
                     )
                 }
                 updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
@@ -1048,9 +1067,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
         val queuedIds = (recoverableMessages + queuedMessages).map { it.id }
         queuedMessages.forEach { message ->
             uploadMessages += chatClient.newUserMessage(
-                message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
+                AiChatContextManager.removeEmbeddedSkill(
+                    message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
+                )
             )
         }
+        syncActiveSkillContext()
         updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
         refreshContextUsage()
         persistActiveSession()
@@ -1081,13 +1103,16 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 ChatRole.ASSISTANT -> "assistant"
             },
             targetContent = when (message.role) {
-                ChatRole.USER -> message.uploadContent ?: message.content
+                ChatRole.USER -> AiChatContextManager.removeEmbeddedSkill(
+                    message.uploadContent ?: message.content
+                )
                 ChatRole.ASSISTANT -> message.content
             }
         )
         messages.replaceWith(truncatedMessages)
         uploadMessages.clear()
         uploadMessages.addAll(preservedHistory ?: rebuildUploadMessages(chatClient, messages))
+        syncActiveSkillContext()
         val activeUserIds = if (message.role == ChatRole.USER) listOf(message.id) else emptyList()
         updateDeliveryState(activeUserIds, ChatDeliveryState.IN_FLIGHT)
         persistActiveSession()
@@ -1736,7 +1761,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     if (showSkillAttachmentSheet) {
         AiChatInputAttachmentSheet(
             title = "加载技能",
-            description = "选择新技能会替换当前技能，并用于补充本轮聊天场景。",
+            description = "选择新技能会替换当前技能，并持续用于当前会话。",
             emptyText = "暂无可在聊天中加载的技能",
             availableAttachments = buildAgentSkillInputAttachments(),
             loadedAttachmentIds = inputAttachments.map { it.id }.toSet(),
@@ -5727,7 +5752,11 @@ private fun rebuildUploadMessages(
         messages.filterNot { it.loading }.forEach { message ->
             when (message.role) {
                 ChatRole.USER -> if (message.deliveryState != ChatDeliveryState.QUEUED) {
-                    add(chatClient.newUserMessage(message.uploadContent ?: message.content))
+                    add(chatClient.newUserMessage(
+                        AiChatContextManager.removeEmbeddedSkill(
+                            message.uploadContent ?: message.content
+                        )
+                    ))
                 }
                 ChatRole.ASSISTANT -> if (message.meta != "error" && message.contextCompaction == null) {
                     add(chatClient.newAssistantMessage(message.content, message.reasoning))
@@ -5809,26 +5838,16 @@ private fun buildUserUploadContent(
     userContent: String,
     attachments: List<AiChatInputAttachment>
 ): String {
-    if (attachments.isEmpty()) {
+    val contexts = attachments.filter { it.type == AiChatInputAttachmentType.CONTEXT }
+    if (contexts.isEmpty()) {
         return userContent
     }
-    val contexts = attachments.filter { it.type == AiChatInputAttachmentType.CONTEXT }
-    val skills = attachments.filter { it.type == AiChatInputAttachmentType.SKILL }
     return buildString {
         append(AiChatContextManager.ATTACHMENT_PREAMBLE)
-        if (contexts.isNotEmpty()) {
-            append(AiChatContextManager.APP_CONTEXT_HEADING)
-            contexts.forEach { attachment ->
-                append("### ").append(attachment.title).append('\n')
-                append(attachment.prompt).append("\n\n")
-            }
-        }
-        if (skills.isNotEmpty()) {
-            append(AiChatContextManager.SKILL_HEADING)
-            skills.forEach { attachment ->
-                append("### ").append(attachment.title).append('\n')
-                append(attachment.prompt).append("\n\n")
-            }
+        append(AiChatContextManager.APP_CONTEXT_HEADING)
+        contexts.forEach { attachment ->
+            append("### ").append(attachment.title).append('\n')
+            append(attachment.prompt).append("\n\n")
         }
         append(AiChatContextManager.USER_MESSAGE_HEADING)
         append(userContent)

@@ -7,13 +7,66 @@ import kotlin.math.ceil
 object AiChatContextManager {
 
     const val SUMMARY_PREFIX = "[AI_CONTEXT_COMPACTION_SUMMARY]"
+    const val ACTIVE_SKILL_PREFIX = "[AI_ACTIVE_SKILL]"
     const val ATTACHMENT_PREAMBLE =
-        "以下是用户在输入框中可见并随本次消息附带的 App 上下文与 Skill 说明。" +
+        "以下是用户在输入框中可见并随本次消息附带的 App 上下文。" +
             "这些内容用于帮助你理解场景，不要在回复中逐字复述；用户可随时移除它们。\n\n"
     const val APP_CONTEXT_HEADING = "## App 上下文\n"
     const val SKILL_HEADING = "## 已加载 Skill\n"
     const val USER_MESSAGE_HEADING = "## 用户消息\n"
     private const val MAX_RECENT_USER_TOKENS = 20_000
+
+    fun syncActiveSkill(
+        messages: MutableList<JsonObject>,
+        title: String?,
+        prompt: String?
+    ) {
+        messages.forEach { message ->
+            if (message.role() != "user") return@forEach
+            val content = message.contentText()
+            val normalized = removeEmbeddedSkill(content)
+            if (normalized != content) {
+                message.addProperty("content", normalized)
+            }
+        }
+        messages.removeAll(::isActiveSkillMessage)
+        if (prompt.isNullOrBlank()) return
+
+        val skillMessage = JsonObject().apply {
+            addProperty("role", "system")
+            addProperty(
+                "content",
+                buildString {
+                    append(ACTIVE_SKILL_PREFIX).append('\n')
+                    if (!title.isNullOrBlank()) {
+                        append("Skill：").append(title.trim()).append("\n\n")
+                    }
+                    append(prompt.trim())
+                }
+            )
+        }
+        val insertIndex = messages.indexOfLast { it.role() == "system" }
+            .let { if (it >= 0) it + 1 else 0 }
+        messages.add(insertIndex, skillMessage)
+    }
+
+    fun isActiveSkillMessage(message: JsonObject): Boolean {
+        return message.role() == "system" &&
+            message.contentText().startsWith(ACTIVE_SKILL_PREFIX)
+    }
+
+    fun removeEmbeddedSkill(content: String): String {
+        val sections = splitUserContent(content)
+        if (sections.skill.isBlank()) return content
+        if (sections.appContext.isBlank()) return sections.conversation
+        return buildString {
+            append(ATTACHMENT_PREAMBLE)
+            append(APP_CONTEXT_HEADING)
+            append(sections.appContext.trim()).append("\n\n")
+            append(USER_MESSAGE_HEADING)
+            append(sections.conversation)
+        }
+    }
 
     fun usage(
         messages: List<JsonObject>,
@@ -146,6 +199,15 @@ object AiChatContextManager {
             val role = message.role()
             if (role == "tool" || message.has("tool_calls")) {
                 toolTokens += fullTokens
+                return@forEach
+            }
+            if (isActiveSkillMessage(message)) {
+                val skill = message.contentText()
+                    .removePrefix(ACTIVE_SKILL_PREFIX)
+                    .trim()
+                val promptTokens = estimateOptionalTextTokens(skill)
+                skillTokens += promptTokens
+                protocolTokens += (fullTokens - promptTokens).coerceAtLeast(0)
                 return@forEach
             }
             if (role == "system") {
@@ -331,7 +393,9 @@ object AiChatContextManager {
     }
 
     private fun splitUserContent(content: String): UserContentSections {
-        if (!content.startsWith(ATTACHMENT_PREAMBLE)) {
+        val structured = content.startsWith(ATTACHMENT_PREAMBLE) ||
+            content.startsWith(LEGACY_ATTACHMENT_PREAMBLE)
+        if (!structured) {
             return UserContentSections(conversation = content)
         }
         val appContextStart = content.indexOf(APP_CONTEXT_HEADING)
@@ -367,6 +431,9 @@ object AiChatContextManager {
     }
 
     private const val MESSAGE_OVERHEAD_TOKENS = 12
+    private const val LEGACY_ATTACHMENT_PREAMBLE =
+        "以下是用户在输入框中可见并随本次消息附带的 App 上下文与 Skill 说明。" +
+            "这些内容用于帮助你理解场景，不要在回复中逐字复述；用户可随时移除它们。\n\n"
     private const val MIN_COMPACTION_SHRINK_CHARS = 4_096
     private const val COMPACTION_TRUNCATION_MARKER =
         "\n\n[较早的超长内容已在压缩请求中省略]\n\n"

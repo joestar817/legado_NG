@@ -56,6 +56,59 @@ class AiChatContextManagerTest {
     }
 
     @Test
+    fun syncActiveSkillKeepsSingleInstructionAndCleansEmbeddedCopies() {
+        val embedded = buildString {
+            append(AiChatContextManager.ATTACHMENT_PREAMBLE)
+            append(AiChatContextManager.APP_CONTEXT_HEADING)
+            append("当前书籍：测试小说\n\n")
+            append(AiChatContextManager.SKILL_HEADING)
+            append("旧角色卡规则\n\n")
+            append(AiChatContextManager.USER_MESSAGE_HEADING)
+            append("继续扫描")
+        }
+        val messages = mutableListOf(
+            message("system", "system prompt"),
+            message("user", embedded)
+        )
+
+        AiChatContextManager.syncActiveSkill(messages, "角色卡生成", "新角色卡规则")
+        AiChatContextManager.syncActiveSkill(messages, "书架管理", "书架管理规则")
+
+        val skillMessages = messages.filter(AiChatContextManager::isActiveSkillMessage)
+        assertEquals(1, skillMessages.size)
+        assertTrue(skillMessages.single().content().contains("书架管理规则"))
+        assertFalse(skillMessages.single().content().contains("新角色卡规则"))
+        val userContent = messages.single { it.role() == "user" }.content()
+        assertTrue(userContent.contains("当前书籍：测试小说"))
+        assertTrue(userContent.contains("继续扫描"))
+        assertFalse(userContent.contains(AiChatContextManager.SKILL_HEADING))
+        assertFalse(userContent.contains("旧角色卡规则"))
+
+        AiChatContextManager.syncActiveSkill(messages, null, null)
+        assertFalse(messages.any(AiChatContextManager::isActiveSkillMessage))
+    }
+
+    @Test
+    fun activeSkillIsCountedAsSkillAndPreservedByCompaction() {
+        val messages = mutableListOf(
+            message("system", "system prompt"),
+            message("user", "old request"),
+            message("assistant", "old answer")
+        )
+        AiChatContextManager.syncActiveSkill(messages, "角色卡生成", "只分析角色，不要续写")
+
+        val breakdown = AiChatContextManager.breakdown(messages)
+        val compacted = AiChatContextManager.buildCompactedHistory(
+            messages = messages,
+            summary = "handoff",
+            recentUserTokenBudget = 100
+        )
+
+        assertTrue(breakdown.skillTokens > 0)
+        assertEquals(1, compacted.count(AiChatContextManager::isActiveSkillMessage))
+    }
+
+    @Test
     fun compactionRevisionIncrementsAcrossReplacements() {
         val first = AiChatContextManager.buildCompactedHistory(
             messages = listOf(message("system", "system prompt"), message("user", "request")),
