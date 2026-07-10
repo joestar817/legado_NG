@@ -11,6 +11,7 @@ data class AiModelCapabilities(
 data class AiModelReasoningOptions(
     val thinkingParam: String = "",
     val effortParam: String = "",
+    val disableEffortValue: String = "",
     val reasoningOutputField: String = "reasoning_content"
 )
 

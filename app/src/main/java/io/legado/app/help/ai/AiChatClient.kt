@@ -13,12 +13,55 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import splitties.init.appCtx
 
 class AiChatClient {
 
+    suspend fun compactContext(
+        messages: MutableList<JsonObject>,
+        promptUsageAnchor: AiChatPromptUsageAnchor? = null,
+        onContextEvent: (AiChatContextEvent) -> Unit = {}
+    ): AiChatManualCompactionResult {
+        val selection = runCatching { AiConfig.requireAssistantModel() }.getOrElse {
+            throw IllegalStateException("请先在模型设置中选择聊天模型")
+        }
+        val setting = AiProviderStore.provider(selection.providerId)
+            ?: error("AI provider not found: ${selection.providerId}")
+        check(setting.enabled) { "AI provider is disabled" }
+        check(setting.type == AiProviderType.OPENAI) { "AI 聊天暂只支持 OpenAI 兼容提供商" }
+        val model = resolveModel(setting, selection.modelId)
+        val tools = if (AiConfig.internalMcpEnabled && model.abilities.contains(AiModelAbility.TOOL)) {
+            loadMcpTools()
+        } else {
+            emptyList()
+        }
+        val calibration = resolveTokenCalibration(
+            messages = messages,
+            toolDefinitions = tools,
+            anchor = promptUsageAnchor,
+            providerId = selection.providerId,
+            modelId = model.id
+        )
+        val record = compactIfNeeded(
+            messages = messages,
+            toolDefinitions = tools,
+            calibration = calibration,
+            stage = AiChatCompactionStage.PRE_TURN,
+            onContextEvent = onContextEvent,
+            force = true
+        ) ?: error("上下文压缩未执行")
+        return AiChatManualCompactionResult(
+            record = record,
+            contextUsage = AiChatContextManager.usage(messages, tools),
+            contextMessages = messages.map { it.deepCopy().asJsonObject }
+        )
+    }
+
     suspend fun send(
         messages: MutableList<JsonObject>,
+        promptUsageAnchor: AiChatPromptUsageAnchor? = null,
         onStreamUpdate: (AiChatStreamUpdate) -> Unit = {},
+        onContextEvent: (AiChatContextEvent) -> Unit = {},
         onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
     ): AiChatTurnResult {
         val selection = runCatching { AiConfig.requireAssistantModel() }.getOrElse {
@@ -50,7 +93,26 @@ class AiChatClient {
         var lastModel: String? = null
         var lastReasoning: String? = null
         var lastFinishReason: String? = null
+        val contextCompactions = mutableListOf<AiChatCompactionRecord>()
         val memoryTrace = mutableListOf<AiMemoryTraceItem>()
+        var contextOverflowRecoveryAttempted = false
+        var tokenCalibration = resolveTokenCalibration(
+            messages = requestMessages,
+            toolDefinitions = tools,
+            anchor = promptUsageAnchor,
+            providerId = selection.providerId,
+            modelId = model.id
+        )
+        compactIfNeeded(
+                requestMessages,
+                tools,
+                tokenCalibration,
+                AiChatCompactionStage.PRE_TURN,
+                onContextEvent
+            )?.let { record ->
+            contextCompactions += record
+            tokenCalibration = null
+        }
         while (true) {
             currentCoroutineContext().ensureActive()
             val stream = setting.streamResponseEnabled
@@ -68,10 +130,32 @@ class AiChatClient {
             val reasoningKey = setting.reasoningOptions(model.id)
                 .reasoningOutputField
                 .ifBlank { "reasoning_content" }
-            val completion = if (stream) {
-                client.executeStreamChat(request, reasoningKey, onStreamUpdate)
-            } else {
-                client.executeJsonChat(request, reasoningKey)
+            val completion = try {
+                if (stream) {
+                    client.executeStreamChat(request, reasoningKey, onStreamUpdate)
+                } else {
+                    client.executeJsonChat(request, reasoningKey)
+                }
+            } catch (error: IllegalStateException) {
+                if (!contextOverflowRecoveryAttempted &&
+                    AiConfig.contextCompactionEnabled &&
+                    error.isContextWindowExceeded()
+                ) {
+                    compactIfNeeded(
+                        messages = requestMessages,
+                        toolDefinitions = tools,
+                        calibration = tokenCalibration,
+                        stage = AiChatCompactionStage.PRE_TURN,
+                        onContextEvent = onContextEvent,
+                        force = true
+                    )?.let { record ->
+                        contextCompactions += record
+                        tokenCalibration = null
+                        contextOverflowRecoveryAttempted = true
+                    } ?: throw error
+                    continue
+                }
+                throw error
             }
             lastModel = completion.model
             lastUsage = completion.usage
@@ -82,6 +166,13 @@ class AiChatClient {
             val toolCalls = completion.toolCalls
             if (toolCalls.size() == 0) {
                 requestMessages.add(uploadAssistantMessage(content, lastReasoning))
+                tokenCalibration = calibrationAfterModelResponse(
+                    usage = completion.usage,
+                    messages = requestMessages,
+                    toolDefinitions = tools,
+                    providerId = selection.providerId,
+                    modelId = model.id
+                ) ?: tokenCalibration
                 return AiChatTurnResult(
                     content = content,
                     reasoning = lastReasoning,
@@ -90,7 +181,16 @@ class AiChatClient {
                     usage = lastUsage,
                     toolTrace = toolTrace,
                     memoryTrace = memoryTrace.toList(),
-                    warnings = warnings
+                    warnings = warnings,
+                    contextUsage = AiChatContextManager.usage(
+                        requestMessages,
+                        tools,
+                        tokenCalibration
+                    ),
+                    contextCalibration = tokenCalibration,
+                    compactionCount = contextCompactions.size,
+                    contextCompactions = contextCompactions.toList(),
+                    contextMessages = requestMessages.map { it.deepCopy().asJsonObject }
                 )
             }
             requestMessages.add(message.deepCopy().asJsonObject.apply {
@@ -99,6 +199,13 @@ class AiChatClient {
                     addProperty("content", "")
                 }
             })
+            tokenCalibration = calibrationAfterModelResponse(
+                usage = completion.usage,
+                messages = requestMessages,
+                toolDefinitions = tools,
+                providerId = selection.providerId,
+                modelId = model.id
+            ) ?: tokenCalibration
             val parsedToolCalls = toolCalls.mapNotNull { call ->
                 val callObject = call.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
                 val callId = callObject.stringOrNull("id").orEmpty()
@@ -174,7 +281,150 @@ class AiChatClient {
                     )
                 }
             )
+            compactIfNeeded(
+                    requestMessages,
+                    tools,
+                    tokenCalibration,
+                    AiChatCompactionStage.MID_TURN,
+                    onContextEvent
+                )?.let { record ->
+                contextCompactions += record
+                tokenCalibration = null
+            }
         }
+    }
+
+    private suspend fun compactIfNeeded(
+        messages: MutableList<JsonObject>,
+        toolDefinitions: List<JsonObject>,
+        calibration: AiChatTokenCalibration?,
+        stage: AiChatCompactionStage,
+        onContextEvent: (AiChatContextEvent) -> Unit,
+        force: Boolean = false
+    ): AiChatCompactionRecord? {
+        val usage = AiChatContextManager.usage(messages, toolDefinitions, calibration)
+        if (!AiConfig.contextCompactionEnabled && !force) {
+            check(usage.estimatedTokens < usage.contextWindowTokens) {
+                "当前上下文约 ${usage.estimatedTokens} tokens，已超过配置的 ${usage.contextWindowTokens} tokens 上下文窗口；请开启自动压缩或增大上下文窗口"
+            }
+            return null
+        }
+        val officialUsageReachedThreshold =
+            calibration?.contextTokens?.let { it >= usage.thresholdTokens } == true
+        val hardWindowGuard = usage.contextWindowTokens * HARD_WINDOW_GUARD_PERCENT / 100
+        val predictedNearWindowLimit = usage.estimatedTokens >= hardWindowGuard
+        if (!force && !officialUsageReachedThreshold && !predictedNearWindowLimit) return null
+
+        onContextEvent(
+            AiChatContextEvent(
+                type = AiChatContextEventType.STARTED,
+                stage = stage,
+                beforeTokens = usage.estimatedTokens,
+                beforeUsage = usage
+            )
+        )
+        val summary = createCompactionSummary(messages)
+        val replacement = AiChatContextManager.buildCompactedHistory(messages, summary.content)
+        val replacementUsage = AiChatContextManager.usage(replacement, toolDefinitions)
+        check(replacementUsage.estimatedTokens < usage.thresholdTokens) {
+            "上下文压缩后仍有约 ${replacementUsage.estimatedTokens} tokens，" +
+                "未降到 ${usage.thresholdTokens} tokens 阈值以下"
+        }
+        messages.clear()
+        messages.addAll(replacement)
+        val record = AiChatCompactionRecord(
+            beforeTokens = usage.estimatedTokens,
+            afterTokens = replacementUsage.estimatedTokens,
+            revision = AiChatContextManager.compactionRevision(replacement),
+            summaryPromptTokens = summary.usage?.promptTokens ?: 0,
+            summaryCompletionTokens = summary.usage?.completionTokens ?: 0
+        )
+        onContextEvent(
+            AiChatContextEvent(
+                type = AiChatContextEventType.COMPLETED,
+                stage = stage,
+                beforeTokens = usage.estimatedTokens,
+                afterTokens = replacementUsage.estimatedTokens,
+                afterUsage = replacementUsage,
+                compaction = record
+            )
+        )
+        return record
+    }
+
+    private suspend fun createCompactionSummary(messages: List<JsonObject>): AiChatCompactionSummary {
+        val selection = AiConfig.contextCompactionModel()
+        val setting = AiProviderStore.provider(selection.providerId)
+            ?: error("AI provider not found: ${selection.providerId}")
+        check(setting.enabled) { "上下文压缩模型所属的 AI provider 已禁用" }
+        check(setting.type == AiProviderType.OPENAI) { "上下文压缩暂只支持 OpenAI 兼容提供商" }
+        val model = resolveModel(setting, selection.modelId)
+        val prompt = appCtx.assets.open(CONTEXT_COMPACTION_PROMPT_ASSET)
+            .bufferedReader(Charsets.UTF_8)
+            .use { it.readText() }
+        val compactionHistory = messages.filterNot { message ->
+                message.stringOrNull("role") == "system"
+            }
+            .mapTo(mutableListOf()) { it.deepCopy().asJsonObject }
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val compactionMessages = buildList {
+                add(JsonObject().apply {
+                    addProperty("role", "system")
+                    addProperty("content", prompt)
+                })
+                addAll(compactionHistory)
+                add(JsonObject().apply {
+                    addProperty("role", "user")
+                    addProperty("content", "请将以上上下文压缩为可继续当前任务的接续摘要。")
+                })
+            }
+            val body = buildRequestBody(
+                setting = setting,
+                model = model,
+                messages = compactionMessages,
+                tools = emptyList(),
+                params = AiTextParams(temperature = 0f, disableThinking = true),
+                stream = false
+            )
+            val request = Request.Builder()
+                .url("${setting.baseUrl.trimEndSlash()}${setting.chatCompletionsPath.ensureStartSlash()}")
+                .apply {
+                    if (setting.apiKey.isNotBlank()) {
+                        addHeader("Authorization", "Bearer ${setting.apiKey}")
+                    }
+                }
+                .addHeader("Content-Type", "application/json")
+                .post(jsonBody(body))
+                .build()
+            val completion = try {
+                aiHttpClient(setting.timeoutSeconds)
+                    .executeJsonChat(request, setting.reasoningOptions(model.id).reasoningOutputField)
+            } catch (error: IllegalStateException) {
+                if (!error.isContextWindowExceeded()) throw error
+                val reduced = AiChatContextManager
+                    .trimOldestCompactionHistoryUnit(compactionHistory) ||
+                    AiChatContextManager.shrinkLargestCompactionMessage(compactionHistory)
+                if (!reduced) {
+                    throw IllegalStateException("压缩模型的上下文窗口不足，无法生成接续摘要", error)
+                }
+                continue
+            }
+            return AiChatCompactionSummary(
+                content = completion.content
+                    .trim()
+                    .ifBlank { error("上下文压缩模型返回了空摘要") },
+                usage = completion.usage
+            )
+        }
+    }
+
+    private fun Throwable.isContextWindowExceeded(): Boolean {
+        val text = generateSequence(this) { it.cause }
+            .mapNotNull { it.message }
+            .joinToString("\n")
+            .lowercase()
+        return CONTEXT_WINDOW_ERROR_MARKERS.any(text::contains)
     }
 
     fun newSystemMessage(): JsonObject {
@@ -195,6 +445,92 @@ class AiChatClient {
         return uploadAssistantMessage(content, reasoning)
     }
 
+    fun estimateContextUsage(
+        messages: List<JsonObject>,
+        promptUsageAnchor: AiChatPromptUsageAnchor? = null
+    ): AiChatContextUsage {
+        val selection = AiConfig.requireAssistantModel()
+        val setting = AiProviderStore.provider(selection.providerId)
+            ?: error("AI provider not found: ${selection.providerId}")
+        val model = resolveModel(setting, selection.modelId)
+        val tools = if (AiConfig.internalMcpEnabled &&
+            model.abilities.contains(AiModelAbility.TOOL)
+        ) {
+            loadMcpTools()
+        } else {
+            emptyList()
+        }
+        val calibration = resolveTokenCalibration(
+            messages = messages,
+            toolDefinitions = tools,
+            anchor = promptUsageAnchor,
+            providerId = selection.providerId,
+            modelId = model.id
+        )
+        return AiChatContextManager.usage(messages, tools, calibration)
+    }
+
+    private fun resolveTokenCalibration(
+        messages: List<JsonObject>,
+        toolDefinitions: List<JsonObject>,
+        anchor: AiChatPromptUsageAnchor?,
+        providerId: String,
+        modelId: String
+    ): AiChatTokenCalibration? {
+        anchor ?: return null
+        if (anchor.providerId != null && anchor.providerId != providerId) return null
+        if (anchor.modelId != null && anchor.modelId != modelId) return null
+        val contextTokens = anchor.contextTokens
+        val localContextTokens = anchor.localContextTokens
+        if (contextTokens != null && localContextTokens != null) {
+            return AiChatTokenCalibration.create(
+                contextTokens = contextTokens,
+                localContextTokens = localContextTokens,
+                providerId = providerId,
+                modelId = modelId
+            )
+        }
+        return anchor.localPromptTokens?.let { localPromptTokens ->
+            AiChatTokenCalibration.create(
+                contextTokens = anchor.promptTokens,
+                localContextTokens = localPromptTokens,
+                providerId = providerId,
+                modelId = modelId
+            )
+        } ?: AiChatContextManager.calibrationFromHistory(
+            messages = messages,
+            toolDefinitions = toolDefinitions,
+            promptTokens = anchor.promptTokens,
+            providerId = providerId,
+            modelId = modelId,
+            expectedToolCallCount = anchor.expectedToolCallCount
+        )
+    }
+
+    private fun calibrationAfterModelResponse(
+        usage: AiChatUsage?,
+        messages: List<JsonObject>,
+        toolDefinitions: List<JsonObject>,
+        providerId: String,
+        modelId: String
+    ): AiChatTokenCalibration? {
+        usage ?: return null
+        val contextTokens = usage.totalTokens?.takeIf { it > 0 }
+            ?: usage.promptTokens
+                ?.takeIf { it > 0 }
+                ?.let { promptTokens -> promptTokens + (usage.completionTokens ?: 0) }
+            ?: return null
+        val localContextTokens = AiChatContextManager
+            .usage(messages, toolDefinitions)
+            .localEstimatedTokens
+        return AiChatTokenCalibration.create(
+            contextTokens = contextTokens,
+            localContextTokens = localContextTokens,
+            providerId = providerId,
+            modelId = modelId
+        )
+    }
+
     private fun resolveModel(setting: AiProviderSetting, modelId: String): AiModel {
         val model = setting.models.firstOrNull { it.id == modelId } ?: AiModel(id = modelId, name = modelId)
         return AiModelRegistry.enrich(model)
@@ -204,7 +540,7 @@ class AiChatClient {
         setting: AiProviderSetting,
         model: AiModel,
         messages: List<JsonObject>,
-        tools: List<McpChatTool>,
+        tools: List<JsonObject>,
         params: AiTextParams,
         stream: Boolean
     ): JsonObject {
@@ -217,31 +553,16 @@ class AiChatClient {
             params.temperature?.let { addProperty("temperature", it) }
             params.maxTokens?.let { addProperty("max_tokens", it) }
             addProperty("stream", stream)
-            if (params.enableThinking && reasoningOptions.thinkingParam.isNotBlank()) {
-                add(reasoningOptions.thinkingParam, JsonObject().apply {
-                    addProperty("type", "enabled")
-                })
-            } else if (params.disableThinking && reasoningOptions.thinkingParam.isNotBlank()) {
-                add(reasoningOptions.thinkingParam, JsonObject().apply {
-                    addProperty("type", "disabled")
+            if (stream && setting.supportsStreamUsage) {
+                add("stream_options", JsonObject().apply {
+                    addProperty("include_usage", true)
                 })
             }
-            if (params.enableThinking && reasoningOptions.effortParam.isNotBlank()) {
-                addProperty(reasoningOptions.effortParam, params.reasoningEffort ?: "high")
-            } else if (params.disableThinking && reasoningOptions.effortParam.isNotBlank()) {
-                addProperty(reasoningOptions.effortParam, "none")
-            }
+            addReasoningParams(params, reasoningOptions)
             if (tools.isNotEmpty()) {
                 add("tools", JsonArray().apply {
                     tools.forEach { tool ->
-                        add(JsonObject().apply {
-                            addProperty("type", "function")
-                            add("function", JsonObject().apply {
-                                addProperty("name", tool.modelName)
-                                addProperty("description", tool.description)
-                                add("parameters", tool.inputSchema)
-                            })
-                        })
+                        add(tool.deepCopy())
                     }
                 })
             }
@@ -389,7 +710,7 @@ class AiChatClient {
         }
     }
 
-    private fun loadMcpTools(): List<McpChatTool> {
+    private fun loadMcpTools(): List<JsonObject> {
         val response = McpInternalChannel.request(JsonObject().apply {
             addProperty("jsonrpc", "2.0")
             addProperty("id", "tools")
@@ -402,12 +723,14 @@ class AiChatClient {
             val inputSchema = obj.objectOrNull("inputSchema") ?: JsonObject().apply {
                 addProperty("type", "object")
             }
-            McpChatTool(
-                name = name,
-                modelName = "$MCP_TOOL_PREFIX$name",
-                description = obj.stringOrNull("description").orEmpty(),
-                inputSchema = inputSchema
-            )
+            JsonObject().apply {
+                addProperty("type", "function")
+                add("function", JsonObject().apply {
+                    addProperty("name", "$MCP_TOOL_PREFIX$name")
+                    addProperty("description", obj.stringOrNull("description").orEmpty())
+                    add("parameters", inputSchema.deepCopy())
+                })
+            }
         }
     }
 
@@ -763,13 +1086,6 @@ class AiChatClient {
         }.getOrNull()
     }
 
-    private data class McpChatTool(
-        val name: String,
-        val modelName: String,
-        val description: String,
-        val inputSchema: JsonObject
-    )
-
     private data class ParsedToolCall(
         val callId: String,
         val functionName: String,
@@ -815,8 +1131,18 @@ class AiChatClient {
     }
 
     companion object {
+
+        private const val CONTEXT_COMPACTION_PROMPT_ASSET = "ai/context_compaction.md"
+        private const val HARD_WINDOW_GUARD_PERCENT = 95
         private const val MCP_TOOL_PREFIX = "mcp__legado__"
         private const val MAX_MODEL_TOOL_RESULT_CHARS = 120_000
+        private val CONTEXT_WINDOW_ERROR_MARKERS = listOf(
+            "maximum context length",
+            "context length",
+            "context window",
+            "context_length",
+            "too many tokens"
+        )
         private val CHARACTER_SCAN_META_BLOCK_REGEX = Regex(
             pattern = """(?s)```[ \t]*(?:legado-character-scan|character_scan_meta)[^\r\n]*\r?\n(.*?)\r?\n```"""
         )
@@ -950,7 +1276,18 @@ data class AiChatTurnResult(
     val usage: AiChatUsage?,
     val toolTrace: List<String>,
     val memoryTrace: List<AiMemoryTraceItem> = emptyList(),
-    val warnings: List<String>
+    val warnings: List<String>,
+    val contextUsage: AiChatContextUsage,
+    val contextCalibration: AiChatTokenCalibration? = null,
+    val compactionCount: Int = 0,
+    val contextCompactions: List<AiChatCompactionRecord> = emptyList(),
+    val contextMessages: List<JsonObject>
+)
+
+data class AiChatManualCompactionResult(
+    val record: AiChatCompactionRecord,
+    val contextUsage: AiChatContextUsage,
+    val contextMessages: List<JsonObject>
 )
 
 data class AiChatStreamUpdate(
@@ -987,6 +1324,11 @@ private data class CharacterApplyMemoryContext(
     val updatedCount: Int,
     val characterNames: List<String>,
     val scanData: JsonObject? = null
+)
+
+private data class AiChatCompactionSummary(
+    val content: String,
+    val usage: AiChatUsage?
 )
 
 private data class GeneratedMemory(

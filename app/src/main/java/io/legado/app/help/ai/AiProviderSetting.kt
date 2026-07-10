@@ -42,6 +42,8 @@ data class AiProviderSetting(
     val thinkingParam: String = "",
     @SerializedName(value = "effortParam", alternate = ["p"])
     val effortParam: String = "",
+    @SerializedName("disableEffortValue")
+    val disableEffortValue: String = "",
     @SerializedName(value = "reasoningOutputField", alternate = ["q"])
     val reasoningOutputField: String = "",
     @SerializedName(value = "useCustomModelsUrl", alternate = ["r"])
@@ -53,7 +55,9 @@ data class AiProviderSetting(
     @SerializedName(value = "useCustomBalanceUrl", alternate = ["u"])
     val useCustomBalanceUrl: Boolean = false,
     @SerializedName(value = "streamResponseEnabled", alternate = ["x"])
-    val streamResponseEnabled: Boolean = false
+    val streamResponseEnabled: Boolean = false,
+    @SerializedName("supportsStreamUsage")
+    val supportsStreamUsage: Boolean = false
 )
 
 enum class AiProviderType(val prefValue: String, val displayName: String) {

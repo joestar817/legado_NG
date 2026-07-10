@@ -480,6 +480,15 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.layoutAssistantReasoningEntry.setOnClickListener {
             showAssistantReasoningDialog()
         }
+        binding.layoutContextCompactionModelEntry.setOnClickListener {
+            showContextCompactionModelSelectDialog()
+        }
+        binding.layoutAssistantContextWindowEntry.setOnClickListener {
+            showAssistantContextWindowDialog()
+        }
+        binding.layoutContextCompactionThresholdEntry.setOnClickListener {
+            showContextCompactionThresholdDialog()
+        }
     }
 
     private fun setupModelDetailAutoSave() {
@@ -2210,6 +2219,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         binding.imageReadAloudStoryboardReasoningIcon.imageTintList = entryIconTint
         binding.imageAssistantModelIcon.imageTintList = entryIconTint
         binding.imageAssistantReasoningIcon.imageTintList = entryIconTint
+        binding.imageContextCompactionModelIcon.imageTintList = entryIconTint
+        binding.imageAssistantContextWindowIcon.imageTintList = entryIconTint
+        binding.imageContextCompactionThresholdIcon.imageTintList = entryIconTint
         binding.imageInternalMcpIcon.imageTintList = entryIconTint
         binding.imageAiMemoryIcon.imageTintList = entryIconTint
         binding.imageAiOperationPermissionIcon.imageTintList = entryIconTint
@@ -2251,6 +2263,22 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         )
         binding.textAssistantModelSummary.text = assistantModelSummaryText()
         binding.textAssistantReasoningSummary.text = assistantReasoningSummaryText()
+        binding.textContextCompactionModelSummary.text = contextCompactionModelSummaryText()
+        binding.textAssistantContextWindowSummary.text = getString(
+            R.string.ai_assistant_context_window_summary,
+            contextWindowLabel(AiConfig.assistantContextWindowTokens)
+        )
+        binding.textContextCompactionThresholdSummary.text =
+            if (AiConfig.contextCompactionThresholdPercent == 0) {
+                getString(R.string.ai_context_compaction_threshold_off)
+            } else {
+                getString(
+                    R.string.ai_context_compaction_threshold_summary,
+                    AiConfig.contextCompactionThresholdPercent,
+                    AiConfig.assistantContextWindowTokens *
+                        AiConfig.contextCompactionThresholdPercent / 100 / 1000
+                )
+            }
         binding.textInternalMcpSummary.text = getString(
             if (AiConfig.internalMcpEnabled) {
                 R.string.ai_internal_mcp_summary_on
@@ -2329,6 +2357,25 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             else -> getString(
                 R.string.ai_purify_reasoning_level_summary,
                 AiConfig.assistantReasoningLevel.displayName()
+            )
+        }
+    }
+
+    private fun contextCompactionModelSummaryText(): String {
+        val providerId = AiConfig.contextCompactionProviderId
+        val modelId = AiConfig.contextCompactionModelId
+        if (providerId.isBlank() || modelId.isBlank()) {
+            return getString(R.string.ai_context_compaction_model_follow)
+        }
+        val provider = AiProviderStore.provider(providerId)
+        val model = provider?.purifyEligibleModels()?.firstOrNull { it.safeId() == modelId }
+        return if (provider == null || model == null) {
+            getString(R.string.ai_assistant_model_unavailable)
+        } else {
+            getString(
+                R.string.ai_purify_model_selected_summary,
+                model.displayName(),
+                provider.name
             )
         }
     }
@@ -2625,6 +2672,111 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
+    private fun showContextCompactionModelSelectDialog() {
+        val sheet = NgLongListBottomSheet(
+            context = requireContext(),
+            searchHint = getString(R.string.ai_context_compaction_model_search_hint)
+        )
+        sheet.setScrollableContent { container, query, dialog ->
+            container.removeAllViews()
+            if (query.isBlank() || getString(R.string.ai_context_compaction_model_follow)
+                    .contains(query, ignoreCase = true)
+            ) {
+                container.addView(createFollowAssistantCompactionModelCard(dialog))
+            }
+            purifyModelOptions(query.trim()).forEach { (provider, models) ->
+                container.addView(createPurifyProviderHeader(provider))
+                models.forEach { model ->
+                    val selected = AiConfig.contextCompactionProviderId == provider.id &&
+                        AiConfig.contextCompactionModelId == model.safeId()
+                    container.addView(
+                        createTextTaskModelCard(provider, model, selected, dialog) {
+                            AiConfig.saveContextCompactionModel(provider.id, model.safeId())
+                        }
+                    )
+                }
+            }
+        }
+        sheet.show()
+    }
+
+    private fun createFollowAssistantCompactionModelCard(
+        dialog: BottomSheetDialog
+    ): LinearLayout {
+        val selected = AiConfig.contextCompactionProviderId.isBlank() ||
+            AiConfig.contextCompactionModelId.isBlank()
+        return LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isClickable = true
+            isFocusable = true
+            background = GradientDrawable().apply {
+                cornerRadius = 18.dpToPx().toFloat()
+                setColor(ContextCompat.getColor(requireContext(), R.color.ng_surface_card))
+            }
+            setPadding(14.dpToPx(), 14.dpToPx(), 14.dpToPx(), 14.dpToPx())
+            setOnClickListener {
+                AiConfig.followAssistantForContextCompaction()
+                refreshModelSettings()
+                dialog.dismiss()
+            }
+            addView(TextView(requireContext()).apply {
+                text = getString(R.string.ai_context_compaction_model_follow)
+                setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
+                typeface = Typeface.DEFAULT_BOLD
+                textSize = 16f
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                weight = 1f
+            })
+            addView(ImageView(requireContext()).apply {
+                if (selected) {
+                    setImageResource(R.drawable.ic_check)
+                    imageTintList = ColorStateList.valueOf(accentColor)
+                }
+            }, LinearLayout.LayoutParams(32.dpToPx(), 32.dpToPx()))
+        }
+    }
+
+    private fun showAssistantContextWindowDialog() {
+        val options = AiConfig.ASSISTANT_CONTEXT_WINDOW_OPTIONS
+        val labels = options.map(::contextWindowLabel)
+        showDiscreteScaleDialog(
+            title = getString(R.string.ai_assistant_context_window_dialog_title),
+            description = getString(R.string.ai_assistant_context_window_dialog_desc),
+            iconRes = R.drawable.ic_ai_context_menu,
+            labels = labels,
+            selectedIndex = options.indexOf(AiConfig.assistantContextWindowTokens).coerceAtLeast(0)
+        ) { index ->
+            options.getOrNull(index)?.let { value ->
+                AiConfig.assistantContextWindowTokens = value
+                refreshModelSettings()
+            }
+        }
+    }
+
+    private fun showContextCompactionThresholdDialog() {
+        val options = AiConfig.CONTEXT_COMPACTION_THRESHOLD_OPTIONS
+        val labels = options.map(Int::toString)
+        val currentLabels = options.map { value ->
+            if (value == 0) getString(R.string.ai_context_compaction_off) else "$value%"
+        }
+        showDiscreteScaleDialog(
+            title = getString(R.string.ai_context_compaction_threshold_dialog_title),
+            description = getString(R.string.ai_context_compaction_threshold_dialog_desc),
+            iconRes = R.drawable.ic_read_aloud_speed,
+            labels = labels,
+            currentLabels = currentLabels,
+            selectedIndex = options.indexOf(AiConfig.contextCompactionThresholdPercent)
+                .coerceAtLeast(0),
+            tintIcon = { index -> options.getOrNull(index) != 0 }
+        ) { index ->
+            options.getOrNull(index)?.let { value ->
+                AiConfig.contextCompactionThresholdPercent = value
+                refreshModelSettings()
+            }
+        }
+    }
+
     private fun showReadAloudStoryboardReasoningDialog() {
         val selected = selectedReadAloudStoryboardModel()
         if (selected == null) {
@@ -2706,6 +2858,33 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         onLevelChanged: (AiReasoningLevel) -> Unit
     ) {
         val levels = AiReasoningLevel.entries.toList()
+        val labels = levels.map { it.displayName() }
+        showDiscreteScaleDialog(
+            title = title,
+            description = description,
+            iconRes = R.drawable.ic_ai_capability_reasoning,
+            labels = labels,
+            selectedIndex = levels.indexOf(currentLevel).coerceAtLeast(0),
+            tintIcon = { index ->
+                iconTintWhenOff || levels.getOrNull(index) != AiReasoningLevel.OFF
+            }
+        ) { index ->
+            levels.getOrNull(index)?.let(onLevelChanged)
+        }
+    }
+
+    private fun showDiscreteScaleDialog(
+        title: String,
+        description: String,
+        iconRes: Int,
+        labels: List<String>,
+        currentLabels: List<String> = labels,
+        selectedIndex: Int,
+        tintIcon: (Int) -> Boolean = { true },
+        onSelectedIndexChanged: (Int) -> Unit
+    ) {
+        if (labels.isEmpty()) return
+        val initialIndex = selectedIndex.coerceIn(0, labels.lastIndex)
         val root = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -2730,14 +2909,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             setPadding(0, 8.dpToPx(), 0, 22.dpToPx())
         })
         val currentLabel = TextView(requireContext()).apply {
-            text = currentLevel.displayName()
+            text = currentLabels.getOrElse(initialIndex) { labels[initialIndex] }
             setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
             textSize = 18f
             gravity = Gravity.CENTER
         }
         val currentIcon = ImageView(requireContext()).apply {
-            setImageResource(R.drawable.ic_ai_capability_reasoning)
-            imageTintList = if (iconTintWhenOff || currentLevel != AiReasoningLevel.OFF) {
+            setImageResource(iconRes)
+            imageTintList = if (tintIcon(initialIndex)) {
                 ColorStateList.valueOf(accentColor)
             } else {
                 null
@@ -2752,14 +2931,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             bottomMargin = 22.dpToPx()
         })
         val stepBar = ReasoningStepBar(requireContext()).apply {
-            stepCount = levels.size
-            selectedIndex = levels.indexOf(currentLevel).coerceAtLeast(0)
+            stepCount = labels.size
+            this.selectedIndex = initialIndex
             stepColor = accentColor
-            onSelectedIndexChanged = { index ->
-                val level = levels.getOrNull(index) ?: AiReasoningLevel.AUTO
-                onLevelChanged(level)
-                currentLabel.text = level.displayName()
-                currentIcon.imageTintList = if (iconTintWhenOff || level != AiReasoningLevel.OFF) {
+            this.onSelectedIndexChanged = { index ->
+                onSelectedIndexChanged(index)
+                currentLabel.text = currentLabels.getOrElse(index) { labels[index] }
+                currentIcon.imageTintList = if (tintIcon(index)) {
                     ColorStateList.valueOf(accentColor)
                 } else {
                     null
@@ -2769,12 +2947,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         root.addReasoningStepBar(stepBar)
         root.addView(LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
-            levels.forEach { level ->
+            labels.forEach { label ->
                 addView(TextView(requireContext()).apply {
-                    text = level.displayName()
+                    text = label
                     gravity = Gravity.CENTER
                     setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant))
-                    textSize = 13f
+                    textSize = if (labels.size >= 10) 11f else 13f
+                    maxLines = 1
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     weight = 1f
                 })
@@ -2796,6 +2975,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             )
         }
         dialog.show()
+    }
+
+    private fun contextWindowLabel(tokens: Int): String {
+        return if (tokens >= 1_000_000) {
+            "${tokens / 1_000_000}M"
+        } else {
+            "${tokens / 1000}K"
+        }
     }
 
     private fun AiProviderSetting.purifyEligibleModels(): List<AiModel> {

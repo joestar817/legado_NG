@@ -29,6 +29,18 @@ object AiConfig {
     const val DEFAULT_READ_ALOUD_STORYBOARD_PRELOAD_COUNT = 3
     const val MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT = 0
     const val MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT = 5
+    const val DEFAULT_ASSISTANT_CONTEXT_WINDOW_TOKENS = 1_000_000
+    const val DEFAULT_CONTEXT_COMPACTION_THRESHOLD_PERCENT = 90
+    val ASSISTANT_CONTEXT_WINDOW_OPTIONS = listOf(
+        32_000,
+        64_000,
+        128_000,
+        256_000,
+        512_000,
+        1_000_000,
+        2_000_000
+    )
+    val CONTEXT_COMPACTION_THRESHOLD_OPTIONS = listOf(0) + (50..95 step 5)
 
     var internalMcpEnabled: Boolean
         get() = appCtx.getPrefBoolean(PreferKey.aiInternalMcp, false)
@@ -136,6 +148,45 @@ object AiConfig {
         get() = AiReasoningLevel.from(appCtx.getPrefString(PreferKey.aiAssistantReasoningLevel))
         set(value) {
             appCtx.putPrefString(PreferKey.aiAssistantReasoningLevel, value.prefValue)
+        }
+
+    val contextCompactionEnabled: Boolean
+        get() = contextCompactionThresholdPercent > 0
+
+    var contextCompactionProviderId: String
+        get() = appCtx.getPrefString(PreferKey.aiContextCompactionProviderId).orEmpty()
+        set(value) {
+            appCtx.putPrefString(PreferKey.aiContextCompactionProviderId, value.trim())
+        }
+
+    var contextCompactionModelId: String
+        get() = appCtx.getPrefString(PreferKey.aiContextCompactionModelId).orEmpty()
+        set(value) {
+            appCtx.putPrefString(PreferKey.aiContextCompactionModelId, value.trim())
+        }
+
+    var assistantContextWindowTokens: Int
+        get() = appCtx.getPrefInt(
+            PreferKey.aiAssistantContextWindowTokens,
+            DEFAULT_ASSISTANT_CONTEXT_WINDOW_TOKENS
+        ).nearestOption(ASSISTANT_CONTEXT_WINDOW_OPTIONS)
+        set(value) {
+            appCtx.putPrefInt(
+                PreferKey.aiAssistantContextWindowTokens,
+                value.nearestOption(ASSISTANT_CONTEXT_WINDOW_OPTIONS)
+            )
+        }
+
+    var contextCompactionThresholdPercent: Int
+        get() = appCtx.getPrefInt(
+            PreferKey.aiContextCompactionThresholdPercent,
+            DEFAULT_CONTEXT_COMPACTION_THRESHOLD_PERCENT
+        ).nearestOption(CONTEXT_COMPACTION_THRESHOLD_OPTIONS)
+        set(value) {
+            appCtx.putPrefInt(
+                PreferKey.aiContextCompactionThresholdPercent,
+                value.nearestOption(CONTEXT_COMPACTION_THRESHOLD_OPTIONS)
+            )
         }
 
     val temperature: Float?
@@ -318,6 +369,26 @@ object AiConfig {
         )
     }
 
+    fun contextCompactionModel(): AiModelSelection {
+        val providerId = contextCompactionProviderId
+        val modelId = contextCompactionModelId
+        return if (providerId.isBlank() || modelId.isBlank()) {
+            requireAssistantModel()
+        } else {
+            AiModelSelection(providerId, modelId)
+        }
+    }
+
+    fun saveContextCompactionModel(providerId: String, modelId: String) {
+        contextCompactionProviderId = providerId
+        contextCompactionModelId = modelId
+    }
+
+    fun followAssistantForContextCompaction() {
+        contextCompactionProviderId = ""
+        contextCompactionModelId = ""
+    }
+
     fun purifyChapterRuleParams(
         sourceLength: Int,
         paragraphCount: Int,
@@ -391,6 +462,11 @@ object AiConfig {
     }
 }
 
+private fun Int.nearestOption(options: List<Int>): Int {
+    return options.minByOrNull { option -> kotlin.math.abs(toLong() - option.toLong()) }
+        ?: this
+}
+
 data class AiModelSelection(
     val providerId: String,
     val modelId: String
@@ -423,6 +499,7 @@ enum class AiReasoningLevel(
             return entries.firstOrNull { it.prefValue == value } ?: OFF
         }
     }
+
 }
 
 enum class AiOperationPermissionMode(

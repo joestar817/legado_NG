@@ -60,20 +60,7 @@ class OpenAiCompatibleProvider : AiProvider {
                     addProperty("type", "json_object")
                 })
             }
-            if (params.enableThinking && reasoningOptions.thinkingParam.isNotBlank()) {
-                add(reasoningOptions.thinkingParam, JsonObject().apply {
-                    addProperty("type", "enabled")
-                })
-            } else if (params.disableThinking && reasoningOptions.thinkingParam.isNotBlank()) {
-                add(reasoningOptions.thinkingParam, JsonObject().apply {
-                    addProperty("type", "disabled")
-                })
-            }
-            if (params.enableThinking && reasoningOptions.effortParam.isNotBlank()) {
-                addProperty(reasoningOptions.effortParam, params.reasoningEffort ?: "high")
-            } else if (params.disableThinking && reasoningOptions.effortParam.isNotBlank()) {
-                addProperty(reasoningOptions.effortParam, "none")
-            }
+            addReasoningParams(params, reasoningOptions)
             addProperty("stream", false)
         }
 

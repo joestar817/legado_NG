@@ -247,10 +247,12 @@ object AiProviderStore {
                 modelsUrl = normalizeAiApiPath(baseUrl, nullableString(provider.modelsUrl)),
                 thinkingParam = nullableString(provider.thinkingParam),
                 effortParam = nullableString(provider.effortParam),
+                disableEffortValue = nullableString(provider.disableEffortValue),
                 reasoningOutputField = nullableString(provider.reasoningOutputField),
                 balanceUrl = normalizeAiApiPath(baseUrl, nullableString(provider.balanceUrl)),
                 balanceJsonPath = nullableString(provider.balanceJsonPath),
-                streamResponseEnabled = provider.streamResponseEnabled
+                streamResponseEnabled = provider.streamResponseEnabled,
+                supportsStreamUsage = provider.supportsStreamUsage
             )
         }.getOrNull()
     }

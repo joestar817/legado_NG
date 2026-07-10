@@ -7,19 +7,44 @@ import androidx.room.Query
 import androidx.room.Transaction
 import io.legado.app.data.entities.AiChatConversation
 import io.legado.app.data.entities.AiChatMessageNode
-import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AiChatDao {
 
-    @Query("select * from aiChatConversations order by isPinned desc, updateAt desc limit :limit")
-    fun flowConversations(limit: Int = 100): Flow<List<AiChatConversation>>
+    @Query(
+        "select id, assistantId, title, createAt, updateAt, isPinned, " +
+            "customSystemPrompt, loadedSkillIds from aiChatConversations " +
+            "order by isPinned desc, updateAt desc limit :limit"
+    )
+    fun getConversationMetadata(limit: Int = 100): List<AiChatConversationMetadata>
 
-    @Query("select * from aiChatConversations order by isPinned desc, updateAt desc limit :limit")
-    fun getConversations(limit: Int = 100): List<AiChatConversation>
+    @Query(
+        "select id, assistantId, title, createAt, updateAt, isPinned, " +
+            "customSystemPrompt, loadedSkillIds from aiChatConversations where id = :id"
+    )
+    fun getConversationMetadata(id: String): AiChatConversationMetadata?
 
-    @Query("select * from aiChatConversations where id = :id")
-    fun getConversation(id: String): AiChatConversation?
+    @Query("select length(uploadMessages) from aiChatConversations where id = :id")
+    fun getUploadMessagesLength(id: String): Int?
+
+    @Query(
+        "select substr(uploadMessages, :start, :length) " +
+            "from aiChatConversations where id = :id"
+    )
+    fun getUploadMessagesChunk(id: String, start: Int, length: Int): String?
+
+    @Transaction
+    fun getConversations(limit: Int = 100): List<AiChatConversation> {
+        return getConversationMetadata(limit).map { metadata ->
+            metadata.toConversation(readUploadMessages(metadata.id))
+        }
+    }
+
+    @Transaction
+    fun getConversation(id: String): AiChatConversation? {
+        val metadata = getConversationMetadata(id) ?: return null
+        return metadata.toConversation(readUploadMessages(id))
+    }
 
     @Query("select count(*) from aiChatConversations")
     fun countConversations(): Int
@@ -49,5 +74,46 @@ interface AiChatDao {
         if (nodes.isNotEmpty()) {
             insertMessageNodes(nodes)
         }
+    }
+
+    private fun readUploadMessages(id: String): String {
+        val totalLength = getUploadMessagesLength(id) ?: return "[]"
+        if (totalLength <= 0) return "[]"
+        return buildString(totalLength) {
+            var start = 1
+            while (start <= totalLength) {
+                append(getUploadMessagesChunk(id, start, UPLOAD_MESSAGE_CHUNK_CHARS).orEmpty())
+                start += UPLOAD_MESSAGE_CHUNK_CHARS
+            }
+        }
+    }
+
+    companion object {
+        private const val UPLOAD_MESSAGE_CHUNK_CHARS = 256 * 1024
+    }
+}
+
+data class AiChatConversationMetadata(
+    val id: String,
+    val assistantId: String,
+    val title: String,
+    val createAt: Long,
+    val updateAt: Long,
+    val isPinned: Boolean,
+    val customSystemPrompt: String,
+    val loadedSkillIds: String
+) {
+    fun toConversation(uploadMessages: String): AiChatConversation {
+        return AiChatConversation(
+            id = id,
+            assistantId = assistantId,
+            title = title,
+            createAt = createAt,
+            updateAt = updateAt,
+            isPinned = isPinned,
+            customSystemPrompt = customSystemPrompt,
+            loadedSkillIds = loadedSkillIds,
+            uploadMessages = uploadMessages
+        )
     }
 }

@@ -103,11 +103,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -154,9 +156,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -166,6 +170,12 @@ import com.bumptech.glide.Glide
 import com.google.gson.JsonObject
 import io.legado.app.R
 import io.legado.app.help.ai.AiChatClient
+import io.legado.app.help.ai.AiChatContextEvent
+import io.legado.app.help.ai.AiChatContextEventType
+import io.legado.app.help.ai.AiChatContextManager
+import io.legado.app.help.ai.AiChatContextUsage
+import io.legado.app.help.ai.AiChatCompactionRecord
+import io.legado.app.help.ai.AiChatPromptUsageAnchor
 import io.legado.app.help.ai.AiChatHistoryState
 import io.legado.app.help.ai.AiChatHistoryStore
 import io.legado.app.help.ai.AiChatInteraction
@@ -370,11 +380,22 @@ private fun AiChatRoute(onBack: () -> Unit) {
             addAll(entryAttachments)
         }
     }
+    val inputAttachmentUsageKey = inputAttachments.joinToString(separator = "|") { attachment ->
+        "${attachment.id}:${attachment.prompt.hashCode()}"
+    }
     val uploadMessages = remember {
         mutableStateListOf<JsonObject>().apply {
             add(chatClient.newSystemMessage())
         }
     }
+    var contextUsage by remember {
+        mutableStateOf(AiChatContextManager.usage(uploadMessages))
+    }
+    var contextStatusText by remember { mutableStateOf<String?>(null) }
+    var contextCompactionCount by remember { mutableIntStateOf(0) }
+    var showContextUsageDialog by remember { mutableStateOf(false) }
+    var contextUsageRevision by remember { mutableIntStateOf(0) }
+    var manualContextCompacting by remember { mutableStateOf(false) }
     val messages = remember { mutableStateListOf<ChatUiMessage>() }
     val sessions = remember { mutableStateListOf<AiChatSessionSnapshot>() }
     val listState = rememberLazyListState()
@@ -432,6 +453,35 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
     }
 
+    fun updateDeliveryState(ids: Collection<String>, state: ChatDeliveryState) {
+        ids.forEach { id ->
+            updateMessage(id) { message -> message.copy(deliveryState = state) }
+        }
+    }
+
+    fun refreshContextUsage() {
+        val revision = ++contextUsageRevision
+        val snapshot = buildList {
+            addAll(uploadMessages.map { it.deepCopy().asJsonObject })
+            if (inputAttachments.isNotEmpty()) {
+                add(chatClient.newUserMessage(buildUserUploadContent("", inputAttachments)))
+            }
+        }
+        val promptUsageAnchor = messages.latestPromptUsageAnchor()
+        contextUsage = AiChatContextManager.usage(snapshot)
+        scope.launch {
+            val measured = withContext(Dispatchers.IO) {
+                runCatching {
+                    chatClient.estimateContextUsage(snapshot, promptUsageAnchor)
+                }
+                    .getOrElse { AiChatContextManager.usage(snapshot) }
+            }
+            if (revision == contextUsageRevision) {
+                contextUsage = measured
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         val history = withContext(Dispatchers.IO) {
             AiChatHistoryStore.load()
@@ -445,8 +495,27 @@ private fun AiChatRoute(onBack: () -> Unit) {
         activeSessionId = UUID.randomUUID().toString()
         uploadMessages.clear()
         uploadMessages += chatClient.newSystemMessage()
+        refreshContextUsage()
         messages.clear()
         selectedDrawerIndex = 2
+    }
+    LaunchedEffect(configVersion) {
+        refreshContextUsage()
+    }
+    LaunchedEffect(historyLoaded, inputAttachmentUsageKey) {
+        val loadedSkills = inputAttachments.filter {
+            it.type == AiChatInputAttachmentType.SKILL
+        }
+        if (loadedSkills.size > 1) {
+            val activeSkillId = loadedSkills.last().id
+            inputAttachments.removeAll { attachment ->
+                attachment.type == AiChatInputAttachmentType.SKILL && attachment.id != activeSkillId
+            }
+            return@LaunchedEffect
+        }
+        if (historyLoaded) {
+            refreshContextUsage()
+        }
     }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -498,6 +567,15 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 }
             }
             delay(32)
+        }
+    }
+    LaunchedEffect(contextStatusText) {
+        val current = contextStatusText ?: return@LaunchedEffect
+        if (current.startsWith("上下文已")) {
+            delay(2500)
+            if (contextStatusText == current) {
+                contextStatusText = null
+            }
         }
     }
     BackHandler(enabled = drawerState.isOpen) {
@@ -575,8 +653,11 @@ private fun AiChatRoute(onBack: () -> Unit) {
         activeSessionId = UUID.randomUUID().toString()
         uploadMessages.clear()
         uploadMessages += chatClient.newSystemMessage()
+        contextCompactionCount = 0
+        contextStatusText = null
         messages.clear()
         inputAttachments.clear()
+        refreshContextUsage()
         selectedDrawerIndex = 2
         saveHistory(activeSessionId)
     }
@@ -586,6 +667,15 @@ private fun AiChatRoute(onBack: () -> Unit) {
         messages.replaceWith(session.messages.map { it.toUiMessage() })
         uploadMessages.replaceUploadMessages(session, chatClient)
         inputAttachments.replaceWith(buildSkillInputAttachments(session.loadedSkillIds))
+        refreshContextUsage()
+        contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
+        contextStatusText = if (messages.any {
+                it.role == ChatRole.USER && it.deliveryState == ChatDeliveryState.RECOVERABLE
+            }) {
+            "上次请求未完成，发送新消息或点击重新生成可恢复"
+        } else {
+            null
+        }
         selectedDrawerIndex = 2
         saveHistory(session.id)
     }
@@ -699,8 +789,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
     }
 
-    fun sendCurrentMessages() {
+    fun sendCurrentMessages(activeUserMessageIds: List<String> = emptyList()) {
         sending = true
+        val promptUsageAnchor = messages.latestPromptUsageAnchor()
         val loadingId = UUID.randomUUID().toString()
         val startedAt = System.currentTimeMillis()
         activeLoadingMessageId = loadingId
@@ -709,7 +800,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         activeStreamReasoningTarget = ""
         activeStreamToolTraceTarget = emptyList()
         activeStreamMemoryTraceTarget = emptyList()
-        val uploadMessageSizeBeforeSend = uploadMessages.size
+        val uploadMessagesBeforeSend = uploadMessages.map { it.deepCopy().asJsonObject }
         messages += ChatUiMessage(
             id = loadingId,
             role = ChatRole.ASSISTANT,
@@ -722,10 +813,14 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
         sendingJob?.cancel()
         sendingJob = scope.launch {
+            val requestMessages = uploadMessagesBeforeSend
+                .map { it.deepCopy().asJsonObject }
+                .toMutableList()
             val result = runCatching {
                 withContext(Dispatchers.IO) {
                     chatClient.send(
-                        messages = uploadMessages,
+                        messages = requestMessages,
+                        promptUsageAnchor = promptUsageAnchor,
                         onStreamUpdate = { update: AiChatStreamUpdate ->
                             scope.launch {
                                 if (activeLoadingMessageId == loadingId) {
@@ -736,6 +831,25 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 }
                             }
                         },
+                        onContextEvent = { event: AiChatContextEvent ->
+                            scope.launch {
+                                when (event.type) {
+                                    AiChatContextEventType.STARTED -> {
+                                        event.beforeUsage?.let { contextUsage = it }
+                                        contextStatusText = "正在自动压缩上下文..."
+                                    }
+                                    AiChatContextEventType.COMPLETED -> {
+                                        val after = event.afterTokens ?: event.beforeTokens
+                                        event.afterUsage?.let { contextUsage = it }
+                                        event.compaction?.let {
+                                            contextCompactionCount = it.revision
+                                        }
+                                        contextStatusText =
+                                            "上下文已自动压缩 · ${formatContextTokens(event.beforeTokens)} → ${formatContextTokens(after)}"
+                                    }
+                                }
+                            }
+                        },
                         onToolConfirmationRequired = { pendingCalls ->
                             confirmToolCalls(pendingCalls)
                         }
@@ -743,13 +857,40 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 }
             }
             val elapsedMs = System.currentTimeMillis() - startedAt
-            messages.removeAll { it.id == loadingId }
+            val canceled = result.exceptionOrNull() is CancellationException
             result.onSuccess {
-                messages += it.toUiMessage(elapsedMs)
-            }.onFailure {
-                while (uploadMessages.size > uploadMessageSizeBeforeSend) {
-                    uploadMessages.removeAt(uploadMessages.lastIndex)
+                updateDeliveryState(activeUserMessageIds, ChatDeliveryState.SENT)
+                uploadMessages.clear()
+                uploadMessages.addAll(
+                    it.contextMessages.map { message -> message.deepCopy().asJsonObject }
+                )
+                val loadingIndex = messages.indexOfFirst { message -> message.id == loadingId }
+                val completedMessage = it.toUiMessage(elapsedMs)
+                val compactionMessages = it.contextCompactions.map { record ->
+                    ChatUiMessage(
+                        role = ChatRole.ASSISTANT,
+                        content = "上下文已自动压缩",
+                        contextCompaction = record
+                    )
                 }
+                if (loadingIndex >= 0) {
+                    messages.removeAt(loadingIndex)
+                    messages.addAll(loadingIndex, compactionMessages + completedMessage)
+                } else {
+                    messages += compactionMessages
+                    messages += completedMessage
+                }
+                contextUsage = it.contextUsage
+                contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
+            }.onFailure {
+                messages.removeAll { message -> message.id == loadingId }
+                uploadMessages.clear()
+                uploadMessages.addAll(uploadMessagesBeforeSend)
+                contextStatusText = null
+                updateDeliveryState(
+                    activeUserMessageIds,
+                    if (canceled) ChatDeliveryState.RECOVERABLE else ChatDeliveryState.FAILED
+                )
                 if (it !is CancellationException) {
                     messages += ChatUiMessage(
                         role = ChatRole.ASSISTANT,
@@ -767,6 +908,26 @@ private fun AiChatRoute(onBack: () -> Unit) {
             activeStreamReasoningTarget = ""
             activeStreamToolTraceTarget = emptyList()
             activeStreamMemoryTraceTarget = emptyList()
+            refreshContextUsage()
+            if (canceled) {
+                contextStatusText = null
+                return@launch
+            }
+            val queuedMessages = messages.filter {
+                it.role == ChatRole.USER && it.deliveryState == ChatDeliveryState.QUEUED
+            }
+            if (queuedMessages.isNotEmpty()) {
+                val queuedIds = queuedMessages.map { it.id }
+                queuedMessages.forEach { message ->
+                    uploadMessages += chatClient.newUserMessage(
+                        message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
+                    )
+                }
+                updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
+                refreshContextUsage()
+                persistActiveSession()
+                sendCurrentMessages(queuedIds)
+            }
         }
     }
 
@@ -775,25 +936,125 @@ private fun AiChatRoute(onBack: () -> Unit) {
         sendingJob?.cancel()
     }
 
+    fun manuallyCompressContext() {
+        if (sending || manualContextCompacting) return
+        manualContextCompacting = true
+        sending = true
+        val promptUsageAnchor = messages.latestPromptUsageAnchor()
+        val snapshot = uploadMessages.map { it.deepCopy().asJsonObject }.toMutableList()
+        sendingJob = scope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    chatClient.compactContext(
+                        messages = snapshot,
+                        promptUsageAnchor = promptUsageAnchor,
+                        onContextEvent = { event ->
+                            scope.launch {
+                                when (event.type) {
+                                    AiChatContextEventType.STARTED -> {
+                                        event.beforeUsage?.let { contextUsage = it }
+                                        contextStatusText = "正在手动压缩上下文..."
+                                    }
+
+                                    AiChatContextEventType.COMPLETED -> {
+                                        val after = event.afterTokens ?: event.beforeTokens
+                                        event.afterUsage?.let { contextUsage = it }
+                                        event.compaction?.let {
+                                            contextCompactionCount = it.revision
+                                        }
+                                        contextStatusText =
+                                            "上下文已手动压缩 · ${formatContextTokens(event.beforeTokens)} → ${formatContextTokens(after)}"
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+            val canceled = result.exceptionOrNull() is CancellationException
+            result.onSuccess { compacted ->
+                uploadMessages.clear()
+                uploadMessages.addAll(
+                    compacted.contextMessages.map { message -> message.deepCopy().asJsonObject }
+                )
+                contextUsage = compacted.contextUsage
+                contextCompactionCount = compacted.record.revision
+                messages += ChatUiMessage(
+                    role = ChatRole.ASSISTANT,
+                    content = "上下文已手动压缩",
+                    contextCompaction = compacted.record
+                )
+                persistActiveSession()
+            }.onFailure { error ->
+                contextStatusText = null
+                if (!canceled) {
+                    Toast.makeText(
+                        context,
+                        error.localizedMessage ?: "上下文压缩失败",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            manualContextCompacting = false
+            sending = false
+            sendingJob = null
+            refreshContextUsage()
+            if (canceled) return@launch
+            val queuedMessages = messages.filter {
+                it.role == ChatRole.USER && it.deliveryState == ChatDeliveryState.QUEUED
+            }
+            if (queuedMessages.isNotEmpty()) {
+                val queuedIds = queuedMessages.map { it.id }
+                queuedMessages.forEach { message ->
+                    uploadMessages += chatClient.newUserMessage(
+                        message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
+                    )
+                }
+                updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
+                refreshContextUsage()
+                persistActiveSession()
+                sendCurrentMessages(queuedIds)
+            }
+        }
+    }
+
     fun sendMessage(messageOverride: String? = null) {
-        if (sending) return
         val content = (messageOverride ?: input).trim()
         if (content.isBlank()) {
             Toast.makeText(context, R.string.ai_chat_empty, Toast.LENGTH_SHORT).show()
             return
         }
         input = ""
-        val userMessage = ChatUiMessage(role = ChatRole.USER, content = content)
+        val uploadContent = buildUserUploadContent(content, inputAttachments)
+        val userMessage = ChatUiMessage(
+            role = ChatRole.USER,
+            content = content,
+            deliveryState = ChatDeliveryState.QUEUED,
+            uploadContent = uploadContent
+        )
         messages += userMessage
         scope.launch {
             listState.scrollToItem(messages.lastIndex)
         }
-        uploadMessages += chatClient.newUserMessage(
-            buildUserUploadContent(content, inputAttachments)
-        )
         inputAttachments.removeAll { it.type == AiChatInputAttachmentType.CONTEXT }
         persistActiveSession()
-        sendCurrentMessages()
+        if (sending) return
+        val recoverableMessages = messages.filter {
+            it.role == ChatRole.USER && it.deliveryState == ChatDeliveryState.RECOVERABLE
+        }
+        val queuedMessages = messages.filter {
+            it.role == ChatRole.USER && it.deliveryState == ChatDeliveryState.QUEUED
+        }
+        val queuedIds = (recoverableMessages + queuedMessages).map { it.id }
+        queuedMessages.forEach { message ->
+            uploadMessages += chatClient.newUserMessage(
+                message.uploadContent?.takeIf { it.isNotBlank() } ?: message.content
+            )
+        }
+        updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
+        refreshContextUsage()
+        persistActiveSession()
+        sendCurrentMessages(queuedIds)
     }
 
     fun regenerateMessage(message: ChatUiMessage) {
@@ -813,11 +1074,24 @@ private fun AiChatRoute(onBack: () -> Unit) {
             Toast.makeText(context, "没有可重新生成的用户消息", Toast.LENGTH_SHORT).show()
             return
         }
+        val preservedHistory = AiChatContextManager.historyForRegeneration(
+            messages = uploadMessages,
+            targetRole = when (message.role) {
+                ChatRole.USER -> "user"
+                ChatRole.ASSISTANT -> "assistant"
+            },
+            targetContent = when (message.role) {
+                ChatRole.USER -> message.uploadContent ?: message.content
+                ChatRole.ASSISTANT -> message.content
+            }
+        )
         messages.replaceWith(truncatedMessages)
         uploadMessages.clear()
-        uploadMessages.addAll(rebuildUploadMessages(chatClient, messages))
+        uploadMessages.addAll(preservedHistory ?: rebuildUploadMessages(chatClient, messages))
+        val activeUserIds = if (message.role == ChatRole.USER) listOf(message.id) else emptyList()
+        updateDeliveryState(activeUserIds, ChatDeliveryState.IN_FLIGHT)
         persistActiveSession()
-        sendCurrentMessages()
+        sendCurrentMessages(activeUserIds)
     }
 
     fun deleteMessage(message: ChatUiMessage) {
@@ -831,6 +1105,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
         uploadMessages.clear()
         uploadMessages.addAll(rebuildUploadMessages(chatClient, messages))
+        refreshContextUsage()
+        contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
         if (messages.any { !it.loading }) {
             persistActiveSession()
         } else {
@@ -931,6 +1207,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
         messages.replaceWith(forkedMessages)
         uploadMessages.clear()
         uploadMessages.addAll(rebuildUploadMessages(chatClient, messages))
+        refreshContextUsage()
+        contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
+        contextStatusText = null
         selectedDrawerIndex = 2
         persistActiveSession()
         Toast.makeText(context, "已创建分支", Toast.LENGTH_SHORT).show()
@@ -988,11 +1267,17 @@ private fun AiChatRoute(onBack: () -> Unit) {
             if (nextSession != null) {
                 openSession(nextSession)
             } else {
-                activeSessionId = null
+                activeSessionId = UUID.randomUUID().toString()
                 messages.clear()
                 uploadMessages.clear()
                 uploadMessages += chatClient.newSystemMessage()
-                saveHistory(null)
+                inputAttachments.clear()
+                contextCompactionCount = 0
+                contextStatusText = null
+                manualContextCompacting = false
+                refreshContextUsage()
+                selectedDrawerIndex = 2
+                saveHistory(activeSessionId)
             }
         } else {
             saveHistory(activeSessionId)
@@ -1272,6 +1557,17 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     onConfirm = ::confirmExportSelection
                                 )
                             }
+                            AnimatedVisibility(visible = !contextStatusText.isNullOrBlank()) {
+                                Text(
+                                    text = contextStatusText.orEmpty(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                             RikkaChatInput(
                                 value = input,
                                 onValueChange = { input = it },
@@ -1288,6 +1584,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 },
                                 suggestionAvailable = skillSuggestions.isNotEmpty(),
                                 suggestionExpanded = suggestionsExpanded,
+                                contextUsage = contextUsage,
                                 attachments = inputAttachments,
                                 skills = inputAttachments.filter {
                                     it.type == AiChatInputAttachmentType.SKILL
@@ -1312,6 +1609,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 onSuggestionClick = {
                                     suggestionsExpanded = !suggestionsExpanded
                                 },
+                                onContextUsageClick = {
+                                    showContextUsageDialog = true
+                                },
                                 onSkillClick = {
                                     showSkillAttachmentSheet = true
                                 },
@@ -1330,9 +1630,11 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 },
                                 onRemoveAttachment = { attachment ->
                                     inputAttachments.removeAll { it.id == attachment.id }
+                                    refreshContextUsage()
                                 },
                                 onRemoveSkill = { skill ->
                                     inputAttachments.removeAll { it.id == skill.id }
+                                    refreshContextUsage()
                                     persistActiveSession()
                                 }
                             )
@@ -1392,6 +1694,22 @@ private fun AiChatRoute(onBack: () -> Unit) {
             onExport = ::exportSelectedMessages
         )
     }
+    if (showContextUsageDialog) {
+        ContextUsageDialog(
+            usage = contextUsage,
+            compactionCount = maxOf(
+                contextCompactionCount,
+                messages.count { it.contextCompaction != null }
+            ),
+            sessionUsage = messages.contextSessionUsage(),
+            manualCompressionAvailable = uploadMessages.any { message ->
+                message.get("role")?.asString != "system"
+            },
+            manualCompacting = manualContextCompacting,
+            onManualCompress = ::manuallyCompressContext,
+            onDismiss = { showContextUsageDialog = false }
+        )
+    }
     if (showContextAttachmentSheet) {
         AiChatInputAttachmentSheet(
             title = "添加上下文",
@@ -1403,6 +1721,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 if (inputAttachments.none { it.id == attachment.id }) {
                     inputAttachments += attachment
                 }
+                refreshContextUsage()
                 showContextAttachmentSheet = false
             },
             onDismiss = { showContextAttachmentSheet = false }
@@ -1417,13 +1736,17 @@ private fun AiChatRoute(onBack: () -> Unit) {
     if (showSkillAttachmentSheet) {
         AiChatInputAttachmentSheet(
             title = "加载技能",
-            description = "技能会作为可见加载项加入输入框，用于给普通聊天补充场景说明。",
+            description = "选择新技能会替换当前技能，并用于补充本轮聊天场景。",
             emptyText = "暂无可在聊天中加载的技能",
             availableAttachments = buildAgentSkillInputAttachments(),
             loadedAttachmentIds = inputAttachments.map { it.id }.toSet(),
             onAdd = { attachment ->
+                inputAttachments.removeAll {
+                    it.type == AiChatInputAttachmentType.SKILL && it.id != attachment.id
+                }
                 if (inputAttachments.none { it.id == attachment.id }) {
                     inputAttachments += attachment
+                    refreshContextUsage()
                     persistActiveSession()
                 }
                 showSkillAttachmentSheet = false
@@ -2714,6 +3037,13 @@ private fun RikkaMessageItem(
     onExport: () -> Unit,
     onInteractionSubmit: (String) -> Unit
 ) {
+    message.contextCompaction?.let { record ->
+        ContextCompactionEventItem(
+            record = record,
+            manual = message.content == "上下文已手动压缩"
+        )
+        return
+    }
     val clipboard = LocalClipboardManager.current
     val isUser = message.role == ChatRole.USER
     var confirmAction by remember { mutableStateOf<PendingMessageAction?>(null) }
@@ -2734,16 +3064,36 @@ private fun RikkaMessageItem(
                     style = MaterialTheme.typography.bodyLarge
                 )
             }
-            MessageActions(
-                message = message,
-                clipboard = clipboard,
-                showShareButton = false,
-                onRegenerate = { confirmAction = PendingMessageAction.REGENERATE },
-                onDelete = { confirmAction = PendingMessageAction.DELETE },
-                onFork = onFork,
-                onToggleFavorite = onToggleFavorite,
-                onExport = onExport
-            )
+            if (message.deliveryState != ChatDeliveryState.SENT &&
+                message.deliveryState != ChatDeliveryState.IN_FLIGHT
+            ) {
+                Text(
+                    text = when (message.deliveryState) {
+                        ChatDeliveryState.QUEUED -> "已排队"
+                        ChatDeliveryState.IN_FLIGHT -> "发送中"
+                        ChatDeliveryState.RECOVERABLE -> "待恢复"
+                        ChatDeliveryState.FAILED -> "发送失败"
+                        ChatDeliveryState.SENT -> ""
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+            if (message.deliveryState == ChatDeliveryState.SENT ||
+                message.deliveryState == ChatDeliveryState.RECOVERABLE ||
+                message.deliveryState == ChatDeliveryState.FAILED
+            ) {
+                MessageActions(
+                    message = message,
+                    clipboard = clipboard,
+                    showShareButton = false,
+                    onRegenerate = { confirmAction = PendingMessageAction.REGENERATE },
+                    onDelete = { confirmAction = PendingMessageAction.DELETE },
+                    onFork = onFork,
+                    onToggleFavorite = onToggleFavorite,
+                    onExport = onExport
+                )
+            }
         } else {
             AssistantMessageHeader()
             if (message.loading) {
@@ -2842,6 +3192,31 @@ private fun RikkaMessageItem(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun ContextCompactionEventItem(
+    record: AiChatCompactionRecord,
+    manual: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+        ) {
+            Text(
+                text = "上下文已${if (manual) "手动" else "自动"}压缩 · " +
+                    "${formatContextTokenValue(record.beforeTokens)} 到 " +
+                    formatContextTokenValue(record.afterTokens),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium
+            )
+        }
     }
 }
 
@@ -4159,6 +4534,311 @@ private fun MessageActionButton(
 }
 
 @Composable
+private fun ContextUsageIndicator(
+    usage: AiChatContextUsage,
+    onClick: () -> Unit
+) {
+    val actualTokens = usage.calibration?.contextTokens ?: 0
+    val actualPercent = if (usage.contextWindowTokens > 0) {
+        actualTokens.toFloat() / usage.contextWindowTokens
+    } else {
+        0f
+    }
+    val percent = (actualPercent * 100).toInt().coerceAtLeast(0)
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(38.dp),
+        shape = CircleShape,
+        color = Color.Transparent
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(
+                progress = { actualPercent.coerceIn(0f, 1f) },
+                modifier = Modifier.size(28.dp),
+                strokeWidth = 2.dp,
+                color = if (actualTokens >= usage.thresholdTokens) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Text(
+                text = if (percent > 99) "99+" else "$percent",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContextUsageDialog(
+    usage: AiChatContextUsage,
+    compactionCount: Int,
+    sessionUsage: AiChatContextSessionUsage,
+    manualCompressionAvailable: Boolean,
+    manualCompacting: Boolean,
+    onManualCompress: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val breakdown = usage.breakdown
+    val localCategories = listOf(
+        ContextUsageCategory("系统提示词", breakdown.systemPromptTokens),
+        ContextUsageCategory("MCP / tools", breakdown.toolTokens),
+        ContextUsageCategory("Skill", breakdown.skillTokens),
+        ContextUsageCategory("App 上下文", breakdown.appContextTokens),
+        ContextUsageCategory("聊天内容", breakdown.conversationTokens),
+        ContextUsageCategory("协议开销", breakdown.protocolTokens)
+    )
+    val categories = localCategories.filter { it.tokens > 0 }
+    val categoryTotal = categories.sumOf { it.tokens }
+    val actualTokens = usage.calibration?.contextTokens ?: 0
+    val actualPercent = if (usage.contextWindowTokens > 0) {
+        actualTokens.toFloat() / usage.contextWindowTokens
+    } else {
+        0f
+    }
+    val actualPercentValue = (actualPercent * 100).toInt().coerceAtLeast(0)
+    val localPercent = if (usage.contextWindowTokens > 0) {
+        usage.localEstimatedTokens.toFloat() / usage.contextWindowTokens
+    } else {
+        0f
+    }
+    val localPercentValue = (localPercent * 100).toInt().coerceAtLeast(0)
+    val limitTokens = if (usage.compactionThresholdPercent == 0) {
+        usage.contextWindowTokens
+    } else {
+        usage.thresholdTokens
+    }
+    val remainingTokens = (limitTokens - actualTokens).coerceAtLeast(0)
+    val overallColor = when {
+        actualTokens >= limitTokens -> MaterialTheme.colorScheme.error
+        actualPercent >= 0.75f -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val dominantTokens = categories.maxOfOrNull { it.tokens } ?: 0
+    AlertDialog(
+        modifier = Modifier
+            .fillMaxWidth(0.92f)
+            .widthIn(max = 360.dp),
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "上下文用量",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "已压缩 $compactionCount 次",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "实时用量",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = formatContextTokenValue(actualTokens),
+                        color = overallColor,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = " / ${formatContextTokenValue(usage.contextWindowTokens)} tokens",
+                        modifier = Modifier.padding(bottom = 3.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { actualPercent.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp),
+                    color = overallColor,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    drawStopIndicator = {}
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "已用 $actualPercentValue%",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text(
+                        text = if (usage.compactionThresholdPercent == 0) {
+                            "距窗口 ${formatContextTokenValue(remainingTokens)}"
+                        } else {
+                            "距自动压缩 ${formatContextTokenValue(remainingTokens)}"
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "本地估算",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = formatContextTokenValue(usage.localEstimatedTokens),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { localPercent.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp),
+                    color = MaterialTheme.colorScheme.secondary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    drawStopIndicator = {}
+                )
+                Text(
+                    text = "占窗口 $localPercentValue%",
+                    modifier = Modifier.align(Alignment.End),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall
+                )
+                categories.forEach { category ->
+                    ContextBreakdownRow(
+                        label = category.label,
+                        tokens = category.tokens,
+                        totalTokens = categoryTotal,
+                        highlight = category.tokens == dominantTokens && category.tokens > 0
+                    )
+                }
+                if (sessionUsage.hasData) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "会话累计",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "↑${formatContextTokenValue(sessionUsage.promptTokens)}  " +
+                                "↓${formatContextTokenValue(sessionUsage.completionTokens)}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    sessionUsage.latestCompaction?.let { record ->
+                        Text(
+                            text = "最近压缩 ${formatContextTokenValue(record.beforeTokens)} → " +
+                                formatContextTokenValue(record.afterTokens),
+                            modifier = Modifier.align(Alignment.End),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onManualCompress,
+                enabled = manualCompressionAvailable && !manualCompacting
+            ) {
+                Text(if (manualCompacting) "正在压缩" else "手动压缩")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ContextBreakdownRow(
+    label: String,
+    tokens: Int,
+    totalTokens: Int,
+    highlight: Boolean
+) {
+    val percent = if (totalTokens > 0) tokens * 100f / totalTokens else 0f
+    val color = if (highlight) {
+        MaterialTheme.colorScheme.tertiary
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.weight(1f),
+                color = if (highlight) color else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Normal
+            )
+            Text(
+                text = formatContextTokenValue(tokens),
+                modifier = Modifier.width(64.dp),
+                textAlign = TextAlign.End,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "${percent.toInt()}%",
+                modifier = Modifier.width(40.dp),
+                color = if (highlight) color else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Normal
+            )
+        }
+        LinearProgressIndicator(
+            progress = { (percent / 100f).coerceIn(0f, 1f) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp),
+            color = color,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            drawStopIndicator = {}
+        )
+    }
+}
+
+private data class ContextUsageCategory(
+    val label: String,
+    val tokens: Int
+)
+
+@Composable
 private fun RikkaChatInput(
     value: String,
     onValueChange: (String) -> Unit,
@@ -4170,6 +4850,7 @@ private fun RikkaChatInput(
     contextAvailable: Boolean,
     suggestionAvailable: Boolean,
     suggestionExpanded: Boolean,
+    contextUsage: AiChatContextUsage,
     attachments: List<AiChatInputAttachment>,
     skills: List<AiChatInputAttachment>,
     onSend: () -> Unit,
@@ -4178,6 +4859,7 @@ private fun RikkaChatInput(
     onReasoningClick: () -> Unit,
     onMcpClick: () -> Unit,
     onSuggestionClick: () -> Unit,
+    onContextUsageClick: () -> Unit,
     onSkillClick: () -> Unit,
     onContextClick: () -> Unit,
     onContextPreview: (AiChatInputAttachment) -> Unit,
@@ -4253,6 +4935,10 @@ private fun RikkaChatInput(
                                 onClick = onSkillClick
                             )
                         }
+                        ContextUsageIndicator(
+                            usage = contextUsage,
+                            onClick = onContextUsageClick
+                        )
                         if (contextAvailable) {
                             InputDrawableIcon(
                                 iconRes = R.drawable.ic_ai_context_menu,
@@ -4269,37 +4955,63 @@ private fun RikkaChatInput(
                                 onClick = onSuggestionClick
                             )
                         }
-                        Surface(
-                            onClick = {
-                                if (sending) onStop() else onSend()
-                            },
+                        if (sending && value.isNotBlank()) {
+                            ChatInputActionButton(
+                                icon = Icons.Rounded.ArrowUpward,
+                                contentDescription = "Queue message",
+                                enabled = true,
+                                color = MaterialTheme.colorScheme.primary,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                onClick = onSend
+                            )
+                        }
+                        ChatInputActionButton(
+                            icon = if (sending) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
+                            contentDescription = if (sending) "Stop" else "Send",
                             enabled = sending || value.isNotBlank(),
-                            modifier = Modifier.size(38.dp),
-                            shape = CircleShape,
                             color = when {
                                 sending -> MaterialTheme.colorScheme.errorContainer
                                 value.isBlank() -> MaterialTheme.colorScheme.surfaceVariant
                                 else -> MaterialTheme.colorScheme.primary
-                            }
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = if (sending) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
-                                    contentDescription = "Send",
-                                    tint = if (sending) {
-                                        MaterialTheme.colorScheme.onErrorContainer
-                                    } else if (value.isBlank()) {
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                    } else {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    },
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+                            },
+                            tint = when {
+                                sending -> MaterialTheme.colorScheme.onErrorContainer
+                                value.isBlank() ->
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                else -> MaterialTheme.colorScheme.onPrimary
+                            },
+                            onClick = if (sending) onStop else onSend
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ChatInputActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    color: Color,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(38.dp),
+        shape = CircleShape,
+        color = color
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
@@ -4314,40 +5026,39 @@ private fun CompactSkillStatusRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(30.dp)
+                    .height(34.dp)
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                val skill = skills.lastOrNull() ?: return@AnimatedVisibility
                 Icon(
-                    imageVector = Icons.Rounded.Psychology,
+                    painter = painterResource(R.drawable.ic_ai_skill_puzzle),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
-                    text = "Skill：${skills.joinToString("、") { it.title }}",
+                    text = "Skill：${skill.title}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                skills.forEach { skill ->
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .size(24.dp)
-                            .clickable { onRemove(skill) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .clickable { onRemove(skill) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "移除 ${skill.title}",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(15.dp)
+                    )
                 }
             }
             HorizontalDivider(
@@ -4666,7 +5377,7 @@ private fun FloatingSkillSuggestionPanel(
         Column(
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .heightIn(max = 190.dp)
+                .heightIn(max = 320.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(7.dp),
             horizontalAlignment = Alignment.End
@@ -4773,7 +5484,13 @@ private fun AiChatTurnResult.toUiMessage(elapsedMs: Long): ChatUiMessage {
         reasoning = reasoning,
         toolTrace = toolTrace,
         memoryTrace = memoryTrace,
-        elapsedMs = elapsedMs
+        elapsedMs = elapsedMs,
+        promptTokens = usage?.promptTokens,
+        localPromptTokens = null,
+        contextAnchorTokens = contextCalibration?.contextTokens,
+        localContextAnchorTokens = contextCalibration?.localContextTokens,
+        usageProviderId = contextCalibration?.providerId,
+        usageModelId = contextCalibration?.modelId
     )
 }
 
@@ -5009,8 +5726,10 @@ private fun rebuildUploadMessages(
         add(chatClient.newSystemMessage())
         messages.filterNot { it.loading }.forEach { message ->
             when (message.role) {
-                ChatRole.USER -> add(chatClient.newUserMessage(message.content))
-                ChatRole.ASSISTANT -> if (message.meta != "error") {
+                ChatRole.USER -> if (message.deliveryState != ChatDeliveryState.QUEUED) {
+                    add(chatClient.newUserMessage(message.uploadContent ?: message.content))
+                }
+                ChatRole.ASSISTANT -> if (message.meta != "error" && message.contextCompaction == null) {
                     add(chatClient.newAssistantMessage(message.content, message.reasoning))
                 }
             }
@@ -5040,11 +5759,11 @@ private fun buildAgentSkillInputAttachments(): List<AiChatInputAttachment> {
 }
 
 private fun buildSkillInputAttachments(skillIds: List<String>): List<AiChatInputAttachment> {
-    return skillIds.distinct().mapNotNull { skillId ->
+    return skillIds.asReversed().firstNotNullOfOrNull { skillId ->
         AiSkillRegistry.get(skillId)
             ?.takeIf { it.scope == AiSkillScope.AGENT }
             ?.let(::toSkillInputAttachment)
-    }
+    }?.let(::listOf).orEmpty()
 }
 
 private fun buildIntentContextInputAttachments(rawAttachments: List<String>): List<AiChatInputAttachment> {
@@ -5096,23 +5815,22 @@ private fun buildUserUploadContent(
     val contexts = attachments.filter { it.type == AiChatInputAttachmentType.CONTEXT }
     val skills = attachments.filter { it.type == AiChatInputAttachmentType.SKILL }
     return buildString {
-        append("以下是用户在输入框中可见并随本次消息附带的 App 上下文与 Skill 说明。")
-        append("这些内容用于帮助你理解场景，不要在回复中逐字复述；用户可随时移除它们。\n\n")
+        append(AiChatContextManager.ATTACHMENT_PREAMBLE)
         if (contexts.isNotEmpty()) {
-            append("## App 上下文\n")
+            append(AiChatContextManager.APP_CONTEXT_HEADING)
             contexts.forEach { attachment ->
                 append("### ").append(attachment.title).append('\n')
                 append(attachment.prompt).append("\n\n")
             }
         }
         if (skills.isNotEmpty()) {
-            append("## 已加载 Skill\n")
+            append(AiChatContextManager.SKILL_HEADING)
             skills.forEach { attachment ->
                 append("### ").append(attachment.title).append('\n')
                 append(attachment.prompt).append("\n\n")
             }
         }
-        append("## 用户消息\n")
+        append(AiChatContextManager.USER_MESSAGE_HEADING)
         append(userContent)
     }
 }
@@ -5579,6 +6297,41 @@ private fun String?.parseAiTokenStats(): AiTokenStats {
     )
 }
 
+private fun List<ChatUiMessage>.latestPromptUsageAnchor(): AiChatPromptUsageAnchor? {
+    val latestCompactionIndex = indexOfLast { it.contextCompaction != null }
+    val anchorIndex = indices.lastOrNull { index ->
+        val message = get(index)
+        index > latestCompactionIndex &&
+            message.role == ChatRole.ASSISTANT && message.meta != "error" &&
+            (message.contextAnchorTokens != null || message.promptTokens != null ||
+                message.meta.parseAiTokenStats().promptTokens in 1..Int.MAX_VALUE.toLong())
+    } ?: -1
+    if (anchorIndex < 0) return null
+    return get(anchorIndex).let { message ->
+        val promptTokens = message.promptTokens
+            ?: message.meta.parseAiTokenStats().promptTokens
+                .takeIf { it in 1..Int.MAX_VALUE.toLong() }
+                ?.toInt()
+            ?: message.contextAnchorTokens
+            ?: return@let null
+        AiChatPromptUsageAnchor(
+            promptTokens = promptTokens,
+            localPromptTokens = message.localPromptTokens,
+            contextTokens = message.contextAnchorTokens,
+            localContextTokens = message.localContextAnchorTokens,
+            providerId = message.usageProviderId,
+            modelId = message.usageModelId,
+            expectedToolCallCount = if (
+                message.localContextAnchorTokens == null && message.localPromptTokens == null
+            ) {
+                subList(latestCompactionIndex + 1, anchorIndex + 1).sumOf { it.toolTrace.size }
+            } else {
+                0
+            }
+        )
+    }
+}
+
 private fun formatAiStatCount(count: Long): String = when {
     count >= 1_000_000 -> "%.1fM".format(count / 1_000_000.0)
     count >= 1_000 -> "%.1fK".format(count / 1_000.0)
@@ -5636,7 +6389,20 @@ private fun ChatUiMessage.toSnapshot(): AiChatMessageSnapshot {
         toolTrace = toolTrace,
         memoryTrace = memoryTrace,
         elapsedMs = elapsedMs,
-        favorite = favorite
+        favorite = favorite,
+        deliveryState = deliveryState.snapshotValue,
+        uploadContent = uploadContent,
+        promptTokens = promptTokens,
+        localPromptTokens = localPromptTokens,
+        contextAnchorTokens = contextAnchorTokens,
+        localContextAnchorTokens = localContextAnchorTokens,
+        usageProviderId = usageProviderId,
+        usageModelId = usageModelId,
+        contextCompactionBeforeTokens = contextCompaction?.beforeTokens,
+        contextCompactionAfterTokens = contextCompaction?.afterTokens,
+        contextCompactionRevision = contextCompaction?.revision,
+        contextCompactionSummaryPromptTokens = contextCompaction?.summaryPromptTokens,
+        contextCompactionSummaryCompletionTokens = contextCompaction?.summaryCompletionTokens
     )
 }
 
@@ -5653,7 +6419,27 @@ private fun AiChatMessageSnapshot.toUiMessage(): ChatUiMessage {
         toolTrace = toolTrace,
         memoryTrace = memoryTrace.orEmpty(),
         elapsedMs = elapsedMs,
-        favorite = favorite
+        favorite = favorite,
+        deliveryState = ChatDeliveryState.fromSnapshot(deliveryState),
+        uploadContent = uploadContent,
+        promptTokens = promptTokens,
+        localPromptTokens = localPromptTokens,
+        contextAnchorTokens = contextAnchorTokens,
+        localContextAnchorTokens = localContextAnchorTokens,
+        usageProviderId = usageProviderId,
+        usageModelId = usageModelId,
+        contextCompaction = contextCompactionBeforeTokens
+            ?.let { beforeTokens ->
+                contextCompactionAfterTokens?.let { afterTokens ->
+                    AiChatCompactionRecord(
+                        beforeTokens = beforeTokens,
+                        afterTokens = afterTokens,
+                        revision = contextCompactionRevision ?: 1,
+                        summaryPromptTokens = contextCompactionSummaryPromptTokens ?: 0,
+                        summaryCompletionTokens = contextCompactionSummaryCompletionTokens ?: 0
+                    )
+                }
+            }
     )
 }
 
@@ -5667,8 +6453,41 @@ private data class ChatUiMessage(
     val memoryTrace: List<AiMemoryTraceItem> = emptyList(),
     val elapsedMs: Long? = null,
     val favorite: Boolean = false,
-    val loading: Boolean = false
+    val loading: Boolean = false,
+    val deliveryState: ChatDeliveryState = ChatDeliveryState.SENT,
+    val uploadContent: String? = null,
+    val promptTokens: Int? = null,
+    val localPromptTokens: Int? = null,
+    val contextAnchorTokens: Int? = null,
+    val localContextAnchorTokens: Int? = null,
+    val usageProviderId: String? = null,
+    val usageModelId: String? = null,
+    val contextCompaction: AiChatCompactionRecord? = null
 )
+
+private data class AiChatContextSessionUsage(
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val latestCompaction: AiChatCompactionRecord? = null
+) {
+    val hasData: Boolean
+        get() = promptTokens > 0 || completionTokens > 0 || latestCompaction != null
+}
+
+private fun List<ChatUiMessage>.contextSessionUsage(): AiChatContextSessionUsage {
+    val normalMessages = filter { message ->
+        message.role == ChatRole.ASSISTANT && message.contextCompaction == null
+    }
+    return AiChatContextSessionUsage(
+        promptTokens = normalMessages.sumOf { message ->
+            message.promptTokens ?: message.meta.parseAiTokenStats().promptTokens.toInt()
+        } + sumOf { it.contextCompaction?.summaryPromptTokens ?: 0 },
+        completionTokens = normalMessages.sumOf { message ->
+            message.meta.parseAiTokenStats().completionTokens.toInt()
+        } + sumOf { it.contextCompaction?.summaryCompletionTokens ?: 0 },
+        latestCompaction = asReversed().firstNotNullOfOrNull { it.contextCompaction }
+    )
+}
 
 private data class DrawerFavoriteItem(
     val messageId: String,
@@ -5757,4 +6576,40 @@ private data class ChatPreviewItem(
 private enum class ChatRole {
     USER,
     ASSISTANT
+}
+
+private enum class ChatDeliveryState(val snapshotValue: String) {
+    SENT(AiChatMessageSnapshot.DELIVERY_SENT),
+    QUEUED(AiChatMessageSnapshot.DELIVERY_QUEUED),
+    IN_FLIGHT(AiChatMessageSnapshot.DELIVERY_IN_FLIGHT),
+    RECOVERABLE(AiChatMessageSnapshot.DELIVERY_IN_FLIGHT),
+    FAILED(AiChatMessageSnapshot.DELIVERY_FAILED);
+
+    companion object {
+        fun fromSnapshot(value: String): ChatDeliveryState {
+            return when (value) {
+                AiChatMessageSnapshot.DELIVERY_QUEUED -> QUEUED
+                AiChatMessageSnapshot.DELIVERY_IN_FLIGHT -> RECOVERABLE
+                AiChatMessageSnapshot.DELIVERY_FAILED -> FAILED
+                else -> SENT
+            }
+        }
+    }
+}
+
+private fun formatContextTokens(tokens: Int): String {
+    return "${formatContextTokenValue(tokens)} tokens"
+}
+
+private fun formatContextTokenValue(tokens: Int): String {
+    val (value, suffix) = when {
+        tokens >= 1_000_000 -> tokens / 1_000_000f to "M"
+        tokens >= 1_000 -> tokens / 1_000f to "K"
+        else -> return "$tokens"
+    }
+    return if (value >= 100 || value % 1f == 0f) {
+        "${value.toInt()}$suffix"
+    } else {
+        String.format(java.util.Locale.US, "%.1f$suffix", value)
+    }
 }

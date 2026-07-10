@@ -244,10 +244,40 @@ data class AiChatMessageSnapshot(
     @SerializedName("elapsed_ms")
     val elapsedMs: Long? = null,
     @SerializedName("favorite")
-    val favorite: Boolean = false
+    val favorite: Boolean = false,
+    @SerializedName("delivery_state")
+    val deliveryState: String = DELIVERY_SENT,
+    @SerializedName("upload_content")
+    val uploadContent: String? = null,
+    @SerializedName("prompt_tokens")
+    val promptTokens: Int? = null,
+    @SerializedName("local_prompt_tokens")
+    val localPromptTokens: Int? = null,
+    @SerializedName("context_anchor_tokens")
+    val contextAnchorTokens: Int? = null,
+    @SerializedName("local_context_anchor_tokens")
+    val localContextAnchorTokens: Int? = null,
+    @SerializedName("usage_provider_id")
+    val usageProviderId: String? = null,
+    @SerializedName("usage_model_id")
+    val usageModelId: String? = null,
+    @SerializedName("context_compaction_before_tokens")
+    val contextCompactionBeforeTokens: Int? = null,
+    @SerializedName("context_compaction_after_tokens")
+    val contextCompactionAfterTokens: Int? = null,
+    @SerializedName("context_compaction_revision")
+    val contextCompactionRevision: Int? = null,
+    @SerializedName("context_compaction_summary_prompt_tokens")
+    val contextCompactionSummaryPromptTokens: Int? = null,
+    @SerializedName("context_compaction_summary_completion_tokens")
+    val contextCompactionSummaryCompletionTokens: Int? = null
 ) {
     companion object {
         const val ROLE_USER = "user"
         const val ROLE_ASSISTANT = "assistant"
+        const val DELIVERY_SENT = "sent"
+        const val DELIVERY_QUEUED = "queued"
+        const val DELIVERY_IN_FLIGHT = "in_flight"
+        const val DELIVERY_FAILED = "failed"
     }
 }

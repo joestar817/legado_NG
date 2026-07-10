@@ -9,6 +9,7 @@ object AiDefaultProviders {
             name = "OpenAI",
             baseUrl = "https://api.openai.com/v1",
             modelsUrl = "/models",
+            supportsStreamUsage = true,
             enabled = true
         ),
         AiProviderSetting(
@@ -36,6 +37,7 @@ object AiDefaultProviders {
             modelsUrl = "/models",
             balanceUrl = "/user/balance",
             balanceJsonPath = "balance_infos[0].total_balance",
+            supportsStreamUsage = true,
             enabled = true
         ),
         AiProviderSetting(
@@ -85,6 +87,7 @@ object AiDefaultProviders {
             ),
             modelsUrl = "/models",
             effortParam = "reasoning_effort",
+            disableEffortValue = "none",
             reasoningOutputField = "reasoning",
             streamResponseEnabled = true,
             enabled = true

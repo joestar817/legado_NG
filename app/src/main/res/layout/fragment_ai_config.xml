@@ -803,6 +803,129 @@
                 <View style="@style/Ng.SettingsItemGap" />
 
                 <LinearLayout
+                    android:id="@+id/layout_context_compaction_model_entry"
+                    style="@style/Ng.SettingsItem">
+
+                    <ImageView
+                        android:id="@+id/image_context_compaction_model_icon"
+                        style="@style/Ng.SettingsIconImage"
+                        android:layout_gravity="center_vertical"
+                        android:contentDescription="@string/ai_context_compaction_model"
+                        android:src="@drawable/ic_ai" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/ai_context_compaction_model" />
+
+                        <TextView
+                            android:id="@+id/text_context_compaction_model_summary"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:maxLines="2" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="›"
+                        android:textColor="@color/ng_settings_arrow"
+                        android:textSize="30sp" />
+
+                </LinearLayout>
+
+                <View style="@style/Ng.SettingsItemGap" />
+
+                <LinearLayout
+                    android:id="@+id/layout_assistant_context_window_entry"
+                    style="@style/Ng.SettingsItem">
+
+                    <ImageView
+                        android:id="@+id/image_assistant_context_window_icon"
+                        style="@style/Ng.SettingsIconImage"
+                        android:layout_gravity="center_vertical"
+                        android:contentDescription="@string/ai_assistant_context_window"
+                        android:src="@drawable/ic_ai_context_menu" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/ai_assistant_context_window" />
+
+                        <TextView
+                            android:id="@+id/text_assistant_context_window_summary"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:maxLines="2" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="›"
+                        android:textColor="@color/ng_settings_arrow"
+                        android:textSize="30sp" />
+
+                </LinearLayout>
+
+                <View style="@style/Ng.SettingsItemGap" />
+
+                <LinearLayout
+                    android:id="@+id/layout_context_compaction_threshold_entry"
+                    style="@style/Ng.SettingsItem">
+
+                    <ImageView
+                        android:id="@+id/image_context_compaction_threshold_icon"
+                        style="@style/Ng.SettingsIconImage"
+                        android:layout_gravity="center_vertical"
+                        android:contentDescription="@string/ai_context_compaction_threshold"
+                        android:src="@drawable/ic_read_aloud_speed" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Ng.SettingsTitle"
+                            android:text="@string/ai_context_compaction_threshold" />
+
+                        <TextView
+                            android:id="@+id/text_context_compaction_threshold_summary"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_marginTop="4dp"
+                            android:maxLines="2" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="›"
+                        android:textColor="@color/ng_settings_arrow"
+                        android:textSize="30sp" />
+
+                </LinearLayout>
+
+                <View style="@style/Ng.SettingsItemGap" />
+
+                <LinearLayout
                     android:id="@+id/layout_internal_mcp"
                     style="@style/Ng.SettingsItem"
                     android:clickable="false"
