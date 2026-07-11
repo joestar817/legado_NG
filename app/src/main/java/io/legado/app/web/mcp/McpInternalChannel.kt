@@ -3,6 +3,7 @@ package io.legado.app.web.mcp
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import io.legado.app.constant.PreferKey
+import io.legado.app.utils.GSON
 import io.legado.app.utils.getPrefBoolean
 import splitties.init.appCtx
 
@@ -20,7 +21,24 @@ object McpInternalChannel {
         return McpServer.handleJsonRpc(requestJson)
     }
 
-    fun callTool(name: String, arguments: JsonObject = JsonObject()): JsonObject {
+    fun listTools(capabilityIds: Collection<String>): List<JsonObject> {
+        check(isEnabled()) { "内置 MCP 通道未开启" }
+        return McpServer.listInternalTools(capabilityIds).mapNotNull { tool ->
+            GSON.toJsonTree(tool).takeIf { it.isJsonObject }?.asJsonObject
+        }
+    }
+
+    fun callTool(
+        name: String,
+        arguments: JsonObject = JsonObject(),
+        capabilityIds: Collection<String>? = null
+    ): JsonObject {
+        if (capabilityIds != null) {
+            check(isEnabled()) { "内置 MCP 通道未开启" }
+            return GSON.toJsonTree(
+                McpServer.callInternalTool(name, arguments, capabilityIds)
+            ).asJsonObject
+        }
         val params = JsonObject().apply {
             addProperty("name", name)
             add("arguments", arguments)

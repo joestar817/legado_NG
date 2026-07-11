@@ -23,5 +23,7 @@ data class AiChatConversation(
     @ColumnInfo(defaultValue = "[]")
     val loadedSkillIds: String = "[]",
     @ColumnInfo(defaultValue = "[]")
+    val enabledMcpCapabilityIds: String = "[]",
+    @ColumnInfo(defaultValue = "[]")
     val uploadMessages: String = "[]"
 )

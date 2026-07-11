@@ -94,6 +94,7 @@ MCP 现在有两条通道：
 | 网络日志 | `network_log_list` | tool | 分页列出内存网络请求日志摘要。 |
 | 网络日志 | `network_log_get` | tool | 按 ID 获取单条网络请求日志详情。 |
 | 网络日志 | `network_log_clear` | tool | 清空当前内存网络日志窗口；测试脚本默认跳过。 |
+| 听书调试 | `read_aloud_storyboard_debug_get` | tool | 读取当前章节的 AI 听书分镜调试快照。 |
 | AI 聊天历史 | `ai_chat_conversation_list` | tool | 分页列出 AI 助手聊天会话摘要。 |
 | AI 聊天历史 | `ai_chat_conversation_get` | tool | 按会话 ID 获取聊天消息、思考和工具轨迹。 |
 | AI 记忆 | `agent_memory_status_get` | tool | 检查 AI 助手记忆系统开关状态。 |
@@ -147,13 +148,45 @@ http://192.0.2.10:1124/mcp
 说明：
 
 - 内置通道不依赖 `服务管理 -> MCP 服务`，关闭外部 MCP 服务后仍可被 App 内 AI 调用。
-- 内置通道复用外部 HTTP MCP 的同一套 `initialize`、`tools/list`、`tools/call`、`resources/read` 处理代码。
+- 内置通道复用外部 HTTP MCP 的工具定义和调用实现；AI 助手按当前会话选择的内部能力分组过滤工具定义。
+- 外部 HTTP MCP 的 `tools/list` 始终返回全量工具，不受 AI 助手内部能力选择影响。
 - 当前只提供 App 内代码入口 `McpInternalChannel`，后续 AI 功能调用工具时接入该入口。
 - `AI 设置 -> AI助理 -> 记忆系统` 单独控制 `agent_memory_*` 工具是否实际读写记忆；关闭时搜索返回空列表，写入不会执行。
 - `AI 设置 -> AI助理 -> 操作权限` 控制内置 AI 助理调用 MCP 写工具时的执行权限；默认 `写操作确认` 会在真实执行前弹出本地确认窗，`完全信任` 会允许 AI 直接执行写操作。
 - 当前 P0 暂不做 token、配对码和读写权限分级；内置通道由 AI 设置页开关控制。
 - 列表类接口默认返回分页后的精简字段，长文本、规则详情、章节 URL 等字段需要通过 `include_detail=true` 或单条 `*_get` 接口显式获取。AI 助理不要为了计数、定位或粗略判断一次性拉取全量明细。
 - 书籍作品身份优先使用 `work_key` 或 `name + author`。`book_url` 是当前书源实例地址，换源后可能变化，只适合作为当前实例的辅助定位参数。
+
+### 内置 AI 能力分组
+
+能力分组只用于 App 内置 AI 助手。模块负责界面归类，能力项负责组合实际工具；同一个能力项可以按需求引用其他模块的工具。
+
+| 模块 | 能力项 | 包含工具 |
+| --- | --- | --- |
+| 通用 | `general.service_info` | `legado_ping`、`legado_get_api_summary` |
+| 书源 | `book_source.query` | `book_source_list`、`book_source_stats_get`、`book_source_get` |
+| 书源 | `book_source.manage` | `book_source_save`、`book_source_delete`、`book_source_set_enabled` |
+| 书源 | `book_source.search` | `book_search` |
+| 书源 | `book_source.debug` | `book_source_debug` |
+| 书架 | `bookshelf.query` | `bookshelf_stats_get`、`bookshelf_book_list`、`bookshelf_book_get`、`bookshelf_current_book_get` |
+| 书架 | `bookshelf.manage_books` | `bookshelf_book_upsert`、`bookshelf_book_delete` |
+| 书架 | `bookshelf.manage_groups` | `bookshelf_group_list`、`bookshelf_group_get`、`bookshelf_group_upsert`、`bookshelf_group_delete`、`bookshelf_book_group_update` |
+| 书架 | `bookshelf.read_content` | `bookshelf_chapter_list`、`bookshelf_chapter_content_get`、`bookshelf_text_window_get` |
+| 书架 | `bookshelf.manage_cache` | `bookshelf_cache_status_get`、`bookshelf_cache_download`、`bookshelf_cache_clear` |
+| 书架 | `bookshelf.manage_bookmarks` | `bookshelf_bookmark_list`、`bookshelf_bookmark_get`、`bookshelf_bookmark_upsert`、`bookshelf_bookmark_delete` |
+| 书架 | `bookshelf.manage_read_records` | `bookshelf_read_record_list`、`bookshelf_read_record_get`、`bookshelf_read_record_upsert`、`bookshelf_read_record_delete` |
+| 书架 | `bookshelf.search_and_change_source` | `bookshelf_search`、`bookshelf_book_sources_get`、`bookshelf_change_source_preview` |
+| 书架 | `bookshelf.manage_characters` | `bookshelf_character_profile_get`、`bookshelf_character_list`、`bookshelf_character_get`、`bookshelf_character_upsert`、`bookshelf_character_delete`、`bookshelf_character_set_enabled` |
+| 书架 | `bookshelf.manage_replace_rules` | `bookshelf_replace_rule_list`、`bookshelf_replace_rule_get`、`bookshelf_replace_rule_upsert`、`bookshelf_replace_rule_delete`、`bookshelf_replace_rule_set_enabled`、`bookshelf_replace_rule_draft_upsert`、`bookshelf_replace_rule_draft_apply`、`bookshelf_replace_rule_rollback` |
+| 设置与规则 | `settings.rule_stats` | `settings_rule_stats_get` |
+| 设置与规则 | `settings.manage_toc_rules` | `settings_txt_toc_rule_list`、`settings_txt_toc_rule_get`、`settings_txt_toc_rule_upsert`、`settings_txt_toc_rule_delete`、`settings_txt_toc_rule_set_enabled` |
+| 设置与规则 | `settings.manage_replace_rules` | `settings_replace_rule_list`、`settings_replace_rule_get`、`settings_replace_rule_upsert`、`settings_replace_rule_delete`、`settings_replace_rule_set_enabled` |
+| 设置与规则 | `settings.manage_dict_rules` | `settings_dict_rule_list`、`settings_dict_rule_get`、`settings_dict_rule_upsert`、`settings_dict_rule_delete`、`settings_dict_rule_set_enabled` |
+| AI 数据 | `ai.chat_history` | `ai_chat_conversation_list`、`ai_chat_conversation_get` |
+| AI 数据 | `ai.memory` | `agent_memory_status_get`、`agent_memory_search`、`agent_memory_upsert`、`agent_memory_archive` |
+| 开发调试 | `developer.network_logs` | `network_log_list`、`network_log_get`、`network_log_clear` |
+| 开发调试 | `developer.app_logs` | `debug_log_list`、`debug_log_get`、`debug_log_clear` |
+| 开发调试 | `developer.read_aloud_storyboard` | `read_aloud_storyboard_debug_get` |
 
 ## 自动测试脚本
 
@@ -348,6 +381,7 @@ curl -s http://192.0.2.10:1124/mcp \
 - `network_log_list`
 - `network_log_get`
 - `network_log_clear`
+- `read_aloud_storyboard_debug_get`
 - `ai_chat_conversation_list`
 - `ai_chat_conversation_get`
 - `agent_memory_status_get`
@@ -1005,6 +1039,25 @@ curl -s http://192.0.2.10:1124/mcp \
 ```
 
 返回的 `normalized_data.cleared` 是被清掉的日志条数。
+
+### read_aloud_storyboard_debug_get
+
+读取当前章节的 AI 听书分镜调试快照。这个接口只读取 App 已保存的运行时数据，不会重新调用模型。
+
+```bash
+curl -s http://192.0.2.10:1124/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"read_aloud_storyboard_debug_get","arguments":{"include_storyboard":true,"include_payload":false}}}'
+```
+
+支持参数：
+
+- `include_storyboard`：默认 `true`，返回分镜结果。
+- `include_payload`：默认 `false`，是否返回 App 当时发送给模型的请求体。
+- `paragraph_limit`：限制返回的段落数量。
+- `unit_limit`：限制返回的归因单元数量。
+- `segment_limit`：限制返回的分镜片段数量。
+- `text_char_limit`：限制长文本字段的字符数。
 
 ## Resources
 

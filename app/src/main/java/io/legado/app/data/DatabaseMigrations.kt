@@ -22,7 +22,7 @@ object DatabaseMigrations {
             migration_39_40, migration_40_41, migration_41_42, migration_42_43,
             migration_89_90, migration_90_91, migration_91_92, migration_92_93, migration_93_94,
             migration_94_95, migration_95_96, migration_96_97, migration_97_98, migration_98_99,
-            migration_99_100,
+            migration_99_100, migration_100_101,
         )
     }
 
@@ -586,6 +586,15 @@ object DatabaseMigrations {
             db.execSQL("ALTER TABLE `bookCharacterTtsBindings_new` RENAME TO `bookCharacterTtsBindings`")
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookCharacterTtsBindings_workKey` ON `bookCharacterTtsBindings` (`workKey`)")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_bookCharacterTtsBindings_workKey_targetType_targetId` ON `bookCharacterTtsBindings` (`workKey`, `targetType`, `targetId`)")
+        }
+    }
+
+    private val migration_100_101 = object : Migration(100, 101) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE aiChatConversations " +
+                    "ADD COLUMN enabledMcpCapabilityIds TEXT NOT NULL DEFAULT '[]'"
+            )
         }
     }
 

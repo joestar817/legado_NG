@@ -196,6 +196,25 @@ object McpServer {
         )
     }
 
+    internal fun listInternalTools(capabilityIds: Collection<String>): List<Map<String, Any>> {
+        val allowedToolNames = McpInternalToolCatalog.resolveToolNames(capabilityIds)
+        return tools().filter { it["name"] in allowedToolNames }
+    }
+
+    internal fun callInternalTool(
+        name: String,
+        arguments: JsonObject,
+        capabilityIds: Collection<String>
+    ): Map<String, Any?> {
+        require(name in McpInternalToolCatalog.resolveToolNames(capabilityIds)) {
+            "MCP tool is not enabled for this AI conversation: $name"
+        }
+        return callTool(JsonObject().apply {
+            addProperty("name", name)
+            add("arguments", arguments)
+        })
+    }
+
     private fun tools(): List<Map<String, Any>> {
         return listOf(
             tool(

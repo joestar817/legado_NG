@@ -10,6 +10,7 @@ import io.legado.app.data.entities.AiChatMessageNode
 import io.legado.app.utils.GSON
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.putPrefString
+import io.legado.app.web.mcp.McpInternalToolCatalog
 import splitties.init.appCtx
 import java.io.File
 
@@ -104,6 +105,7 @@ object AiChatHistoryStore {
             updateAt = updatedAt,
             isPinned = isPinned,
             loadedSkillIds = GSON.toJson(loadedSkillIds),
+            enabledMcpCapabilityIds = GSON.toJson(enabledMcpCapabilityIds),
             uploadMessages = GSON.toJson(uploadMessages)
         )
     }
@@ -131,6 +133,7 @@ object AiChatHistoryStore {
             isPinned = isPinned,
             messages = messages,
             loadedSkillIds = loadedSkillIds.toStringList(),
+            enabledMcpCapabilityIds = enabledMcpCapabilityIds.toStringList(),
             uploadMessages = uploadMessages.toUploadMessages()
         ).sanitize()
     }
@@ -193,6 +196,9 @@ object AiChatHistoryStore {
             title = cleanTitle,
             messages = cleanMessages,
             loadedSkillIds = loadedSkillIds.map { it.trim() }.filter { it.isNotBlank() }.distinct(),
+            enabledMcpCapabilityIds = McpInternalToolCatalog.normalizeCapabilityIds(
+                enabledMcpCapabilityIds
+            ),
             uploadMessages = uploadMessages.filter { it.has("role") }
         )
     }
@@ -222,6 +228,8 @@ data class AiChatSessionSnapshot(
     val messages: List<AiChatMessageSnapshot>,
     @SerializedName("loaded_skill_ids")
     val loadedSkillIds: List<String> = emptyList(),
+    @SerializedName("enabled_mcp_capability_ids")
+    val enabledMcpCapabilityIds: List<String> = emptyList(),
     @SerializedName("upload_messages")
     val uploadMessages: List<JsonObject> = emptyList()
 )

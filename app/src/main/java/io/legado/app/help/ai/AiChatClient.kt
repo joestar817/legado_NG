@@ -20,6 +20,7 @@ class AiChatClient {
     suspend fun compactContext(
         messages: MutableList<JsonObject>,
         promptUsageAnchor: AiChatPromptUsageAnchor? = null,
+        enabledMcpCapabilityIds: List<String> = emptyList(),
         onContextEvent: (AiChatContextEvent) -> Unit = {}
     ): AiChatManualCompactionResult {
         val selection = runCatching { AiConfig.requireAssistantModel() }.getOrElse {
@@ -31,7 +32,7 @@ class AiChatClient {
         check(setting.type == AiProviderType.OPENAI) { "AI 聊天暂只支持 OpenAI 兼容提供商" }
         val model = resolveModel(setting, selection.modelId)
         val tools = if (AiConfig.internalMcpEnabled && model.abilities.contains(AiModelAbility.TOOL)) {
-            loadMcpTools()
+            loadMcpTools(enabledMcpCapabilityIds)
         } else {
             emptyList()
         }
@@ -62,6 +63,7 @@ class AiChatClient {
         promptUsageAnchor: AiChatPromptUsageAnchor? = null,
         onStreamUpdate: (AiChatStreamUpdate) -> Unit = {},
         onContextEvent: (AiChatContextEvent) -> Unit = {},
+        enabledMcpCapabilityIds: List<String> = emptyList(),
         onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
     ): AiChatTurnResult {
         val selection = runCatching { AiConfig.requireAssistantModel() }.getOrElse {
@@ -74,7 +76,7 @@ class AiChatClient {
         val model = resolveModel(setting, selection.modelId)
         val params = AiConfig.assistantChatParams(model.abilities.contains(AiModelAbility.REASONING))
         val tools = if (AiConfig.internalMcpEnabled && model.abilities.contains(AiModelAbility.TOOL)) {
-            loadMcpTools()
+            loadMcpTools(enabledMcpCapabilityIds)
         } else {
             emptyList()
         }
@@ -237,7 +239,11 @@ class AiChatClient {
                     writeOperationCanceledResult(call.toolName)
                 } else {
                     runCatching {
-                        McpInternalChannel.callTool(call.toolName, call.arguments)
+                        McpInternalChannel.callTool(
+                            call.toolName,
+                            call.arguments,
+                            enabledMcpCapabilityIds
+                        )
                     }.getOrElse {
                         JsonObject().apply {
                             addProperty("ok", false)
@@ -447,7 +453,8 @@ class AiChatClient {
 
     fun estimateContextUsage(
         messages: List<JsonObject>,
-        promptUsageAnchor: AiChatPromptUsageAnchor? = null
+        promptUsageAnchor: AiChatPromptUsageAnchor? = null,
+        enabledMcpCapabilityIds: List<String> = emptyList()
     ): AiChatContextUsage {
         val selection = AiConfig.requireAssistantModel()
         val setting = AiProviderStore.provider(selection.providerId)
@@ -456,7 +463,7 @@ class AiChatClient {
         val tools = if (AiConfig.internalMcpEnabled &&
             model.abilities.contains(AiModelAbility.TOOL)
         ) {
-            loadMcpTools()
+            loadMcpTools(enabledMcpCapabilityIds)
         } else {
             emptyList()
         }
@@ -710,15 +717,8 @@ class AiChatClient {
         }
     }
 
-    private fun loadMcpTools(): List<JsonObject> {
-        val response = McpInternalChannel.request(JsonObject().apply {
-            addProperty("jsonrpc", "2.0")
-            addProperty("id", "tools")
-            addProperty("method", "tools/list")
-        })?.takeIf { it.isJsonObject }?.asJsonObject ?: return emptyList()
-        val tools = response.objectOrNull("result")?.arrayOrNull("tools") ?: return emptyList()
-        return tools.mapNotNull { item ->
-            val obj = item.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+    private fun loadMcpTools(enabledMcpCapabilityIds: Collection<String>): List<JsonObject> {
+        return McpInternalChannel.listTools(enabledMcpCapabilityIds).mapNotNull { obj ->
             val name = obj.stringOrNull("name") ?: return@mapNotNull null
             val inputSchema = obj.objectOrNull("inputSchema") ?: JsonObject().apply {
                 addProperty("type", "object")

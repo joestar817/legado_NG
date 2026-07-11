@@ -13,14 +13,15 @@ interface AiChatDao {
 
     @Query(
         "select id, assistantId, title, createAt, updateAt, isPinned, " +
-            "customSystemPrompt, loadedSkillIds from aiChatConversations " +
+            "customSystemPrompt, loadedSkillIds, enabledMcpCapabilityIds from aiChatConversations " +
             "order by isPinned desc, updateAt desc limit :limit"
     )
     fun getConversationMetadata(limit: Int = 100): List<AiChatConversationMetadata>
 
     @Query(
         "select id, assistantId, title, createAt, updateAt, isPinned, " +
-            "customSystemPrompt, loadedSkillIds from aiChatConversations where id = :id"
+            "customSystemPrompt, loadedSkillIds, enabledMcpCapabilityIds " +
+            "from aiChatConversations where id = :id"
     )
     fun getConversationMetadata(id: String): AiChatConversationMetadata?
 
@@ -101,7 +102,8 @@ data class AiChatConversationMetadata(
     val updateAt: Long,
     val isPinned: Boolean,
     val customSystemPrompt: String,
-    val loadedSkillIds: String
+    val loadedSkillIds: String,
+    val enabledMcpCapabilityIds: String
 ) {
     fun toConversation(uploadMessages: String): AiChatConversation {
         return AiChatConversation(
@@ -113,6 +115,7 @@ data class AiChatConversationMetadata(
             isPinned = isPinned,
             customSystemPrompt = customSystemPrompt,
             loadedSkillIds = loadedSkillIds,
+            enabledMcpCapabilityIds = enabledMcpCapabilityIds,
             uploadMessages = uploadMessages
         )
     }

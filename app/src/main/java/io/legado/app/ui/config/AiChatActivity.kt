@@ -150,6 +150,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -196,14 +197,22 @@ import io.legado.app.help.config.ThemeConfig
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.lib.theme.bottomBackground
+import io.legado.app.ui.widget.compose.NgExpandableChildRow
+import io.legado.app.ui.widget.compose.NgExpandableSectionHeader
 import io.legado.app.ui.widget.compose.NgFunctionMenu
 import io.legado.app.ui.widget.compose.NgFunctionMenuAction
+import io.legado.app.ui.widget.compose.NgListBadge
+import io.legado.app.ui.widget.compose.NgListBadgeTone
+import io.legado.app.ui.widget.compose.toggleNgExpandedKey
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.PhotoDialog
 import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.GSON
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.openUrl
+import io.legado.app.web.mcp.McpInternalToolCatalog
+import io.legado.app.web.mcp.McpInternalToolCapability
+import io.legado.app.web.mcp.McpInternalToolModule
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.html.HtmlPlugin
@@ -419,6 +428,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
     var exportFormatDialog by remember { mutableStateOf(false) }
     var showContextAttachmentSheet by remember { mutableStateOf(false) }
     var showSkillAttachmentSheet by remember { mutableStateOf(false) }
+    var showMcpCapabilitySheet by remember { mutableStateOf(false) }
+    val enabledMcpCapabilityIds = remember {
+        mutableStateListOf<String>().apply {
+            addAll(defaultMcpCapabilityIds(entrySource))
+        }
+    }
     var contextPreviewAttachments by remember { mutableStateOf<List<AiChatInputAttachment>>(emptyList()) }
     var historyLoaded by remember { mutableStateOf(false) }
     var historyManageMode by remember { mutableStateOf(false) }
@@ -483,11 +498,16 @@ private fun AiChatRoute(onBack: () -> Unit) {
             }
         }
         val promptUsageAnchor = messages.latestPromptUsageAnchor()
+        val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
         contextUsage = AiChatContextManager.usage(snapshot)
         scope.launch {
             val measured = withContext(Dispatchers.IO) {
                 runCatching {
-                    chatClient.estimateContextUsage(snapshot, promptUsageAnchor)
+                    chatClient.estimateContextUsage(
+                        snapshot,
+                        promptUsageAnchor,
+                        enabledMcpCapabilityIds = mcpCapabilityIds
+                    )
                 }
                     .getOrElse { AiChatContextManager.usage(snapshot) }
             }
@@ -655,12 +675,21 @@ private fun AiChatRoute(onBack: () -> Unit) {
             isPinned = oldSession?.isPinned ?: false,
             messages = visibleMessages.map { it.toSnapshot() },
             loadedSkillIds = inputAttachments.loadedSkillIds(),
+            enabledMcpCapabilityIds = enabledMcpCapabilityIds.toList(),
             uploadMessages = uploadMessages.map { it.deepCopy().asJsonObject }
         )
         sessions.removeAll { it.id == sessionId }
         sessions.add(0, snapshot)
         sessions.sortChatSessions()
         saveHistory(sessionId)
+    }
+
+    fun updateMcpCapabilitySelection(capabilityIds: Collection<String>) {
+        enabledMcpCapabilityIds.replaceWith(
+            McpInternalToolCatalog.normalizeCapabilityIds(capabilityIds)
+        )
+        refreshContextUsage()
+        persistActiveSession()
     }
 
     fun startNewChat() {
@@ -672,6 +701,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         contextStatusText = null
         messages.clear()
         inputAttachments.clear()
+        enabledMcpCapabilityIds.replaceWith(defaultMcpCapabilityIds(entrySource))
         refreshContextUsage()
         selectedDrawerIndex = 2
         saveHistory(activeSessionId)
@@ -682,6 +712,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         messages.replaceWith(session.messages.map { it.toUiMessage() })
         uploadMessages.replaceUploadMessages(session, chatClient)
         inputAttachments.replaceWith(buildSkillInputAttachments(session.loadedSkillIds))
+        enabledMcpCapabilityIds.replaceWith(session.enabledMcpCapabilityIds)
         refreshContextUsage()
         contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
         contextStatusText = if (messages.any {
@@ -816,6 +847,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         activeStreamToolTraceTarget = emptyList()
         activeStreamMemoryTraceTarget = emptyList()
         val uploadMessagesBeforeSend = uploadMessages.map { it.deepCopy().asJsonObject }
+        val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
         messages += ChatUiMessage(
             id = loadingId,
             role = ChatRole.ASSISTANT,
@@ -865,6 +897,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 }
                             }
                         },
+                        enabledMcpCapabilityIds = mcpCapabilityIds,
                         onToolConfirmationRequired = { pendingCalls ->
                             confirmToolCalls(pendingCalls)
                         }
@@ -959,12 +992,14 @@ private fun AiChatRoute(onBack: () -> Unit) {
         sending = true
         val promptUsageAnchor = messages.latestPromptUsageAnchor()
         val snapshot = uploadMessages.map { it.deepCopy().asJsonObject }.toMutableList()
+        val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
         sendingJob = scope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
                     chatClient.compactContext(
                         messages = snapshot,
                         promptUsageAnchor = promptUsageAnchor,
+                        enabledMcpCapabilityIds = mcpCapabilityIds,
                         onContextEvent = { event ->
                             scope.launch {
                                 when (event.type) {
@@ -1599,7 +1634,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 sending = sending,
                                 modelIconRes = selectedModelIconRes,
                                 reasoningEnabled = selectedReasoningEnabled,
-                                mcpEnabled = internalMcpEnabled,
+                                mcpEnabled = internalMcpEnabled && enabledMcpCapabilityIds.isNotEmpty(),
                                 skillEnabled = inputAttachments.any {
                                     it.type == AiChatInputAttachmentType.SKILL
                                 },
@@ -1627,8 +1662,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     }
                                 },
                                 onMcpClick = {
-                                    AiAssistantConfigUi.showInternalMcpSheet(context) {
-                                        configVersion++
+                                    if (internalMcpEnabled) {
+                                        showMcpCapabilitySheet = true
+                                    } else {
+                                        AiAssistantConfigUi.showInternalMcpSheet(context) {
+                                            configVersion++
+                                        }
                                     }
                                 },
                                 onSuggestionClick = {
@@ -1777,6 +1816,14 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 showSkillAttachmentSheet = false
             },
             onDismiss = { showSkillAttachmentSheet = false }
+        )
+    }
+    if (showMcpCapabilitySheet) {
+        AiChatMcpCapabilitySheet(
+            modules = McpInternalToolCatalog.modules,
+            selectedCapabilityIds = enabledMcpCapabilityIds.toSet(),
+            onSelectionChange = ::updateMcpCapabilitySelection,
+            onDismiss = { showMcpCapabilitySheet = false }
         )
     }
 }
@@ -5193,6 +5240,7 @@ private fun AiChatContextPreviewSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        dragHandle = null,
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
     ) {
         Column(
@@ -5256,6 +5304,210 @@ private fun AiChatContextPreviewSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun AiChatMcpCapabilitySheet(
+    modules: List<McpInternalToolModule>,
+    selectedCapabilityIds: Set<String>,
+    onSelectionChange: (Set<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val expandedModuleIds = remember(modules) {
+        mutableStateListOf<String>()
+    }
+    val allCapabilityIds = remember(modules) {
+        modules.flatMap { module ->
+            module.capabilities.map { capability -> capability.id }
+        }.toSet()
+    }
+    val sheetBackgroundDrawable = remember(context) {
+        runCatching {
+            ThemeConfig.getBgImage(context, context.resources.displayMetrics)
+        }.getOrNull()
+    }
+    val selectedToolCount = McpInternalToolCatalog
+        .resolveToolNames(selectedCapabilityIds)
+        .size
+    val selectionActionText = if (selectedCapabilityIds.isEmpty()) {
+        "全选"
+    } else {
+        "反选"
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = null,
+        containerColor = Color.Transparent,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.68f)
+                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+        ) {
+            if (sheetBackgroundDrawable != null) {
+                ChatBackgroundImage(
+                    drawableProvider = { sheetBackgroundDrawable },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x66FFFFF9))
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .padding(top = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, top = 8.dp, end = 14.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "AI 功能",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "已选 ${selectedCapabilityIds.size} 项 · $selectedToolCount 个接口",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(
+                        enabled = allCapabilityIds.isNotEmpty(),
+                        onClick = {
+                            if (selectedCapabilityIds.isEmpty()) {
+                                onSelectionChange(allCapabilityIds)
+                            } else {
+                                onSelectionChange(
+                                    allCapabilityIds
+                                        .filterNot { it in selectedCapabilityIds }
+                                        .toSet()
+                                )
+                            }
+                        }
+                    ) {
+                        Text(selectionActionText)
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        top = 8.dp,
+                        end = 12.dp,
+                        bottom = 20.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    modules.forEach { module ->
+                        item(key = "mcp-module-${module.id}") {
+                            val expanded = module.id in expandedModuleIds
+                            Column {
+                                AiChatMcpModuleHeader(
+                                    module = module,
+                                    selectedCapabilityIds = selectedCapabilityIds,
+                                    expanded = expanded,
+                                    onToggleExpanded = {
+                                        expandedModuleIds.toggleNgExpandedKey(module.id)
+                                    },
+                                    onSelectionChange = onSelectionChange
+                                )
+                                AnimatedVisibility(visible = expanded) {
+                                    Column(modifier = Modifier.padding(top = 4.dp)) {
+                                        module.capabilities.forEach { capability ->
+                                            AiChatMcpCapabilityRow(
+                                                capability = capability,
+                                                selected = capability.id in selectedCapabilityIds,
+                                                onToggle = {
+                                                    val next = selectedCapabilityIds.toMutableSet()
+                                                    if (!next.add(capability.id)) {
+                                                        next.remove(capability.id)
+                                                    }
+                                                    onSelectionChange(next)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiChatMcpModuleHeader(
+    module: McpInternalToolModule,
+    selectedCapabilityIds: Set<String>,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onSelectionChange: (Set<String>) -> Unit
+) {
+    val moduleIds = module.capabilities.mapTo(linkedSetOf()) { it.id }
+    val selectedCount = moduleIds.count { it in selectedCapabilityIds }
+    val selectionState = when {
+        selectedCount == 0 -> ToggleableState.Off
+        selectedCount == moduleIds.size -> ToggleableState.On
+        else -> ToggleableState.Indeterminate
+    }
+    val toggleSelection = {
+        val next = selectedCapabilityIds.toMutableSet()
+        if (selectionState == ToggleableState.On) {
+            next.removeAll(moduleIds)
+        } else {
+            next.addAll(moduleIds)
+        }
+        onSelectionChange(next)
+    }
+    NgExpandableSectionHeader(
+        title = module.title,
+        selectionState = selectionState,
+        selectedText = "$selectedCount/${moduleIds.size}",
+        expanded = expanded,
+        onToggleExpanded = onToggleExpanded,
+        onToggleSelection = toggleSelection,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+@Composable
+private fun AiChatMcpCapabilityRow(
+    capability: McpInternalToolCapability,
+    selected: Boolean,
+    onToggle: () -> Unit
+) {
+    NgExpandableChildRow(
+        title = capability.title,
+        summary = capability.description,
+        selected = selected,
+        badges = buildList {
+            add(NgListBadge(capability.toolNames.size.toString()))
+            if (capability.containsWriteTools) {
+                add(NgListBadge("写", NgListBadgeTone.Error))
+            }
+        },
+        onToggle = onToggle,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun AiChatInputAttachmentSheet(
     title: String,
     description: String,
@@ -5269,6 +5521,7 @@ private fun AiChatInputAttachmentSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        dragHandle = null,
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
     ) {
         Column(
@@ -5775,6 +6028,14 @@ private fun buildEntryInputAttachments(entrySource: String?): List<AiChatInputAt
         }
 
         else -> emptyList()
+    }
+}
+
+private fun defaultMcpCapabilityIds(entrySource: String?): List<String> {
+    return if (entrySource == AiChatActivity.ENTRY_BOOKSHELF) {
+        McpInternalToolCatalog.allCapabilityIds
+    } else {
+        emptyList()
     }
 }
 
