@@ -97,6 +97,7 @@ class AiChatClient {
         var lastFinishReason: String? = null
         val contextCompactions = mutableListOf<AiChatCompactionRecord>()
         val memoryTrace = mutableListOf<AiMemoryTraceItem>()
+        val bookScanReadEvidence = mutableListOf<AiBookScanReadEvidence>()
         var contextOverflowRecoveryAttempted = false
         var tokenCalibration = resolveTokenCalibration(
             messages = requestMessages,
@@ -167,6 +168,19 @@ class AiChatClient {
             val content = completion.content
             val toolCalls = completion.toolCalls
             if (toolCalls.size() == 0) {
+                saveBookScanDeltas(
+                    content = content,
+                    evidence = bookScanReadEvidence,
+                    memoryTrace = memoryTrace
+                )
+                onStreamUpdate(
+                    AiChatStreamUpdate(
+                        content = content,
+                        reasoning = lastReasoning,
+                        toolTrace = toolTrace.toList(),
+                        memoryTrace = memoryTrace.toList()
+                    )
+                )
                 requestMessages.add(uploadAssistantMessage(content, lastReasoning))
                 tokenCalibration = calibrationAfterModelResponse(
                     usage = completion.usage,
@@ -222,6 +236,19 @@ class AiChatClient {
                     arguments = arguments
                 )
             }
+            saveBookScanDeltas(
+                content = content,
+                evidence = bookScanReadEvidence,
+                memoryTrace = memoryTrace
+            )
+            onStreamUpdate(
+                AiChatStreamUpdate(
+                    content = content,
+                    reasoning = lastReasoning,
+                    toolTrace = toolTrace.toList(),
+                    memoryTrace = memoryTrace.toList()
+                )
+            )
             val writeToolCalls = if (AiConfig.operationPermissionMode.requiresWriteConfirmation) {
                 parsedToolCalls.filter { it.toolName.isWriteTool(it.arguments) }
             } else {
@@ -262,6 +289,8 @@ class AiChatClient {
                 )
                 result.toCharacterApplyMemoryContext(call.toolName)
                     ?.let { characterMemoryContexts += it }
+                AiBookScanMemory.readEvidence(call.toolName, call.arguments, result)
+                    ?.let { bookScanReadEvidence += it }
                 requestMessages.add(JsonObject().apply {
                     addProperty("role", "tool")
                     addProperty("tool_call_id", call.callId)
@@ -842,6 +871,29 @@ class AiChatClient {
             memoryTrace += finalTrace
         }
         onStreamUpdate()
+    }
+
+    private fun saveBookScanDeltas(
+        content: String,
+        evidence: Collection<AiBookScanReadEvidence>,
+        memoryTrace: MutableList<AiMemoryTraceItem>
+    ) {
+        val results = AiBookScanMemory.saveDeltas(content, evidence)
+        results.forEach { result ->
+            memoryTrace += AiMemoryTraceItem(
+                status = AiMemoryTraceItem.STATUS_SAVED,
+                title = "已保存扫书进度",
+                detail = buildString {
+                    append(result.subject)
+                    append("：新增 ${result.savedChapterCount} 章")
+                    if (result.totalChapterCount > 0) {
+                        append("，累计 ${result.coveredChapterCount}/${result.totalChapterCount} 章")
+                    }
+                    if (result.eventCount > 0) append("，记录 ${result.eventCount} 个事件")
+                    result.warnings.firstOrNull()?.let { append("；$it") }
+                }
+            )
+        }
     }
 
     private suspend fun generateCharacterApplyMemory(

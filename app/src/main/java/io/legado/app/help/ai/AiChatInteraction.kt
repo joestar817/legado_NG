@@ -42,10 +42,10 @@ object AiChatInteractionParser {
         pattern = """(?s)```[ \t]*legado-interaction[^\r\n]*\r?\n(.*?)\r?\n```"""
     )
     private val hiddenBlockRegex = Regex(
-        pattern = """(?s)```[ \t]*(?:legado-character-scan|character_scan_meta)[^\r\n]*\r?\n.*?\r?\n```"""
+        pattern = """(?s)```[ \t]*(?:legado-character-scan|character_scan_meta|legado-book-scan|book_scan_delta)[^\r\n]*\r?\n.*?\r?\n```"""
     )
     private val partialHiddenBlockRegex = Regex(
-        pattern = """(?s)```[ \t]*(?:legado-character-scan|character_scan_meta)[^\r\n]*(?:\r?\n.*)?$"""
+        pattern = """(?s)```[ \t]*(?:legado-character-scan|character_scan_meta|legado-book-scan|book_scan_delta)[^\r\n]*(?:\r?\n.*)?$"""
     )
     private val partialBlockRegex = Regex(
         pattern = """(?s)```[ \t]*legado-interaction[^\r\n]*(?:\r?\n.*)?$"""

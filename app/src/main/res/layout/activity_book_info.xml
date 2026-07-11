@@ -397,6 +397,65 @@
                     </LinearLayout>
 
                     <LinearLayout
+                        android:id="@+id/ll_book_scan"
+                        style="@style/Ng.SettingsGroup"
+                        android:layout_marginTop="@dimen/ng_space_m"
+                        android:background="@drawable/ng_bg_book_detail_card"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:foreground="?attr/selectableItemBackground"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="@dimen/ng_space_l"
+                        android:paddingTop="@dimen/ng_space_m"
+                        android:paddingEnd="@dimen/ng_space_l"
+                        android:paddingBottom="@dimen/ng_space_m">
+
+                        <ImageView
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:contentDescription="@string/book_scan"
+                            android:padding="3dp"
+                            android:src="@drawable/ic_ai"
+                            app:tint="@color/tv_text_summary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/ng_space_m"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:includeFontPadding="false"
+                                android:text="@string/book_scan"
+                                android:textColor="@color/primaryText"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:includeFontPadding="false"
+                                android:text="@string/book_scan_summary"
+                                android:textColor="@color/tv_text_summary"
+                                android:textSize="12sp" />
+
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:contentDescription="@string/book_scan"
+                            android:src="@drawable/ic_chevron_right_20"
+                            app:tint="@color/tv_text_summary" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
                         android:id="@+id/ll_characters"
                         style="@style/Ng.SettingsGroup"
                         android:layout_marginTop="@dimen/ng_space_m"

@@ -687,6 +687,9 @@ class BookInfoActivity :
         upTvBookshelf()
         upKinds(book)
         upGroup(book.group)
+        llBookScan.setOnClickListener {
+            openBookScanAiAssistant(book)
+        }
         observeCharacterPreview(book)
         viewModel.prepareOtherWorks(book)
         upCacheProgress(book)
@@ -961,9 +964,34 @@ class BookInfoActivity :
             )
         )
         startActivity<AiChatActivity> {
+            putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_DETAIL)
             putStringArrayListExtra(
                 AiChatActivity.EXTRA_LOADED_SKILL_IDS,
                 arrayListOf(AiSkillRegistry.SKILL_CHARACTER_CARD_GENERATE)
+            )
+            putStringArrayListExtra(
+                AiChatActivity.EXTRA_CONTEXT_ATTACHMENTS,
+                arrayListOf(contextAttachment)
+            )
+            putExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, true)
+        }
+    }
+
+    private fun openBookScanAiAssistant(book: Book) {
+        val workKey = BookCharacterProfile.workKey(book.name, book.author)
+        val contextAttachment = GSON.toJson(
+            mapOf(
+                "id" to "book_detail_book_scan",
+                "title" to "AI 扫书：${book.name}",
+                "subtitle" to book.getRealAuthor(),
+                "prompt" to buildBookDetailAiContextPrompt(book, workKey)
+            )
+        )
+        startActivity<AiChatActivity> {
+            putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_DETAIL)
+            putStringArrayListExtra(
+                AiChatActivity.EXTRA_LOADED_SKILL_IDS,
+                arrayListOf(AiSkillRegistry.SKILL_BOOK_SCAN)
             )
             putStringArrayListExtra(
                 AiChatActivity.EXTRA_CONTEXT_ATTACHMENTS,

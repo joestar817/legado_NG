@@ -252,6 +252,7 @@ class AiChatActivity : AppCompatActivity() {
         const val EXTRA_CONTEXT_ATTACHMENTS = "context_attachments"
         const val EXTRA_EXPAND_SUGGESTIONS = "expand_suggestions"
         const val ENTRY_BOOKSHELF = "bookshelf"
+        const val ENTRY_BOOK_DETAIL = "book_detail"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -6032,10 +6033,16 @@ private fun buildEntryInputAttachments(entrySource: String?): List<AiChatInputAt
 }
 
 private fun defaultMcpCapabilityIds(entrySource: String?): List<String> {
-    return if (entrySource == AiChatActivity.ENTRY_BOOKSHELF) {
-        McpInternalToolCatalog.allCapabilityIds
-    } else {
-        emptyList()
+    return when (entrySource) {
+        AiChatActivity.ENTRY_BOOKSHELF -> McpInternalToolCatalog.allCapabilityIds
+        AiChatActivity.ENTRY_BOOK_DETAIL -> listOf(
+            "bookshelf.query",
+            "bookshelf.read_content",
+            "bookshelf.manage_cache",
+            "bookshelf.manage_characters",
+            "ai.memory"
+        )
+        else -> emptyList()
     }
 }
 
