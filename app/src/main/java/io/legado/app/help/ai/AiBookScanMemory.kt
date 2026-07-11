@@ -12,6 +12,9 @@ import java.security.MessageDigest
 internal data class AiBookScanReadEvidence(
     val workKey: String,
     val subject: String,
+    val bookName: String,
+    val author: String,
+    val totalChapterCount: Int,
     val fullyReadChapterIndexes: Set<Int>
 )
 
@@ -245,12 +248,21 @@ internal object AiBookScanMemory {
             book.stringValue("name")?.trim()?.takeIf { it.isNotEmpty() },
             book.stringValue("author")?.trim()?.takeIf { it.isNotEmpty() }
         ).joinToString(" / ").ifBlank { workKey.replace('\n', ' ') }
-        return AiBookScanReadEvidence(workKey, subject, indexes.toSet())
+        return AiBookScanReadEvidence(
+            workKey = workKey,
+            subject = subject,
+            bookName = book.stringValue("name").orEmpty().trim(),
+            author = book.stringValue("author").orEmpty().trim(),
+            totalChapterCount = book.intValue("total_chapter_num") ?: 0,
+            fullyReadChapterIndexes = indexes.toSet()
+        )
     }
 
     fun saveDeltas(
         content: String,
-        evidence: Collection<AiBookScanReadEvidence>
+        evidence: Collection<AiBookScanReadEvidence>,
+        allowCoverageFallback: Boolean = false,
+        fallbackContent: String = content
     ): List<AiBookScanSaveResult> {
         if (!AiConfig.memoryEnabled) return emptyList()
         val deltas = deltaBlockRegex.findAll(content).mapNotNull { match ->
@@ -260,16 +272,82 @@ internal object AiBookScanMemory {
                 GSON.fromJson(payload, AiBookScanDelta::class.java)
             }.getOrNull()
         }.toList()
-        if (deltas.isEmpty()) return emptyList()
         val evidenceByWork = evidence.groupBy { it.workKey }.mapValues { (_, items) ->
             AiBookScanReadEvidence(
                 workKey = items.first().workKey,
                 subject = items.first().subject,
+                bookName = items.firstNotNullOfOrNull { it.bookName.takeIf(String::isNotBlank) }.orEmpty(),
+                author = items.firstNotNullOfOrNull { it.author.takeIf(String::isNotBlank) }.orEmpty(),
+                totalChapterCount = items.maxOfOrNull { it.totalChapterCount } ?: 0,
                 fullyReadChapterIndexes = items.flatMapTo(linkedSetOf()) { it.fullyReadChapterIndexes }
             )
         }
-        return deltas.mapNotNull { delta ->
+        val results = deltas.mapNotNullTo(mutableListOf()) { delta ->
             saveDelta(delta, evidenceByWork[delta.workKey])
+        }
+        if (allowCoverageFallback) {
+            val visibleReport = AiChatInteractionParser.parse(fallbackContent).content.trim()
+            evidenceByWork.values.forEach { readEvidence ->
+                val scopeHash = readEvidence.workKey.sha256(20)
+                val oldManifest = appDb.agentMemoryDao.get("book_scan:manifest:$scopeHash")
+                    ?.dataJson
+                    ?.let { json ->
+                        runCatching { GSON.fromJson(json, AiBookScanManifest::class.java) }.getOrNull()
+                    }
+                val uncovered = readEvidence.fullyReadChapterIndexes
+                    .filterNot { it in oldManifest?.coverage?.fullyReadChapters.orEmpty() }
+                    .sorted()
+                if (uncovered.isEmpty()) return@forEach
+                saveDelta(
+                    delta = fallbackDelta(
+                        content = visibleReport,
+                        evidence = readEvidence,
+                        observedChapters = uncovered,
+                        oldManifest = oldManifest
+                    ),
+                    evidence = readEvidence
+                )?.let(results::add)
+            }
+        }
+        return results
+    }
+
+    internal fun fallbackDelta(
+        content: String,
+        evidence: AiBookScanReadEvidence,
+        observedChapters: List<Int> = evidence.fullyReadChapterIndexes.sorted(),
+        oldManifest: AiBookScanManifest? = null
+    ): AiBookScanDelta {
+        val summary = AiChatInteractionParser.parse(content).content
+            .trim()
+            .take(MAX_FALLBACK_SUMMARY_CHARS)
+        return AiBookScanDelta(
+            schemaVersion = AiBookScanManifest.SCHEMA_VERSION,
+            workKey = evidence.workKey,
+            bookName = evidence.bookName,
+            author = evidence.author,
+            totalChapters = maxOf(
+                evidence.totalChapterCount,
+                oldManifest?.totalChapters ?: 0,
+                (evidence.fullyReadChapterIndexes.maxOrNull() ?: -1) + 1
+            ),
+            bookStatus = inferFallbackBookStatus(summary, oldManifest?.bookStatus),
+            scanStage = if (oldManifest == null) "orientation" else "full_scan",
+            observedChapters = observedChapters,
+            batchSummary = summary,
+            unresolved = listOf(
+                "本轮模型未提供覆盖这些章节的结构化 book_scan_delta；App 已保存经 MCP 校验的章节覆盖和可见扫描报告。"
+            )
+        )
+    }
+
+    private fun inferFallbackBookStatus(summary: String, oldStatus: String?): String {
+        return when {
+            summary.contains("已完结") && listOf("大结局", "完结感言", "全书完")
+                .any(summary::contains) -> "completed"
+            summary.contains("连载中") -> "ongoing"
+            oldStatus in allowedBookStatuses -> oldStatus.orEmpty()
+            else -> "unknown"
         }
     }
 
@@ -297,7 +375,7 @@ internal object AiBookScanMemory {
             runCatching { GSON.fromJson(json, AiBookScanManifest::class.java) }.getOrNull()
         }
         val totalChapters = maxOf(delta.totalChapters, oldManifest?.totalChapters ?: 0)
-        val bookStatus = delta.bookStatus.takeIf { it in allowedBookStatuses }
+        val bookStatus = delta.bookStatus.takeIf { it in allowedBookStatuses && it != "unknown" }
             ?: oldManifest?.bookStatus?.takeIf { it in allowedBookStatuses }
             ?: "unknown"
         val allCovered = buildSet {
@@ -529,7 +607,7 @@ internal object AiBookScanMemory {
             workKey = delta.workKey,
             scanStage = delta.scanStage,
             fullyReadChapters = verified,
-            batchSummary = delta.batchSummary.trim().take(1200),
+            batchSummary = delta.batchSummary.trim().take(MAX_FALLBACK_SUMMARY_CHARS),
             dimensionSignals = delta.dimensionSignals.filter { it.dimension in allowedDimensions },
             eventKeys = events.map { it.eventKey },
             unresolved = delta.unresolved.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(50),
@@ -617,4 +695,6 @@ internal object AiBookScanMemory {
             .joinToString("") { "%02x".format(it) }
             .take(length)
     }
+
+    private const val MAX_FALLBACK_SUMMARY_CHARS = 6000
 }

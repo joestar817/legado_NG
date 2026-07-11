@@ -253,6 +253,7 @@ class AiChatActivity : AppCompatActivity() {
         const val EXTRA_EXPAND_SUGGESTIONS = "expand_suggestions"
         const val ENTRY_BOOKSHELF = "bookshelf"
         const val ENTRY_BOOK_DETAIL = "book_detail"
+        const val ENTRY_BOOK_SCAN = "book_scan"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -6041,6 +6042,12 @@ private fun defaultMcpCapabilityIds(entrySource: String?): List<String> {
             "bookshelf.manage_cache",
             "bookshelf.manage_characters",
             "ai.memory"
+        )
+        AiChatActivity.ENTRY_BOOK_SCAN -> listOf(
+            "bookshelf.query",
+            "bookshelf.read_content",
+            "bookshelf.cache_status",
+            "ai.memory_read"
         )
         else -> emptyList()
     }

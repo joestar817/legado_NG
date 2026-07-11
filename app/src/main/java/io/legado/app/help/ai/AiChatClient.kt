@@ -98,6 +98,11 @@ class AiChatClient {
         val contextCompactions = mutableListOf<AiChatCompactionRecord>()
         val memoryTrace = mutableListOf<AiMemoryTraceItem>()
         val bookScanReadEvidence = mutableListOf<AiBookScanReadEvidence>()
+        val bookScanSkillActive = requestMessages.any { message ->
+            message.stringOrNull("role") == "system" &&
+                message.stringOrNull("content").orEmpty().contains("Skill：AI 扫书")
+        }
+        var bookScanBestVisibleContent = ""
         var contextOverflowRecoveryAttempted = false
         var tokenCalibration = resolveTokenCalibration(
             messages = requestMessages,
@@ -167,11 +172,19 @@ class AiChatClient {
             val message = completion.message
             val content = completion.content
             val toolCalls = completion.toolCalls
+            if (bookScanSkillActive) {
+                val visibleContent = AiChatInteractionParser.parse(content).content.trim()
+                if (visibleContent.length > bookScanBestVisibleContent.length) {
+                    bookScanBestVisibleContent = visibleContent
+                }
+            }
             if (toolCalls.size() == 0) {
                 saveBookScanDeltas(
                     content = content,
                     evidence = bookScanReadEvidence,
-                    memoryTrace = memoryTrace
+                    memoryTrace = memoryTrace,
+                    allowCoverageFallback = bookScanSkillActive,
+                    fallbackContent = bookScanBestVisibleContent.ifBlank { content }
                 )
                 onStreamUpdate(
                     AiChatStreamUpdate(
@@ -189,6 +202,11 @@ class AiChatClient {
                     providerId = selection.providerId,
                     modelId = model.id
                 ) ?: tokenCalibration
+                val contextMessages = if (bookScanSkillActive) {
+                    AiBookScanContext.pruneAfterTurn(requestMessages)
+                } else {
+                    requestMessages.map { it.deepCopy().asJsonObject }
+                }
                 return AiChatTurnResult(
                     content = content,
                     reasoning = lastReasoning,
@@ -199,14 +217,14 @@ class AiChatClient {
                     memoryTrace = memoryTrace.toList(),
                     warnings = warnings,
                     contextUsage = AiChatContextManager.usage(
-                        requestMessages,
+                        contextMessages,
                         tools,
-                        tokenCalibration
+                        tokenCalibration.takeUnless { bookScanSkillActive }
                     ),
-                    contextCalibration = tokenCalibration,
+                    contextCalibration = tokenCalibration.takeUnless { bookScanSkillActive },
                     compactionCount = contextCompactions.size,
                     contextCompactions = contextCompactions.toList(),
-                    contextMessages = requestMessages.map { it.deepCopy().asJsonObject }
+                    contextMessages = contextMessages
                 )
             }
             requestMessages.add(message.deepCopy().asJsonObject.apply {
@@ -239,7 +257,9 @@ class AiChatClient {
             saveBookScanDeltas(
                 content = content,
                 evidence = bookScanReadEvidence,
-                memoryTrace = memoryTrace
+                memoryTrace = memoryTrace,
+                allowCoverageFallback = false,
+                fallbackContent = content
             )
             onStreamUpdate(
                 AiChatStreamUpdate(
@@ -876,9 +896,16 @@ class AiChatClient {
     private fun saveBookScanDeltas(
         content: String,
         evidence: Collection<AiBookScanReadEvidence>,
-        memoryTrace: MutableList<AiMemoryTraceItem>
+        memoryTrace: MutableList<AiMemoryTraceItem>,
+        allowCoverageFallback: Boolean,
+        fallbackContent: String
     ) {
-        val results = AiBookScanMemory.saveDeltas(content, evidence)
+        val results = AiBookScanMemory.saveDeltas(
+            content = content,
+            evidence = evidence,
+            allowCoverageFallback = allowCoverageFallback,
+            fallbackContent = fallbackContent
+        )
         results.forEach { result ->
             memoryTrace += AiMemoryTraceItem(
                 status = AiMemoryTraceItem.STATUS_SAVED,

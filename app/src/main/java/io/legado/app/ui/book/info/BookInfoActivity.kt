@@ -988,7 +988,7 @@ class BookInfoActivity :
             )
         )
         startActivity<AiChatActivity> {
-            putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_DETAIL)
+            putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_SCAN)
             putStringArrayListExtra(
                 AiChatActivity.EXTRA_LOADED_SKILL_IDS,
                 arrayListOf(AiSkillRegistry.SKILL_BOOK_SCAN)

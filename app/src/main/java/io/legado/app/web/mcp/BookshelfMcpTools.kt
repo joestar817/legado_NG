@@ -896,10 +896,11 @@ object BookshelfMcpTools {
             ?: return notFound("native://bookshelf/chapterContent", "未找到章节，请检查 chapter_index")
         val rawContent = BookHelp.getContent(book, chapter)
         val hasContent = rawContent != null
-        val fullText = if (rawContent != null && includeTitle) {
-            chapter.title + "\n" + rawContent
+        val modelContent = rawContent?.let(McpTextSanitizer::forModel)
+        val fullText = if (modelContent != null && includeTitle) {
+            chapter.title + "\n" + modelContent
         } else {
-            rawContent
+            modelContent
         }
         val limited = fullText.limitText(charLimit)
         return toolResult(
@@ -911,6 +912,9 @@ object BookshelfMcpTools {
                 "has_content" to hasContent,
                 "content" to limited.text,
                 "content_chars" to (fullText?.length ?: 0),
+                "raw_content_chars" to (rawContent?.length ?: 0),
+                "removed_non_text_chars" to maxOf(0, (rawContent?.length ?: 0) - (modelContent?.length ?: 0)),
+                "sanitized_for_ai" to true,
                 "truncated_by_mcp" to limited.truncated
             ),
             warnings = if (hasContent) {
@@ -933,17 +937,18 @@ object BookshelfMcpTools {
         val chapters = appDb.bookChapterDao.getChapterList(
             book.bookUrl,
             start.coerceAtLeast(0),
-            start.coerceAtLeast(0) + chapterCount
+            mcpInclusiveChapterEnd(start, chapterCount)
         )
         var remaining = charLimit
         val items = mutableListOf<Map<String, Any?>>()
         val textParts = mutableListOf<String>()
         chapters.forEach { chapter ->
-            val content = BookHelp.getContent(book, chapter)
-            val block = if (content == null) {
+            val rawContent = BookHelp.getContent(book, chapter)
+            val modelContent = rawContent?.let(McpTextSanitizer::forModel)
+            val block = if (modelContent == null) {
                 null
             } else {
-                chapter.title + "\n" + content
+                chapter.title + "\n" + modelContent
             }
             val limited = block.limitText(remaining)
             if (limited.text != null) {
@@ -954,8 +959,13 @@ object BookshelfMcpTools {
                 mapOf(
                     "index" to chapter.index,
                     "title" to chapter.title,
-                    "has_content" to (content != null),
+                    "has_content" to (rawContent != null),
                     "content_chars" to (block?.length ?: 0),
+                    "raw_content_chars" to (rawContent?.length ?: 0),
+                    "removed_non_text_chars" to maxOf(
+                        0,
+                        (rawContent?.length ?: 0) - (modelContent?.length ?: 0)
+                    ),
                     "included_chars" to (limited.text?.length ?: 0),
                     "truncated_by_mcp" to limited.truncated
                 )
@@ -973,7 +983,8 @@ object BookshelfMcpTools {
                 "missing_chapter_indexes" to missing,
                 "text" to textParts.joinToString("\n\n"),
                 "char_limit" to charLimit,
-                "truncated_by_mcp" to chapters.any { BookHelp.getContent(book, it)?.length ?: 0 > charLimit }
+                "sanitized_for_ai" to true,
+                "truncated_by_mcp" to items.any { it["truncated_by_mcp"] == true }
             ),
             warnings = if (missing.isEmpty()) {
                 emptyList()

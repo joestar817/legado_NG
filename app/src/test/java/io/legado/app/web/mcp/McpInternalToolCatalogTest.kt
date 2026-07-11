@@ -32,6 +32,20 @@ class McpInternalToolCatalogTest {
         assertTrue(McpInternalToolCatalog.resolveToolNames(listOf("missing")).isEmpty())
     }
 
+    @Test
+    fun bookScanReadCapabilitiesDoNotExposeMemoryOrCacheWrites() {
+        val tools = McpInternalToolCatalog.resolveToolNames(
+            listOf("bookshelf.cache_status", "ai.memory_read")
+        )
+
+        assertTrue("bookshelf_cache_status_get" in tools)
+        assertTrue("agent_memory_status_get" in tools)
+        assertTrue("agent_memory_search" in tools)
+        assertFalse("bookshelf_cache_download" in tools)
+        assertFalse("agent_memory_upsert" in tools)
+        assertFalse("agent_memory_archive" in tools)
+    }
+
     companion object {
         private val EXPECTED_TOOL_NAMES = setOf(
             "legado_ping",

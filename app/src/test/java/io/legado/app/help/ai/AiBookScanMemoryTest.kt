@@ -23,6 +23,7 @@ class AiBookScanMemoryTest {
                         addProperty("work_key", "测试书\n作者")
                         addProperty("name", "测试书")
                         addProperty("author", "作者")
+                        addProperty("total_chapter_num", 100)
                     })
                     add("chapters", JsonArray().apply {
                         add(chapter(10, contentChars = 1200, includedChars = 1200, truncated = false))
@@ -40,7 +41,39 @@ class AiBookScanMemoryTest {
         )
 
         assertEquals("测试书\n作者", evidence?.workKey)
+        assertEquals("测试书", evidence?.bookName)
+        assertEquals("作者", evidence?.author)
+        assertEquals(100, evidence?.totalChapterCount)
         assertEquals(setOf(10), evidence?.fullyReadChapterIndexes)
+    }
+
+    @Test
+    fun fallbackDeltaKeepsVerifiedCoverageAndVisibleReport() {
+        val evidence = AiBookScanReadEvidence(
+            workKey = "测试书\n作者",
+            subject = "测试书 / 作者",
+            bookName = "测试书",
+            author = "作者",
+            totalChapterCount = 100,
+            fullyReadChapterIndexes = setOf(0, 1, 98, 99)
+        )
+        val content = """
+            初扫判断：后宫、已完结、HE，有明确大结局。
+
+            ```legado-interaction
+            {"version":1,"id":"next","type":"actions","title":"继续"}
+            ```
+        """.trimIndent()
+
+        val delta = AiBookScanMemory.fallbackDelta(content, evidence)
+
+        assertEquals("orientation", delta.scanStage)
+        assertEquals(100, delta.totalChapters)
+        assertEquals("completed", delta.bookStatus)
+        assertEquals(listOf(0, 1, 98, 99), delta.observedChapters)
+        assertTrue(delta.batchSummary.contains("后宫、已完结、HE"))
+        assertFalse(delta.batchSummary.contains("legado-interaction"))
+        assertTrue(delta.unresolved.single().contains("MCP 校验"))
     }
 
     @Test

@@ -101,6 +101,12 @@ object McpInternalToolCatalog {
                 "bookshelf_chapter_content_get",
                 "bookshelf_text_window_get"
             ),
+            capability(
+                id = "bookshelf.cache_status",
+                title = "查询章节缓存",
+                description = "只读查询章节正文是否已经缓存",
+                "bookshelf_cache_status_get"
+            ),
             writeCapability(
                 id = "bookshelf.manage_cache",
                 title = "管理章节缓存",
@@ -203,6 +209,13 @@ object McpInternalToolCatalog {
         module(
             id = "ai",
             title = "AI 数据",
+            capability(
+                id = "ai.memory_read",
+                title = "查询 AI 记忆",
+                description = "只读检查和检索 AI 记忆",
+                "agent_memory_status_get",
+                "agent_memory_search"
+            ),
             capability(
                 id = "ai.chat_history",
                 title = "查询 AI 聊天历史",
