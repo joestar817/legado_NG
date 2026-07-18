@@ -35,6 +35,11 @@ class TtsWebSocketProtocolTest {
                 "idleTimeout": 5,
                 "finishGrace": 300,
                 "maxAudioBytes": 1024,
+                "pcm": {
+                  "sampleRate": 24000,
+                  "channels": 1,
+                  "bitsPerSample": 16
+                },
                 "textRules": [
                   {
                     "matchPath": "event",
@@ -60,6 +65,7 @@ class TtsWebSocketProtocolTest {
         assertEquals(5, config.idleTimeoutSeconds)
         assertEquals(300, config.finishGraceMillis)
         assertEquals(1024, config.maxAudioBytes)
+        assertEquals(24000, config.pcm?.sampleRate)
         assertEquals(1, config.textRules.size)
     }
 

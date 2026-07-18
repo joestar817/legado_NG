@@ -83,7 +83,8 @@ object TtsScriptEngineClient {
         speed: Int = engine.effectiveSpeed(),
         volume: Int = engine.effectiveVolume(),
         pitch: Int = engine.effectivePitch(),
-        coroutineContext: CoroutineContext = EmptyCoroutineContext
+        coroutineContext: CoroutineContext = EmptyCoroutineContext,
+        streaming: Boolean = false
     ): Response {
         val voice = TtsEngineStore.voice(engine.id, voiceId)
             ?: engine.effectiveVoices().firstOrNull { it.id == voiceId }
@@ -114,7 +115,8 @@ object TtsScriptEngineClient {
             pitch = pitch,
             voiceId = voice?.id ?: voiceId,
             voiceName = voice?.name,
-            coroutineContext = coroutineContext
+            coroutineContext = coroutineContext,
+            streaming = streaming
         )
     }
 
@@ -127,7 +129,8 @@ object TtsScriptEngineClient {
         pitch: Int,
         voiceId: String?,
         voiceName: String?,
-        coroutineContext: CoroutineContext
+        coroutineContext: CoroutineContext,
+        streaming: Boolean
     ): Response {
         val attempts = request.retry.coerceIn(0, 3) + 1
         var lastError: Throwable? = null
@@ -142,7 +145,8 @@ object TtsScriptEngineClient {
                     pitch = pitch,
                     voiceId = voiceId,
                     voiceName = voiceName,
-                    coroutineContext = coroutineContext
+                    coroutineContext = coroutineContext,
+                    streaming = streaming
                 )
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
@@ -161,14 +165,23 @@ object TtsScriptEngineClient {
         pitch: Int,
         voiceId: String?,
         voiceName: String?,
-        coroutineContext: CoroutineContext
+        coroutineContext: CoroutineContext,
+        streaming: Boolean
     ): Response {
         if (request.isWebSocket) {
-            return TtsWebSocketEngineClient.execute(
-                engine = engine,
-                request = request,
-                coroutineContext = coroutineContext
-            )
+            return if (streaming) {
+                TtsWebSocketEngineClient.executeStreaming(
+                    engine = engine,
+                    request = request,
+                    coroutineContext = coroutineContext
+                )
+            } else {
+                TtsWebSocketEngineClient.execute(
+                    engine = engine,
+                    request = request,
+                    coroutineContext = coroutineContext
+                )
+            }
         }
         val analyzeUrl = AnalyzeUrl(
             request.toAnalyzeUrlRule(),
@@ -183,8 +196,30 @@ object TtsScriptEngineClient {
             coroutineContext = coroutineContext
         )
         val response = analyzeUrl.getResponseAwait()
+        if (request.isSse && response.isSuccessful) {
+            val transformed = TtsSseEngineClient.transform(response, request)
+            if (streaming) return transformed
+            return transformed.use {
+                val contentType = it.body.contentType()
+                val bytes = it.body.bytes()
+                it.newBuilder()
+                    .body(bytes.toResponseBody(contentType))
+                    .build()
+            }
+        }
         return if (request.isJsonResponse) {
-            response.toAudioResponse(request, engine, text, speed, volume, pitch, voiceId, voiceName, coroutineContext)
+            response.toAudioResponse(
+                request,
+                engine,
+                text,
+                speed,
+                volume,
+                pitch,
+                voiceId,
+                voiceName,
+                coroutineContext,
+                streaming
+            )
         } else {
             response
         }
@@ -208,7 +243,8 @@ object TtsScriptEngineClient {
             speed = speed,
             volume = volume,
             pitch = pitch,
-            coroutineContext = coroutineContext
+            coroutineContext = coroutineContext,
+            streaming = true
         ).body.byteStream()
     }
 
@@ -337,15 +373,21 @@ object TtsScriptEngineClient {
                 ?: obj.intValue("timeout_seconds"),
             retry = obj.intValue("retry") ?: 0,
             transport = obj.stringValue("transport")
-                ?: if (obj.stringValue("url")?.startsWith("ws", ignoreCase = true) == true) {
-                    "websocket"
-                } else {
-                    "http"
+                ?: when {
+                    obj.stringValue("url")?.startsWith("ws", ignoreCase = true) == true -> {
+                        "websocket"
+                    }
+                    obj.get("stream")?.isJsonObject == true -> "sse"
+                    else -> "http"
                 },
             webSocketConfig = obj.get("websocket")
                 ?.takeIf { it.isJsonObject }
                 ?.asJsonObject
-                ?.toWebSocketConfig()
+                ?.toWebSocketConfig(),
+            sseConfig = obj.get("stream")
+                ?.takeIf { it.isJsonObject }
+                ?.asJsonObject
+                ?.toSseConfig()
         )
     }
 
@@ -381,7 +423,42 @@ object TtsScriptEngineClient {
             firstAudioTimeoutSeconds = intValue("firstAudioTimeout") ?: 15,
             idleTimeoutSeconds = intValue("idleTimeout") ?: 15,
             finishGraceMillis = intValue("finishGrace") ?: 0,
-            maxAudioBytes = intValue("maxAudioBytes") ?: TtsWebSocketConfig.DEFAULT_MAX_AUDIO_BYTES
+            maxAudioBytes = intValue("maxAudioBytes")
+                ?: TtsWebSocketConfig.DEFAULT_MAX_AUDIO_BYTES,
+            pcm = get("pcm")
+                ?.takeIf { it.isJsonObject }
+                ?.asJsonObject
+                ?.toPcmConfig()
+        )
+    }
+
+    private fun JsonObject.toSseConfig(): TtsSseConfig {
+        return TtsSseConfig(
+            dataPrefix = stringValue("dataPrefix") ?: "data:",
+            doneData = stringValue("doneData") ?: "[DONE]",
+            finishOnEof = booleanValue("finishOnEof") ?: true,
+            textRules = get("textRules")
+                ?.takeIf { it.isJsonArray }
+                ?.asJsonArray
+                ?.mapNotNull { element ->
+                    element.takeIf { it.isJsonObject }?.asJsonObject?.toWebSocketTextRule()
+                }
+                .orEmpty(),
+            maxAudioBytes = intValue("maxAudioBytes")
+                ?: TtsWebSocketConfig.DEFAULT_MAX_AUDIO_BYTES,
+            pcm = get("pcm")
+                ?.takeIf { it.isJsonObject }
+                ?.asJsonObject
+                ?.toPcmConfig()
+        )
+    }
+
+    private fun JsonObject.toPcmConfig(): TtsPcmConfig? {
+        val sampleRate = intValue("sampleRate") ?: intValue("sample_rate") ?: return null
+        return TtsPcmConfig(
+            sampleRate = sampleRate,
+            channels = intValue("channels") ?: 1,
+            bitsPerSample = intValue("bitsPerSample") ?: intValue("bits_per_sample") ?: 16
         )
     }
 
@@ -422,7 +499,8 @@ object TtsScriptEngineClient {
         pitch: Int,
         voiceId: String?,
         voiceName: String?,
-        coroutineContext: CoroutineContext
+        coroutineContext: CoroutineContext,
+        streaming: Boolean
     ): Response {
         val bodyText = body.string()
         val audioValue = extractAudioValue(bodyText, request.audioExtract)
@@ -447,7 +525,8 @@ object TtsScriptEngineClient {
                     pitch = pitch,
                     voiceId = voiceId,
                     voiceName = voiceName,
-                    coroutineContext = coroutineContext
+                    coroutineContext = coroutineContext,
+                    streaming = streaming
                 )
             }
             "base64", "" -> {
@@ -536,7 +615,8 @@ object TtsScriptEngineClient {
         val timeoutSeconds: Int? = null,
         val retry: Int = 0,
         val transport: String = "http",
-        val webSocketConfig: TtsWebSocketConfig? = null
+        val webSocketConfig: TtsWebSocketConfig? = null,
+        val sseConfig: TtsSseConfig? = null
     ) {
         val isJsonResponse: Boolean
             get() = responseType.orEmpty().equals("json", ignoreCase = true)
@@ -548,6 +628,10 @@ object TtsScriptEngineClient {
             get() = transport.equals("websocket", ignoreCase = true) ||
                     url.startsWith("ws://", ignoreCase = true) ||
                     url.startsWith("wss://", ignoreCase = true)
+
+        val isSse: Boolean
+            get() = transport.equals("sse", ignoreCase = true) ||
+                    transport.equals("event-stream", ignoreCase = true)
 
         val timeoutMillis: Long?
             get() = timeoutSeconds

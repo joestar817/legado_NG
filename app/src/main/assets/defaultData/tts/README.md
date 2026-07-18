@@ -52,9 +52,50 @@ App 主动调用的协议函数只有：
 
 其它认证、签名、测试、token 刷新等函数由脚本作者自由定义，并在协议函数内部自行调用。
 
-HTTP 分支接收直接音频响应，或 JSON 中的完整 Base64/音频 URL。Chat Completions SSE、PCM chunk 等增量流式音频仍需要后续新增专用响应类型，不能仅靠 `stream: true` 接入。
+HTTP 分支接收直接音频响应，或 JSON 中的完整 Base64/音频 URL。普通 HTTP body 本身可以随网络读取；Chat Completions SSE 需要使用下方的 `transport: "sse"` 增量解码协议，不能只在请求体里设置 `stream: true`。
 
-## WebSocket 完整音频
+## SSE / Chat Completions PCM 分片
+
+SSE 接口由 `stream` 描述事件格式。下面示例从 OpenAI-compatible Chat Completions 的 `choices[0].delta.audio.data` 提取 Base64 PCM16 分片，并在输出开头自动增加流式 WAV 头，使播放器可以在总长度未知时开始解码：
+
+```json
+{
+  "transport": "sse",
+  "url": "https://example.com/v1/chat/completions",
+  "method": "POST",
+  "headers": { "Authorization": "Bearer ..." },
+  "requestContentType": "application/json",
+  "body": "{\"stream\":true}",
+  "audioContentType": "audio/pcm",
+  "timeout": 60,
+  "stream": {
+    "dataPrefix": "data:",
+    "doneData": "[DONE]",
+    "finishOnEof": true,
+    "maxAudioBytes": 33554432,
+    "pcm": {
+      "sampleRate": 24000,
+      "channels": 1,
+      "bitsPerSample": 16
+    },
+    "textRules": [
+      {
+        "matchPath": "choices[0].delta.audio.data",
+        "audioPath": "choices[0].delta.audio.data",
+        "audioEncoding": "base64"
+      },
+      {
+        "matchPath": "error.message",
+        "errorPath": "error.message"
+      }
+    ]
+  }
+}
+```
+
+`dataPrefix` 默认是标准 SSE 的 `data:`，`doneData` 默认 `[DONE]`。不返回裸 PCM 时可省略 `pcm`，并把 `audioContentType` 设置为实际分片格式，例如 `audio/mpeg`。
+
+## WebSocket 音频
 
 需要多阶段 WebSocket 会话的脚本，可让 `synthesize()` 返回 `transport: "websocket"`，并通过 `websocket` 描述会话：
 
@@ -103,4 +144,4 @@ HTTP 分支接收直接音频响应，或 JSON 中的完整 Base64/音频 URL。
 
 `openMessages` 和 `sendMessages` 中的元素可以是字符串或 JSON 对象；对象会在发送前序列化。`binaryAudio` 表示二进制帧直接作为音频，文本帧中的 Base64 音频使用 `audioPath/audioEncoding` 提取。`finishGrace` 用于接收完成事件之后可能延迟到达的尾部音频帧。
 
-当前 WebSocket 实现会先汇总全部音频帧，再向调用方返回完整音频；它不是边生成边播放的流式输出。SSE、PCM chunk 和 WebSocket 实时播放仍属于后续协议能力。
+SSE 和 WebSocket 音频分片可以通过 V2 的阻塞音频流增量交给调用方；需要完整结果的调用仍会汇总全部分片，以保持缓存、试听和旧调用方兼容。这里描述的是上游 TTS 传输与引擎输出，不决定播放器是否直接消费未完成音频。WebSocket 返回裸 PCM 时，也可以在 `websocket` 内使用与 SSE 相同的 `pcm` 配置。

@@ -5,7 +5,13 @@ import com.google.gson.JsonParser
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.ConcurrentRateLimiter
 import io.legado.app.help.http.okHttpClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Protocol
@@ -20,6 +26,7 @@ import okio.ByteString
 import okio.ByteString.Companion.decodeBase64
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
 
 internal data class TtsWebSocketConfig(
@@ -31,7 +38,8 @@ internal data class TtsWebSocketConfig(
     val firstAudioTimeoutSeconds: Int = 15,
     val idleTimeoutSeconds: Int = 15,
     val finishGraceMillis: Int = 0,
-    val maxAudioBytes: Int = DEFAULT_MAX_AUDIO_BYTES
+    val maxAudioBytes: Int = DEFAULT_MAX_AUDIO_BYTES,
+    val pcm: TtsPcmConfig? = null
 ) {
     companion object {
         const val DEFAULT_MAX_AUDIO_BYTES = 32 * 1024 * 1024
@@ -118,13 +126,83 @@ internal object TtsWebSocketEngineClient {
         ConcurrentRateLimiter(engine).getConcurrentRecord()
         val config = request.webSocketConfig
             ?: throw NoStackTraceException("WebSocket 合成请求缺少 websocket 配置")
-        val protocol = TtsWebSocketProtocol(config)
-        val httpRequest = Request.Builder()
-            .url(request.url)
-            .apply {
-                request.headers.forEach { (name, value) -> header(name, value) }
-            }
+        val httpRequest = request.toHttpRequest()
+        val audio = ByteArrayOutputStream().apply {
+            config.pcm?.wavHeader()?.let(::write)
+        }
+        runSession(
+            request = request,
+            config = config,
+            httpRequest = httpRequest,
+            onAudio = audio::write
+        )
+        Response.Builder()
+            .request(httpRequest)
+            .protocol(Protocol.HTTP_1_1)
+            .code(200)
+            .message("OK")
+            .header("Content-Type", request.streamingContentType(config.pcm))
+            .body(audio.toByteArray().toResponseBody(request.streamingMediaType(config.pcm)))
             .build()
+    }
+
+    suspend fun executeStreaming(
+        engine: TtsEngineSetting,
+        request: TtsScriptEngineClient.TtsScriptRequest,
+        coroutineContext: CoroutineContext
+    ): Response = withContext(coroutineContext) {
+        ConcurrentRateLimiter(engine).getConcurrentRecord()
+        val config = request.webSocketConfig
+            ?: throw NoStackTraceException("WebSocket 合成请求缺少 websocket 配置")
+        val httpRequest = request.toHttpRequest()
+        val webSocketRef = AtomicReference<WebSocket?>()
+        var sessionJob: Job? = null
+        val input = TtsChunkedInputStream(config.pcm?.wavHeader() ?: byteArrayOf()) {
+            webSocketRef.get()?.cancel()
+            sessionJob?.cancel()
+        }
+        val launchedJob = CoroutineScope(Dispatchers.IO).launch {
+            try {
+                runSession(
+                    request = request,
+                    config = config,
+                    httpRequest = httpRequest,
+                    onAudio = input::offer,
+                    onWebSocket = webSocketRef::set
+                )
+                input.finish()
+            } catch (e: Throwable) {
+                input.fail(e)
+                if (e is CancellationException) throw e
+            }
+        }
+        sessionJob = launchedJob
+        val parentJob = currentCoroutineContext()[Job]
+        val parentCompletion = parentJob?.invokeOnCompletion { cause ->
+            if (cause is CancellationException) {
+                input.fail(cause)
+                launchedJob.cancel(cause)
+            }
+        }
+        launchedJob.invokeOnCompletion { parentCompletion?.dispose() }
+        Response.Builder()
+            .request(httpRequest)
+            .protocol(Protocol.HTTP_1_1)
+            .code(200)
+            .message("OK")
+            .header("Content-Type", request.streamingContentType(config.pcm))
+            .body(TtsStreamingResponseBody(request.streamingMediaType(config.pcm), input))
+            .build()
+    }
+
+    private suspend fun runSession(
+        request: TtsScriptEngineClient.TtsScriptRequest,
+        config: TtsWebSocketConfig,
+        httpRequest: Request,
+        onAudio: (ByteArray) -> Unit,
+        onWebSocket: (WebSocket) -> Unit = {}
+    ) {
+        val protocol = TtsWebSocketProtocol(config)
         val client = createWebSocketClient(okHttpClient, config.connectTimeoutSeconds)
         val events = Channel<WebSocketEvent>(Channel.UNLIMITED)
         val listener = object : WebSocketListener() {
@@ -153,7 +231,8 @@ internal object TtsWebSocketEngineClient {
             }
         }
         val webSocket = client.newWebSocket(httpRequest, listener)
-        val audio = ByteArrayOutputStream()
+        onWebSocket(webSocket)
+        var audioBytes = 0L
         var opened = false
         var receivedAudio = false
         var finished = false
@@ -163,10 +242,11 @@ internal object TtsWebSocketEngineClient {
 
         fun appendAudio(bytes: ByteArray) {
             if (bytes.isEmpty()) return
-            if (audio.size().toLong() + bytes.size > config.maxAudioBytes.safeMaxAudioBytes()) {
+            audioBytes += bytes.size
+            if (audioBytes > config.maxAudioBytes.safeMaxAudioBytes()) {
                 throw NoStackTraceException("WebSocket TTS 音频超过大小限制")
             }
-            audio.write(bytes)
+            onAudio(bytes)
             receivedAudio = true
             lastAudioAt = System.nanoTime()
         }
@@ -223,7 +303,7 @@ internal object TtsWebSocketEngineClient {
                     is WebSocketEvent.Text -> finished = processText(event.value)
                     is WebSocketEvent.Binary -> protocol.binaryAudio(event.value)?.let(::appendAudio)
                     is WebSocketEvent.Closed -> {
-                        if (config.finishOnClose && audio.size() > 0) {
+                        if (config.finishOnClose && audioBytes > 0) {
                             finished = true
                         } else {
                             throw NoStackTraceException(
@@ -256,24 +336,30 @@ internal object TtsWebSocketEngineClient {
                     else -> Unit
                 }
             }
-            if (audio.size() == 0) {
+            if (audioBytes == 0L) {
                 throw NoStackTraceException("WebSocket TTS 未返回音频数据")
             }
             webSocket.close(1000, null)
-            Response.Builder()
-                .request(httpRequest)
-                .protocol(Protocol.HTTP_1_1)
-                .code(200)
-                .message("OK")
-                .header("Content-Type", request.audioContentType ?: "application/octet-stream")
-                .body(audio.toByteArray().toResponseBody(request.audioContentType?.toMediaTypeOrNull()))
-                .build()
         } finally {
             webSocket.cancel()
             events.close()
-            audio.close()
         }
     }
+
+    private fun TtsScriptEngineClient.TtsScriptRequest.toHttpRequest(): Request {
+        return Request.Builder()
+            .url(url)
+            .apply { headers.forEach { (name, value) -> header(name, value) } }
+            .build()
+    }
+
+    private fun TtsScriptEngineClient.TtsScriptRequest.streamingContentType(
+        pcm: TtsPcmConfig?
+    ): String = if (pcm != null) "audio/wav" else audioContentType ?: "application/octet-stream"
+
+    private fun TtsScriptEngineClient.TtsScriptRequest.streamingMediaType(
+        pcm: TtsPcmConfig?
+    ) = streamingContentType(pcm).toMediaTypeOrNull()
 
     private const val DEFAULT_TOTAL_TIMEOUT_MILLIS = 60_000L
 
@@ -295,12 +381,6 @@ internal object TtsWebSocketEngineClient {
         return takeIf { it > 0 }?.coerceAtMost(300)?.toLong() ?: defaultValue.toLong()
     }
 
-    private fun Int.safeMaxAudioBytes(): Long {
-        return takeIf { it > 0 }
-            ?.coerceAtMost(128 * 1024 * 1024)
-            ?.toLong()
-            ?: TtsWebSocketConfig.DEFAULT_MAX_AUDIO_BYTES.toLong()
-    }
 }
 
 private sealed interface WebSocketEvent {
