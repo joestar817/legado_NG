@@ -188,7 +188,6 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     private fun bindActions() = binding.run {
         btnClose.setOnClickListener { finish() }
         cardCover.setOnClickListener { openBookInfo() }
-        cardSubtitle.setOnClickListener { openOriginal() }
         actionMore.root.setOnClickListener { showMoreSheet() }
         actionTimer.root.setOnClickListener {
             ReadAloudTimerSheet().show(supportFragmentManager, "readAloudTimer")
