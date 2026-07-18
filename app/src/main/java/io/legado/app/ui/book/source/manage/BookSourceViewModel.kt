@@ -138,15 +138,28 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
 
     fun selectionAutoGroup(sources: List<BookSourcePart>) {
         execute {
+            val sharedBaseUrlGroups = BookSourceAutoGroup.sharedBaseUrlGroups(
+                appDb.bookSourceDao.allPart.map { it.bookSourceUrl }
+            )
             val array = sources.map {
                 val fullSource = appDb.bookSourceDao.getBookSource(it.bookSourceUrl)
-                it.copy(bookSourceGroup = autoGroupNames(it, fullSource))
+                it.copy(
+                    bookSourceGroup = autoGroupNames(
+                        it,
+                        fullSource,
+                        sharedBaseUrlGroups[it.bookSourceUrl]
+                    )
+                )
             }
             appDb.bookSourceDao.upGroup(array)
         }
     }
 
-    private fun autoGroupNames(source: BookSourcePart, fullSource: BookSource?): String {
+    private fun autoGroupNames(
+        source: BookSourcePart,
+        fullSource: BookSource?,
+        sharedBaseUrlGroup: String?
+    ): String {
         val groups = arrayListOf(
             when (source.bookSourceType) {
                 BookSourceType.image -> "漫画"
@@ -156,6 +169,7 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
                 else -> "小说"
             }
         )
+        sharedBaseUrlGroup?.let(groups::add)
         if (source.hasLoginUrl) {
             groups.add("有登录入口")
         }

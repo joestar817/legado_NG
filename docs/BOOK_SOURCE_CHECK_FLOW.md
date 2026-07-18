@@ -139,6 +139,7 @@ flowchart TD
 | `音频` | `bookSourceType == audio` | 类型基础分组。 |
 | `视频` | `bookSourceType == video` | 类型基础分组。 |
 | `其它` | `bookSourceType == file` | 类型基础分组。 |
+| `<base URL>` | 当前已安装的全部书源中，通过阅读现有 URL 拼接与 `NetworkUtils.getBaseUrl()` 取得相同 base URL 的不同完整书源 URL 至少有 2 个 | 路径、查询参数和 `#` 后缀按最终 URL 拼接口径忽略。例如 `http://192.168.11.10:8080#lm` 与 `http://192.168.11.10:8080#icon` 都追加 `http://192.168.11.10:8080` 分组；只修改本次选中的书源。 |
 | `有登录入口` | `loginUrl` 非空 | 只表示书源声明了登录入口，不等同于运行时必须登录。 |
 | `无搜索` | `searchUrl` 为空 | 表示该源不支持搜索规则，可能仍支持发现或直接书籍 URL。 |
 | `有发现` | `exploreUrl` 非空 | 表示该源声明了发现规则。 |
