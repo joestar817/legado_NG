@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="48dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingEnd="4dp">
+
+    <ImageView
+        android:id="@+id/image_expand"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:contentDescription="@null"
+        android:padding="2dp"
+        android:src="@drawable/ic_chevron_right_20"
+        android:tint="@color/ng_on_surface_variant" />
+
+    <ImageView
+        android:id="@+id/image_type"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginStart="6dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_code"
+        android:tint="@color/ng_primary" />
+
+    <TextView
+        android:id="@+id/text_path"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:layout_weight="1"
+        android:ellipsize="middle"
+        android:fontFamily="monospace"
+        android:maxLines="1"
+        android:textColor="@color/ng_on_surface"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/text_size"
+        style="@style/Ng.Summary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:fontFamily="monospace"
+        android:maxLines="1" />
+
+    <ImageView
+        android:id="@+id/button_edit"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="4dp"
+        android:contentDescription="@string/edit"
+        android:padding="9dp"
+        android:src="@drawable/ic_edit"
+        android:tint="@color/ng_on_surface" />
+
+</LinearLayout>

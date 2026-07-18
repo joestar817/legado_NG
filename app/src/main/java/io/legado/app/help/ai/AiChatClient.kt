@@ -54,12 +54,14 @@ class AiChatClient {
         check(setting.enabled) { "AI provider is disabled" }
         check(setting.type == AiProviderType.OPENAI) { "AI 聊天暂只支持 OpenAI 兼容提供商" }
         val model = resolveModel(setting, selection.modelId)
+        val activeSkill = AiChatContextManager.activeSkillSnapshot(messages)
         val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
             loadModelTools(
                 skillId,
                 skillContentHash,
                 availableSkillIds,
-                enabledMcpCapabilityIds
+                enabledMcpCapabilityIds,
+                activeSkill
             )
         } else {
             emptyList()
@@ -148,12 +150,14 @@ class AiChatClient {
         check(setting.type == AiProviderType.OPENAI) { "AI 聊天暂只支持 OpenAI 兼容提供商" }
         val model = resolveModel(setting, selection.modelId)
         val params = AiConfig.assistantChatParams(model.abilities.contains(AiModelAbility.REASONING))
+        val activeSkill = AiChatContextManager.activeSkillSnapshot(messages)
         val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
             loadModelTools(
                 skillId,
                 skillContentHash,
                 availableSkillIds,
-                enabledMcpCapabilityIds
+                enabledMcpCapabilityIds,
+                activeSkill
             )
         } else {
             emptyList()
@@ -614,7 +618,8 @@ class AiChatClient {
                                     availableSkillIds = normalizedAvailableSkillIds(
                                         skillId,
                                         availableSkillIds
-                                    )
+                                    ),
+                                    activeSkill = activeSkill
                                 ) ?: McpInternalChannel.callTool(
                                     call.toolName,
                                     call.arguments,
@@ -1019,12 +1024,14 @@ class AiChatClient {
         val setting = AiProviderStore.provider(selection.providerId)
             ?: error("AI provider not found: ${selection.providerId}")
         val model = resolveModel(setting, selection.modelId)
+        val activeSkill = AiChatContextManager.activeSkillSnapshot(messages)
         val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
             loadModelTools(
                 skillId,
                 skillContentHash,
                 availableSkillIds,
-                enabledMcpCapabilityIds
+                enabledMcpCapabilityIds,
+                activeSkill
             )
         } else {
             emptyList()
@@ -1117,7 +1124,9 @@ class AiChatClient {
         return JsonObject().apply {
             addProperty("model", model.id)
             add("messages", JsonArray().apply {
-                messages.forEach { add(it) }
+                messages.forEach { message ->
+                    add(AiChatContextManager.providerMessage(message))
+                }
             })
             params.temperature?.let { addProperty("temperature", it) }
             params.maxTokens?.let { addProperty("max_tokens", it) }
@@ -1292,14 +1301,16 @@ class AiChatClient {
         skillId: String,
         skillContentHash: String,
         availableSkillIds: Collection<String>,
-        enabledMcpCapabilityIds: Collection<String>
+        enabledMcpCapabilityIds: Collection<String>,
+        activeSkill: AiActiveSkillSnapshot?
     ): List<JsonObject> {
         val normalizedSkillIds = normalizedAvailableSkillIds(skillId, availableSkillIds)
         val definitions = buildList {
             AiAgentSkillTools.toolDefinition(
                 activeSkillId = skillId,
                 contentHash = skillContentHash,
-                availableSkillIds = normalizedSkillIds
+                availableSkillIds = normalizedSkillIds,
+                activeSkill = activeSkill
             )?.let(::add)
             if (AiConfig.internalMcpEnabled) {
                 addAll(McpInternalChannel.listTools(enabledMcpCapabilityIds))

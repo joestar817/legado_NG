@@ -65,11 +65,12 @@ object AiSkillRegistry {
     const val SKILL_BOOK_SCAN_REPORT = "book_scan_report"
     private const val MAX_SKILL_FILE_LENGTH = 512 * 1024
     private const val BUILT_IN_SKILL_ASSET_DIR = "skills"
-    private val SYSTEM_WORKFLOW_IDS = setOf(
+    private val SYSTEM_WORKFLOW_IDS = listOf(
         SKILL_BOOK_SCAN,
         SKILL_BOOK_SCAN_FACTS,
         SKILL_BOOK_SCAN_REPORT
     )
+    private val MANAGEMENT_SYSTEM_WORKFLOW_IDS = listOf(SKILL_BOOK_SCAN)
 
     fun all(): List<AiSkillDefinition> {
         ensureBuiltInSkills()
@@ -80,6 +81,38 @@ object AiSkillRegistry {
 
     fun agentSkills(): List<AiSkillDefinition> {
         return all().filter { it.scope == AiSkillScope.AGENT }
+    }
+
+    fun managementSkills(): List<AiSkillDefinition> {
+        return (all() + MANAGEMENT_SYSTEM_WORKFLOW_IDS.mapNotNull(::systemWorkflow))
+            .distinctBy(AiSkillDefinition::id)
+    }
+
+    fun skillFilePaths(skillId: String): List<String> {
+        val normalizedId = normalizeId(skillId)
+        AiSkillPackageRegistry.systemPackage(normalizedId)?.let { skillPackage ->
+            return skillPackage.resourcePaths.sortedWith(
+                compareBy<String>({ it != "SKILL.md" }, { it })
+            )
+        }
+        return if (get(normalizedId) != null) listOf("SKILL.md") else emptyList()
+    }
+
+    fun readSkillFile(skillId: String, relativePath: String): String {
+        val normalizedId = normalizeId(skillId)
+        AiSkillPackageRegistry.systemPackage(normalizedId)?.let { skillPackage ->
+            return AiSkillPackageRegistry.readRawText(
+                skillId = normalizedId,
+                relativePath = relativePath,
+                expectedContentHash = skillPackage.contentHash
+            ).content
+        }
+        require(relativePath == "SKILL.md") { "单文件 Skill 只包含 SKILL.md" }
+        return requireNotNull(get(normalizedId)) { "Skill 不存在：$normalizedId" }.content
+    }
+
+    fun skillFileSize(skillId: String, relativePath: String): Int {
+        return readSkillFile(skillId, relativePath).toByteArray(Charsets.UTF_8).size
     }
 
     fun get(id: String): AiSkillDefinition? {
@@ -109,6 +142,7 @@ object AiSkillRegistry {
         require(skillId !in SYSTEM_WORKFLOW_IDS) { "System Workflow 不允许在 Skill 管理中编辑" }
         val current = skillId?.let { appDb.aiSkillDao.get(it) }
         require(current != null) { "Skill 不存在" }
+        require(!current.builtIn) { "内置 Skill 只读，不允许编辑" }
         val parsed = parseSkillContent(content)
         require(parsed.id == current.id) { "已绑定功能的 Skill 不能修改 id" }
         validateUniqueSkill(parsed, current.id)
@@ -132,6 +166,7 @@ object AiSkillRegistry {
         val parsed = parseSkillContent(content)
         require(parsed.id !in SYSTEM_WORKFLOW_IDS) { "不能覆盖内置 System Workflow" }
         val current = appDb.aiSkillDao.get(parsed.id)
+        require(current?.builtIn != true) { "内置 Skill 只读，不允许覆盖" }
         validateUniqueSkill(parsed, current?.id)
         if (current != null && !overwriteExisting) {
             throw AiSkillExistsException(current.id, current.name)

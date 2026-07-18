@@ -183,6 +183,7 @@ import io.legado.app.help.ai.AgentModeEntryMemoryState
 import io.legado.app.help.ai.AgentModeRegistry
 import io.legado.app.help.ai.AiChatClient
 import io.legado.app.help.ai.AiActiveSkillSnapshot
+import io.legado.app.help.ai.AiAvailableSkillSnapshot
 import io.legado.app.help.ai.AiChatContextEvent
 import io.legado.app.help.ai.AiChatContextEventType
 import io.legado.app.help.ai.AiChatContextManager
@@ -401,6 +402,7 @@ private data class AiChatInputAttachment(
     val skillContentHash: String = "",
     val skillRuntimeRevision: String = "",
     val availableSkillIds: List<String> = emptyList(),
+    val availableSkills: List<AiAvailableSkillSnapshot> = emptyList(),
     val trustedBuiltIn: Boolean = false
 )
 
@@ -670,7 +672,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     revision = attachment.skillRevision,
                     runtimeRevision = attachment.skillRuntimeRevision,
                     contentHash = attachment.skillContentHash,
-                    runtime = attachment.skillRuntime
+                    runtime = attachment.skillRuntime,
+                    description = attachment.subtitle,
+                    availableSkills = attachment.availableSkills
                 )
             }
         )
@@ -8182,7 +8186,11 @@ private fun buildModeSkillInputAttachments(
                 AiSkillRegistry.systemWorkflow(skillId)?.copy(contentHash = systemSkillSetHash)
             }
         ).map { attachment ->
-            attachment.copy(availableSkillIds = systemSkillIds)
+            attachment.copy(
+                availableSkillIds = systemSkillIds,
+                availableSkills = systemSkillIds.mapNotNull(AiSkillRegistry::systemWorkflow)
+                    .map { skill -> skill.toAvailableSkillSnapshot() }
+            )
         }
 
         mode.allowsUserSkills -> buildSkillInputAttachments(
@@ -8247,6 +8255,9 @@ private fun buildSkillInputAttachments(
                 skillRevision = pinned.revision,
                 skillContentHash = pinned.contentHash,
                 skillRuntimeRevision = pinnedRuntimeRevision,
+                availableSkills = pinned.availableSkills.ifEmpty {
+                    current?.availableSkills.orEmpty()
+                },
                 trustedBuiltIn = isPinnedSkillTrustedBuiltIn(
                     currentTrusted = current?.trustedBuiltIn == true,
                     currentContentHash = current?.skillContentHash.orEmpty(),
@@ -8309,7 +8320,16 @@ private fun toSkillInputAttachment(skill: io.legado.app.help.ai.AiSkillDefinitio
         skillContentHash = skill.contentHash,
         skillRuntimeRevision = buildRuntimeRevisionToken(skill.id, skill.revision, skill.contentHash),
         availableSkillIds = listOf(skill.id),
+        availableSkills = listOf(skill.toAvailableSkillSnapshot()),
         trustedBuiltIn = skill.builtIn && !skill.userModified
+    )
+}
+
+private fun io.legado.app.help.ai.AiSkillDefinition.toAvailableSkillSnapshot(): AiAvailableSkillSnapshot {
+    return AiAvailableSkillSnapshot(
+        id = id,
+        name = name,
+        description = summary
     )
 }
 

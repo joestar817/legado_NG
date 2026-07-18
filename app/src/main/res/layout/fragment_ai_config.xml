@@ -1586,9 +1586,6 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:paddingStart="@dimen/ng_page_padding"
-        android:paddingTop="8dp"
-        android:paddingEnd="@dimen/ng_page_padding"
         android:visibility="gone">
 
         <TextView
@@ -1605,13 +1602,24 @@
             android:maxLines="3"
             android:visibility="gone" />
 
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler_skill_files"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@color/ng_surface_card"
+            android:clipToPadding="false"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp" />
+
         <FrameLayout
             android:id="@+id/layout_prompt_editor_box"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:background="@drawable/ng_bg_dialog_section"
-            android:padding="4dp">
+            android:padding="4dp"
+            android:visibility="gone">
 
             <ScrollView
                 android:id="@+id/scroll_prompt_markdown"

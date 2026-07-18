@@ -168,6 +168,34 @@ class AiChatContextManagerTest {
     }
 
     @Test
+    fun providerMessageExposesCatalogButHidesPinnedSkillBody() {
+        val messages = mutableListOf(message("system", "system prompt"))
+        val secretBody = "这段完整 Skill 正文只能通过工具读取"
+        AiChatContextManager.syncActiveSkill(
+            messages,
+            AiActiveSkillSnapshot(
+                skillId = "book_scan",
+                title = "AI 扫书",
+                description = "分析整本书",
+                prompt = secretBody,
+                contentHash = "hash",
+                availableSkills = listOf(
+                    AiAvailableSkillSnapshot("book_scan", "AI 扫书", "分析整本书"),
+                    AiAvailableSkillSnapshot("book_scan_facts", "事实记录", "记录证据")
+                )
+            )
+        )
+
+        val projected = AiChatContextManager.providerMessage(
+            messages.single(AiChatContextManager::isActiveSkillMessage)
+        ).content()
+
+        assertTrue(projected.contains("use_skill"))
+        assertTrue(projected.contains("book_scan_facts"))
+        assertFalse(projected.contains(secretBody))
+    }
+
+    @Test
     fun compactionRevisionIncrementsAcrossReplacements() {
         val first = AiChatContextManager.buildCompactedHistory(
             messages = listOf(message("system", "system prompt"), message("user", "request")),

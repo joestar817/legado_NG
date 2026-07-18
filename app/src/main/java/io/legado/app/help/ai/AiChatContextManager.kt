@@ -102,6 +102,44 @@ object AiChatContextManager {
             message.contentText().startsWith(ACTIVE_SKILL_PREFIX)
     }
 
+    fun providerMessage(message: JsonObject): JsonObject {
+        if (!isActiveSkillMessage(message)) return message.deepCopy().asJsonObject
+        val snapshot = activeSkillSnapshot(listOf(message))
+            ?: return message.deepCopy().asJsonObject
+        return JsonObject().apply {
+            addProperty("role", "system")
+            addProperty("content", buildAvailableSkillsPrompt(snapshot))
+        }
+    }
+
+    internal fun buildAvailableSkillsPrompt(snapshot: AiActiveSkillSnapshot): String {
+        val available = snapshot.availableSkills.ifEmpty {
+            listOf(
+                AiAvailableSkillSnapshot(
+                    id = snapshot.skillId,
+                    name = snapshot.title.ifBlank { snapshot.skillId },
+                    description = snapshot.description
+                )
+            )
+        }.filter { it.id.isNotBlank() }
+        return buildString {
+            appendLine("**Skills**")
+            appendLine(
+                "You have access to the following skills. Use the `use_skill` tool to load " +
+                    "a skill's instructions when the user's request matches."
+            )
+            appendLine("<available_skills>")
+            available.forEach { skill ->
+                appendLine("  <skill>")
+                appendLine("    <name>${skill.id.escapeXml()}</name>")
+                appendLine("    <title>${skill.name.escapeXml()}</title>")
+                appendLine("    <description>${skill.description.escapeXml()}</description>")
+                appendLine("  </skill>")
+            }
+            append("</available_skills>")
+        }
+    }
+
     fun syncModeEntryContext(
         messages: MutableList<JsonObject>,
         context: AgentModeEntryContext?
@@ -293,12 +331,11 @@ object AiChatContextManager {
                 return@forEach
             }
             if (isActiveSkillMessage(message)) {
-                val skill = message.contentText()
-                    .removePrefix(ACTIVE_SKILL_PREFIX)
-                    .trim()
-                val promptTokens = estimateOptionalTextTokens(skill)
-                skillTokens += promptTokens
-                protocolTokens += (fullTokens - promptTokens).coerceAtLeast(0)
+                val projected = providerMessage(message)
+                val projectedTokens = estimateTokens(listOf(projected))
+                val catalogTokens = estimateOptionalTextTokens(projected.contentText())
+                skillTokens += catalogTokens
+                protocolTokens += (projectedTokens - catalogTokens).coerceAtLeast(0)
                 return@forEach
             }
             if (isModeEntryContextMessage(message)) {
@@ -560,6 +597,14 @@ object AiChatContextManager {
             block == Character.UnicodeBlock.HANGUL_SYLLABLES
     }
 
+    private fun String.escapeXml(): String {
+        return replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&apos;")
+    }
+
     private const val MESSAGE_OVERHEAD_TOKENS = 12
     private const val LEGACY_ATTACHMENT_PREAMBLE =
         "以下是用户在输入框中可见并随本次消息附带的 App 上下文与 Skill 说明。" +
@@ -581,6 +626,8 @@ data class AiActiveSkillSnapshot(
     val skillId: String = "",
     @SerializedName("title")
     val title: String = "",
+    @SerializedName("description")
+    val description: String = "",
     @SerializedName("prompt")
     val prompt: String = "",
     @SerializedName("revision")
@@ -590,7 +637,18 @@ data class AiActiveSkillSnapshot(
     @SerializedName("content_hash")
     val contentHash: String = "",
     @SerializedName("runtime")
-    val runtime: AgentSkillRuntimeDeclaration = AgentSkillRuntimeDeclaration()
+    val runtime: AgentSkillRuntimeDeclaration = AgentSkillRuntimeDeclaration(),
+    @SerializedName("available_skills")
+    val availableSkills: List<AiAvailableSkillSnapshot> = emptyList()
+)
+
+data class AiAvailableSkillSnapshot(
+    @SerializedName("id")
+    val id: String,
+    @SerializedName("name")
+    val name: String,
+    @SerializedName("description")
+    val description: String = ""
 )
 
 data class AiChatContextBreakdown(

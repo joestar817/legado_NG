@@ -200,7 +200,8 @@
     <string name="ai_model_settings_section">Feature models</string>
     <string name="ai_prompt_menu">Skills</string>
     <string name="ai_prompt_menu_summary">%s skills</string>
-    <string name="ai_prompt_protocol_summary">APP skills are called internally by the app. Agent skills can be loaded in AI chat. Internal skills are editable here but are not shown in chat skill selection.</string>
+    <string name="ai_prompt_protocol_summary">APP skills are called internally by the app. Agent skills are exposed by metadata and loaded on demand through use_skill. Built-in skills are read-only.</string>
+    <string name="ai_skill_files">Skill files</string>
     <string name="ai_skill_add">Add manually</string>
     <string name="ai_skill_import">Import skill</string>
     <string name="ai_skill_export">Export</string>

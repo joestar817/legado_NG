@@ -26,6 +26,7 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.RadioButton
 import android.widget.Switch
 import android.widget.TextView
@@ -50,6 +51,7 @@ import io.legado.app.databinding.DialogAiModelEditBinding
 import io.legado.app.databinding.FragmentAiConfigBinding
 import io.legado.app.databinding.ItemAiModelBinding
 import io.legado.app.databinding.ItemAiProviderBinding
+import io.legado.app.databinding.ItemAiSkillFileBinding
 import io.legado.app.data.appDb
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiManager
@@ -73,6 +75,7 @@ import io.legado.app.lib.theme.Selector
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.databinding.ItemAiPromptBinding
 import io.legado.app.ui.widget.TitleBar
+import io.legado.app.ui.widget.dialog.CodeDialog
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.WaitDialog
@@ -82,6 +85,7 @@ import io.legado.app.utils.applyTint
 import io.legado.app.utils.hideSoftInput
 import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.share
+import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import io.noties.markwon.Markwon
 import io.noties.markwon.core.spans.EmphasisSpan
@@ -96,7 +100,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.DecimalFormat
 
-class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHandler {
+class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHandler,
+    CodeDialog.Callback {
 
     companion object {
         const val EXTRA_INITIAL_PAGE = "initialPage"
@@ -118,18 +123,47 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
     private enum class ProviderDetailTab { CONFIG, MODELS }
 
+    private sealed interface SkillTreeRow {
+        val path: String
+        val name: String
+        val depth: Int
+
+        data class Directory(
+            override val path: String,
+            override val name: String,
+            override val depth: Int,
+            val expanded: Boolean
+        ) : SkillTreeRow
+
+        data class File(
+            override val path: String,
+            override val name: String,
+            override val depth: Int,
+            val size: Int
+        ) : SkillTreeRow
+    }
+
+    private class SkillDirectoryNode(
+        val name: String,
+        val path: String
+    ) {
+        val directories = linkedMapOf<String, SkillDirectoryNode>()
+        val files = mutableListOf<String>()
+    }
+
     private val binding by viewBinding(FragmentAiConfigBinding::bind)
     private val waitDialog by lazy { WaitDialog(requireContext()) }
     private val providerAdapter by lazy { AiProviderAdapter() }
     private val modelAdapter by lazy { AiModelAdapter() }
     private val promptAdapter by lazy { AiPromptAdapter() }
+    private val skillFileAdapter by lazy { AiSkillFileAdapter() }
     private lateinit var providerItemTouchHelper: ItemTouchHelper
     private var currentPage = Page.MAIN
     private var currentProviderId: String? = null
     private var currentModelId: String? = null
     private var currentSkill: AiSkillDefinition? = null
     private var currentPrompt: AiPromptStore.Prompt? = null
-    private var promptDetailEditing = false
+    private val expandedSkillDirectories = linkedSetOf<String>()
     private var providerSearchQuery: String = ""
     private var modelSearchQuery: String = ""
     private var providerDetailTab = ProviderDetailTab.CONFIG
@@ -138,17 +172,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var ignoreMainFormChanges = false
     private var ignoreProviderFormChanges = false
     private var ignorePurifyFormChanges = false
-    private var ignorePromptHighlight = false
     private var ignoreModelDetailChanges = false
     private var apiKeyVisible = false
     private val balanceNumberFormat by lazy { DecimalFormat("0.####") }
-    private val promptMarkwon by lazy {
-        Markwon.builder(requireContext())
-            .usePlugin(GlideImagesPlugin.create(Glide.with(requireContext())))
-            .usePlugin(HtmlPlugin.create())
-            .usePlugin(TablePlugin.create(requireContext()))
-            .build()
-    }
     private val importSkillFileLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -594,56 +620,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun initPromptDetail() {
-        binding.editPrompt.typeface = Typeface.MONOSPACE
-        binding.editPrompt.doOnTextChanged { _, _, _, _ ->
-            if (!ignorePromptHighlight && promptDetailEditing) {
-                highlightSkillMarkdown()
+        binding.recyclerSkillFiles.layoutManager = LinearLayoutManager(requireContext())
+        skillFileAdapter.bindToRecyclerView(binding.recyclerSkillFiles)
+        skillFileAdapter.setOnItemClickListener { _, item ->
+            when (item) {
+                is SkillTreeRow.Directory -> toggleSkillDirectory(item.path)
+                is SkillTreeRow.File -> openSkillFile(item.path, edit = false)
             }
-        }
-        binding.buttonEditPrompt.setOnClickListener {
-            promptDetailEditing = true
-            updatePromptDetailMode()
-        }
-        binding.buttonCancelPrompt.setOnClickListener {
-            setSkillEditorText(currentSkillContent())
-            promptDetailEditing = false
-            updatePromptDetailMode()
-        }
-        binding.buttonSavePrompt.setOnClickListener {
-            val skill = currentSkill ?: return@setOnClickListener
-            val prompt = currentPrompt
-            if (prompt != null) {
-                AiPromptStore.save(prompt, binding.editPrompt.text?.toString().orEmpty())
-            } else {
-                saveAgentSkillContent(skill.id, binding.editPrompt.text?.toString().orEmpty())
-            }
-            Toast.makeText(requireContext(), R.string.ai_prompt_saved, Toast.LENGTH_SHORT).show()
-            currentSkill = AiSkillRegistry.get(skill.id) ?: skill
-            setSkillEditorText(currentSkillContent())
-            promptDetailEditing = false
-            refreshPrompts()
-            updatePromptDetailMode()
-        }
-        binding.buttonResetPrompt.setOnClickListener {
-            val skill = currentSkill ?: return@setOnClickListener
-            val prompt = currentPrompt
-            if (prompt != null) {
-                AiPromptStore.reset(prompt)
-                setSkillEditorText(prompt.defaultPrompt)
-            } else if (skill.builtIn && AiSkillRegistry.resetBuiltIn(skill.id)) {
-                currentSkill = AiSkillRegistry.get(skill.id)
-                setSkillEditorText(currentSkill?.content.orEmpty())
-            }
-            refreshPrompts()
-            updatePromptDetailMode()
-            Toast.makeText(requireContext(), R.string.ai_prompt_reset_done, Toast.LENGTH_SHORT)
-                .show()
-        }
-        binding.buttonExportPrompt.setOnClickListener {
-            exportCurrentSkill()
-        }
-        binding.buttonDeletePrompt.setOnClickListener {
-            confirmDeleteCurrentSkill()
         }
     }
 
@@ -799,7 +782,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentModelId = null
         currentSkill = skill
         currentPrompt = skill.editablePrompt
-        promptDetailEditing = false
+        expandedSkillDirectories.clear()
         setPageTitle(skill.name)
         binding.layoutMainMenu.isVisible = false
         binding.layoutProviderList.isVisible = false
@@ -1737,32 +1720,107 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun visibleAiSkills(): List<AiSkillDefinition> {
-        return AiSkillRegistry.all()
+        return AiSkillRegistry.managementSkills()
     }
 
     private fun refreshPromptDetail() {
         val skill = currentSkill ?: return
-        val prompt = skill.editablePrompt
         binding.textPromptDetailTitle.text = skill.name
         binding.textPromptDetailSummary.text = skill.summary
-        setSkillEditorText(prompt?.let { AiPromptStore.prompt(it) } ?: skill.content)
-        updatePromptDetailMode()
+        refreshSkillFileTree()
     }
 
-    private fun updatePromptDetailMode() {
+    private fun refreshSkillFileTree() {
         val skill = currentSkill ?: return
-        val prompt = skill.editablePrompt
-        binding.scrollPromptMarkdown.isVisible = !promptDetailEditing
-        binding.editPrompt.isVisible = promptDetailEditing
-        binding.editPrompt.isEnabled = promptDetailEditing
-        binding.buttonEditPrompt.isVisible = !promptDetailEditing
-        binding.buttonExportPrompt.isVisible = !promptDetailEditing
-        binding.buttonDeletePrompt.isVisible =
-            !promptDetailEditing && !skill.builtIn
-        binding.buttonCancelPrompt.isVisible = promptDetailEditing
-        binding.buttonSavePrompt.isVisible = promptDetailEditing
-        binding.buttonResetPrompt.isVisible =
-            promptDetailEditing && (prompt != null || skill.builtIn)
+        skillFileAdapter.setItems(buildSkillTreeRows(skill.id))
+    }
+
+    private fun buildSkillTreeRows(skillId: String): List<SkillTreeRow> {
+        val root = SkillDirectoryNode(name = "", path = "")
+        AiSkillRegistry.skillFilePaths(skillId).forEach { path ->
+            val segments = path.split('/')
+            var directory = root
+            segments.dropLast(1).forEach { name ->
+                val directoryPath = listOf(directory.path, name)
+                    .filter(String::isNotBlank)
+                    .joinToString("/")
+                directory = directory.directories.getOrPut(name) {
+                    SkillDirectoryNode(name = name, path = directoryPath)
+                }
+            }
+            directory.files += path
+        }
+
+        fun flatten(directory: SkillDirectoryNode, depth: Int): List<SkillTreeRow> {
+            return buildList {
+                directory.directories.values.sortedBy(SkillDirectoryNode::name).forEach { child ->
+                    val expanded = child.path in expandedSkillDirectories
+                    add(
+                        SkillTreeRow.Directory(
+                            path = child.path,
+                            name = child.name,
+                            depth = depth,
+                            expanded = expanded
+                        )
+                    )
+                    if (expanded) addAll(flatten(child, depth + 1))
+                }
+                directory.files.sortedWith(
+                    compareBy<String>({ it.substringAfterLast('/') != "SKILL.md" }, { it })
+                ).forEach { path ->
+                    add(
+                        SkillTreeRow.File(
+                            path = path,
+                            name = path.substringAfterLast('/'),
+                            depth = depth,
+                            size = AiSkillRegistry.skillFileSize(skillId, path)
+                        )
+                    )
+                }
+            }
+        }
+
+        return flatten(root, depth = 0)
+    }
+
+    private fun toggleSkillDirectory(path: String) {
+        if (!expandedSkillDirectories.add(path)) {
+            expandedSkillDirectories.remove(path)
+        }
+        refreshSkillFileTree()
+    }
+
+    private fun openSkillFile(path: String, edit: Boolean) {
+        val skill = currentSkill ?: return
+        val content = if (path == "SKILL.md" && skill.editablePrompt != null) {
+            AiPromptStore.prompt(skill.editablePrompt)
+        } else {
+            AiSkillRegistry.readSkillFile(skill.id, path)
+        }
+        val editable = edit && !skill.builtIn && path == "SKILL.md"
+        showDialogFragment(
+            CodeDialog(
+                code = content,
+                disableEdit = !editable,
+                requestId = if (editable) "${skill.id}:$path" else null,
+                title = path,
+                exportFilePrefix = "${skill.id}-${path.substringAfterLast('/').substringBeforeLast('.')}"
+            )
+        )
+    }
+
+    override fun onCodeSave(code: String, requestId: String?) {
+        val skill = currentSkill ?: return
+        val expectedRequestId = "${skill.id}:SKILL.md"
+        if (skill.builtIn || requestId != expectedRequestId) return
+        currentPrompt?.let { prompt ->
+            AiPromptStore.save(prompt, code)
+        } ?: saveAgentSkillContent(skill.id, code)
+        currentSkill = AiSkillRegistry.get(skill.id) ?: skill
+        currentPrompt = currentSkill?.editablePrompt
+        refreshPrompts()
+        refreshSkillFileTree()
+        Toast.makeText(requireContext(), R.string.ai_prompt_saved, Toast.LENGTH_SHORT).show()
     }
 
     private fun showManualSkillDialog() {
@@ -1890,11 +1948,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         AiSkillRegistry.saveSkillContent(skillId, content)
     }
 
-    private fun currentSkillContent(): String {
-        val skill = currentSkill ?: return ""
-        return currentPrompt?.let { AiPromptStore.prompt(it) } ?: skill.content
-    }
-
     private fun exportCurrentSkill() {
         val skill = currentSkill ?: return
         val dir = File(requireContext().cacheDir, "ai-skill-export").apply {
@@ -1925,118 +1978,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             .setNegativeButton(android.R.string.cancel, null)
             .show()
             .applyTint()
-    }
-
-    private fun setSkillEditorText(text: String) {
-        ignorePromptHighlight = true
-        try {
-            binding.editPrompt.setText(text)
-            binding.editPrompt.setSelection(0)
-        } finally {
-            ignorePromptHighlight = false
-        }
-        renderPromptMarkdown(text)
-        highlightSkillMarkdown()
-    }
-
-    private fun renderPromptMarkdown(text: String) {
-        binding.textPromptMarkdown.setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
-        binding.textPromptMarkdown.setLinkTextColor(accentColor)
-        binding.textPromptMarkdown.movementMethod = LinkMovementMethod.getInstance()
-        binding.textPromptMarkdown.text = promptMarkwon.toMarkdown(text.stripSkillFrontmatter()).withoutItalic()
-    }
-
-    private fun String.stripSkillFrontmatter(): String {
-        if (!startsWith("---")) {
-            return this
-        }
-        val end = Regex("""\r?\n---(?:\r?\n|$)""").find(this, startIndex = 3)
-            ?: return this
-        return substring(end.range.last + 1).trimStart('\r', '\n')
-    }
-
-    private fun highlightSkillMarkdown() {
-        val editable = binding.editPrompt.text ?: return
-        val length = editable.length
-        if (length == 0) {
-            return
-        }
-        val selectionStart = binding.editPrompt.selectionStart
-        val selectionEnd = binding.editPrompt.selectionEnd
-        editable.getSpans(0, length, SkillMarkdownSpan::class.java).forEach {
-            editable.removeSpan(it)
-        }
-
-        val text = editable.toString()
-        val headingColor = accentColor
-        val mutedColor = ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant)
-        val codeColor = ContextCompat.getColor(requireContext(), R.color.ng_info)
-        val listColor = ContextCompat.getColor(requireContext(), R.color.ng_warning)
-        val codeBackground = ContextCompat.getColor(requireContext(), R.color.ng_neutral_container)
-        var lineStart = 0
-        var inFence = false
-        text.split('\n').forEach { line ->
-            val lineEnd = lineStart + line.length
-            val trimmed = line.trimStart()
-            when {
-                trimmed.startsWith("```") -> {
-                    editable.applySkillSpan(SkillMarkdownColorSpan(codeColor), lineStart, lineEnd)
-                    editable.applySkillSpan(SkillMarkdownStyleSpan(Typeface.BOLD), lineStart, lineEnd)
-                    inFence = !inFence
-                }
-                inFence -> {
-                    editable.applySkillSpan(
-                        SkillMarkdownBackgroundSpan(codeBackground),
-                        lineStart,
-                        lineEnd
-                    )
-                    editable.applySkillSpan(SkillMarkdownColorSpan(codeColor), lineStart, lineEnd)
-                }
-                trimmed.startsWith("#") -> {
-                    editable.applySkillSpan(SkillMarkdownColorSpan(headingColor), lineStart, lineEnd)
-                    editable.applySkillSpan(SkillMarkdownStyleSpan(Typeface.BOLD), lineStart, lineEnd)
-                }
-                trimmed == "---" -> {
-                    editable.applySkillSpan(SkillMarkdownColorSpan(mutedColor), lineStart, lineEnd)
-                    editable.applySkillSpan(SkillMarkdownStyleSpan(Typeface.BOLD), lineStart, lineEnd)
-                }
-                trimmed.startsWith("- ") || trimmed.matches(Regex("""\d+\.\s+.*""")) -> {
-                    val markerEnd = lineStart + line.length - trimmed.length + when {
-                        trimmed.startsWith("- ") -> 1
-                        else -> trimmed.indexOf('.').takeIf { it >= 0 }?.plus(1) ?: 0
-                    }
-                    editable.applySkillSpan(SkillMarkdownColorSpan(listColor), lineStart, markerEnd)
-                }
-            }
-            lineStart = lineEnd + 1
-        }
-
-        Regex("`[^`\\n]+`").findAll(text).forEach { match ->
-            editable.applySkillSpan(
-                SkillMarkdownColorSpan(codeColor),
-                match.range.first,
-                match.range.last + 1
-            )
-            editable.applySkillSpan(
-                SkillMarkdownBackgroundSpan(codeBackground),
-                match.range.first,
-                match.range.last + 1
-            )
-        }
-        Regex("\\*\\*[^*\\n]+\\*\\*").findAll(text).forEach { match ->
-            editable.applySkillSpan(
-                SkillMarkdownStyleSpan(Typeface.BOLD),
-                match.range.first,
-                match.range.last + 1
-            )
-        }
-
-        if (selectionStart >= 0 && selectionEnd >= 0) {
-            binding.editPrompt.setSelection(
-                selectionStart.coerceAtMost(editable.length),
-                selectionEnd.coerceAtMost(editable.length)
-            )
-        }
     }
 
     private fun refreshPurifySettings() {
@@ -3748,6 +3689,58 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
+    private inner class AiSkillFileAdapter :
+        RecyclerAdapter<SkillTreeRow, ItemAiSkillFileBinding>(requireContext()) {
+
+        override fun getViewBinding(parent: ViewGroup): ItemAiSkillFileBinding {
+            return ItemAiSkillFileBinding.inflate(inflater, parent, false)
+        }
+
+        override fun convert(
+            holder: ItemViewHolder,
+            binding: ItemAiSkillFileBinding,
+            item: SkillTreeRow,
+            payloads: MutableList<Any>
+        ) {
+            binding.textPath.text = item.name
+            binding.root.setPadding(
+                (16 + item.depth * 20).dpToPx(),
+                binding.root.paddingTop,
+                4.dpToPx(),
+                binding.root.paddingBottom
+            )
+            binding.root.setBackgroundColor(Color.TRANSPARENT)
+            when (item) {
+                is SkillTreeRow.Directory -> {
+                    binding.imageExpand.isVisible = true
+                    binding.imageExpand.rotation = if (item.expanded) 90f else 0f
+                    binding.imageType.setImageResource(
+                        if (item.expanded) R.drawable.ic_folder_open else R.drawable.ic_folder_outline
+                    )
+                    binding.textSize.isVisible = false
+                    binding.buttonEdit.isVisible = false
+                }
+
+                is SkillTreeRow.File -> {
+                    binding.imageExpand.isVisible = false
+                    binding.imageExpand.rotation = 0f
+                    binding.imageType.setImageResource(R.drawable.ic_code)
+                    binding.textSize.isVisible = true
+                    binding.textSize.text = formatMemorySize(item.size.toLong())
+                    binding.buttonEdit.isVisible =
+                        currentSkill?.builtIn == false && item.path == "SKILL.md"
+                }
+            }
+        }
+
+        override fun registerListener(holder: ItemViewHolder, binding: ItemAiSkillFileBinding) {
+            binding.buttonEdit.setOnClickListener {
+                (getItemByLayoutPosition(holder.layoutPosition) as? SkillTreeRow.File)
+                    ?.let { item -> openSkillFile(item.path, edit = true) }
+            }
+        }
+    }
+
     private inner class AiPromptAdapter :
         RecyclerAdapter<AiSkillDefinition, ItemAiPromptBinding>(requireContext()) {
 
@@ -3780,54 +3773,31 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     }
                 )
             )
-            binding.textCustom.isVisible = item.userModified || !item.builtIn
+            binding.textCustom.isVisible = !item.builtIn
+            binding.buttonMore.isVisible = !item.builtIn
         }
 
         override fun registerListener(holder: ItemViewHolder, binding: ItemAiPromptBinding) {
-        }
-    }
-
-    private interface SkillMarkdownSpan
-
-    private class SkillMarkdownColorSpan(color: Int) :
-        ForegroundColorSpan(color),
-        SkillMarkdownSpan
-
-    private class SkillMarkdownBackgroundSpan(color: Int) :
-        BackgroundColorSpan(color),
-        SkillMarkdownSpan
-
-    private class SkillMarkdownStyleSpan(style: Int) :
-        StyleSpan(style),
-        SkillMarkdownSpan
-
-    private fun Editable.applySkillSpan(span: SkillMarkdownSpan, start: Int, end: Int) {
-        if (start < end && start >= 0 && end <= length) {
-            setSpan(span, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-    }
-
-    private fun Spanned.withoutItalic(): Spanned {
-        val spannable = SpannableString(this)
-        getSpans(0, length, EmphasisSpan::class.java).forEach { span ->
-            spannable.removeSpan(span)
-        }
-        getSpans(0, length, StyleSpan::class.java).forEach { span ->
-            when (span.style) {
-                Typeface.ITALIC -> spannable.removeSpan(span)
-                Typeface.BOLD_ITALIC -> {
-                    val start = getSpanStart(span)
-                    val end = getSpanEnd(span)
-                    val flags = getSpanFlags(span)
-                    spannable.removeSpan(span)
-                    if (start >= 0 && end >= 0) {
-                        spannable.setSpan(StyleSpan(Typeface.BOLD), start, end, flags)
+            binding.buttonMore.setOnClickListener {
+                val skill = getItemByLayoutPosition(holder.layoutPosition) ?: return@setOnClickListener
+                PopupMenu(requireContext(), binding.buttonMore).apply {
+                    menu.add(0, 1, 0, R.string.ai_skill_export)
+                    menu.add(0, 2, 1, R.string.delete)
+                    setOnMenuItemClickListener { menuItem ->
+                        currentSkill = skill
+                        currentPrompt = skill.editablePrompt
+                        when (menuItem.itemId) {
+                            1 -> exportCurrentSkill()
+                            2 -> confirmDeleteCurrentSkill()
+                        }
+                        true
                     }
+                    show()
                 }
             }
         }
-        return spannable
     }
+
 }
 
 private data class AiMemoryStats(

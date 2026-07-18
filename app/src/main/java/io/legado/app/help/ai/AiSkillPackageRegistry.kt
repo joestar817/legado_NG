@@ -54,6 +54,29 @@ object AiSkillPackageRegistry {
         )
     }
 
+    fun readRawText(
+        skillId: String,
+        relativePath: String,
+        expectedContentHash: String
+    ): AiSkillPackageResource {
+        val snapshot = requireNotNull(systemPackage(skillId)) {
+            "Skill Package 不存在：$skillId"
+        }
+        require(expectedContentHash.isNotBlank() && snapshot.contentHash == expectedContentHash) {
+            "Skill Package 已变化，请重新打开后重试"
+        }
+        val path = normalizeRelativePath(relativePath)
+        val bytes = requireNotNull(snapshot.files[path]) {
+            "Skill '$skillId' 中不存在文件：$path"
+        }
+        return AiSkillPackageResource(
+            skillId = snapshot.skillId,
+            path = path,
+            content = bytes.toString(Charsets.UTF_8),
+            contentHash = snapshot.contentHash
+        )
+    }
+
     /**
      * 构建一组只读 System Skill Package 的不可变快照。
      *

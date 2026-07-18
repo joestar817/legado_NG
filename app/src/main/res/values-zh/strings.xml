@@ -196,7 +196,8 @@
     <string name="ai_model_settings_section">功能模型</string>
     <string name="ai_prompt_menu">技能 (Skills)</string>
     <string name="ai_prompt_menu_summary">共 %s 个技能</string>
-    <string name="ai_prompt_protocol_summary">APP 标签表示应用内部调用，Agent 标签表示可在 AI 聊天中加载；内部技能只允许编辑内容，不会出现在聊天技能选择中。</string>
+    <string name="ai_prompt_protocol_summary">APP 技能由应用内部调用；Agent 技能仅暴露目录信息，并通过 use_skill 按需读取。内置技能只读。</string>
+    <string name="ai_skill_files">Skill 文件</string>
     <string name="ai_skill_add">手动添加</string>
     <string name="ai_skill_import">导入技能</string>
     <string name="ai_skill_export">导出</string>
