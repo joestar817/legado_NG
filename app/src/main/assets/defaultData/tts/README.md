@@ -15,6 +15,7 @@ App 主动调用的协议函数只有：
 - `@name`：引擎名称。
 - `@enabled`：默认是否启用。
 - `@cookieJar`：是否启用内部 CookieJar。
+- `@concurrentRate`：请求频率限制，沿用阅读现有的“间隔毫秒”或“次数/毫秒”格式。
 - `@audioType`：默认音频 MIME 类型，旧 `@contentType` 仍兼容。
 - `@sampleText`：该脚本的默认试听文本。发音人未提供 `sample_text` 时，试听优先使用这里的文本，再回落到 App 内置默认文本。
 
@@ -51,4 +52,55 @@ App 主动调用的协议函数只有：
 
 其它认证、签名、测试、token 刷新等函数由脚本作者自由定义，并在协议函数内部自行调用。
 
-当前脚本协议只接收完整 HTTP 响应或 JSON 中的完整音频字段。Chat Completions SSE、PCM chunk 等增量流式音频需要后续新增专用响应类型，不能仅靠 `stream: true` 接入。
+HTTP 分支接收直接音频响应，或 JSON 中的完整 Base64/音频 URL。Chat Completions SSE、PCM chunk 等增量流式音频仍需要后续新增专用响应类型，不能仅靠 `stream: true` 接入。
+
+## WebSocket 完整音频
+
+需要多阶段 WebSocket 会话的脚本，可让 `synthesize()` 返回 `transport: "websocket"`，并通过 `websocket` 描述会话：
+
+```json
+{
+  "transport": "websocket",
+  "url": "wss://example.com/tts",
+  "headers": { "Origin": "https://example.com" },
+  "audioContentType": "audio/mpeg",
+  "timeout": 60,
+  "websocket": {
+    "openMessages": ["{\"event\":\"StartTask\"}"],
+    "binaryAudio": true,
+    "finishOnClose": false,
+    "connectTimeout": 15,
+    "firstAudioTimeout": 15,
+    "idleTimeout": 15,
+    "finishGrace": 300,
+    "maxAudioBytes": 33554432,
+    "textRules": [
+      {
+        "matchPath": "event",
+        "equals": "TaskStarted",
+        "sendMessages": ["{\"payload\":\"...\"}"]
+      },
+      {
+        "matchPath": "type",
+        "equals": "3",
+        "audioPath": "buffer",
+        "audioEncoding": "base64"
+      },
+      {
+        "matchPath": "event",
+        "equals": "TaskFinished",
+        "finish": true
+      },
+      {
+        "matchPath": "status_code",
+        "notEquals": "20000000",
+        "errorPath": "status_text"
+      }
+    ]
+  }
+}
+```
+
+`openMessages` 和 `sendMessages` 中的元素可以是字符串或 JSON 对象；对象会在发送前序列化。`binaryAudio` 表示二进制帧直接作为音频，文本帧中的 Base64 音频使用 `audioPath/audioEncoding` 提取。`finishGrace` 用于接收完成事件之后可能延迟到达的尾部音频帧。
+
+当前 WebSocket 实现会先汇总全部音频帧，再向调用方返回完整音频；它不是边生成边播放的流式输出。SSE、PCM chunk 和 WebSocket 实时播放仍属于后续协议能力。

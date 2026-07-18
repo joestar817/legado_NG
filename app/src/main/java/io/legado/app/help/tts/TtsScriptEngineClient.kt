@@ -16,6 +16,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.ByteString.Companion.decodeBase64
 import splitties.init.appCtx
 import java.io.InputStream
+import kotlinx.coroutines.CancellationException
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
@@ -124,6 +125,7 @@ object TtsScriptEngineClient {
                     coroutineContext = coroutineContext
                 )
             } catch (e: Throwable) {
+                if (e is CancellationException) throw e
                 lastError = e
             }
         }
@@ -141,6 +143,13 @@ object TtsScriptEngineClient {
         voiceName: String?,
         coroutineContext: CoroutineContext
     ): Response {
+        if (request.isWebSocket) {
+            return TtsWebSocketEngineClient.execute(
+                engine = engine,
+                request = request,
+                coroutineContext = coroutineContext
+            )
+        }
         val analyzeUrl = AnalyzeUrl(
             request.toAnalyzeUrlRule(),
             speakText = text,
@@ -306,7 +315,17 @@ object TtsScriptEngineClient {
             timeoutSeconds = obj.intValue("timeout")
                 ?: obj.intValue("timeoutSeconds")
                 ?: obj.intValue("timeout_seconds"),
-            retry = obj.intValue("retry") ?: 0
+            retry = obj.intValue("retry") ?: 0,
+            transport = obj.stringValue("transport")
+                ?: if (obj.stringValue("url")?.startsWith("ws", ignoreCase = true) == true) {
+                    "websocket"
+                } else {
+                    "http"
+                },
+            webSocketConfig = obj.get("websocket")
+                ?.takeIf { it.isJsonObject }
+                ?.asJsonObject
+                ?.toWebSocketConfig()
         )
     }
 
@@ -318,6 +337,60 @@ object TtsScriptEngineClient {
         return get(name)?.takeIf { it.isJsonPrimitive }?.let {
             runCatching { it.asInt }.getOrNull()
         }
+    }
+
+    private fun JsonObject.booleanValue(name: String): Boolean? {
+        return get(name)?.takeIf { it.isJsonPrimitive }?.let {
+            runCatching { it.asBoolean }.getOrNull()
+        }
+    }
+
+    private fun JsonObject.toWebSocketConfig(): TtsWebSocketConfig {
+        return TtsWebSocketConfig(
+            openMessages = get("openMessages").toMessageList(),
+            textRules = get("textRules")
+                ?.takeIf { it.isJsonArray }
+                ?.asJsonArray
+                ?.mapNotNull { element ->
+                    element.takeIf { it.isJsonObject }?.asJsonObject?.toWebSocketTextRule()
+                }
+                .orEmpty(),
+            binaryAudio = booleanValue("binaryAudio") ?: true,
+            finishOnClose = booleanValue("finishOnClose") ?: false,
+            connectTimeoutSeconds = intValue("connectTimeout") ?: 15,
+            firstAudioTimeoutSeconds = intValue("firstAudioTimeout") ?: 15,
+            idleTimeoutSeconds = intValue("idleTimeout") ?: 15,
+            finishGraceMillis = intValue("finishGrace") ?: 0,
+            maxAudioBytes = intValue("maxAudioBytes") ?: TtsWebSocketConfig.DEFAULT_MAX_AUDIO_BYTES
+        )
+    }
+
+    private fun JsonObject.toWebSocketTextRule(): TtsWebSocketTextRule? {
+        val matchPath = stringValue("matchPath") ?: return null
+        return TtsWebSocketTextRule(
+            matchPath = matchPath,
+            equalsValue = get("equals")?.takeIf { it.isJsonPrimitive }?.asString,
+            notEqualsValue = get("notEquals")?.takeIf { it.isJsonPrimitive }?.asString,
+            sendMessages = get("sendMessages").toMessageList(),
+            audioPath = stringValue("audioPath"),
+            audioEncoding = stringValue("audioEncoding"),
+            finish = booleanValue("finish") ?: false,
+            errorPath = stringValue("errorPath")
+        )
+    }
+
+    private fun JsonElement?.toMessageList(): List<String> {
+        return this
+            ?.takeIf { it.isJsonArray }
+            ?.asJsonArray
+            ?.mapNotNull { element ->
+                when {
+                    element.isJsonPrimitive -> element.asString.takeIf { it.isNotBlank() }
+                    element.isJsonObject || element.isJsonArray -> GSON.toJson(element)
+                    else -> null
+                }
+            }
+            .orEmpty()
     }
 
     private suspend fun Response.toAudioResponse(
@@ -441,13 +514,20 @@ object TtsScriptEngineClient {
         val audioExtract: String? = null,
         val audioEncoding: String? = null,
         val timeoutSeconds: Int? = null,
-        val retry: Int = 0
+        val retry: Int = 0,
+        val transport: String = "http",
+        val webSocketConfig: TtsWebSocketConfig? = null
     ) {
         val isJsonResponse: Boolean
             get() = responseType.orEmpty().equals("json", ignoreCase = true)
 
         val normalizedAudioEncoding: String
             get() = audioEncoding.orEmpty().trim().lowercase()
+
+        val isWebSocket: Boolean
+            get() = transport.equals("websocket", ignoreCase = true) ||
+                    url.startsWith("ws://", ignoreCase = true) ||
+                    url.startsWith("wss://", ignoreCase = true)
 
         val timeoutMillis: Long?
             get() = timeoutSeconds

@@ -874,6 +874,7 @@ object TtsEngineStore {
             contentType = metadata["audiotype"]?.takeIf { it.isNotBlank() }
                 ?: metadata["contenttype"]?.takeIf { it.isNotBlank() }
                 ?: "audio/x-wav",
+            concurrentRate = metadata["concurrentrate"]?.takeIf { it.isNotBlank() } ?: "0",
             enabledCookieJar = metadata["cookiejar"].toScriptBoolean(defaultValue = false),
             sampleText = metadata["sampletext"]?.takeIf { it.isNotBlank() },
             defaultSpeed = metadata["defaultspeed"].toScriptInt(defaultValue = 50),
