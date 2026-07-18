@@ -1621,8 +1621,7 @@
     <string name="default_version">当前</string>
     <string name="official_version">正式版</string>
     <string name="beta_release_version">测试版</string>
-    <string name="stream_read_aloud_audio">流式播放音频</string>
-    <string name="stream_read_aloud_audio_summary">即边下边播，网络不好时播放会断断续续，仅TTS源有效</string>
+    <string name="read_aloud_worker_count">并发预缓存</string>
     <string name="skip_read_aloud_chapter_title">跳过章节标题</string>
     <string name="skip_read_aloud_chapter_title_summary">切换章节时不朗读章名，保持后台听书连续感</string>
     <string name="pause_read_aloud_while_phone_calls_title">来电期间暂停朗读</string>

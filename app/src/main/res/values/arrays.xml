@@ -222,4 +222,20 @@
 		<item>Customize</item>
 	</string-array>
 
+	<string-array name="read_aloud_worker_count_entries">
+		<item>1 worker</item>
+		<item>2 workers</item>
+		<item>3 workers</item>
+		<item>4 workers</item>
+		<item>5 workers</item>
+	</string-array>
+
+	<string-array name="read_aloud_worker_count_values">
+		<item>1</item>
+		<item>2</item>
+		<item>3</item>
+		<item>4</item>
+		<item>5</item>
+	</string-array>
+
 </resources>

@@ -25,6 +25,10 @@ import io.legado.app.utils.toastOnUi
 import splitties.init.appCtx
 import java.net.InetAddress
 
+internal fun normalizeReadAloudWorkerCount(value: String?): Int {
+    return value?.toIntOrNull()?.coerceIn(1, 5) ?: 3
+}
+
 @Suppress("MemberVisibilityCanBePrivate", "ConstPropertyName")
 object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     val isCronet = appCtx.getPrefBoolean(PreferKey.cronet)
@@ -605,7 +609,10 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
 
     val updateToVariant get() = appCtx.getPrefString(PreferKey.updateToVariant, "default_version")
 
-    val streamReadAloudAudio get() = appCtx.getPrefBoolean(PreferKey.streamReadAloudAudio, false)
+    val readAloudWorkerCount: Int
+        get() = normalizeReadAloudWorkerCount(
+            appCtx.getPrefString(PreferKey.readAloudWorkerCount, "3")
+        )
 
     val skipReadAloudChapterTitle
         get() = appCtx.getPrefBoolean(PreferKey.skipReadAloudChapterTitle, false)

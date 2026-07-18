@@ -233,35 +233,94 @@
                 </LinearLayout>
 
                 <LinearLayout
-                    android:id="@+id/item_stream_audio"
+                    android:id="@+id/item_worker_count"
                     style="@style/Ng.SettingsItem"
                     android:layout_marginTop="6dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:foreground="?android:attr/selectableItemBackground"
+                    android:clickable="false"
+                    android:focusable="false"
+                    android:orientation="vertical"
                     android:paddingStart="20dp"
-                    android:paddingEnd="16dp">
+                    android:paddingTop="16dp"
+                    android:paddingEnd="20dp"
+                    android:paddingBottom="14dp">
 
                     <LinearLayout
-                        android:layout_width="0dp"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
                         <TextView
                             style="@style/Ng.SettingsTitle"
-                            android:text="@string/stream_read_aloud_audio" />
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/read_aloud_worker_count" />
 
                         <TextView
-                            style="@style/Ng.SettingsSummary"
-                            android:layout_marginTop="4dp"
-                            android:text="@string/stream_read_aloud_audio_summary" />
+                            android:id="@+id/tv_worker_count_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/ng_primary"
+                            android:textSize="15sp" />
                     </LinearLayout>
 
-                    <io.legado.app.lib.theme.view.ThemeSwitch
-                        android:id="@+id/switch_stream_audio"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" />
+                    <io.legado.app.lib.theme.view.ThemeSeekBar
+                        android:id="@+id/seek_worker_count"
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:layout_marginTop="8dp"
+                        android:max="4"
+                        android:maxHeight="6dp"
+                        android:minHeight="6dp"
+                        android:progress="2"
+                        android:splitTrack="false"
+                        android:tickMark="@drawable/ng_read_aloud_storyboard_mode_tick" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tv_worker_count_1"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:gravity="start"
+                            android:text="1" />
+
+                        <TextView
+                            android:id="@+id/tv_worker_count_2"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:gravity="center"
+                            android:text="2" />
+
+                        <TextView
+                            android:id="@+id/tv_worker_count_3"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:gravity="center"
+                            android:text="3" />
+
+                        <TextView
+                            android:id="@+id/tv_worker_count_4"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:gravity="center"
+                            android:text="4" />
+
+                        <TextView
+                            android:id="@+id/tv_worker_count_5"
+                            style="@style/Ng.SettingsSummary"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:gravity="end"
+                            android:text="5" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <TextView

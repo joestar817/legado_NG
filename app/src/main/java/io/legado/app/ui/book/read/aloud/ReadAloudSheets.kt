@@ -56,6 +56,7 @@ import io.legado.app.utils.dpToPx
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.putPrefBoolean
+import io.legado.app.utils.putPrefString
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
@@ -300,9 +301,22 @@ class ReadAloudMoreSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_more_
         bindSwitch(itemSkipChapterTitle, switchSkipChapterTitle, PreferKey.skipReadAloudChapterTitle) {
             notifyReadAloudRuntimeChanged()
         }
-        bindSwitch(itemStreamAudio, switchStreamAudio, PreferKey.streamReadAloudAudio) {
-            notifyReadAloudRuntimeChanged()
-        }
+        seekWorkerCount.applyReadAloudSliderStyle()
+        seekWorkerCount.tickMarkTintList = ColorStateList.valueOf(view.context.accentColor)
+        seekWorkerCount.progress = AppConfig.readAloudWorkerCount - 1
+        syncWorkerCount(seekWorkerCount.progress + 1)
+        seekWorkerCount.setOnSeekBarChangeListener(object : SeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                syncWorkerCount(progress + 1)
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                val safeContext = context ?: return
+                val count = seekBar.progress + 1
+                safeContext.putPrefString(PreferKey.readAloudWorkerCount, count.toString())
+                notifyReadAloudRuntimeChanged()
+            }
+        })
         syncPauseOnCallState()
         itemEngine.setOnClickListener {
             val safeContext = context ?: return@setOnClickListener
@@ -338,6 +352,24 @@ class ReadAloudMoreSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_more_
             if (row.isEnabled && switch.isEnabled) {
                 switch.isChecked = !switch.isChecked
             }
+        }
+    }
+
+    private fun syncWorkerCount(count: Int) = binding.run {
+        tvWorkerCountValue.text = count.toString()
+        val activeColor = tvWorkerCountValue.context.accentColor
+        val inactiveColor = ContextCompat.getColor(
+            tvWorkerCountValue.context,
+            R.color.ng_on_surface_variant
+        )
+        listOf(
+            tvWorkerCount1,
+            tvWorkerCount2,
+            tvWorkerCount3,
+            tvWorkerCount4,
+            tvWorkerCount5
+        ).forEachIndexed { index, label ->
+            label.setTextColor(if (index + 1 == count) activeColor else inactiveColor)
         }
     }
 

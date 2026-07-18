@@ -130,4 +130,20 @@
         <item>自定义</item>
     </string-array>
 
+    <string-array name="read_aloud_worker_count_entries">
+        <item>1 个</item>
+        <item>2 个</item>
+        <item>3 个</item>
+        <item>4 个</item>
+        <item>5 个</item>
+    </string-array>
+
+    <string-array name="read_aloud_worker_count_values">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+    </string-array>
+
 </resources>

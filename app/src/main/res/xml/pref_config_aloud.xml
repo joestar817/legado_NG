@@ -48,11 +48,12 @@
             android:key="skipReadAloudChapterTitle"
             app:iconSpaceReserved="false" />
 
-        <io.legado.app.lib.prefs.SwitchPreference
-            android:defaultValue="false"
-            android:title="@string/stream_read_aloud_audio"
-            android:summary="@string/stream_read_aloud_audio_summary"
-            android:key="streamReadAloudAudio"
+        <io.legado.app.lib.prefs.NameListPreference
+            android:defaultValue="3"
+            android:entries="@array/read_aloud_worker_count_entries"
+            android:entryValues="@array/read_aloud_worker_count_values"
+            android:key="readAloudWorkerCount"
+            android:title="@string/read_aloud_worker_count"
             app:iconSpaceReserved="false" />
 
         <io.legado.app.lib.prefs.Preference

@@ -230,7 +230,7 @@ object PreferKey {
     const val recordHeapDump = "recordHeapDump"
     const val optimizeRender = "optimizeRender"
     const val updateToVariant = "updateToVariant"
-    const val streamReadAloudAudio = "streamReadAloudAudio"
+    const val readAloudWorkerCount = "readAloudWorkerCount"
     const val pauseReadAloudWhilePhoneCalls = "pauseReadAloudWhilePhoneCalls"
     const val readAloudByMediaButton = "readAloudByMediaButton"
     const val showMangaUi = "showMangaUi"
