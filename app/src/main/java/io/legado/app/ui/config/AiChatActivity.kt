@@ -206,6 +206,8 @@ import io.legado.app.help.ai.AiChatStreamUpdate
 import io.legado.app.help.ai.AiChatTurnResult
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiMemoryTraceItem
+import io.legado.app.help.ai.AiModelAbility
+import io.legado.app.help.ai.AiModelRegistry
 import io.legado.app.help.ai.AiPendingToolCall
 import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.ai.AiSkillCapabilityGrantStore
@@ -628,8 +630,38 @@ private fun AiChatRoute(onBack: () -> Unit) {
     val selectedReasoningEnabled = remember(configVersion) {
         AiAssistantConfigUi.selectedReasoningEnabled()
     }
+    val selectedModelSupportsToolCalls = remember(configVersion) {
+        AiAssistantConfigUi.selectedModel()?.model
+            ?.let(AiModelRegistry::enrich)
+            ?.abilities
+            ?.contains(AiModelAbility.TOOL) == true
+    }
     val internalMcpEnabled = remember(configVersion) {
         AiConfig.internalMcpEnabled
+    }
+    val activeSkillAttachments = inputAttachments.filter {
+        it.type == AiChatInputAttachmentType.SKILL
+    }
+    val fixedEntrySkillIds = entryAttachments
+        .filter { it.type == AiChatInputAttachmentType.SKILL }
+        .mapTo(mutableSetOf(), AiChatInputAttachment::id)
+    val hasFixedEntrySkill = activeSkillAttachments.any { it.id in fixedEntrySkillIds }
+    val skillInputPolicy = resolveSkillInputPolicy(
+        hasActiveSkill = activeSkillAttachments.isNotEmpty(),
+        allowsUserSkills = activeAgentMode.allowsUserSkills,
+        fixedEntrySkill = hasFixedEntrySkill,
+        modelSupportsToolCalls = selectedModelSupportsToolCalls
+    )
+    val skillToolErrorText = if (skillInputPolicy.toolError) {
+        "当前模型不支持工具调用，请切换模型"
+    } else {
+        null
+    }
+    LaunchedEffect(skillInputPolicy.selectorVisible) {
+        if (!skillInputPolicy.selectorVisible) {
+            showSkillAttachmentSheet = false
+            pendingSkillCapabilityAuthorization = null
+        }
     }
     val skillSuggestions = inputAttachments
         .filter { it.type == AiChatInputAttachmentType.SKILL }
@@ -656,6 +688,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
         ids.forEach { id ->
             updateMessage(id) { message -> message.copy(deliveryState = state) }
         }
+    }
+
+    fun ensureSkillToolSupport(): Boolean {
+        val message = skillToolErrorText ?: return true
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        return false
     }
 
     fun syncActiveSkillContext() {
@@ -998,7 +1036,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun activateSkillAttachment(attachment: AiChatInputAttachment) {
-        if (!activeAgentMode.allowsUserSkills) return
+        if (!skillInputPolicy.selectorVisible) return
         inputAttachments.removeAll {
             it.type == AiChatInputAttachmentType.SKILL && it.id != attachment.id
         }
@@ -1016,7 +1054,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun requestSkillAttachment(attachment: AiChatInputAttachment) {
-        if (!activeAgentMode.allowsUserSkills) return
+        if (!skillInputPolicy.selectorVisible) return
         val requested = attachment.skillRuntime.mcpCapabilities.toSet()
         val missing = requested - attachment.authorizedSkillCapabilities().toSet()
         if (missing.isNotEmpty()) {
@@ -1297,6 +1335,10 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun sendCurrentMessages(activeUserMessageIds: List<String> = emptyList()) {
+        if (!ensureSkillToolSupport()) {
+            updateDeliveryState(activeUserMessageIds, ChatDeliveryState.RECOVERABLE)
+            return
+        }
         syncModeEntryContext()
         syncActiveSkillContext()
         sending = true
@@ -1633,6 +1675,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         messageOverride: String? = null,
         uploadOverride: String? = null
     ) {
+        if (!ensureSkillToolSupport()) return
         val content = (messageOverride ?: input).trim()
         if (content.isBlank()) {
             Toast.makeText(context, R.string.ai_chat_empty, Toast.LENGTH_SHORT).show()
@@ -1700,6 +1743,10 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun submitInteraction(messageId: String, action: AiChatInteractionAction) {
+        if (!ensureSkillToolSupport()) {
+            action.onCompleted(false)
+            return
+        }
         if (sending) {
             Toast.makeText(context, "正在生成中", Toast.LENGTH_SHORT).show()
             action.onCompleted(false)
@@ -1769,6 +1816,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun regenerateMessage(message: ChatUiMessage) {
+        if (!ensureSkillToolSupport()) return
         if (sending) {
             Toast.makeText(context, "正在生成中", Toast.LENGTH_SHORT).show()
             return
@@ -2045,6 +2093,10 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun showBookScanContinueEntry(action: AiChatInteractionAction) {
+        if (!ensureSkillToolSupport()) {
+            action.onCompleted(false)
+            return
+        }
         if (sending || modeEntryStarted || messages.isNotEmpty()) {
             action.onCompleted(false)
             return
@@ -2098,9 +2150,10 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
     }
 
-    fun startModeEntry() {
+    fun startModeEntry(): Boolean {
+        if (!ensureSkillToolSupport()) return false
         if (sending || modeEntryStarted || messages.isNotEmpty()) {
-            return
+            return false
         }
         val entryPolicy = activeAgentMode.entryPolicy
         if (entryPolicy.requiresContext && activeModeEntryContext == null) {
@@ -2111,7 +2164,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 meta = "error"
             )
             persistActiveSession()
-            return
+            return false
         }
         modeEntryStarted = true
         syncModeEntryContext()
@@ -2120,6 +2173,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         refreshContextUsage()
         persistActiveSession()
         sendCurrentMessages()
+        return true
     }
 
     val modeEntryStateDecision = if (!sending) {
@@ -2148,7 +2202,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
     LaunchedEffect(
         activeSessionId,
         activeAgentMode.identity,
-        modeEntryLaunchDecision
+        modeEntryLaunchDecision,
+        skillToolErrorText
     ) {
         when (modeEntryLaunchDecision) {
             AgentModeEntryLaunchDecision.NONE -> Unit
@@ -2444,7 +2499,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
                             RikkaChatInput(
                                 value = input,
                                 onValueChange = { input = it },
-                                messageInputEnabled = modeEntryConfirmation == null,
+                                messageInputEnabled = modeEntryConfirmation == null &&
+                                    skillToolErrorText == null,
                                 sending = sending,
                                 modelIconRes = selectedModelIconRes,
                                 reasoningEnabled = selectedReasoningEnabled,
@@ -2453,7 +2509,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     it.type == AiChatInputAttachmentType.SKILL
                                 },
                                 mcpControlVisible = activeAgentMode.allowsManualMcpCapabilities,
-                                skillControlVisible = activeAgentMode.allowsUserSkills,
+                                skillControlVisible = skillInputPolicy.selectorVisible,
                                 contextAvailable = availableContextAttachments.isNotEmpty()
                                         || inputAttachments.any {
                                     it.type == AiChatInputAttachmentType.CONTEXT
@@ -2462,13 +2518,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 suggestionExpanded = suggestionsExpanded,
                                 contextUsage = contextUsage,
                                 attachments = inputAttachments,
-                                skills = if (activeAgentMode.allowsUserSkills) {
-                                    inputAttachments.filter {
-                                        it.type == AiChatInputAttachmentType.SKILL
-                                    }
-                                } else {
-                                    emptyList()
-                                },
+                                skills = activeSkillAttachments,
+                                skillRemovable = skillInputPolicy.removable,
+                                skillErrorText = skillToolErrorText,
                                 onSend = ::sendMessage,
                                 onStop = ::stopSending,
                                 onModelClick = {
@@ -2499,7 +2551,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     showContextUsageDialog = true
                                 },
                                 onSkillClick = {
-                                    if (activeAgentMode.allowsUserSkills) {
+                                    if (skillInputPolicy.selectorVisible) {
                                         showSkillAttachmentSheet = true
                                     }
                                 },
@@ -2521,7 +2573,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     refreshContextUsage()
                                 },
                                 onRemoveSkill = { skill ->
-                                    if (activeAgentMode.allowsUserSkills) {
+                                    if (skillInputPolicy.removable) {
                                         inputAttachments.removeAll { it.id == skill.id }
                                         skillManagedCapabilityIds.clear()
                                         enabledMcpCapabilityIds.replaceWith(
@@ -2570,8 +2622,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 ) {
                                     showBookScanContinueEntry(action)
                                 } else {
-                                    action.onCompleted(true)
-                                    startModeEntry()
+                                    action.onCompleted(startModeEntry())
                                 }
                             },
                             onInteractionSubmit = ::submitInteraction,
@@ -2646,7 +2697,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             onDismiss = { contextPreviewAttachments = emptyList() }
         )
     }
-    if (showSkillAttachmentSheet && activeAgentMode.allowsUserSkills) {
+    if (showSkillAttachmentSheet && skillInputPolicy.selectorVisible) {
         AiChatInputAttachmentSheet(
             title = "加载技能",
             description = "选择新技能会替换当前技能，并持续用于当前会话。",
@@ -2661,7 +2712,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         )
     }
     pendingSkillCapabilityAuthorization
-        ?.takeIf { activeAgentMode.allowsUserSkills }
+        ?.takeIf { skillInputPolicy.selectorVisible }
         ?.let { attachment ->
         val requestedCapabilities = attachment.skillRuntime.mcpCapabilities.mapNotNull { id ->
             McpInternalToolCatalog.capability(id)
@@ -7010,6 +7061,26 @@ private data class ContextUsageCategory(
     val tokens: Int
 )
 
+internal data class AiSkillInputPolicy(
+    val selectorVisible: Boolean,
+    val removable: Boolean,
+    val toolError: Boolean
+)
+
+internal fun resolveSkillInputPolicy(
+    hasActiveSkill: Boolean,
+    allowsUserSkills: Boolean,
+    fixedEntrySkill: Boolean = false,
+    modelSupportsToolCalls: Boolean
+): AiSkillInputPolicy {
+    val skillLocked = hasActiveSkill && (!allowsUserSkills || fixedEntrySkill)
+    return AiSkillInputPolicy(
+        selectorVisible = allowsUserSkills && !skillLocked,
+        removable = allowsUserSkills && !skillLocked,
+        toolError = hasActiveSkill && !modelSupportsToolCalls
+    )
+}
+
 @Composable
 private fun RikkaChatInput(
     value: String,
@@ -7028,6 +7099,8 @@ private fun RikkaChatInput(
     contextUsage: AiChatContextUsage,
     attachments: List<AiChatInputAttachment>,
     skills: List<AiChatInputAttachment>,
+    skillRemovable: Boolean,
+    skillErrorText: String?,
     onSend: () -> Unit,
     onStop: () -> Unit,
     onModelClick: () -> Unit,
@@ -7057,6 +7130,8 @@ private fun RikkaChatInput(
                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                     CompactSkillStatusRow(
                         skills = skills,
+                        removable = skillRemovable,
+                        errorText = skillErrorText,
                         onRemove = onRemoveSkill
                     )
                     val contextAttachments = attachments.filter {
@@ -7076,7 +7151,9 @@ private fun RikkaChatInput(
                         readOnly = !messageInputEnabled,
                         placeholder = {
                             Text(
-                                if (messageInputEnabled) {
+                                if (skillErrorText != null) {
+                                    "请先切换到支持工具调用的模型"
+                                } else if (messageInputEnabled) {
                                     "输入消息与 AI 聊天"
                                 } else {
                                     "可先设置模型和思考深度"
@@ -7207,6 +7284,8 @@ private fun ChatInputActionButton(
 @Composable
 private fun CompactSkillStatusRow(
     skills: List<AiChatInputAttachment>,
+    removable: Boolean,
+    errorText: String?,
     onRemove: (AiChatInputAttachment) -> Unit
 ) {
     AnimatedVisibility(visible = skills.isNotEmpty()) {
@@ -7220,33 +7299,44 @@ private fun CompactSkillStatusRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 val skill = skills.lastOrNull() ?: return@AnimatedVisibility
+                val statusColor = if (errorText != null) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
                 Icon(
                     painter = painterResource(R.drawable.ic_ai_skill_puzzle),
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = statusColor,
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
-                    text = "Skill：${skill.title}",
+                    text = errorText ?: "Skill：${skill.title}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = if (errorText != null) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .clickable { onRemove(skill) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = "移除 ${skill.title}",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(15.dp)
-                    )
+                if (removable) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .clickable { onRemove(skill) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "移除 ${skill.title}",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
                 }
             }
             HorizontalDivider(
