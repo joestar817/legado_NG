@@ -136,6 +136,8 @@ data class TtsEngineSetting(
     var contentType: String? = "audio/x-wav",
     @SerializedName(value = "concurrentRate", alternate = ["concurrent_rate"])
     override var concurrentRate: String? = "0",
+    @SerializedName(value = "maxConcurrency", alternate = ["max_concurrency"])
+    val maxConcurrency: Int = 0,
     @SerializedName(value = "loginUrl", alternate = ["login_url"])
     override var loginUrl: String? = null,
     @SerializedName(value = "loginUi", alternate = ["login_ui"])
@@ -222,6 +224,13 @@ data class TtsEngineSetting(
 
     fun effectivePitch(): Int {
         return (runtimePitch ?: defaultPitch).coerceIn(0, 100)
+    }
+
+    fun effectiveMaxConcurrency(globalLimit: Int): Int {
+        val safeGlobalLimit = globalLimit.coerceAtLeast(1)
+        return maxConcurrency.takeIf { it > 0 }
+            ?.coerceIn(1, safeGlobalLimit)
+            ?: safeGlobalLimit
     }
 
     fun effectiveSynthesisUrl(): String {

@@ -83,8 +83,31 @@ object TtsScriptEngineClient {
         speed: Int = engine.effectiveSpeed(),
         volume: Int = engine.effectiveVolume(),
         pitch: Int = engine.effectivePitch(),
-        coroutineContext: CoroutineContext = EmptyCoroutineContext,
-        streaming: Boolean = false
+        coroutineContext: CoroutineContext = EmptyCoroutineContext
+    ): Response {
+        return executeSynthesis(
+            engine = engine,
+            text = text,
+            voiceId = voiceId,
+            styleId = styleId,
+            speed = speed,
+            volume = volume,
+            pitch = pitch,
+            coroutineContext = coroutineContext,
+            aggregateResponse = true
+        )
+    }
+
+    private suspend fun executeSynthesis(
+        engine: TtsEngineSetting,
+        text: String,
+        voiceId: String?,
+        styleId: String?,
+        speed: Int,
+        volume: Int,
+        pitch: Int,
+        coroutineContext: CoroutineContext,
+        aggregateResponse: Boolean
     ): Response {
         val voice = TtsEngineStore.voice(engine.id, voiceId)
             ?: engine.effectiveVoices().firstOrNull { it.id == voiceId }
@@ -116,7 +139,7 @@ object TtsScriptEngineClient {
             voiceId = voice?.id ?: voiceId,
             voiceName = voice?.name,
             coroutineContext = coroutineContext,
-            streaming = streaming
+            aggregateResponse = aggregateResponse
         )
     }
 
@@ -130,13 +153,13 @@ object TtsScriptEngineClient {
         voiceId: String?,
         voiceName: String?,
         coroutineContext: CoroutineContext,
-        streaming: Boolean
+        aggregateResponse: Boolean
     ): Response {
         val attempts = request.retry.coerceIn(0, 3) + 1
         var lastError: Throwable? = null
         repeat(attempts) {
             try {
-                return executeRequest(
+                val response = executeRequest(
                     request = request,
                     engine = engine,
                     text = text,
@@ -145,9 +168,18 @@ object TtsScriptEngineClient {
                     pitch = pitch,
                     voiceId = voiceId,
                     voiceName = voiceName,
-                    coroutineContext = coroutineContext,
-                    streaming = streaming
+                    coroutineContext = coroutineContext
                 )
+                if (!aggregateResponse || (!request.isWebSocket && !request.isSse)) {
+                    return response
+                }
+                return response.use {
+                    val contentType = it.body.contentType()
+                    val bytes = it.body.bytes()
+                    it.newBuilder()
+                        .body(bytes.toResponseBody(contentType))
+                        .build()
+                }
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
                 lastError = e
@@ -165,23 +197,14 @@ object TtsScriptEngineClient {
         pitch: Int,
         voiceId: String?,
         voiceName: String?,
-        coroutineContext: CoroutineContext,
-        streaming: Boolean
+        coroutineContext: CoroutineContext
     ): Response {
         if (request.isWebSocket) {
-            return if (streaming) {
-                TtsWebSocketEngineClient.executeStreaming(
-                    engine = engine,
-                    request = request,
-                    coroutineContext = coroutineContext
-                )
-            } else {
-                TtsWebSocketEngineClient.execute(
-                    engine = engine,
-                    request = request,
-                    coroutineContext = coroutineContext
-                )
-            }
+            return TtsWebSocketEngineClient.execute(
+                engine = engine,
+                request = request,
+                coroutineContext = coroutineContext
+            )
         }
         val analyzeUrl = AnalyzeUrl(
             request.toAnalyzeUrlRule(),
@@ -197,15 +220,7 @@ object TtsScriptEngineClient {
         )
         val response = analyzeUrl.getResponseAwait()
         if (request.isSse && response.isSuccessful) {
-            val transformed = TtsSseEngineClient.transform(response, request)
-            if (streaming) return transformed
-            return transformed.use {
-                val contentType = it.body.contentType()
-                val bytes = it.body.bytes()
-                it.newBuilder()
-                    .body(bytes.toResponseBody(contentType))
-                    .build()
-            }
+            return TtsSseEngineClient.transform(response, request)
         }
         return if (request.isJsonResponse) {
             response.toAudioResponse(
@@ -217,8 +232,7 @@ object TtsScriptEngineClient {
                 pitch,
                 voiceId,
                 voiceName,
-                coroutineContext,
-                streaming
+                coroutineContext
             )
         } else {
             response
@@ -235,7 +249,7 @@ object TtsScriptEngineClient {
         pitch: Int = engine.effectivePitch(),
         coroutineContext: CoroutineContext = EmptyCoroutineContext
     ): InputStream {
-        return getSynthesisResponse(
+        val response = executeSynthesis(
             engine = engine,
             text = text,
             voiceId = voiceId,
@@ -244,8 +258,23 @@ object TtsScriptEngineClient {
             volume = volume,
             pitch = pitch,
             coroutineContext = coroutineContext,
-            streaming = true
-        ).body.byteStream()
+            aggregateResponse = false
+        )
+        return response.requireAudioStream(engine)
+    }
+
+    private fun Response.requireAudioStream(engine: TtsEngineSetting): InputStream {
+        headers["Content-Type"]?.let { rawContentType ->
+            val contentType = rawContentType.substringBefore(';').trim()
+            val expected = engine.contentType.orEmpty()
+            if (contentType == "application/json" || contentType.startsWith("text/")) {
+                throw NoStackTraceException(body.string())
+            }
+            if (expected.isNotBlank() && !contentType.matches(expected.toRegex())) {
+                throw NoStackTraceException("TTS服务器返回错误：${body.string()}")
+            }
+        }
+        return body.byteStream()
     }
 
     fun audioCacheKey(
@@ -499,8 +528,7 @@ object TtsScriptEngineClient {
         pitch: Int,
         voiceId: String?,
         voiceName: String?,
-        coroutineContext: CoroutineContext,
-        streaming: Boolean
+        coroutineContext: CoroutineContext
     ): Response {
         val bodyText = body.string()
         val audioValue = extractAudioValue(bodyText, request.audioExtract)
@@ -525,8 +553,7 @@ object TtsScriptEngineClient {
                     pitch = pitch,
                     voiceId = voiceId,
                     voiceName = voiceName,
-                    coroutineContext = coroutineContext,
-                    streaming = streaming
+                    coroutineContext = coroutineContext
                 )
             }
             "base64", "" -> {

@@ -16,6 +16,7 @@ App 主动调用的协议函数只有：
 - `@enabled`：默认是否启用。
 - `@cookieJar`：是否启用内部 CookieJar。
 - `@concurrentRate`：请求频率限制，沿用阅读现有的“间隔毫秒”或“次数/毫秒”格式。
+- `@maxConcurrency`：单引擎最大在途合成数。`0` 或省略时跟随听书全局 Worker 数；多人 TTS 中绑定到同一引擎的不同角色和音色共享该上限。
 - `@audioType`：默认音频 MIME 类型，旧 `@contentType` 仍兼容。
 - `@sampleText`：该脚本的默认试听文本。发音人未提供 `sample_text` 时，试听优先使用这里的文本，再回落到 App 内置默认文本。
 

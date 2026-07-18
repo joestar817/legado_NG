@@ -472,6 +472,7 @@ object TtsEngineStore {
             optionValues = safeOptionValues(),
             contentType = safeString { contentType }.ifBlank { "audio/x-wav" },
             concurrentRate = safeNullableString { concurrentRate },
+            maxConcurrency = safeInt(0) { maxConcurrency }.coerceIn(0, 16),
             loginUrl = safeNullableString { loginUrl },
             loginUi = safeNullableString { loginUi },
             loginCheckJs = safeNullableString { loginCheckJs },
@@ -875,6 +876,9 @@ object TtsEngineStore {
                 ?: metadata["contenttype"]?.takeIf { it.isNotBlank() }
                 ?: "audio/x-wav",
             concurrentRate = metadata["concurrentrate"]?.takeIf { it.isNotBlank() } ?: "0",
+            maxConcurrency = metadata["maxconcurrency"]
+                .toScriptInt(defaultValue = 0)
+                .coerceIn(0, 16),
             enabledCookieJar = metadata["cookiejar"].toScriptBoolean(defaultValue = false),
             sampleText = metadata["sampletext"]?.takeIf { it.isNotBlank() },
             defaultSpeed = metadata["defaultspeed"].toScriptInt(defaultValue = 50),

@@ -148,17 +148,20 @@ class TtsWebSocketProtocolTest {
     }
 
     @Test
-    fun scriptMetadata_readsConcurrentRate() {
+    fun scriptMetadata_readsConcurrencyLimits() {
         val parsed = TtsEngineStore.scriptEngineFromScript(
             """
             // @name WebSocket Test
             // @uuid websocket_test
             // @concurrentRate 200
+            // @maxConcurrency 2
             function synthesize() { return {}; }
             """.trimIndent()
         )
 
         assertEquals("200", parsed?.concurrentRate)
+        assertEquals(2, parsed?.maxConcurrency)
+        assertEquals(2, parsed?.effectiveMaxConcurrency(globalLimit = 3))
     }
 
     @Test

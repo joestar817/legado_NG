@@ -21,10 +21,8 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.ByteString
 import okio.ByteString.Companion.decodeBase64
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.CoroutineContext
@@ -119,34 +117,6 @@ internal class TtsWebSocketProtocol(
 internal object TtsWebSocketEngineClient {
 
     suspend fun execute(
-        engine: TtsEngineSetting,
-        request: TtsScriptEngineClient.TtsScriptRequest,
-        coroutineContext: CoroutineContext
-    ): Response = withContext(coroutineContext) {
-        ConcurrentRateLimiter(engine).getConcurrentRecord()
-        val config = request.webSocketConfig
-            ?: throw NoStackTraceException("WebSocket 合成请求缺少 websocket 配置")
-        val httpRequest = request.toHttpRequest()
-        val audio = ByteArrayOutputStream().apply {
-            config.pcm?.wavHeader()?.let(::write)
-        }
-        runSession(
-            request = request,
-            config = config,
-            httpRequest = httpRequest,
-            onAudio = audio::write
-        )
-        Response.Builder()
-            .request(httpRequest)
-            .protocol(Protocol.HTTP_1_1)
-            .code(200)
-            .message("OK")
-            .header("Content-Type", request.streamingContentType(config.pcm))
-            .body(audio.toByteArray().toResponseBody(request.streamingMediaType(config.pcm)))
-            .build()
-    }
-
-    suspend fun executeStreaming(
         engine: TtsEngineSetting,
         request: TtsScriptEngineClient.TtsScriptRequest,
         coroutineContext: CoroutineContext
