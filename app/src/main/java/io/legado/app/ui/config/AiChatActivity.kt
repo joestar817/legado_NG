@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -168,20 +169,34 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.bumptech.glide.Glide
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import io.legado.app.R
+import io.legado.app.data.appDb
+import io.legado.app.data.entities.AgentMemory
+import io.legado.app.help.ai.AgentModeDefinition
+import io.legado.app.help.ai.AgentModeEntryContext
+import io.legado.app.help.ai.AgentModeEntryLaunchDecision
+import io.legado.app.help.ai.AgentModeEntryMemoryState
+import io.legado.app.help.ai.AgentModeRegistry
 import io.legado.app.help.ai.AiChatClient
+import io.legado.app.help.ai.AiActiveSkillSnapshot
 import io.legado.app.help.ai.AiChatContextEvent
 import io.legado.app.help.ai.AiChatContextEventType
 import io.legado.app.help.ai.AiChatContextManager
+import io.legado.app.help.ai.AiChatDurableContextUpdate
 import io.legado.app.help.ai.AiChatContextUsage
 import io.legado.app.help.ai.AiChatCompactionRecord
 import io.legado.app.help.ai.AiChatPromptUsageAnchor
-import io.legado.app.help.ai.AiChatHistoryState
 import io.legado.app.help.ai.AiChatHistoryStore
 import io.legado.app.help.ai.AiChatInteraction
 import io.legado.app.help.ai.AiChatInteractionOption
 import io.legado.app.help.ai.AiChatInteractionParser
+import io.legado.app.help.ai.AiChatInteractionPolicyContract
+import io.legado.app.help.ai.AiChatInteractionPolicyRegistry
+import io.legado.app.help.ai.AiChatInteractionMemoryWriter
 import io.legado.app.help.ai.AiChatInteractionSubmit
 import io.legado.app.help.ai.AiChatInteractionType
 import io.legado.app.help.ai.AiChatMessageSnapshot
@@ -192,7 +207,14 @@ import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiMemoryTraceItem
 import io.legado.app.help.ai.AiPendingToolCall
 import io.legado.app.help.ai.AiSkillRegistry
+import io.legado.app.help.ai.AiSkillCapabilityGrantStore
+import io.legado.app.help.ai.AiSkillPackageRegistry
+import io.legado.app.help.ai.AiSkillPresentation
 import io.legado.app.help.ai.AiSkillScope
+import io.legado.app.help.ai.resolveAgentModeEntryLaunch
+import io.legado.app.help.ai.resolveAgentModeEntryMemoryProbeTarget
+import io.legado.app.help.ai.runtime.AgentSkillRuntimeDeclaration
+import io.legado.app.help.ai.runtime.ToolExecutionReceipt
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.backgroundColor
@@ -213,6 +235,7 @@ import io.legado.app.utils.openUrl
 import io.legado.app.web.mcp.McpInternalToolCatalog
 import io.legado.app.web.mcp.McpInternalToolCapability
 import io.legado.app.web.mcp.McpInternalToolModule
+import io.legado.app.web.mcp.McpToolSideEffect
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.html.HtmlPlugin
@@ -250,6 +273,7 @@ class AiChatActivity : AppCompatActivity() {
         const val EXTRA_AVAILABLE_CONTEXTS = "available_contexts"
         const val EXTRA_LOADED_SKILL_IDS = "loaded_skill_ids"
         const val EXTRA_CONTEXT_ATTACHMENTS = "context_attachments"
+        const val EXTRA_MODE_ENTRY_CONTEXT = "mode_entry_context"
         const val EXTRA_EXPAND_SUGGESTIONS = "expand_suggestions"
         const val ENTRY_BOOKSHELF = "bookshelf"
         const val ENTRY_BOOK_DETAIL = "book_detail"
@@ -271,6 +295,95 @@ class AiChatActivity : AppCompatActivity() {
     }
 }
 
+private const val MODE_ENTRY_START_PROMPT =
+    "[AI_MODE_START] 使用当前固定 Mode 入口上下文完整执行系统工作流，" +
+        "直到产生工作流要求的最终可见结果。不要要求用户重复提供入口信息，" +
+        "不要复述本条内部触发消息，不要输出中间过程播报。"
+
+private val MODE_ENTRY_CONTEXT_TOKEN =
+    Regex("""\{\{context\.(title|payload\.[A-Za-z0-9_]+)\}\}""")
+
+internal fun renderModeEntryConfirmationTemplate(
+    template: String,
+    context: AgentModeEntryContext?
+): String {
+    return MODE_ENTRY_CONTEXT_TOKEN.replace(template) { match ->
+        when (val path = match.groupValues[1]) {
+            "title" -> context?.title.orEmpty()
+            else -> {
+                val key = path.removePrefix("payload.")
+                runCatching {
+                    context?.payload
+                        ?.get(key)
+                        ?.takeIf { it.isJsonPrimitive }
+                        ?.asJsonPrimitive
+                        ?.asString
+                }.getOrNull().orEmpty()
+            }
+        }
+    }.trim()
+}
+
+internal fun shouldPersistActiveSession(
+    hasVisibleMessages: Boolean,
+    modeEntryStarted: Boolean
+): Boolean = hasVisibleMessages || modeEntryStarted
+
+internal fun buildModeEntryConfirmation(
+    mode: AgentModeDefinition,
+    context: AgentModeEntryContext?,
+    memoryState: AgentModeEntryMemoryState = AgentModeEntryMemoryState.NOT_REQUIRED
+): AiChatInteraction? {
+    val probe = mode.entryPolicy.memoryProbe
+    val confirmation = when {
+        probe == null -> mode.entryPolicy.confirmation
+        memoryState == AgentModeEntryMemoryState.ABSENT -> probe.absent
+        memoryState == AgentModeEntryMemoryState.PRESENT -> probe.present
+        else -> null
+    }
+    val notice = when {
+        probe == null -> null
+        memoryState == AgentModeEntryMemoryState.LOADING -> probe.loading
+        memoryState == AgentModeEntryMemoryState.DISABLED -> probe.disabled
+        memoryState == AgentModeEntryMemoryState.ERROR -> probe.error
+        else -> null
+    }
+    val title = confirmation?.title ?: notice?.title ?: return null
+    val description = confirmation?.description ?: notice?.description ?: return null
+    val actionOptions = confirmation?.actions.orEmpty().map { action ->
+        AiChatInteractionOption(
+            label = action.label,
+            value = action.value,
+            description = action.description
+        )
+    }
+    return AiChatInteraction(
+        version = 1,
+        id = "${mode.id}_entry_confirmation",
+        type = if (actionOptions.isNotEmpty()) {
+            AiChatInteractionType.ACTIONS
+        } else {
+            AiChatInteractionType.CONFIRM
+        },
+        title = renderModeEntryConfirmationTemplate(title, context),
+        description = renderModeEntryConfirmationTemplate(description, context),
+        options = actionOptions,
+        submit = confirmation?.let {
+            AiChatInteractionSubmit(
+                label = it.confirmLabel,
+                promptTemplate = if (actionOptions.isNotEmpty()) {
+                    MODE_ENTRY_ACTION_PROMPT_TEMPLATE
+                } else {
+                    it.confirmLabel
+                }
+            )
+        },
+        cancel = null
+    )
+}
+
+private const val MODE_ENTRY_ACTION_PROMPT_TEMPLATE = "[MODE_ENTRY_ACTION] action={{value}}"
+
 private enum class AiChatInputAttachmentType {
     CONTEXT,
     SKILL
@@ -282,7 +395,22 @@ private data class AiChatInputAttachment(
     val title: String,
     val subtitle: String,
     val prompt: String,
-    val suggestions: List<String> = emptyList()
+    val suggestions: List<String> = emptyList(),
+    val skillRuntime: AgentSkillRuntimeDeclaration = AgentSkillRuntimeDeclaration(),
+    val skillRevision: String = "",
+    val skillContentHash: String = "",
+    val skillRuntimeRevision: String = "",
+    val availableSkillIds: List<String> = emptyList(),
+    val trustedBuiltIn: Boolean = false
+)
+
+private data class AiChatInteractionAction(
+    val interaction: AiChatInteraction,
+    val displayText: String,
+    val prompt: String,
+    val selectedValues: Map<String, String> = emptyMap(),
+    val skipped: Boolean = false,
+    val onCompleted: (Boolean) -> Unit = {}
 )
 
 @Composable
@@ -354,6 +482,16 @@ private fun AiChatRoute(onBack: () -> Unit) {
     val entrySource = remember {
         (context as? AiChatActivity)?.intent?.getStringExtra(AiChatActivity.EXTRA_ENTRY)
     }
+    val initialAgentMode = remember(entrySource) {
+        resolveEntryAgentMode(entrySource)
+    }
+    val initialModeEntryContext = remember(entrySource) {
+        AgentModeEntryContext.fromJsonOrNull(
+            (context as? AiChatActivity)
+                ?.intent
+                ?.getStringExtra(AiChatActivity.EXTRA_MODE_ENTRY_CONTEXT)
+        )
+    }
     val preloadSkillIds = remember {
         (context as? AiChatActivity)
             ?.intent
@@ -373,9 +511,14 @@ private fun AiChatRoute(onBack: () -> Unit) {
             ?.intent
             ?.getBooleanExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, false) == true
     }
-    val entryAttachments = remember(entrySource, preloadSkillIds, preloadContextAttachments) {
+    val entryAttachments = remember(
+        entrySource,
+        initialAgentMode,
+        preloadSkillIds,
+        preloadContextAttachments
+    ) {
         (buildEntryInputAttachments(entrySource) +
-            buildSkillInputAttachments(preloadSkillIds) +
+            buildModeSkillInputAttachments(initialAgentMode, preloadSkillIds) +
             preloadContextAttachments)
             .distinctBy { it.id }
     }
@@ -410,7 +553,23 @@ private fun AiChatRoute(onBack: () -> Unit) {
     val messages = remember { mutableStateListOf<ChatUiMessage>() }
     val sessions = remember { mutableStateListOf<AiChatSessionSnapshot>() }
     val listState = rememberLazyListState()
-    var activeSessionId by remember { mutableStateOf<String?>(null) }
+    var activeSessionId by remember {
+        mutableStateOf<String?>(UUID.randomUUID().toString())
+    }
+    var activeAgentMode by remember { mutableStateOf<AgentModeDefinition>(initialAgentMode) }
+    var activeModeEntryContext by remember {
+        mutableStateOf<AgentModeEntryContext?>(initialModeEntryContext)
+    }
+    var modeEntryStarted by remember { mutableStateOf(false) }
+    var modeEntryMemoryState by remember {
+        mutableStateOf(
+            if (initialAgentMode.entryPolicy.memoryProbe == null) {
+                AgentModeEntryMemoryState.NOT_REQUIRED
+            } else {
+                AgentModeEntryMemoryState.LOADING
+            }
+        )
+    }
     var input by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var sendingJob by remember { mutableStateOf<Job?>(null) }
@@ -431,13 +590,29 @@ private fun AiChatRoute(onBack: () -> Unit) {
     var showContextAttachmentSheet by remember { mutableStateOf(false) }
     var showSkillAttachmentSheet by remember { mutableStateOf(false) }
     var showMcpCapabilitySheet by remember { mutableStateOf(false) }
+    val initialSkillManagedCapabilityIds = remember(entryAttachments) {
+        resolveModeManagedCapabilities(initialAgentMode, entryAttachments)
+    }
+    val skillManagedCapabilityIds = remember {
+        mutableStateListOf<String>().apply {
+            addAll(initialSkillManagedCapabilityIds)
+        }
+    }
+    val manualMcpCapabilityIds = remember { mutableStateListOf<String>() }
     val enabledMcpCapabilityIds = remember {
         mutableStateListOf<String>().apply {
-            addAll(defaultMcpCapabilityIds(entrySource))
+            addAll(initialSkillManagedCapabilityIds)
         }
     }
     var contextPreviewAttachments by remember { mutableStateOf<List<AiChatInputAttachment>>(emptyList()) }
+    var pendingSkillCapabilityAuthorization by remember {
+        mutableStateOf<AiChatInputAttachment?>(null)
+    }
     var historyLoaded by remember { mutableStateOf(false) }
+    val loadedSessionDetailIds = remember { mutableStateListOf<String>() }
+    var historyDetailsLoaded by remember { mutableStateOf(false) }
+    var historyDetailsLoading by remember { mutableStateOf(false) }
+    var openingSessionId by remember { mutableStateOf<String?>(null) }
     var historyManageMode by remember { mutableStateOf(false) }
     var pendingDeleteHistoryIds by remember { mutableStateOf<List<String>>(emptyList()) }
     val selectedExportMessageIds = remember { mutableStateListOf<String>() }
@@ -459,9 +634,14 @@ private fun AiChatRoute(onBack: () -> Unit) {
         .flatMap { it.suggestions }
         .distinct()
     var suggestionsExpanded by remember { mutableStateOf(expandSuggestionsOnEntry) }
-    val currentTitle = sessions.firstOrNull { it.id == activeSessionId }?.title
-        ?: messages.deriveChatTitle()
-        ?: "新聊天"
+    val currentTitle = resolveConversationTitle(
+        modeEntryTitle = activeModeEntryContext?.title,
+        derivedTitle = messages.deriveChatTitle(),
+        previousTitle = sessions.firstOrNull { it.id == activeSessionId }?.title
+    )
+    val interactionPolicy = remember(activeAgentMode.identity) {
+        AiChatInteractionPolicyRegistry.resolve(activeAgentMode)
+    }
 
     fun updateMessage(id: String, transform: (ChatUiMessage) -> ChatUiMessage) {
         val index = messages.indexOfFirst { it.id == id }
@@ -482,12 +662,29 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
         AiChatContextManager.syncActiveSkill(
             messages = uploadMessages,
-            title = skill?.title,
-            prompt = skill?.prompt
+            snapshot = skill?.let { attachment ->
+                AiActiveSkillSnapshot(
+                    skillId = attachment.id.removePrefix("skill."),
+                    title = attachment.title,
+                    prompt = attachment.prompt,
+                    revision = attachment.skillRevision,
+                    runtimeRevision = attachment.skillRuntimeRevision,
+                    contentHash = attachment.skillContentHash,
+                    runtime = attachment.skillRuntime
+                )
+            }
+        )
+    }
+
+    fun syncModeEntryContext() {
+        AiChatContextManager.syncModeEntryContext(
+            messages = uploadMessages,
+            context = activeModeEntryContext
         )
     }
 
     fun refreshContextUsage() {
+        syncModeEntryContext()
         syncActiveSkillContext()
         val revision = ++contextUsageRevision
         val pendingContexts = inputAttachments.filter {
@@ -501,6 +698,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
         val promptUsageAnchor = messages.latestPromptUsageAnchor()
         val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
+        val activeSkill = inputAttachments.lastOrNull {
+            it.type == AiChatInputAttachmentType.SKILL
+        }
         contextUsage = AiChatContextManager.usage(snapshot)
         scope.launch {
             val measured = withContext(Dispatchers.IO) {
@@ -508,6 +708,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     chatClient.estimateContextUsage(
                         snapshot,
                         promptUsageAnchor,
+                        skillId = activeSkill?.id?.removePrefix("skill.").orEmpty(),
+                        skillContentHash = activeSkill?.skillContentHash.orEmpty(),
+                        availableSkillIds = activeSkill?.availableSkillIds.orEmpty(),
                         enabledMcpCapabilityIds = mcpCapabilityIds
                     )
                 }
@@ -521,23 +724,66 @@ private fun AiChatRoute(onBack: () -> Unit) {
 
     LaunchedEffect(Unit) {
         val history = withContext(Dispatchers.IO) {
-            AiChatHistoryStore.load()
+            AiChatHistoryStore.loadIndex()
         }
-        sessions.clear()
-        sessions += history.sessions
+        val currentSessionIds = sessions.mapTo(mutableSetOf()) { it.id }
+        sessions += history.sessions.filterNot { it.id in currentSessionIds }
+        sessions.sortChatSessions()
         historyLoaded = true
-        if (sending || messages.isNotEmpty()) {
-            return@LaunchedEffect
-        }
-        activeSessionId = UUID.randomUUID().toString()
-        uploadMessages.clear()
-        uploadMessages += chatClient.newSystemMessage()
         refreshContextUsage()
-        messages.clear()
         selectedDrawerIndex = 2
     }
     LaunchedEffect(configVersion) {
         refreshContextUsage()
+    }
+    LaunchedEffect(
+        activeSessionId,
+        activeAgentMode.identity,
+        activeModeEntryContext?.toJson(),
+        modeEntryStarted,
+        messages.size,
+        configVersion
+    ) {
+        val probe = activeAgentMode.entryPolicy.memoryProbe
+        if (probe == null || modeEntryStarted || messages.isNotEmpty()) {
+            modeEntryMemoryState = AgentModeEntryMemoryState.NOT_REQUIRED
+            return@LaunchedEffect
+        }
+        if (!AiConfig.memoryEnabled) {
+            modeEntryMemoryState = AgentModeEntryMemoryState.DISABLED
+            return@LaunchedEffect
+        }
+        modeEntryMemoryState = AgentModeEntryMemoryState.LOADING
+        val target = runCatching {
+            resolveAgentModeEntryMemoryProbeTarget(
+                mode = activeAgentMode,
+                context = activeModeEntryContext
+            )
+        }.getOrElse {
+            modeEntryMemoryState = AgentModeEntryMemoryState.ERROR
+            return@LaunchedEffect
+        }
+        modeEntryMemoryState = runCatching {
+            withContext(Dispatchers.IO) {
+                appDb.agentMemoryDao.search(
+                    scopeType = target.scopeType,
+                    scopeKey = target.scopeKey,
+                    subject = "",
+                    domain = target.domain,
+                    memoryType = target.memoryType,
+                    keyword = "",
+                    status = target.status,
+                    offset = 0,
+                    limit = 1
+                ).isNotEmpty()
+            }
+        }.fold(
+            onSuccess = { present ->
+                if (present) AgentModeEntryMemoryState.PRESENT
+                else AgentModeEntryMemoryState.ABSENT
+            },
+            onFailure = { AgentModeEntryMemoryState.ERROR }
+        )
     }
     LaunchedEffect(historyLoaded, inputAttachmentUsageKey) {
         val loadedSkills = inputAttachments.filter {
@@ -549,6 +795,33 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 attachment.type == AiChatInputAttachmentType.SKILL && attachment.id != activeSkillId
             }
             return@LaunchedEffect
+        }
+        loadedSkills.singleOrNull()?.let { loadedSkill ->
+            val granted = resolveModeManagedCapabilities(activeAgentMode, listOf(loadedSkill))
+            if (skillManagedCapabilityIds.toList() != granted) {
+                skillManagedCapabilityIds.replaceWith(granted)
+            }
+            val merged = McpInternalToolCatalog.normalizeCapabilityIds(
+                manualMcpCapabilityIds + skillManagedCapabilityIds
+            )
+            if (merged != enabledMcpCapabilityIds.toList()) {
+                enabledMcpCapabilityIds.replaceWith(merged)
+            }
+            val missing = if (activeAgentMode.allowsUserSkills) {
+                loadedSkill.skillRuntime.mcpCapabilities.toSet() - granted.toSet()
+            } else {
+                emptySet()
+            }
+            if (missing.isNotEmpty() && pendingSkillCapabilityAuthorization == null) {
+                pendingSkillCapabilityAuthorization = loadedSkill
+            }
+        } ?: run {
+            if (skillManagedCapabilityIds.isNotEmpty()) {
+                skillManagedCapabilityIds.clear()
+                enabledMcpCapabilityIds.replaceWith(
+                    McpInternalToolCatalog.normalizeCapabilityIds(manualMcpCapabilityIds)
+                )
+            }
         }
         if (historyLoaded) {
             refreshContextUsage()
@@ -652,18 +925,26 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun saveHistory(activeId: String? = activeSessionId) {
-        val state = AiChatHistoryState(
-            activeSessionId = activeId,
-            sessions = sessions.toList()
-        )
         scope.launch(Dispatchers.IO) {
-            AiChatHistoryStore.save(state)
+            AiChatHistoryStore.setActiveSessionId(activeId)
+        }
+    }
+
+    fun saveSessionSnapshot(
+        snapshot: AiChatSessionSnapshot,
+        makeActive: Boolean = false
+    ) {
+        scope.launch(Dispatchers.IO) {
+            AiChatHistoryStore.saveSessionSnapshot(snapshot)
+            if (makeActive) {
+                AiChatHistoryStore.setActiveSessionId(snapshot.id)
+            }
         }
     }
 
     fun persistActiveSession() {
         val visibleMessages = messages.filterNot { it.loading }
-        if (visibleMessages.isEmpty()) {
+        if (!shouldPersistActiveSession(visibleMessages.isNotEmpty(), modeEntryStarted)) {
             return
         }
         val now = System.currentTimeMillis()
@@ -671,7 +952,15 @@ private fun AiChatRoute(onBack: () -> Unit) {
         val oldSession = sessions.firstOrNull { it.id == sessionId }
         val snapshot = AiChatSessionSnapshot(
             id = sessionId,
-            title = visibleMessages.deriveChatTitle() ?: oldSession?.title ?: "新聊天",
+            title = resolveConversationTitle(
+                modeEntryTitle = activeModeEntryContext?.title,
+                derivedTitle = visibleMessages.deriveChatTitle(),
+                previousTitle = oldSession?.title
+            ),
+            modeId = activeAgentMode.id,
+            modeRevision = activeAgentMode.revision,
+            modeEntryContext = activeModeEntryContext,
+            modeEntryStarted = modeEntryStarted,
             createdAt = oldSession?.createdAt ?: now,
             updatedAt = now,
             isPinned = oldSession?.isPinned ?: false,
@@ -683,38 +972,118 @@ private fun AiChatRoute(onBack: () -> Unit) {
         sessions.removeAll { it.id == sessionId }
         sessions.add(0, snapshot)
         sessions.sortChatSessions()
-        saveHistory(sessionId)
+        if (sessionId !in loadedSessionDetailIds) {
+            loadedSessionDetailIds += sessionId
+        }
+        saveSessionSnapshot(snapshot, makeActive = true)
     }
 
     fun updateMcpCapabilitySelection(capabilityIds: Collection<String>) {
+        if (!activeAgentMode.allowsManualMcpCapabilities) return
+        val normalized = McpInternalToolCatalog.normalizeCapabilityIds(capabilityIds)
+        manualMcpCapabilityIds.replaceWith(
+            normalized.filterNot { capabilityId -> capabilityId in skillManagedCapabilityIds }
+        )
         enabledMcpCapabilityIds.replaceWith(
-            McpInternalToolCatalog.normalizeCapabilityIds(capabilityIds)
+            McpInternalToolCatalog.normalizeCapabilityIds(
+                manualMcpCapabilityIds + skillManagedCapabilityIds
+            )
         )
         refreshContextUsage()
         persistActiveSession()
     }
 
+    fun activateSkillAttachment(attachment: AiChatInputAttachment) {
+        if (!activeAgentMode.allowsUserSkills) return
+        inputAttachments.removeAll {
+            it.type == AiChatInputAttachmentType.SKILL && it.id != attachment.id
+        }
+        if (inputAttachments.none { it.id == attachment.id }) {
+            inputAttachments += attachment
+        }
+        skillManagedCapabilityIds.replaceWith(attachment.authorizedSkillCapabilities())
+        enabledMcpCapabilityIds.replaceWith(
+            McpInternalToolCatalog.normalizeCapabilityIds(
+                manualMcpCapabilityIds + skillManagedCapabilityIds
+            )
+        )
+        refreshContextUsage()
+        persistActiveSession()
+    }
+
+    fun requestSkillAttachment(attachment: AiChatInputAttachment) {
+        if (!activeAgentMode.allowsUserSkills) return
+        val requested = attachment.skillRuntime.mcpCapabilities.toSet()
+        val missing = requested - attachment.authorizedSkillCapabilities().toSet()
+        if (missing.isNotEmpty()) {
+            pendingSkillCapabilityAuthorization = attachment
+            return
+        }
+        activateSkillAttachment(attachment)
+    }
+
     fun startNewChat() {
         persistActiveSession()
         activeSessionId = UUID.randomUUID().toString()
+        activeAgentMode = initialAgentMode
+        activeModeEntryContext = initialModeEntryContext
+        modeEntryStarted = false
         uploadMessages.clear()
         uploadMessages += chatClient.newSystemMessage()
         contextCompactionCount = 0
         contextStatusText = null
         messages.clear()
-        inputAttachments.clear()
-        enabledMcpCapabilityIds.replaceWith(defaultMcpCapabilityIds(entrySource))
+        inputAttachments.replaceWith(entryAttachments)
+        skillManagedCapabilityIds.replaceWith(initialSkillManagedCapabilityIds)
+        manualMcpCapabilityIds.clear()
+        enabledMcpCapabilityIds.replaceWith(initialSkillManagedCapabilityIds)
         refreshContextUsage()
         selectedDrawerIndex = 2
         saveHistory(activeSessionId)
     }
 
-    fun openSession(session: AiChatSessionSnapshot) {
+    fun applyLoadedSession(session: AiChatSessionSnapshot) {
+        val restoredModeIdentity = session.normalizedAgentModeIdentity()
+        val restoredMode = AgentModeRegistry.resolve(restoredModeIdentity)
+        if (restoredMode == null) {
+            Toast.makeText(
+                context,
+                "当前版本不支持 Agent Mode：${restoredModeIdentity.id}@${restoredModeIdentity.revision}",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
         activeSessionId = session.id
+        activeAgentMode = restoredMode
+        activeModeEntryContext = session.modeEntryContext
+        modeEntryStarted = session.modeEntryStarted
         messages.replaceWith(session.messages.map { it.toUiMessage() })
         uploadMessages.replaceUploadMessages(session, chatClient)
-        inputAttachments.replaceWith(buildSkillInputAttachments(session.loadedSkillIds))
-        enabledMcpCapabilityIds.replaceWith(session.enabledMcpCapabilityIds)
+        inputAttachments.replaceWith(
+            buildModeSkillInputAttachments(
+                mode = restoredMode,
+                requestedSkillIds = session.loadedSkillIds,
+                pinnedMessages = uploadMessages
+            )
+        )
+        val restoredSkillCapabilities = resolveModeManagedCapabilities(
+            restoredMode,
+            inputAttachments
+        )
+        skillManagedCapabilityIds.replaceWith(restoredSkillCapabilities)
+        manualMcpCapabilityIds.replaceWith(
+            if (restoredMode.allowsManualMcpCapabilities) {
+                McpInternalToolCatalog.normalizeCapabilityIds(session.enabledMcpCapabilityIds)
+                    .filterNot { capabilityId -> capabilityId in restoredSkillCapabilities }
+            } else {
+                emptyList()
+            }
+        )
+        enabledMcpCapabilityIds.replaceWith(
+            McpInternalToolCatalog.normalizeCapabilityIds(
+                manualMcpCapabilityIds + skillManagedCapabilityIds
+            )
+        )
         refreshContextUsage()
         contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
         contextStatusText = if (messages.any {
@@ -728,6 +1097,85 @@ private fun AiChatRoute(onBack: () -> Unit) {
         saveHistory(session.id)
     }
 
+    fun openSession(session: AiChatSessionSnapshot) {
+        if (session.id == activeSessionId) return
+        val cached = sessions.firstOrNull { it.id == session.id }
+            ?.takeIf { it.id in loadedSessionDetailIds }
+        if (cached != null) {
+            applyLoadedSession(cached)
+            return
+        }
+        openingSessionId = session.id
+        contextStatusText = "正在加载会话…"
+        scope.launch {
+            val loadedResult = runCatching {
+                withContext(Dispatchers.IO) {
+                    AiChatHistoryStore.loadSession(session.id)
+                }
+            }
+            if (openingSessionId != session.id) return@launch
+            openingSessionId = null
+            val loaded = loadedResult.getOrElse {
+                contextStatusText = null
+                Toast.makeText(context, "会话加载失败，请重试", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            if (loaded == null) {
+                contextStatusText = null
+                Toast.makeText(context, "会话不存在或已被删除", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val index = sessions.indexOfFirst { it.id == loaded.id }
+            if (index >= 0) {
+                sessions[index] = loaded
+            } else {
+                sessions.add(0, loaded)
+            }
+            sessions.sortChatSessions()
+            if (loaded.id !in loadedSessionDetailIds) {
+                loadedSessionDetailIds += loaded.id
+            }
+            applyLoadedSession(loaded)
+        }
+    }
+
+    fun ensureAllHistoryDetails(onReady: () -> Unit) {
+        if (historyDetailsLoaded) {
+            onReady()
+            return
+        }
+        if (historyDetailsLoading) return
+        historyDetailsLoading = true
+        Toast.makeText(context, "正在加载历史内容…", Toast.LENGTH_SHORT).show()
+        scope.launch {
+            val details = runCatching {
+                withContext(Dispatchers.IO) {
+                    AiChatHistoryStore.loadAllSessionDetails()
+                }
+            }.getOrElse {
+                historyDetailsLoading = false
+                Toast.makeText(context, "历史内容加载失败，请重试", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            details.forEach { detail ->
+                if (detail.id == activeSessionId) return@forEach
+                val index = sessions.indexOfFirst { it.id == detail.id }
+                if (index >= 0) {
+                    sessions[index] = detail
+                } else {
+                    sessions += detail
+                }
+                if (detail.id !in loadedSessionDetailIds) {
+                    loadedSessionDetailIds += detail.id
+                }
+            }
+            sessions.sortChatSessions()
+            historyDetailsLoaded = true
+            historyDetailsLoading = false
+            onReady()
+        }
+    }
+
     suspend fun confirmToolCalls(toolCalls: List<AiPendingToolCall>): Boolean {
         if (toolCalls.isEmpty()) return true
         return withContext(Dispatchers.Main) {
@@ -738,6 +1186,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     return@suspendCancellableCoroutine
                 }
                 val summaries = toolCalls.map { it.toWriteOperationSummary() }
+                val containsDestructiveOperation = toolCalls.any {
+                    it.sideEffect == McpToolSideEffect.DESTRUCTIVE
+                }
                 var resumed = false
                 fun resumeOnce(value: Boolean) {
                     if (resumed) return
@@ -754,7 +1205,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     orientation = LinearLayout.VERTICAL
                     setPadding(24.dpToPx(), 24.dpToPx(), 24.dpToPx(), 10.dpToPx())
                     addView(TextView(activity).apply {
-                        text = "确认写操作"
+                        text = if (containsDestructiveOperation) "确认高风险操作" else "确认写操作"
                         setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface))
                         textSize = 24f
                         typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -765,7 +1216,11 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     addView(LinearLayout(activity).apply {
                         orientation = LinearLayout.VERTICAL
                         addView(TextView(activity).apply {
-                            text = "AI 请求执行以下写操作，确认后会写入或修改本地数据。"
+                            text = if (containsDestructiveOperation) {
+                                "AI 请求执行删除、清空或回滚操作。请确认对象和影响范围后再执行。"
+                            } else {
+                                "AI 请求执行以下写操作，确认后会写入或修改本地数据。"
+                            }
                             setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface_variant))
                             textSize = 15f
                             setLineSpacing(2f, 1.05f)
@@ -838,7 +1293,17 @@ private fun AiChatRoute(onBack: () -> Unit) {
     }
 
     fun sendCurrentMessages(activeUserMessageIds: List<String> = emptyList()) {
+        syncModeEntryContext()
+        syncActiveSkillContext()
         sending = true
+        val conversationId = activeSessionId
+            ?: UUID.randomUUID().toString().also { activeSessionId = it }
+        val turnId = activeUserMessageIds.firstOrNull()
+            ?: messages.asReversed().firstOrNull { message -> message.role == ChatRole.USER }?.id
+            ?: UUID.randomUUID().toString()
+        val activeSkill = inputAttachments.lastOrNull { attachment ->
+            attachment.type == AiChatInputAttachmentType.SKILL
+        }
         val promptUsageAnchor = messages.latestPromptUsageAnchor()
         val loadingId = UUID.randomUUID().toString()
         val startedAt = System.currentTimeMillis()
@@ -857,18 +1322,55 @@ private fun AiChatRoute(onBack: () -> Unit) {
             elapsedMs = 0L,
             loading = true
         )
+        val previousSession = sessions.firstOrNull { session -> session.id == conversationId }
+        val durableBaseSession = AiChatSessionSnapshot(
+            id = conversationId,
+            title = resolveConversationTitle(
+                modeEntryTitle = activeModeEntryContext?.title,
+                derivedTitle = messages.filterNot { it.loading }.deriveChatTitle(),
+                previousTitle = previousSession?.title
+            ),
+            modeId = activeAgentMode.id,
+            modeRevision = activeAgentMode.revision,
+            modeEntryContext = activeModeEntryContext,
+            modeEntryStarted = modeEntryStarted,
+            createdAt = previousSession?.createdAt ?: startedAt,
+            updatedAt = startedAt,
+            isPinned = previousSession?.isPinned == true,
+            messages = messages.filterNot { it.loading }.map(ChatUiMessage::toSnapshot),
+            loadedSkillIds = inputAttachments
+                .filter { it.type == AiChatInputAttachmentType.SKILL }
+                .map { it.id.removePrefix("skill.") },
+            enabledMcpCapabilityIds = mcpCapabilityIds,
+            uploadMessages = uploadMessagesBeforeSend
+        )
         scope.launch {
             listState.scrollToItem(messages.lastIndex)
         }
         sendingJob?.cancel()
         sendingJob = scope.launch {
+            var latestDurableUpdate: AiChatDurableContextUpdate? = null
             val requestMessages = uploadMessagesBeforeSend
                 .map { it.deepCopy().asJsonObject }
                 .toMutableList()
             val result = runCatching {
                 withContext(Dispatchers.IO) {
+                    AiChatHistoryStore.saveSessionSnapshot(durableBaseSession)
                     chatClient.send(
                         messages = requestMessages,
+                        conversationId = conversationId,
+                        turnId = turnId,
+                        skillId = activeSkill?.id?.removePrefix("skill.").orEmpty(),
+                        skillRevision = activeSkill?.skillRuntimeRevision.orEmpty(),
+                        skillContentHash = activeSkill?.skillContentHash.orEmpty(),
+                        availableSkillIds = activeSkill?.availableSkillIds.orEmpty(),
+                        memoryPolicy = activeAgentMode.memoryPolicy,
+                        runtimeHooks = activeAgentMode.runtimeHooks +
+                            if (activeAgentMode.allowsUserSkills) {
+                                activeSkill?.skillRuntime?.runtimeHooks.orEmpty()
+                            } else {
+                                emptyList()
+                            },
                         promptUsageAnchor = promptUsageAnchor,
                         onStreamUpdate = { update: AiChatStreamUpdate ->
                             scope.launch {
@@ -879,6 +1381,14 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     activeStreamMemoryTraceTarget = update.memoryTrace
                                 }
                             }
+                        },
+                        onDurableContextUpdate = { update ->
+                            latestDurableUpdate = update
+                            AiChatHistoryStore.saveDurableTurn(
+                                baseSession = durableBaseSession,
+                                assistantMessageId = loadingId,
+                                update = update
+                            )
                         },
                         onContextEvent = { event: AiChatContextEvent ->
                             scope.launch {
@@ -933,9 +1443,32 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 contextUsage = it.contextUsage
                 contextCompactionCount = AiChatContextManager.compactionRevision(uploadMessages)
             }.onFailure {
-                messages.removeAll { message -> message.id == loadingId }
+                val durable = latestDurableUpdate
                 uploadMessages.clear()
-                uploadMessages.addAll(uploadMessagesBeforeSend)
+                uploadMessages.addAll(
+                    (durable?.contextMessages ?: uploadMessagesBeforeSend).map { message ->
+                        message.deepCopy().asJsonObject
+                    }
+                )
+                val partialContent = durable?.visibleContent
+                    ?.takeIf { content -> content.isNotBlank() }
+                    ?: activeStreamContentTarget.takeIf { content -> content.isNotBlank() }
+                if (partialContent != null) {
+                    updateMessage(loadingId) { loading ->
+                        loading.copy(
+                            content = partialContent,
+                            reasoning = durable?.reasoning ?: activeStreamReasoningTarget.takeIf { reasoning ->
+                                reasoning.isNotBlank()
+                            },
+                            toolTrace = durable?.toolTrace ?: activeStreamToolTraceTarget,
+                            toolReceipts = durable?.toolReceipts.orEmpty(),
+                            loading = false,
+                            meta = if (canceled) "已中断，可恢复" else "执行中断，结果已保留"
+                        )
+                    }
+                } else {
+                    messages.removeAll { message -> message.id == loadingId }
+                }
                 contextStatusText = null
                 updateDeliveryState(
                     activeUserMessageIds,
@@ -990,16 +1523,34 @@ private fun AiChatRoute(onBack: () -> Unit) {
 
     fun manuallyCompressContext() {
         if (sending || manualContextCompacting) return
+        syncModeEntryContext()
+        syncActiveSkillContext()
         manualContextCompacting = true
         sending = true
         val promptUsageAnchor = messages.latestPromptUsageAnchor()
         val snapshot = uploadMessages.map { it.deepCopy().asJsonObject }.toMutableList()
         val mcpCapabilityIds = enabledMcpCapabilityIds.toList()
+        val conversationId = activeSessionId
+            ?: UUID.randomUUID().toString().also { activeSessionId = it }
+        val activeSkill = inputAttachments.lastOrNull { attachment ->
+            attachment.type == AiChatInputAttachmentType.SKILL
+        }
         sendingJob = scope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
                     chatClient.compactContext(
                         messages = snapshot,
+                        conversationId = conversationId,
+                        skillId = activeSkill?.id?.removePrefix("skill.").orEmpty(),
+                        skillRevision = activeSkill?.skillRuntimeRevision.orEmpty(),
+                        skillContentHash = activeSkill?.skillContentHash.orEmpty(),
+                        availableSkillIds = activeSkill?.availableSkillIds.orEmpty(),
+                        runtimeHooks = activeAgentMode.runtimeHooks +
+                            if (activeAgentMode.allowsUserSkills) {
+                                activeSkill?.skillRuntime?.runtimeHooks.orEmpty()
+                            } else {
+                                emptyList()
+                            },
                         promptUsageAnchor = promptUsageAnchor,
                         enabledMcpCapabilityIds = mcpCapabilityIds,
                         onContextEvent = { event ->
@@ -1074,14 +1625,20 @@ private fun AiChatRoute(onBack: () -> Unit) {
         }
     }
 
-    fun sendMessage(messageOverride: String? = null) {
+    fun sendMessage(
+        messageOverride: String? = null,
+        uploadOverride: String? = null
+    ) {
         val content = (messageOverride ?: input).trim()
         if (content.isBlank()) {
             Toast.makeText(context, R.string.ai_chat_empty, Toast.LENGTH_SHORT).show()
             return
         }
         input = ""
-        val uploadContent = buildUserUploadContent(content, inputAttachments)
+        val uploadContent = uploadOverride
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: buildUserUploadContent(content, inputAttachments)
         val userMessage = ChatUiMessage(
             role = ChatRole.USER,
             content = content,
@@ -1109,11 +1666,102 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 )
             )
         }
+        syncModeEntryContext()
         syncActiveSkillContext()
         updateDeliveryState(queuedIds, ChatDeliveryState.IN_FLIGHT)
         refreshContextUsage()
         persistActiveSession()
         sendCurrentMessages(queuedIds)
+    }
+
+    fun markInteractionResolved(
+        messageId: String,
+        interactionId: String,
+        resultLabel: String,
+        resultSelections: Map<String, String> = emptyMap()
+    ) {
+        updateMessage(messageId) { message ->
+            message.copy(
+                resolvedInteractionIds = (message.resolvedInteractionIds + interactionId).distinct(),
+                interactionResultLabels = message.interactionResultLabels +
+                    (interactionId to resultLabel.trim()),
+                interactionResultSelections = if (resultSelections.isEmpty()) {
+                    message.interactionResultSelections
+                } else {
+                    message.interactionResultSelections + (interactionId to resultSelections)
+                }
+            )
+        }
+        persistActiveSession()
+    }
+
+    fun submitInteraction(messageId: String, action: AiChatInteractionAction) {
+        if (sending) {
+            Toast.makeText(context, "正在生成中", Toast.LENGTH_SHORT).show()
+            action.onCompleted(false)
+            return
+        }
+        if (action.interaction.type != AiChatInteractionType.MULTI_TAG_STANCE) {
+            markInteractionResolved(
+                messageId = messageId,
+                interactionId = action.interaction.id,
+                resultLabel = action.displayText
+            )
+            action.onCompleted(true)
+            sendMessage(action.displayText, action.prompt)
+            return
+        }
+        syncModeEntryContext()
+        syncActiveSkillContext()
+        val activeSkill = AiChatContextManager.activeSkillSnapshot(uploadMessages)
+        if (!action.skipped && activeSkill == null) {
+            Toast.makeText(context, "当前系统工作流状态无效，请重新进入功能", Toast.LENGTH_LONG).show()
+            action.onCompleted(false)
+            return
+        }
+        val conversationId = activeSessionId
+            ?: UUID.randomUUID().toString().also { activeSessionId = it }
+        val turnId = UUID.randomUUID().toString()
+        scope.launch {
+            val result = runCatching {
+                if (action.skipped) {
+                    AiChatInteractionMemoryWriter.skipped(action.interaction)
+                } else {
+                    withContext(Dispatchers.IO) {
+                        AiChatInteractionMemoryWriter.write(
+                            interaction = action.interaction,
+                            selectedValues = action.selectedValues,
+                            agentMode = activeAgentMode,
+                            activeSkill = requireNotNull(activeSkill),
+                            conversationId = conversationId,
+                            turnId = turnId
+                        )
+                    }
+                }
+            }
+            result.onSuccess { writeResult ->
+                markInteractionResolved(
+                    messageId = messageId,
+                    interactionId = action.interaction.id,
+                    resultLabel = writeResult.displayText,
+                    resultSelections = action.selectedValues
+                )
+                action.onCompleted(true)
+                uploadMessages += chatClient.newUserMessage(writeResult.continuationPrompt)
+                syncModeEntryContext()
+                syncActiveSkillContext()
+                refreshContextUsage()
+                persistActiveSession()
+                sendCurrentMessages()
+            }.onFailure { error ->
+                action.onCompleted(false)
+                Toast.makeText(
+                    context,
+                    error.localizedMessage ?: "阅读偏好保存失败",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     fun regenerateMessage(message: ChatUiMessage) {
@@ -1149,6 +1797,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         messages.replaceWith(truncatedMessages)
         uploadMessages.clear()
         uploadMessages.addAll(preservedHistory ?: rebuildUploadMessages(chatClient, messages))
+        syncModeEntryContext()
         syncActiveSkillContext()
         val activeUserIds = if (message.role == ChatRole.USER) listOf(message.id) else emptyList()
         updateDeliveryState(activeUserIds, ChatDeliveryState.IN_FLIGHT)
@@ -1296,7 +1945,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
             }
         }
         sessions.sortChatSessions()
-        saveHistory(activeSessionId)
+        scope.launch(Dispatchers.IO) {
+            AiChatHistoryStore.updatePinned(targetIds, isPinned = true, updatedAt = now)
+        }
         Toast.makeText(context, "已置顶 ${targetIds.size} 条聊天记录", Toast.LENGTH_SHORT).show()
     }
 
@@ -1320,6 +1971,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
         val wasActive = activeSessionId in targetIds
         val deleteCount = sessions.count { it.id in targetIds }
         sessions.removeAll { it.id in targetIds }
+        loadedSessionDetailIds.removeAll(targetIds)
         selectedHistoryIds.removeAll(targetIds)
         scope.launch(Dispatchers.IO) {
             AiChatHistoryStore.deleteSessions(targetIds)
@@ -1330,10 +1982,13 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 openSession(nextSession)
             } else {
                 activeSessionId = UUID.randomUUID().toString()
+                activeAgentMode = initialAgentMode
+                activeModeEntryContext = initialModeEntryContext
+                modeEntryStarted = false
                 messages.clear()
                 uploadMessages.clear()
                 uploadMessages += chatClient.newSystemMessage()
-                inputAttachments.clear()
+                inputAttachments.replaceWith(entryAttachments)
                 contextCompactionCount = 0
                 contextStatusText = null
                 manualContextCompacting = false
@@ -1375,7 +2030,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             }
         )
         sessions[sessionIndex] = updatedSession
-        saveHistory(activeSessionId)
+        saveSessionSnapshot(updatedSession)
         Toast.makeText(context, "已取消收藏", Toast.LENGTH_SHORT).show()
     }
 
@@ -1384,13 +2039,155 @@ private fun AiChatRoute(onBack: () -> Unit) {
             ThemeConfig.getBgImage(context, context.resources.displayMetrics)
         }.getOrNull()
     }
+
+    fun showBookScanContinueEntry(action: AiChatInteractionAction) {
+        if (sending || modeEntryStarted || messages.isNotEmpty()) {
+            action.onCompleted(false)
+            return
+        }
+        val entryPolicy = activeAgentMode.entryPolicy
+        if (entryPolicy.requiresContext && activeModeEntryContext == null) {
+            modeEntryStarted = true
+            messages += ChatUiMessage(
+                role = ChatRole.ASSISTANT,
+                content = "缺少当前功能所需的入口上下文，请从对应功能入口重新进入。",
+                meta = "error"
+            )
+            persistActiveSession()
+            action.onCompleted(false)
+            return
+        }
+        modeEntryStarted = true
+        syncModeEntryContext()
+        syncActiveSkillContext()
+        persistActiveSession()
+        val contextSnapshot = activeModeEntryContext
+        val workKey = contextSnapshot.payloadString("work_key")
+        scope.launch {
+            val memoryResult = runCatching {
+                withContext(Dispatchers.IO) {
+                    appDb.agentMemoryDao.search(
+                        scopeType = "book",
+                        scopeKey = workKey,
+                        subject = "",
+                        domain = "book_scan",
+                        memoryType = "",
+                        keyword = "",
+                        status = "active",
+                        offset = 0,
+                        limit = 20
+                    )
+                }
+            }
+            messages += ChatUiMessage(
+                role = ChatRole.ASSISTANT,
+                content = buildBookScanContinueEntryContent(
+                    context = contextSnapshot,
+                    memories = memoryResult.getOrDefault(emptyList()),
+                    loadError = memoryResult.exceptionOrNull()?.localizedMessage
+                )
+            )
+            refreshContextUsage()
+            persistActiveSession()
+            action.onCompleted(true)
+            listState.scrollToItem(messages.lastIndex)
+        }
+    }
+
+    fun startModeEntry() {
+        if (sending || modeEntryStarted || messages.isNotEmpty()) {
+            return
+        }
+        val entryPolicy = activeAgentMode.entryPolicy
+        if (entryPolicy.requiresContext && activeModeEntryContext == null) {
+            modeEntryStarted = true
+            messages += ChatUiMessage(
+                role = ChatRole.ASSISTANT,
+                content = "缺少当前功能所需的入口上下文，请从对应功能入口重新进入。",
+                meta = "error"
+            )
+            persistActiveSession()
+            return
+        }
+        modeEntryStarted = true
+        syncModeEntryContext()
+        syncActiveSkillContext()
+        uploadMessages += chatClient.newUserMessage(MODE_ENTRY_START_PROMPT)
+        refreshContextUsage()
+        persistActiveSession()
+        sendCurrentMessages()
+    }
+
+    val modeEntryStateDecision = if (!sending) {
+        resolveAgentModeEntryLaunch(
+            policy = activeAgentMode.entryPolicy,
+            hasRequiredContext = activeModeEntryContext != null,
+            alreadyStarted = modeEntryStarted,
+            hasVisibleMessages = messages.isNotEmpty()
+        )
+    } else {
+        AgentModeEntryLaunchDecision.NONE
+    }
+    val modeEntryConfirmation = if (
+        modeEntryStateDecision == AgentModeEntryLaunchDecision.SHOW_CONFIRMATION
+    ) {
+        buildModeEntryConfirmation(
+            mode = activeAgentMode,
+            context = activeModeEntryContext,
+            memoryState = modeEntryMemoryState
+        )
+    } else {
+        null
+    }
+    val modeEntryLaunchDecision = modeEntryStateDecision
+
+    LaunchedEffect(
+        activeSessionId,
+        activeAgentMode.identity,
+        modeEntryLaunchDecision
+    ) {
+        when (modeEntryLaunchDecision) {
+            AgentModeEntryLaunchDecision.NONE -> Unit
+            AgentModeEntryLaunchDecision.SHOW_CONFIRMATION -> Unit
+            AgentModeEntryLaunchDecision.START_AUTOMATICALLY -> startModeEntry()
+            AgentModeEntryLaunchDecision.MISSING_REQUIRED_CONTEXT -> {
+                modeEntryStarted = true
+                messages += ChatUiMessage(
+                    role = ChatRole.ASSISTANT,
+                    content = "缺少当前功能所需的入口上下文，请从对应功能入口重新进入。",
+                    meta = "error"
+                )
+                persistActiveSession()
+            }
+        }
+    }
+
     val sessionSnapshots = sessions.toList()
     val currentMessageSnapshots = messages.toList()
-    val drawerHistoryGroups = remember(sessionSnapshots) {
-        buildDrawerHistoryGroups(sessionSnapshots)
+    val skillPresentations = remember(sessionSnapshots, configVersion) {
+        val generalSkills = AiSkillRegistry.agentSkills()
+        val systemWorkflows = AgentModeRegistry.all().mapNotNull { mode ->
+            mode.systemWorkflowId?.let(AiSkillRegistry::systemWorkflow)
+        }
+        (generalSkills + systemWorkflows).associate { skill ->
+            skill.id to (skill.name to skill.presentation)
+        }
     }
-    val drawerFavoriteItems = remember(sessionSnapshots, activeSessionId, currentMessageSnapshots) {
-        buildDrawerFavoriteItems(sessionSnapshots, activeSessionId, currentMessageSnapshots)
+    val drawerHistoryGroups = remember(sessionSnapshots, skillPresentations) {
+        buildDrawerHistoryGroups(sessionSnapshots, skillPresentations)
+    }
+    val drawerFavoriteItems = remember(
+        sessionSnapshots,
+        activeSessionId,
+        currentMessageSnapshots,
+        skillPresentations
+    ) {
+        buildDrawerFavoriteItems(
+            sessionSnapshots,
+            activeSessionId,
+            currentMessageSnapshots,
+            skillPresentations
+        )
     }
     if (pendingDeleteHistoryIds.isNotEmpty()) {
         val deleteCount = pendingDeleteHistoryIds.size
@@ -1428,15 +2225,23 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 backgroundDrawable = chatBackgroundDrawable,
                 historyManageMode = historyManageMode,
                 selectedHistoryIds = selectedHistoryIds.toSet(),
-                onSelect = {
-                    selectedDrawerIndex = it
+                onSelect = { targetIndex ->
                     historyManageMode = false
                     selectedHistoryIds.clear()
-                    if (it == 1) {
-                        previewMode = false
-                        globalSearchMode = true
-                        globalSearchQuery = ""
-                        scope.launch { drawerState.close() }
+                    when (targetIndex) {
+                        1 -> ensureAllHistoryDetails {
+                            selectedDrawerIndex = targetIndex
+                            previewMode = false
+                            globalSearchMode = true
+                            globalSearchQuery = ""
+                            scope.launch { drawerState.close() }
+                        }
+
+                        3 -> ensureAllHistoryDetails {
+                            selectedDrawerIndex = targetIndex
+                        }
+
+                        else -> selectedDrawerIndex = targetIndex
                     }
                 },
                 onSessionSelect = {
@@ -1482,11 +2287,13 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 onDeleteFavorite = ::deleteFavorite,
                 onOpenStats = {
                     persistActiveSession()
-                    statsMode = true
-                    globalSearchMode = false
-                    previewMode = false
-                    selectedDrawerIndex = 2
-                    scope.launch { drawerState.close() }
+                    ensureAllHistoryDetails {
+                        statsMode = true
+                        globalSearchMode = false
+                        previewMode = false
+                        selectedDrawerIndex = 2
+                        scope.launch { drawerState.close() }
+                    }
                 },
                 onOpenSettings = {
                     scope.launch { drawerState.close() }
@@ -1633,6 +2440,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                             RikkaChatInput(
                                 value = input,
                                 onValueChange = { input = it },
+                                messageInputEnabled = modeEntryConfirmation == null,
                                 sending = sending,
                                 modelIconRes = selectedModelIconRes,
                                 reasoningEnabled = selectedReasoningEnabled,
@@ -1640,6 +2448,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 skillEnabled = inputAttachments.any {
                                     it.type == AiChatInputAttachmentType.SKILL
                                 },
+                                mcpControlVisible = activeAgentMode.allowsManualMcpCapabilities,
+                                skillControlVisible = activeAgentMode.allowsUserSkills,
                                 contextAvailable = availableContextAttachments.isNotEmpty()
                                         || inputAttachments.any {
                                     it.type == AiChatInputAttachmentType.CONTEXT
@@ -1648,8 +2458,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 suggestionExpanded = suggestionsExpanded,
                                 contextUsage = contextUsage,
                                 attachments = inputAttachments,
-                                skills = inputAttachments.filter {
-                                    it.type == AiChatInputAttachmentType.SKILL
+                                skills = if (activeAgentMode.allowsUserSkills) {
+                                    inputAttachments.filter {
+                                        it.type == AiChatInputAttachmentType.SKILL
+                                    }
+                                } else {
+                                    emptyList()
                                 },
                                 onSend = ::sendMessage,
                                 onStop = ::stopSending,
@@ -1664,11 +2478,13 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     }
                                 },
                                 onMcpClick = {
-                                    if (internalMcpEnabled) {
-                                        showMcpCapabilitySheet = true
-                                    } else {
-                                        AiAssistantConfigUi.showInternalMcpSheet(context) {
-                                            configVersion++
+                                    if (activeAgentMode.allowsManualMcpCapabilities) {
+                                        if (internalMcpEnabled) {
+                                            showMcpCapabilitySheet = true
+                                        } else {
+                                            AiAssistantConfigUi.showInternalMcpSheet(context) {
+                                                configVersion++
+                                            }
                                         }
                                     }
                                 },
@@ -1679,7 +2495,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     showContextUsageDialog = true
                                 },
                                 onSkillClick = {
-                                    showSkillAttachmentSheet = true
+                                    if (activeAgentMode.allowsUserSkills) {
+                                        showSkillAttachmentSheet = true
+                                    }
                                 },
                                 onContextClick = {
                                     val loadedContexts = inputAttachments.filter {
@@ -1699,11 +2517,19 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                     refreshContextUsage()
                                 },
                                 onRemoveSkill = { skill ->
-                                    inputAttachments.removeAll { it.id == skill.id }
-                                    refreshContextUsage()
-                                    persistActiveSession()
-                                }
-                            )
+                                    if (activeAgentMode.allowsUserSkills) {
+                                        inputAttachments.removeAll { it.id == skill.id }
+                                        skillManagedCapabilityIds.clear()
+                                        enabledMcpCapabilityIds.replaceWith(
+                                            McpInternalToolCatalog.normalizeCapabilityIds(
+                                                manualMcpCapabilityIds
+                                            )
+                                        )
+                                        refreshContextUsage()
+                                        persistActiveSession()
+                                    }
+                                    }
+                                )
                         }
                     }
                 ) { padding ->
@@ -1712,6 +2538,8 @@ private fun AiChatRoute(onBack: () -> Unit) {
                             padding = padding,
                             state = listState,
                             messages = messages,
+                            entryInteraction = modeEntryConfirmation,
+                            interactionPolicy = interactionPolicy,
                             previewMode = previewMode,
                             onRegenerate = ::regenerateMessage,
                             onDelete = ::deleteMessage,
@@ -1727,7 +2555,22 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 }
                             },
                             onExport = ::startExportSelection,
-                            onInteractionSubmit = { prompt -> sendMessage(prompt) },
+                            onEntryInteractionSubmit = { action ->
+                                val entryAction = action.selectedValues[action.interaction.id]
+                                    ?: action.prompt.substringAfter("action=", "")
+                                        .substringBefore(' ')
+                                        .trim()
+                                if (
+                                    activeAgentMode.id == AgentModeRegistry.BOOK_SCAN_ID &&
+                                    entryAction == "continue_scan"
+                                ) {
+                                    showBookScanContinueEntry(action)
+                                } else {
+                                    action.onCompleted(true)
+                                    startModeEntry()
+                                }
+                            },
+                            onInteractionSubmit = ::submitInteraction,
                             onJumpToMessage = { index ->
                                 previewMode = false
                                 scope.launch {
@@ -1799,7 +2642,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             onDismiss = { contextPreviewAttachments = emptyList() }
         )
     }
-    if (showSkillAttachmentSheet) {
+    if (showSkillAttachmentSheet && activeAgentMode.allowsUserSkills) {
         AiChatInputAttachmentSheet(
             title = "加载技能",
             description = "选择新技能会替换当前技能，并持续用于当前会话。",
@@ -1807,20 +2650,60 @@ private fun AiChatRoute(onBack: () -> Unit) {
             availableAttachments = buildAgentSkillInputAttachments(),
             loadedAttachmentIds = inputAttachments.map { it.id }.toSet(),
             onAdd = { attachment ->
-                inputAttachments.removeAll {
-                    it.type == AiChatInputAttachmentType.SKILL && it.id != attachment.id
-                }
-                if (inputAttachments.none { it.id == attachment.id }) {
-                    inputAttachments += attachment
-                    refreshContextUsage()
-                    persistActiveSession()
-                }
+                requestSkillAttachment(attachment)
                 showSkillAttachmentSheet = false
             },
             onDismiss = { showSkillAttachmentSheet = false }
         )
     }
-    if (showMcpCapabilitySheet) {
+    pendingSkillCapabilityAuthorization
+        ?.takeIf { activeAgentMode.allowsUserSkills }
+        ?.let { attachment ->
+        val requestedCapabilities = attachment.skillRuntime.mcpCapabilities.mapNotNull { id ->
+            McpInternalToolCatalog.capability(id)
+        }
+        AlertDialog(
+            onDismissRequest = {
+                pendingSkillCapabilityAuthorization = null
+                inputAttachments.removeAll { it.id == attachment.id }
+            },
+            title = { Text("授权技能能力") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("“${attachment.title}”申请以下 MCP 能力。授权只绑定当前 Skill 内容版本；编辑后需要重新授权。")
+                    requestedCapabilities.forEach { capability ->
+                        Text(
+                            text = "${capability.title}：${capability.description}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        AiSkillCapabilityGrantStore.grant(
+                            attachment.skillRuntimeRevision,
+                            attachment.skillRuntime.mcpCapabilities
+                        )
+                        pendingSkillCapabilityAuthorization = null
+                        activateSkillAttachment(attachment)
+                    }
+                ) {
+                    Text("授权并加载")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    pendingSkillCapabilityAuthorization = null
+                    inputAttachments.removeAll { it.id == attachment.id }
+                }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+    if (showMcpCapabilitySheet && activeAgentMode.allowsManualMcpCapabilities) {
         AiChatMcpCapabilitySheet(
             modules = McpInternalToolCatalog.modules,
             selectedCapabilityIds = enabledMcpCapabilityIds.toSet(),
@@ -2930,6 +3813,8 @@ private fun RikkaChatList(
     padding: PaddingValues,
     state: LazyListState,
     messages: List<ChatUiMessage>,
+    entryInteraction: AiChatInteraction?,
+    interactionPolicy: AiChatInteractionPolicyContract?,
     previewMode: Boolean,
     onRegenerate: (ChatUiMessage) -> Unit,
     onDelete: (ChatUiMessage) -> Unit,
@@ -2939,7 +3824,8 @@ private fun RikkaChatList(
     selectedIds: Set<String>,
     onToggleSelection: (ChatUiMessage) -> Unit,
     onExport: (ChatUiMessage) -> Unit,
-    onInteractionSubmit: (String) -> Unit,
+    onEntryInteractionSubmit: (AiChatInteractionAction) -> Unit,
+    onInteractionSubmit: (String, AiChatInteractionAction) -> Unit,
     onJumpToMessage: (Int) -> Unit
 ) {
     if (previewMode) {
@@ -2962,6 +3848,15 @@ private fun RikkaChatList(
         ),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        entryInteraction?.let { interaction ->
+            item(key = "mode-entry-${interaction.id}") {
+                ChatInteractionBlock(
+                    interaction = interaction,
+                    resolvedLabel = null,
+                    onSubmit = onEntryInteractionSubmit
+                )
+            }
+        }
         items(messages, key = { it.id }) { message ->
             if (selectionMode && !message.loading) {
                 Row(
@@ -2977,6 +3872,7 @@ private fun RikkaChatList(
                     Box(modifier = Modifier.weight(1f)) {
                         RikkaMessageItem(
                             message = message,
+                            interactionPolicy = interactionPolicy,
                             onRegenerate = { onRegenerate(message) },
                             onDelete = { onDelete(message) },
                             onFork = { onFork(message) },
@@ -2989,6 +3885,7 @@ private fun RikkaChatList(
             } else {
                 RikkaMessageItem(
                     message = message,
+                    interactionPolicy = interactionPolicy,
                     onRegenerate = { onRegenerate(message) },
                     onDelete = { onDelete(message) },
                     onFork = { onFork(message) },
@@ -3104,12 +4001,13 @@ private fun MessagePreviewRow(
 @Composable
 private fun RikkaMessageItem(
     message: ChatUiMessage,
+    interactionPolicy: AiChatInteractionPolicyContract?,
     onRegenerate: () -> Unit,
     onDelete: () -> Unit,
     onFork: () -> Unit,
     onToggleFavorite: () -> Unit,
     onExport: () -> Unit,
-    onInteractionSubmit: (String) -> Unit
+    onInteractionSubmit: (String, AiChatInteractionAction) -> Unit
 ) {
     message.contextCompaction?.let { record ->
         ContextCompactionEventItem(
@@ -3202,6 +4100,12 @@ private fun RikkaMessageItem(
                 val interactionRender = remember(message.content) {
                     AiChatInteractionParser.parse(message.content)
                 }
+                val interactionPolicyResult = remember(interactionRender, interactionPolicy) {
+                    AiChatInteractionPolicyRegistry.filter(
+                        contract = interactionPolicy,
+                        interactions = interactionRender.interactions
+                    )
+                }
                 if (!message.reasoning.isNullOrBlank()) {
                     ReasoningEntry(
                         reasoning = message.reasoning,
@@ -3222,11 +4126,33 @@ private fun RikkaMessageItem(
                             .padding(top = 2.dp)
                     )
                 }
-                interactionRender.interactions.forEach { interaction ->
+                interactionPolicyResult.accepted.forEach { interaction ->
                     ChatInteractionBlock(
                         interaction = interaction,
-                        onSubmit = onInteractionSubmit
+                        resolvedLabel = message.interactionResultLabels[interaction.id],
+                        resolvedSelections = message.interactionResultSelections[interaction.id].orEmpty(),
+                        onSubmit = { action -> onInteractionSubmit(message.id, action) }
                     )
+                }
+                if (interactionPolicyResult.rejected.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
+                        border = BorderStroke(
+                            0.8.dp,
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Text(
+                            text = "已阻止不符合当前工作流规则的交互，请重新生成本条回复。",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
                 if (message.toolTrace.isNotEmpty()) {
                     ToolTraceEntry(message.toolTrace)
@@ -3297,7 +4223,9 @@ private fun ContextCompactionEventItem(
 @Composable
 private fun ChatInteractionBlock(
     interaction: AiChatInteraction,
-    onSubmit: (String) -> Unit
+    resolvedLabel: String?,
+    resolvedSelections: Map<String, String> = emptyMap(),
+    onSubmit: (AiChatInteractionAction) -> Unit
 ) {
     Surface(
         modifier = Modifier
@@ -3328,14 +4256,20 @@ private fun ChatInteractionBlock(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (resolvedLabel != null) {
+                ResolvedInteractionContent(
+                    interaction = interaction,
+                    resolvedLabel = resolvedLabel,
+                    resolvedSelections = resolvedSelections
+                )
+            } else BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 val minContentWidth = maxWidth
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     when (interaction.type) {
+                        AiChatInteractionType.POLICY_REF -> Unit
+
                         AiChatInteractionType.ACTIONS -> InteractionActions(
                             interaction = interaction,
                             minWidth = minContentWidth,
@@ -3349,6 +4283,12 @@ private fun ChatInteractionBlock(
                         )
 
                         AiChatInteractionType.MULTI_CHOICE -> InteractionMultiChoice(
+                            interaction = interaction,
+                            minWidth = minContentWidth,
+                            onSubmit = onSubmit
+                        )
+
+                        AiChatInteractionType.MULTI_TAG_STANCE -> InteractionMultiTagStance(
                             interaction = interaction,
                             minWidth = minContentWidth,
                             onSubmit = onSubmit
@@ -3370,7 +4310,7 @@ private fun ChatInteractionBlock(
 private fun InteractionActions(
     interaction: AiChatInteraction,
     minWidth: Dp,
-    onSubmit: (String) -> Unit
+    onSubmit: (AiChatInteractionAction) -> Unit
 ) {
     Column(
         modifier = Modifier.widthIn(min = minWidth),
@@ -3389,10 +4329,15 @@ private fun InteractionActions(
                         modifier = Modifier.widthIn(max = 148.dp),
                         onClick = {
                             onSubmit(
-                                AiChatInteractionParser.buildPrompt(
+                                AiChatInteractionAction(
                                     interaction = interaction,
-                                    option = option,
-                                    submit = interaction.submit
+                                    displayText = option.label,
+                                    prompt = AiChatInteractionParser.buildPrompt(
+                                        interaction = interaction,
+                                        option = option,
+                                        submit = interaction.submit
+                                    ),
+                                    selectedValues = mapOf(interaction.id to option.value)
                                 )
                             )
                         }
@@ -3407,7 +4352,7 @@ private fun InteractionActions(
 private fun InteractionSingleChoice(
     interaction: AiChatInteraction,
     minWidth: Dp,
-    onSubmit: (String) -> Unit
+    onSubmit: (AiChatInteractionAction) -> Unit
 ) {
     var selectedValue by remember(interaction.id) {
         mutableStateOf(interaction.options.firstOrNull()?.value.orEmpty())
@@ -3433,10 +4378,14 @@ private fun InteractionSingleChoice(
             onSubmit = {
                 selected?.let { option ->
                     onSubmit(
-                        AiChatInteractionParser.buildPrompt(
+                        AiChatInteractionAction(
                             interaction = interaction,
-                            option = option,
-                            submit = interaction.submit
+                            displayText = option.label,
+                            prompt = AiChatInteractionParser.buildPrompt(
+                                interaction = interaction,
+                                option = option,
+                                submit = interaction.submit
+                            )
                         )
                     )
                 }
@@ -3449,7 +4398,7 @@ private fun InteractionSingleChoice(
 private fun InteractionMultiChoice(
     interaction: AiChatInteraction,
     minWidth: Dp,
-    onSubmit: (String) -> Unit
+    onSubmit: (AiChatInteractionAction) -> Unit
 ) {
     var selectedValues by remember(interaction.id) { mutableStateOf(emptySet<String>()) }
     Column(
@@ -3472,19 +4421,226 @@ private fun InteractionMultiChoice(
             )
         }
         val selected = interaction.options.filter { it.value in selectedValues }
-        InteractionSubmitRow(
-            enabled = selected.isNotEmpty(),
-            label = interaction.submit?.label ?: "确认",
-            minWidth = minWidth,
-            onSubmit = {
-                onSubmit(
-                    AiChatInteractionParser.buildPrompt(
-                        interaction = interaction,
-                        options = selected,
-                        submit = interaction.submit
-                    )
+        Row(
+            modifier = Modifier.widthIn(min = minWidth),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            interaction.skip?.let { skip ->
+                InteractionChip(
+                    text = skip.label.ifBlank { "跳过" },
+                    primary = false,
+                    modifier = Modifier.padding(end = 8.dp),
+                    onClick = {
+                        onSubmit(
+                            AiChatInteractionAction(
+                                interaction = interaction,
+                                displayText = skip.label.ifBlank { "已跳过" },
+                                prompt = AiChatInteractionParser.buildPrompt(
+                                    interaction = interaction,
+                                    submit = skip
+                                ),
+                                skipped = true
+                            )
+                        )
+                    }
                 )
             }
+            InteractionChip(
+                text = interaction.submit?.label ?: "确认",
+                primary = true,
+                enabled = selected.isNotEmpty(),
+                onClick = {
+                    onSubmit(
+                        AiChatInteractionAction(
+                            interaction = interaction,
+                            displayText = selected.joinToString("、") { it.label },
+                            prompt = AiChatInteractionParser.buildPrompt(
+                                interaction = interaction,
+                                options = selected,
+                                submit = interaction.submit
+                            )
+                        )
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun InteractionMultiTagStance(
+    interaction: AiChatInteraction,
+    minWidth: Dp,
+    onSubmit: (AiChatInteractionAction) -> Unit
+) {
+    var selectedValues by remember(interaction.id) {
+        mutableStateOf<Map<String, String>>(emptyMap())
+    }
+    var submitting by remember(interaction.id) { mutableStateOf(false) }
+    fun dispatch(action: AiChatInteractionAction) {
+        if (submitting) return
+        submitting = true
+        onSubmit(
+            action.copy(
+                onCompleted = { _ -> submitting = false }
+            )
+        )
+    }
+    Column(
+        modifier = Modifier.widthIn(min = minWidth),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        interaction.items.forEachIndexed { index, item ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = item.label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = item.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    interaction.options.forEach { option ->
+                        InteractionOptionRow(
+                            option = option,
+                            minWidth = minWidth,
+                            selected = selectedValues[item.id] == option.value,
+                            multiple = false,
+                            onClick = {
+                                if (!submitting) {
+                                    selectedValues = selectedValues + (item.id to option.value)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+            if (index < interaction.items.lastIndex) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+            }
+        }
+        Row(
+            modifier = Modifier.widthIn(min = minWidth),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            interaction.skip?.let { skip ->
+                InteractionChip(
+                    text = skip.label.ifBlank { "暂时跳过" },
+                    primary = false,
+                    enabled = !submitting,
+                    modifier = Modifier.padding(end = 8.dp),
+                    onClick = {
+                        dispatch(
+                            AiChatInteractionAction(
+                                interaction = interaction,
+                                displayText = skip.label.ifBlank { "已暂时跳过" },
+                                prompt = "",
+                                skipped = true
+                            )
+                        )
+                    }
+                )
+            }
+            val selectedSummary = interaction.items.mapNotNull { item ->
+                val value = selectedValues[item.id] ?: return@mapNotNull null
+                val option = interaction.options.firstOrNull { it.value == value }
+                    ?: return@mapNotNull null
+                "${item.label}＝${option.label}"
+            }.joinToString("；")
+            InteractionChip(
+                text = interaction.submit?.label ?: "保存并更新推荐",
+                primary = true,
+                enabled = selectedValues.isNotEmpty() && !submitting,
+                onClick = {
+                    dispatch(
+                        AiChatInteractionAction(
+                            interaction = interaction,
+                            displayText = selectedSummary,
+                            prompt = "",
+                            selectedValues = selectedValues
+                        )
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResolvedInteractionContent(
+    interaction: AiChatInteraction,
+    resolvedLabel: String,
+    resolvedSelections: Map<String, String>
+) {
+    val selections = resolveInteractionSelections(interaction, resolvedSelections)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "✓ ${resolvedLabel.ifBlank { "已处理" }}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Medium
+        )
+        selections.forEachIndexed { index, item ->
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = item.itemLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (item.description.isNotBlank()) {
+                    Text(
+                        text = item.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    RadioButton(selected = true, onClick = null)
+                    Text(
+                        text = item.optionLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            if (index < selections.lastIndex) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+            }
+        }
+    }
+}
+
+internal data class ResolvedInteractionSelection(
+    val itemId: String,
+    val itemLabel: String,
+    val description: String,
+    val optionValue: String,
+    val optionLabel: String
+)
+
+internal fun resolveInteractionSelections(
+    interaction: AiChatInteraction,
+    selectedValues: Map<String, String>
+): List<ResolvedInteractionSelection> {
+    val optionsByValue = interaction.options.associateBy { it.value }
+    return interaction.items.mapNotNull { item ->
+        val optionValue = selectedValues[item.id] ?: return@mapNotNull null
+        val option = optionsByValue[optionValue] ?: return@mapNotNull null
+        ResolvedInteractionSelection(
+            itemId = item.id,
+            itemLabel = item.label,
+            description = item.description,
+            optionValue = option.value,
+            optionLabel = option.label
         )
     }
 }
@@ -3493,39 +4649,51 @@ private fun InteractionMultiChoice(
 private fun InteractionConfirm(
     interaction: AiChatInteraction,
     minWidth: Dp,
-    onSubmit: (String) -> Unit
+    onSubmit: (AiChatInteractionAction) -> Unit
 ) {
-    Row(
-        modifier = Modifier.widthIn(min = minWidth),
-        horizontalArrangement = Arrangement.End
-    ) {
-        interaction.cancel?.let { cancel ->
-            InteractionChip(
-                text = cancel.label.ifBlank { "取消" },
-                primary = false,
-                modifier = Modifier.padding(end = 8.dp),
-                onClick = {
-                    onSubmit(
-                        AiChatInteractionParser.buildPrompt(
-                            interaction = interaction,
-                            submit = cancel
+    if (interaction.submit != null || interaction.cancel != null) {
+        Row(
+            modifier = Modifier.widthIn(min = minWidth),
+            horizontalArrangement = Arrangement.End
+        ) {
+            interaction.cancel?.let { cancel ->
+                InteractionChip(
+                    text = cancel.label.ifBlank { "取消" },
+                    primary = false,
+                    modifier = Modifier.padding(end = 8.dp),
+                    onClick = {
+                        onSubmit(
+                            AiChatInteractionAction(
+                                interaction = interaction,
+                                displayText = cancel.label.ifBlank { "取消" },
+                                prompt = AiChatInteractionParser.buildPrompt(
+                                    interaction = interaction,
+                                    submit = cancel
+                                )
+                            )
                         )
-                    )
-                }
-            )
-        }
-        InteractionChip(
-            text = interaction.submit?.label ?: "确认",
-            primary = true,
-            onClick = {
-                onSubmit(
-                    AiChatInteractionParser.buildPrompt(
-                        interaction = interaction,
-                        submit = interaction.submit ?: AiChatInteractionSubmit("确认", "确认")
-                    )
+                    }
                 )
             }
-        )
+            interaction.submit?.let { submit ->
+                InteractionChip(
+                    text = submit.label,
+                    primary = true,
+                    onClick = {
+                        onSubmit(
+                            AiChatInteractionAction(
+                                interaction = interaction,
+                                displayText = submit.label,
+                                prompt = AiChatInteractionParser.buildPrompt(
+                                    interaction = interaction,
+                                    submit = submit
+                                )
+                            )
+                        )
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -3551,7 +4719,7 @@ private fun InteractionOptionRow(
         } else {
             RadioButton(selected = selected, onClick = onClick)
         }
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = option.label,
                 style = MaterialTheme.typography.bodyMedium,
@@ -3770,6 +4938,48 @@ private fun MarkdownMessageText(
                 )
 
                 is ChatMarkdownBlock.Table -> MarkdownTableBlock(block.table)
+
+                is ChatMarkdownBlock.Callout -> MarkdownCalloutBlock(block.callout)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarkdownCalloutBlock(
+    callout: MarkdownCallout,
+    modifier: Modifier = Modifier
+) {
+    val (accent, container) = when (callout.type) {
+        MarkdownCalloutType.NOTE -> Color(0xFF35618D) to Color(0xFFDCEBFA)
+        MarkdownCalloutType.TIP -> Color(0xFF2E7D32) to Color(0xFFE8F5E9)
+        MarkdownCalloutType.IMPORTANT -> Color(0xFF6B4EA0) to Color(0xFFEDE3F7)
+        MarkdownCalloutType.WARNING -> Color(0xFFD26A00) to Color(0xFFFFEEDB)
+        MarkdownCalloutType.CAUTION -> Color(0xFFB3261E) to Color(0xFFF9DEDC)
+    }
+    val warning = callout.type in setOf(MarkdownCalloutType.WARNING, MarkdownCalloutType.CAUTION)
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = container,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.58f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = if (callout.hasExplicitTitle) {
+                    callout.title
+                } else {
+                    "${if (warning) "⚠️" else "ℹ️"} ${callout.title}"
+                },
+                color = accent,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            if (callout.body.isNotBlank()) {
+                MarkdownTextBlock(content = callout.body)
             }
         }
     }
@@ -3782,6 +4992,7 @@ private fun MarkdownTextBlock(
     textSizeSp: Float = 16f
 ) {
     val context = LocalContext.current
+    val normalizedContent = remember(content) { normalizeAiChatMarkdown(content) }
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val linkColor = MaterialTheme.colorScheme.primary.toArgb()
     val markwon = remember(context) {
@@ -3809,7 +5020,7 @@ private fun MarkdownTextBlock(
             textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
             textView.linksClickable = true
             textView.movementMethod = LinkMovementMethod.getInstance()
-            markwon.setMarkdown(textView, content)
+            markwon.setMarkdown(textView, normalizedContent)
         }
     )
 }
@@ -3939,13 +5150,14 @@ private fun MarkdownTableBlock(
                 .background(rowColor)
         ) {
             rows.forEachIndexed { rowIndex, row ->
-                Row {
+                Row(modifier = Modifier.height(IntrinsicSize.Min)) {
                     repeat(columns) { columnIndex ->
                         val text = row.getOrNull(columnIndex).orEmpty()
                         val isHeader = rowIndex == 0
                         Box(
                             modifier = Modifier
                                 .width(widths[columnIndex])
+                                .fillMaxHeight()
                                 .heightIn(min = if (isHeader) 38.dp else 42.dp)
                                 .background(
                                     when {
@@ -3970,9 +5182,7 @@ private fun MarkdownTableBlock(
                                     MaterialTheme.typography.bodyMedium
                                 },
                                 color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
+                                softWrap = true
                             )
                             Box(
                                 modifier = Modifier
@@ -4021,10 +5231,16 @@ private fun splitMarkdownBlocks(content: String): List<ChatMarkdownBlock> {
         if (match.range.first > cursor) {
             appendTextAndImages(content.substring(cursor, match.range.first), blocks)
         }
-        blocks += ChatMarkdownBlock.Code(
-            language = match.groupValues[1].trim(),
-            code = match.groupValues[2].trimEnd()
-        )
+        val language = match.groupValues[1].trim()
+        val code = match.groupValues[2].trimEnd()
+        if (language.equals("legado-book-report", ignoreCase = true)) {
+            appendTextTablesAndImages(renderLegadoBookReportMarkdown(code), blocks)
+        } else {
+            blocks += ChatMarkdownBlock.Code(
+                language = language,
+                code = code
+            )
+        }
         cursor = match.range.last + 1
     }
     if (cursor < content.length) {
@@ -4048,8 +5264,14 @@ private fun appendTextTablesAndImages(
     val buffer = StringBuilder()
     var index = 0
     while (index < lines.size) {
-        val table = parseMarkdownTable(lines, index)
-        if (table != null) {
+        val callout = parseMarkdownCallout(lines, index)
+        val table = if (callout == null) parseMarkdownTable(lines, index) else null
+        if (callout != null) {
+            appendInlineTextAndImages(buffer.toString(), blocks)
+            buffer.clear()
+            blocks += ChatMarkdownBlock.Callout(callout.callout)
+            index = callout.nextIndex
+        } else if (table != null) {
             appendInlineTextAndImages(buffer.toString(), blocks)
             buffer.clear()
             blocks += ChatMarkdownBlock.Table(table.table)
@@ -4093,6 +5315,70 @@ private sealed interface ChatMarkdownBlock {
     data class Code(val language: String, val code: String) : ChatMarkdownBlock
     data class Image(val alt: String, val url: String) : ChatMarkdownBlock
     data class Table(val table: MarkdownTable) : ChatMarkdownBlock
+    data class Callout(val callout: MarkdownCallout) : ChatMarkdownBlock
+}
+
+internal enum class MarkdownCalloutType {
+    NOTE,
+    TIP,
+    IMPORTANT,
+    WARNING,
+    CAUTION
+}
+
+internal data class MarkdownCallout(
+    val type: MarkdownCalloutType,
+    val title: String,
+    val body: String,
+    val hasExplicitTitle: Boolean
+)
+
+internal data class MarkdownCalloutParseResult(
+    val callout: MarkdownCallout,
+    val nextIndex: Int
+)
+
+private val markdownCalloutStartRegex = Regex(
+    """^\s*>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)]\s*(.*)$""",
+    RegexOption.IGNORE_CASE
+)
+
+internal fun parseMarkdownCallout(
+    lines: List<String>,
+    startIndex: Int
+): MarkdownCalloutParseResult? {
+    val match = lines.getOrNull(startIndex)?.let(markdownCalloutStartRegex::matchEntire)
+        ?: return null
+    val type = runCatching {
+        MarkdownCalloutType.valueOf(match.groupValues[1].uppercase(Locale.ROOT))
+    }.getOrNull() ?: return null
+    val explicitTitle = match.groupValues[2].trim()
+    val title = explicitTitle.ifBlank {
+        when (type) {
+            MarkdownCalloutType.NOTE -> "提示"
+            MarkdownCalloutType.TIP -> "建议"
+            MarkdownCalloutType.IMPORTANT -> "重要"
+            MarkdownCalloutType.WARNING -> "警告"
+            MarkdownCalloutType.CAUTION -> "注意"
+        }
+    }
+    val body = mutableListOf<String>()
+    var index = startIndex + 1
+    while (index < lines.size) {
+        val line = lines[index]
+        if (!line.trimStart().startsWith('>')) break
+        body += line.trimStart().removePrefix(">").removePrefix(" ")
+        index++
+    }
+    return MarkdownCalloutParseResult(
+        callout = MarkdownCallout(
+            type = type,
+            title = title,
+            body = body.joinToString("\n").trim(),
+            hasExplicitTitle = explicitTitle.isNotBlank()
+        ),
+        nextIndex = index
+    )
 }
 
 private data class MarkdownTable(
@@ -4188,6 +5474,806 @@ private fun String.tablePlainText(): String {
 private val fencedCodeBlockRegex = Regex("""```([^\n`]*)\n([\s\S]*?)(?:\n```|$)""")
 private val markdownImageRegex = Regex("""!\[([^]]*)]\((<[^>]+>|\S+?)(?:\s+"[^"]*")?\)""")
 private val tableBoldRegex = Regex("""(\*\*|__)(.+?)\1""")
+
+internal fun renderLegadoBookReportMarkdown(payload: String): String {
+    val trimmed = payload.trim()
+    return if (trimmed.startsWith("<")) {
+        renderLegadoBookReportXmlMarkdown(trimmed)
+    } else {
+        renderLegadoBookReportJsonMarkdown(trimmed)
+    }
+}
+
+private fun renderLegadoBookReportJsonMarkdown(json: String): String {
+    val root = runCatching {
+        JsonParser.parseString(json.trim()).takeIf { it.isJsonObject }?.asJsonObject
+    }.getOrNull() ?: return "报告解析失败：模型返回的报告格式不完整。"
+    if (!root.stringValue("type").isSupportedBookReportType()) {
+        return "报告解析失败：不支持的扫书报告类型。"
+    }
+    val verdict = bookReportVerdict(root.stringValue("verdict"))
+    val headline = root.stringValue("headline").bookReportDisplayHeadline()
+    val basis = root.objectOrNull("basis")
+    val book = basis?.stringValue("book").orEmpty()
+    val author = basis?.stringValue("author").orEmpty()
+    val status = basis?.stringValue("status").orEmpty()
+    val wordCount = basis?.stringValue("word_count").orEmpty()
+    val category = basis?.stringValue("category").orEmpty()
+    val sampled = basis?.arrayOrNull("sampled").stringList()
+    val overview = root.arrayOrNull("overview").stringList()
+    val audience = root.arrayOrNull("audience").stringList()
+    val readerFeeling = root.stringValue("reader_feeling")
+    val pressureIndex = root.objectOrNull("intensity")?.stringValue("pressure_index").orEmpty()
+    val pressureLabel = root.objectOrNull("intensity")?.stringValue("pressure_label").orEmpty()
+    val pressureText = root.objectOrNull("intensity")?.stringValue("pressure_text").orEmpty()
+    val risks = root.arrayOrNull("confirmed_risks").objectList()
+    val unknowns = root.arrayOrNull("unknowns").stringList()
+    val subjectiveReview = root.stringValue("subjective_review")
+        .ifBlank { root.stringValue("subjective-review") }
+
+    return buildString {
+        appendLine("## 适读结论")
+        appendLine()
+        appendLine("> [!${verdict.callout}] 🎯 当前判断")
+        appendLine("> **${verdict.label}**${headline.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()}")
+        appendLine()
+        if (book.isNotBlank() || author.isNotBlank() || status.isNotBlank() || sampled.isNotEmpty()) {
+            appendLine("## 基础信息")
+            appendLine()
+            if (book.isNotBlank() || author.isNotBlank()) {
+                appendLine("- **书籍**：${listOf(book, author).filter { it.isNotBlank() }.joinToString("｜")}")
+            }
+            if (status.isNotBlank()) {
+                appendLine("- **状态**：$status")
+            }
+            if (wordCount.isNotBlank() || category.isNotBlank()) {
+                appendLine("- **篇幅/分类**：${listOf(wordCount, category).filter { it.isNotBlank() }.joinToString("｜")}")
+            }
+            if (sampled.isNotEmpty()) {
+                appendLine("- **覆盖**：${sampled.joinToString("、")}")
+            }
+            appendLine()
+        }
+        if (overview.isNotEmpty()) {
+            appendLine("## 作品速览")
+            appendLine()
+            overview.take(4).forEach { appendLine("- $it") }
+            appendLine()
+        }
+        if (
+            readerFeeling.isNotBlank() ||
+            pressureIndex.isNotBlank() ||
+            pressureLabel.isNotBlank() ||
+            pressureText.isNotBlank()
+        ) {
+            appendLine("## 阅读感受")
+            appendLine()
+            if (pressureIndex.isNotBlank() || pressureLabel.isNotBlank()) {
+                appendLine("**压抑指数**：${formatPressureRating(pressureIndex, pressureLabel)}")
+                appendLine()
+            }
+            if (pressureText.isNotBlank()) {
+                appendLine("- **压力来源**：$pressureText")
+            }
+            if (readerFeeling.isNotBlank()) {
+                appendLine(readerFeeling)
+            }
+            appendLine()
+        }
+        if (audience.isNotEmpty()) {
+            appendLine("## 作品受众")
+            appendLine()
+            audience.take(4).forEach { appendLine("- $it") }
+            appendLine()
+        }
+        if (risks.isNotEmpty()) {
+            appendLine("## 重点避坑")
+            appendLine()
+            risks.forEach { item ->
+                val level = item.stringValue("level")
+                val callout = if (level == "critical" || level == "high") "CAUTION" else "WARNING"
+                val title = item.stringValue("title").ifBlank { "风险" }
+                val text = item.stringValue("text")
+                appendLine("> [!$callout] $title")
+                if (text.isNotBlank()) {
+                    text.lines().forEach { line -> appendLine("> $line") }
+                }
+                appendLine()
+            }
+        }
+        appendBookScanBoundary(unknowns)
+        if (subjectiveReview.isNotBlank()) {
+            appendLine()
+            appendBookScanSubjectiveReview(subjectiveReview)
+        }
+    }.trim().normalizeBookScanUserFacingText()
+}
+
+private fun renderLegadoBookReportXmlMarkdown(xml: String): String {
+    val root = xml.xmlFirstBlock("book-report") ?: xml
+    val type = xml.xmlAttribute("type").ifBlank { root.xmlAttribute("type") }
+    if (type.isNotBlank() && !type.isSupportedBookReportType()) {
+        return "报告解析失败：不支持的扫书报告类型。"
+    }
+    val verdict = bookReportVerdict(
+        root.xmlFirstTag("verdict").ifBlank { root.xmlAttribute("verdict") }
+    )
+    val headline = root.xmlFirstTag("headline").bookReportDisplayHeadline()
+    val basic = root.xmlFirstBlock("basic").orEmpty()
+    val book = basic.xmlFirstTag("book")
+    val author = basic.xmlFirstTag("author")
+    val status = basic.xmlFirstTag("status")
+    val wordCount = basic.xmlFirstTag("word-count").ifBlank { basic.xmlFirstTag("word_count") }
+    val category = basic.xmlFirstTag("category")
+    val sampled = basic.xmlFirstTag("sampled")
+    val positioning = basic.xmlFirstTag("positioning")
+    val overview = root.xmlSectionItems("overview")
+    val audience = root.xmlSectionItems("audience")
+    val feeling = root.xmlFirstBlock("reading-feeling")
+        ?: root.xmlFirstBlock("reading_feeling")
+        ?: root.xmlFirstTag("reading-feeling").ifBlank { root.xmlFirstTag("reader-feeling") }
+    val pressure = feeling.xmlBlocks("pressure").firstOrNull().orEmpty()
+    val pressureIndex = pressure.xmlAttribute("index")
+    val pressureLabel = pressure.xmlAttribute("label")
+    val pressureText = pressure.xmlTextBody()
+    val feelingItems = feeling.xmlBlocks("item").map { block ->
+        val title = block.xmlFirstTag("title").ifBlank { block.xmlAttribute("title") }
+        val text = block.xmlFirstTag("text").ifBlank { block.xmlTextBody() }
+        listOf(title, text).filter { it.isNotBlank() }.joinToString("：")
+    }.filter { it.isNotBlank() }
+    val risks = root.xmlBlocks("risk").map { block ->
+        XmlReportItem(
+            title = block.xmlFirstTag("title")
+                .ifBlank { block.xmlAttribute("title") }
+                .ifBlank { block.xmlAttribute("label") },
+            text = block.xmlFirstTag("text").ifBlank { block.xmlTextBody() },
+            level = block.xmlAttribute("level")
+                .ifBlank { block.xmlAttribute("severity").toBookReportRiskLevel() }
+                .ifBlank { "medium" }
+        )
+    }.filter { it.title.isNotBlank() || it.text.isNotBlank() }
+    val unknowns = root.xmlBlocks("unknown").map { it.xmlTextBody() }
+        .ifEmpty { root.xmlSectionItems("unknowns") }
+    val subjectiveReview = root.xmlFirstTag("subjective-review")
+        .ifBlank { root.xmlFirstTag("subjective_review") }
+
+    return buildString {
+        appendLine("## 适读结论")
+        appendLine()
+        appendLine("> [!${verdict.callout}] 🎯 当前判断")
+        appendLine("> **${verdict.label}**${headline.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()}")
+        appendLine()
+        if (
+            book.isNotBlank() || author.isNotBlank() || status.isNotBlank() ||
+            wordCount.isNotBlank() || category.isNotBlank() || sampled.isNotBlank() ||
+            positioning.isNotBlank()
+        ) {
+            appendLine("## 基础信息")
+            appendLine()
+            if (book.isNotBlank() || author.isNotBlank()) {
+                appendLine("- **书籍**：${listOf(book, author).filter { it.isNotBlank() }.joinToString("｜")}")
+            }
+            if (status.isNotBlank()) appendLine("- **状态**：$status")
+            if (wordCount.isNotBlank() || category.isNotBlank()) {
+                appendLine("- **篇幅/分类**：${listOf(wordCount, category).filter { it.isNotBlank() }.joinToString("｜")}")
+            }
+            if (sampled.isNotBlank()) appendLine("- **扫描**：$sampled")
+            if (positioning.isNotBlank()) appendLine("- **一句话定位**：$positioning")
+            appendLine()
+        }
+        if (overview.isNotEmpty()) {
+            appendLine("## 作品速览")
+            appendLine()
+            overview.take(6).forEach { appendLine("- $it") }
+            appendLine()
+        }
+        if (pressureIndex.isNotBlank() || pressureLabel.isNotBlank() || pressureText.isNotBlank() || feelingItems.isNotEmpty()) {
+            appendLine("## 阅读感受")
+            appendLine()
+            if (pressureIndex.isNotBlank() || pressureLabel.isNotBlank()) {
+                appendLine("**压抑指数**：${formatPressureRating(pressureIndex, pressureLabel)}")
+                appendLine()
+            }
+            if (pressureText.isNotBlank()) appendLine("- **压力来源**：$pressureText")
+            feelingItems.take(4).forEach { appendLine("- $it") }
+            appendLine()
+        }
+        if (audience.isNotEmpty()) {
+            appendLine("## 作品受众")
+            appendLine()
+            audience.take(4).forEach { appendLine("- $it") }
+            appendLine()
+        }
+        if (risks.isNotEmpty()) {
+            appendLine("## 重点避坑")
+            appendLine()
+            risks.forEach { item ->
+                val callout = if (item.level == "critical" || item.level == "high") "CAUTION" else "WARNING"
+                appendLine("> [!$callout] ${item.title.ifBlank { "风险" }}")
+                item.text.lines().filter { it.isNotBlank() }.forEach { line -> appendLine("> $line") }
+                appendLine()
+            }
+        }
+        appendBookScanBoundary(unknowns)
+        if (subjectiveReview.isNotBlank()) {
+            appendLine()
+            appendBookScanSubjectiveReview(subjectiveReview)
+        }
+    }.trim().normalizeBookScanUserFacingText()
+}
+
+private fun StringBuilder.appendBookScanBoundary(unknowns: List<String>) {
+    appendLine("> [!WARNING] 🔎 扫描边界：还有没扫完的地方")
+    appendLine("> 这份结论只对当前已经读取或快速浏览过的章节负责；没扫到不等于没有隐藏雷点。")
+    if (unknowns.isNotEmpty()) {
+        unknowns.take(4).forEach { item ->
+            item.lines()
+                .filter { it.isNotBlank() }
+                .forEach { line -> appendLine("> $line") }
+        }
+    } else {
+        appendLine("> 当前只是快速定位，未完整覆盖全书。")
+    }
+}
+
+private fun StringBuilder.appendBookScanSubjectiveReview(subjectiveReview: String) {
+    appendLine("## 主观锐评")
+    appendLine()
+    appendLine("> [!WARNING] 老书虫吐槽")
+    subjectiveReview.lines()
+        .filter { it.isNotBlank() }
+        .forEach { line -> appendLine("> $line") }
+}
+
+private data class BookReportVerdict(
+    val label: String,
+    val callout: String
+)
+
+private fun bookReportVerdict(value: String): BookReportVerdict {
+    return when (value) {
+        "try" -> BookReportVerdict(label = "可以试读", callout = "TIP")
+        "cautious" -> BookReportVerdict(label = "谨慎试读", callout = "WARNING")
+        "reject" -> BookReportVerdict(label = "目前不推荐", callout = "CAUTION")
+        "uncertain" -> BookReportVerdict(label = "信息不足", callout = "NOTE")
+        else -> BookReportVerdict(label = "初步判断", callout = "IMPORTANT")
+    }
+}
+
+private fun String.isSupportedBookReportType(): Boolean {
+    return this == "quick_scan_report" || this == "continue_scan_report"
+}
+
+private fun String.bookReportDisplayHeadline(): String {
+    var cleaned = trim()
+    while (cleaned.isNotEmpty()) {
+        val next = BOOK_REPORT_HEADLINE_VERDICT_PREFIX_REGEX.replace(cleaned, "").trim()
+        if (next == cleaned) break
+        cleaned = next
+    }
+    return cleaned
+}
+
+internal fun String.normalizeBookScanUserFacingText(): String {
+    return replace(BOOK_SCAN_INTERNAL_CHAPTER_RANGE_REGEX) { match ->
+        "第${match.groupValues[1]}—${match.groupValues[2]}章"
+    }.replace(BOOK_SCAN_INTERNAL_SINGLE_CHAPTER_REGEX) { match ->
+        "第${match.groupValues[1]}章"
+    }.replace(BOOK_SCAN_SNIPPET_COVERAGE_REGEX, "许多章节只快速浏览了首尾")
+        .replace(BOOK_SCAN_SNIPPET_NAVIGATION_REGEX, "快速浏览章节首尾")
+        .replace(BOOK_SCAN_MANIFEST_WORD_REGEX, "扫描记录")
+        .replace(BOOK_SCAN_BUDGET_WORD_REGEX, "本轮检查")
+}
+
+private val BOOK_REPORT_HEADLINE_VERDICT_PREFIX_REGEX = Regex(
+    """^(?:可以试读|谨慎试读|目前不推荐|信息不足|初步判断)\s*[：:，,。；;、\-—]\s*"""
+)
+
+private val BOOK_SCAN_INTERNAL_CHAPTER_RANGE_REGEX = Regex(
+    """(?i)\bch(?:apter)?\s*(\d+)\s*[-~～—至]\s*(\d+)\b"""
+)
+private val BOOK_SCAN_INTERNAL_SINGLE_CHAPTER_REGEX = Regex(
+    """(?i)\bch(?:apter)?\s*(\d+)\b"""
+)
+private val BOOK_SCAN_SNIPPET_COVERAGE_REGEX = Regex(
+    """(?i)(?:大量内容|许多章节|相关章节)?\s*(?:仅|只)?\s*snippet\s*(?:导航)?覆盖"""
+)
+private val BOOK_SCAN_SNIPPET_NAVIGATION_REGEX = Regex(
+    """(?i)snippet\s*(?:导航|筛查|浏览)?"""
+)
+private val BOOK_SCAN_MANIFEST_WORD_REGEX = Regex("""(?i)\bmanifest\b""")
+private val BOOK_SCAN_BUDGET_WORD_REGEX = Regex("""(?i)\bscan_(?:100|300)\b""")
+
+private data class XmlReportItem(
+    val title: String,
+    val text: String,
+    val level: String = "medium"
+)
+
+private fun formatPressureRating(indexText: String, label: String): String {
+    val index = indexText.trim().toIntOrNull()?.coerceIn(1, 5)
+    val stars = index?.let(::pressureStars) ?: "☆☆☆☆☆"
+    val score = index?.let { "$it/5" } ?: indexText.trim().ifBlank { "-/5" }
+    val normalizedLabel = pressureLevelName(index).ifBlank { label }
+    return listOf(stars, score, normalizedLabel)
+        .filter { it.isNotBlank() }
+        .joinToString("｜")
+}
+
+private fun pressureLevelName(index: Int?): String {
+    return when (index) {
+        1 -> "轻松愉快"
+        2 -> "略有压力"
+        3 -> "明显压抑"
+        4 -> "高度压抑"
+        5 -> "极度压抑"
+        else -> ""
+    }
+}
+
+private fun pressureStars(index: Int): String {
+    return buildString {
+        repeat(index.coerceIn(0, 5)) { append('★') }
+        repeat(5 - index.coerceIn(0, 5)) { append('☆') }
+    }
+}
+
+private fun String.xmlSectionItems(sectionName: String): List<String> {
+    val section = xmlFirstBlock(sectionName) ?: return emptyList()
+    val itemBlocks = section.xmlBlocks("item")
+    if (itemBlocks.isNotEmpty()) {
+        return itemBlocks.map { block ->
+            val title = block.xmlFirstTag("title").ifBlank { block.xmlAttribute("title") }
+            val text = block.xmlFirstTag("text").ifBlank { block.xmlTextBody() }
+            listOf(title, text).filter { it.isNotBlank() }.joinToString("：")
+        }.filter { it.isNotBlank() }
+    }
+    return section.lines()
+        .map { it.trim().trimStart('-', '•').trim() }
+        .filter { it.isNotBlank() }
+}
+
+private fun String.xmlFirstTag(name: String): String {
+    return xmlFirstBlock(name)?.xmlTextBody().orEmpty()
+}
+
+private fun String.xmlFirstBlock(name: String): String? {
+    return xmlTagRegex(name).find(this)?.groupValues?.get(1)
+}
+
+private fun String.xmlBlocks(name: String): List<String> {
+    return xmlTagRegex(name).findAll(this).map { it.value }.toList()
+}
+
+private fun String.xmlAttribute(name: String): String {
+    return Regex("""\b${Regex.escape(name)}\s*=\s*["']([^"']*)["']""")
+        .find(this)
+        ?.groupValues
+        ?.get(1)
+        ?.xmlUnescape()
+        ?.trim()
+        .orEmpty()
+}
+
+private fun String.toBookReportRiskLevel(): String {
+    return when (trim().lowercase()) {
+        "critical", "hard", "high", "severe", "严重", "硬雷" -> "high"
+        "medium", "mid", "warning", "warn", "中", "中等" -> "medium"
+        "low", "minor", "轻微" -> "low"
+        else -> ""
+    }
+}
+
+private fun String.xmlTextBody(): String {
+    return replace(Regex("""(?is)<title\b[^>]*>.*?</title>"""), "")
+        .replace(Regex("""(?is)<text\b[^>]*>"""), "")
+        .replace(Regex("""(?is)</text>"""), "")
+        .replace(Regex("""(?is)<[^>]+>"""), "")
+        .xmlUnescape()
+        .trim()
+}
+
+private fun xmlTagRegex(name: String): Regex {
+    val escaped = Regex.escape(name)
+    return Regex("""(?is)<$escaped\b[^>]*>(.*?)</$escaped>""")
+}
+
+private fun String.xmlUnescape(): String {
+    return replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+private fun JsonObject.stringValue(name: String): String {
+    return runCatching {
+        get(name)?.takeIf { it.isJsonPrimitive }?.asJsonPrimitive?.asString
+    }.getOrNull().orEmpty().trim()
+}
+
+private fun JsonObject.objectOrNull(name: String): JsonObject? {
+    return runCatching {
+        get(name)?.takeIf { it.isJsonObject }?.asJsonObject
+    }.getOrNull()
+}
+
+private fun JsonObject.arrayOrNull(name: String): JsonArray? {
+    return runCatching {
+        get(name)?.takeIf { it.isJsonArray }?.asJsonArray
+    }.getOrNull()
+}
+
+private fun JsonArray?.stringList(): List<String> {
+    return this.orEmptyElements()
+        .mapNotNull { element ->
+            element.takeIf { it.isJsonPrimitive }
+                ?.asJsonPrimitive
+                ?.asString
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+        }
+}
+
+private fun JsonArray?.objectList(): List<JsonObject> {
+    return this.orEmptyElements()
+        .mapNotNull { element ->
+            when {
+                element.isJsonObject -> element.asJsonObject
+                element.isJsonPrimitive && element.asJsonPrimitive.isString -> {
+                    JsonObject().apply {
+                        addProperty("title", element.asJsonPrimitive.asString.trim())
+                        addProperty("text", element.asJsonPrimitive.asString.trim())
+                    }
+                }
+                else -> null
+            }
+        }
+}
+
+private fun JsonArray?.orEmptyElements(): List<JsonElement> {
+    if (this == null) return emptyList()
+    return (0 until size()).mapNotNull { index -> get(index) }
+}
+
+internal fun buildBookScanContinueEntryContent(
+    context: AgentModeEntryContext?,
+    memories: List<AgentMemory>,
+    loadError: String? = null
+): String {
+    val bookName = context.payloadString("book_name").ifBlank { context?.title.orEmpty() }
+    val summary = summarizeBookScanMemories(
+        memories = memories,
+        totalChapters = context.payloadInt("total_chapters")
+    )
+    return buildString {
+        appendLine("## 继续排雷")
+        appendLine()
+        append("《").append(bookName.ifBlank { "这本书" }).append("》")
+        appendLine("已有扫描记录。下面只说明目前扫到哪里，以及下一步从哪里继续。")
+        appendLine()
+        appendLine("### 目前扫到哪里")
+        appendLine()
+        if (loadError != null) {
+            appendLine("- **进度**：暂时无法读取详细进度，你仍可以自己指定要检查的章节。")
+        } else {
+            summary.progressLines.forEach { line -> appendLine("- $line") }
+        }
+        appendLine()
+        appendLine("### 接下来从哪里开始")
+        appendLine()
+        summary.nextStepLines.forEach { line -> appendLine("- $line") }
+        appendLine()
+        appendLine("“完整核对”表示读过该章正文；“快速浏览”只用于寻找可疑章节，不能据此判断那些章节一定没有雷点。")
+        appendLine()
+        appendLine("<legado-interaction>")
+        appendLine("<interaction id=\"book_scan_target\" />")
+        appendLine("</legado-interaction>")
+    }.trim()
+}
+
+private data class BookScanMemorySummary(
+    val progressLines: List<String>,
+    val nextStepLines: List<String>
+)
+
+private data class BookScanChapterRange(
+    val startChapter: Int,
+    val endChapter: Int
+) {
+    val chapterCount: Int
+        get() = endChapter - startChapter + 1
+}
+
+private fun summarizeBookScanMemories(
+    memories: List<AgentMemory>,
+    totalChapters: Int?
+): BookScanMemorySummary {
+    val validTotal = totalChapters?.takeIf { it > 0 }
+    if (memories.isEmpty()) {
+        return BookScanMemorySummary(
+            progressLines = listOf("**进度**：没有读到可用的扫描记录。"),
+            nextStepLines = listOf("**建议**：重新快速定位，或者自己指定章节。")
+        )
+    }
+
+    val parsedData = memories.mapNotNull { memory ->
+        runCatching {
+            JsonParser.parseString(memory.dataJson).takeIf { it.isJsonObject }
+        }.getOrNull()?.let { memory to it }
+    }
+    val structuredFullRanges = parsedData.flatMap { (memory, data) ->
+        val keys = if (memory.memoryType == "window_bundle") {
+            BOOK_SCAN_WINDOW_RANGE_KEYS
+        } else {
+            BOOK_SCAN_FULL_COVERAGE_KEYS
+        }
+        data.bookScanValues(keys).flatMap { it.toBookScanChapterRanges() }
+    }
+    val allRecordText = memories.joinToString("。") { memory ->
+        listOf(memory.title, memory.content).filter { it.isNotBlank() }.joinToString("。")
+    }
+    val fallbackFullRanges = allRecordText.bookScanManifestSentences()
+        .filter { sentence ->
+            sentence.contains("正文覆盖") ||
+                sentence.contains("完整正文") ||
+                sentence.contains("完整核对")
+        }
+        .flatMap { sentence -> sentence.bookScanChapterRangesFromText().asSequence() }
+        .toList()
+    val fullRanges = mergeBookScanChapterRanges(
+        structuredFullRanges.ifEmpty { fallbackFullRanges }
+    )
+    val fullCount = fullRanges.sumOf { it.chapterCount }
+
+    val structuredNavigationRanges = parsedData.flatMap { (_, data) ->
+        data.bookScanValues(BOOK_SCAN_NAVIGATION_RANGE_KEYS)
+            .flatMap { it.toBookScanChapterRanges() }
+    }
+    val structuredNavigationCount = parsedData.asSequence()
+        .flatMap { (_, data) -> data.bookScanValues(BOOK_SCAN_NAVIGATION_COUNT_KEYS).asSequence() }
+        .mapNotNull { value ->
+            runCatching { value.takeIf { it.isJsonPrimitive }?.asInt }.getOrNull()
+        }
+        .maxOrNull()
+    val fallbackNavigationCount = Regex(
+        "(?:snippet|片段|快速浏览|导航覆盖)[^。；]{0,24}?(\\d+)\\+?\\s*章",
+        RegexOption.IGNORE_CASE
+    ).findAll(allRecordText)
+        .mapNotNull { match -> match.groupValues.getOrNull(1)?.toIntOrNull() }
+        .maxOrNull()
+    val navigationCount = structuredNavigationCount
+        ?: mergeBookScanChapterRanges(structuredNavigationRanges).sumOf { it.chapterCount }
+            .takeIf { it > 0 }
+        ?: fallbackNavigationCount
+
+    val preferredNextRanges = parsedData.flatMap { (_, data) ->
+        data.bookScanValues(BOOK_SCAN_PREFERRED_NEXT_RANGE_KEYS)
+            .flatMap { it.toBookScanChapterRanges() }
+    }
+    val structuredGapRanges = parsedData.flatMap { (_, data) ->
+        data.bookScanValues(BOOK_SCAN_GAP_RANGE_KEYS)
+            .flatMap { it.toBookScanChapterRanges() }
+    }
+    val structuredNextRanges = preferredNextRanges.ifEmpty { structuredGapRanges }
+    val fallbackNextRanges = allRecordText.bookScanManifestSentences()
+        .filter { sentence ->
+            sentence.contains("补读") ||
+                sentence.contains("待查") ||
+                sentence.contains("下一") ||
+                sentence.contains("建议") ||
+                sentence.contains("缺口")
+        }
+        .flatMap { sentence -> sentence.bookScanChapterRangesFromText().asSequence() }
+        .toList()
+    val explicitNextRange = mergeBookScanChapterRanges(
+        structuredNextRanges.ifEmpty { fallbackNextRanges }
+    ).firstOrNull()
+    val nextRange = explicitNextRange ?: firstMissingBookScanRange(fullRanges, validTotal)
+
+    val progress = buildList {
+        if (validTotal != null) add("**全书**：共 $validTotal 章。")
+        if (fullRanges.isNotEmpty()) {
+            add(
+                "**已完整核对**：${formatBookScanRanges(fullRanges)}，" +
+                    "共 $fullCount${validTotal?.let { " / $it" }.orEmpty()} 章。"
+            )
+        } else {
+            add("**已完整核对**：现有记录没有保存清楚具体章号，暂时无法准确统计。")
+        }
+        if (navigationCount != null) {
+            add("**已快速浏览**：约 $navigationCount 章；这些章节只做过初步筛查。")
+        }
+        if (validTotal != null && fullRanges.isNotEmpty()) {
+            val remaining = (validTotal - fullCount).coerceAtLeast(0)
+            add("**尚未完整核对**：按现有记录计算约 $remaining 章。")
+        }
+        if (structuredFullRanges.isEmpty() && fallbackFullRanges.isNotEmpty()) {
+            add("**记录说明**：旧记录只留下了部分章号，以上是目前能够确认的范围，实际读过的内容可能更多。")
+        }
+    }
+    val nextSteps = if (nextRange != null) {
+        listOf(
+            "**优先检查**：${formatBookScanRange(nextRange)}。",
+            "**之后**：继续检查其他尚未完整核对的中段和人物线。"
+        )
+    } else {
+        listOf("**优先检查**：现有记录没有保存明确的下一处章号；请选择“我来指定章节”，或从尚未完整核对的中段继续。")
+    }
+    return BookScanMemorySummary(progressLines = progress, nextStepLines = nextSteps)
+}
+
+private fun JsonElement.bookScanValues(keys: Set<String>): List<JsonElement> {
+    return when {
+        isJsonObject -> asJsonObject.entrySet().flatMap { (key, value) ->
+            if (key in keys) listOf(value) else value.bookScanValues(keys)
+        }
+        isJsonArray -> asJsonArray.flatMap { element -> element.bookScanValues(keys) }
+        else -> emptyList()
+    }
+}
+
+private fun JsonElement.toBookScanChapterRanges(): List<BookScanChapterRange> {
+    return when {
+        isJsonArray -> {
+            val array = asJsonArray
+            if (
+                array.size() == 2 &&
+                array.allElements { element ->
+                    element.isJsonPrimitive && element.asJsonPrimitive.isNumber
+                }
+            ) {
+                val startIndex = array[0].asInt
+                val endExclusive = array[1].asInt
+                listOfNotNull(
+                    BookScanChapterRange(startIndex + 1, endExclusive)
+                        .takeIf { startIndex >= 0 && endExclusive > startIndex }
+                )
+            } else {
+                array.flatMap { element -> element.toBookScanChapterRanges() }
+            }
+        }
+        isJsonObject -> {
+            val obj = asJsonObject
+            val range = BOOK_SCAN_RANGE_VALUE_KEYS.asSequence()
+                .mapNotNull { key -> obj.get(key) }
+                .firstOrNull()
+            if (range != null) range.toBookScanChapterRanges()
+            else obj.entrySet().flatMap { (_, value) -> value.toBookScanChapterRanges() }
+        }
+        isJsonPrimitive && asJsonPrimitive.isString -> asString.bookScanChapterRangesFromText()
+        else -> emptyList()
+    }
+}
+
+private fun String.bookScanChapterRangesFromText(): List<BookScanChapterRange> {
+    return BOOK_SCAN_CHAPTER_RANGE_REGEX.findAll(this).mapNotNull { match ->
+        val start = match.groupValues[1].toIntOrNull() ?: return@mapNotNull null
+        val end = match.groupValues[2].toIntOrNull() ?: start
+        BookScanChapterRange(start, end).takeIf { start > 0 && end >= start }
+    }.toList()
+}
+
+private fun mergeBookScanChapterRanges(
+    ranges: List<BookScanChapterRange>
+): List<BookScanChapterRange> {
+    val sorted = ranges.sortedWith(
+        compareBy(BookScanChapterRange::startChapter, BookScanChapterRange::endChapter)
+    )
+    if (sorted.isEmpty()) return emptyList()
+    val merged = mutableListOf(sorted.first())
+    sorted.drop(1).forEach { range ->
+        val previous = merged.last()
+        if (range.startChapter <= previous.endChapter + 1) {
+            merged[merged.lastIndex] = previous.copy(
+                endChapter = maxOf(previous.endChapter, range.endChapter)
+            )
+        } else {
+            merged += range
+        }
+    }
+    return merged
+}
+
+private fun firstMissingBookScanRange(
+    covered: List<BookScanChapterRange>,
+    totalChapters: Int?
+): BookScanChapterRange? {
+    val total = totalChapters ?: return null
+    var nextStart = 1
+    covered.forEach { range ->
+        if (range.startChapter > nextStart) {
+            return BookScanChapterRange(nextStart, range.startChapter - 1)
+        }
+        nextStart = maxOf(nextStart, range.endChapter + 1)
+    }
+    return BookScanChapterRange(nextStart, total).takeIf { nextStart <= total }
+}
+
+private fun formatBookScanRanges(ranges: List<BookScanChapterRange>): String {
+    val visible = ranges.take(6).joinToString("、", transform = ::formatBookScanRange)
+    return if (ranges.size > 6) "$visible 等 ${ranges.size} 段" else visible
+}
+
+private fun formatBookScanRange(range: BookScanChapterRange): String {
+    return if (range.startChapter == range.endChapter) {
+        "第 ${range.startChapter} 章"
+    } else {
+        "第 ${range.startChapter}–${range.endChapter} 章"
+    }
+}
+
+private const val BOOK_SCAN_RANGE_VALUE_KEY_CHAPTER_RANGE = "chapter_range"
+private val BOOK_SCAN_WINDOW_RANGE_KEYS = setOf(BOOK_SCAN_RANGE_VALUE_KEY_CHAPTER_RANGE)
+private val BOOK_SCAN_FULL_COVERAGE_KEYS = setOf(
+    "full_text_coverage",
+    "full_coverage",
+    "complete_coverage"
+)
+private val BOOK_SCAN_NAVIGATION_RANGE_KEYS = setOf(
+    "navigation_coverage",
+    "snippet_coverage",
+    "navigation_ranges"
+)
+private val BOOK_SCAN_NAVIGATION_COUNT_KEYS = setOf(
+    "navigation_chapter_count",
+    "snippet_chapter_count"
+)
+private val BOOK_SCAN_PREFERRED_NEXT_RANGE_KEYS = setOf(
+    "next_scan_ranges",
+    "next_scan_range",
+    "next_gap",
+    "next_continuous_gap"
+)
+private val BOOK_SCAN_GAP_RANGE_KEYS = setOf(
+    "gaps",
+    "uncovered_ranges",
+    "missing_ranges"
+)
+private val BOOK_SCAN_RANGE_VALUE_KEYS = listOf(
+    BOOK_SCAN_RANGE_VALUE_KEY_CHAPTER_RANGE,
+    "range",
+    "chapters"
+)
+private val BOOK_SCAN_CHAPTER_RANGE_REGEX = Regex(
+    "(?:第\\s*)?(\\d+)\\s*(?:[-~～—至]\\s*(\\d+))?\\s*章"
+)
+
+private fun String.bookScanManifestSentences(): Sequence<String> {
+    return lineSequence()
+        .flatMap { line ->
+            line.trim()
+                .trimStart('-', '•')
+                .split('。', '；', ';', '\n')
+                .asSequence()
+        }
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+}
+
+private fun JsonArray.allElements(predicate: (JsonElement) -> Boolean): Boolean {
+    return (0 until size()).all { index -> predicate(get(index)) }
+}
+
+private fun AgentModeEntryContext?.payloadString(key: String): String {
+    return runCatching {
+        this?.payload
+            ?.get(key)
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asJsonPrimitive
+            ?.asString
+            ?.trim()
+    }.getOrNull().orEmpty()
+}
+
+private fun AgentModeEntryContext?.payloadInt(key: String): Int? {
+    return runCatching {
+        this?.payload
+            ?.get(key)
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asInt
+    }.getOrNull()
+}
 
 @Composable
 private fun ToolTraceEntry(toolTrace: List<String>) {
@@ -4668,6 +6754,7 @@ private fun ContextUsageDialog(
     )
     val categories = localCategories.filter { it.tokens > 0 }
     val categoryTotal = categories.sumOf { it.tokens }
+    val hasMeasuredUsage = usage.calibration != null
     val actualTokens = usage.calibration?.contextTokens ?: 0
     val actualPercent = if (usage.contextWindowTokens > 0) {
         actualTokens.toFloat() / usage.contextWindowTokens
@@ -4764,6 +6851,13 @@ private fun ContextUsageDialog(
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                if (hasMeasuredUsage) {
+                    Text(
+                        text = "基于最近一次接口 usage 校准；会话累计见下方。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall
                     )
                 }
 
@@ -4916,11 +7010,14 @@ private data class ContextUsageCategory(
 private fun RikkaChatInput(
     value: String,
     onValueChange: (String) -> Unit,
+    messageInputEnabled: Boolean,
     sending: Boolean,
     @DrawableRes modelIconRes: Int,
     reasoningEnabled: Boolean,
     mcpEnabled: Boolean,
     skillEnabled: Boolean,
+    mcpControlVisible: Boolean,
+    skillControlVisible: Boolean,
     contextAvailable: Boolean,
     suggestionAvailable: Boolean,
     suggestionExpanded: Boolean,
@@ -4972,7 +7069,16 @@ private fun RikkaChatInput(
                         value = value,
                         onValueChange = onValueChange,
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("输入消息与 AI 聊天") },
+                        readOnly = !messageInputEnabled,
+                        placeholder = {
+                            Text(
+                                if (messageInputEnabled) {
+                                    "输入消息与 AI 聊天"
+                                } else {
+                                    "可先设置模型和思考深度"
+                                }
+                            )
+                        },
                         maxLines = 5,
                         colors = TextFieldDefaults.colors(
                             focusedIndicatorColor = Color.Transparent,
@@ -4998,16 +7104,20 @@ private fun RikkaChatInput(
                                 active = reasoningEnabled,
                                 onClick = onReasoningClick
                             )
-                            InputDrawableIcon(
-                                iconRes = R.drawable.ic_ai_capability_tool,
-                                active = mcpEnabled,
-                                onClick = onMcpClick
-                            )
-                            InputDrawableIcon(
-                                iconRes = R.drawable.ic_ai_skill_puzzle,
-                                active = skillEnabled,
-                                onClick = onSkillClick
-                            )
+                            if (mcpControlVisible) {
+                                InputDrawableIcon(
+                                    iconRes = R.drawable.ic_ai_capability_tool,
+                                    active = mcpEnabled,
+                                    onClick = onMcpClick
+                                )
+                            }
+                            if (skillControlVisible) {
+                                InputDrawableIcon(
+                                    iconRes = R.drawable.ic_ai_skill_puzzle,
+                                    active = skillEnabled,
+                                    onClick = onSkillClick
+                                )
+                            }
                         }
                         ContextUsageIndicator(
                             usage = contextUsage,
@@ -5033,7 +7143,7 @@ private fun RikkaChatInput(
                             ChatInputActionButton(
                                 icon = Icons.Rounded.ArrowUpward,
                                 contentDescription = "Queue message",
-                                enabled = true,
+                                enabled = messageInputEnabled,
                                 color = MaterialTheme.colorScheme.primary,
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 onClick = onSend
@@ -5042,15 +7152,15 @@ private fun RikkaChatInput(
                         ChatInputActionButton(
                             icon = if (sending) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
                             contentDescription = if (sending) "Stop" else "Send",
-                            enabled = sending || value.isNotBlank(),
+                            enabled = sending || messageInputEnabled && value.isNotBlank(),
                             color = when {
                                 sending -> MaterialTheme.colorScheme.errorContainer
-                                value.isBlank() -> MaterialTheme.colorScheme.surfaceVariant
+                                !messageInputEnabled || value.isBlank() -> MaterialTheme.colorScheme.surfaceVariant
                                 else -> MaterialTheme.colorScheme.primary
                             },
                             tint = when {
                                 sending -> MaterialTheme.colorScheme.onErrorContainer
-                                value.isBlank() ->
+                                !messageInputEnabled || value.isBlank() ->
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                 else -> MaterialTheme.colorScheme.onPrimary
                             },
@@ -5499,7 +7609,7 @@ private fun AiChatMcpCapabilityRow(
         selected = selected,
         badges = buildList {
             add(NgListBadge(capability.toolNames.size.toString()))
-            if (capability.containsWriteTools) {
+            if (capability.requiresUserConfirmation) {
                 add(NgListBadge("写", NgListBadgeTone.Error))
             }
         },
@@ -5763,6 +7873,7 @@ private fun AiChatTurnResult.toUiMessage(elapsedMs: Long): ChatUiMessage {
         meta = meta,
         reasoning = reasoning,
         toolTrace = toolTrace,
+        toolReceipts = toolReceipts,
         memoryTrace = memoryTrace,
         elapsedMs = elapsedMs,
         promptTokens = usage?.promptTokens,
@@ -6033,26 +8144,6 @@ private fun buildEntryInputAttachments(entrySource: String?): List<AiChatInputAt
     }
 }
 
-private fun defaultMcpCapabilityIds(entrySource: String?): List<String> {
-    return when (entrySource) {
-        AiChatActivity.ENTRY_BOOKSHELF -> McpInternalToolCatalog.allCapabilityIds
-        AiChatActivity.ENTRY_BOOK_DETAIL -> listOf(
-            "bookshelf.query",
-            "bookshelf.read_content",
-            "bookshelf.manage_cache",
-            "bookshelf.manage_characters",
-            "ai.memory"
-        )
-        AiChatActivity.ENTRY_BOOK_SCAN -> listOf(
-            "bookshelf.query",
-            "bookshelf.read_content",
-            "bookshelf.cache_status",
-            "ai.memory_read"
-        )
-        else -> emptyList()
-    }
-}
-
 @Suppress("UNUSED_PARAMETER")
 private fun buildContextInputAttachments(contextSources: List<String>): List<AiChatInputAttachment> {
     return emptyList()
@@ -6062,12 +8153,126 @@ private fun buildAgentSkillInputAttachments(): List<AiChatInputAttachment> {
     return AiSkillRegistry.agentSkills().map(::toSkillInputAttachment)
 }
 
-private fun buildSkillInputAttachments(skillIds: List<String>): List<AiChatInputAttachment> {
+internal fun resolveEntryAgentMode(entrySource: String?): AgentModeDefinition {
+    return when (entrySource) {
+        AiChatActivity.ENTRY_BOOK_SCAN -> AgentModeRegistry.bookScan
+        else -> AgentModeRegistry.general
+    }
+}
+
+private fun buildModeSkillInputAttachments(
+    mode: AgentModeDefinition,
+    requestedSkillIds: List<String>,
+    pinnedMessages: List<JsonObject> = emptyList()
+): List<AiChatInputAttachment> {
+    val workflowId = mode.systemWorkflowId
+    val systemSkillIds = mode.availableSystemSkillIds
+    val systemSkillSetHash = if (workflowId != null) {
+        requireNotNull(AiSkillPackageRegistry.systemPackageSet(systemSkillIds)) {
+            "System Skill Package 集合不存在：${systemSkillIds.joinToString()}"
+        }.contentHash
+    } else {
+        ""
+    }
+    val attachments = when {
+        workflowId != null -> buildSkillInputAttachments(
+            skillIds = listOf(workflowId),
+            pinnedMessages = pinnedMessages,
+            skillResolver = { skillId ->
+                AiSkillRegistry.systemWorkflow(skillId)?.copy(contentHash = systemSkillSetHash)
+            }
+        ).map { attachment ->
+            attachment.copy(availableSkillIds = systemSkillIds)
+        }
+
+        mode.allowsUserSkills -> buildSkillInputAttachments(
+            skillIds = requestedSkillIds,
+            pinnedMessages = pinnedMessages
+        )
+
+        else -> emptyList()
+    }
+    if (workflowId != null) {
+        check(attachments.size == 1) { "System Workflow 资源不存在：$workflowId" }
+        check(
+            McpInternalToolCatalog.normalizeCapabilityIds(
+                attachments.single().skillRuntime.mcpCapabilities
+            ) == McpInternalToolCatalog.normalizeCapabilityIds(mode.fixedMcpCapabilityIds)
+        ) {
+            "System Workflow 与 Agent Mode 的 MCP capability 快照不一致：$workflowId"
+        }
+    }
+    return attachments
+}
+
+private fun resolveModeManagedCapabilities(
+    mode: AgentModeDefinition,
+    attachments: List<AiChatInputAttachment>
+): List<String> {
+    return if (mode.fixedMcpCapabilityIds.isNotEmpty()) {
+        McpInternalToolCatalog.normalizeCapabilityIds(mode.fixedMcpCapabilityIds)
+    } else {
+        McpInternalToolCatalog.normalizeCapabilityIds(
+            attachments.flatMap { attachment -> attachment.authorizedSkillCapabilities() }
+        )
+    }
+}
+
+private fun buildSkillInputAttachments(
+    skillIds: List<String>,
+    pinnedMessages: List<JsonObject> = emptyList(),
+    skillResolver: (String) -> io.legado.app.help.ai.AiSkillDefinition? = AiSkillRegistry::get
+): List<AiChatInputAttachment> {
+    val pinned = AiChatContextManager.activeSkillSnapshot(pinnedMessages)
     return skillIds.asReversed().firstNotNullOfOrNull { skillId ->
-        AiSkillRegistry.get(skillId)
+        val normalizedId = skillId.trim()
+        if (normalizedId.isBlank()) return@firstNotNullOfOrNull null
+        val current = skillResolver(normalizedId)
             ?.takeIf { it.scope == AiSkillScope.AGENT }
             ?.let(::toSkillInputAttachment)
+        if (pinned != null && pinned.skillId == normalizedId && pinned.prompt.isNotBlank()) {
+            val pinnedRuntimeRevision = pinned.runtimeRevision.ifBlank {
+                pinned.toRuntimeRevisionToken()
+            }
+            (current ?: AiChatInputAttachment(
+                id = "skill.$normalizedId",
+                type = AiChatInputAttachmentType.SKILL,
+                title = pinned.title.ifBlank { normalizedId },
+                subtitle = "当前会话固定的 Skill 版本",
+                prompt = pinned.prompt
+            )).copy(
+                title = pinned.title.ifBlank { current?.title ?: normalizedId },
+                prompt = pinned.prompt,
+                skillRuntime = pinned.runtime,
+                skillRevision = pinned.revision,
+                skillContentHash = pinned.contentHash,
+                skillRuntimeRevision = pinnedRuntimeRevision,
+                trustedBuiltIn = isPinnedSkillTrustedBuiltIn(
+                    currentTrusted = current?.trustedBuiltIn == true,
+                    currentContentHash = current?.skillContentHash.orEmpty(),
+                    currentRuntimeRevision = current?.skillRuntimeRevision.orEmpty(),
+                    pinnedContentHash = pinned.contentHash,
+                    pinnedRuntimeRevision = pinnedRuntimeRevision
+                )
+            )
+        } else {
+            current
+        }
     }?.let(::listOf).orEmpty()
+}
+
+internal fun isPinnedSkillTrustedBuiltIn(
+    currentTrusted: Boolean,
+    currentContentHash: String,
+    currentRuntimeRevision: String,
+    pinnedContentHash: String,
+    pinnedRuntimeRevision: String
+): Boolean {
+    return currentTrusted &&
+        pinnedContentHash.isNotBlank() &&
+        pinnedContentHash == currentContentHash &&
+        pinnedRuntimeRevision.isNotBlank() &&
+        pinnedRuntimeRevision == currentRuntimeRevision
 }
 
 private fun buildIntentContextInputAttachments(rawAttachments: List<String>): List<AiChatInputAttachment> {
@@ -6098,8 +8303,39 @@ private fun toSkillInputAttachment(skill: io.legado.app.help.ai.AiSkillDefinitio
         title = skill.name,
         subtitle = skill.summary,
         prompt = skill.prompt,
-        suggestions = skill.suggestions
+        suggestions = skill.suggestions,
+        skillRuntime = skill.runtime,
+        skillRevision = skill.revision,
+        skillContentHash = skill.contentHash,
+        skillRuntimeRevision = buildRuntimeRevisionToken(skill.id, skill.revision, skill.contentHash),
+        availableSkillIds = listOf(skill.id),
+        trustedBuiltIn = skill.builtIn && !skill.userModified
     )
+}
+
+private fun AiChatInputAttachment.authorizedSkillCapabilities(): List<String> {
+    val requested = McpInternalToolCatalog.normalizeCapabilityIds(
+        skillRuntime.mcpCapabilities
+    )
+    if (trustedBuiltIn) return requested
+    val granted = AiSkillCapabilityGrantStore.granted(skillRuntimeRevision)
+    return requested.filter { capabilityId -> capabilityId in granted }
+}
+
+private fun AiActiveSkillSnapshot.toRuntimeRevisionToken(): String {
+    return buildRuntimeRevisionToken(skillId, revision, contentHash)
+}
+
+private fun buildRuntimeRevisionToken(
+    skillId: String,
+    revision: String,
+    contentHash: String
+): String {
+    val id = skillId.trim().ifBlank { "skill" }
+    val version = revision.trim().ifBlank { "unversioned" }
+    return contentHash.trim().takeIf { it.isNotBlank() }
+        ?.let { hash -> "$id@$version@$hash" }
+        ?: "$id@$version"
 }
 
 private fun List<AiChatInputAttachment>.loadedSkillIds(): List<String> {
@@ -6224,7 +8460,7 @@ private fun AiChatMessageSnapshot.searchCorpus(): String {
         content,
         reasoning.orEmpty(),
         meta.orEmpty(),
-        toolTrace.joinToString("\n")
+        toolTrace.orEmpty().joinToString("\n")
     ).joinToString("\n")
 }
 
@@ -6276,12 +8512,24 @@ private fun List<ChatUiMessage>.deriveChatTitle(): String? {
         ?.takeIf { it.isNotBlank() }
 }
 
+internal fun resolveConversationTitle(
+    modeEntryTitle: String?,
+    derivedTitle: String?,
+    previousTitle: String?
+): String {
+    return modeEntryTitle?.takeIf { it.isNotBlank() }
+        ?: derivedTitle?.takeIf { it.isNotBlank() }
+        ?: previousTitle?.takeIf { it.isNotBlank() }
+        ?: "新聊天"
+}
+
 private fun buildDrawerHistoryGroups(
-    sessions: List<AiChatSessionSnapshot>
+    sessions: List<AiChatSessionSnapshot>,
+    skillPresentations: Map<String, Pair<String, AiSkillPresentation>>
 ): List<DrawerHistoryGroup> {
     val groupOrder = listOf("置顶", "书籍相关", "书架管理", "普通聊天")
     val items = sessions.map { session ->
-        val identity = session.drawerIdentity()
+        val identity = session.drawerIdentity(skillPresentations)
         DrawerHistoryItem(
             session = session,
             groupTitle = if (session.isPinned) "置顶" else identity.groupTitle,
@@ -6304,32 +8552,26 @@ private fun buildDrawerHistoryGroups(
     return orderedGroups + extraGroups
 }
 
-private fun AiChatSessionSnapshot.drawerIdentity(): DrawerConversationIdentity {
-    val skillText = loadedSkillIds.joinToString("|").lowercase(Locale.ROOT)
-    val isCharacterCardEntry = skillText.hasDedicatedSkill("character_card_generate")
-    val isBookshelfManagementEntry = skillText.hasDedicatedSkill("bookshelf_management")
-    val subject = if (isCharacterCardEntry) {
+private fun AiChatSessionSnapshot.drawerIdentity(
+    skillPresentations: Map<String, Pair<String, AiSkillPresentation>>
+): DrawerConversationIdentity {
+    val activeSkill = loadedSkillIds.asReversed().firstNotNullOfOrNull { skillId ->
+        skillPresentations[skillId.trim().lowercase(Locale.ROOT)]
+    }
+    val skillName = activeSkill?.first
+    val presentation = activeSkill?.second
+    val subject = if (presentation?.subjectFromConversation == true) {
         extractChatSubject(drawerCorpus())
     } else {
         null
     }
     val compactTitle = title.toCompactDrawerText()
-    val scene = when {
-        isCharacterCardEntry -> DrawerScene(
-            groupTitle = "书籍相关",
-            title = "角色卡"
-        )
-
-        isBookshelfManagementEntry -> DrawerScene(
-            groupTitle = "书架管理",
-            title = "书架管理"
-        )
-
-        else -> DrawerScene(
-            groupTitle = "普通聊天",
-            title = compactTitle.ifBlank { "普通聊天" }
-        )
-    }
+    val scene = DrawerScene(
+        groupTitle = presentation?.conversationGroup ?: "普通聊天",
+        title = presentation?.conversationTitle
+            ?: skillName
+            ?: compactTitle.ifBlank { "普通聊天" }
+    )
     val titleText = if (subject != null && scene.title !in subject) {
         "${scene.title} · $subject"
     } else {
@@ -6368,12 +8610,6 @@ private fun AiChatSessionSnapshot.drawerCorpus(): String {
         .joinToString("\n")
         .replace("\\n", "\n")
         .take(4000)
-}
-
-private fun String.hasDedicatedSkill(skillId: String): Boolean {
-    return split('|').any { loadedId ->
-        loadedId.trim().replace('-', '_') == skillId
-    }
 }
 
 private fun extractChatSubject(text: String): String? {
@@ -6425,11 +8661,12 @@ private fun formatDrawerHistoryTime(timeMillis: Long): String {
 private fun buildDrawerFavoriteItems(
     sessions: List<AiChatSessionSnapshot>,
     activeSessionId: String?,
-    messages: List<ChatUiMessage>
+    messages: List<ChatUiMessage>,
+    skillPresentations: Map<String, Pair<String, AiSkillPresentation>>
 ): List<DrawerFavoriteItem> {
     val activeSession = sessions.firstOrNull { it.id == activeSessionId }
     val titleCache = sessions.associate { session ->
-        session.id to session.drawerIdentity().title
+        session.id to session.drawerIdentity(skillPresentations).title
     }
     val activeTitle = activeSession?.let { titleCache[it.id] } ?: messages.deriveChatTitle() ?: "当前聊天"
     val activeItems = messages
@@ -6681,11 +8918,15 @@ private fun ChatUiMessage.toSnapshot(): AiChatMessageSnapshot {
         meta = meta,
         reasoning = reasoning,
         toolTrace = toolTrace,
+        toolReceipts = toolReceipts,
         memoryTrace = memoryTrace,
         elapsedMs = elapsedMs,
         favorite = favorite,
         deliveryState = deliveryState.snapshotValue,
         uploadContent = uploadContent,
+        resolvedInteractionIds = resolvedInteractionIds,
+        interactionResultLabels = interactionResultLabels,
+        interactionResultSelections = interactionResultSelections,
         promptTokens = promptTokens,
         localPromptTokens = localPromptTokens,
         contextAnchorTokens = contextAnchorTokens,
@@ -6710,12 +8951,18 @@ private fun AiChatMessageSnapshot.toUiMessage(): ChatUiMessage {
         content = content,
         meta = meta,
         reasoning = reasoning,
-        toolTrace = toolTrace,
+        toolTrace = toolTrace.orEmpty(),
+        toolReceipts = toolReceipts.orEmpty(),
         memoryTrace = memoryTrace.orEmpty(),
         elapsedMs = elapsedMs,
         favorite = favorite,
-        deliveryState = ChatDeliveryState.fromSnapshot(deliveryState),
+        deliveryState = ChatDeliveryState.fromSnapshot(
+            deliveryState ?: AiChatMessageSnapshot.DELIVERY_SENT
+        ),
         uploadContent = uploadContent,
+        resolvedInteractionIds = resolvedInteractionIds,
+        interactionResultLabels = interactionResultLabels,
+        interactionResultSelections = interactionResultSelections,
         promptTokens = promptTokens,
         localPromptTokens = localPromptTokens,
         contextAnchorTokens = contextAnchorTokens,
@@ -6744,12 +8991,16 @@ private data class ChatUiMessage(
     val meta: String? = null,
     val reasoning: String? = null,
     val toolTrace: List<String> = emptyList(),
+    val toolReceipts: List<ToolExecutionReceipt> = emptyList(),
     val memoryTrace: List<AiMemoryTraceItem> = emptyList(),
     val elapsedMs: Long? = null,
     val favorite: Boolean = false,
     val loading: Boolean = false,
     val deliveryState: ChatDeliveryState = ChatDeliveryState.SENT,
     val uploadContent: String? = null,
+    val resolvedInteractionIds: List<String> = emptyList(),
+    val interactionResultLabels: Map<String, String> = emptyMap(),
+    val interactionResultSelections: Map<String, Map<String, String>> = emptyMap(),
     val promptTokens: Int? = null,
     val localPromptTokens: Int? = null,
     val contextAnchorTokens: Int? = null,

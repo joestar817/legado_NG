@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "name": "example-harem-full-flow",
+  "book": "scripts/fixtures/books/personalized_harem_quick_scan.txt",
+  "model": "deepseek-v4-flash",
+  "api_url": "https://api.deepseek.com/chat/completions",
+  "api_key_env": "DEEPSEEK_API_KEY",
+  "repeat": 1,
+  "recover_protocol_errors": true,
+  "flow": [
+    {
+      "interaction": "book_scan_reaction",
+      "select": "continue_scan"
+    },
+    {
+      "interaction": "book_scan_like_reasons",
+      "action": "skip"
+    },
+    {
+      "interaction": "book_scan_target",
+      "select": "scan_100"
+    }
+  ],
+  "reopen": true,
+  "expectations": {
+    "verdict_in": ["try", "cautious", "reject", "uncertain"],
+    "forbidden_terms": ["manifest", "snippet覆盖", "scan_100", "AgentMemory"],
+    "must_write_book_memory": true,
+    "max_tool_calls": 80,
+    "max_total_tokens": 300000
+  }
+}

@@ -92,9 +92,6 @@ interface AgentMemoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsert(memory: AgentMemory)
 
-    @Query("update agentMemories set status = :status, updatedAt = :updatedAt where id in (:ids)")
-    fun updateStatus(ids: List<String>, status: String, updatedAt: Long): Int
-
     @Query("delete from agentMemories")
     fun clearAll(): Int
 }

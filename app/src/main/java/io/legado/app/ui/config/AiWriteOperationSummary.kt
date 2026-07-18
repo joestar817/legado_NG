@@ -290,22 +290,6 @@ internal fun AiPendingToolCall.toWriteOperationSummary(): WriteOperationSummary 
                 secondary = null
             )
         }
-        "agent_memory_upsert" -> {
-            title = "保存 AI 记忆"
-            description = buildObjectDescription(
-                action = "新增或更新 AI 助手记忆",
-                primary = args.stringOrNull("subject"),
-                secondary = args.stringOrNull("scope_key") ?: args.stringOrNull("scopeKey")
-            )
-        }
-        "agent_memory_archive" -> {
-            title = "归档 AI 记忆"
-            description = buildObjectDescription(
-                action = "归档或停用 AI 助手记忆",
-                primary = args.stringListLabel("ids") ?: args.stringOrNull("id"),
-                secondary = null
-            )
-        }
         "network_log_clear" -> {
             title = "清空网络日志"
             description = buildObjectDescription(

@@ -5,8 +5,25 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
+import io.legado.app.data.AgentToolResultStore
+import io.legado.app.data.entities.AgentToolResultArtifact
+import io.legado.app.data.entities.AgentToolExecutionIntent
+import io.legado.app.data.dao.AgentToolExecutionBeginOutcome
+import io.legado.app.help.ai.runtime.AgentHookBinding
+import io.legado.app.help.ai.runtime.AgentHookEvent
+import io.legado.app.help.ai.runtime.AgentHookEffects
+import io.legado.app.help.ai.runtime.AgentHookPhase
+import io.legado.app.help.ai.runtime.AgentHookRegistry
+import io.legado.app.help.ai.runtime.AgentHookResult
+import io.legado.app.help.ai.runtime.AgentHookRuntime
+import io.legado.app.help.ai.runtime.ToolApprovalStatus
+import io.legado.app.help.ai.runtime.ToolExecutionReceipt
+import io.legado.app.help.ai.runtime.ToolExecutionStatus
 import io.legado.app.help.http.await
 import io.legado.app.web.mcp.McpInternalChannel
+import io.legado.app.web.mcp.McpInternalToolCatalog
+import io.legado.app.web.mcp.McpToolSideEffect
+import io.legado.app.web.mcp.McpToolExecutionContext
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -19,6 +36,12 @@ class AiChatClient {
 
     suspend fun compactContext(
         messages: MutableList<JsonObject>,
+        conversationId: String,
+        skillId: String = "",
+        skillRevision: String = "",
+        skillContentHash: String = "",
+        availableSkillIds: List<String> = emptyList(),
+        runtimeHooks: List<AgentHookBinding> = emptyList(),
         promptUsageAnchor: AiChatPromptUsageAnchor? = null,
         enabledMcpCapabilityIds: List<String> = emptyList(),
         onContextEvent: (AiChatContextEvent) -> Unit = {}
@@ -31,11 +54,38 @@ class AiChatClient {
         check(setting.enabled) { "AI provider is disabled" }
         check(setting.type == AiProviderType.OPENAI) { "AI 聊天暂只支持 OpenAI 兼容提供商" }
         val model = resolveModel(setting, selection.modelId)
-        val tools = if (AiConfig.internalMcpEnabled && model.abilities.contains(AiModelAbility.TOOL)) {
-            loadMcpTools(enabledMcpCapabilityIds)
+        val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
+            loadModelTools(
+                skillId,
+                skillContentHash,
+                availableSkillIds,
+                enabledMcpCapabilityIds
+            )
         } else {
             emptyList()
         }
+        val hookRuntime = AgentHookRegistry.createRuntime(
+            runtimeHooks,
+            McpInternalToolCatalog.resolveToolNames(enabledMcpCapabilityIds)
+        )
+        val pendingReceiptIds = AgentToolResultStore.listUnacknowledgedByConversation(
+            conversationId = conversationId,
+            skillRevision = skillRevision,
+            contentHash = skillContentHash,
+            toolNames = hookRuntime.pendingReceiptToolNames()
+        ).map { artifact -> artifact.receiptId }
+        messages.applyHookEffects(hookRuntime.evaluate(
+            AgentHookEvent(
+                eventId = "$conversationId:manual-compaction:resume",
+                phase = AgentHookPhase.TURN_RESUMED,
+                conversationId = conversationId,
+                turnId = "manual-compaction",
+                skillRevision = skillRevision,
+                skillContentHash = skillContentHash,
+                authorizedCapabilityIds = enabledMcpCapabilityIds,
+                pendingReceiptIds = pendingReceiptIds
+            )
+        ))
         val calibration = resolveTokenCalibration(
             messages = messages,
             toolDefinitions = tools,
@@ -43,14 +93,28 @@ class AiChatClient {
             providerId = selection.providerId,
             modelId = model.id
         )
+        var blocked: AgentHookResult.BlockBoundary? = null
         val record = compactIfNeeded(
             messages = messages,
             toolDefinitions = tools,
             calibration = calibration,
             stage = AiChatCompactionStage.PRE_TURN,
             onContextEvent = onContextEvent,
-            force = true
-        ) ?: error("上下文压缩未执行")
+            force = true,
+            beforeCompaction = {
+                hookRuntime.evaluate(
+                    AgentHookEvent(
+                        eventId = "$conversationId:manual-compaction:boundary",
+                        phase = AgentHookPhase.BEFORE_COMPACTION,
+                        conversationId = conversationId,
+                        turnId = "manual-compaction",
+                        skillRevision = skillRevision,
+                        skillContentHash = skillContentHash,
+                        authorizedCapabilityIds = enabledMcpCapabilityIds
+                    )
+                ).also { effects -> blocked = effects.block }
+            }
+        ) ?: error(blocked?.message ?: "上下文压缩未执行")
         return AiChatManualCompactionResult(
             record = record,
             contextUsage = AiChatContextManager.usage(messages, tools),
@@ -60,8 +124,17 @@ class AiChatClient {
 
     suspend fun send(
         messages: MutableList<JsonObject>,
+        conversationId: String,
+        turnId: String,
+        skillId: String = "",
+        skillRevision: String = "",
+        skillContentHash: String = "",
+        availableSkillIds: List<String> = emptyList(),
+        memoryPolicy: AgentModeMemoryPolicy? = null,
+        runtimeHooks: List<AgentHookBinding> = emptyList(),
         promptUsageAnchor: AiChatPromptUsageAnchor? = null,
         onStreamUpdate: (AiChatStreamUpdate) -> Unit = {},
+        onDurableContextUpdate: (AiChatDurableContextUpdate) -> Unit = {},
         onContextEvent: (AiChatContextEvent) -> Unit = {},
         enabledMcpCapabilityIds: List<String> = emptyList(),
         onToolConfirmationRequired: suspend (List<AiPendingToolCall>) -> Boolean = { false }
@@ -75,8 +148,13 @@ class AiChatClient {
         check(setting.type == AiProviderType.OPENAI) { "AI 聊天暂只支持 OpenAI 兼容提供商" }
         val model = resolveModel(setting, selection.modelId)
         val params = AiConfig.assistantChatParams(model.abilities.contains(AiModelAbility.REASONING))
-        val tools = if (AiConfig.internalMcpEnabled && model.abilities.contains(AiModelAbility.TOOL)) {
-            loadMcpTools(enabledMcpCapabilityIds)
+        val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
+            loadModelTools(
+                skillId,
+                skillContentHash,
+                availableSkillIds,
+                enabledMcpCapabilityIds
+            )
         } else {
             emptyList()
         }
@@ -87,9 +165,38 @@ class AiChatClient {
             if (!AiConfig.internalMcpEnabled) {
                 add("内置 MCP 未开启")
             }
-        }
+        }.toMutableList()
         val client = aiHttpClient(setting.timeoutSeconds)
         val requestMessages = messages
+        val recoveringInterruptedBatch =
+            AiChatToolBatchRecovery.discardLatestIncompleteBatch(requestMessages)
+        var allowLogicalRecoveryReplay = recoveringInterruptedBatch
+        val hookRuntime = AgentHookRegistry.createRuntime(
+            runtimeHooks,
+            McpInternalToolCatalog.resolveToolNames(enabledMcpCapabilityIds)
+        )
+        val resumedReceipts = AgentToolResultStore.listUnacknowledgedByConversation(
+            conversationId = conversationId,
+            skillRevision = skillRevision,
+            contentHash = skillContentHash,
+            toolNames = hookRuntime.pendingReceiptToolNames()
+        ).filter { artifact -> artifact.success && artifact.complete }
+        requestMessages.applyHookEffects(hookRuntime.evaluate(
+            AgentHookEvent(
+                eventId = "$turnId:open",
+                phase = if (resumedReceipts.isEmpty()) {
+                    AgentHookPhase.TURN_OPENED
+                } else {
+                    AgentHookPhase.TURN_RESUMED
+                },
+                conversationId = conversationId,
+                turnId = turnId,
+                skillRevision = skillRevision,
+                skillContentHash = skillContentHash,
+                authorizedCapabilityIds = enabledMcpCapabilityIds,
+                pendingReceiptIds = resumedReceipts.map { artifact -> artifact.receiptId }
+            )
+        ))
         val toolTrace = mutableListOf<String>()
         var lastUsage: AiChatUsage? = null
         var lastModel: String? = null
@@ -97,13 +204,13 @@ class AiChatClient {
         var lastFinishReason: String? = null
         val contextCompactions = mutableListOf<AiChatCompactionRecord>()
         val memoryTrace = mutableListOf<AiMemoryTraceItem>()
-        val bookScanReadEvidence = mutableListOf<AiBookScanReadEvidence>()
-        val bookScanSkillActive = requestMessages.any { message ->
-            message.stringOrNull("role") == "system" &&
-                message.stringOrNull("content").orEmpty().contains("Skill：AI 扫书")
-        }
-        var bookScanBestVisibleContent = ""
+        val toolReceipts = mutableListOf<ToolExecutionReceipt>()
+        val recoverableToolStepContents = mutableListOf<String>()
+        var durableAssistantContent = ""
+        var stepNumber = 0
+        var finalizeStateFlushRetryCount = 0
         var contextOverflowRecoveryAttempted = false
+        val seenToolCallIds = hashSetOf<String>()
         var tokenCalibration = resolveTokenCalibration(
             messages = requestMessages,
             toolDefinitions = tools,
@@ -111,17 +218,40 @@ class AiChatClient {
             providerId = selection.providerId,
             modelId = model.id
         )
-        compactIfNeeded(
+        try {
+            compactIfNeeded(
                 requestMessages,
                 tools,
                 tokenCalibration,
                 AiChatCompactionStage.PRE_TURN,
-                onContextEvent
+                onContextEvent,
+                beforeCompaction = {
+                    hookRuntime.evaluate(
+                        AgentHookEvent(
+                            eventId = "$turnId:pre-turn-compaction",
+                            phase = AgentHookPhase.BEFORE_COMPACTION,
+                            conversationId = conversationId,
+                            turnId = turnId,
+                            skillRevision = skillRevision,
+                            skillContentHash = skillContentHash,
+                            authorizedCapabilityIds = enabledMcpCapabilityIds
+                        )
+                    )
+                }
             )?.let { record ->
             contextCompactions += record
             tokenCalibration = null
+            onDurableContextUpdate(
+                durableContextUpdate(
+                    requestMessages,
+                    durableAssistantContent,
+                    lastReasoning,
+                    toolTrace,
+                    hookRuntime
+                )
+            )
         }
-        while (true) {
+            while (true) {
             currentCoroutineContext().ensureActive()
             val stream = setting.streamResponseEnabled
             val body = buildRequestBody(setting, model, requestMessages, tools, params, stream)
@@ -140,7 +270,12 @@ class AiChatClient {
                 .ifBlank { "reasoning_content" }
             val completion = try {
                 if (stream) {
-                    client.executeStreamChat(request, reasoningKey, onStreamUpdate)
+                    client.executeStreamChat(
+                        request = request,
+                        reasoningKey = reasoningKey,
+                        deferVisibleContent = tools.isNotEmpty(),
+                        onStreamUpdate = onStreamUpdate
+                    )
                 } else {
                     client.executeJsonChat(request, reasoningKey)
                 }
@@ -155,7 +290,20 @@ class AiChatClient {
                         calibration = tokenCalibration,
                         stage = AiChatCompactionStage.PRE_TURN,
                         onContextEvent = onContextEvent,
-                        force = true
+                        force = true,
+                        beforeCompaction = {
+                            hookRuntime.evaluate(
+                                AgentHookEvent(
+                                    eventId = "$turnId:overflow-compaction",
+                                    phase = AgentHookPhase.BEFORE_COMPACTION,
+                                    conversationId = conversationId,
+                                    turnId = turnId,
+                                    skillRevision = skillRevision,
+                                    skillContentHash = skillContentHash,
+                                    authorizedCapabilityIds = enabledMcpCapabilityIds
+                                )
+                            )
+                        }
                     )?.let { record ->
                         contextCompactions += record
                         tokenCalibration = null
@@ -169,32 +317,84 @@ class AiChatClient {
             lastUsage = completion.usage
             lastReasoning = completion.reasoning
             lastFinishReason = completion.finishReason
+            stepNumber += 1
             val message = completion.message
             val content = completion.content
             val toolCalls = completion.toolCalls
-            if (bookScanSkillActive) {
-                val visibleContent = AiChatInteractionParser.parse(content).content.trim()
-                if (visibleContent.length > bookScanBestVisibleContent.length) {
-                    bookScanBestVisibleContent = visibleContent
-                }
-            }
             if (toolCalls.size() == 0) {
-                saveBookScanDeltas(
-                    content = content,
-                    evidence = bookScanReadEvidence,
-                    memoryTrace = memoryTrace,
-                    allowCoverageFallback = bookScanSkillActive,
-                    fallbackContent = bookScanBestVisibleContent.ifBlank { content }
+                durableAssistantContent = AiChatToolStepContent.bestRecoveryCandidate(
+                    recoverableToolStepContents
+                )?.let { earlierContent ->
+                    if (finalizeStateFlushRetryCount > 0) {
+                        AiChatVisibleContentRecovery.recoverAfterInternalRetry(
+                            finalContent = content,
+                            earlierContent = earlierContent
+                        )
+                    } else {
+                        AiChatVisibleContentRecovery.recover(content, earlierContent)
+                    }
+                } ?: content.trim()
+                val finalizeEffects = hookRuntime.evaluate(
+                    AgentHookEvent(
+                        eventId = "$turnId:step-$stepNumber:finalize",
+                        phase = AgentHookPhase.BEFORE_TURN_FINALIZE,
+                        conversationId = conversationId,
+                        turnId = turnId,
+                        stepId = "step-$stepNumber",
+                        skillRevision = skillRevision,
+                        skillContentHash = skillContentHash,
+                        authorizedCapabilityIds = enabledMcpCapabilityIds
+                    )
                 )
+                requestMessages.applyHookEffects(finalizeEffects)
+                val finalizeBlock = finalizeEffects.block
+                if (finalizeBlock != null && finalizeStateFlushRetryCount == 0) {
+                    AiChatToolStepContent.recoveryCandidate(content)?.let(recoverableToolStepContents::add)
+                    requestMessages.add(uploadAssistantMessage(content, lastReasoning))
+                    finalizeStateFlushRetryCount += 1
+                    onDurableContextUpdate(
+                        durableContextUpdate(
+                            requestMessages,
+                            durableAssistantContent,
+                            lastReasoning,
+                            toolTrace,
+                            hookRuntime
+                        )
+                    )
+                    continue
+                }
+                val finalContent = if (finalizeBlock == null) {
+                    requestMessages.removeRuntimeNotices()
+                    durableAssistantContent
+                } else {
+                    warnings += "本轮存在尚未确认的工具结果，已保留为可恢复状态"
+                    buildString {
+                        append(durableAssistantContent.trim())
+                        if (isNotEmpty()) append("\n\n")
+                        append("> [!WARNING]\n> 本轮有 ")
+                        append(finalizeBlock.pendingReceiptIds.size)
+                        append(" 个工具结果尚未写入 AgentMemory，结果已保留，可在当前会话继续恢复。")
+                    }
+                }
                 onStreamUpdate(
                     AiChatStreamUpdate(
-                        content = content,
+                        content = finalContent,
                         reasoning = lastReasoning,
                         toolTrace = toolTrace.toList(),
                         memoryTrace = memoryTrace.toList()
                     )
                 )
                 requestMessages.add(uploadAssistantMessage(content, lastReasoning))
+                onDurableContextUpdate(
+                    durableContextUpdate(
+                        requestMessages,
+                        finalContent,
+                        lastReasoning,
+                        toolTrace,
+                        hookRuntime,
+                        toolReceipts
+                    )
+                )
                 tokenCalibration = calibrationAfterModelResponse(
                     usage = completion.usage,
                     messages = requestMessages,
@@ -202,37 +402,49 @@ class AiChatClient {
                     providerId = selection.providerId,
                     modelId = model.id
                 ) ?: tokenCalibration
-                val contextMessages = if (bookScanSkillActive) {
-                    AiBookScanContext.pruneAfterTurn(requestMessages)
-                } else {
-                    requestMessages.map { it.deepCopy().asJsonObject }
-                }
+                val contextMessages = requestMessages.map { it.deepCopy().asJsonObject }
                 return AiChatTurnResult(
-                    content = content,
+                    content = finalContent,
                     reasoning = lastReasoning,
                     model = lastModel ?: model.id,
                     finishReason = lastFinishReason,
                     usage = lastUsage,
                     toolTrace = toolTrace,
+                    toolReceipts = toolReceipts.toList(),
                     memoryTrace = memoryTrace.toList(),
                     warnings = warnings,
                     contextUsage = AiChatContextManager.usage(
                         contextMessages,
                         tools,
-                        tokenCalibration.takeUnless { bookScanSkillActive }
+                        tokenCalibration
                     ),
-                    contextCalibration = tokenCalibration.takeUnless { bookScanSkillActive },
+                    contextCalibration = tokenCalibration,
                     compactionCount = contextCompactions.size,
                     contextCompactions = contextCompactions.toList(),
                     contextMessages = contextMessages
                 )
             }
+            AiChatToolStepContent.recoveryCandidate(content)?.let(recoverableToolStepContents::add)
+            val providerContent = AiChatToolStepContent.providerProjection(content)
+            if (providerContent != content) {
+                warnings += "Provider 工具协议文本已从可见消息和后续请求中隔离"
+            }
             requestMessages.add(message.deepCopy().asJsonObject.apply {
                 addProperty("role", "assistant")
-                if (!has("content") || get("content").isJsonNull) {
-                    addProperty("content", "")
-                }
+                addProperty("content", providerContent)
             })
+            // 先持久化完整 tool-call 计划。批次中途退出时不保存半组 tool result，
+            // 恢复阶段会清理未闭合的 Provider 投影，并通过不可变 receipt replay。
+            onDurableContextUpdate(
+                durableContextUpdate(
+                    requestMessages,
+                    durableAssistantContent,
+                    lastReasoning,
+                    toolTrace,
+                    hookRuntime,
+                    toolReceipts
+                )
+            )
             tokenCalibration = calibrationAfterModelResponse(
                 usage = completion.usage,
                 messages = requestMessages,
@@ -254,98 +466,374 @@ class AiChatClient {
                     arguments = arguments
                 )
             }
-            saveBookScanDeltas(
-                content = content,
-                evidence = bookScanReadEvidence,
-                memoryTrace = memoryTrace,
-                allowCoverageFallback = false,
-                fallbackContent = content
-            )
+            require(parsedToolCalls.size == toolCalls.size()) {
+                "模型返回了无法解析的 tool_calls，已在执行任何工具前中止"
+            }
+            val preparedToolCalls = parsedToolCalls.map { call ->
+                require(call.callId.isNotBlank()) { "模型返回的 tool_call id 不能为空" }
+                require(call.functionName.startsWith(MCP_TOOL_PREFIX) && call.toolName.isNotBlank()) {
+                    "模型返回了非法的 MCP tool name"
+                }
+                require(seenToolCallIds.add(call.callId)) {
+                    "模型在同一轮重复使用 tool_call id：${call.callId}"
+                }
+                val argumentsHash = AgentToolResultStore.argumentsHash(call.arguments)
+                val receiptId = AgentToolResultStore.deterministicReceiptId(
+                    conversationId = conversationId,
+                    turnId = turnId,
+                    toolCallId = call.callId,
+                    argumentsHash = argumentsHash
+                )
+                val exactArtifact = AgentToolResultStore.get(receiptId)?.also { artifact ->
+                    require(
+                        artifact.conversationId == conversationId &&
+                            artifact.turnId == turnId &&
+                            artifact.toolName == call.toolName &&
+                            artifact.skillRevision == skillRevision &&
+                            artifact.contentHash == skillContentHash &&
+                            artifact.argumentsHash == argumentsHash
+                    ) { "已存在的工具回执与本次调用身份冲突，已拒绝重复执行" }
+                }
+                PreparedToolCall(
+                    call = call,
+                    argumentsHash = argumentsHash,
+                    receiptId = receiptId,
+                    reusableArtifact = exactArtifact ?: if (allowLogicalRecoveryReplay) {
+                        AgentToolResultStore.findReusableByTurnToolArguments(
+                            conversationId = conversationId,
+                            turnId = turnId,
+                            toolName = call.toolName,
+                            argumentsHash = argumentsHash,
+                            skillRevision = skillRevision,
+                            contentHash = skillContentHash
+                        )
+                    } else {
+                        null
+                    }
+                )
+            }
+            // Logical identity replay is only for the first regenerated batch after an
+            // interrupted provider projection. Later batches in the same resumed turn are live.
+            allowLogicalRecoveryReplay = false
             onStreamUpdate(
                 AiChatStreamUpdate(
-                    content = content,
+                    content = durableAssistantContent,
                     reasoning = lastReasoning,
                     toolTrace = toolTrace.toList(),
                     memoryTrace = memoryTrace.toList()
                 )
             )
             val writeToolCalls = if (AiConfig.operationPermissionMode.requiresWriteConfirmation) {
-                parsedToolCalls.filter { it.toolName.isWriteTool(it.arguments) }
+                preparedToolCalls
+                    .filter { prepared -> prepared.reusableArtifact == null }
+                    .map { prepared -> prepared.call }
+                    .filter { call ->
+                        call.toolName.requiresPerCallConfirmation(
+                            arguments = call.arguments
+                        )
+                    }
             } else {
                 emptyList()
             }
             val writeToolCallIds = writeToolCalls.mapTo(mutableSetOf()) { it.callId }
             val writeApproved = if (writeToolCalls.isNotEmpty()) {
-                onToolConfirmationRequired(writeToolCalls.map { it.toPendingToolCall() })
+                onToolConfirmationRequired(writeToolCalls.map { call ->
+                    call.toPendingToolCall(
+                        McpInternalToolCatalog.sideEffectOf(
+                            toolName = call.toolName,
+                            argumentsDeclareWrite = call.arguments.booleanOrNull("write") == true ||
+                                call.arguments.booleanOrNull("overwrite") == true
+                        )
+                    )
+                })
             } else {
                 true
             }
-            val characterMemoryContexts = mutableListOf<CharacterApplyMemoryContext>()
-            parsedToolCalls.forEach { call ->
-                val result = if (!writeApproved && call.callId in writeToolCallIds) {
-                    writeOperationCanceledResult(call.toolName)
-                } else {
-                    runCatching {
-                        McpInternalChannel.callTool(
-                            call.toolName,
-                            call.arguments,
-                            enabledMcpCapabilityIds
+            preparedToolCalls.forEach { prepared ->
+                val call = prepared.call
+                val proposedEffects = if (prepared.reusableArtifact == null) {
+                    hookRuntime.evaluate(
+                        AgentHookEvent(
+                            eventId = "$turnId:step-$stepNumber:${call.callId}:proposed",
+                            phase = AgentHookPhase.TOOL_CALL_PROPOSED,
+                            conversationId = conversationId,
+                            turnId = turnId,
+                            stepId = "step-$stepNumber",
+                            skillRevision = skillRevision,
+                            skillContentHash = skillContentHash,
+                            authorizedCapabilityIds = enabledMcpCapabilityIds,
+                            proposedToolName = call.toolName
                         )
-                    }.getOrElse {
-                        JsonObject().apply {
-                            addProperty("ok", false)
-                            addProperty("error", it.localizedMessage ?: "MCP tool failed")
+                    )
+                } else {
+                    AgentHookEffects()
+                }
+                requestMessages.applyHookEffects(proposedEffects)
+                val proposedBlock = proposedEffects.block
+                val requiresWriteApproval = call.callId in writeToolCallIds
+                var startedIntent: AgentToolExecutionIntent? = null
+                var resolvedArtifact = prepared.reusableArtifact
+                var indeterminateIntent: AgentToolExecutionIntent? = null
+                val result = when {
+                    resolvedArtifact != null -> resolvedArtifact.toReplayedMcpResult()
+                    proposedBlock != null -> blockedToolResult(call.toolName, proposedBlock)
+                    !writeApproved && requiresWriteApproval -> writeOperationCanceledResult(call.toolName)
+                    else -> when (
+                        val begin = AgentToolResultStore.beginExecution(
+                            AgentToolExecutionIntent(
+                                receiptId = prepared.receiptId,
+                                conversationId = conversationId,
+                                turnId = turnId,
+                                toolCallId = call.callId,
+                                toolName = call.toolName,
+                                skillRevision = skillRevision,
+                                contentHash = skillContentHash,
+                                argumentsHash = prepared.argumentsHash,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                    ) {
+                        is AgentToolExecutionBeginOutcome.Completed -> {
+                            resolvedArtifact = begin.artifact
+                            begin.artifact.toReplayedMcpResult()
+                        }
+
+                        is AgentToolExecutionBeginOutcome.Indeterminate -> {
+                            indeterminateIntent = begin.intent
+                            indeterminateToolResult(call.toolName, begin.intent.receiptId)
+                        }
+
+                        is AgentToolExecutionBeginOutcome.Started -> {
+                            startedIntent = begin.intent
+                            runCatching {
+                                AiAgentSkillTools.call(
+                                    name = call.toolName,
+                                    arguments = call.arguments,
+                                    activeSkillId = skillId,
+                                    contentHash = skillContentHash,
+                                    availableSkillIds = normalizedAvailableSkillIds(
+                                        skillId,
+                                        availableSkillIds
+                                    )
+                                ) ?: McpInternalChannel.callTool(
+                                    call.toolName,
+                                    call.arguments,
+                                    enabledMcpCapabilityIds,
+                                    McpToolExecutionContext(
+                                        conversationId = conversationId,
+                                        turnId = turnId,
+                                        skillRevision = skillRevision,
+                                        skillContentHash = skillContentHash,
+                                        allowedMemoryRanges = memoryPolicy?.allowedRanges.orEmpty()
+                                    )
+                                )
+                            }.getOrElse {
+                                JsonObject().apply {
+                                    addProperty("ok", false)
+                                    addProperty("error", it.localizedMessage ?: "MCP tool failed")
+                                }
+                            }
                         }
                     }
                 }
-                toolTrace.add("${call.toolName}(${call.arguments.toString().take(120)})")
+                toolTrace.add(
+                    buildString {
+                        append(call.toolName)
+                        append('(').append(call.arguments.toString().take(120)).append(')')
+                        if (resolvedArtifact != null) append(" [replay]")
+                        if (indeterminateIntent != null) append(" [indeterminate]")
+                    }
+                )
                 onStreamUpdate(
                     AiChatStreamUpdate(
-                        content = content,
+                        content = durableAssistantContent,
                         reasoning = lastReasoning,
                         toolTrace = toolTrace.toList(),
                         memoryTrace = memoryTrace.toList()
                     )
                 )
-                result.toCharacterApplyMemoryContext(call.toolName)
-                    ?.let { characterMemoryContexts += it }
-                AiBookScanMemory.readEvidence(call.toolName, call.arguments, result)
-                    ?.let { bookScanReadEvidence += it }
+                val fullModelToolContent = resolvedArtifact?.payload
+                    ?: AiModelToolContent.format(result, call.toolName, Int.MAX_VALUE)
+                val modelResultCharBudget = resolveToolResultCharBudget(
+                    messages = requestMessages,
+                    toolDefinitions = tools,
+                    calibration = tokenCalibration
+                )
+                val boundedModelToolContent = AiModelToolContent.format(
+                    result,
+                    call.toolName,
+                    (modelResultCharBudget - AiToolResultBudget.ENVELOPE_RESERVE_CHARS)
+                        .coerceAtLeast(512)
+                )
+                val resultSucceeded = resolvedArtifact?.success
+                    ?: result.isSuccessfulToolResult()
+                val resultComplete = resolvedArtifact?.complete
+                    ?: (!result.containsTruncationMarker() &&
+                        indeterminateIntent == null &&
+                        !AiModelToolContent.isTruncatedByApp(boundedModelToolContent))
+                val newArtifact = AgentToolResultArtifact(
+                        receiptId = prepared.receiptId,
+                        conversationId = conversationId,
+                        turnId = turnId,
+                        toolCallId = call.callId,
+                        toolName = call.toolName,
+                        skillRevision = skillRevision,
+                        contentHash = skillContentHash,
+                        argumentsHash = prepared.argumentsHash,
+                        resultHash = AgentToolResultStore.payloadHash(fullModelToolContent),
+                        payload = fullModelToolContent,
+                        success = resultSucceeded,
+                        complete = resultComplete,
+                        createdAt = System.currentTimeMillis()
+                    )
+                val storedArtifact = resolvedArtifact ?: if (indeterminateIntent != null) {
+                    null
+                } else {
+                    startedIntent?.let { intent ->
+                        AgentToolResultStore.completeExecution(intent.receiptId, newArtifact)
+                    } ?: AgentToolResultStore.recordAndGet(newArtifact)
+                }
+                val receipt = ToolExecutionReceipt(
+                    receiptId = storedArtifact?.receiptId ?: indeterminateIntent!!.receiptId,
+                    conversationId = conversationId,
+                    turnId = turnId,
+                    stepId = "step-$stepNumber",
+                    toolCallId = call.callId,
+                    toolName = call.toolName,
+                    argumentsHash = storedArtifact?.argumentsHash ?: prepared.argumentsHash,
+                    resultHash = storedArtifact?.resultHash
+                        ?: AgentToolResultStore.payloadHash(fullModelToolContent),
+                    status = when {
+                        result.booleanOrNull("canceled") == true -> ToolExecutionStatus.CANCELED
+                        resultSucceeded -> ToolExecutionStatus.SUCCEEDED
+                        else -> ToolExecutionStatus.FAILED
+                    },
+                    approvalStatus = when {
+                        !requiresWriteApproval -> ToolApprovalStatus.NOT_REQUIRED
+                        writeApproved -> ToolApprovalStatus.APPROVED
+                        else -> ToolApprovalStatus.REJECTED
+                    },
+                    resultTruncated = storedArtifact?.complete != true,
+                    artifactRefs = storedArtifact?.let { listOf(it.receiptId) }.orEmpty(),
+                    acknowledgedReceiptIds = if (resultSucceeded && storedArtifact != null) {
+                        result.acknowledgedReceiptIds()
+                    } else {
+                        emptyList()
+                    },
+                    error = result.toolErrorOrNull(),
+                    createdAt = storedArtifact?.createdAt ?: indeterminateIntent!!.createdAt
+                )
+                toolReceipts += receipt
+                requestMessages.applyHookEffects(hookRuntime.evaluate(
+                    AgentHookEvent(
+                        eventId = "$turnId:step-$stepNumber:${call.callId}:committed",
+                        phase = AgentHookPhase.TOOL_RESULT_COMMITTED,
+                        conversationId = conversationId,
+                        turnId = turnId,
+                        stepId = "step-$stepNumber",
+                        skillRevision = skillRevision,
+                        skillContentHash = skillContentHash,
+                        authorizedCapabilityIds = enabledMcpCapabilityIds,
+                        receipt = receipt
+                    )
+                ))
+                if (receipt.acknowledgedReceiptIds.isNotEmpty()) {
+                    requestMessages.removeRuntimeNotices()
+                }
+                val modelToolContent = if (storedArtifact == null) {
+                    AiModelToolContent.format(result, call.toolName, modelResultCharBudget)
+                } else if (AiModelToolContent.isTruncatedByApp(boundedModelToolContent)) {
+                    JsonParser.parseString(boundedModelToolContent).asJsonObject.apply {
+                        add("_agent_result", storedArtifact.toAgentResultEnvelope())
+                    }.toString()
+                } else {
+                    AiModelToolContent.format(
+                        result.withAgentResultEnvelope(storedArtifact),
+                        call.toolName,
+                        modelResultCharBudget
+                    )
+                }
                 requestMessages.add(JsonObject().apply {
                     addProperty("role", "tool")
                     addProperty("tool_call_id", call.callId)
                     addProperty("name", call.functionName)
-                    addProperty("content", result.toModelToolContent(call.toolName))
+                    addProperty("content", modelToolContent)
                 })
             }
-            maybeRunCharacterMemoryHook(
-                contexts = characterMemoryContexts,
-                messages = requestMessages,
-                setting = setting,
-                model = model,
-                client = client,
-                memoryTrace = memoryTrace,
-                onStreamUpdate = {
-                    onStreamUpdate(
-                        AiChatStreamUpdate(
-                            content = content,
-                            reasoning = lastReasoning,
-                            toolTrace = toolTrace.toList(),
-                            memoryTrace = memoryTrace.toList()
-                        )
-                    )
-                }
+            // 一次发布完整的 tool-call batch，避免进程恢复时留下半组 Provider 消息。
+            onDurableContextUpdate(
+                durableContextUpdate(
+                    requestMessages,
+                    durableAssistantContent,
+                    lastReasoning,
+                    toolTrace,
+                    hookRuntime,
+                    toolReceipts
+                )
             )
             compactIfNeeded(
                     requestMessages,
                     tools,
                     tokenCalibration,
                     AiChatCompactionStage.MID_TURN,
-                    onContextEvent
+                    onContextEvent,
+                    beforeCompaction = {
+                        hookRuntime.evaluate(
+                            AgentHookEvent(
+                                eventId = "$turnId:step-$stepNumber:compaction",
+                                phase = AgentHookPhase.BEFORE_COMPACTION,
+                                conversationId = conversationId,
+                                turnId = turnId,
+                                stepId = "step-$stepNumber",
+                                skillRevision = skillRevision,
+                                skillContentHash = skillContentHash,
+                                authorizedCapabilityIds = enabledMcpCapabilityIds
+                            )
+                        )
+                    }
                 )?.let { record ->
                 contextCompactions += record
                 tokenCalibration = null
+                onDurableContextUpdate(
+                    durableContextUpdate(
+                        requestMessages,
+                        durableAssistantContent,
+                        lastReasoning,
+                        toolTrace,
+                        hookRuntime,
+                        toolReceipts
+                    )
+                )
             }
+            }
+        } catch (error: Throwable) {
+            requestMessages.applyHookEffects(
+                hookRuntime.evaluate(
+                    AgentHookEvent(
+                        eventId = "$turnId:aborted:$stepNumber",
+                        phase = AgentHookPhase.TURN_ABORTED,
+                        conversationId = conversationId,
+                        turnId = turnId,
+                        stepId = stepNumber.takeIf { it > 0 }?.let { "step-$it" },
+                        skillRevision = skillRevision,
+                        skillContentHash = skillContentHash,
+                        authorizedCapabilityIds = enabledMcpCapabilityIds
+                    )
+                )
+            )
+            runCatching {
+                onDurableContextUpdate(
+                    durableContextUpdate(
+                        requestMessages,
+                        durableAssistantContent,
+                        lastReasoning,
+                        toolTrace,
+                        hookRuntime,
+                        toolReceipts
+                    )
+                )
+            }
+            throw error
         }
     }
 
@@ -355,7 +843,8 @@ class AiChatClient {
         calibration: AiChatTokenCalibration?,
         stage: AiChatCompactionStage,
         onContextEvent: (AiChatContextEvent) -> Unit,
-        force: Boolean = false
+        force: Boolean = false,
+        beforeCompaction: () -> AgentHookEffects = { AgentHookEffects() }
     ): AiChatCompactionRecord? {
         val usage = AiChatContextManager.usage(messages, toolDefinitions, calibration)
         if (!AiConfig.contextCompactionEnabled && !force) {
@@ -370,6 +859,13 @@ class AiChatClient {
         val predictedNearWindowLimit = usage.estimatedTokens >= hardWindowGuard
         if (!force && !officialUsageReachedThreshold && !predictedNearWindowLimit) return null
 
+        val hookEffects = beforeCompaction()
+        messages.applyHookEffects(hookEffects)
+        hookEffects.block?.let {
+            return null
+        }
+        val pinnedArtifactRefs = hookEffects.pinnedArtifactRefs.toSet()
+
         onContextEvent(
             AiChatContextEvent(
                 type = AiChatContextEventType.STARTED,
@@ -378,8 +874,12 @@ class AiChatClient {
                 beforeUsage = usage
             )
         )
-        val summary = createCompactionSummary(messages)
-        val replacement = AiChatContextManager.buildCompactedHistory(messages, summary.content)
+        val summary = createCompactionSummary(messages, pinnedArtifactRefs)
+        val replacement = AiChatContextManager.buildCompactedHistory(
+            messages,
+            summary.content,
+            pinnedArtifactRefs
+        )
         val replacementUsage = AiChatContextManager.usage(replacement, toolDefinitions)
         check(replacementUsage.estimatedTokens < usage.thresholdTokens) {
             "上下文压缩后仍有约 ${replacementUsage.estimatedTokens} tokens，" +
@@ -407,7 +907,10 @@ class AiChatClient {
         return record
     }
 
-    private suspend fun createCompactionSummary(messages: List<JsonObject>): AiChatCompactionSummary {
+    private suspend fun createCompactionSummary(
+        messages: List<JsonObject>,
+        pinnedArtifactRefs: Set<String> = emptySet()
+    ): AiChatCompactionSummary {
         val selection = AiConfig.contextCompactionModel()
         val setting = AiProviderStore.provider(selection.providerId)
             ?: error("AI provider not found: ${selection.providerId}")
@@ -417,8 +920,12 @@ class AiChatClient {
         val prompt = appCtx.assets.open(CONTEXT_COMPACTION_PROMPT_ASSET)
             .bufferedReader(Charsets.UTF_8)
             .use { it.readText() }
+        val pinnedMessages = AiChatContextManager.pinnedArtifactMessages(
+            messages,
+            pinnedArtifactRefs
+        ).toSet()
         val compactionHistory = messages.filterNot { message ->
-                message.stringOrNull("role") == "system"
+                message.stringOrNull("role") == "system" || message in pinnedMessages
             }
             .mapTo(mutableListOf()) { it.deepCopy().asJsonObject }
         while (true) {
@@ -503,16 +1010,22 @@ class AiChatClient {
     fun estimateContextUsage(
         messages: List<JsonObject>,
         promptUsageAnchor: AiChatPromptUsageAnchor? = null,
+        skillId: String = "",
+        skillContentHash: String = "",
+        availableSkillIds: List<String> = emptyList(),
         enabledMcpCapabilityIds: List<String> = emptyList()
     ): AiChatContextUsage {
         val selection = AiConfig.requireAssistantModel()
         val setting = AiProviderStore.provider(selection.providerId)
             ?: error("AI provider not found: ${selection.providerId}")
         val model = resolveModel(setting, selection.modelId)
-        val tools = if (AiConfig.internalMcpEnabled &&
-            model.abilities.contains(AiModelAbility.TOOL)
-        ) {
-            loadMcpTools(enabledMcpCapabilityIds)
+        val tools = if (model.abilities.contains(AiModelAbility.TOOL)) {
+            loadModelTools(
+                skillId,
+                skillContentHash,
+                availableSkillIds,
+                enabledMcpCapabilityIds
+            )
         } else {
             emptyList()
         }
@@ -658,6 +1171,7 @@ class AiChatClient {
     private suspend fun OkHttpClient.executeStreamChat(
         request: Request,
         reasoningKey: String,
+        deferVisibleContent: Boolean,
         onStreamUpdate: (AiChatStreamUpdate) -> Unit
     ): ChatCompletionSnapshot {
         return withContext(IO) {
@@ -729,10 +1243,10 @@ class AiChatClient {
                                 }
                             }
                         }
-                        if (contentDelta.isNotEmpty() || !reasoningDelta.isNullOrEmpty()) {
+                        if ((!deferVisibleContent && contentDelta.isNotEmpty()) || !reasoningDelta.isNullOrEmpty()) {
                             onStreamUpdate(
                                 AiChatStreamUpdate(
-                                    content = contentBuilder.toString(),
+                                    content = if (deferVisibleContent) "" else contentBuilder.toString(),
                                     reasoning = reasoningBuilder.toString()
                                         .takeIf { text -> text.isNotBlank() }
                                 )
@@ -745,6 +1259,14 @@ class AiChatClient {
                 }
                 val content = contentBuilder.toString()
                 val reasoning = reasoningBuilder.toString().takeIf { text -> text.isNotBlank() }
+                if (deferVisibleContent && toolCallArray.size() == 0 && content.isNotEmpty()) {
+                    onStreamUpdate(
+                        AiChatStreamUpdate(
+                            content = content,
+                            reasoning = reasoning
+                        )
+                    )
+                }
                 val message = JsonObject().apply {
                     addProperty("role", "assistant")
                     addProperty("content", content)
@@ -766,8 +1288,24 @@ class AiChatClient {
         }
     }
 
-    private fun loadMcpTools(enabledMcpCapabilityIds: Collection<String>): List<JsonObject> {
-        return McpInternalChannel.listTools(enabledMcpCapabilityIds).mapNotNull { obj ->
+    private fun loadModelTools(
+        skillId: String,
+        skillContentHash: String,
+        availableSkillIds: Collection<String>,
+        enabledMcpCapabilityIds: Collection<String>
+    ): List<JsonObject> {
+        val normalizedSkillIds = normalizedAvailableSkillIds(skillId, availableSkillIds)
+        val definitions = buildList {
+            AiAgentSkillTools.toolDefinition(
+                activeSkillId = skillId,
+                contentHash = skillContentHash,
+                availableSkillIds = normalizedSkillIds
+            )?.let(::add)
+            if (AiConfig.internalMcpEnabled) {
+                addAll(McpInternalChannel.listTools(enabledMcpCapabilityIds))
+            }
+        }
+        return definitions.mapNotNull { obj ->
             val name = obj.stringOrNull("name") ?: return@mapNotNull null
             val inputSchema = obj.objectOrNull("inputSchema") ?: JsonObject().apply {
                 addProperty("type", "object")
@@ -799,15 +1337,187 @@ class AiChatClient {
         }.getOrNull() ?: JsonObject()
     }
 
-    private fun String.isWriteTool(arguments: JsonObject): Boolean {
-        if (this in WRITE_CONFIRMATION_REQUIRED_TOOLS) {
-            return true
+    private fun durableContextUpdate(
+        messages: List<JsonObject>,
+        visibleContent: String,
+        reasoning: String?,
+        toolTrace: List<String>,
+        hookRuntime: AgentHookRuntime,
+        toolReceipts: List<ToolExecutionReceipt> = emptyList()
+    ): AiChatDurableContextUpdate {
+        return AiChatDurableContextUpdate(
+            contextMessages = messages.map { message -> message.deepCopy().asJsonObject },
+            visibleContent = visibleContent,
+            reasoning = reasoning,
+            toolTrace = toolTrace.toList(),
+            toolReceipts = toolReceipts.toList(),
+            pendingReceiptIds = hookRuntime.snapshot()
+                .flatMap { snapshot -> snapshot.pendingReceiptIds }
+                .distinct()
+        )
+    }
+
+    private fun MutableList<JsonObject>.applyHookEffects(effects: AgentHookEffects) {
+        val noticeLines = buildList {
+            addAll(effects.notices)
+            effects.block?.let { blocked ->
+                add(blocked.message)
+                if (blocked.pendingReceiptIds.isNotEmpty()) {
+                    add("待处理 artifact/receipt：${blocked.pendingReceiptIds.joinToString(",")}")
+                }
+                blocked.recoveryInstruction?.takeIf(String::isNotBlank)?.let(::add)
+            }
+        }.filter(String::isNotBlank).distinct()
+        removeRuntimeNotices()
+        if (noticeLines.isEmpty()) return
+        val notice = JsonObject().apply {
+            addProperty("role", "system")
+            addProperty(
+                "content",
+                buildString {
+                    append(AGENT_RUNTIME_NOTICE_PREFIX).append('\n')
+                    append(noticeLines.joinToString("\n"))
+                }
+            )
         }
-        if (WRITE_CONFIRMATION_REQUIRED_SUFFIXES.any { suffix -> endsWith(suffix) }) {
-            return true
+        val index = indexOfLast { message ->
+            message.stringOrNull("role") == "system"
+        }.let { lastSystem -> if (lastSystem >= 0) lastSystem + 1 else 0 }
+        add(index, notice)
+    }
+
+    private fun MutableList<JsonObject>.removeRuntimeNotices() {
+        removeAll { message ->
+            message.stringOrNull("role") == "system" &&
+                message.stringOrNull("content").orEmpty().startsWith(AGENT_RUNTIME_NOTICE_PREFIX)
         }
-        return arguments.booleanOrNull("write") == true ||
-            arguments.booleanOrNull("overwrite") == true
+    }
+
+    private fun normalizedAvailableSkillIds(
+        activeSkillId: String,
+        availableSkillIds: Collection<String>
+    ): List<String> {
+        return availableSkillIds
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .ifEmpty { listOfNotNull(activeSkillId.trim().takeIf(String::isNotBlank)) }
+    }
+
+    private fun blockedToolResult(
+        toolName: String,
+        blocked: AgentHookResult.BlockBoundary
+    ): JsonObject {
+        return JsonObject().apply {
+            add("structuredContent", JsonObject().apply {
+                addProperty("ok", false)
+                addProperty("tool", toolName)
+                addProperty("blocked", true)
+                addProperty("reason_code", blocked.reasonCode)
+                addProperty("error", blocked.message)
+                add("pending_receipt_ids", JsonArray().apply {
+                    blocked.pendingReceiptIds.forEach { receiptId -> add(receiptId) }
+                })
+            })
+        }
+    }
+
+    private fun indeterminateToolResult(toolName: String, receiptId: String): JsonObject {
+        return JsonObject().apply {
+            add("structuredContent", JsonObject().apply {
+                addProperty("ok", false)
+                addProperty("tool", toolName)
+                addProperty("execution_indeterminate", true)
+                addProperty("intent_receipt_id", receiptId)
+                addProperty(
+                    "error",
+                    "检测到上次执行在结果提交前中断。为避免重复写入，本次未自动重放；请先核对目标状态，再使用新的参数或幂等键重试。"
+                )
+            })
+        }
+    }
+
+    private fun JsonObject.isSuccessfulToolResult(): Boolean {
+        val payload = objectOrNull("structuredContent") ?: this
+        return payload.booleanOrNull("ok") == true
+    }
+
+    private fun JsonObject.toolErrorOrNull(): String? {
+        val payload = objectOrNull("structuredContent") ?: this
+        return payload.stringOrNull("error")
+            ?: payload.stringOrNull("message")?.takeIf { payload.booleanOrNull("ok") == false }
+    }
+
+    private fun JsonObject.acknowledgedReceiptIds(): List<String> {
+        val payload = objectOrNull("structuredContent") ?: this
+        val normalized = payload.objectOrNull("normalized_data")
+            ?: payload.objectOrNull("normalizedData")
+            ?: return emptyList()
+        return normalized.arrayOrNull("acknowledged_receipt_ids")
+            ?.mapNotNull { element ->
+                element.takeIf { it.isJsonPrimitive }
+                    ?.asString
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+            }
+            ?.distinct()
+            .orEmpty()
+    }
+
+    private fun JsonObject.containsTruncationMarker(): Boolean {
+        fun contains(element: JsonElement): Boolean {
+            return when {
+                element.isJsonObject -> element.asJsonObject.entrySet().any { (key, value) ->
+                    ((key == "truncated_by_app" || key == "truncated_by_mcp") &&
+                        value.isJsonPrimitive && value.asJsonPrimitive.isBoolean && value.asBoolean) ||
+                        contains(value)
+                }
+                element.isJsonArray -> element.asJsonArray.any(::contains)
+                else -> false
+            }
+        }
+        return contains(this)
+    }
+
+    private fun JsonObject.withAgentResultEnvelope(
+        artifact: AgentToolResultArtifact
+    ): JsonObject {
+        val copy = deepCopy().asJsonObject
+        val target = copy.objectOrNull("structuredContent") ?: copy
+        target.add("_agent_result", artifact.toAgentResultEnvelope())
+        return copy
+    }
+
+    private fun AgentToolResultArtifact.toAgentResultEnvelope(): JsonObject {
+        return JsonObject().apply {
+            addProperty("receipt_id", receiptId)
+            addProperty("result_hash", resultHash)
+            addProperty("success", success)
+            addProperty("complete", complete)
+        }
+    }
+
+    private fun resolveToolResultCharBudget(
+        messages: List<JsonObject>,
+        toolDefinitions: List<JsonObject>,
+        calibration: AiChatTokenCalibration?
+    ): Int {
+        val usage = AiChatContextManager.usage(messages, toolDefinitions, calibration)
+        return AiToolResultBudget.resolveChars(
+            contextWindowTokens = usage.contextWindowTokens,
+            thresholdTokens = usage.thresholdTokens,
+            estimatedTokens = usage.estimatedTokens
+        )
+    }
+
+    private fun String.requiresPerCallConfirmation(
+        arguments: JsonObject
+    ): Boolean {
+        return McpInternalToolCatalog.requiresUserConfirmation(
+            toolName = this,
+            argumentsDeclareWrite = arguments.booleanOrNull("write") == true ||
+                arguments.booleanOrNull("overwrite") == true
+        )
     }
 
     private fun writeOperationCanceledResult(toolName: String): JsonObject {
@@ -820,334 +1530,6 @@ class AiChatClient {
                 "message",
                 "当前写操作未执行。请停止写入流程，并向用户说明操作已取消。"
             )
-        }
-    }
-
-    private fun JsonObject.toModelToolContent(toolName: String): String {
-        val content = toString()
-        if (content.length <= MAX_MODEL_TOOL_RESULT_CHARS) {
-            return content
-        }
-        return JsonObject().apply {
-            addProperty("ok", false)
-            addProperty("tool", toolName)
-            addProperty("truncated_by_app", true)
-            addProperty("original_chars", content.length)
-            addProperty("preview_chars", MAX_MODEL_TOOL_RESULT_CHARS)
-            addProperty(
-                "message",
-                "工具结果过大，App 已截断以避免超过模型上下文。请用 offset/limit/start/end/keyword/include_detail=false 等参数分页或缩小范围后重试。"
-            )
-            addProperty("preview", content.take(MAX_MODEL_TOOL_RESULT_CHARS))
-        }.toString()
-    }
-
-    private suspend fun maybeRunCharacterMemoryHook(
-        contexts: List<CharacterApplyMemoryContext>,
-        messages: List<JsonObject>,
-        setting: AiProviderSetting,
-        model: AiModel,
-        client: OkHttpClient,
-        memoryTrace: MutableList<AiMemoryTraceItem>,
-        onStreamUpdate: () -> Unit
-    ) {
-        if (!AiConfig.memoryEnabled) return
-        val mergedContext = contexts.mergeCharacterMemoryContext() ?: return
-        val context = mergedContext.copy(
-            scanData = messages.latestCharacterScanData(mergedContext.workKey)
-        )
-        memoryTrace += AiMemoryTraceItem(
-            status = AiMemoryTraceItem.STATUS_RUNNING,
-            title = "正在生成记忆...",
-            detail = "角色卡已写入，正在总结本次操作"
-        )
-        onStreamUpdate()
-        val traceIndex = memoryTrace.lastIndex
-        val finalTrace = runCatching {
-            val generated = generateCharacterApplyMemory(
-                context = context,
-                setting = setting,
-                model = model,
-                client = client
-            )
-            val arguments = generated.toMemoryUpsertArguments(context)
-            val writeResult = McpInternalChannel.callTool("agent_memory_upsert", arguments)
-            check(writeResult.structuredContentOk()) { "记忆写入失败" }
-            AiMemoryTraceItem(
-                status = AiMemoryTraceItem.STATUS_SAVED,
-                title = "已保存记忆",
-                detail = generated.title
-            )
-        }.getOrElse {
-            AiMemoryTraceItem(
-                status = AiMemoryTraceItem.STATUS_FAILED,
-                title = "记忆保存失败",
-                detail = it.localizedMessage ?: it.toString()
-            )
-        }
-        if (traceIndex in memoryTrace.indices) {
-            memoryTrace[traceIndex] = finalTrace
-        } else {
-            memoryTrace += finalTrace
-        }
-        onStreamUpdate()
-    }
-
-    private fun saveBookScanDeltas(
-        content: String,
-        evidence: Collection<AiBookScanReadEvidence>,
-        memoryTrace: MutableList<AiMemoryTraceItem>,
-        allowCoverageFallback: Boolean,
-        fallbackContent: String
-    ) {
-        val results = AiBookScanMemory.saveDeltas(
-            content = content,
-            evidence = evidence,
-            allowCoverageFallback = allowCoverageFallback,
-            fallbackContent = fallbackContent
-        )
-        results.forEach { result ->
-            memoryTrace += AiMemoryTraceItem(
-                status = AiMemoryTraceItem.STATUS_SAVED,
-                title = "已保存扫书进度",
-                detail = buildString {
-                    append(result.subject)
-                    append("：新增 ${result.savedChapterCount} 章")
-                    if (result.totalChapterCount > 0) {
-                        append("，累计 ${result.coveredChapterCount}/${result.totalChapterCount} 章")
-                    }
-                    if (result.eventCount > 0) append("，记录 ${result.eventCount} 个事件")
-                    result.warnings.firstOrNull()?.let { append("；$it") }
-                }
-            )
-        }
-    }
-
-    private suspend fun generateCharacterApplyMemory(
-        context: CharacterApplyMemoryContext,
-        setting: AiProviderSetting,
-        model: AiModel,
-        client: OkHttpClient
-    ): GeneratedMemory {
-        val memoryMessages = listOf(
-            JsonObject().apply {
-                addProperty("role", "system")
-                addProperty(
-                    "content",
-                    """
-                    你是阅读 App 的 AI 记忆总结器。
-                    只根据用户已经确认并已成功执行的操作生成一条短记忆。
-                    只返回 JSON，不要 Markdown，不要解释。
-                    JSON 字段：
-                    - title：20 字以内短标题
-                    - content：120 字以内，说明对象、已完成结果、后续有用线索
-                    - tags：字符串数组，最多 5 个
-                    - confidence：0 到 1，已确认成功操作一般为 1
-                    不要保存章节原文、长日志、隐私、API Key、Cookie 或完整业务数据。
-                    """.trimIndent()
-                )
-            },
-            JsonObject().apply {
-                addProperty("role", "user")
-                addProperty(
-                    "content",
-                    """
-                    角色卡写入已成功，请为后续 AI 助理生成一条记忆。
-
-                    书籍对象：${context.subject}
-                    work_key：${context.workKey}
-                    已写入角色数量：${context.updatedCount}
-                    已写入角色：${context.characterNames.joinToString("、").ifBlank { "未提供名称" }}
-                    扫描元数据：${context.scanData?.toString() ?: "未提供"}
-
-                    返回 JSON：
-                    {"title":"","content":"","tags":[],"confidence":1}
-                    """.trimIndent()
-                )
-            }
-        )
-        val body = buildRequestBody(
-            setting = setting,
-            model = model,
-            messages = memoryMessages,
-            tools = emptyList(),
-            params = AiTextParams(temperature = 0f, disableThinking = true),
-            stream = false
-        )
-        val request = Request.Builder()
-            .url("${setting.baseUrl.trimEndSlash()}${setting.chatCompletionsPath.ensureStartSlash()}")
-            .apply {
-                if (setting.apiKey.isNotBlank()) {
-                    addHeader("Authorization", "Bearer ${setting.apiKey}")
-                }
-            }
-            .addHeader("Content-Type", "application/json")
-            .post(jsonBody(body))
-            .build()
-        val reasoningKey = setting.reasoningOptions(model.id)
-            .reasoningOutputField
-            .ifBlank { "reasoning_content" }
-        val completion = client.executeJsonChat(request, reasoningKey)
-        val json = completion.content.extractJsonObject()
-        return GeneratedMemory(
-            title = json.stringOrNull("title")
-                ?.trim()
-                ?.take(40)
-                ?.takeIf { it.isNotBlank() }
-                ?: "角色卡已写入",
-            content = json.stringOrNull("content")
-                ?.trim()
-                ?.take(240)
-                ?.takeIf { it.isNotBlank() }
-                ?: "已为${context.subject}写入 ${context.updatedCount} 张角色卡。",
-            tags = json.arrayOrNull("tags")
-                ?.mapNotNull { it.takeIf { element -> element.isJsonPrimitive }?.asString?.trim() }
-                ?.filter { it.isNotBlank() }
-                ?.take(5)
-                ?.takeIf { it.isNotEmpty() }
-                ?: listOf("角色卡", "已写入"),
-            confidence = json.get("confidence")
-                ?.takeIf { it.isJsonPrimitive }
-                ?.asFloat
-                ?.coerceIn(0f, 1f)
-                ?: 1f
-        )
-    }
-
-    private fun GeneratedMemory.toMemoryUpsertArguments(context: CharacterApplyMemoryContext): JsonObject {
-        return JsonObject().apply {
-            addProperty("scope_type", "book")
-            addProperty("scope_key", context.workKey)
-            addProperty("subject", context.subject)
-            addProperty("domain", "character_card")
-            addProperty("memory_type", "checkpoint")
-            addProperty("title", title)
-            addProperty("content", content)
-            add("tags", JsonArray().apply {
-                tags.forEach { add(it) }
-            })
-            addProperty("confidence", confidence)
-            addProperty("source", "post_action_hook")
-            add("data", JsonObject().apply {
-                context.scanData?.entrySet()?.forEach { (key, value) ->
-                    add(key, value.deepCopy())
-                }
-                addProperty("source_tool", "character_write_hook")
-                addProperty("updated_count", context.updatedCount)
-                add("character_names", JsonArray().apply {
-                    context.characterNames.forEach { add(it) }
-                })
-            })
-        }
-    }
-
-    private fun JsonObject.toCharacterApplyMemoryContext(toolName: String): CharacterApplyMemoryContext? {
-        if (toolName !in CHARACTER_MEMORY_HOOK_TOOLS) return null
-        if (!structuredContentOk()) return null
-        val data = objectOrNull("structuredContent")
-            ?.objectOrNull("normalized_data")
-            ?: return null
-        val characters = buildList {
-            data.arrayOrNull("updated")?.forEach { element ->
-                element.takeIf { it.isJsonObject }?.asJsonObject?.let { add(it) }
-            }
-            data.objectOrNull("character")?.let { add(it) }
-        }
-        if (characters.isEmpty()) return null
-        val workKey = data.stringOrNull("work_key")?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: characters.firstNotNullOfOrNull { it.stringOrNull("work_key")?.trim() }
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-        val names = characters.mapNotNull { it.stringOrNull("name")?.trim()?.takeIf { name -> name.isNotBlank() } }
-        val updatedCount = data.get("updated_count")
-            ?.takeIf { it.isJsonPrimitive }
-            ?.asInt
-            ?: characters.size
-        return CharacterApplyMemoryContext(
-            workKey = workKey,
-            subject = workKey.toMemorySubject(),
-            updatedCount = updatedCount,
-            characterNames = names.distinct().take(20)
-        )
-    }
-
-    private fun List<JsonObject>.latestCharacterScanData(workKey: String): JsonObject? {
-        asReversed().forEach { message ->
-            if (message.stringOrNull("role") != "assistant") return@forEach
-            val content = message.stringOrNull("content").orEmpty()
-            val matches = CHARACTER_SCAN_META_BLOCK_REGEX.findAll(content).toList()
-            matches.asReversed().forEach { match ->
-                val meta = runCatching {
-                    JsonParser.parseString(match.groupValues[1].trim())
-                        .takeIf { it.isJsonObject }
-                        ?.asJsonObject
-                }.getOrNull() ?: return@forEach
-                val metaWorkKey = meta.stringOrNull("work_key")
-                    ?: meta.stringOrNull("workKey")
-                    ?: meta.objectOrNull("book")?.stringOrNull("work_key")
-                    ?: meta.objectOrNull("book")?.stringOrNull("workKey")
-                if (metaWorkKey.isNullOrBlank() || metaWorkKey == workKey) {
-                    return meta
-                }
-            }
-        }
-        return null
-    }
-
-    private fun List<CharacterApplyMemoryContext>.mergeCharacterMemoryContext(): CharacterApplyMemoryContext? {
-        if (isEmpty()) return null
-        val grouped = groupBy { it.workKey }
-        val (_, contexts) = grouped.maxByOrNull { (_, items) -> items.sumOf { it.updatedCount } } ?: return null
-        val first = contexts.first()
-        val names = contexts.flatMap { it.characterNames }
-            .distinct()
-            .take(20)
-        return CharacterApplyMemoryContext(
-            workKey = first.workKey,
-            subject = first.subject,
-            updatedCount = names.size.takeIf { it > 0 } ?: contexts.sumOf { it.updatedCount },
-            characterNames = names
-        )
-    }
-
-    private fun JsonObject.structuredContentOk(): Boolean {
-        return objectOrNull("structuredContent")
-            ?.get("ok")
-            ?.takeIf { it.isJsonPrimitive }
-            ?.asBoolean == true
-    }
-
-    private fun String.extractJsonObject(): JsonObject {
-        val trimmed = trim()
-            .removePrefix("```json")
-            .removePrefix("```")
-            .removeSuffix("```")
-            .trim()
-        return runCatching {
-            JsonParser.parseString(trimmed).asJsonObject
-        }.getOrElse {
-            val start = trimmed.indexOf('{')
-            val end = trimmed.lastIndexOf('}')
-            if (start >= 0 && end > start) {
-                JsonParser.parseString(trimmed.substring(start, end + 1)).asJsonObject
-            } else {
-                throw it
-            }
-        }
-    }
-
-    private fun String.toMemorySubject(): String {
-        val parts = replace("\\n", "\n")
-            .replace("\r\n", "\n")
-            .replace('\r', '\n')
-            .split('\n')
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-        return when {
-            parts.size >= 2 -> "《${parts[0]}》${parts[1]}"
-            parts.size == 1 -> parts[0]
-            else -> this
         }
     }
 
@@ -1165,18 +1547,34 @@ class AiChatClient {
         }.getOrNull()
     }
 
+    private fun AgentToolResultArtifact.toReplayedMcpResult(): JsonObject {
+        val storedPayload = runCatching { JsonParser.parseString(payload) }
+            .getOrElse { throw IllegalStateException("已保存的工具结果无法解析，拒绝重复执行", it) }
+        return JsonObject().apply {
+            add("structuredContent", storedPayload)
+        }
+    }
+
+    private data class PreparedToolCall(
+        val call: ParsedToolCall,
+        val argumentsHash: String,
+        val receiptId: String,
+        val reusableArtifact: AgentToolResultArtifact?
+    )
+
     private data class ParsedToolCall(
         val callId: String,
         val functionName: String,
         val toolName: String,
         val arguments: JsonObject
     ) {
-        fun toPendingToolCall(): AiPendingToolCall {
+        fun toPendingToolCall(sideEffect: McpToolSideEffect): AiPendingToolCall {
             return AiPendingToolCall(
                 toolName = toolName,
                 functionName = functionName,
                 callId = callId,
-                arguments = arguments.deepCopy()
+                arguments = arguments.deepCopy(),
+                sideEffect = sideEffect
             )
         }
     }
@@ -1212,21 +1610,15 @@ class AiChatClient {
     companion object {
 
         private const val CONTEXT_COMPACTION_PROMPT_ASSET = "ai/context_compaction.md"
+        private const val AGENT_RUNTIME_NOTICE_PREFIX = "[AI_RUNTIME_NOTICE]"
         private const val HARD_WINDOW_GUARD_PERCENT = 95
         private const val MCP_TOOL_PREFIX = "mcp__legado__"
-        private const val MAX_MODEL_TOOL_RESULT_CHARS = 120_000
         private val CONTEXT_WINDOW_ERROR_MARKERS = listOf(
             "maximum context length",
             "context length",
             "context window",
             "context_length",
             "too many tokens"
-        )
-        private val CHARACTER_SCAN_META_BLOCK_REGEX = Regex(
-            pattern = """(?s)```[ \t]*(?:legado-character-scan|character_scan_meta)[^\r\n]*\r?\n(.*?)\r?\n```"""
-        )
-        private val CHARACTER_MEMORY_HOOK_TOOLS = setOf(
-            "bookshelf_character_upsert"
         )
         private val AGENT_SYSTEM_PROMPT = """
             你是 Legado / 阅读NG 内置 AI 助手。回答要简洁直接。
@@ -1248,11 +1640,11 @@ class AiChatClient {
 
             交互协议：
             - 需要用户选择或确认时，可在正文后输出一个 ```legado-interaction 代码块。
-            - 支持 type：actions、single_choice、multi_choice、confirm。
+            - 支持 type：actions、single_choice、multi_choice、multi_tag_stance、confirm。
             - 代码块必须完整闭合，必须是合法 JSON，id 稳定简短，按钮 label 要短。
+            - 所有 options 项统一使用 {"label":"...","value":"..."}；不要用 id 代替 value。
             - 交互块不能替代正文说明；正文先说明依据、结果和风险。
             - 如果正文说“请选择”“请确认”“点击按钮”，必须紧跟一个完整的 legado-interaction 代码块；不要只写提示语。
-            - 领域 Skill 可能要求输出其它 App 元数据代码块，例如 ```character_scan_meta。按 Skill 要求输出即可；这类元数据会被 App 隐藏，不要在正文里解释其内部字段。
             - single_choice 示例：
             ```legado-interaction
             {
@@ -1293,49 +1685,16 @@ class AiChatClient {
 
             记忆系统：
             - 记忆属于 AI 助手功能，不属于某个 Skill。
-            - 当前不要为了普通业务流程强制保存记忆。
-            - 用户明确要求查询历史上下文，或后续 App 通过 hook 要求处理记忆时，先调用 agent_memory_status_get 检查开关。
+            - 普通临时推理不强制保存记忆；用户请求或当前活动 Skill 明确要求持久语义档案时，使用通用记忆接口。
+            - 查询或写入前先调用 agent_memory_status_get 检查开关。
             - 如果 enabled=false，不要调用任何记忆检索或写入工具。
             - 如果 enabled=true，并且任务有明确对象，先用 agent_memory_search 检索该对象相关记忆。scope_key 优先使用稳定自然键，例如书名+作者、书源名称+关键地址；不要只依赖易变化的 bookUrl。
-            - 记忆写入主要由 App 在已确认业务操作成功后的 hook 触发；普通分析、预览、失败操作或用户未确认前不要保存记忆。
-            - 不要把角色卡、书籍、书源、规则等业务写入工具当作记忆工具；只有 agent_memory_upsert 才代表记忆已保存。
+            - agent_memory_upsert 保存单条持久语义；agent_memory_batch_upsert 在一个事务中保存一组相关语义。已有记忆必须复用搜索结果中的 id，避免重复创建。
+            - 记忆写入仍受本地 capability 和确认策略约束；不得通过其它存储或伪装参数绕过权限。
+            - Skill 的人物、关系、事实、分析与进度等业务语义若需跨轮次复用，应保存在 AgentMemory；不要同时维护另一份 Skill 专用档案。
+            - 不要把角色卡、书籍、书源、规则等业务写入工具当作记忆工具。
             - 保存内容要短，记录对象、业务域、已应用结果、采样范围或后续建议，避免存入整段原文。
         """.trimIndent()
-
-        private val WRITE_CONFIRMATION_REQUIRED_TOOLS = setOf(
-            "bookshelf_character_upsert",
-            "bookshelf_character_delete",
-            "bookshelf_character_set_enabled",
-            "book_source_save",
-            "book_source_delete",
-            "book_source_set_enabled",
-            "bookshelf_book_upsert",
-            "bookshelf_book_delete",
-            "bookshelf_book_group_update",
-            "bookshelf_cache_download",
-            "bookshelf_cache_clear",
-            "bookshelf_group_upsert",
-            "bookshelf_group_delete",
-            "replace_rule_upsert",
-            "replace_rule_delete",
-            "replace_rule_set_enabled",
-            "agent_memory_upsert",
-            "agent_memory_archive",
-            "network_log_clear",
-            "debug_log_clear"
-        )
-
-        private val WRITE_CONFIRMATION_REQUIRED_SUFFIXES = listOf(
-            "_upsert",
-            "_delete",
-            "_set_enabled",
-            "_apply",
-            "_rollback",
-            "_save",
-            "_archive",
-            "_clear",
-            "_group_update"
-        )
 
     }
 }
@@ -1344,7 +1703,8 @@ data class AiPendingToolCall(
     val toolName: String,
     val functionName: String,
     val callId: String,
-    val arguments: JsonObject
+    val arguments: JsonObject,
+    val sideEffect: McpToolSideEffect
 )
 
 data class AiChatTurnResult(
@@ -1354,6 +1714,7 @@ data class AiChatTurnResult(
     val finishReason: String?,
     val usage: AiChatUsage?,
     val toolTrace: List<String>,
+    val toolReceipts: List<ToolExecutionReceipt> = emptyList(),
     val memoryTrace: List<AiMemoryTraceItem> = emptyList(),
     val warnings: List<String>,
     val contextUsage: AiChatContextUsage,
@@ -1374,6 +1735,15 @@ data class AiChatStreamUpdate(
     val reasoning: String?,
     val toolTrace: List<String> = emptyList(),
     val memoryTrace: List<AiMemoryTraceItem> = emptyList()
+)
+
+data class AiChatDurableContextUpdate(
+    val contextMessages: List<JsonObject>,
+    val visibleContent: String,
+    val reasoning: String?,
+    val toolTrace: List<String> = emptyList(),
+    val toolReceipts: List<ToolExecutionReceipt> = emptyList(),
+    val pendingReceiptIds: List<String> = emptyList()
 )
 
 data class AiMemoryTraceItem(
@@ -1397,22 +1767,7 @@ data class AiChatUsage(
     val totalTokens: Int?
 )
 
-private data class CharacterApplyMemoryContext(
-    val workKey: String,
-    val subject: String,
-    val updatedCount: Int,
-    val characterNames: List<String>,
-    val scanData: JsonObject? = null
-)
-
 private data class AiChatCompactionSummary(
     val content: String,
     val usage: AiChatUsage?
-)
-
-private data class GeneratedMemory(
-    val title: String,
-    val content: String,
-    val tags: List<String>,
-    val confidence: Float
 )

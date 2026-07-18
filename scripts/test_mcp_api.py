@@ -92,7 +92,7 @@ EXPECTED_TOOLS = {
     "agent_memory_status_get",
     "agent_memory_search",
     "agent_memory_upsert",
-    "agent_memory_archive",
+    "agent_memory_batch_upsert",
     "debug_log_list",
     "debug_log_get",
     "debug_log_clear",

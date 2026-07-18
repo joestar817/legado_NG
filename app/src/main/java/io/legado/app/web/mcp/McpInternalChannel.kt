@@ -31,12 +31,13 @@ object McpInternalChannel {
     fun callTool(
         name: String,
         arguments: JsonObject = JsonObject(),
-        capabilityIds: Collection<String>? = null
+        capabilityIds: Collection<String>? = null,
+        executionContext: McpToolExecutionContext? = null
     ): JsonObject {
         if (capabilityIds != null) {
             check(isEnabled()) { "内置 MCP 通道未开启" }
             return GSON.toJsonTree(
-                McpServer.callInternalTool(name, arguments, capabilityIds)
+                McpServer.callInternalTool(name, arguments, capabilityIds, executionContext)
             ).asJsonObject
         }
         val params = JsonObject().apply {

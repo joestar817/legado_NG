@@ -29,3 +29,5 @@ AGENTS.md
 .codex-remote-attachments
 .codex
 *.log
+__pycache__/
+*.pyc

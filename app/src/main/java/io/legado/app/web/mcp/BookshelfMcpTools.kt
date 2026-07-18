@@ -27,6 +27,7 @@ import io.legado.app.model.ReadBook
 import io.legado.app.model.CacheBook
 import io.legado.app.utils.GSON
 import splitties.init.appCtx
+import java.security.MessageDigest
 import kotlin.math.max
 import kotlin.math.min
 
@@ -38,6 +39,9 @@ object BookshelfMcpTools {
     private const val MAX_CONTENT_LIMIT = 120_000
     private const val DEFAULT_WINDOW_CHAPTERS = 1
     private const val MAX_WINDOW_CHAPTERS = 20
+    private const val DEFAULT_SNIPPET_CHARS = 200
+    private const val MAX_SNIPPET_CHARS = 2_000
+    private const val MAX_SNIPPET_CHAPTERS = 80
     private const val DEFAULT_CHAPTER_LIST_LIMIT = 100
     private const val MAX_CHAPTER_LIST_LIMIT = 300
     private const val MAX_CACHE_STATUS_CHAPTERS = 500
@@ -165,7 +169,7 @@ object BookshelfMcpTools {
                     "author" to stringSchema("Book.author"),
                     "chapter_index" to numberSchema("BookChapter.index"),
                     "include_title" to booleanSchema("Prefix title before content, default true"),
-                    "char_limit" to numberSchema("Default 20000, max 120000")
+                    "char_limit" to numberSchema("Default 20000, max 120000; use 0 to return full content")
                 ),
                 required = listOf("chapter_index")
             ),
@@ -179,9 +183,27 @@ object BookshelfMcpTools {
                     "author" to stringSchema("Book.author"),
                     "start_chapter_index" to numberSchema("Inclusive chapter index"),
                     "chapter_count" to numberSchema("Default 1, max 20"),
-                    "char_limit" to numberSchema("Default 20000, max 120000")
+                    "char_limit" to numberSchema("Default 20000, max 120000; use 0 to return full content")
                 ),
                 required = listOf("start_chapter_index")
+            ),
+            tool(
+                name = "bookshelf_chapter_snippets_get",
+                description = "Read head/tail snippets for selected cached or local chapters. This never triggers network fetching.",
+                properties = mapOf(
+                    "work_key" to stringSchema("Stable work identity. Prefer this when available."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
+                    "name" to stringSchema("Book.name"),
+                    "author" to stringSchema("Book.author"),
+                    "chapter_indexes" to arraySchema("BookChapter.index list returned by bookshelf_chapter_list. Zero-based indexes."),
+                    "ranges" to arraySchema("Array of {start,end}; start inclusive, end exclusive, using BookChapter.index"),
+                    "start" to numberSchema("Optional inclusive chapter index for one range"),
+                    "end" to numberSchema("Optional exclusive chapter index for one range"),
+                    "head_chars" to numberSchema("Default 200, max 2000. Characters from chapter start after AI sanitization."),
+                    "tail_chars" to numberSchema("Default 200, max 2000. Characters from chapter end after AI sanitization."),
+                    "include_title" to booleanSchema("Include chapter titles in the aggregate text, default true"),
+                    "max_total_chars" to numberSchema("Default 20000, max 120000. Caps aggregate snippet text and per-item included snippet fields.")
+                )
             ),
             tool(
                 name = "bookshelf_cache_status_get",
@@ -508,6 +530,7 @@ object BookshelfMcpTools {
             "bookshelf_chapter_list" -> listChapters(arguments)
             "bookshelf_chapter_content_get" -> getChapterContent(arguments)
             "bookshelf_text_window_get" -> getTextWindow(arguments)
+            "bookshelf_chapter_snippets_get" -> getChapterSnippets(arguments)
             "bookshelf_cache_status_get" -> getCacheStatus(arguments)
             "bookshelf_cache_download" -> downloadCache(arguments)
             "bookshelf_cache_clear" -> clearCache(arguments)
@@ -912,6 +935,7 @@ object BookshelfMcpTools {
                 "has_content" to hasContent,
                 "content" to limited.text,
                 "content_chars" to (fullText?.length ?: 0),
+                "content_sha256" to fullText?.sha256Hex(),
                 "raw_content_chars" to (rawContent?.length ?: 0),
                 "removed_non_text_chars" to maxOf(0, (rawContent?.length ?: 0) - (modelContent?.length ?: 0)),
                 "sanitized_for_ai" to true,
@@ -961,6 +985,7 @@ object BookshelfMcpTools {
                     "title" to chapter.title,
                     "has_content" to (rawContent != null),
                     "content_chars" to (block?.length ?: 0),
+                    "content_sha256" to block?.sha256Hex(),
                     "raw_content_chars" to (rawContent?.length ?: 0),
                     "removed_non_text_chars" to maxOf(
                         0,
@@ -972,6 +997,7 @@ object BookshelfMcpTools {
             )
         }
         val missing = items.filter { it["has_content"] != true }.map { it["index"] }
+        val windowText = textParts.joinToString("\n\n")
         return toolResult(
             ok = chapters.isNotEmpty(),
             upstreamEndpoint = "native://bookshelf/textWindow",
@@ -981,7 +1007,8 @@ object BookshelfMcpTools {
                 "chapter_count" to chapterCount,
                 "chapters" to items,
                 "missing_chapter_indexes" to missing,
-                "text" to textParts.joinToString("\n\n"),
+                "text" to windowText,
+                "text_sha256" to windowText.sha256Hex(),
                 "char_limit" to charLimit,
                 "sanitized_for_ai" to true,
                 "truncated_by_mcp" to items.any { it["truncated_by_mcp"] == true }
@@ -991,6 +1018,107 @@ object BookshelfMcpTools {
             } else {
                 listOf("部分章节未缓存且不是可直接读取的本地书籍；MCP 不会主动联网抓取正文")
             }
+        )
+    }
+
+    private fun getChapterSnippets(arguments: JsonObject): Map<String, Any?> {
+        val book = resolveBook(arguments)
+            ?: return notFound("native://bookshelf/chapterSnippets", "未找到书籍，请检查 work_key、book_url 或 name/author")
+        val selection = selectChapters(arguments, book, allowWholeBook = false)
+        if (selection.chapters.isEmpty()) {
+            throw IllegalArgumentException("chapter_indexes, ranges, or start/end is required")
+        }
+        val headChars = (arguments.get("head_chars").asIntOrNull() ?: DEFAULT_SNIPPET_CHARS)
+            .coerceIn(0, MAX_SNIPPET_CHARS)
+        val tailChars = (arguments.get("tail_chars").asIntOrNull() ?: DEFAULT_SNIPPET_CHARS)
+            .coerceIn(0, MAX_SNIPPET_CHARS)
+        val includeTitle = arguments.get("include_title").asBooleanOrNull() ?: true
+        val maxTotalChars = (arguments.get("max_total_chars").asIntOrNull() ?: DEFAULT_CONTENT_LIMIT)
+            .coerceIn(0, MAX_CONTENT_LIMIT)
+        val selectedChapters = selection.chapters.take(MAX_SNIPPET_CHAPTERS)
+        var remaining = maxTotalChars
+        val items = mutableListOf<Map<String, Any?>>()
+        val textParts = mutableListOf<String>()
+
+        selectedChapters.forEach { chapter ->
+            val rawContent = BookHelp.getContent(book, chapter)
+            val modelContent = rawContent?.let(McpTextSanitizer::forModel)
+            val hasContent = modelContent != null
+            val aggregateParts = mutableListOf<String>()
+            if (includeTitle && remaining > 0) {
+                val title = chapter.title.take(remaining)
+                aggregateParts.add(title)
+                remaining -= title.length
+            }
+            var head: String? = null
+            var tail: String? = null
+            if (modelContent != null && remaining > 0) {
+                val headLimit = min(headChars, remaining)
+                head = modelContent.take(headLimit).takeIf { it.isNotEmpty() }
+                remaining -= head?.length ?: 0
+
+                if (tailChars > 0 && modelContent.length > (head?.length ?: 0) && remaining > 0) {
+                    val tailLimit = min(tailChars, remaining)
+                    tail = modelContent.takeLast(tailLimit).takeIf { it.isNotEmpty() }
+                    remaining -= tail?.length ?: 0
+                }
+            }
+            head?.let { aggregateParts.add(it) }
+            tail?.let { aggregateParts.add(it) }
+            if (aggregateParts.isNotEmpty()) {
+                textParts.add(aggregateParts.joinToString("\n"))
+            }
+            val includedChars = (head?.length ?: 0) + (tail?.length ?: 0)
+            val contentChars = modelContent?.length ?: 0
+            items.add(
+                mapOf(
+                    "index" to chapter.index,
+                    "title" to chapter.title,
+                    "has_content" to hasContent,
+                    "head" to head,
+                    "tail" to tail,
+                    "content_chars" to contentChars,
+                    "content_sha256" to modelContent?.sha256Hex(),
+                    "raw_content_chars" to (rawContent?.length ?: 0),
+                    "removed_non_text_chars" to maxOf(
+                        0,
+                        (rawContent?.length ?: 0) - contentChars
+                    ),
+                    "included_chars" to includedChars,
+                    "middle_omitted" to (contentChars > includedChars),
+                    "omitted_by_total_limit" to (hasContent && includedChars == 0 && remaining <= 0),
+                    "sanitized_for_ai" to true
+                )
+            )
+        }
+        val missing = items.filter { it["has_content"] != true }.map { it["index"] }
+        val aggregateText = textParts.joinToString("\n\n")
+        val warnings = selection.warnings.toMutableList()
+        if (selection.chapters.size > MAX_SNIPPET_CHAPTERS) {
+            warnings.add("章节片段最多返回 $MAX_SNIPPET_CHAPTERS 章；其余章节已截断")
+        }
+        if (missing.isNotEmpty()) {
+            warnings.add("部分章节未缓存且不是可直接读取的本地书籍；MCP 不会主动联网抓取正文")
+        }
+        return toolResult(
+            ok = items.isNotEmpty(),
+            upstreamEndpoint = "native://bookshelf/chapterSnippets",
+            normalizedData = mapOf(
+                "book" to book.toMcpSummary(),
+                "requested_chapter_count" to selection.requestedCount,
+                "returned_chapter_count" to items.size,
+                "head_chars" to headChars,
+                "tail_chars" to tailChars,
+                "max_total_chars" to maxTotalChars,
+                "chapters" to items,
+                "missing_chapter_indexes" to missing,
+                "text" to aggregateText,
+                "text_sha256" to aggregateText.sha256Hex(),
+                "total_included_chars" to aggregateText.length,
+                "sanitized_for_ai" to true,
+                "truncated_by_mcp" to (selection.chapters.size > MAX_SNIPPET_CHAPTERS || remaining <= 0)
+            ),
+            warnings = warnings
         )
     }
 
@@ -2168,6 +2296,9 @@ object BookshelfMcpTools {
 
     private fun String?.limitText(maxChars: Int): LimitedText {
         val value = this ?: return LimitedText(null, truncated = false)
+        if (maxChars <= 0) {
+            return LimitedText(value, truncated = false)
+        }
         if (value.length <= maxChars) {
             return LimitedText(value, truncated = false)
         }
@@ -2301,5 +2432,11 @@ object BookshelfMcpTools {
             element.isJsonPrimitive -> listOfNotNull(element.asLongOrNull())
             else -> emptyList()
         }
+    }
+
+    private fun String.sha256Hex(): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
     }
 }

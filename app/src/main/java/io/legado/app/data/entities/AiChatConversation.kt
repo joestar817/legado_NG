@@ -11,6 +11,12 @@ data class AiChatConversation(
     @ColumnInfo(defaultValue = "default")
     val assistantId: String = "default",
     @ColumnInfo(defaultValue = "")
+    val agentModeRevision: String = "",
+    @ColumnInfo(defaultValue = "")
+    val modeEntryContext: String = "",
+    @ColumnInfo(defaultValue = "0")
+    val modeEntryStarted: Boolean = false,
+    @ColumnInfo(defaultValue = "")
     val title: String = "",
     @ColumnInfo(defaultValue = "0")
     val createAt: Long = 0L,

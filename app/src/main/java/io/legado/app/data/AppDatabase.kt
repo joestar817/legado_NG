@@ -10,6 +10,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import io.legado.app.data.dao.AgentMemoryDao
+import io.legado.app.data.dao.AgentToolResultDao
 import io.legado.app.data.dao.AiChatDao
 import io.legado.app.data.dao.AiSkillDao
 import io.legado.app.data.dao.BookChapterDao
@@ -37,6 +38,9 @@ import io.legado.app.data.dao.TxtTocRuleDao
 import io.legado.app.data.dao.TtsVoiceDao
 import io.legado.app.data.dao.TtsEngineRuntimeDao
 import io.legado.app.data.entities.AgentMemory
+import io.legado.app.data.entities.AgentToolResultArtifact
+import io.legado.app.data.entities.AgentToolExecutionIntent
+import io.legado.app.data.entities.AgentToolReceiptAcknowledgement
 import io.legado.app.data.entities.AiChatConversation
 import io.legado.app.data.entities.AiChatMessageNode
 import io.legado.app.data.entities.AiSkill
@@ -82,7 +86,7 @@ val appDb by lazy {
 }
 
 @Database(
-    version = 101,
+    version = 107,
     exportSchema = true,
     entities = [Book::class, BookGroup::class, BookSource::class, BookChapter::class,
         ReplaceRule::class, SearchBook::class, SearchKeyword::class, Cookie::class,
@@ -91,7 +95,9 @@ val appDb by lazy {
         RuleSub::class, DictRule::class, KeyboardAssist::class, Server::class,
         BookCharacterProfile::class, BookCharacter::class, BookCharacterTtsBinding::class,
         AiChatConversation::class, AiChatMessageNode::class, AiSkill::class,
-        AgentMemory::class, TtsVoiceEntity::class, TtsEngineRuntimeEntity::class],
+        AgentMemory::class, AgentToolResultArtifact::class,
+        AgentToolExecutionIntent::class, AgentToolReceiptAcknowledgement::class,
+        TtsVoiceEntity::class, TtsEngineRuntimeEntity::class],
     views = [BookSourcePart::class],
     autoMigrations = [
         AutoMigration(from = 43, to = 44),
@@ -169,6 +175,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract val aiChatDao: AiChatDao
     abstract val aiSkillDao: AiSkillDao
     abstract val agentMemoryDao: AgentMemoryDao
+    abstract val agentToolResultDao: AgentToolResultDao
     abstract val ttsVoiceDao: TtsVoiceDao
     abstract val ttsEngineRuntimeDao: TtsEngineRuntimeDao
 

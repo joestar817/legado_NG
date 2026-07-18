@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="book_scan">AI 扫书</string>
-    <string name="book_scan_summary">多维画像、重大风险与交互式下钻</string>
+    <string name="book_scan_summary">分析书籍是否存在重大雷点</string>
     <!--App-->
     <string name="app_name">阅读</string>
     <string name="receiving_shared_label">Legado·search</string>

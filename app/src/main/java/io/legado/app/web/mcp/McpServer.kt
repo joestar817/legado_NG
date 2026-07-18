@@ -204,7 +204,8 @@ object McpServer {
     internal fun callInternalTool(
         name: String,
         arguments: JsonObject,
-        capabilityIds: Collection<String>
+        capabilityIds: Collection<String>,
+        executionContext: McpToolExecutionContext? = null
     ): Map<String, Any?> {
         require(name in McpInternalToolCatalog.resolveToolNames(capabilityIds)) {
             "MCP tool is not enabled for this AI conversation: $name"
@@ -212,7 +213,7 @@ object McpServer {
         return callTool(JsonObject().apply {
             addProperty("name", name)
             add("arguments", arguments)
-        })
+        }, executionContext)
     }
 
     private fun tools(): List<Map<String, Any>> {
@@ -600,7 +601,10 @@ object McpServer {
         )
     }
 
-    private fun callTool(params: JsonObject?): Map<String, Any?> {
+    private fun callTool(
+        params: JsonObject?,
+        executionContext: McpToolExecutionContext? = null
+    ): Map<String, Any?> {
         val name = params?.get("name")?.asStringOrNull()
             ?: throw IllegalArgumentException("tool name is required")
         val arguments = params.get("arguments")?.takeIf { it.isJsonObject }?.asJsonObject
@@ -652,7 +656,7 @@ object McpServer {
             "debug_log_clear" -> clearDebugLogs()
             else -> BookshelfMcpTools.call(name, arguments)
                 ?: SettingsMcpTools.call(name, arguments)
-                ?: AgentMemoryMcpTools.call(name, arguments)
+                ?: AgentMemoryMcpTools.call(name, arguments, executionContext)
                 ?: throw IllegalArgumentException("Unknown tool: $name")
         }
         val text = GSON.toJson(result)
@@ -1244,7 +1248,7 @@ object McpServer {
         messages: List<AiChatMessageSnapshot>
     ): Map<String, Any?> {
         val lastMessage = messages.lastOrNull()
-        val toolTraceCount = messages.sumOf { it.toolTrace.size }
+        val toolTraceCount = messages.sumOf { it.toolTrace.orEmpty().size }
         return mapOf(
             "id" to id,
             "title" to title,
@@ -1286,8 +1290,8 @@ object McpServer {
             "reasoning" to reasoningText?.limitMcpText(textCharLimit),
             "reasoning_chars" to (reasoningText?.length ?: 0),
             "reasoning_truncated_by_mcp" to ((reasoningText?.length ?: 0) > textCharLimit),
-            "tool_trace" to toolTrace.map { it.limitMcpText(textCharLimit) },
-            "tool_trace_count" to toolTrace.size,
+            "tool_trace" to toolTrace.orEmpty().map { it.limitMcpText(textCharLimit) },
+            "tool_trace_count" to toolTrace.orEmpty().size,
             "elapsed_ms" to elapsedMs,
             "favorite" to favorite
         )
@@ -1311,7 +1315,7 @@ object McpServer {
                         message.content,
                         message.meta,
                         message.reasoning,
-                        message.toolTrace.joinToString("\n")
+                        message.toolTrace.orEmpty().joinToString("\n")
                     ).filterNotNull().any { it.contains(keyword, ignoreCase = true) }
                 }
     }

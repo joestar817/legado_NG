@@ -99,8 +99,8 @@ MCP 现在有两条通道：
 | AI 聊天历史 | `ai_chat_conversation_get` | tool | 按会话 ID 获取聊天消息、思考和工具轨迹。 |
 | AI 记忆 | `agent_memory_status_get` | tool | 检查 AI 助手记忆系统开关状态。 |
 | AI 记忆 | `agent_memory_search` | tool | 按具体对象、业务域、类型和关键词检索记忆。 |
-| AI 记忆 | `agent_memory_upsert` | tool | 写入或更新一条 AI 助手记忆；写接口。 |
-| AI 记忆 | `agent_memory_archive` | tool | 归档指定 AI 助手记忆；写接口。 |
+| AI 记忆 | `agent_memory_upsert` | tool | 写入或更新一条 AI 助手记忆；Agent 内部写入，不触发用户审核。 |
+| AI 记忆 | `agent_memory_batch_upsert` | tool | 原子写入一小批通用结构化 AI 记忆；Agent 内部写入，不触发用户审核。 |
 | 调试日志 | `debug_log_list` | tool | 分页列出 App 内存调试日志摘要。 |
 | 调试日志 | `debug_log_get` | tool | 按 ID 获取单条调试日志详情。 |
 | 调试日志 | `debug_log_clear` | tool | 清空当前内存调试日志窗口。 |
@@ -183,7 +183,7 @@ http://192.0.2.10:1124/mcp
 | 设置与规则 | `settings.manage_replace_rules` | `settings_replace_rule_list`、`settings_replace_rule_get`、`settings_replace_rule_upsert`、`settings_replace_rule_delete`、`settings_replace_rule_set_enabled` |
 | 设置与规则 | `settings.manage_dict_rules` | `settings_dict_rule_list`、`settings_dict_rule_get`、`settings_dict_rule_upsert`、`settings_dict_rule_delete`、`settings_dict_rule_set_enabled` |
 | AI 数据 | `ai.chat_history` | `ai_chat_conversation_list`、`ai_chat_conversation_get` |
-| AI 数据 | `ai.memory` | `agent_memory_status_get`、`agent_memory_search`、`agent_memory_upsert`、`agent_memory_archive` |
+| AI 数据 | `ai.memory` | `agent_memory_status_get`、`agent_memory_search`、`agent_memory_upsert`、`agent_memory_batch_upsert` |
 | 开发调试 | `developer.network_logs` | `network_log_list`、`network_log_get`、`network_log_clear` |
 | 开发调试 | `developer.app_logs` | `debug_log_list`、`debug_log_get`、`debug_log_clear` |
 | 开发调试 | `developer.read_aloud_storyboard` | `read_aloud_storyboard_debug_get` |
@@ -387,7 +387,7 @@ curl -s http://192.0.2.10:1124/mcp \
 - `agent_memory_status_get`
 - `agent_memory_search`
 - `agent_memory_upsert`
-- `agent_memory_archive`
+- `agent_memory_batch_upsert`
 - `debug_log_list`
 - `debug_log_get`
 - `debug_log_clear`
@@ -897,10 +897,18 @@ curl -s http://192.0.2.10:1124/mcp \
 - `scope_key`：稳定对象键。书籍建议优先使用 `书名|作者`，不要只依赖可能随换源变化的 `bookUrl`。
 - `subject`：可读对象名称，可选模糊过滤。
 - `domain`：业务域，例如 `character_card`。
-- `memory_type`：记忆类型，例如 `checkpoint`、`fact`、`preference`、`decision`。
+- `memory_type`：记忆类型，例如 `manifest`、`fact`、`preference`、`decision`；省略时为 `note`。
 - `keyword`：关键词，匹配标题、内容、对象名和标签。
 
-`agent_memory_upsert` 是写接口，只应在最终用户确认的应用操作成功后调用；不要在普通分析、预览或失败操作后保存记忆。
+`agent_memory_upsert` 属于 Agent 内部状态写入，不触发用户审核。只有用户请求或当前工作流确实需要持久语义状态时才应调用；它不能替代真实 App 写操作，也不能用来绕过 App 数据写入审核。
+
+### agent_memory_batch_upsert
+
+原子创建或更新 1 到 25 条通用 Agent 记忆。每个 `items[]` 元素使用与 `agent_memory_upsert` 相同的字段（`scope_type`、`scope_key`、`domain`、`title`、`content` 等）；任一元素不合法时整批不写入。
+
+这同样属于 Agent 内部状态写入，不触发用户审核；capability 仍决定模型是否能调用。真实 App 数据写入继续按 `APP_WRITE` 或 `DESTRUCTIVE` 级别审核。复杂流程的可恢复工作状态也保存在 AgentMemory 中；读取正文等工具结果时，通过 `source_receipt_ids` 关联真实执行回执。
+
+记忆归档、删除和清空接口不向模型暴露；用户通过记忆管理 UI 手动执行此类操作。
 
 ### debug_log_list
 

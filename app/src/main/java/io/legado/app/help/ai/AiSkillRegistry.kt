@@ -1,11 +1,17 @@
 package io.legado.app.help.ai
 
+import com.google.gson.JsonParser
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.AiSkill
+import io.legado.app.help.ai.runtime.AgentHookBinding
+import io.legado.app.help.ai.runtime.AgentHookRegistry
+import io.legado.app.help.ai.runtime.AgentSkillRuntimeDeclaration
+import io.legado.app.web.mcp.McpInternalToolCatalog
 import splitties.init.appCtx
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import java.security.MessageDigest
 import java.util.Locale
 
 enum class AiSkillScope {
@@ -24,7 +30,23 @@ data class AiSkillDefinition(
     val builtIn: Boolean = false,
     val enabled: Boolean = true,
     val userModified: Boolean = false,
-    val content: String = prompt
+    val content: String = prompt,
+    val runtime: AgentSkillRuntimeDeclaration = AgentSkillRuntimeDeclaration(),
+    val presentation: AiSkillPresentation = AiSkillPresentation(),
+    val revision: String = "",
+    val contentHash: String = ""
+) {
+    val mcpCapabilities: List<String>
+        get() = runtime.mcpCapabilities
+
+    val runtimeHooks: List<AgentHookBinding>
+        get() = runtime.runtimeHooks
+}
+
+data class AiSkillPresentation(
+    val conversationGroup: String? = null,
+    val conversationTitle: String? = null,
+    val subjectFromConversation: Boolean = false
 )
 
 class AiSkillExistsException(
@@ -39,27 +61,52 @@ object AiSkillRegistry {
     const val SKILL_BOOKSHELF_MANAGEMENT = "bookshelf_management"
     const val SKILL_CHARACTER_CARD_GENERATE = "character_card_generate"
     const val SKILL_BOOK_SCAN = "book_scan"
+    const val SKILL_BOOK_SCAN_FACTS = "book_scan_facts"
+    const val SKILL_BOOK_SCAN_REPORT = "book_scan_report"
     private const val MAX_SKILL_FILE_LENGTH = 512 * 1024
     private const val BUILT_IN_SKILL_ASSET_DIR = "skills"
+    private val SYSTEM_WORKFLOW_IDS = setOf(
+        SKILL_BOOK_SCAN,
+        SKILL_BOOK_SCAN_FACTS,
+        SKILL_BOOK_SCAN_REPORT
+    )
 
     fun all(): List<AiSkillDefinition> {
         ensureBuiltInSkills()
-        return appDb.aiSkillDao.all.map { it.toDefinition() }
+        return appDb.aiSkillDao.all
+            .filterNot { it.id in SYSTEM_WORKFLOW_IDS }
+            .map { it.toDefinition() }
     }
 
     fun agentSkills(): List<AiSkillDefinition> {
-        ensureBuiltInSkills()
-        return appDb.aiSkillDao.all
-            .filter { it.scope == AiSkillScope.AGENT.name }
-            .map { it.toDefinition() }
+        return all().filter { it.scope == AiSkillScope.AGENT }
     }
 
     fun get(id: String): AiSkillDefinition? {
         return all().firstOrNull { it.id == id }
     }
 
+    /**
+     * 从只读 APK 资源加载 System Workflow，不经过可编辑 Skill 数据库。
+     * 返回的定义只用于 System Mode 的运行时快照，不能由 Skill 管理 UI 修改。
+     */
+    fun systemWorkflow(id: String): AiSkillDefinition? {
+        val normalizedId = normalizeId(id)
+        if (normalizedId !in SYSTEM_WORKFLOW_IDS) return null
+        AiSkillPackageRegistry.systemPackage(normalizedId)?.let { skillPackage ->
+            return runCatching {
+                parseBuiltInSkillContent(skillPackage.entryContent, 0)
+                    .toDefinition(contentHashOverride = skillPackage.contentHash)
+            }.getOrNull()
+        }
+        return builtInSkills()
+            .firstOrNull { it.id == normalizedId }
+            ?.toDefinition()
+    }
+
     fun saveSkillContent(skillId: String?, content: String): AiSkill {
         ensureBuiltInSkills()
+        require(skillId !in SYSTEM_WORKFLOW_IDS) { "System Workflow 不允许在 Skill 管理中编辑" }
         val current = skillId?.let { appDb.aiSkillDao.get(it) }
         require(current != null) { "Skill 不存在" }
         val parsed = parseSkillContent(content)
@@ -83,6 +130,7 @@ object AiSkillRegistry {
     fun importFromText(content: String, overwriteExisting: Boolean = false): AiSkill {
         ensureBuiltInSkills()
         val parsed = parseSkillContent(content)
+        require(parsed.id !in SYSTEM_WORKFLOW_IDS) { "不能覆盖内置 System Workflow" }
         val current = appDb.aiSkillDao.get(parsed.id)
         validateUniqueSkill(parsed, current?.id)
         if (current != null && !overwriteExisting) {
@@ -114,6 +162,7 @@ object AiSkillRegistry {
     }
 
     fun resetBuiltIn(id: String): Boolean {
+        if (id in SYSTEM_WORKFLOW_IDS) return false
         val default = builtInSkills().firstOrNull { it.id == id } ?: return false
         val current = appDb.aiSkillDao.get(id)
         val now = System.currentTimeMillis()
@@ -148,6 +197,8 @@ object AiSkillRegistry {
         require(id.isNotBlank()) { "Skill 缺少 id 字段" }
         require(name.isNotBlank()) { "Skill 缺少 name 字段" }
         require(description.isNotBlank()) { "Skill 缺少 description 字段" }
+        parseRuntimeDeclaration(frontmatter)
+        parsePresentation(frontmatter)
         return AiSkill(
             id = normalizeId(id),
             name = name,
@@ -164,8 +215,12 @@ object AiSkillRegistry {
         return appDb.aiSkillDao.get(id)?.toDefinition()?.prompt
     }
 
+    fun parseRuntimeDeclaration(content: String): AgentSkillRuntimeDeclaration {
+        return parseRuntimeDeclaration(parseFrontmatter(content.trim()))
+    }
+
     private fun ensureBuiltInSkills() {
-        builtInSkills().forEach { defaultSkill ->
+        builtInSkills().filterNot { it.id in SYSTEM_WORKFLOW_IDS }.forEach { defaultSkill ->
             val existing = appDb.aiSkillDao.get(defaultSkill.id)
             if (existing == null) {
                 appDb.aiSkillDao.insert(defaultSkill.withLegacyPromptIfNeeded())
@@ -217,7 +272,7 @@ object AiSkillRegistry {
             }
     }
 
-    private fun AiSkill.toDefinition(): AiSkillDefinition {
+    private fun AiSkill.toDefinition(contentHashOverride: String? = null): AiSkillDefinition {
         val metadata = parseFrontmatter(content)
         val body = extractBody(content)
         val suggestions = metadata["suggestions"]
@@ -235,8 +290,112 @@ object AiSkillRegistry {
             builtIn = builtIn,
             enabled = enabled,
             userModified = userModified,
-            content = content
+            content = content,
+            runtime = parseRuntimeDeclaration(metadata),
+            presentation = parsePresentation(metadata),
+            revision = metadata["version"]?.trim().orEmpty(),
+            contentHash = contentHashOverride ?: content.sha256()
         )
+    }
+
+    private fun parsePresentation(frontmatter: Map<String, String>): AiSkillPresentation {
+        fun optionalText(key: String): String? {
+            return frontmatter[key]
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.also { value ->
+                    require(value.length <= 40) { "$key 最多 40 个字符" }
+                    require(value.none { character -> character.isISOControl() }) {
+                        "$key 不能包含控制字符"
+                    }
+                }
+        }
+        val subjectMode = frontmatter["conversation_subject"]?.trim().orEmpty()
+        require(subjectMode.isBlank() || subjectMode == "auto" || subjectMode == "none") {
+            "conversation_subject 只支持 auto 或 none"
+        }
+        return AiSkillPresentation(
+            conversationGroup = optionalText("conversation_group"),
+            conversationTitle = optionalText("conversation_title"),
+            subjectFromConversation = subjectMode == "auto"
+        )
+    }
+
+    private fun parseRuntimeDeclaration(frontmatter: Map<String, String>): AgentSkillRuntimeDeclaration {
+        val mcpCapabilities = parsePipeList(
+            value = frontmatter["mcp_capabilities"],
+            fieldName = "mcp_capabilities"
+        ).onEach { capabilityId ->
+            require(CAPABILITY_ID_REGEX.matches(capabilityId)) {
+                "mcp_capabilities 包含非法 capability：$capabilityId"
+            }
+            require(capabilityId in McpInternalToolCatalog.allCapabilityIds) {
+                "mcp_capabilities 包含未知 capability：$capabilityId"
+            }
+        }
+        require(mcpCapabilities.distinct().size == mcpCapabilities.size) {
+            "mcp_capabilities 不能重复声明"
+        }
+
+        val hookReferences = parsePipeList(
+            value = frontmatter["runtime_hooks"],
+            fieldName = "runtime_hooks"
+        ).map { reference ->
+            val separator = reference.lastIndexOf('@')
+            require(separator > 0 && separator < reference.lastIndex) {
+                "runtime_hooks 必须使用 hook.id@version 格式：$reference"
+            }
+            val id = reference.substring(0, separator).trim()
+            val version = reference.substring(separator + 1).trim().toIntOrNull()
+            require(HOOK_ID_REGEX.matches(id)) { "runtime_hooks 包含非法 Hook id：$id" }
+            require(version != null && version > 0) { "runtime_hooks 包含非法版本：$reference" }
+            id to version
+        }
+        require(hookReferences.map { it.first }.distinct().size == hookReferences.size) {
+            "runtime_hooks 不能重复声明同一个 Hook"
+        }
+
+        val declaredHookIds = hookReferences.mapTo(hashSetOf()) { it.first }
+        val configuredHookIds = frontmatter.keys
+            .filter { key -> key.startsWith(HOOK_CONFIG_PREFIX) }
+            .map { key -> key.removePrefix(HOOK_CONFIG_PREFIX) }
+        val undeclaredConfigs = configuredHookIds.filterNot(declaredHookIds::contains)
+        require(undeclaredConfigs.isEmpty()) {
+            "存在未声明 runtime Hook 的配置：${undeclaredConfigs.sorted().joinToString()}"
+        }
+
+        val bindings = hookReferences.map { (id, version) ->
+            val rawConfig = frontmatter["$HOOK_CONFIG_PREFIX$id"].orEmpty()
+            val config = if (rawConfig.isBlank()) {
+                com.google.gson.JsonObject()
+            } else {
+                runCatching { JsonParser.parseString(rawConfig) }
+                    .getOrElse { error ->
+                        throw IllegalArgumentException("Hook $id 配置不是合法 JSON", error)
+                    }
+                    .also { element ->
+                        require(element.isJsonObject) { "Hook $id 配置必须是 JSON object" }
+                    }
+                    .asJsonObject
+            }
+            AgentHookBinding(id = id, version = version, config = config)
+        }
+        return AgentSkillRuntimeDeclaration(
+            mcpCapabilities = mcpCapabilities,
+            runtimeHooks = AgentHookRegistry.validateBindings(
+                bindings = bindings,
+                allowedToolNames = McpInternalToolCatalog.resolveToolNames(mcpCapabilities)
+            )
+        )
+    }
+
+    private fun parsePipeList(value: String?, fieldName: String): List<String> {
+        if (value.isNullOrBlank()) return emptyList()
+        return value.split('|').mapIndexed { index, item ->
+            item.trim().also {
+                require(it.isNotBlank()) { "$fieldName 的第 ${index + 1} 项不能为空" }
+            }
+        }
     }
 
     private fun parseFrontmatter(content: String): Map<String, String> {
@@ -266,6 +425,8 @@ object AiSkillRegistry {
         require(id.isNotBlank()) { "built-in Skill 缺少 id 字段" }
         require(name.isNotBlank()) { "built-in Skill 缺少 name 字段" }
         require(description.isNotBlank()) { "built-in Skill 缺少 description 字段" }
+        parseRuntimeDeclaration(frontmatter)
+        parsePresentation(frontmatter)
         val scope = frontmatter["scope"]
             ?.trim()
             ?.uppercase(Locale.ROOT)
@@ -297,6 +458,12 @@ object AiSkillRegistry {
             .replace(Regex("""[^a-z0-9_\-\u4e00-\u9fa5]+"""), "_")
             .trim('_', '-')
             .ifBlank { "custom_skill" }
+    }
+
+    private fun String.sha256(): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
     }
 
     private fun validateUniqueSkill(skill: AiSkill, currentId: String?) {
@@ -363,4 +530,8 @@ object AiSkillRegistry {
         val path = match.groupValues[4]
         return "https://raw.githubusercontent.com/$owner/$repo/$branch/$path"
     }
+
+    private val CAPABILITY_ID_REGEX = Regex("^[a-z0-9][a-z0-9_.-]*$")
+    private val HOOK_ID_REGEX = Regex("^[a-z0-9][a-z0-9_.-]*$")
+    private const val HOOK_CONFIG_PREFIX = "hook."
 }

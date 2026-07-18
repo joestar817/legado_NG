@@ -2,8 +2,11 @@
 id: bookshelf_management
 name: 书架管理
 description: 理解书架、图书、分组、阅读记录、缓存、书签、换源、角色卡和替换净化规则
-version: 7
+version: 8
 suggestions: 帮我整理下书架|分析我的阅读偏好|找出长期未读的书
+mcp_capabilities: bookshelf.query|bookshelf.manage_books|bookshelf.manage_groups|bookshelf.read_content|bookshelf.manage_cache|bookshelf.manage_bookmarks|bookshelf.manage_read_records|bookshelf.search_and_change_source|bookshelf.manage_characters|bookshelf.manage_replace_rules|book_source.query|book_source.search
+conversation_group: 书架管理
+conversation_title: 书架管理
 ---
 
 # 书架管理 Skill

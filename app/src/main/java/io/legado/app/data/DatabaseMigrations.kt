@@ -22,7 +22,8 @@ object DatabaseMigrations {
             migration_39_40, migration_40_41, migration_41_42, migration_42_43,
             migration_89_90, migration_90_91, migration_91_92, migration_92_93, migration_93_94,
             migration_94_95, migration_95_96, migration_96_97, migration_97_98, migration_98_99,
-            migration_99_100, migration_100_101,
+            migration_99_100, migration_100_101, migration_101_102, migration_102_103,
+            migration_103_104, migration_104_105, migration_105_106, migration_106_107,
         )
     }
 
@@ -594,6 +595,222 @@ object DatabaseMigrations {
             db.execSQL(
                 "ALTER TABLE aiChatConversations " +
                     "ADD COLUMN enabledMcpCapabilityIds TEXT NOT NULL DEFAULT '[]'"
+            )
+        }
+    }
+
+    private val migration_101_102 = object : Migration(101, 102) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `agentToolResultArtifacts` (
+                    `receiptId` TEXT NOT NULL DEFAULT '',
+                    `conversationId` TEXT NOT NULL DEFAULT '',
+                    `turnId` TEXT NOT NULL DEFAULT '',
+                    `toolCallId` TEXT NOT NULL DEFAULT '',
+                    `toolName` TEXT NOT NULL DEFAULT '',
+                    `skillRevision` TEXT NOT NULL DEFAULT '',
+                    `contentHash` TEXT NOT NULL DEFAULT '',
+                    `argumentsHash` TEXT NOT NULL DEFAULT '',
+                    `resultHash` TEXT NOT NULL DEFAULT '',
+                    `payload` TEXT NOT NULL DEFAULT '',
+                    `success` INTEGER NOT NULL DEFAULT 0,
+                    `complete` INTEGER NOT NULL DEFAULT 0,
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`receiptId`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_agentToolResultArtifacts_conversationId_turnId_toolCallId` ON `agentToolResultArtifacts` (`conversationId`, `turnId`, `toolCallId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentToolResultArtifacts_turnId` ON `agentToolResultArtifacts` (`turnId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentToolResultArtifacts_createdAt` ON `agentToolResultArtifacts` (`createdAt`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `agentCheckpoints` (
+                    `id` TEXT NOT NULL DEFAULT '',
+                    `scopeType` TEXT NOT NULL DEFAULT '',
+                    `scopeKey` TEXT NOT NULL DEFAULT '',
+                    `checkpointKey` TEXT NOT NULL DEFAULT '',
+                    `schemaVersion` INTEGER NOT NULL DEFAULT 1,
+                    `revision` INTEGER NOT NULL DEFAULT 0,
+                    `itemsJson` TEXT NOT NULL DEFAULT '[]',
+                    `skillRevision` TEXT NOT NULL DEFAULT '',
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_agentCheckpoints_scopeType_scopeKey_checkpointKey` ON `agentCheckpoints` (`scopeType`, `scopeKey`, `checkpointKey`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentCheckpoints_updatedAt` ON `agentCheckpoints` (`updatedAt`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `agentCheckpointCommits` (
+                    `checkpointId` TEXT NOT NULL DEFAULT '',
+                    `idempotencyKey` TEXT NOT NULL DEFAULT '',
+                    `requestHash` TEXT NOT NULL DEFAULT '',
+                    `revision` INTEGER NOT NULL DEFAULT 0,
+                    `itemCount` INTEGER NOT NULL DEFAULT 0,
+                    `acknowledgedReceiptIdsJson` TEXT NOT NULL DEFAULT '[]',
+                    `skillRevision` TEXT NOT NULL DEFAULT '',
+                    `committedAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`checkpointId`, `idempotencyKey`),
+                    FOREIGN KEY(`checkpointId`) REFERENCES `agentCheckpoints`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentCheckpointCommits_checkpointId` ON `agentCheckpointCommits` (`checkpointId`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_agentCheckpointCommits_checkpointId_revision` ON `agentCheckpointCommits` (`checkpointId`, `revision`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentCheckpointCommits_committedAt` ON `agentCheckpointCommits` (`committedAt`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `agentCheckpointReceiptLinks` (
+                    `checkpointId` TEXT NOT NULL DEFAULT '',
+                    `revision` INTEGER NOT NULL DEFAULT 0,
+                    `receiptId` TEXT NOT NULL DEFAULT '',
+                    `acknowledgedAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`checkpointId`, `revision`, `receiptId`),
+                    FOREIGN KEY(`checkpointId`) REFERENCES `agentCheckpoints`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                    FOREIGN KEY(`receiptId`) REFERENCES `agentToolResultArtifacts`(`receiptId`) ON UPDATE NO ACTION ON DELETE NO ACTION
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentCheckpointReceiptLinks_checkpointId` ON `agentCheckpointReceiptLinks` (`checkpointId`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_agentCheckpointReceiptLinks_checkpointId_receiptId` ON `agentCheckpointReceiptLinks` (`checkpointId`, `receiptId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentCheckpointReceiptLinks_receiptId` ON `agentCheckpointReceiptLinks` (`receiptId`)")
+        }
+    }
+
+    private val migration_102_103 = object : Migration(102, 103) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `agentToolExecutionIntents` (
+                    `receiptId` TEXT NOT NULL DEFAULT '',
+                    `conversationId` TEXT NOT NULL DEFAULT '',
+                    `turnId` TEXT NOT NULL DEFAULT '',
+                    `toolCallId` TEXT NOT NULL DEFAULT '',
+                    `toolName` TEXT NOT NULL DEFAULT '',
+                    `skillRevision` TEXT NOT NULL DEFAULT '',
+                    `contentHash` TEXT NOT NULL DEFAULT '',
+                    `argumentsHash` TEXT NOT NULL DEFAULT '',
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`receiptId`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agentToolExecutionIntents_conversationId_turnId_toolName_argumentsHash` " +
+                    "ON `agentToolExecutionIntents` (`conversationId`, `turnId`, `toolName`, `argumentsHash`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agentToolExecutionIntents_createdAt` " +
+                    "ON `agentToolExecutionIntents` (`createdAt`)"
+            )
+        }
+    }
+
+    private val migration_103_104 = object : Migration(103, 104) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `aiChatConversations` " +
+                    "ADD COLUMN `agentModeRevision` TEXT NOT NULL DEFAULT ''"
+            )
+        }
+    }
+
+    private val migration_104_105 = object : Migration(104, 105) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `agentToolReceiptAcknowledgements` (
+                    `receiptId` TEXT NOT NULL DEFAULT '',
+                    `consumerType` TEXT NOT NULL DEFAULT '',
+                    `consumerKey` TEXT NOT NULL DEFAULT '',
+                    `conversationId` TEXT NOT NULL DEFAULT '',
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`receiptId`, `consumerType`, `consumerKey`),
+                    FOREIGN KEY(`receiptId`) REFERENCES `agentToolResultArtifacts`(`receiptId`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agentToolReceiptAcknowledgements_receiptId` " +
+                    "ON `agentToolReceiptAcknowledgements` (`receiptId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agentToolReceiptAcknowledgements_conversationId` " +
+                    "ON `agentToolReceiptAcknowledgements` (`conversationId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_agentToolReceiptAcknowledgements_consumerType_consumerKey` " +
+                    "ON `agentToolReceiptAcknowledgements` (`consumerType`, `consumerKey`)"
+            )
+        }
+    }
+
+    private val migration_105_106 = object : Migration(105, 106) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP TABLE IF EXISTS `agentCheckpointReceiptLinks`")
+            db.execSQL("DROP TABLE IF EXISTS `agentCheckpointCommits`")
+            db.execSQL("DROP TABLE IF EXISTS `agentCheckpoints`")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `agentMemories_new` (
+                    `id` TEXT NOT NULL,
+                    `scopeType` TEXT NOT NULL DEFAULT '',
+                    `scopeKey` TEXT NOT NULL DEFAULT '',
+                    `subject` TEXT NOT NULL DEFAULT '',
+                    `domain` TEXT NOT NULL DEFAULT '',
+                    `memoryType` TEXT NOT NULL DEFAULT 'note',
+                    `title` TEXT NOT NULL DEFAULT '',
+                    `content` TEXT NOT NULL DEFAULT '',
+                    `dataJson` TEXT NOT NULL DEFAULT '{}',
+                    `tags` TEXT NOT NULL DEFAULT '',
+                    `confidence` REAL NOT NULL DEFAULT 1,
+                    `source` TEXT NOT NULL DEFAULT 'ai',
+                    `status` TEXT NOT NULL DEFAULT 'active',
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO `agentMemories_new` (
+                    `id`, `scopeType`, `scopeKey`, `subject`, `domain`, `memoryType`,
+                    `title`, `content`, `dataJson`, `tags`, `confidence`, `source`,
+                    `status`, `createdAt`, `updatedAt`
+                )
+                SELECT
+                    `id`, `scopeType`, `scopeKey`, `subject`, `domain`,
+                    CASE WHEN `memoryType` = 'checkpoint' THEN 'note' ELSE `memoryType` END,
+                    `title`, `content`, `dataJson`, `tags`, `confidence`, `source`,
+                    `status`, `createdAt`, `updatedAt`
+                FROM `agentMemories`
+                """.trimIndent()
+            )
+            db.execSQL("DROP TABLE `agentMemories`")
+            db.execSQL("ALTER TABLE `agentMemories_new` RENAME TO `agentMemories`")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentMemories_scopeType_scopeKey` ON `agentMemories` (`scopeType`, `scopeKey`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentMemories_domain_memoryType_status` ON `agentMemories` (`domain`, `memoryType`, `status`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agentMemories_updatedAt` ON `agentMemories` (`updatedAt`)")
+        }
+    }
+
+    private val migration_106_107 = object : Migration(106, 107) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `aiChatConversations` " +
+                    "ADD COLUMN `modeEntryContext` TEXT NOT NULL DEFAULT ''"
+            )
+            db.execSQL(
+                "ALTER TABLE `aiChatConversations` " +
+                    "ADD COLUMN `modeEntryStarted` INTEGER NOT NULL DEFAULT 0"
             )
         }
     }

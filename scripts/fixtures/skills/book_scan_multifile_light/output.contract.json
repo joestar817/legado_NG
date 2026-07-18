@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "min_visible_chars": 200,
+  "max_retries": 1,
+  "forbidden_regex": [
+    {
+      "pattern": "(?m)^\\s*\\|.+\\|\\s*$",
+      "message": "Markdown tables are forbidden; use compact headings, paragraphs or bullets"
+    },
+    {
+      "pattern": "<(?:(?:｜DSML｜)|(?:\\|DSML\\|))",
+      "message": "provider protocol markers must not appear in the final response"
+    }
+  ]
+}

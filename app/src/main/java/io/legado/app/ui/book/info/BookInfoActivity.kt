@@ -29,6 +29,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.RequestOptions
+import com.google.gson.JsonObject
 import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.AppLog
@@ -49,6 +50,7 @@ import io.legado.app.help.AppWebDav
 import io.legado.app.help.GlideImageGetter
 import io.legado.app.help.TextViewTagHandler
 import io.legado.app.help.WebCacheManager
+import io.legado.app.help.ai.AgentModeEntryContext
 import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.addType
@@ -979,25 +981,31 @@ class BookInfoActivity :
 
     private fun openBookScanAiAssistant(book: Book) {
         val workKey = BookCharacterProfile.workKey(book.name, book.author)
-        val contextAttachment = GSON.toJson(
-            mapOf(
-                "id" to "book_detail_book_scan",
-                "title" to "AI 扫书：${book.name}",
-                "subtitle" to book.getRealAuthor(),
-                "prompt" to buildBookDetailAiContextPrompt(book, workKey)
-            )
+        val payload = JsonObject().apply {
+            addProperty("work_key", workKey)
+            addProperty("book_name", book.name)
+            addProperty("book_author", book.getRealAuthor())
+            addProperty("book_url", book.bookUrl)
+            addProperty("origin_name", book.originName)
+            book.kind?.takeIf { it.isNotBlank() }?.let { addProperty("category", it) }
+            book.wordCount?.takeIf { it.isNotBlank() }?.let { addProperty("word_count", it) }
+            addProperty("total_chapters", book.totalChapterNum)
+            book.durChapterTitle?.takeIf { it.isNotBlank() }?.let {
+                addProperty("current_chapter_index", book.durChapterIndex + 1)
+                addProperty("current_chapter_title", it)
+            }
+            book.latestChapterTitle?.takeIf { it.isNotBlank() }?.let {
+                addProperty("latest_chapter_title", it)
+            }
+        }
+        val entryContext = AgentModeEntryContext(
+            contextId = "book_detail",
+            title = "AI 扫书：${book.name}",
+            payload = payload
         )
         startActivity<AiChatActivity> {
             putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_SCAN)
-            putStringArrayListExtra(
-                AiChatActivity.EXTRA_LOADED_SKILL_IDS,
-                arrayListOf(AiSkillRegistry.SKILL_BOOK_SCAN)
-            )
-            putStringArrayListExtra(
-                AiChatActivity.EXTRA_CONTEXT_ATTACHMENTS,
-                arrayListOf(contextAttachment)
-            )
-            putExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, true)
+            putExtra(AiChatActivity.EXTRA_MODE_ENTRY_CONTEXT, entryContext.toJson())
         }
     }
 

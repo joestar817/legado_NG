@@ -1,0 +1,284 @@
+{
+  "schema_version": 2,
+  "required_policy_types": ["actions", "single_choice", "multi_choice", "multi_tag_stance", "confirm"],
+  "interactions": {
+    "book_scan_reaction": {
+      "type": "single_choice",
+      "version": 1,
+      "title": "接下来怎么处理这本书？",
+      "description": "快速定位只完整读了开头和结尾，中段仍未排完。",
+      "options": [
+        {"label": "继续排雷", "value": "continue_scan", "description": "先记下还想看的点，再选择下一段要补读的章节。"},
+        {"label": "已经劝退", "value": "reject", "description": "记录劝退原因后结束本次扫书。"}
+      ],
+      "allowed_items": {},
+      "submit": {
+        "label": "继续",
+        "prompt_template": "[BOOK_SCAN_REACTION] reaction={{value}}。读取两级交互定义，只输出与该选择对应的下一张宿主交互；不重读正文，不重复报告，不把本次单书态度自动写成长期偏好。"
+      }
+    },
+    "book_scan_like_reasons": {
+      "type": "multi_choice",
+      "version": 1,
+      "title": "目前哪些点让你愿意继续了解？",
+      "description": "可多选；没有明确喜欢的点就跳过。",
+      "options": [],
+      "allowed_items": {
+        "feedback.genre_setting": {"label": "题材和设定有兴趣", "description": ""},
+        "feedback.opening_hook": {"label": "开篇有吸引力", "description": ""},
+        "feedback.protagonist": {"label": "想继续看主角", "description": ""},
+        "feedback.character_relationship": {"label": "人物关系有看点", "description": ""},
+        "feedback.pacing_payoff": {"label": "节奏或爽点不错", "description": ""},
+        "feedback.atmosphere_style": {"label": "氛围或文风顺眼", "description": ""},
+        "feedback.ending_direction": {"label": "想确认结局过程", "description": ""},
+        "feedback.risk_level_ok": {"label": "当前风险还能接受", "description": ""}
+      },
+      "submit": {
+        "label": "记下并选范围",
+        "prompt_template": "[BOOK_SCAN_CONTINUE_REASONS] reason_ids={{values}}。这些只是当前书反馈，不写全局偏好。用一句短句确认后，只输出 book_scan_target 宿主交互；不重复报告。"
+      },
+      "skip": {
+        "label": "跳过，直接选范围",
+        "prompt_template": "[BOOK_SCAN_CONTINUE_REASONS_SKIPPED] 用户没有选择喜欢点。只输出 book_scan_target 宿主交互；不重复报告。"
+      }
+    },
+    "book_scan_dislike_reasons": {
+      "type": "multi_choice",
+      "version": 1,
+      "title": "主要是什么让你不想看？",
+      "description": "可多选；也可以直接在输入框补充。",
+      "options": [],
+      "allowed_items": {
+        "feedback.genre_mismatch": {"label": "题材不对胃口", "description": ""},
+        "feedback.opening_weak": {"label": "开篇看不进去", "description": ""},
+        "feedback.protagonist_problem": {"label": "人物选择劝退", "description": ""},
+        "feedback.relationship_problem": {"label": "感情关系劝退", "description": ""},
+        "feedback.pacing_problem": {"label": "节奏或爽点不对", "description": ""},
+        "feedback.style_problem": {"label": "文风表达不合口味", "description": ""},
+        "feedback.ending_problem": {"label": "结局方向劝退", "description": ""},
+        "risk.committed_partner_betrayal": {"label": "核心伴侣自愿背叛", "description": ""},
+        "risk.third_party_sexual_violation": {"label": "核心角色遭第三方性侵害", "description": ""},
+        "risk.developed_love_interest_paired_elsewhere": {"label": "重要感情角色最终归他人", "description": ""},
+        "risk.forced_third_party_marriage": {"label": "核心感情角色被迫与第三方成婚", "description": ""},
+        "risk.core_love_interest_death": {"label": "核心感情角色不可逆死亡", "description": ""},
+        "risk.core_love_interest_severe_abuse": {"label": "核心感情角色遭严重虐待", "description": ""},
+        "risk.extreme_protagonist_abuse": {"label": "主角长期遭极端虐待", "description": ""},
+        "risk.abuser_reunited_without_accountability": {"label": "严重虐待后强行复合", "description": ""},
+        "risk.protagonist_death": {"label": "主角结局死亡", "description": ""},
+        "risk.unexpected_protagonist_gender_change": {"label": "非预期永久变性", "description": ""},
+        "status.abandoned_or_hiatus": {"label": "长期断更或停更", "description": ""}
+      },
+      "submit": {
+        "label": "保存并结束",
+        "prompt_template": "[BOOK_SCAN_REJECT_REASONS] reason_ids={{values}}。这些只是当前书反馈，不写全局偏好。用一句自然中文确认用户选择后结束；不得重复报告，不输出下一张交互。用户之后明确要求继续扫描时再展示扫描范围。"
+      }
+    },
+    "book_scan_next": {
+      "type": "actions",
+      "version": 1,
+      "title": "继续查看",
+      "description": "继续读取更多正文可以降低中段未知；也可以只分析当前档案。",
+      "options": [
+        {"label": "继续扫描", "value": "show_scan_targets", "description": ""},
+        {"label": "分析当前", "value": "show_analysis_targets", "description": ""}
+      ],
+      "allowed_items": {},
+      "submit": {
+        "label": "继续",
+        "prompt_template": "AI扫书下一步：{{label}}（{{value}}）。只输出对应下一层交互，不重读正文。"
+      }
+    },
+    "book_scan_target": {
+      "type": "single_choice",
+      "version": 1,
+      "title": "下一步扫哪里？",
+      "description": "先看上面的章节进度，再选择下一轮连续补读范围。",
+      "options": [
+        {"label": "继续补约 100 章", "value": "scan_100", "description": "从第一个未完整读过的缺口开始，连续补读约 100 章。"},
+        {"label": "继续补约 300 章", "value": "scan_300", "description": "从第一个未完整读过的缺口开始，连续补读约 300 章。"},
+        {"label": "检查全部剩余章节", "value": "scan_all_chapters", "description": "尽量把当前目录里还没完整读过的章节全部补完。"},
+        {"label": "我来指定章节", "value": "custom_scan_target", "description": "提交后输入具体章号或章节范围。"}
+      ],
+      "allowed_items": {},
+      "submit": {
+        "label": "继续排雷",
+        "prompt_template": "AI扫书扫描目标：{{label}}（{{value}}）。继续使用专用入口上下文固定的 work_key，读取 references/full-scan.md 执行扩展排雷扫描；先查询该书 manifest 与目录，不得跟随全局当前在读书籍切换。按 manifest 里的完整正文覆盖计算缺口；没有可用覆盖记录时，从最早未读章节开始。scan_100 连续补读约 100 章，scan_300 连续补读约 300 章，scan_all_chapters 尽量补齐全部剩余章节，自定义范围只读用户指定范围。使用 bookshelf_text_window_get 读取连续正文窗口，不做目录/snippet 导航，不用标题或片段确认/排除风险。目标完成、正文不可用或真实达到工具/上下文边界前，不得提前输出报告或交还控制权。"
+      }
+    },
+    "book_scan_memory_analysis": {
+      "type": "single_choice",
+      "version": 1,
+      "title": "分析已有结果",
+      "description": "默认不读取新正文，只整理已经保存的扫描档案；证据不足时明确说明。",
+      "options": [
+        {"label": "雷点分析", "value": "risk_analysis", "description": "汇总重大事件、关系伦理、人物弧和长期劝退模式。"},
+        {"label": "感情分析", "value": "relationship", "description": "整理感情路线、双向关系、边界、心路与收束。"},
+        {"label": "主角分析", "value": "protagonist_experience", "description": "整理主角目标、主动权、人物弧、选择和代入体验。"},
+        {"label": "剧情与节奏分析", "value": "plot_and_pacing", "description": "整理结构逻辑、决策、反转重复、压力和释放。"},
+        {"label": "结局分析", "value": "ending_safety", "description": "整理结局类型、角色收束、伏笔和未完成线索。"}
+      ],
+      "allowed_items": {},
+      "submit": {
+        "label": "开始分析",
+        "prompt_template": "基于现有扫书档案分析：{{label}}（{{value}}）。读取档案分析资源，默认不读取正文；先查唯一 manifest，再按分析方向分页读取必要记忆，证据不足时说明扫描边界。"
+      }
+    },
+    "book_scan_rebuild_required": {
+      "type": "confirm",
+      "version": 1,
+      "title": "已有档案需要重新核对",
+      "description": "找到的扫书档案来自旧协议，不能直接当作当前结论。重新核对会再次读取这本书的开头与结尾样本；确认前不会读取正文。",
+      "options": [],
+      "allowed_items": {},
+      "submit": {
+        "label": "重新快速定位",
+        "prompt_template": "[BOOK_SCAN_REBUILD_CONFIRMED] 用户已确认重新读取当前书首尾样本并覆盖旧协议事实包。"
+      },
+      "cancel": {
+        "label": "暂不重扫",
+        "prompt_template": "[BOOK_SCAN_REBUILD_CANCELLED] 不读取正文，只说明旧档案暂不可用于当前报告。"
+      }
+    },
+    "reader_preference_adaptive_tags": {
+      "type": "multi_tag_stance",
+      "version": 2,
+      "title": "这些作品特征会怎样影响你的选择？",
+      "description": "每项单选；只保存你明确选择的项目，未选择和跳过仍保持未知。",
+      "options": [
+        {"label": "更偏好这类作品", "value": "like", "description": ""},
+        {"label": "可以接受", "value": "neutral", "description": ""},
+        {"label": "会因此劝退", "value": "avoid", "description": ""}
+      ],
+      "allowed_items": {
+        "route.no_romance": {
+          "label": "无感情线／无女主",
+          "description": "作品没有持续核心恋爱线或核心感情对象"
+        },
+        "route.single_partner": {
+          "label": "单女主／一对一",
+          "description": "作品只有一名稳定核心感情对象"
+        },
+        "route.multi_partner": {
+          "label": "后宫／多女主路线",
+          "description": "主角与多名角色建立明确感情或归宿关系"
+        },
+        "center.single_male": {
+          "label": "单男主中心",
+          "description": "一名男性承担主要叙事与因果中心"
+        },
+        "center.multi_male_ensemble": {
+          "label": "多男主真群像",
+          "description": "多名男性主角各有不可替代的独立目标和主线"
+        },
+        "setting.system_present": {
+          "label": "有系统",
+          "description": "存在发任务、发奖励或提供交互规则的系统机制"
+        },
+        "setting.sign_in_reward_loop": {
+          "label": "签到领奖",
+          "description": "签到、打卡、领取奖励是持续成长机制"
+        },
+        "setting.numeric_panel_heavy": {
+          "label": "数值面板较重",
+          "description": "属性、战力和技能数字反复占据正文并替代成长描写"
+        },
+        "format.national_destiny_competition": {
+          "label": "国运竞赛",
+          "description": "角色与国家绑定，胜负直接影响国运"
+        },
+        "format.public_broadcast_exposure": {
+          "label": "全民围观／回忆曝光",
+          "description": "主角经历被全球直播、天道播放、榜单曝光或死后公开"
+        },
+        "format.audience_reaction_heavy": {
+          "label": "群众反应较多",
+          "description": "弹幕、观众震惊和各国反应占显著篇幅并承担主要爽点"
+        },
+        "power.invincible_from_start": {
+          "label": "开局无敌",
+          "description": "主角从开局起长期缺少可信威胁"
+        },
+        "strategy.cautious_survival": {
+          "label": "苟道发育",
+          "description": "核心乐趣是隐藏、避险和稳健积累"
+        },
+        "identity.gender_transformation": {
+          "label": "变身／性转",
+          "description": "主角性别发生实质转换"
+        },
+        "structure.infinite_instances": {
+          "label": "无限副本",
+          "description": "反复进入相对独立的任务世界或副本并返回"
+        },
+        "setting.apocalypse_survival": {
+          "label": "末世生存",
+          "description": "文明崩溃、生存资源和环境威胁构成主要矛盾"
+        },
+        "tone.dark_cruel": {
+          "label": "黑暗残酷",
+          "description": "样本持续以残酷、压迫和低缓解为主要体验"
+        },
+        "aesthetic.cthulhu_weird": {
+          "label": "克苏鲁／诡异风",
+          "description": "污染、疯狂、仪式和不可理解存在构成核心审美"
+        },
+        "style.meta_anti_trope": {
+          "label": "反套路写法",
+          "description": "作品持续拆解、反转或嘲弄常见套路"
+        },
+        "narrative.frequent_pov_switch": {
+          "label": "频繁切换视角",
+          "description": "视角切换高频且明显打断单一代入"
+        },
+        "relationship.harem_rivalry": {
+          "label": "后宫争风吃醋",
+          "description": "多名明确感情对象反复争斗"
+        },
+        "relationship.partner_prior_marriage": {
+          "label": "女方有既往婚姻",
+          "description": "核心感情对象在当前或过去有明确婚姻"
+        },
+        "relationship.rejects_interested_love_interest": {
+          "label": "主角拒绝明确追求者",
+          "description": "对方明确表达感情且主角明确拒绝"
+        },
+        "relationship.large_age_gap_older_partner": {
+          "label": "女方年龄明显更大",
+          "description": "女方与男主存在显著代际年龄差"
+        },
+        "narrative.conscious_clone": {
+          "label": "有独立意识的分身",
+          "description": "主角分身拥有自主意识和不可完全控制的选择"
+        }
+      },
+      "submit": {
+        "label": "保存并更新推荐",
+        "prompt_template": ""
+      },
+      "skip": {
+        "label": "暂时跳过",
+        "prompt_template": ""
+      },
+      "memory_patch": {
+        "operation": "json_map_merge",
+        "scope_type": "global",
+        "scope_key": "default",
+        "domain": "reader_preference",
+        "memory_type": "global_profile",
+        "title": "默认阅读偏好",
+        "content": "用户在扫书报告中明确选择的标签态度。",
+        "map_field": "tag_stances",
+        "value_field": "stance",
+        "identity_fields": ["schema_version", "profile_id"],
+        "base_data": {
+          "schema_version": 2,
+          "profile_id": "default",
+          "dimension_answers": {},
+          "tag_stances": {},
+          "custom_rules": []
+        },
+        "on_base_mismatch": "replace"
+      }
+    }
+  }
+}

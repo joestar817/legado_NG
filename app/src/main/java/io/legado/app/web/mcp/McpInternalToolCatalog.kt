@@ -11,8 +11,18 @@ data class McpInternalToolCapability(
     val title: String,
     val description: String,
     val toolNames: Set<String>,
-    val containsWriteTools: Boolean = false
-)
+    val sideEffect: McpToolSideEffect = McpToolSideEffect.READ
+) {
+    val requiresUserConfirmation: Boolean
+        get() = sideEffect.requiresUserConfirmation
+}
+
+enum class McpToolSideEffect(val requiresUserConfirmation: Boolean) {
+    READ(false),
+    AGENT_INTERNAL_WRITE(false),
+    APP_WRITE(true),
+    DESTRUCTIVE(true)
+}
 
 /**
  * Internal-only capability catalog used to limit the tool definitions sent to AI models.
@@ -99,7 +109,8 @@ object McpInternalToolCatalog {
                 description = "读取章节目录、章节正文和正文窗口",
                 "bookshelf_chapter_list",
                 "bookshelf_chapter_content_get",
-                "bookshelf_text_window_get"
+                "bookshelf_text_window_get",
+                "bookshelf_chapter_snippets_get"
             ),
             capability(
                 id = "bookshelf.cache_status",
@@ -223,14 +234,14 @@ object McpInternalToolCatalog {
                 "ai_chat_conversation_list",
                 "ai_chat_conversation_get"
             ),
-            writeCapability(
+            internalWriteCapability(
                 id = "ai.memory",
                 title = "管理 AI 记忆",
-                description = "检查、检索、写入或归档 AI 记忆",
+                description = "检查、检索或写入 AI 记忆",
                 "agent_memory_status_get",
                 "agent_memory_search",
                 "agent_memory_upsert",
-                "agent_memory_archive"
+                "agent_memory_batch_upsert"
             )
         ),
         module(
@@ -277,6 +288,33 @@ object McpInternalToolCatalog {
             .flatMapTo(linkedSetOf()) { capabilityById.getValue(it).toolNames }
     }
 
+    fun capability(id: String): McpInternalToolCapability? = capabilityById[id]
+
+    fun sideEffectOf(
+        toolName: String,
+        argumentsDeclareWrite: Boolean = false
+    ): McpToolSideEffect {
+        if (toolName in agentInternalWriteToolNames) {
+            return McpToolSideEffect.AGENT_INTERNAL_WRITE
+        }
+        if (toolName in destructiveToolNames || destructiveFallbackSuffixes.any(toolName::endsWith)) {
+            return McpToolSideEffect.DESTRUCTIVE
+        }
+        if (toolName in appWriteToolNames || appWriteFallbackSuffixes.any(toolName::endsWith) ||
+            argumentsDeclareWrite
+        ) {
+            return McpToolSideEffect.APP_WRITE
+        }
+        return McpToolSideEffect.READ
+    }
+
+    fun requiresUserConfirmation(
+        toolName: String,
+        argumentsDeclareWrite: Boolean = false
+    ): Boolean {
+        return sideEffectOf(toolName, argumentsDeclareWrite).requiresUserConfirmation
+    }
+
     private fun module(
         id: String,
         title: String,
@@ -293,7 +331,20 @@ object McpInternalToolCatalog {
         title = title,
         description = description,
         toolNames = toolNames.toCollection(linkedSetOf()),
-        containsWriteTools = false
+        sideEffect = McpToolSideEffect.READ
+    )
+
+    private fun internalWriteCapability(
+        id: String,
+        title: String,
+        description: String,
+        vararg toolNames: String
+    ) = McpInternalToolCapability(
+        id = id,
+        title = title,
+        description = description,
+        toolNames = toolNames.toCollection(linkedSetOf()),
+        sideEffect = McpToolSideEffect.AGENT_INTERNAL_WRITE
     )
 
     private fun writeCapability(
@@ -306,6 +357,69 @@ object McpInternalToolCatalog {
         title = title,
         description = description,
         toolNames = toolNames.toCollection(linkedSetOf()),
-        containsWriteTools = true
+        sideEffect = McpToolSideEffect.APP_WRITE
+    )
+
+    private val agentInternalWriteToolNames = setOf(
+        "agent_memory_upsert",
+        "agent_memory_batch_upsert"
+    )
+
+    private val appWriteToolNames = setOf(
+        "book_source_save",
+        "book_source_set_enabled",
+        "bookshelf_book_upsert",
+        "bookshelf_group_upsert",
+        "bookshelf_book_group_update",
+        "bookshelf_cache_download",
+        "bookshelf_bookmark_upsert",
+        "bookshelf_read_record_upsert",
+        "bookshelf_character_upsert",
+        "bookshelf_character_set_enabled",
+        "bookshelf_replace_rule_upsert",
+        "bookshelf_replace_rule_set_enabled",
+        "bookshelf_replace_rule_draft_upsert",
+        "bookshelf_replace_rule_draft_apply",
+        "settings_txt_toc_rule_upsert",
+        "settings_txt_toc_rule_set_enabled",
+        "settings_replace_rule_upsert",
+        "settings_replace_rule_set_enabled",
+        "settings_dict_rule_upsert",
+        "settings_dict_rule_set_enabled"
+    )
+
+    private val destructiveToolNames = setOf(
+        "book_source_delete",
+        "bookshelf_book_delete",
+        "bookshelf_group_delete",
+        "bookshelf_cache_clear",
+        "bookshelf_bookmark_delete",
+        "bookshelf_read_record_delete",
+        "bookshelf_character_delete",
+        "bookshelf_replace_rule_delete",
+        "bookshelf_replace_rule_rollback",
+        "settings_txt_toc_rule_delete",
+        "settings_replace_rule_delete",
+        "settings_dict_rule_delete",
+        "network_log_clear",
+        "debug_log_clear"
+    )
+
+    // Unknown future tools fail closed by conventional mutating suffixes. Registered tools
+    // should still be added to the explicit sets above so review semantics remain auditable.
+    private val destructiveFallbackSuffixes = listOf(
+        "_delete",
+        "_rollback",
+        "_archive",
+        "_clear"
+    )
+
+    private val appWriteFallbackSuffixes = listOf(
+        "_upsert",
+        "_set_enabled",
+        "_apply",
+        "_save",
+        "_download",
+        "_group_update"
     )
 }

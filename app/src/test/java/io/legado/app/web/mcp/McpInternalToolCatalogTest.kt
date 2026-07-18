@@ -33,17 +33,75 @@ class McpInternalToolCatalogTest {
     }
 
     @Test
-    fun bookScanReadCapabilitiesDoNotExposeMemoryOrCacheWrites() {
-        val tools = McpInternalToolCatalog.resolveToolNames(
-            listOf("bookshelf.cache_status", "ai.memory_read")
-        )
+    fun memoryDeletionIsNotExposedToModels() {
+        val memoryToolNames = AgentMemoryMcpTools.tools()
+            .mapNotNull { tool -> tool["name"] as? String }
 
-        assertTrue("bookshelf_cache_status_get" in tools)
-        assertTrue("agent_memory_status_get" in tools)
-        assertTrue("agent_memory_search" in tools)
-        assertFalse("bookshelf_cache_download" in tools)
-        assertFalse("agent_memory_upsert" in tools)
-        assertFalse("agent_memory_archive" in tools)
+        assertFalse("agent_memory_archive" in memoryToolNames)
+        assertFalse(memoryToolNames.any { it.endsWith("_delete") || it.endsWith("_clear") })
+    }
+
+    @Test
+    fun memoryIsTheOnlySemanticAgentStateCapability() {
+        val memoryTools = McpInternalToolCatalog.resolveToolNames(listOf("ai.memory"))
+
+        assertEquals(
+            setOf(
+                "agent_memory_status_get",
+                "agent_memory_search",
+                "agent_memory_upsert",
+                "agent_memory_batch_upsert"
+            ),
+            memoryTools
+        )
+        assertFalse("ai.memory_checkpoint" in McpInternalToolCatalog.allCapabilityIds)
+        assertFalse("agent_checkpoint_get" in McpInternalToolCatalog.allToolNames)
+        assertFalse("agent_checkpoint_commit" in McpInternalToolCatalog.allToolNames)
+        assertFalse("agent_tool_result_get" in McpInternalToolCatalog.allToolNames)
+        assertFalse(
+            McpInternalToolCatalog.capabilities
+                .single { it.id == "ai.memory" }
+                .requiresUserConfirmation
+        )
+    }
+
+    @Test
+    fun toolApprovalPolicyUsesSideEffectLevels() {
+        assertEquals(
+            McpToolSideEffect.AGENT_INTERNAL_WRITE,
+            McpInternalToolCatalog.sideEffectOf("agent_memory_batch_upsert")
+        )
+        assertFalse(
+            McpInternalToolCatalog.requiresUserConfirmation("agent_memory_batch_upsert")
+        )
+        assertEquals(
+            McpToolSideEffect.APP_WRITE,
+            McpInternalToolCatalog.sideEffectOf("bookshelf_character_upsert")
+        )
+        assertTrue(
+            McpInternalToolCatalog.requiresUserConfirmation("bookshelf_character_upsert")
+        )
+        assertEquals(
+            McpToolSideEffect.DESTRUCTIVE,
+            McpInternalToolCatalog.sideEffectOf("bookshelf_character_delete")
+        )
+        assertTrue(
+            McpInternalToolCatalog.requiresUserConfirmation("bookshelf_character_delete")
+        )
+        assertEquals(
+            McpToolSideEffect.READ,
+            McpInternalToolCatalog.sideEffectOf("bookshelf_text_window_get")
+        )
+        assertEquals(
+            McpToolSideEffect.READ,
+            McpInternalToolCatalog.sideEffectOf("bookshelf_chapter_snippets_get")
+        )
+        assertTrue(
+            McpInternalToolCatalog.requiresUserConfirmation(
+                toolName = "custom_tool",
+                argumentsDeclareWrite = true
+            )
+        )
     }
 
     companion object {
@@ -81,6 +139,7 @@ class McpInternalToolCatalogTest {
             "bookshelf_chapter_list",
             "bookshelf_chapter_content_get",
             "bookshelf_text_window_get",
+            "bookshelf_chapter_snippets_get",
             "bookshelf_cache_status_get",
             "bookshelf_cache_download",
             "bookshelf_cache_clear",
@@ -128,7 +187,7 @@ class McpInternalToolCatalogTest {
             "agent_memory_status_get",
             "agent_memory_search",
             "agent_memory_upsert",
-            "agent_memory_archive"
+            "agent_memory_batch_upsert"
         )
     }
 }

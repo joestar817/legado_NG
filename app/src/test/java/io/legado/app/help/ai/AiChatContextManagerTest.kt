@@ -1,6 +1,8 @@
 package io.legado.app.help.ai
 
 import com.google.gson.JsonObject
+import com.google.gson.JsonArray
+import io.legado.app.help.ai.runtime.AgentSkillRuntimeDeclaration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -56,6 +58,37 @@ class AiChatContextManagerTest {
     }
 
     @Test
+    fun buildCompactedHistoryKeepsPinnedToolCallUnit() {
+        val assistant = message("assistant", "正在读取").apply {
+            add("tool_calls", JsonArray().apply {
+                add(JsonObject().apply { addProperty("id", "call-1") })
+            })
+        }
+        val tool = message(
+            "tool",
+            """{"data":"正文","_agent_result":{"receipt_id":"receipt-1"}}"""
+        ).apply {
+            addProperty("tool_call_id", "call-1")
+        }
+        val compacted = AiChatContextManager.buildCompactedHistory(
+            messages = listOf(
+                message("system", "system prompt"),
+                message("user", "读取正文"),
+                assistant,
+                tool
+            ),
+            summary = "handoff",
+            pinnedArtifactRefs = setOf("receipt-1"),
+            recentUserTokenBudget = 1000
+        )
+
+        assertTrue(compacted.any { it.get("tool_calls")?.isJsonArray == true })
+        assertTrue(compacted.any { it.role() == "tool" && it.content().contains("receipt-1") })
+        assertTrue(compacted.indexOfFirst { it.role() == "user" && it.content() == "读取正文" } <
+            compacted.indexOfFirst { it.get("tool_calls")?.isJsonArray == true })
+    }
+
+    @Test
     fun syncActiveSkillKeepsSingleInstructionAndCleansEmbeddedCopies() {
         val embedded = buildString {
             append(AiChatContextManager.ATTACHMENT_PREAMBLE)
@@ -106,6 +139,32 @@ class AiChatContextManagerTest {
 
         assertTrue(breakdown.skillTokens > 0)
         assertEquals(1, compacted.count(AiChatContextManager::isActiveSkillMessage))
+    }
+
+    @Test
+    fun activeSkillSnapshotPinsRevisionRuntimeAndPrompt() {
+        val messages = mutableListOf(message("system", "system prompt"))
+        val expected = AiActiveSkillSnapshot(
+            skillId = "custom_reader",
+            title = "自定义阅读",
+            prompt = "固定在会话中的规则",
+            revision = "7",
+            contentHash = "abc123",
+            runtime = AgentSkillRuntimeDeclaration(
+                mcpCapabilities = listOf("bookshelf.read_content")
+            )
+        )
+
+        AiChatContextManager.syncActiveSkill(messages, expected)
+        val restored = AiChatContextManager.activeSkillSnapshot(messages)
+
+        assertEquals(expected, restored)
+        val compacted = AiChatContextManager.buildCompactedHistory(
+            messages = messages + message("user", "继续"),
+            summary = "handoff",
+            recentUserTokenBudget = 100
+        )
+        assertEquals(expected, AiChatContextManager.activeSkillSnapshot(compacted))
     }
 
     @Test
@@ -340,6 +399,58 @@ class AiChatContextManagerTest {
         assertEquals(6, regenerated.size)
         assertTrue(regenerated.any { it.role() == "tool" })
         assertEquals("continue", regenerated.last().content())
+    }
+
+    @Test
+    fun modeEntryContextIsHiddenIdempotentAndRestorable() {
+        val messages = mutableListOf(
+            message("system", "system prompt"),
+            message("user", "visible user request")
+        )
+        val first = AgentModeEntryContext(
+            contextId = "book_detail",
+            title = "AI 扫书：旧书",
+            payload = JsonObject().apply { addProperty("work_key", "旧书\n作者") }
+        )
+        val second = AgentModeEntryContext(
+            contextId = "book_detail",
+            title = "AI 扫书：新书",
+            payload = JsonObject().apply { addProperty("work_key", "新书\n作者") }
+        )
+
+        AiChatContextManager.syncModeEntryContext(messages, first)
+        AiChatContextManager.syncModeEntryContext(messages, second)
+
+        assertEquals(1, messages.count(AiChatContextManager::isModeEntryContextMessage))
+        assertEquals(second, AiChatContextManager.modeEntryContextSnapshot(messages))
+        assertEquals("visible user request", messages.single { it.role() == "user" }.content())
+
+        AiChatContextManager.syncModeEntryContext(messages, null)
+        assertFalse(messages.any(AiChatContextManager::isModeEntryContextMessage))
+    }
+
+    @Test
+    fun modeEntryContextCoexistsWithSkillAndSurvivesCompaction() {
+        val messages = mutableListOf(message("system", "system prompt"))
+        val context = AgentModeEntryContext(
+            contextId = "book_detail",
+            payload = JsonObject().apply { addProperty("work_key", "天之下\n空") }
+        )
+        AiChatContextManager.syncActiveSkill(messages, "AI 扫书", "按工作流扫描")
+        AiChatContextManager.syncModeEntryContext(messages, context)
+        messages += message("user", "继续")
+
+        val breakdown = AiChatContextManager.breakdown(messages)
+        val compacted = AiChatContextManager.buildCompactedHistory(
+            messages = messages,
+            summary = "handoff",
+            recentUserTokenBudget = 100
+        )
+
+        assertTrue(breakdown.appContextTokens > 0)
+        assertEquals(1, compacted.count(AiChatContextManager::isActiveSkillMessage))
+        assertEquals(1, compacted.count(AiChatContextManager::isModeEntryContextMessage))
+        assertEquals(context, AiChatContextManager.modeEntryContextSnapshot(compacted))
     }
 
     private fun message(role: String, content: String): JsonObject {

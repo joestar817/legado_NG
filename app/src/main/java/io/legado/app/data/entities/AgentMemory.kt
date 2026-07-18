@@ -24,8 +24,8 @@ data class AgentMemory(
     var subject: String = "",
     @ColumnInfo(defaultValue = "")
     var domain: String = "",
-    @ColumnInfo(defaultValue = "checkpoint")
-    var memoryType: String = "checkpoint",
+    @ColumnInfo(defaultValue = "note")
+    var memoryType: String = "note",
     @ColumnInfo(defaultValue = "")
     var title: String = "",
     @ColumnInfo(defaultValue = "")

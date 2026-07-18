@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "profile_id": "default",
+  "dimension_answers": {
+    "relationship_routes": {
+      "answer_type": "multi",
+      "values": ["route.multi_partner"],
+      "source_kind": "ui_choice",
+      "source_text": "后宫可以",
+      "confirmed_by_user": true
+    },
+    "defense_level": {
+      "answer_type": "single",
+      "values": ["defense.cloth"],
+      "source_kind": "ui_choice",
+      "source_text": "默认布甲",
+      "confirmed_by_user": true
+    }
+  },
+  "tag_stances": {},
+  "custom_rules": [
+    {
+      "rule_id": "custom:light_campus_business",
+      "scope": "global",
+      "stance": "prefer",
+      "text": "偏好轻松校园创业内容",
+      "source_text": "喜欢轻松校园创业",
+      "confirmed_by_user": true
+    }
+  ]
+}

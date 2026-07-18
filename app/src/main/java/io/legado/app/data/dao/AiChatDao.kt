@@ -12,14 +12,16 @@ import io.legado.app.data.entities.AiChatMessageNode
 interface AiChatDao {
 
     @Query(
-        "select id, assistantId, title, createAt, updateAt, isPinned, " +
+        "select id, assistantId, agentModeRevision, modeEntryContext, modeEntryStarted, " +
+            "title, createAt, updateAt, isPinned, " +
             "customSystemPrompt, loadedSkillIds, enabledMcpCapabilityIds from aiChatConversations " +
             "order by isPinned desc, updateAt desc limit :limit"
     )
     fun getConversationMetadata(limit: Int = 100): List<AiChatConversationMetadata>
 
     @Query(
-        "select id, assistantId, title, createAt, updateAt, isPinned, " +
+        "select id, assistantId, agentModeRevision, modeEntryContext, modeEntryStarted, " +
+            "title, createAt, updateAt, isPinned, " +
             "customSystemPrompt, loadedSkillIds, enabledMcpCapabilityIds " +
             "from aiChatConversations where id = :id"
     )
@@ -97,6 +99,9 @@ interface AiChatDao {
 data class AiChatConversationMetadata(
     val id: String,
     val assistantId: String,
+    val agentModeRevision: String,
+    val modeEntryContext: String,
+    val modeEntryStarted: Boolean,
     val title: String,
     val createAt: Long,
     val updateAt: Long,
@@ -109,6 +114,9 @@ data class AiChatConversationMetadata(
         return AiChatConversation(
             id = id,
             assistantId = assistantId,
+            agentModeRevision = agentModeRevision,
+            modeEntryContext = modeEntryContext,
+            modeEntryStarted = modeEntryStarted,
             title = title,
             createAt = createAt,
             updateAt = updateAt,
