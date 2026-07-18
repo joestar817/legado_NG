@@ -957,13 +957,32 @@ class BookInfoActivity :
 
     private fun openCharacterCardAiAssistant(book: Book) {
         val workKey = BookCharacterProfile.workKey(book.name, book.author)
-        val contextAttachment = GSON.toJson(
-            mapOf(
-                "id" to "book_detail_character_card",
-                "title" to "书籍详情：${book.name}",
-                "subtitle" to book.getRealAuthor(),
-                "prompt" to buildBookDetailAiContextPrompt(book, workKey)
-            )
+        val payload = JsonObject().apply {
+            addProperty("work_key", workKey)
+            addProperty("book_name", book.name)
+            addProperty("book_author", book.getRealAuthor())
+            addProperty("book_url", book.bookUrl)
+            addProperty("origin_name", book.originName)
+            book.kind?.takeIf { it.isNotBlank() }?.let { addProperty("category", it) }
+            book.wordCount?.takeIf { it.isNotBlank() }?.let { addProperty("word_count", it) }
+            addProperty("total_chapters", book.totalChapterNum)
+            book.durChapterTitle?.takeIf { it.isNotBlank() }?.let {
+                addProperty("current_chapter_index", book.durChapterIndex + 1)
+                addProperty("current_chapter_title", it)
+            }
+            book.latestChapterTitle?.takeIf { it.isNotBlank() }?.let {
+                addProperty("latest_chapter_title", it)
+            }
+            book.getDisplayIntro()
+                .orEmpty()
+                .toPlainBookIntro()
+                .limitAiContextText(1800)
+                .takeIf { it.isNotBlank() }
+                ?.let { addProperty("book_intro", it) }
+        }
+        val entryContext = AgentModeEntryContext(
+            contextId = "book_detail_character_card",
+            payload = payload
         )
         startActivity<AiChatActivity> {
             putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_DETAIL)
@@ -971,10 +990,7 @@ class BookInfoActivity :
                 AiChatActivity.EXTRA_LOADED_SKILL_IDS,
                 arrayListOf(AiSkillRegistry.SKILL_CHARACTER_CARD_GENERATE)
             )
-            putStringArrayListExtra(
-                AiChatActivity.EXTRA_CONTEXT_ATTACHMENTS,
-                arrayListOf(contextAttachment)
-            )
+            putExtra(AiChatActivity.EXTRA_MODE_ENTRY_CONTEXT, entryContext.toJson())
             putExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, true)
         }
     }
@@ -1006,34 +1022,6 @@ class BookInfoActivity :
         startActivity<AiChatActivity> {
             putExtra(AiChatActivity.EXTRA_ENTRY, AiChatActivity.ENTRY_BOOK_SCAN)
             putExtra(AiChatActivity.EXTRA_MODE_ENTRY_CONTEXT, entryContext.toJson())
-        }
-    }
-
-    private fun buildBookDetailAiContextPrompt(book: Book, workKey: String): String {
-        val intro = book.getDisplayIntro().orEmpty().toPlainBookIntro().limitAiContextText(1800)
-        return buildString {
-            appendLine("这是从书籍详情页进入 AI 助理时附带的当前书籍上下文。")
-            appendLine("这是专用入口，目标书籍已经明确，不需要再次询问用户是哪本书。")
-            appendLine()
-            appendLine("书名：${book.name}")
-            appendLine("作者：${book.getRealAuthor()}")
-            appendLine("book_url：${book.bookUrl}")
-            appendLine("work_key：$workKey")
-            appendLine("书源：${book.originName}")
-            book.kind?.takeIf { it.isNotBlank() }?.let { appendLine("分类：$it") }
-            book.wordCount?.takeIf { it.isNotBlank() }?.let { appendLine("字数：$it") }
-            appendLine("目录章节数：${book.totalChapterNum}")
-            book.durChapterTitle?.takeIf { it.isNotBlank() }?.let {
-                appendLine("当前阅读章节：第 ${book.durChapterIndex + 1} 章 $it")
-            }
-            book.latestChapterTitle?.takeIf { it.isNotBlank() }?.let {
-                appendLine("最新章节：$it")
-            }
-            if (intro.isNotBlank()) {
-                appendLine()
-                appendLine("书籍简介：")
-                appendLine(intro)
-            }
         }
     }
 
