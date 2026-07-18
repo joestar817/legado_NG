@@ -793,9 +793,15 @@ internal fun AiProviderSetting.iconRes(): Int {
 }
 
 internal fun AiModel.iconRes(defaultIconRes: Int): Int {
-    val modelName = listOf(safeId(), safeName(), safeOwnedBy())
+    val modelName = listOf(safeId(), safeName())
         .joinToString(" ")
         .lowercase()
+    return resolveModelIconRes(modelName)
+        ?: resolveModelIconRes(safeOwnedBy().lowercase())
+        ?: defaultIconRes
+}
+
+private fun resolveModelIconRes(modelName: String): Int? {
     return when {
         Regex("(gpt|openai|o\\d)").containsMatchIn(modelName) -> R.drawable.ic_provider_openai
         Regex("(gemini|nano-banana)").containsMatchIn(modelName) -> R.drawable.ic_provider_gemini
@@ -842,7 +848,7 @@ internal fun AiModel.iconRes(defaultIconRes: Int): Int {
         Regex("ling|ring|百灵").containsMatchIn(modelName) -> R.drawable.ic_model_ling
         Regex("mimo|xiaomi|小米").containsMatchIn(modelName) -> R.drawable.ic_provider_mimo
         Regex("longcat").containsMatchIn(modelName) -> R.drawable.ic_model_longcat
-        else -> defaultIconRes
+        else -> null
     }
 }
 
