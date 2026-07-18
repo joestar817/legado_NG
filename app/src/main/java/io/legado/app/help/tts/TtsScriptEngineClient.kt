@@ -22,6 +22,17 @@ import kotlin.coroutines.EmptyCoroutineContext
 
 object TtsScriptEngineClient {
 
+    private const val MAX_OPTIONS_CACHE_SIZE = 16
+    private val optionsCache = object : LinkedHashMap<String, List<TtsScriptOption>>(
+        MAX_OPTIONS_CACHE_SIZE,
+        0.75f,
+        true
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, List<TtsScriptOption>>?
+        ): Boolean = size > MAX_OPTIONS_CACHE_SIZE
+    }
+
     fun sampleText(voice: TtsVoice?): String {
         return voice?.previewText() ?: DEFAULT_TTS_PREVIEW_TEXT
     }
@@ -33,12 +44,21 @@ object TtsScriptEngineClient {
     }
 
     fun loadOptions(engine: TtsEngineSetting): List<TtsScriptOption> {
+        val cacheKey = "${engine.id}:${MD5Utils.md5Encode(engine.script)}"
+        synchronized(optionsCache) {
+            optionsCache[cacheKey]
+        }?.let { return it }
         val result = callEngineFunction(engine, "options")
-            ?: return emptyList()
-        return GSON.fromJsonArray<TtsScriptOption>(result)
-            .getOrDefault(emptyList())
-            .filter { it.safeKey.isNotBlank() }
-            .distinctBy { it.safeKey }
+        val options = result?.let {
+            GSON.fromJsonArray<TtsScriptOption>(it)
+                .getOrDefault(emptyList())
+                .filter { option -> option.safeKey.isNotBlank() }
+                .distinctBy { option -> option.safeKey }
+        }.orEmpty()
+        synchronized(optionsCache) {
+            optionsCache[cacheKey] = options
+        }
+        return options
     }
 
     suspend fun fetchVoices(engine: TtsEngineSetting): List<TtsVoice> {

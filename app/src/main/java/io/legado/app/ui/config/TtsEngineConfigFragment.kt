@@ -59,6 +59,7 @@ import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.help.tts.TtsScriptEngineClient
+import io.legado.app.help.tts.TtsScriptOption
 import io.legado.app.help.tts.TtsScriptOptionValue
 import io.legado.app.help.tts.TtsVoice
 import io.legado.app.help.tts.TtsVoiceStyle
@@ -84,6 +85,7 @@ import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -100,7 +102,11 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     private lateinit var engineItemTouchHelper: ItemTouchHelper
     private val configEntities = arrayListOf<ConfigField>()
     private var currentEngineId: String? = null
+    private var detailEngineSnapshot: TtsEngineSetting? = null
     private var draftEngine: TtsEngineSetting? = null
+    private var configOptionsJob: Job? = null
+    private var configOptionsLoadedScript: String? = null
+    private var scriptCodeLoadedEngineId: String? = null
     private var detailTab = DetailTab.CONFIG
     private var sourceMode = false
     private var allVoices: List<TtsVoice> = emptyList()
@@ -172,6 +178,8 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     override fun onDestroyView() {
+        configOptionsJob?.cancel()
+        configOptionsJob = null
         removeEngineListMenu()
         voiceParamPopup?.dismiss()
         voiceParamPopup = null
@@ -207,12 +215,20 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
 
     private fun currentDisplayedEngine(): TtsEngineSetting? {
         val id = currentEngineId ?: return null
-        return TtsEngineStore.engine(id) ?: draftEngine?.takeIf { it.id == id }
+        return detailEngineSnapshot?.takeIf { it.id == id }
+            ?: draftEngine?.takeIf { it.id == id }
+            ?: TtsEngineStore.engine(id)
     }
 
     private fun showEngineList() {
+        configOptionsJob?.cancel()
+        configOptionsJob = null
+        configOptionsLoadedScript = null
         currentEngineId = null
+        detailEngineSnapshot = null
         draftEngine = null
+        scriptCodeLoadedEngineId = null
+        binding.editScriptCode.setText("")
         activity?.setTitle(R.string.tts_engine_settings)
         engineMenuButton?.isVisible = true
         binding.layoutEngineList.isVisible = true
@@ -222,12 +238,18 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
 
     private fun showEngineDetail(engine: TtsEngineSetting, tab: DetailTab = DetailTab.CONFIG) {
         val isSwitchingEngine = currentEngineId != engine.id
+        configOptionsJob?.cancel()
+        configOptionsJob = null
+        configOptionsLoadedScript = null
         currentEngineId = engine.id
+        detailEngineSnapshot = engine
         if (draftEngine?.id != engine.id) {
             draftEngine = null
         }
         if (isSwitchingEngine) {
             sourceMode = false
+            scriptCodeLoadedEngineId = null
+            binding.editScriptCode.setText("")
         }
         activity?.setTitle(engine.name)
         engineMenuButton?.isVisible = false
@@ -429,7 +451,9 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             saveEnabledState(isChecked)
         }
         bindConfigEntities(engine)
-        setScriptCodeText(engine.script)
+        if (sourceMode) {
+            ensureScriptCodeLoaded(engine)
+        }
 
         val scriptEnabled = engine.type == TtsEngineType.SCRIPT
         configAdapter.enabled = scriptEnabled
@@ -439,23 +463,25 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     private fun saveEnabledState(enabled: Boolean) {
-        val source = currentEngineId?.let { TtsEngineStore.engine(it) } ?: return
+        val source = currentDisplayedEngine() ?: return
         if (source.enabled == enabled) {
             return
         }
-        TtsEngineStore.saveEngine(source.copy(enabled = enabled))
+        val updated = source.copy(enabled = enabled)
+        detailEngineSnapshot = updated
+        TtsEngineStore.saveEngine(updated)
     }
 
     private fun showConfigSourceMode(enabled: Boolean) {
         val source = currentDisplayedEngine()
         if (enabled && !sourceMode) {
             source?.let {
-                setScriptCodeText(engineFromForm(it).script)
+                ensureScriptCodeLoaded(engineFromForm(it))
             }
         } else if (!enabled && sourceMode) {
             val updated = source?.let { engineFromForm(it) } ?: return
+            detailEngineSnapshot = updated
             bindConfigEntities(updated)
-            setScriptCodeText(updated.script)
             binding.switchEnabled.isChecked = updated.enabled
             activity?.setTitle(updated.name)
         }
@@ -477,41 +503,76 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         }
     }
 
-    private fun bindConfigEntities(engine: TtsEngineSetting) {
-        configEntities.clear()
-        configEntities.apply {
-            add(ConfigField("name", engine.name, getString(R.string.name)))
-            if (engine.type == TtsEngineType.SCRIPT) {
-                val options = runCatching {
-                    TtsScriptEngineClient.loadOptions(engine)
-                }.getOrDefault(emptyList())
-                val values = engine.effectiveOptionValues(options)
-                options.forEach { option ->
-                    add(
-                        ConfigField(
-                            "option:${option.safeKey}",
-                            values[option.safeKey].orEmpty(),
-                            option.displayLabel,
-                            option.normalizedType,
-                            option.safeValues
-                        )
-                    )
-                }
-            }
+    private fun ensureScriptCodeLoaded(engine: TtsEngineSetting) {
+        if (scriptCodeLoadedEngineId == engine.id) {
+            return
         }
-        configAdapter.editEntities = configEntities
+        setScriptCodeText(engine.script)
+        scriptCodeLoadedEngineId = engine.id
+    }
+
+    private fun bindConfigEntities(engine: TtsEngineSetting) {
+        configOptionsJob?.cancel()
+        configOptionsLoadedScript = null
+        applyConfigEntities(engine, emptyList())
+        if (engine.type != TtsEngineType.SCRIPT) {
+            return
+        }
+        val requestedEngineId = engine.id
+        val requestedScript = engine.script
+        configOptionsJob = lifecycleScope.launch {
+            val options = withContext(Dispatchers.Default) {
+                runCatching { TtsScriptEngineClient.loadOptions(engine) }
+                    .getOrDefault(emptyList())
+            }
+            val current = currentDisplayedEngine()
+            if (
+                currentEngineId != requestedEngineId ||
+                current?.script != requestedScript
+            ) {
+                return@launch
+            }
+            val currentName = configValue("name").ifBlank { current.name }
+            applyConfigEntities(current.copy(name = currentName), options)
+            configOptionsLoadedScript = requestedScript
+        }
+    }
+
+    private fun applyConfigEntities(
+        engine: TtsEngineSetting,
+        options: List<TtsScriptOption>
+    ) {
+        val entities = arrayListOf(
+            ConfigField("name", engine.name, getString(R.string.name))
+        )
+        val values = engine.effectiveOptionValues(options)
+        options.forEach { option ->
+            entities.add(
+                ConfigField(
+                    "option:${option.safeKey}",
+                    values[option.safeKey].orEmpty(),
+                    option.displayLabel,
+                    option.normalizedType,
+                    option.safeValues
+                )
+            )
+        }
+        configEntities.clear()
+        configEntities.addAll(entities)
+        configAdapter.editEntities = ArrayList(configEntities)
     }
 
     private fun saveCurrentEngine(
         showToast: Boolean = true,
         restartReadAloud: Boolean = true
     ): TtsEngineSetting? {
-        val source = currentEngineId?.let { TtsEngineStore.engine(it) }
+        val source = currentDisplayedEngine()
             ?: draftEngine?.takeIf { it.id == currentEngineId }
             ?: return null
         val updated = engineFromForm(source)
         TtsEngineStore.saveEngine(updated, restartReadAloud)
         val effective = TtsEngineStore.engine(updated.id) ?: updated
+        detailEngineSnapshot = effective
         draftEngine = null
         activity?.setTitle(effective.name)
         bindVoiceParams(effective)
@@ -526,14 +587,20 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         val script = binding.editScriptCode.text?.toString()?.takeIf { it.isNotBlank() }
             ?: source.script
         val metadata = TtsEngineStore.parseScriptMetadata(script)
+        val displayedOptionValues = configEntities
+            .filter { it.isOption }
+            .associate { it.key.removePrefix("option:") to it.value.orEmpty() }
+        val optionValues = if (configOptionsLoadedScript == script) {
+            displayedOptionValues
+        } else {
+            source.optionValues + displayedOptionValues
+        }
         return source.copy(
             name = configValue("name").ifBlank { source.name },
             enabled = binding.switchEnabled.isChecked,
             script = script,
             sampleText = metadata["sampletext"]?.takeIf { it.isNotBlank() },
-            optionValues = configEntities
-                .filter { it.isOption }
-                .associate { it.key.removePrefix("option:") to it.value.orEmpty() },
+            optionValues = optionValues,
             enabledCookieJar = cookieJarFromScript(source)
         )
     }
@@ -614,7 +681,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     private fun showVoiceParamPopup() {
-        val engine = currentEngineId?.let { TtsEngineStore.engine(it) } ?: return
+        val engine = currentDisplayedEngine() ?: return
         val popupBinding = LayoutTtsVoiceParamsPopupBinding.inflate(layoutInflater)
         setupVoiceParamSeekBars(popupBinding)
         bindVoiceParamPopup(popupBinding, engine)
@@ -698,7 +765,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     private fun bindVoiceFilterChips(popupBinding: LayoutTtsVoiceParamsPopupBinding) {
-        if (currentEngineId?.let { TtsEngineStore.engine(it)?.type } == TtsEngineType.SYSTEM) {
+        if (currentDisplayedEngine()?.type == TtsEngineType.SYSTEM) {
             popupBinding.layoutLanguageFilterSection.isVisible = false
             popupBinding.layoutGenderFilterSection.isVisible = false
             return
@@ -944,7 +1011,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                     matchesVoiceLanguageFilter(voice) &&
                     matchesVoiceGenderFilter(voice)
         }
-        val engine = currentEngineId?.let { TtsEngineStore.engine(it) }
+        val engine = currentDisplayedEngine()
         val displayVoices = if (
             engine != null &&
             filteredVoices.any { !engine.isVoiceEnabled(it) }
@@ -986,7 +1053,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     private fun updateVoiceHeader() {
-        val engine = currentEngineId?.let { TtsEngineStore.engine(it) }
+        val engine = currentDisplayedEngine()
         val hasVoices = allVoices.isNotEmpty()
         if (engine?.type == TtsEngineType.SYSTEM) {
             binding.layoutVoiceHeader.isVisible = false
@@ -1004,22 +1071,25 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
 
     private fun toggleAllVoicesEnabled() {
         val engineId = currentEngineId ?: return
-        val engine = TtsEngineStore.engine(engineId) ?: return
+        val engine = currentDisplayedEngine()?.takeIf { it.id == engineId } ?: return
         if (allVoices.isEmpty()) {
             return
         }
         val allEnabled = allVoices.all { engine.isVoiceEnabled(it) }
-        TtsEngineStore.setAllVoicesEnabled(
+        val updated = TtsEngineStore.setAllVoicesEnabled(
             engineId = engineId,
             voiceIds = allVoices.map { it.id },
             enabled = !allEnabled
         )
+        if (updated != null) {
+            detailEngineSnapshot = updated
+        }
         applyVoiceFilter()
         refreshEngines()
     }
 
     private fun maybeAutoFetchVoices() {
-        val engine = currentEngineId?.let { TtsEngineStore.engine(it) } ?: return
+        val engine = currentDisplayedEngine() ?: return
         if (
             !engine.supportsVoiceFetch() ||
             engine.effectiveVoices().isNotEmpty() ||
@@ -1062,6 +1132,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                         restartReadAloud = false
                     )
                     if (updated != null) {
+                        detailEngineSnapshot = updated
                         val effectiveVoices = updated.effectiveVoices()
                         setVoiceItems(effectiveVoices)
                         updateVoiceMessage(updated)
@@ -1077,13 +1148,13 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             } finally {
                 binding.refreshVoices.isRefreshing = false
                 binding.refreshVoices.isEnabled =
-                    currentEngineId?.let { TtsEngineStore.engine(it) }?.supportsVoiceFetch() == true
+                    currentDisplayedEngine()?.supportsVoiceFetch() == true
             }
         }
     }
 
     private fun previewCurrentVoice(voice: TtsVoice? = null) {
-        val currentEngine = currentEngineId?.let { TtsEngineStore.engine(it) } ?: return
+        val currentEngine = currentDisplayedEngine() ?: return
         if (currentEngine.type == TtsEngineType.SYSTEM) {
             previewSystemVoice(currentEngine)
             return
@@ -1667,7 +1738,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             item: TtsVoice,
             payloads: MutableList<Any>
         ) {
-            val engine = currentEngineId?.let { TtsEngineStore.engine(it) }
+            val engine = currentDisplayedEngine()
             val isSystemEngine = engine?.type == TtsEngineType.SYSTEM
             val enabled = if (isSystemEngine) {
                 engine.enabled
@@ -1695,7 +1766,10 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                     refreshEngines()
                 } else {
                     val engineId = currentEngineId ?: return@setOnCheckedChangeListener
-                    TtsEngineStore.setVoiceEnabled(engineId, item.id, isChecked)
+                    val updated = TtsEngineStore.setVoiceEnabled(engineId, item.id, isChecked)
+                    if (updated != null) {
+                        detailEngineSnapshot = updated
+                    }
                     binding.root.alpha = if (isChecked) 1f else 0.48f
                     updateVoiceHeader()
                     refreshEngines()
@@ -1865,7 +1939,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             binding.imagePreview.setOnLongClickListener {
                 showPreviewClickFeedback(binding.imagePreview)
                 getItemByLayoutPosition(holder.layoutPosition)?.let { voice ->
-                    val engine = currentEngineId?.let { id -> TtsEngineStore.engine(id) }
+                    val engine = currentDisplayedEngine()
                         ?: return@setOnLongClickListener true
                     val styles = voice.styleOptions()
                     if (styles.isEmpty()) {
