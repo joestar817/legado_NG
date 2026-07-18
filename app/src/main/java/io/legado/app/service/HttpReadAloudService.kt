@@ -26,8 +26,11 @@ import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.tts.ReadAloudTtsRouter
+import io.legado.app.help.tts.ReadAloudAudioTask
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsScriptEngineClient
+import io.legado.app.help.tts.prepareReadAloudAudioTasks
+import io.legado.app.help.tts.writeReadAloudAudioAtomically
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.model.CacheBook
@@ -44,11 +47,8 @@ import io.legado.app.utils.postEvent
 import io.legado.app.utils.servicePendingIntent
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -56,9 +56,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.Response
 import org.mozilla.javascript.WrappedException
@@ -241,27 +239,27 @@ class HttpReadAloudService : BaseReadAloudService(),
         items: List<SpeakItem>,
         cacheChapter: TextChapter? = null,
         onPrepared: suspend (File) -> Unit = {}
-    ) = coroutineScope {
-        val semaphore = Semaphore(AppConfig.readAloudWorkerCount)
-        val jobsByFileName = hashMapOf<String, Deferred<File>>()
-        val orderedJobs = items.map { item ->
+    ) {
+        val globalConcurrency = AppConfig.readAloudWorkerCount
+        val tasks = items.map { item ->
             val route = routeFor(engineV2, item.segment)
             val fileName = if (cacheChapter == null) {
                 md5SpeakFileName(item.text, route)
             } else {
                 md5SpeakFileName(item.text, route, cacheChapter)
             }
-            jobsByFileName.getOrPut(fileName) {
-                async {
-                    semaphore.withPermit {
-                        prepareSpeakFile(httpTts, engineV2, item, route, fileName)
-                    }
+            val routedEngine = route?.engine ?: engineV2
+            ReadAloudAudioTask(
+                cacheKey = fileName,
+                engineKey = routedEngine?.id ?: "legacy:${httpTts?.getKey().orEmpty()}",
+                maxConcurrency = routedEngine?.effectiveMaxConcurrency(globalConcurrency)
+                    ?: globalConcurrency,
+                prepare = {
+                    prepareSpeakFile(httpTts, engineV2, item, route, fileName)
                 }
-            }
+            )
         }
-        orderedJobs.forEach { job ->
-            onPrepared(job.await())
-        }
+        prepareReadAloudAudioTasks(tasks, globalConcurrency, onPrepared)
     }
 
     private suspend fun prepareSpeakFile(
@@ -297,7 +295,7 @@ class HttpReadAloudService : BaseReadAloudService(),
             try {
                 val routedEngine = route?.engine ?: engineV2
                 if (routedEngine != null) {
-                    val response = TtsScriptEngineClient.getSynthesisResponse(
+                    val stream = TtsScriptEngineClient.getSynthesisStream(
                         engine = routedEngine,
                         text = speakText,
                         voiceId = route?.voiceId ?: routedEngine.activeVoiceId,
@@ -305,24 +303,9 @@ class HttpReadAloudService : BaseReadAloudService(),
                         speed = effectiveEngineSpeed(routedEngine),
                         coroutineContext = currentCoroutineContext()
                     )
-                    response.headers["Content-Type"]?.let { contentType ->
-                        val normalizedContentType = contentType.substringBefore(";")
-                        val expected = routedEngine.contentType.orEmpty()
-                        if (normalizedContentType == "application/json" ||
-                            normalizedContentType.startsWith("text/")
-                        ) {
-                            throw NoStackTraceException(response.body.string())
-                        } else if (expected.isNotBlank() &&
-                            !normalizedContentType.matches(expected.toRegex())
-                        ) {
-                            throw NoStackTraceException(
-                                "TTS服务器返回错误：" + response.body.string()
-                            )
-                        }
-                    }
                     currentCoroutineContext().ensureActive()
                     downloadErrorNo.set(0)
-                    return response.body.byteStream()
+                    return stream
                 }
                 val legacyHttpTts = httpTts ?: throw NoStackTraceException("tts is null")
                 val analyzeUrl = AnalyzeUrl(
@@ -660,9 +643,11 @@ class HttpReadAloudService : BaseReadAloudService(),
         return speechRate / 10f
     }
 
-    private fun createSilentSound(fileName: String) {
-        val file = createSpeakFile(fileName)
-        file.writeBytes(resources.openRawResource(R.raw.silent_sound).readBytes())
+    private suspend fun createSilentSound(fileName: String) {
+        writeReadAloudAudioAtomically(
+            getSpeakFileAsMd5(fileName),
+            resources.openRawResource(R.raw.silent_sound)
+        )
     }
 
     private fun hasSpeakFile(name: String): Boolean {
@@ -673,16 +658,8 @@ class HttpReadAloudService : BaseReadAloudService(),
         return File("${ttsFolderPath}$name.mp3")
     }
 
-    private fun createSpeakFile(name: String): File {
-        return FileUtils.createFileIfNotExist("${ttsFolderPath}$name.mp3")
-    }
-
-    private fun createSpeakFile(name: String, inputStream: InputStream) {
-        FileUtils.createFileIfNotExist("${ttsFolderPath}$name.mp3").outputStream().use { out ->
-            inputStream.use {
-                it.copyTo(out)
-            }
-        }
+    private suspend fun createSpeakFile(name: String, inputStream: InputStream) {
+        writeReadAloudAudioAtomically(getSpeakFileAsMd5(name), inputStream)
     }
 
     /**
