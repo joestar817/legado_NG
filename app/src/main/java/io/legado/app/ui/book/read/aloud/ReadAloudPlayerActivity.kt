@@ -971,7 +971,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
             when (it) {
                 Status.LOADING -> setPlayButtonLoading(true)
                 Status.PAUSE, Status.STOP -> setPlayButtonLoading(false)
-                Status.PLAY -> if (!playButtonLoading) refreshPlayState()
+                Status.PLAY -> setPlayButtonLoading(false)
             }
             refreshStaticState()
             if (it == Status.STOP && !switchingChapter && !switchingVoice && !switchingParagraph) {
