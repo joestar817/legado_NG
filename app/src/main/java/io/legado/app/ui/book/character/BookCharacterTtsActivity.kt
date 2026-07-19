@@ -344,7 +344,16 @@ class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBinding>()
                         ?: getString(R.string.character_tts_unbound)
                 }
             }
-            tvRole.isVisible = false
+            val roleLabel = when (item) {
+                is Row.DialogueFallback -> getString(R.string.character_tts_dialogue_fallback)
+                is Row.Character -> BookCharacterLabels.roleLabel(
+                    this@BookCharacterTtsActivity,
+                    item.character.roleTag
+                )
+                is Row.Narrator -> null
+            }
+            tvRole.text = roleLabel
+            tvRole.isVisible = !roleLabel.isNullOrBlank()
             tvStyle.isVisible = false
             tvAction.text = null
             tvAction.setCompoundDrawablesRelativeWithIntrinsicBounds(

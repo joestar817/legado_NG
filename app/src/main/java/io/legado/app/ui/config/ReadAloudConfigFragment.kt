@@ -150,7 +150,8 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
             avatarBackground = R.drawable.bg_character_avatar_unknown,
             title = getString(R.string.default_narrator_voice),
             summary = narratorSummary(),
-            enabled = true
+            enabled = true,
+            showFallbackTag = false
         )
         bindDefaultVoiceCard(
             card = binding.cardDialogueMale,
@@ -160,7 +161,8 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
             summary = engine?.let {
                 dialogueSummary(it, AppConfig.defaultDialogueMaleTtsVoiceId)
             } ?: getString(R.string.default_tts_voice_select_engine_first),
-            enabled = engine != null
+            enabled = engine != null,
+            showFallbackTag = true
         )
         bindDefaultVoiceCard(
             card = binding.cardDialogueFemale,
@@ -170,7 +172,8 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
             summary = engine?.let {
                 dialogueSummary(it, AppConfig.defaultDialogueFemaleTtsVoiceId)
             } ?: getString(R.string.default_tts_voice_select_engine_first),
-            enabled = engine != null
+            enabled = engine != null,
+            showFallbackTag = true
         )
     }
 
@@ -180,12 +183,18 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
         avatarBackground: Int,
         title: String,
         summary: String,
-        enabled: Boolean
+        enabled: Boolean,
+        showFallbackTag: Boolean
     ) = card.run {
         tvAvatar.text = avatar
         tvAvatar.setBackgroundResource(avatarBackground)
         tvName.text = title
-        tvRole.isVisible = false
+        tvRole.isVisible = showFallbackTag
+        tvRole.text = if (showFallbackTag) {
+            getString(R.string.character_tts_dialogue_fallback)
+        } else {
+            null
+        }
         tvVoice.text = summary
         tvStyle.isVisible = false
         tvAction.text = null

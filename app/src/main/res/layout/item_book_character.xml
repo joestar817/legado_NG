@@ -58,15 +58,15 @@
             <TextView
                 android:id="@+id/tv_role"
                 android:layout_width="wrap_content"
-                android:layout_height="20dp"
+                android:layout_height="24dp"
                 android:layout_marginStart="@dimen/ng_space_s"
-                android:background="@drawable/bg_character_tag"
+                android:background="@drawable/ng_bg_tts_voice_tag_blue"
                 android:gravity="center"
                 android:includeFontPadding="false"
-                android:minWidth="40dp"
-                android:paddingStart="7dp"
-                android:paddingEnd="7dp"
-                android:textColor="@color/tv_text_summary"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:textColor="@color/ng_tts_tag_blue"
                 android:textSize="12sp"
                 tools:text="女主" />
 
