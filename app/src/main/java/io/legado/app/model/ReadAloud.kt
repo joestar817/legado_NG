@@ -167,6 +167,14 @@ object ReadAloud {
         }
     }
 
+    fun refreshTtsRoute(context: Context) {
+        if (BaseReadAloudService.isRun) {
+            val intent = Intent(context, aloudClass)
+            intent.action = IntentAction.refreshTtsRoute
+            context.startForegroundServiceCompat(intent)
+        }
+    }
+
     fun setTimer(context: Context, minute: Int) {
         if (BaseReadAloudService.isRun) {
             val intent = Intent(context, aloudClass)

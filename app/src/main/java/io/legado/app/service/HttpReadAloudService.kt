@@ -688,14 +688,17 @@ class HttpReadAloudService : BaseReadAloudService(),
     }
 
     override fun resumeReadAloud() {
+        if (pageChanged || exoPlayer.mediaItemCount == 0 ||
+            exoPlayer.playbackState == Player.STATE_IDLE ||
+            exoPlayer.playbackState == Player.STATE_ENDED
+        ) {
+            play()
+            return
+        }
         super.resumeReadAloud()
         kotlin.runCatching {
-            if (pageChanged) {
-                play()
-            } else {
-                exoPlayer.play()
-                upPlayPos()
-            }
+            exoPlayer.play()
+            upPlayPos()
         }
     }
 
@@ -735,9 +738,17 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 更新朗读速度
      */
     override fun upSpeechRate(reset: Boolean) {
+        speechRate = AppConfig.speechRatePlay + 5
+        refreshTtsRoute()
+    }
+
+    override fun refreshTtsRoute() {
+        playIndexJob?.cancel()
         downloadTask?.cancel()
         exoPlayer.stop()
-        speechRate = AppConfig.speechRatePlay + 5
+        if (!pause) {
+            postEvent(EventBus.ALOUD_STATE, Status.LOADING)
+        }
         downloadAndPlayAudios()
     }
 
