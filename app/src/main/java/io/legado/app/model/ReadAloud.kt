@@ -9,6 +9,7 @@ import io.legado.app.constant.IntentAction
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.HttpTTS
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.tts.ReadAloudTtsRouter
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsEngineType
@@ -30,7 +31,12 @@ object ReadAloud {
     var httpTtsEngineV2: TtsEngineSetting? = null
 
     private fun getReadAloudClass(): Class<*> {
-        val engineV2 = TtsEngineStore.activeEngine()
+        val activeEngine = TtsEngineStore.activeEngine()
+        val engineV2 = if (AppConfig.readAloudMultiRole) {
+            ReadAloudTtsRouter.globalScriptNarratorEngine() ?: activeEngine
+        } else {
+            activeEngine
+        }
         if (engineV2.enabled) {
             when (engineV2.type) {
                 TtsEngineType.SYSTEM -> {

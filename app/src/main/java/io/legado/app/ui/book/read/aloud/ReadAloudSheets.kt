@@ -9,8 +9,6 @@ import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
-import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -33,13 +31,9 @@ import io.legado.app.databinding.DialogReadAloudModeSheetBinding
 import io.legado.app.databinding.DialogReadAloudMoreSheetBinding
 import io.legado.app.databinding.DialogReadAloudSpeedSheetBinding
 import io.legado.app.databinding.DialogReadAloudTimerSheetBinding
-import io.legado.app.databinding.ItemTtsVoiceBinding
 import io.legado.app.help.IntentHelp
 import io.legado.app.help.config.AppConfig
-import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
-import io.legado.app.help.tts.TtsEngineType
-import io.legado.app.help.tts.TtsVoice
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.view.ThemeSwitch
 import io.legado.app.model.ReadAloud
@@ -47,10 +41,8 @@ import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.config.ConfigActivity
 import io.legado.app.ui.config.ConfigTag
-import io.legado.app.ui.config.TtsVoiceCardBinder
-import io.legado.app.ui.config.TtsVoicePreviewController
-import io.legado.app.ui.config.TtsVoicePreviewState
-import io.legado.app.ui.config.TtsVoicePreviewStatus
+import io.legado.app.ui.config.TtsVoiceOption
+import io.legado.app.ui.config.TtsVoiceSelectionSheet
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.ui.widget.seekbar.SeekBarChangeListener
 import io.legado.app.utils.ColorUtils
@@ -82,7 +74,6 @@ abstract class ReadAloudBottomSheet(layoutId: Int) : BaseDialogFragment(layoutId
         }
     }
 }
-
 class ReadAloudTimerSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_timer_sheet) {
     private val binding by viewBinding(DialogReadAloudTimerSheetBinding::bind)
 
@@ -511,132 +502,36 @@ class ReadAloudCatalogSheet(
 class ReadAloudVoiceSheet(
     private val activity: ReadAloudPlayerActivity
 ) {
-    private lateinit var sheet: NgLongListBottomSheet
-    private lateinit var recyclerVoices: RecyclerView
-    private lateinit var textEmpty: TextView
-    private val previewController by lazy {
-        TtsVoicePreviewController(
-            context = activity,
-            lifecycleScope = activity.lifecycleScope,
-            beforePreview = {
-                activity.stopStoryboardPreview()
-                if (BaseReadAloudService.isPlay()) {
-                    ReadAloud.pause(activity)
-                }
-            },
-            onStatusChanged = adapter::updatePreviewStatus
-        )
-    }
-    private val adapter by lazy {
-        ReadAloudVoiceAdapter(
-            context = activity,
-            onSelect = ::selectVoice,
-            onPreview = ::previewVoice
-        )
-    }
+    private lateinit var voiceSheet: TtsVoiceSelectionSheet
 
     fun show() {
-        sheet = NgLongListBottomSheet(
-            context = activity,
-            searchHint = "搜索引擎或发音人"
-        )
-        recyclerVoices = RecyclerView(activity).apply {
-            layoutManager = LinearLayoutManager(activity)
-            adapter = this@ReadAloudVoiceSheet.adapter
-            clipToPadding = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            setPadding(0, 0, 0, 6.dpToPx())
-        }
-        textEmpty = TextView(activity).apply {
-            text = "没有可选发音人"
-            setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface_variant))
-            textSize = 15f
-            gravity = Gravity.CENTER
-            isVisible = false
-        }
-        val content = FrameLayout(activity).apply {
-            addView(
-                recyclerVoices,
-                FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            )
-            addView(
-                textEmpty,
-                FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            )
-        }
-        sheet.setContent(content, ::renderVoiceOptions)
-        sheet.dialog.setOnDismissListener {
-            releasePreview()
-        }
-        sheet.show()
-    }
-
-    private fun renderVoiceOptions(query: String) {
-        val items = buildVoiceItems(query)
-        adapter.submitItems(items)
-        val hasChoice = items.any { it is VoiceSheetItem.Choice }
-        recyclerVoices.isVisible = hasChoice
-        textEmpty.isVisible = !hasChoice
-    }
-
-    private fun buildVoiceItems(query: String): List<VoiceSheetItem> {
         val activeEngineId = runCatching { TtsEngineStore.activeEngineId() }.getOrDefault("")
         val activeEngine = runCatching { TtsEngineStore.engine(activeEngineId) }.getOrNull()
         val activeVoiceId = activeEngine?.activeVoiceId
-        val normalizedQuery = query.trim()
-        return buildList {
-            TtsEngineStore.engines()
-                .filter { it.enabled }
-                .forEach { engine ->
-                    val choices = voiceChoices(engine)
-                        .filter { choice ->
-                            normalizedQuery.isBlank() || choice.matches(normalizedQuery)
-                        }
-                    if (choices.isNotEmpty()) {
-                        add(VoiceSheetItem.Header(engine.name))
-                        choices.forEach { choice ->
-                            add(
-                                VoiceSheetItem.Choice(
-                                    option = choice,
-                                    selected = activeEngineId == engine.id &&
-                                            if (choice.systemDefault) {
-                                                activeVoiceId.isNullOrBlank()
-                                            } else {
-                                                activeVoiceId == choice.voice.id
-                                            }
-                                )
-                            )
-                        }
-                    }
+        voiceSheet = TtsVoiceSelectionSheet(
+            context = activity,
+            lifecycleScope = activity.lifecycleScope,
+            searchHint = "搜索引擎或发音人",
+            emptyText = "没有可选发音人",
+            engines = { TtsEngineStore.engines().filter { it.enabled } },
+            isSelected = { option ->
+                activeEngineId == option.engine.id && if (option.systemDefault) {
+                    activeVoiceId.isNullOrBlank()
+                } else {
+                    activeVoiceId == option.voice.id
                 }
-        }
+            },
+            onSelect = ::selectVoice,
+            beforePreview = {
+                activity.stopStoryboardPreview()
+                if (BaseReadAloudService.isPlay()) ReadAloud.pause(activity)
+            },
+            dismissOnSelect = false
+        )
+        voiceSheet.show()
     }
 
-    private fun voiceChoices(engine: TtsEngineSetting): List<VoiceOption> {
-        if (engine.type == TtsEngineType.SYSTEM) {
-            return listOf(
-                VoiceOption(
-                    engine = engine,
-                    voice = TtsVoice(
-                        id = TtsEngineStore.SYSTEM_DEFAULT_ID,
-                        name = "默认发音人"
-                    ),
-                    systemDefault = true
-                )
-            )
-        }
-        return engine.enabledVoices().map { voice ->
-            VoiceOption(engine = engine, voice = voice, systemDefault = false)
-        }
-    }
-
-    private fun selectVoice(option: VoiceOption) {
+    private fun selectVoice(option: TtsVoiceOption) {
         val wasRun = BaseReadAloudService.isRun
         val oldEngineType = runCatching { TtsEngineStore.activeEngine().type }.getOrNull()
         val pageIndex = ReadBook.durPageIndex
@@ -653,17 +548,9 @@ class ReadAloudVoiceSheet(
                 if (wasRun) {
                     ReadAloud.play(activity, play = true, pageIndex = pageIndex, startPos = startPos)
                 }
-                sheet.dismiss()
+                voiceSheet.dismiss()
             }
         }
-    }
-
-    private fun previewVoice(option: VoiceOption) {
-        previewController.preview(option.engine, option.voice, option.systemDefault)
-    }
-
-    private fun releasePreview() {
-        previewController.release()
     }
 }
 
@@ -760,172 +647,5 @@ private class ReadAloudCatalogAdapter(
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
-    }
-}
-
-private sealed class VoiceSheetItem {
-    data class Header(val title: String) : VoiceSheetItem()
-    data class Choice(val option: VoiceOption, val selected: Boolean) : VoiceSheetItem()
-}
-
-private data class VoiceOption(
-    val engine: TtsEngineSetting,
-    val voice: TtsVoice,
-    val systemDefault: Boolean
-) {
-    fun matches(query: String): Boolean {
-        return listOf(
-            engine.name,
-            voice.name,
-            voice.id,
-            voice.language.orEmpty(),
-            voice.gender.orEmpty(),
-            voice.style.orEmpty(),
-            voice.tags.joinToString(" ")
-        ).any { it.contains(query, ignoreCase = true) }
-    }
-}
-
-private class ReadAloudVoiceAdapter(
-    private val context: Context,
-    private val onSelect: (VoiceOption) -> Unit,
-    private val onPreview: (VoiceOption) -> Unit
-) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-
-    private val items = mutableListOf<VoiceSheetItem>()
-    private var previewStatus = TtsVoicePreviewStatus(
-        key = null,
-        state = TtsVoicePreviewState.IDLE
-    )
-
-    fun updatePreviewStatus(status: TtsVoicePreviewStatus) {
-        val affectedKeys = listOfNotNull(previewStatus.key, status.key).distinct()
-        previewStatus = status
-        affectedKeys.forEach { key ->
-            val position = items.indexOfFirst { item ->
-                (item as? VoiceSheetItem.Choice)?.option?.previewKey() == key
-            }
-            if (position >= 0) notifyItemChanged(position)
-        }
-    }
-
-    fun submitItems(newItems: List<VoiceSheetItem>) {
-        items.clear()
-        items.addAll(newItems)
-        notifyDataSetChanged()
-    }
-
-    override fun getItemViewType(position: Int): Int {
-        return when (items[position]) {
-            is VoiceSheetItem.Header -> VIEW_TYPE_HEADER
-            is VoiceSheetItem.Choice -> VIEW_TYPE_CHOICE
-        }
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-        return if (viewType == VIEW_TYPE_HEADER) {
-            HeaderHolder(TextView(parent.context))
-        } else {
-            ChoiceHolder(
-                ItemTtsVoiceBinding.inflate(
-                    LayoutInflater.from(parent.context),
-                    parent,
-                    false
-                )
-            )
-        }
-    }
-
-    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-        when (val item = items[position]) {
-            is VoiceSheetItem.Header -> (holder as HeaderHolder).bind(item)
-            is VoiceSheetItem.Choice -> (holder as ChoiceHolder).bind(item)
-        }
-    }
-
-    override fun getItemCount(): Int = items.size
-
-    private inner class HeaderHolder(
-        private val textView: TextView
-    ) : RecyclerView.ViewHolder(textView) {
-        fun bind(item: VoiceSheetItem.Header) {
-            textView.text = item.title
-            textView.setTextColor(context.accentColor)
-            textView.typeface = Typeface.DEFAULT_BOLD
-            textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            textView.includeFontPadding = false
-            textView.setPadding(4.dpToPx(), 12.dpToPx(), 4.dpToPx(), 8.dpToPx())
-            textView.layoutParams = RecyclerView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-    }
-
-    private inner class ChoiceHolder(
-        private val binding: ItemTtsVoiceBinding
-    ) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(item: VoiceSheetItem.Choice) = binding.run {
-            val option = item.option
-            TtsVoiceCardBinder.bind(
-                context = context,
-                binding = this,
-                item = option.voice,
-                engine = option.engine,
-                isSystemEngine = option.systemDefault,
-                showControls = false
-            )
-            switchEnabled.isVisible = false
-            layoutPreviewButton.isVisible = true
-            TtsVoiceCardBinder.bindPreviewState(
-                context = context,
-                binding = this,
-                state = previewStatus.takeIf { it.key == option.previewKey() }
-                    ?.state
-                    ?: TtsVoicePreviewState.IDLE
-            )
-            val contentArea = root.getChildAt(0)
-            root.alpha = 1f
-            root.isClickable = false
-            root.isFocusable = false
-            root.setOnClickListener(null)
-            contentArea.isClickable = true
-            contentArea.isFocusable = true
-            contentArea.setOnClickListener { onSelect(option) }
-            listOf(scrollHeader, scrollTags).forEach { scrollView ->
-                scrollView.setOnTouchListener { _, event ->
-                    if (event.action == MotionEvent.ACTION_UP) {
-                        contentArea.performClick()
-                    }
-                    true
-                }
-            }
-            layoutPreviewButton.setOnClickListener {
-                imagePreview.animate().cancel()
-                imagePreview.scaleX = 0.9f
-                imagePreview.scaleY = 0.9f
-                imagePreview.animate()
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setDuration(160L)
-                    .start()
-                onPreview(option)
-            }
-            root.layoutParams = RecyclerView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = 10.dpToPx()
-            }
-        }
-    }
-
-    private fun VoiceOption.previewKey(): String {
-        return TtsVoicePreviewController.keyOf(engine, voice, systemDefault)
-    }
-
-    companion object {
-        private const val VIEW_TYPE_HEADER = 0
-        private const val VIEW_TYPE_CHOICE = 1
     }
 }

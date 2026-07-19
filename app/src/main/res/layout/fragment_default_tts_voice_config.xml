@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/ng_page_padding"
+    android:paddingTop="@dimen/ng_space_l"
+    android:paddingEnd="@dimen/ng_page_padding">
+
+    <include
+        android:id="@+id/card_narrator"
+        layout="@layout/item_book_character_tts" />
+
+    <include
+        android:id="@+id/card_dialogue_male"
+        layout="@layout/item_book_character_tts" />
+
+    <include
+        android:id="@+id/card_dialogue_female"
+        layout="@layout/item_book_character_tts" />
+
+</LinearLayout>

@@ -1,6 +1,7 @@
 package io.legado.app.ui.widget.dialog
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -8,6 +9,7 @@ import android.graphics.drawable.LayerDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -15,12 +17,14 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
+import androidx.core.widget.TextViewCompat
 import androidx.core.widget.NestedScrollView
 import androidx.core.widget.doOnTextChanged
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
 import io.legado.app.help.config.ThemeConfig
+import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.windowSize
@@ -32,35 +36,70 @@ class NgLongListBottomSheet(
     title: CharSequence? = null,
     private val showSearch: Boolean = true,
     private val showCloseButton: Boolean = false,
-    private val heightRatio: Float = 0.88f
+    private val heightRatio: Float = 0.88f,
+    private val compact: Boolean = false
 ) {
 
     val dialog = BottomSheetDialog(context)
     val root = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(24.dpToPx(), 14.dpToPx(), 24.dpToPx(), 18.dpToPx())
+        val horizontalPadding = if (compact) 12.dpToPx() else 24.dpToPx()
+        setPadding(
+            horizontalPadding,
+            if (compact) 10.dpToPx() else 14.dpToPx(),
+            horizontalPadding,
+            if (compact) 14.dpToPx() else 18.dpToPx()
+        )
         background = createSheetBackground()
     }
     private val titleAction = TextView(context).apply {
         gravity = Gravity.CENTER
         setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
-        textSize = 15f
+        textSize = if (compact) 14f else 15f
         isVisible = false
         setPadding(10.dpToPx(), 0, 10.dpToPx(), 0)
     }
     val searchEdit = EditText(context).apply {
-        background = GradientDrawable().apply {
-            cornerRadius = 28.dpToPx().toFloat()
-            setColor(ContextCompat.getColor(context, R.color.ng_neutral_container))
+        background = if (compact) {
+            ContextCompat.getDrawable(context, R.drawable.ng_bg_search_pill)
+        } else {
+            GradientDrawable().apply {
+                cornerRadius = 28.dpToPx().toFloat()
+                setColor(ContextCompat.getColor(context, R.color.ng_neutral_container))
+            }
         }
         hint = searchHint
         setSingleLine(true)
         setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
         setHintTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
-        textSize = 16f
+        textSize = if (compact) 14f else 16f
         compoundDrawablePadding = 10.dpToPx()
-        setPadding(18.dpToPx(), 0, 18.dpToPx(), 0)
+        val horizontalPadding = (if (compact) 14 else 18).dpToPx()
+        setPadding(horizontalPadding, 0, horizontalPadding, 0)
+        if (compact) {
+            setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_search, 0, 0, 0)
+            TextViewCompat.setCompoundDrawableTintList(
+                this,
+                ColorStateList.valueOf(
+                    ContextCompat.getColor(context, R.color.ng_on_surface_variant)
+                )
+            )
+            isVisible = false
+        }
     }
+    private val compactSearchAction = ImageButton(context).apply {
+        setImageResource(R.drawable.ic_search)
+        background = null
+        contentDescription = context.getString(R.string.search)
+        setColorFilter(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
+        setPadding(10.dpToPx(), 10.dpToPx(), 10.dpToPx(), 10.dpToPx())
+        setOnClickListener { toggleCompactSearch() }
+    }
+    private val compactEndActions = LinearLayout(context).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        orientation = LinearLayout.HORIZONTAL
+    }
+    private var compactTitleView: TextView? = null
     val contentFrame = FrameLayout(context)
 
     private fun createSheetBackground() = runCatching {
@@ -80,9 +119,13 @@ class NgLongListBottomSheet(
                 createTitleBar(title),
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    54.dpToPx()
+                    (if (compact) 44 else 54).dpToPx()
                 ).apply {
-                    bottomMargin = if (showSearch) 8.dpToPx() else 12.dpToPx()
+                    bottomMargin = when {
+                        compact -> 8.dpToPx()
+                        showSearch -> 8.dpToPx()
+                        else -> 12.dpToPx()
+                    }
                 }
             )
         }
@@ -91,9 +134,9 @@ class NgLongListBottomSheet(
                 searchEdit,
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    52.dpToPx()
+                    (if (compact) 42 else 52).dpToPx()
                 ).apply {
-                    bottomMargin = 16.dpToPx()
+                    bottomMargin = (if (compact) 12 else 16).dpToPx()
                 }
             )
         }
@@ -143,26 +186,88 @@ class NgLongListBottomSheet(
             addView(
                 TextView(context).apply {
                     text = title
-                    gravity = Gravity.CENTER
+                    gravity = if (compact) {
+                        Gravity.START or Gravity.CENTER_VERTICAL
+                    } else {
+                        Gravity.CENTER
+                    }
                     setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
-                    textSize = 20f
+                    textSize = if (compact) 17f else 20f
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
                     includeFontPadding = false
+                    if (compact) {
+                        compactTitleView = this
+                        setPadding(
+                            if (showCloseButton) 48.dpToPx() else 4.dpToPx(),
+                            0,
+                            if (showSearch) 120.dpToPx() else 72.dpToPx(),
+                            0
+                        )
+                    }
                 },
                 FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    if (compact) {
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    } else {
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    },
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    Gravity.CENTER
+                    if (compact) Gravity.START else Gravity.CENTER
                 )
             )
-            addView(
-                titleAction,
-                FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    Gravity.END or Gravity.CENTER_VERTICAL
+            if (compact) {
+                compactEndActions.removeAllViews()
+                if (showSearch) {
+                    compactEndActions.addView(
+                        compactSearchAction,
+                        LinearLayout.LayoutParams(40.dpToPx(), 40.dpToPx())
+                    )
+                }
+                compactEndActions.addView(
+                    titleAction,
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
                 )
-            )
+                addView(
+                    compactEndActions,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        Gravity.END or Gravity.CENTER_VERTICAL
+                    )
+                )
+            } else {
+                addView(
+                    titleAction,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        Gravity.END or Gravity.CENTER_VERTICAL
+                    )
+                )
+            }
+        }
+    }
+
+    private fun toggleCompactSearch() {
+        val show = !searchEdit.isVisible
+        searchEdit.isVisible = show
+        compactSearchAction.setImageResource(
+            if (show) R.drawable.ic_baseline_close else R.drawable.ic_search
+        )
+        compactSearchAction.contentDescription = context.getString(
+            if (show) R.string.close else R.string.search
+        )
+        val inputMethodManager = context.getSystemService(InputMethodManager::class.java)
+        if (show) {
+            searchEdit.requestFocus()
+            searchEdit.post { inputMethodManager?.showSoftInput(searchEdit, InputMethodManager.SHOW_IMPLICIT) }
+        } else {
+            searchEdit.setText("")
+            searchEdit.clearFocus()
+            inputMethodManager?.hideSoftInputFromWindow(searchEdit.windowToken, 0)
         }
     }
 
@@ -213,8 +318,52 @@ class NgLongListBottomSheet(
         )
     }
 
+    fun setTopContent(content: View) {
+        val contentIndex = root.indexOfChild(contentFrame).coerceAtLeast(0)
+        root.addView(
+            content,
+            contentIndex,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 10.dpToPx()
+            }
+        )
+    }
+
+    fun addCompactTitleIcon(
+        iconRes: Int,
+        contentDescription: CharSequence,
+        onClick: (ImageButton) -> Unit
+    ): ImageButton {
+        check(compact) { "Title icons require compact mode" }
+        val button = ImageButton(context).apply {
+            setImageResource(iconRes)
+            background = null
+            this.contentDescription = contentDescription
+            setColorFilter(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
+            setPadding(9.dpToPx(), 9.dpToPx(), 9.dpToPx(), 9.dpToPx())
+            setOnClickListener { onClick(this) }
+        }
+        val searchIndex = compactEndActions.indexOfChild(compactSearchAction)
+        compactEndActions.addView(
+            button,
+            searchIndex.takeIf { it >= 0 } ?: 0,
+            LinearLayout.LayoutParams(40.dpToPx(), 40.dpToPx())
+        )
+        compactTitleView?.setPadding(
+            if (showCloseButton) 48.dpToPx() else 4.dpToPx(),
+            0,
+            (if (showSearch) 160 else 120).dpToPx(),
+            0
+        )
+        return button
+    }
+
     fun setTitleAction(text: CharSequence, action: () -> Unit) {
         titleAction.text = text
+        if (compact) titleAction.setTextColor(context.accentColor)
         titleAction.isVisible = true
         titleAction.setOnClickListener { action() }
     }

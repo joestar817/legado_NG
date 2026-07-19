@@ -4,6 +4,13 @@
     android:gravity="center_vertical"
     android:orientation="horizontal">
 
+    <View
+        android:id="@+id/view_selection_indicator"
+        android:layout_width="6dp"
+        android:layout_height="match_parent"
+        android:background="@drawable/ng_bg_tts_engine_selected_indicator"
+        android:visibility="gone" />
+
     <FrameLayout
         android:id="@+id/layout_select_engine"
         android:layout_width="58dp"

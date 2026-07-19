@@ -4,7 +4,15 @@
     android:gravity="center_vertical"
     android:orientation="horizontal">
 
+    <View
+        android:id="@+id/view_selection_indicator"
+        android:layout_width="6dp"
+        android:layout_height="match_parent"
+        android:background="@drawable/ng_bg_tts_engine_selected_indicator"
+        android:visibility="gone" />
+
     <LinearLayout
+        android:id="@+id/layout_voice_content"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="18dp"

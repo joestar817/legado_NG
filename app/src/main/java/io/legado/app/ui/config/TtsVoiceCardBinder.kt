@@ -24,8 +24,12 @@ object TtsVoiceCardBinder {
         item: TtsVoice,
         engine: TtsEngineSetting?,
         isSystemEngine: Boolean,
-        showControls: Boolean
+        showControls: Boolean,
+        selected: Boolean = false
     ) {
+        binding.viewSelectionIndicator.isVisible = selected
+        binding.viewSelectionIndicator.backgroundTintList =
+            ColorStateList.valueOf(context.accentColor)
         binding.textName.text = item.name
         bindVoiceHeaderTags(context, binding, item, isSystemEngine)
         bindVoiceTags(context, binding, item, engine, isSystemEngine)
@@ -64,7 +68,7 @@ object TtsVoiceCardBinder {
         bindGenderIcon(context, binding, item.takeUnless { isSystemEngine }?.gender)
         val languageLabels = item.takeUnless { isSystemEngine }
             ?.language
-            ?.let { voiceLanguageLabels(it) }
+            ?.let { TtsVoiceFilterSupport.languageLabels(it) }
             .orEmpty()
         binding.layoutLanguageTags.removeAllViews()
         binding.layoutLanguageTags.isVisible = languageLabels.isNotEmpty()
@@ -142,45 +146,6 @@ object TtsVoiceCardBinder {
             2 -> VoiceTag(text, R.drawable.ng_bg_tts_voice_tag_orange, R.color.ng_tts_tag_orange)
             3 -> VoiceTag(text, R.drawable.ng_bg_tts_voice_tag_green, R.color.ng_tts_tag_green)
             else -> VoiceTag(text, R.drawable.ng_bg_tts_voice_tag_pink, R.color.ng_tts_tag_pink)
-        }
-    }
-
-    private fun voiceLanguageLabels(language: String?): List<String> {
-        val raw = language?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
-        val values = raw
-            .replace('，', ',')
-            .replace('、', ',')
-            .replace(';', ',')
-            .replace('；', ',')
-            .replace('/', ',')
-            .replace('|', ',')
-            .replace('+', ',')
-            .split(',', ' ', '\n', '\t')
-            .mapNotNull { voiceLanguageLabel(it) }
-            .distinct()
-        return values.ifEmpty {
-            voiceLanguageLabel(raw)?.let { listOf(it) }.orEmpty()
-        }
-    }
-
-    private fun voiceLanguageLabel(language: String?): String? {
-        val code = language?.takeIf { it.isNotBlank() }
-            ?.substringBefore("-")
-            ?.substringBefore("_")
-            ?.lowercase()
-            ?: return null
-        return when (code) {
-            "zh", "cmn" -> "中"
-            "yue" -> "粤"
-            "wuu" -> "吴"
-            "en" -> "英"
-            "ja", "jp", "jpn" -> "日"
-            "ko", "kr", "kor" -> "韩"
-            "fr", "fra", "fre" -> "法"
-            "de", "deu", "ger" -> "德"
-            "es", "esp", "spa" -> "西"
-            "pt", "por" -> "葡"
-            else -> code.uppercase()
         }
     }
 

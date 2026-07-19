@@ -477,6 +477,36 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             appCtx.putPrefString(PreferKey.ttsEngine, value)
         }
 
+    var multiRoleTtsEngineId: String?
+        get() = appCtx.getPrefString(PreferKey.multiRoleTtsEngineId)
+        set(value) {
+            appCtx.putPrefString(PreferKey.multiRoleTtsEngineId, value)
+        }
+
+    var defaultNarratorTtsEngineId: String?
+        get() = appCtx.getPrefString(PreferKey.defaultNarratorTtsEngineId)
+        set(value) {
+            appCtx.putPrefString(PreferKey.defaultNarratorTtsEngineId, value)
+        }
+
+    var defaultNarratorTtsVoiceId: String?
+        get() = appCtx.getPrefString(PreferKey.defaultNarratorTtsVoiceId)
+        set(value) {
+            appCtx.putPrefString(PreferKey.defaultNarratorTtsVoiceId, value)
+        }
+
+    var defaultDialogueMaleTtsVoiceId: String?
+        get() = appCtx.getPrefString(PreferKey.defaultDialogueMaleTtsVoiceId)
+        set(value) {
+            appCtx.putPrefString(PreferKey.defaultDialogueMaleTtsVoiceId, value)
+        }
+
+    var defaultDialogueFemaleTtsVoiceId: String?
+        get() = appCtx.getPrefString(PreferKey.defaultDialogueFemaleTtsVoiceId)
+        set(value) {
+            appCtx.putPrefString(PreferKey.defaultDialogueFemaleTtsVoiceId, value)
+        }
+
     var webPort: Int
         get() = appCtx.getPrefInt(PreferKey.webPort, 1122)
         set(value) {

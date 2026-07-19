@@ -900,67 +900,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     private fun availableVoiceLanguageLabels(): List<String> {
-        return sortVoiceFilterLabels(
-            allVoices
-                .flatMap { voiceLanguageLabels(it.language) }
-                .distinct()
-        )
-    }
-
-    private fun sortVoiceFilterLabels(labels: List<String>): List<String> {
-        val preferredOrder = listOf("中", "英", "日", "韩", "法", "德", "西", "葡", "粤", "吴")
-        return labels.sortedWith(
-            compareBy<String> {
-                preferredOrder.indexOf(it).takeIf { index -> index >= 0 } ?: Int.MAX_VALUE
-            }.thenBy { it }
-        )
-    }
-
-    private fun voiceLanguageLabels(language: String?): List<String> {
-        val raw = language?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
-        val values = raw
-            .replace('，', ',')
-            .replace('、', ',')
-            .replace(';', ',')
-            .replace('；', ',')
-            .replace('/', ',')
-            .replace('|', ',')
-            .replace('+', ',')
-            .split(',', ' ', '\n', '\t')
-            .mapNotNull { voiceLanguageLabel(it) }
-            .distinct()
-        return values.ifEmpty {
-            voiceLanguageLabel(raw)?.let { listOf(it) }.orEmpty()
-        }
-    }
-
-    private fun voiceLanguageLabel(language: String?): String? {
-        val code = language?.takeIf { it.isNotBlank() }
-            ?.substringBefore("-")
-            ?.substringBefore("_")
-            ?.lowercase()
-            ?: return null
-        return when (code) {
-            "zh", "cmn" -> "中"
-            "yue" -> "粤"
-            "wuu" -> "吴"
-            "en" -> "英"
-            "ja", "jp", "jpn" -> "日"
-            "ko", "kr", "kor" -> "韩"
-            "fr", "fra", "fre" -> "法"
-            "de", "deu", "ger" -> "德"
-            "es", "esp", "spa" -> "西"
-            "pt", "por" -> "葡"
-            else -> code.uppercase()
-        }
-    }
-
-    private fun voiceGenderLabel(gender: String?): String? {
-        return when (gender?.takeIf { it.isNotBlank() }?.lowercase()) {
-            "male", "man" -> "男"
-            "female", "woman" -> "女"
-            else -> null
-        }
+        return TtsVoiceFilterSupport.availableLanguageLabels(allVoices)
     }
 
     private fun setupVoiceSearch() {
@@ -1034,14 +974,16 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         if (selectedVoiceLanguageFilters.isEmpty()) {
             return true
         }
-        return voiceLanguageLabels(voice.language).any { it in selectedVoiceLanguageFilters }
+        return TtsVoiceFilterSupport.languageLabels(voice.language)
+            .any { it in selectedVoiceLanguageFilters }
     }
 
     private fun matchesVoiceGenderFilter(voice: TtsVoice): Boolean {
         if (selectedVoiceGenderFilters.isEmpty()) {
             return true
         }
-        return voiceGenderLabel(voice.gender)?.let { it in selectedVoiceGenderFilters } == true
+        return TtsVoiceFilterSupport.genderLabel(voice.gender)
+            ?.let { it in selectedVoiceGenderFilters } == true
     }
 
     private fun updateVoiceHeader() {
@@ -1569,29 +1511,11 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             item: TtsEngineSetting,
             payloads: MutableList<Any>
         ) {
-            binding.textName.text = item.name
-            binding.imageIcon.imageTintList = ColorStateList.valueOf(accentColor)
-            binding.textEnabled.setBackgroundResource(
-                if (item.enabled) R.drawable.ng_bg_tag_success else R.drawable.ng_bg_tag_warning
+            TtsEngineCardBinder.bind(
+                context = requireContext(),
+                binding = binding,
+                engine = item
             )
-            binding.textEnabled.setTextColor(
-                ContextCompat.getColor(
-                    requireContext(),
-                    if (item.enabled) R.color.ng_success else R.color.ng_warning
-                )
-            )
-            binding.textEnabled.text =
-                if (item.enabled) getString(R.string.enabled) else getString(R.string.disabled)
-            binding.textType.text = when (item.type) {
-                TtsEngineType.SYSTEM -> "系统"
-                TtsEngineType.SCRIPT -> "脚本"
-            }
-            binding.textVoiceCount.text = when {
-                item.type == TtsEngineType.SYSTEM -> "默认发音人"
-                item.effectiveVoices().isEmpty() -> "未获取"
-                else -> "${item.effectiveVoices().size} 个发音人"
-            }
-            binding.imageDragHandle.alpha = 1f
         }
 
         @SuppressLint("ClickableViewAccessibility")
@@ -1730,7 +1654,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             bindGenderIcon(binding, item.takeUnless { isSystemEngine }?.gender)
             val languageLabels = item.takeUnless { isSystemEngine }
                 ?.language
-                ?.let { voiceLanguageLabels(it) }
+                ?.let { TtsVoiceFilterSupport.languageLabels(it) }
                 .orEmpty()
             binding.layoutLanguageTags.removeAllViews()
             binding.layoutLanguageTags.isVisible = languageLabels.isNotEmpty()

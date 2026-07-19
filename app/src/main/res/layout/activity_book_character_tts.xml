@@ -17,18 +17,6 @@
             android:layout_height="wrap_content"
             app:title="@string/character_tts_bindings" />
 
-        <TextView
-            android:id="@+id/tv_summary"
-            style="@style/Ng.Summary"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="@dimen/ng_page_padding"
-            android:paddingTop="@dimen/ng_space_s"
-            android:paddingEnd="@dimen/ng_page_padding"
-            android:paddingBottom="@dimen/ng_space_s"
-            android:textSize="14sp"
-            tools:text="旁白 1 个 · 角色 7 个" />
-
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recycler_view"
             android:layout_width="match_parent"
@@ -36,23 +24,11 @@
             android:layout_weight="1"
             android:clipToPadding="false"
             android:paddingStart="@dimen/ng_page_padding"
-            android:paddingTop="@dimen/ng_space_xs"
+            android:paddingTop="@dimen/ng_space_l"
             android:paddingEnd="@dimen/ng_page_padding"
             android:paddingBottom="@dimen/ng_space_l"
             tools:listitem="@layout/item_book_character_tts" />
 
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/tv_empty"
-        style="@style/Ng.Summary"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:gravity="center"
-        android:padding="@dimen/ng_page_padding"
-        android:text="@string/character_tts_empty"
-        android:textSize="15sp"
-        android:visibility="gone" />
 
 </FrameLayout>
