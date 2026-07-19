@@ -13,6 +13,7 @@ import io.legado.app.R
 import io.legado.app.databinding.ItemTtsVoiceBinding
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsVoice
+import io.legado.app.lib.theme.accentColor
 import io.legado.app.utils.dpToPx
 
 object TtsVoiceCardBinder {
@@ -29,7 +30,29 @@ object TtsVoiceCardBinder {
         bindVoiceHeaderTags(context, binding, item, isSystemEngine)
         bindVoiceTags(context, binding, item, engine, isSystemEngine)
         binding.switchEnabled.isVisible = showControls
-        binding.imagePreview.isVisible = showControls
+        binding.layoutPreviewButton.isVisible = showControls
+        bindPreviewState(context, binding, TtsVoicePreviewState.IDLE)
+    }
+
+    fun bindPreviewState(
+        context: Context,
+        binding: ItemTtsVoiceBinding,
+        state: TtsVoicePreviewState
+    ) {
+        binding.imagePreview.animate().cancel()
+        binding.imagePreview.scaleX = 1f
+        binding.imagePreview.scaleY = 1f
+        binding.imagePreview.alpha = when (state) {
+            TtsVoicePreviewState.LOADING -> 0.55f
+            else -> 1f
+        }
+        binding.imagePreview.imageTintList = ColorStateList.valueOf(
+            when (state) {
+                TtsVoicePreviewState.PLAYING -> context.accentColor
+                else -> ContextCompat.getColor(context, R.color.ng_on_surface)
+            }
+        )
+        binding.previewIndicator.setPreviewState(state, context.accentColor)
     }
 
     private fun bindVoiceHeaderTags(

@@ -1,6 +1,5 @@
 package io.legado.app.ui.book.character
 
-import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.os.Bundle
 import android.util.TypedValue
@@ -39,6 +38,8 @@ import io.legado.app.model.ReadAloud
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.config.TtsVoiceCardBinder
 import io.legado.app.ui.config.TtsVoicePreviewController
+import io.legado.app.ui.config.TtsVoicePreviewState
+import io.legado.app.ui.config.TtsVoicePreviewStatus
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.utils.GSON
 import io.legado.app.utils.dpToPx
@@ -385,7 +386,8 @@ private class CharacterTtsVoiceSheet(
                 if (BaseReadAloudService.isPlay()) {
                     ReadAloud.pause(activity)
                 }
-            }
+            },
+            onStatusChanged = adapter::updatePreviewStatus
         )
     }
     private val adapter by lazy {
@@ -526,6 +528,21 @@ private class CharacterTtsVoiceAdapter(
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val items = mutableListOf<VoiceSheetItem>()
+    private var previewStatus = TtsVoicePreviewStatus(
+        key = null,
+        state = TtsVoicePreviewState.IDLE
+    )
+
+    fun updatePreviewStatus(status: TtsVoicePreviewStatus) {
+        val affectedKeys = listOfNotNull(previewStatus.key, status.key).distinct()
+        previewStatus = status
+        affectedKeys.forEach { key ->
+            val position = items.indexOfFirst { item ->
+                (item as? VoiceSheetItem.Choice)?.option?.previewKey() == key
+            }
+            if (position >= 0) notifyItemChanged(position)
+        }
+    }
 
     fun submitItems(newItems: List<VoiceSheetItem>) {
         items.clear()
@@ -594,9 +611,13 @@ private class CharacterTtsVoiceAdapter(
                 showControls = false
             )
             switchEnabled.isVisible = false
-            imagePreview.isVisible = true
-            imagePreview.imageTintList = ColorStateList.valueOf(
-                ContextCompat.getColor(context, R.color.ng_on_surface)
+            layoutPreviewButton.isVisible = true
+            TtsVoiceCardBinder.bindPreviewState(
+                context = context,
+                binding = this,
+                state = previewStatus.takeIf { it.key == option.previewKey() }
+                    ?.state
+                    ?: TtsVoicePreviewState.IDLE
             )
             val contentArea = root.getChildAt(0)
             root.alpha = if (isSelected(option)) 0.72f else 1f
@@ -614,11 +635,11 @@ private class CharacterTtsVoiceAdapter(
                     true
                 }
             }
-            imagePreview.setOnClickListener {
-                it.animate().cancel()
-                it.scaleX = 0.9f
-                it.scaleY = 0.9f
-                it.animate()
+            layoutPreviewButton.setOnClickListener {
+                imagePreview.animate().cancel()
+                imagePreview.scaleX = 0.9f
+                imagePreview.scaleY = 0.9f
+                imagePreview.animate()
                     .scaleX(1f)
                     .scaleY(1f)
                     .setDuration(160L)
@@ -642,6 +663,10 @@ private class CharacterTtsVoiceAdapter(
                         binding.voiceId == option.voice.id
                     }
         }
+    }
+
+    private fun VoiceOption.previewKey(): String {
+        return TtsVoicePreviewController.keyOf(engine, voice, systemDefault)
     }
 
     companion object {

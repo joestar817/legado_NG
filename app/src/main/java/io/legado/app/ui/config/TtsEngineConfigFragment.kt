@@ -10,7 +10,6 @@ import android.view.Gravity
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
-import android.speech.tts.TextToSpeech
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -35,8 +34,6 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -63,7 +60,6 @@ import io.legado.app.help.tts.TtsScriptOption
 import io.legado.app.help.tts.TtsScriptOptionValue
 import io.legado.app.help.tts.TtsVoice
 import io.legado.app.help.tts.TtsVoiceStyle
-import io.legado.app.help.tts.previewText
 import io.legado.app.help.tts.styleOptions
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.dialogs.selector
@@ -88,7 +84,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config),
     ConfigBackHandler {
@@ -111,9 +106,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     private var sourceMode = false
     private var allVoices: List<TtsVoice> = emptyList()
     private var voiceSearchQuery: String = ""
-    private var previewPlayer: ExoPlayer? = null
-    private var systemPreviewTts: TextToSpeech? = null
-    private var systemPreviewToken = 0
+    private var voicePreviewController: TtsVoicePreviewController? = null
     private var voiceParamPopup: PopupWindow? = null
     private var voiceParamPopupBinding: LayoutTtsVoiceParamsPopupBinding? = null
     private var engineMenuButton: ImageButton? = null
@@ -173,6 +166,11 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         binding.refreshVoices.setColorSchemeColors(accentColor)
         binding.refreshVoices.setOnRefreshListener { fetchVoices() }
         setupVoiceSearch()
+        voicePreviewController = TtsVoicePreviewController(
+            context = requireContext(),
+            lifecycleScope = viewLifecycleOwner.lifecycleScope,
+            onStatusChanged = voiceAdapter::updatePreviewStatus
+        )
 
         refreshEngines()
     }
@@ -184,14 +182,8 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         voiceParamPopup?.dismiss()
         voiceParamPopup = null
         voiceParamPopupBinding = null
-        previewPlayer?.release()
-        previewPlayer = null
-        systemPreviewToken++
-        systemPreviewTts?.runCatching {
-            stop()
-            shutdown()
-        }
-        systemPreviewTts = null
+        voicePreviewController?.release()
+        voicePreviewController = null
         super.onDestroyView()
     }
 
@@ -1156,7 +1148,11 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     private fun previewCurrentVoice(voice: TtsVoice? = null) {
         val currentEngine = currentDisplayedEngine() ?: return
         if (currentEngine.type == TtsEngineType.SYSTEM) {
-            previewSystemVoice(currentEngine)
+            voicePreviewController?.preview(
+                engine = currentEngine,
+                voice = systemDefaultVoice(currentEngine),
+                systemDefault = true
+            )
             return
         }
         val engine = saveCurrentEngine(
@@ -1213,36 +1209,16 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         voice: TtsVoice?,
         styleId: String?
     ) {
-        val context = context ?: return
-        lifecycleScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val response = TtsScriptEngineClient.getSynthesisResponse(
-                        engine = engine,
-                        text = TtsScriptEngineClient.sampleText(engine, voice),
-                        voiceId = voice?.id,
-                        styleId = styleId
-                    )
-                    File(context.cacheDir, "tts_preview_${engine.id}.audio").apply {
-                        outputStream().use { out ->
-                            response.body.byteStream().use { input ->
-                                input.copyTo(out)
-                            }
-                        }
-                    }
-                }
-            }.onSuccess { file ->
-                if (!isAdded) return@onSuccess
-                previewPlayer?.release()
-                previewPlayer = ExoPlayer.Builder(context).build().apply {
-                    setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
-                    prepare()
-                    play()
-                }
-            }.onFailure {
-                context.toastOnUi("试听失败：${it.localizedMessage ?: it.javaClass.simpleName}")
-            }
-        }
+        val previewVoice = voice ?: TtsVoice(
+            id = TtsEngineStore.SYSTEM_DEFAULT_ID,
+            name = engine.name
+        )
+        voicePreviewController?.preview(
+            engine = engine,
+            voice = previewVoice,
+            systemDefault = voice == null,
+            styleId = styleId
+        )
     }
 
     private fun testCurrentEngineConnection() {
@@ -1291,58 +1267,6 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                 context.toastOnUi("接口测试失败：${it.localizedMessage ?: it.javaClass.simpleName}")
             }
         }
-    }
-
-    private fun previewSystemVoice(engine: TtsEngineSetting) {
-        previewPlayer?.release()
-        previewPlayer = null
-        systemPreviewTts?.runCatching {
-            stop()
-            shutdown()
-        }
-        systemPreviewTts = null
-        val previewToken = ++systemPreviewToken
-        val appContext = requireContext().applicationContext
-        val previewText = systemDefaultVoice(engine).previewText()
-        val ttsHolder = arrayOfNulls<TextToSpeech>(1)
-        val listener = TextToSpeech.OnInitListener { status ->
-            val tts = ttsHolder[0] ?: return@OnInitListener
-            if (!isAdded || previewToken != systemPreviewToken) {
-                tts.shutdown()
-                return@OnInitListener
-            }
-            if (status == TextToSpeech.SUCCESS) {
-                systemPreviewTts = tts
-                tts.setSpeechRate(systemPreviewSpeechRate(engine))
-                tts.setPitch(systemPreviewPitch(engine))
-                val result = tts.speak(
-                    previewText,
-                    TextToSpeech.QUEUE_FLUSH,
-                    null,
-                    "tts_preview_${System.currentTimeMillis()}"
-                )
-                if (result == TextToSpeech.ERROR) {
-                    requireContext().toastOnUi("试听失败")
-                }
-            } else {
-                tts.shutdown()
-                requireContext().toastOnUi(R.string.tts_init_failed)
-            }
-        }
-        ttsHolder[0] = if (engine.enginePackage.isNullOrBlank()) {
-            TextToSpeech(appContext, listener)
-        } else {
-            TextToSpeech(appContext, listener, engine.enginePackage)
-        }
-        systemPreviewTts = ttsHolder[0]
-    }
-
-    private fun systemPreviewSpeechRate(engine: TtsEngineSetting): Float {
-        return (engine.effectiveSpeed() / 50f).coerceIn(0.1f, 5f)
-    }
-
-    private fun systemPreviewPitch(engine: TtsEngineSetting): Float {
-        return (engine.effectivePitch() / 50f).coerceIn(0.1f, 2f)
     }
 
     private fun setVoiceSearchPillVisible(visible: Boolean) {
@@ -1728,6 +1652,20 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     private inner class VoiceAdapter :
         RecyclerAdapter<TtsVoice, ItemTtsVoiceBinding>(requireContext()) {
 
+        private var previewStatus = TtsVoicePreviewStatus(
+            key = null,
+            state = TtsVoicePreviewState.IDLE
+        )
+
+        fun updatePreviewStatus(status: TtsVoicePreviewStatus) {
+            val affectedKeys = listOfNotNull(previewStatus.key, status.key).distinct()
+            previewStatus = status
+            affectedKeys.forEach { key ->
+                val position = getItems().indexOfFirst { item -> previewKey(item) == key }
+                if (position >= 0) notifyItemChanged(position)
+            }
+        }
+
         override fun getViewBinding(parent: ViewGroup): ItemTtsVoiceBinding {
             return ItemTtsVoiceBinding.inflate(inflater, parent, false)
         }
@@ -1757,6 +1695,13 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                 engine = engine,
                 isSystemEngine = isSystemEngine,
                 showControls = true
+            )
+            TtsVoiceCardBinder.bindPreviewState(
+                context = requireContext(),
+                binding = binding,
+                state = previewStatus.takeIf { it.key == previewKey(item) }
+                    ?.state
+                    ?: TtsVoicePreviewState.IDLE
             )
             binding.switchEnabled.setOnCheckedChangeListener(null)
             binding.switchEnabled.isChecked = enabled
@@ -1930,13 +1875,13 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         }
 
         override fun registerListener(holder: ItemViewHolder, binding: ItemTtsVoiceBinding) {
-            binding.imagePreview.setOnClickListener {
+            binding.layoutPreviewButton.setOnClickListener {
                 showPreviewClickFeedback(binding.imagePreview)
                 getItemByLayoutPosition(holder.layoutPosition)?.let {
                     previewCurrentVoice(it)
                 }
             }
-            binding.imagePreview.setOnLongClickListener {
+            binding.layoutPreviewButton.setOnLongClickListener {
                 showPreviewClickFeedback(binding.imagePreview)
                 getItemByLayoutPosition(holder.layoutPosition)?.let { voice ->
                     val engine = currentDisplayedEngine()
@@ -1952,23 +1897,23 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             }
         }
 
+        private fun previewKey(item: TtsVoice): String? {
+            val engine = currentDisplayedEngine() ?: return null
+            return TtsVoicePreviewController.keyOf(
+                engine = engine,
+                voice = item,
+                systemDefault = engine.type == TtsEngineType.SYSTEM
+            )
+        }
+
         private fun showPreviewClickFeedback(view: ImageView) {
-            val normalColor = ContextCompat.getColor(requireContext(), R.color.ng_on_surface)
             view.animate().cancel()
-            view.imageTintList = ColorStateList.valueOf(accentColor)
             view.scaleX = 0.88f
             view.scaleY = 0.88f
-            view.alpha = 0.72f
             view.animate()
                 .scaleX(1f)
                 .scaleY(1f)
-                .alpha(1f)
                 .setDuration(180L)
-                .withEndAction {
-                    view.postDelayed({
-                        view.imageTintList = ColorStateList.valueOf(normalColor)
-                    }, 420L)
-                }
                 .start()
         }
     }
