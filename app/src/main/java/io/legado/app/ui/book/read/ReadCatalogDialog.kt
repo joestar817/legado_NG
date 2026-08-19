@@ -41,6 +41,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -929,6 +931,19 @@ private fun CatalogChapterRow(
         verticalArrangement = if (chapterTag == null) Arrangement.Center else Arrangement.Top,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (item.chapter.isVip) {
+                Icon(
+                    imageVector = if (item.chapter.isPay) {
+                        Icons.Rounded.LockOpen
+                    } else {
+                        Icons.Rounded.Lock
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = mutedColor.copy(alpha = 0.72f),
+                )
+                Spacer(Modifier.width(8.dp))
+            }
             Text(
                 text = item.displayTitle,
                 modifier = Modifier.weight(1f),
