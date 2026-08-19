@@ -39,6 +39,7 @@ import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.theme.NgTheme
 
 private const val ALL_GROUP_ITEM_ID = 0x53FFFFFF
+private const val UNGROUPED_GROUP_ITEM_ID = 0x53FFFFFE
 private const val GROUP_ITEM_ID_BASE = 0x54000000
 
 @Composable
@@ -80,6 +81,12 @@ internal fun BookshelfManageTopBar(
                 titleRes = R.string.all,
                 iconRes = R.drawable.ic_groups,
                 checked = selectedGroupId == BookGroup.IdAll
+            ),
+            NgExpandableActionMenuItem(
+                itemId = UNGROUPED_GROUP_ITEM_ID,
+                titleRes = R.string.no_group,
+                iconRes = R.drawable.ic_groups,
+                checked = selectedGroupId == 0L
             ),
             NgExpandableActionMenuItem(
                 itemId = R.id.menu_book_group,
@@ -173,6 +180,7 @@ internal fun BookshelfManageTopBar(
                                 when (item.itemId) {
                                     R.id.menu_group_manage -> onGroupManage()
                                     ALL_GROUP_ITEM_ID -> onGroupSelected(BookGroup.IdAll)
+                                    UNGROUPED_GROUP_ITEM_ID -> onGroupSelected(0L)
 
                                     else -> {
                                         val index = item.itemId - GROUP_ITEM_ID_BASE
