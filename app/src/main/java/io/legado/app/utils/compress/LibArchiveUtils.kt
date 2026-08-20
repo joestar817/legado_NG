@@ -23,6 +23,28 @@ import java.nio.charset.StandardCharsets
 
 object LibArchiveUtils {
 
+    internal fun resolveArchiveEntry(
+        destDir: File,
+        entryName: String,
+        isDirectory: Boolean
+    ): File {
+        val canonicalDestDir = destDir.canonicalFile
+        val entryFile = File(canonicalDestDir, entryName).canonicalFile
+        if (entryFile == canonicalDestDir) {
+            if (isDirectory) return entryFile
+            throw SecurityException("压缩文件只能解压到指定路径")
+        }
+        val destPrefix = if (canonicalDestDir.path.endsWith(File.separator)) {
+            canonicalDestDir.path
+        } else {
+            canonicalDestDir.path + File.separator
+        }
+        if (!entryFile.path.startsWith(destPrefix)) {
+            throw SecurityException("压缩文件只能解压到指定路径")
+        }
+        return entryFile
+    }
+
     @Throws(ArchiveException::class)
     fun openArchive(
         inputStream: InputStream,
@@ -236,11 +258,8 @@ object LibArchiveUtils {
                 val entryName =
                     getEntryString(ArchiveEntry.pathnameUtf8(entry), ArchiveEntry.pathname(entry))
                         ?: continue
-                val entryFile = File(destDir, entryName)
-                if (!entryFile.canonicalPath.startsWith(destDir.canonicalPath)) {
-                    throw SecurityException("压缩文件只能解压到指定路径")
-                }
                 val entryStat = ArchiveEntry.stat(entry)
+                val entryFile = resolveArchiveEntry(destDir, entryName, entryStat.isDir())
 
                 //判断是否是文件夹
                 if (entryStat.isDir()) {

@@ -12,6 +12,7 @@ import io.legado.app.constant.AppConst.dateFormat
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.AppPattern
 import io.legado.app.data.entities.BaseSource
+import io.legado.app.data.entities.BookSource
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.http.BackstageWebView
@@ -20,6 +21,7 @@ import io.legado.app.help.http.CookieStore
 import io.legado.app.help.http.NetworkLog
 import io.legado.app.help.http.SSLHelper
 import io.legado.app.help.http.StrResponse
+import io.legado.app.help.source.BookSourceFileAccessPolicy
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.source.SourceInteractionBlockedException
 import io.legado.app.help.source.SourceInteractionPolicy
@@ -93,6 +95,18 @@ interface JsExtensions : JsEncodeUtils {
 
     fun getSource(): BaseSource?
     fun getTag(): String?
+
+    private fun bookSourceFileRoot(): File? {
+        val source = getSource() as? BookSource ?: return null
+        return BookSourceFileAccessPolicy.resolveSourceRoot(
+            appCtx.externalCache,
+            source.bookSourceUrl
+        )
+    }
+
+    private fun resolveBookSourceFile(path: String) = bookSourceFileRoot()?.let { root ->
+        BookSourceFileAccessPolicy.resolvePath(root, path)
+    }
 
     private val context: CoroutineContext
         get() = rhinoContextOrNull?.coroutineContext ?: EmptyCoroutineContext
@@ -450,11 +464,13 @@ interface JsExtensions : JsEncodeUtils {
         rhinoContextOrNull?.ensureActive()
         val analyzeUrl = AnalyzeUrl(url, source = getSource(), coroutineContext = context)
         val type = analyzeUrl.type ?: UrlUtil.getSuffix(url)
-        val path = FileUtils.getPath(
+        val fileName = "${MD5Utils.md5Encode16(url)}.${type}"
+        val bookSourceTarget = resolveBookSourceFile(fileName)
+        val path = bookSourceTarget?.file?.absolutePath ?: FileUtils.getPath(
             File(FileUtils.getCachePath()),
-            "${MD5Utils.md5Encode16(url)}.${type}"
+            fileName
         )
-        val file = File(path)
+        val file = bookSourceTarget?.file ?: File(path)
         file.delete()
         analyzeUrl.getInputStream().use { iStream ->
             file.createFileReplace()
@@ -467,7 +483,8 @@ interface JsExtensions : JsEncodeUtils {
                 throw e
             }
         }
-        return path.substring(FileUtils.getCachePath().length)
+        return bookSourceTarget?.relativePath
+            ?: path.substring(FileUtils.getCachePath().length)
     }
 
 
@@ -486,18 +503,21 @@ interface JsExtensions : JsEncodeUtils {
         rhinoContextOrNull?.ensureActive()
         val type = AnalyzeUrl(url, source = getSource(), coroutineContext = context).type
             ?: return ""
-        val path = FileUtils.getPath(
+        val fileName = "${MD5Utils.md5Encode16(url)}.${type}"
+        val bookSourceTarget = resolveBookSourceFile(fileName)
+        val path = bookSourceTarget?.file?.absolutePath ?: FileUtils.getPath(
             FileUtils.createFolderIfNotExist(FileUtils.getCachePath()),
-            "${MD5Utils.md5Encode16(url)}.${type}"
+            fileName
         )
-        val file = File(path)
+        val file = bookSourceTarget?.file ?: File(path)
         file.createFileReplace()
         HexUtil.decodeHex(content).let {
             if (it.isNotEmpty()) {
                 file.writeBytes(it)
             }
         }
-        return path.substring(FileUtils.getCachePath().length)
+        return bookSourceTarget?.relativePath
+            ?: path.substring(FileUtils.getCachePath().length)
     }
 
     /**
@@ -814,6 +834,9 @@ interface JsExtensions : JsEncodeUtils {
      * @return File
      */
     fun getFile(path: String): File {
+        resolveBookSourceFile(path)?.let {
+            return it.file
+        }
         val cachePath = appCtx.externalCache.absolutePath
         val aPath = if (path.startsWith(File.separator)) {
             cachePath + path
@@ -861,6 +884,9 @@ interface JsExtensions : JsEncodeUtils {
     @JavascriptInterface
     fun deleteFile(path: String): Boolean {
         val file = getFile(path)
+        bookSourceFileRoot()?.let { root ->
+            BookSourceFileAccessPolicy.requireContainedTree(root, file)
+        }
         return FileUtils.delete(file, true)
     }
 
@@ -903,6 +929,21 @@ interface JsExtensions : JsEncodeUtils {
     fun unArchiveFile(zipPath: String): String {
         if (zipPath.isEmpty()) return ""
         val zipFile = getFile(zipPath)
+        bookSourceFileRoot()?.let { root ->
+            val archiveTemp = BookSourceFileAccessPolicy.resolvePath(
+                root,
+                ArchiveUtils.TEMP_FOLDER_NAME
+            ).file
+            val outputRelativePath = ArchiveUtils.TEMP_FOLDER_NAME +
+                    File.separator + MD5Utils.md5Encode16(zipFile.name)
+            val output = BookSourceFileAccessPolicy.resolvePath(
+                root,
+                outputRelativePath
+            ).file
+            ArchiveUtils.deCompress(zipFile.absolutePath, archiveTemp.absolutePath)
+            BookSourceFileAccessPolicy.requireContainedTree(root, output)
+            return outputRelativePath
+        }
         return ArchiveUtils.deCompress(zipFile.absolutePath).let {
             ArchiveUtils.TEMP_FOLDER_NAME + File.separator + MD5Utils.md5Encode16(zipFile.name)
         }
@@ -917,6 +958,9 @@ interface JsExtensions : JsEncodeUtils {
     fun getTxtInFolder(path: String): String {
         if (path.isEmpty()) return ""
         val folder = getFile(path)
+        bookSourceFileRoot()?.let { root ->
+            BookSourceFileAccessPolicy.requireContainedTree(root, folder)
+        }
         val contents = StringBuilder()
         folder.listFiles().let {
             if (it != null) {
