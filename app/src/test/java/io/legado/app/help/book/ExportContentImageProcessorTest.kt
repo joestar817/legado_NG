@@ -26,7 +26,7 @@ class ExportContentImageProcessorTest {
         assertEquals(
             "前后",
             ExportContentImageProcessor.process(
-                content = "前$interactive后",
+                content = "前${interactive}后",
                 plainText = false,
                 filterInteractiveImages = true,
             ),
@@ -41,9 +41,9 @@ class ExportContentImageProcessorTest {
         val blankClick = """<img src="blank.svg,{"click":""}">"""
 
         assertEquals(
-            "前$normal$blankClick后",
+            "前${normal}${blankClick}后",
             ExportContentImageProcessor.process(
-                content = "前$normal$interactive$blankClick后",
+                content = "前${normal}${interactive}${blankClick}后",
                 plainText = false,
                 filterInteractiveImages = true,
             ),
