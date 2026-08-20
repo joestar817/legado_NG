@@ -46,7 +46,9 @@ import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.http.Cronet
 import io.legado.app.help.http.ObsoleteUrlFactory
 import io.legado.app.help.http.okHttpClient
+import io.legado.app.help.rhino.BookSourceGuardLog
 import io.legado.app.help.rhino.NativeBaseSource
+import io.legado.app.help.rhino.NativeBook
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.storage.Backup
 import io.legado.app.model.BookCover
@@ -230,11 +232,17 @@ class App : Application() {
         RhinoScriptEngine
         RhinoWrapFactory.register(BookSource::class.java, NativeBaseSource.factory)
         RhinoWrapFactory.register(RssSource::class.java, NativeBaseSource.factory)
+        RhinoWrapFactory.register(Book::class.java, NativeBook.factory)
         RhinoWrapFactory.register(ExploreRule::class.java, ReadOnlyJavaObject.factory)
         RhinoWrapFactory.register(SearchRule::class.java, ReadOnlyJavaObject.factory)
         RhinoWrapFactory.register(BookInfoRule::class.java, ReadOnlyJavaObject.factory)
         RhinoWrapFactory.register(ContentRule::class.java, ReadOnlyJavaObject.factory)
-        RhinoWrapFactory.register(BookChapter::class.java, ReadOnlyJavaObject.factory)
+        RhinoWrapFactory.register(
+            BookChapter::class.java,
+            ReadOnlyJavaObject.factory(setOf("update")) { member ->
+                BookSourceGuardLog.noOp("BookChapter", member)
+            }
+        )
         RhinoWrapFactory.register(Book.ReadConfig::class.java, ReadOnlyJavaObject.factory)
     }
 

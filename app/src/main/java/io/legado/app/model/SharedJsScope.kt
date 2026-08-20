@@ -32,12 +32,16 @@ object SharedJsScope {
     fun getScope(
         jsLib: String?,
         coroutineContext: CoroutineContext?,
-        bookSourceClassPolicy: Boolean = false
+        bookSourceClassPolicy: Boolean = false,
+        bookSourceLabel: String? = null
     ): Scriptable? {
         if (jsLib.isNullOrBlank()) {
             return null
         }
-        return RhinoClassShutter.withBookSourceClassPolicy(bookSourceClassPolicy) {
+        return RhinoClassShutter.withBookSourceClassPolicy(
+            enabled = bookSourceClassPolicy,
+            sourceLabel = bookSourceLabel
+        ) {
             val key = scopeKey(jsLib, bookSourceClassPolicy)
             var scope = scopeMap[key]?.get()
             if (scope == null) {

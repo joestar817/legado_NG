@@ -12,6 +12,7 @@ import io.legado.app.model.analyzeRule.AnalyzeRule
 import io.legado.app.model.analyzeRule.AnalyzeUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.BeforeClass
 import org.junit.Test
@@ -191,6 +192,24 @@ class RhinoBookSourceClassPolicyTest {
         }
 
         assertTrue(RhinoClassShutter.visibleToScripts(fixtureClassName))
+    }
+
+    @Test
+    fun diagnosticSourceLabelSupportsNestingAndCleanup() {
+        assertNull(RhinoClassShutter.currentBookSourceLabel())
+
+        RhinoClassShutter.withBookSourceClassPolicy(true, "外层书源") {
+            assertEquals("外层书源", RhinoClassShutter.currentBookSourceLabel())
+            RhinoClassShutter.withBookSourceClassPolicy(true) {
+                assertEquals("外层书源", RhinoClassShutter.currentBookSourceLabel())
+            }
+            RhinoClassShutter.withBookSourceClassPolicy(true, "内层书源") {
+                assertEquals("内层书源", RhinoClassShutter.currentBookSourceLabel())
+            }
+            assertEquals("外层书源", RhinoClassShutter.currentBookSourceLabel())
+        }
+
+        assertNull(RhinoClassShutter.currentBookSourceLabel())
     }
 
     companion object {

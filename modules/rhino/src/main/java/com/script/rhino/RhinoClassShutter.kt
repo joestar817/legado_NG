@@ -59,6 +59,8 @@ object RhinoClassShutter : ClassShutter {
 
     private val bookSourcePolicyDepth = ThreadLocal<Int>()
 
+    private val bookSourceLabel = ThreadLocal<String>()
+
     private val hostObjectClassAccess = ThreadLocal<Set<String>>()
 
     private val protectedClassNamesMatcher by lazy {
@@ -189,10 +191,18 @@ object RhinoClassShutter : ClassShutter {
         return visibleToScripts(clazz.name)
     }
 
-    fun <T> withBookSourceClassPolicy(enabled: Boolean, block: () -> T): T {
+    fun <T> withBookSourceClassPolicy(
+        enabled: Boolean,
+        sourceLabel: String? = null,
+        block: () -> T
+    ): T {
         if (!enabled) return block()
         val previousDepth = bookSourcePolicyDepth.get() ?: 0
+        val previousLabel = bookSourceLabel.get()
         bookSourcePolicyDepth.set(previousDepth + 1)
+        if (!sourceLabel.isNullOrBlank()) {
+            bookSourceLabel.set(sourceLabel)
+        }
         return try {
             block()
         } finally {
@@ -201,8 +211,15 @@ object RhinoClassShutter : ClassShutter {
             } else {
                 bookSourcePolicyDepth.set(previousDepth)
             }
+            if (previousLabel == null) {
+                bookSourceLabel.remove()
+            } else {
+                bookSourceLabel.set(previousLabel)
+            }
         }
     }
+
+    fun currentBookSourceLabel(): String? = bookSourceLabel.get()
 
     fun <T> withHostObjectClassAccess(clazz: Class<*>, block: () -> T): T {
         val previous = hostObjectClassAccess.get().orEmpty()

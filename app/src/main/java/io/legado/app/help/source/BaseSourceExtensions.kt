@@ -10,15 +10,22 @@ import org.mozilla.javascript.Scriptable
 import kotlin.coroutines.CoroutineContext
 
 fun BaseSource.getShareScope(coroutineContext: CoroutineContext? = null): Scriptable? {
+    val bookSource = this as? BookSource
     return SharedJsScope.getScope(
         jsLib = jsLib,
         coroutineContext = coroutineContext,
-        bookSourceClassPolicy = this is BookSource
+        bookSourceClassPolicy = bookSource != null,
+        bookSourceLabel = bookSource?.bookSourceName
     )
 }
 
 fun <T> BaseSource?.withBookSourceClassPolicy(block: () -> T): T {
-    return RhinoClassShutter.withBookSourceClassPolicy(this is BookSource, block)
+    val bookSource = this as? BookSource
+    return RhinoClassShutter.withBookSourceClassPolicy(
+        enabled = bookSource != null,
+        sourceLabel = bookSource?.bookSourceName,
+        block = block
+    )
 }
 
 fun BaseSource.getSourceType(): Int {
