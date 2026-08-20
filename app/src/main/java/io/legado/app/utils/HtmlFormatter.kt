@@ -44,20 +44,24 @@ object HtmlFormatter {
         val sb = StringBuilder()
         while (matcher.find()) {
             var param = ""
-            sb.append(
-                keepImgHtml.substring(appendPos, matcher.start()), "<img src=\"${
-                    NetworkUtils.getAbsoluteURL(
-                        redirectUrl,
-                        matcher.group(1)?.let {
-                            val urlMatcher = AnalyzeUrl.paramPattern.matcher(it)
-                            if (urlMatcher.find()) {
-                                param = ',' + it.substring(urlMatcher.end())
-                                it.substring(0, urlMatcher.start())
-                            } else it
-                        } ?: matcher.group(2) ?: matcher.group(3) ?: matcher.group(4)!!
-                    ) + param
-                }\">"
-            )
+            val rawSource = matcher.group(1)?.let {
+                val urlMatcher = AnalyzeUrl.paramPattern.matcher(it)
+                if (urlMatcher.find()) {
+                    param = ',' + it.substring(urlMatcher.end())
+                    it.substring(0, urlMatcher.start())
+                } else {
+                    it
+                }
+            } ?: matcher.group(2) ?: matcher.group(3) ?: matcher.group(4).orEmpty()
+            val imageUrl = if (rawSource.isBlank()) {
+                ""
+            } else {
+                NetworkUtils.getAbsoluteURL(redirectUrl, rawSource)
+            }
+            sb.append(keepImgHtml.substring(appendPos, matcher.start()))
+            if (imageUrl.isNotBlank()) {
+                sb.append("<img src=\"${imageUrl + param}\">")
+            }
             appendPos = matcher.end()
         }
         if (appendPos < keepImgHtml.length) sb.append(

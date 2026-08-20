@@ -20,7 +20,6 @@ import io.legado.app.model.localBook.PdfFile
 import io.legado.app.utils.BitmapUtils
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.SvgUtils
-import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.withContext
 import splitties.init.appCtx
@@ -182,11 +181,7 @@ object ImageProvider {
         width: Int,
         height: Int? = null
     ): Bitmap {
-        //src为空白时 可能被净化替换掉了 或者规则失效
-        if (book.getUseReplaceRule() && src.isBlank()) {
-            book.setUseReplaceRule(false)
-            appCtx.toastOnUi(R.string.error_image_url_empty)
-        }
+        if (src.isBlank()) return errorBitmap
         val vFile = BookHelp.getImage(book, src)
         if (!vFile.exists()) return errorBitmap
         //epub文件提供图片链接是相对链接，同时阅读多个epub文件，缓存命中错误

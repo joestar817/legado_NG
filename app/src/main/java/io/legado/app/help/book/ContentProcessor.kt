@@ -248,6 +248,7 @@ class ContentProcessor private constructor(
             useHtmlMap.forEach { (placeholder, originalContent) ->
                 mContent = mContent.replace(placeholder, originalContent)
             }
+            mContent = HtmlImageTags.removeEmptySources(mContent)
         }
         if (includeTitle) {
             //重新添加标题
