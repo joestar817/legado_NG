@@ -56,8 +56,10 @@ object RhinoWrapFactory : WrapFactory() {
         if (!RhinoClassShutter.visibleToScripts(javaObject)) {
             return null
         }
-        return wrapOrNull(scope, javaObject, staticType)
-            ?: super.wrapAsJavaObject(cx, scope, javaObject, staticType)
+        return RhinoClassShutter.withHostObjectClassAccess(javaObject.javaClass) {
+            wrapOrNull(scope, javaObject, staticType)
+                ?: super.wrapAsJavaObject(cx, scope, javaObject, staticType)
+        }
     }
 
     override fun wrapJavaClass(

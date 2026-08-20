@@ -20,6 +20,7 @@ import io.legado.app.help.JsExtensions
 import io.legado.app.help.http.BackstageWebView
 import io.legado.app.help.http.CookieStore
 import io.legado.app.help.source.getShareScope
+import io.legado.app.help.source.withBookSourceClassPolicy
 import io.legado.app.model.Debug
 import io.legado.app.model.webBook.WebBook
 import io.legado.app.utils.GSON
@@ -826,36 +827,37 @@ class AnalyzeRule(
      * 执行JS
      */
     fun evalJS(jsStr: String, result: Any? = null): Any? {
-        val bindings = buildScriptBindings { bindings ->
-            bindings["java"] = this
-            bindings["cookie"] = CookieStore
-            bindings["cache"] = CacheManager
-            bindings["source"] = source
-            bindings["book"] = book
-            bindings["result"] = result
-            bindings["baseUrl"] = baseUrl
-            bindings["chapter"] = chapter
-            bindings["title"] = chapter?.title
-            bindings["src"] = content
-            bindings["nextChapterUrl"] = nextChapterUrl
-            bindings["rssArticle"] = rssArticle
-            bindings["fromBookInfo"] = isFromBookInfo
-        }
-        val topScope = source?.getShareScope(coroutineContext) ?: topScopeRef?.get()
-        val scope = if (topScope == null) {
-            RhinoScriptEngine.getRuntimeScope(bindings).apply {
-                if (evalJSCallCount++ > 16) {
-                    topScopeRef = WeakReference(prototype)
+        return source.withBookSourceClassPolicy {
+            val bindings = buildScriptBindings { bindings ->
+                bindings["java"] = this
+                bindings["cookie"] = CookieStore
+                bindings["cache"] = CacheManager
+                bindings["source"] = source
+                bindings["book"] = book
+                bindings["result"] = result
+                bindings["baseUrl"] = baseUrl
+                bindings["chapter"] = chapter
+                bindings["title"] = chapter?.title
+                bindings["src"] = content
+                bindings["nextChapterUrl"] = nextChapterUrl
+                bindings["rssArticle"] = rssArticle
+                bindings["fromBookInfo"] = isFromBookInfo
+            }
+            val topScope = source?.getShareScope(coroutineContext) ?: topScopeRef?.get()
+            val scope = if (topScope == null) {
+                RhinoScriptEngine.getRuntimeScope(bindings).apply {
+                    if (evalJSCallCount++ > 16) {
+                        topScopeRef = WeakReference(prototype)
+                    }
+                }
+            } else {
+                bindings.apply {
+                    prototype = topScope
                 }
             }
-        } else {
-            bindings.apply {
-                prototype = topScope
-            }
+            val script = compileScriptCache(jsStr)
+            script.eval(scope, coroutineContext)
         }
-        val script = compileScriptCache(jsStr)
-        val result = script.eval(scope, coroutineContext)
-        return result
     }
 
     private fun compileScriptCache(jsStr: String): CompiledScript {

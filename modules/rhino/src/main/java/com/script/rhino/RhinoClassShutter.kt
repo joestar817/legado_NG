@@ -45,6 +45,22 @@ import java.util.Collections
  */
 object RhinoClassShutter : ClassShutter {
 
+    private const val appClassPrefix = "io.legado.app."
+
+    /**
+     * BookSource 脚本必须主动构造且已经过兼容审计的 App 类型。
+     *
+     * 宿主注入或返回的对象不属于直接类导入，必须通过包装能力暴露，不能因此加入本表。
+     * 新增条目必须同时提供现有书源证据和默认拒绝回归测试。
+     */
+    private val bookSourceDirectClassImports = setOf(
+        "io.legado.app.help.http.StrResponse"
+    )
+
+    private val bookSourcePolicyDepth = ThreadLocal<Int>()
+
+    private val hostObjectClassAccess = ThreadLocal<Set<String>>()
+
     private val protectedClassNamesMatcher by lazy {
         listOf(
             "java.lang.Class",
@@ -161,7 +177,7 @@ object RhinoClassShutter : ClassShutter {
                 is Path -> return false
             }
         }
-        return visibleToScripts(obj.javaClass.name)
+        return !protectedClassNamesMatcher.match(obj.javaClass.name)
     }
 
     fun visibleToScripts(clazz: Class<*>): Boolean {
@@ -170,7 +186,36 @@ object RhinoClassShutter : ClassShutter {
                 return false
             }
         }
-        return true
+        return visibleToScripts(clazz.name)
+    }
+
+    fun <T> withBookSourceClassPolicy(enabled: Boolean, block: () -> T): T {
+        if (!enabled) return block()
+        val previousDepth = bookSourcePolicyDepth.get() ?: 0
+        bookSourcePolicyDepth.set(previousDepth + 1)
+        return try {
+            block()
+        } finally {
+            if (previousDepth == 0) {
+                bookSourcePolicyDepth.remove()
+            } else {
+                bookSourcePolicyDepth.set(previousDepth)
+            }
+        }
+    }
+
+    fun <T> withHostObjectClassAccess(clazz: Class<*>, block: () -> T): T {
+        val previous = hostObjectClassAccess.get().orEmpty()
+        hostObjectClassAccess.set(previous + clazz.name)
+        return try {
+            block()
+        } finally {
+            if (previous.isEmpty()) {
+                hostObjectClassAccess.remove()
+            } else {
+                hostObjectClassAccess.set(previous)
+            }
+        }
     }
 
     fun wrapJavaClass(scope: Scriptable, javaClass: Class<*>): Scriptable {
@@ -184,7 +229,19 @@ object RhinoClassShutter : ClassShutter {
     }
 
     override fun visibleToScripts(fullClassName: String): Boolean {
-        return !protectedClassNamesMatcher.match(fullClassName)
+        if (protectedClassNamesMatcher.match(fullClassName)) {
+            return false
+        }
+        if (fullClassName in hostObjectClassAccess.get().orEmpty()) {
+            return true
+        }
+        if (
+            (bookSourcePolicyDepth.get() ?: 0) > 0 &&
+            fullClassName.startsWith(appClassPrefix)
+        ) {
+            return fullClassName in bookSourceDirectClassImports
+        }
+        return true
     }
 
 }

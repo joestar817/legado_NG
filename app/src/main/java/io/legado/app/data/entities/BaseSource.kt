@@ -16,6 +16,7 @@ import io.legado.app.help.crypto.SymmetricCryptoAndroid
 import io.legado.app.help.http.CookieStore
 import io.legado.app.help.source.clearExploreKindsCache
 import io.legado.app.help.source.getShareScope
+import io.legado.app.help.source.withBookSourceClassPolicy
 import io.legado.app.model.SharedJsScope.remove
 import io.legado.app.utils.GSON
 import io.legado.app.utils.GSONStrict
@@ -323,22 +324,24 @@ interface BaseSource : JsExtensions {
      */
     @Throws(Exception::class)
     fun evalJS(jsStr: String, bindingsConfig: ScriptBindings.() -> Unit = {}): Any? {
-        val bindings = buildScriptBindings { bindings ->
-            bindings["java"] = this
-            bindings["source"] = this
-            bindings["baseUrl"] = getKey()
-            bindings["cookie"] = CookieStore
-            bindings["cache"] = CacheManager
-            bindings.apply(bindingsConfig)
-        }
-        val sharedScope = getShareScope()
-        val scope = if (sharedScope == null) {
-            RhinoScriptEngine.getRuntimeScope(bindings)
-        } else {
-            bindings.apply {
-                prototype = sharedScope
+        return this.withBookSourceClassPolicy {
+            val bindings = buildScriptBindings { bindings ->
+                bindings["java"] = this
+                bindings["source"] = this
+                bindings["baseUrl"] = getKey()
+                bindings["cookie"] = CookieStore
+                bindings["cache"] = CacheManager
+                bindings.apply(bindingsConfig)
             }
+            val sharedScope = getShareScope()
+            val scope = if (sharedScope == null) {
+                RhinoScriptEngine.getRuntimeScope(bindings)
+            } else {
+                bindings.apply {
+                    prototype = sharedScope
+                }
+            }
+            RhinoScriptEngine.eval(jsStr, scope)
         }
-        return RhinoScriptEngine.eval(jsStr, scope)
     }
 }

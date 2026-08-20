@@ -1,5 +1,6 @@
 package io.legado.app.help.source
 
+import com.script.rhino.RhinoClassShutter
 import io.legado.app.constant.SourceType
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.data.entities.BookSource
@@ -9,7 +10,15 @@ import org.mozilla.javascript.Scriptable
 import kotlin.coroutines.CoroutineContext
 
 fun BaseSource.getShareScope(coroutineContext: CoroutineContext? = null): Scriptable? {
-    return SharedJsScope.getScope(jsLib, coroutineContext)
+    return SharedJsScope.getScope(
+        jsLib = jsLib,
+        coroutineContext = coroutineContext,
+        bookSourceClassPolicy = this is BookSource
+    )
+}
+
+fun <T> BaseSource?.withBookSourceClassPolicy(block: () -> T): T {
+    return RhinoClassShutter.withBookSourceClassPolicy(this is BookSource, block)
 }
 
 fun BaseSource.getSourceType(): Int {
