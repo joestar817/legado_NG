@@ -938,7 +938,13 @@ private fun CatalogChapterRow(
                     } else {
                         Icons.Rounded.Lock
                     },
-                    contentDescription = null,
+                    contentDescription = stringResource(
+                        if (item.chapter.isPay) {
+                            R.string.read_catalog_vip_purchased
+                        } else {
+                            R.string.read_catalog_vip_unpaid
+                        }
+                    ),
                     modifier = Modifier.size(16.dp),
                     tint = mutedColor.copy(alpha = 0.72f),
                 )

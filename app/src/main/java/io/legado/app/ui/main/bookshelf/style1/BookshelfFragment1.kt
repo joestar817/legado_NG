@@ -22,6 +22,7 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.BookshelfFloatingDockConfig
 import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.help.config.BookshelfHomeMode
+import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.ui.about.ReadRecordActivity
 import io.legado.app.ui.book.group.GroupManageDialog
 import io.legado.app.ui.book.info.BookInfoActivity
@@ -128,7 +129,9 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
                     },
                     onGroupLongClick = { index ->
                         bookGroups.getOrNull(index)?.let { group ->
-                            if (group.groupId != BookGroup.IdRoot) {
+                            if (group.groupId != BookGroup.IdRoot &&
+                                group.groupId != BookGroup.IdNoGroup
+                            ) {
                                 showDialogFragment(GroupManageDialog.forEdit(group))
                             }
                         }
@@ -194,7 +197,12 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
                     order = Int.MIN_VALUE,
                 )
             )
-            addAll(bookGroups.filter { it.groupId != BookGroup.IdRoot })
+            addAll(
+                bookGroups.filter {
+                    it.groupId != BookGroup.IdRoot &&
+                        it.groupId != BookGroup.IdNoGroup
+                }
+            )
         }
         groupGridFolders = buildBookshelfGroupFolders(
             groups = folderGroups,
@@ -243,7 +251,11 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
     override fun onResume() {
         super.onResume()
         updateFloatingDockSettings()
-        if (bookGroups.isNotEmpty() &&
+        if (bookGroups.isEmpty()) return
+        val visibleGroupIndex = resolveVisibleGroupIndex(selectedGroupIndex)
+        if (visibleGroupIndex != selectedGroupIndex) {
+            selectGroup(visibleGroupIndex, force = true)
+        } else if (
             (pendingGroupSelection || !isSelectedGroupMounted())
         ) {
             selectGroup(selectedGroupIndex, force = true)
@@ -332,7 +344,18 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         if (data.isEmpty()) {
             appDb.bookGroupDao.enableGroup(BookGroup.IdAll)
         } else {
+            val noGroup = BookGroup(
+                groupId = BookGroup.IdNoGroup,
+                groupName = getString(R.string.no_group),
+                order = Int.MIN_VALUE,
+            )
             val visibleGroups = data
+                .filterNot { it.groupId == BookGroup.IdNoGroup }
+                .toMutableList()
+                .apply {
+                    val allIndex = indexOfFirst { it.groupId == BookGroup.IdAll }
+                    add(if (allIndex >= 0) allIndex + 1 else 0, noGroup)
+                }
             if (visibleGroups != bookGroups) {
                 bookGroups.clear()
                 bookGroups.addAll(visibleGroups)
@@ -354,11 +377,24 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
 
     private fun selectSavedGroup() {
         if (bookGroups.isEmpty()) return
-        val targetPosition = AppConfig.saveTabPosition.coerceIn(
-            0,
-            bookGroups.lastIndex,
-        )
+        val targetPosition = resolveVisibleGroupIndex(AppConfig.saveTabPosition)
         selectGroup(targetPosition, force = true)
+    }
+
+    private fun resolveVisibleGroupIndex(index: Int): Int {
+        val safeIndex = index.coerceIn(0, bookGroups.lastIndex)
+        val resolvedTopBarStyle = BookshelfTopBarStyle.resolveForLayout(
+            configuredStyle = configuredTopBarStyle,
+            groupGridMode = showGroupGrid,
+        )
+        if (resolvedTopBarStyle == BookshelfTopBarStyle.GROUP_NAVIGATION &&
+            bookGroups[safeIndex].groupId == BookGroup.IdNoGroup
+        ) {
+            return bookGroups.indexOfFirst { it.groupId == BookGroup.IdAll }
+                .takeIf { it >= 0 }
+                ?: safeIndex
+        }
+        return safeIndex
     }
 
     private fun selectGroup(

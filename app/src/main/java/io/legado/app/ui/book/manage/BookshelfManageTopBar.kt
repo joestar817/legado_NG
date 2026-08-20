@@ -86,7 +86,7 @@ internal fun BookshelfManageTopBar(
                 itemId = UNGROUPED_GROUP_ITEM_ID,
                 titleRes = R.string.no_group,
                 iconRes = R.drawable.ic_groups,
-                checked = selectedGroupId == 0L
+                checked = selectedGroupId == BookGroup.IdNoGroup
             ),
             NgExpandableActionMenuItem(
                 itemId = R.id.menu_book_group,
@@ -180,7 +180,8 @@ internal fun BookshelfManageTopBar(
                                 when (item.itemId) {
                                     R.id.menu_group_manage -> onGroupManage()
                                     ALL_GROUP_ITEM_ID -> onGroupSelected(BookGroup.IdAll)
-                                    UNGROUPED_GROUP_ITEM_ID -> onGroupSelected(0L)
+                                    UNGROUPED_GROUP_ITEM_ID ->
+                                        onGroupSelected(BookGroup.IdNoGroup)
 
                                     else -> {
                                         val index = item.itemId - GROUP_ITEM_ID_BASE

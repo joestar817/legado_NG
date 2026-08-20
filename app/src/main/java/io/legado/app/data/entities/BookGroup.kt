@@ -31,6 +31,7 @@ data class BookGroup(
 
     companion object {
         const val IdRoot = -100L
+        const val IdNoGroup = 0L
         const val IdAll = -1L
         const val IdLocal = -2L
         const val IdAudio = -3L

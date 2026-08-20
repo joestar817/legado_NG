@@ -647,6 +647,8 @@
     <string name="read_catalog_collapse_note">收起备注</string>
     <string name="read_catalog_ascending">正序</string>
     <string name="read_catalog_descending">倒序</string>
+    <string name="read_catalog_vip_unpaid">VIP 章节，未购买</string>
+    <string name="read_catalog_vip_purchased">VIP 章节，已购买</string>
     <string name="next_chapter">下一章</string>
     <string name="previous_chapter">上一章</string>
     <string name="pt_hide_status_bar">隐藏状态栏</string>

@@ -556,7 +556,7 @@ private fun CompactToolbarGroupAction(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(4.dp)
+                .padding(vertical = 4.dp)
                 .clip(RoundedCornerShape(14.dp))
                 .background(
                     if (isPressed) colorResource(R.color.ng_bookshelf_action_pressed)
@@ -568,7 +568,7 @@ private fun CompactToolbarGroupAction(
                     onClick = { expanded = true },
                     onLongClick = { onGroupLongClick(selectedIndex) },
                 )
-                .padding(horizontal = 6.dp)
+                .padding(horizontal = 3.dp)
                 .semantics(mergeDescendants = true) {
                     contentDescription = "$groupLabel: ${selectedGroup.name}"
                     role = Role.Button
@@ -724,6 +724,7 @@ private fun floatingDockInactiveContentColor(): Color {
 private fun BookshelfDockGroup.builtInIconRes(): Int? {
     return when (groupId) {
         BookGroup.IdAll -> R.drawable.ic_bookshelf_dock_all
+        BookGroup.IdNoGroup -> R.drawable.ic_groups
         BookGroup.IdLocal -> R.drawable.ic_bookshelf_dock_local
         BookGroup.IdAudio -> R.drawable.ic_bookshelf_dock_audio
         BookGroup.IdVideo -> R.drawable.ic_bookshelf_dock_video
