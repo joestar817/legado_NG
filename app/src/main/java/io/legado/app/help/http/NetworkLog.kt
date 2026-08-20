@@ -25,6 +25,7 @@ object NetworkLog {
         "set-cookie",
         "x-api-key",
         "api-key",
+        "x-goog-api-key",
         "x-auth-token",
         "x-access-token",
         "x-csrf-token",

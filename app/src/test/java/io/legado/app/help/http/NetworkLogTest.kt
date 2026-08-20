@@ -15,6 +15,7 @@ class NetworkLogTest {
             "Cookie", "session=abc; uid=1",
             "Set-Cookie", "sid=response-secret; Path=/",
             "X-Api-Key", "api-key-secret",
+            "X-Goog-Api-Key", "gemini-key-secret",
             "User-Agent", "Legado"
         )
 
@@ -24,11 +25,27 @@ class NetworkLogTest {
         assertTrue(formatted.contains("Cookie: [已脱敏]"))
         assertTrue(formatted.contains("Set-Cookie: [已脱敏]"))
         assertTrue(formatted.contains("X-Api-Key: [已脱敏]"))
+        assertTrue(formatted.contains("X-Goog-Api-Key: [已脱敏]"))
         assertTrue(formatted.contains("User-Agent: Legado"))
         assertFalse(formatted.contains("sk-test-secret"))
         assertFalse(formatted.contains("session=abc"))
         assertFalse(formatted.contains("response-secret"))
         assertFalse(formatted.contains("api-key-secret"))
+        assertFalse(formatted.contains("gemini-key-secret"))
+    }
+
+    @Test
+    fun formatHeaderMapRedactsGeminiApiKey() {
+        val formatted = NetworkLog.formatHeaders(
+            mapOf(
+                "x-goog-api-key" to "gemini-map-secret",
+                "Content-Type" to "application/json"
+            )
+        )
+
+        assertTrue(formatted.contains("x-goog-api-key: [已脱敏]"))
+        assertTrue(formatted.contains("Content-Type: application/json"))
+        assertFalse(formatted.contains("gemini-map-secret"))
     }
 
     @Test
