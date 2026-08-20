@@ -38,6 +38,15 @@ object WebViewPool {
     private val cleanupScope by lazy { CoroutineScope(Dispatchers.IO + SupervisorJob()) }
     private var cleanupJob: Job? = null
 
+    private val javascriptInterfaceNames by lazy {
+        arrayOf(
+            WebJsExtensions.nameJava,
+            WebJsExtensions.nameCache,
+            WebJsExtensions.nameSource,
+            WebJsExtensions.nameBasic
+        )
+    }
+
     // 获取一个WebView
     @Synchronized
     fun acquire(context: Context): PooledWebView {
@@ -50,6 +59,7 @@ object WebViewPool {
             }
             createNewWebView() // 创建新实例
         }
+        pooledWebView.realWebView.clearKnownJavascriptInterfaces()
         pooledWebView.upContext(context).apply {
             realWebView.settings.setDarkeningAllowed(AppConfig.isNightTheme) //设置是否夜间
             if (inUsePool.isEmpty()) {
@@ -76,6 +86,7 @@ object WebViewPool {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             stopLoading()
+            clearKnownJavascriptInterfaces()
             clearFocus() //清除焦点
             setOnLongClickListener(null)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -127,6 +138,10 @@ object WebViewPool {
         val webView = VisibleWebView(MutableContextWrapper(appCtx))
         preInitWebView(webView)
         return PooledWebView(webView, generateId())
+    }
+
+    private fun WebView.clearKnownJavascriptInterfaces() {
+        javascriptInterfaceNames.forEach(::removeJavascriptInterface)
     }
 
     private fun generateId(): String {
