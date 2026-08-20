@@ -195,6 +195,33 @@ class RhinoBookSourceClassPolicyTest {
     }
 
     @Test
+    fun bookSourceCannotBypassCookieFacadeThroughAndroidSingleton() {
+        val blockedClasses = listOf(
+            "android.webkit.CookieManager",
+            "android.webkit.CookieSyncManager"
+        )
+
+        RhinoClassShutter.withBookSourceClassPolicy(true) {
+            blockedClasses.forEach { className ->
+                assertFalse(className, RhinoClassShutter.visibleToScripts(className))
+            }
+        }
+
+        blockedClasses.forEach { className ->
+            assertTrue(className, RhinoClassShutter.visibleToScripts(className))
+        }
+
+        val source = BookSource(
+            bookSourceUrl = "https://example.com/cookie",
+            bookSourceName = "Cookie测试"
+        )
+        blockedClasses.forEach { className ->
+            val result = source.evalJS("String(Packages.$className)").toString()
+            assertTrue(result, result.startsWith("[JavaPackage "))
+        }
+    }
+
+    @Test
     fun diagnosticSourceLabelSupportsNestingAndCleanup() {
         assertNull(RhinoClassShutter.currentBookSourceLabel())
 

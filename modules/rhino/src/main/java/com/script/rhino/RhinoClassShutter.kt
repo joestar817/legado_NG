@@ -57,6 +57,11 @@ object RhinoClassShutter : ClassShutter {
         "io.legado.app.help.http.StrResponse"
     )
 
+    private val bookSourceProtectedClassNames = setOf(
+        "android.webkit.CookieManager",
+        "android.webkit.CookieSyncManager"
+    )
+
     private val bookSourcePolicyDepth = ThreadLocal<Int>()
 
     private val bookSourceLabel = ThreadLocal<String>()
@@ -247,6 +252,12 @@ object RhinoClassShutter : ClassShutter {
 
     override fun visibleToScripts(fullClassName: String): Boolean {
         if (protectedClassNamesMatcher.match(fullClassName)) {
+            return false
+        }
+        if (
+            (bookSourcePolicyDepth.get() ?: 0) > 0 &&
+            fullClassName in bookSourceProtectedClassNames
+        ) {
             return false
         }
         if (fullClassName in hostObjectClassAccess.get().orEmpty()) {
