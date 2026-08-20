@@ -33,7 +33,8 @@ object SharedJsScope {
         jsLib: String?,
         coroutineContext: CoroutineContext?,
         bookSourceClassPolicy: Boolean = false,
-        bookSourceLabel: String? = null
+        bookSourceLabel: String? = null,
+        scopeNamespace: String? = null
     ): Scriptable? {
         if (jsLib.isNullOrBlank()) {
             return null
@@ -42,7 +43,7 @@ object SharedJsScope {
             enabled = bookSourceClassPolicy,
             sourceLabel = bookSourceLabel
         ) {
-            val key = scopeKey(jsLib, bookSourceClassPolicy)
+            val key = scopeKey(jsLib, bookSourceClassPolicy, scopeNamespace)
             var scope = scopeMap[key]?.get()
             if (scope == null) {
                 scope = RhinoScriptEngine.run {
@@ -111,12 +112,27 @@ object SharedJsScope {
                 }
             }
         }
-        scopeMap.remove(scopeKey(jsLib, false))
-        scopeMap.remove(scopeKey(jsLib, true))
+        val jsLibHash = MD5Utils.md5Encode(jsLib)
+        scopeMap.snapshot().keys.forEach { key ->
+            if (key.endsWith(":$jsLibHash")) {
+                scopeMap.remove(key)
+            }
+        }
     }
 
-    private fun scopeKey(jsLib: String, bookSourceClassPolicy: Boolean): String {
-        val policyPrefix = if (bookSourceClassPolicy) "bookSource" else "default"
+    private fun scopeKey(
+        jsLib: String,
+        bookSourceClassPolicy: Boolean,
+        scopeNamespace: String?
+    ): String {
+        val policyPrefix = if (bookSourceClassPolicy) {
+            require(!scopeNamespace.isNullOrBlank()) {
+                "BookSource shared JS scope requires a source namespace"
+            }
+            "bookSource:$scopeNamespace"
+        } else {
+            "default"
+        }
         return "$policyPrefix:${MD5Utils.md5Encode(jsLib)}"
     }
 

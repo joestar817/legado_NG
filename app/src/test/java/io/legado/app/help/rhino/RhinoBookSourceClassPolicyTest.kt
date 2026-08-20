@@ -128,6 +128,35 @@ class RhinoBookSourceClassPolicyTest {
     }
 
     @Test
+    fun sharedJsScopeIsSeparatedBetweenBookSourcesButKeptForSameUrl() {
+        val jsLib = """
+            var codexScopeOwner = "";
+            function claimCodexScope(owner) {
+                if (codexScopeOwner === "") codexScopeOwner = String(owner);
+                return codexScopeOwner;
+            }
+        """.trimIndent()
+        val sourceA = BookSource(
+            bookSourceUrl = "https://example.com/source#a",
+            bookSourceName = "A",
+            jsLib = jsLib
+        )
+        val sourceAAfterUpdate = sourceA.copy(bookSourceName = "A更新后")
+        val sourceB = sourceA.copy(
+            bookSourceUrl = "https://example.com/source#b",
+            bookSourceName = "B"
+        )
+
+        try {
+            assertEquals("A", sourceA.evalJS("claimCodexScope('A')"))
+            assertEquals("A", sourceAAfterUpdate.evalJS("claimCodexScope('A更新后')"))
+            assertEquals("B", sourceB.evalJS("claimCodexScope('B')"))
+        } finally {
+            SharedJsScope.remove(jsLib)
+        }
+    }
+
+    @Test
     fun ttsAndRssRemainOutsideBookSourcePolicy() {
         val bookSource = BookSource(
             bookSourceUrl = "https://example.com/book",

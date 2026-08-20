@@ -15,7 +15,10 @@ fun BaseSource.getShareScope(coroutineContext: CoroutineContext? = null): Script
         jsLib = jsLib,
         coroutineContext = coroutineContext,
         bookSourceClassPolicy = bookSource != null,
-        bookSourceLabel = bookSource?.bookSourceName
+        bookSourceLabel = bookSource?.bookSourceName,
+        scopeNamespace = bookSource?.let {
+            BookSourceStorageScope.namespace(it.bookSourceUrl)
+        }
     )
 }
 
