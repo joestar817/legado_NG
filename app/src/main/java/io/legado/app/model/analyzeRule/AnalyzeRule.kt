@@ -15,10 +15,10 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.RssArticle
 import io.legado.app.exception.NoStackTraceException
-import io.legado.app.help.CacheManager
 import io.legado.app.help.JsExtensions
 import io.legado.app.help.http.BackstageWebView
-import io.legado.app.help.http.CookieStore
+import io.legado.app.help.http.BookSourceCookieStore
+import io.legado.app.help.source.scriptCacheObject
 import io.legado.app.help.source.getShareScope
 import io.legado.app.help.source.withBookSourceClassPolicy
 import io.legado.app.model.Debug
@@ -183,6 +183,7 @@ class AnalyzeRule(
                 javaScript = jsStr,
                 headerMap = getSource()?.getHeaderMap(true),
                 tag = getSource()?.getKey(),
+                source = getSource(),
                 cacheFirst = true,
                 timeout = 10000,
                 result = GSON.toJson(result),
@@ -830,8 +831,8 @@ class AnalyzeRule(
         return source.withBookSourceClassPolicy {
             val bindings = buildScriptBindings { bindings ->
                 bindings["java"] = this
-                bindings["cookie"] = CookieStore
-                bindings["cache"] = CacheManager
+                bindings["cookie"] = BookSourceCookieStore.forSource(source)
+                bindings["cache"] = source.scriptCacheObject()
                 bindings["source"] = source
                 bindings["book"] = book
                 bindings["result"] = result

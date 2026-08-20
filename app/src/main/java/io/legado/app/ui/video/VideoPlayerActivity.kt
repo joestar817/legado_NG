@@ -40,7 +40,8 @@ import io.legado.app.data.entities.RssSource
 import io.legado.app.databinding.ActivityVideoPlayerBinding
 import io.legado.app.help.GlideImageGetter
 import io.legado.app.help.TextViewTagHandler
-import io.legado.app.help.WebCacheManager
+import io.legado.app.help.source.webCacheObject
+import io.legado.app.help.http.BookSourceCookieStore
 import io.legado.app.help.book.removeType
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.gsyVideo.VideoPlayer
@@ -284,6 +285,11 @@ class VideoPlayerActivity : VMBaseActivity<ActivityVideoPlayerBinding, VideoPlay
         }
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
+            if (view != null && url != null) {
+                BookSourceCookieStore.forBookSource(VideoPlay.source)?.captureFromWebView(
+                    pageUrl = url
+                )
+            }
             view?.post {
                 binding.tvIntroContainer.requestLayout()
             }
@@ -304,8 +310,9 @@ class VideoPlayerActivity : VMBaseActivity<ActivityVideoPlayerBinding, VideoPlay
                 val webView = pooledWebView.realWebView
                 webView.onResume()
                 webView.webViewClient = CustomWebViewClient()
-                webView.addJavascriptInterface(WebCacheManager, nameCache)
-                VideoPlay.source?.let {
+                val source = VideoPlay.source
+                webView.addJavascriptInterface(source.webCacheObject(), nameCache)
+                source?.let {
                     webView.addJavascriptInterface(it, nameSource)
                     val webJsExtensions = WebJsExtensions(it, null, webView)
                     webView.addJavascriptInterface(webJsExtensions, nameJava)
@@ -322,6 +329,12 @@ class VideoPlayerActivity : VMBaseActivity<ActivityVideoPlayerBinding, VideoPlay
             val bookUrl = VideoPlay.book?.bookUrl
                 ?.takeIf { it.startsWith("http", true) }
                 ?.substringBefore(",")
+            if (bookUrl != null) {
+                BookSourceCookieStore.forBookSource(VideoPlay.source)?.applyToWebView(
+                    cookieUrl = bookUrl,
+                    targetUrl = bookUrl
+                )
+            }
             webView.loadDataWithBaseURL(bookUrl, html, "text/html", "utf-8", bookUrl)
             return
         }

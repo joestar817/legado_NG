@@ -47,7 +47,8 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.GlideImageGetter
 import io.legado.app.help.TextViewTagHandler
-import io.legado.app.help.WebCacheManager
+import io.legado.app.help.source.webCacheObject
+import io.legado.app.help.http.BookSourceCookieStore
 import io.legado.app.help.ai.AgentModeEntryContext
 import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.book.BookHelp
@@ -881,6 +882,11 @@ class BookInfoActivity :
         }
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
+            if (view != null && url != null) {
+                BookSourceCookieStore.forBookSource(viewModel.bookSource)?.captureFromWebView(
+                    pageUrl = url
+                )
+            }
             view?.post {
                 introContainer.requestLayout()
             }
@@ -902,8 +908,9 @@ class BookInfoActivity :
                 val webView = pooledWebView.realWebView
                 webView.onResume()
                 webView.webViewClient = CustomWebViewClient()
-                webView.addJavascriptInterface(WebCacheManager, nameCache)
-                viewModel.bookSource?.let {
+                val source = viewModel.bookSource
+                webView.addJavascriptInterface(source.webCacheObject(), nameCache)
+                source?.let {
                     webView.addJavascriptInterface(it as BaseSource, nameSource)
                     val webJsExtensions = WebJsExtensions(it, null, webView)
                     webView.addJavascriptInterface(webJsExtensions, nameJava)
@@ -920,6 +927,12 @@ class BookInfoActivity :
             val bookUrl = viewModel.getBook()?.bookUrl
                 ?.takeIf { it.startsWith("http", true) }
                 ?.substringBefore(",")
+            if (bookUrl != null) {
+                BookSourceCookieStore.forBookSource(viewModel.bookSource)?.applyToWebView(
+                    cookieUrl = bookUrl,
+                    targetUrl = bookUrl
+                )
+            }
             webView.loadDataWithBaseURL(bookUrl, html, "text/html", "utf-8", bookUrl)
             return
         }

@@ -21,6 +21,12 @@ interface CacheDao {
     @Query("delete from caches where `key` = :key")
     fun delete(key: String)
 
+    @Query("select * from caches where substr(`key`, 1, length(:prefix)) = :prefix")
+    fun getByPrefix(prefix: String): List<Cache>
+
+    @Query("delete from caches where substr(`key`, 1, length(:prefix)) = :prefix")
+    fun deleteByPrefix(prefix: String)
+
     @Query(
         """delete from caches where `key` like 'v_' || :key || '_%'
         or `key` = 'userInfo_' || :key

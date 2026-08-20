@@ -16,13 +16,13 @@ import io.legado.app.constant.AppPattern
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
-import io.legado.app.help.CacheManager
 import io.legado.app.help.ConcurrentRateLimiter
 import io.legado.app.help.JsExtensions
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.exoplayer.ExoPlayerHelper
 import io.legado.app.help.glide.GlideHeaders
 import io.legado.app.help.http.BackstageWebView
+import io.legado.app.help.http.BookSourceCookieStore
 import io.legado.app.help.http.CookieManager
 import io.legado.app.help.http.CookieManager.mergeCookies
 import io.legado.app.help.http.CookieStore
@@ -38,6 +38,7 @@ import io.legado.app.help.http.postForm
 import io.legado.app.help.http.postJson
 import io.legado.app.help.http.postMultipart
 import io.legado.app.help.source.getShareScope
+import io.legado.app.help.source.scriptCacheObject
 import io.legado.app.help.source.withBookSourceClassPolicy
 import io.legado.app.model.Debug
 import io.legado.app.utils.EncoderUtils
@@ -127,6 +128,9 @@ class AnalyzeUrl(
     private val domain: String
     private var webViewDelayTime: Long = 0
     private val concurrentRateLimiter = ConcurrentRateLimiter(source)
+    private val bookSourceCookieStore by lazy {
+        BookSourceCookieStore.forBookSource(source)
+    }
 
     // 服务器ID
     var serverID: Long? = null
@@ -372,8 +376,8 @@ class AnalyzeUrl(
             val bindings = buildScriptBindings { bindings ->
                 bindings["java"] = this
                 bindings["baseUrl"] = baseUrl
-                bindings["cookie"] = CookieStore
-                bindings["cache"] = CacheManager
+                bindings["cookie"] = BookSourceCookieStore.forSource(source)
+                bindings["cache"] = source.scriptCacheObject()
                 bindings["page"] = page
                 bindings["key"] = key
                 bindings["speakText"] = speakText
@@ -475,6 +479,7 @@ class AnalyzeUrl(
                             url = res.url,
                             html = res.body,
                             tag = source?.getKey(),
+                            source = source,
                             javaScript = webJs ?: jsStr,
                             sourceRegex = sourceRegex,
                             headerMap = headerMap,
@@ -485,6 +490,7 @@ class AnalyzeUrl(
                     else -> BackstageWebView(
                         url = url,
                         tag = source?.getKey(),
+                        source = source,
                         javaScript = webJs ?: jsStr,
                         sourceRegex = sourceRegex,
                         headerMap = headerMap,
@@ -530,6 +536,9 @@ class AnalyzeUrl(
             }
             val connectionTime = System.currentTimeMillis() - startTime
             strResponse.putCallTime(connectionTime.toInt())
+            if (enabledCookieJar) {
+                bookSourceCookieStore?.saveResponse(strResponse.raw)
+            }
             return strResponse
         } catch (e: Exception) {
             if (!isTest) {
@@ -591,6 +600,9 @@ class AnalyzeUrl(
 
                     else -> get(urlNoQuery, encodedQuery)
                 }
+            }
+            if (enabledCookieJar) {
+                bookSourceCookieStore?.saveResponse(response)
             }
             return response
         }
@@ -730,33 +742,22 @@ class AnalyzeUrl(
                 }
             }
             */
-            CookieStore.getCookie(domain)
+            val cookieUrl = if (enabledCookieJar && bookSourceCookieStore != null) {
+                url
+            } else {
+                domain
+            }
+            (bookSourceCookieStore ?: CookieStore).getCookie(cookieUrl)
         }
         if (cookie.isNotEmpty()) {
             mergeCookies(cookie, headerMap["Cookie"])?.let {
                 headerMap.put("Cookie", it)
             }
         }
-        if (enabledCookieJar) {
+        if (enabledCookieJar && bookSourceCookieStore == null) {
             headerMap[CookieManager.cookieJarHeader] = "1"
         } else {
             headerMap.remove(CookieManager.cookieJarHeader)
-        }
-    }
-
-    /**
-     * 保存cookieJar中的cookie在访问结束时就保存,不等到下次访问
-     */
-    private fun saveCookie() {
-        //书源启用保存cookie时 添加内存中的cookie到数据库
-        if (enabledCookieJar) {
-            val key = "${domain}_cookieJar"
-            CacheManager.getFromMemory(key)?.let {
-                if (it is String) {
-                    CookieStore.replaceCookie(domain, it)
-                    CacheManager.deleteMemory(key)
-                }
-            }
         }
     }
 

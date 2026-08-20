@@ -16,12 +16,14 @@ import io.legado.app.data.entities.BookSource
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.http.BackstageWebView
+import io.legado.app.help.http.BookSourceCookieStore
 import io.legado.app.help.http.CookieManager.cookieJarHeader
-import io.legado.app.help.http.CookieStore
+import io.legado.app.help.http.CookieManager.mergeCookies
 import io.legado.app.help.http.NetworkLog
 import io.legado.app.help.http.SSLHelper
 import io.legado.app.help.http.StrResponse
 import io.legado.app.help.source.BookSourceFileAccessPolicy
+import io.legado.app.help.source.bookSourceCacheStoreOrNull
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.source.SourceInteractionBlockedException
 import io.legado.app.help.source.SourceInteractionPolicy
@@ -254,6 +256,7 @@ interface JsExtensions : JsEncodeUtils {
                 javaScript = js,
                 headerMap = getSource()?.getHeaderMap(true),
                 tag = getSource()?.getKey(),
+                source = getSource(),
                 cacheFirst = cacheFirst
             ).getStrResponse().body
         }
@@ -287,6 +290,7 @@ interface JsExtensions : JsEncodeUtils {
                 javaScript = js,
                 headerMap = getSource()?.getHeaderMap(true),
                 tag = getSource()?.getKey(),
+                source = getSource(),
                 sourceRegex = sourceRegex,
                 cacheFirst = cacheFirst,
                 delayTime = delayTime
@@ -322,6 +326,7 @@ interface JsExtensions : JsEncodeUtils {
                 javaScript = js,
                 headerMap = getSource()?.getHeaderMap(true),
                 tag = getSource()?.getKey(),
+                source = getSource(),
                 overrideUrlRegex = overrideUrlRegex,
                 cacheFirst = cacheFirst,
                 delayTime = delayTime
@@ -423,14 +428,23 @@ interface JsExtensions : JsEncodeUtils {
     @JavascriptInterface
     fun cacheFile(urlStr: String, saveTime: Int): String {
         val key = md5Encode16(urlStr)
-        val cachePath = CacheManager.get(key)
+        val sourceCache = getSource().bookSourceCacheStoreOrNull()
+        val cachePath = if (sourceCache != null) {
+            sourceCache.get(key)
+        } else {
+            CacheManager.get(key)
+        }
         return if (
             cachePath.isNullOrBlank() ||
             !getFile(cachePath).exists()
         ) {
             val path = downloadFile(urlStr)
             log("首次下载 $urlStr >> $path")
-            CacheManager.put(key, path, saveTime)
+            if (sourceCache != null) {
+                sourceCache.put(key, path, saveTime)
+            } else {
+                CacheManager.put(key, path, saveTime)
+            }
             readTxtFile(path)
         } else {
             readTxtFile(cachePath)
@@ -447,10 +461,11 @@ interface JsExtensions : JsEncodeUtils {
 
     @JavascriptInterface
     fun getCookie(tag: String, key: String?): String {
+        val cookieStore = BookSourceCookieStore.forSource(getSource())
         return if (key != null) {
-            CookieStore.getKey(tag, key)
+            cookieStore.getKey(tag, key)
         } else {
-            CookieStore.getCookie(tag)
+            cookieStore.getCookie(tag)
         }
     }
 
@@ -528,9 +543,7 @@ interface JsExtensions : JsEncodeUtils {
     }
 
     fun get(urlStr: String, headers: Map<String, String>, timeout: Int?): Connection.Response {
-        val requestHeaders = if (getSource()?.enabledCookieJar == true) {
-            headers.toMutableMap().apply { put(cookieJarHeader, "1") }
-        } else headers
+        val (requestHeaders, cookieStore) = sourceRequestHeaders(urlStr, headers)
         val rateLimiter = ConcurrentRateLimiter(getSource())
         val start = System.nanoTime()
         val response = try {
@@ -559,6 +572,7 @@ interface JsExtensions : JsEncodeUtils {
             }
             throw e
         }
+        cookieStore?.saveResponse(response)
         if (NetworkLog.isEnabled) {
             NetworkLog.recordEvent(
                 type = "JS",
@@ -583,9 +597,7 @@ interface JsExtensions : JsEncodeUtils {
     }
 
     fun head(urlStr: String, headers: Map<String, String>, timeout: Int?): Connection.Response {
-        val requestHeaders = if (getSource()?.enabledCookieJar == true) {
-            headers.toMutableMap().apply { put(cookieJarHeader, "1") }
-        } else headers
+        val (requestHeaders, cookieStore) = sourceRequestHeaders(urlStr, headers)
         val rateLimiter = ConcurrentRateLimiter(getSource())
         val start = System.nanoTime()
         val response = try {
@@ -614,6 +626,7 @@ interface JsExtensions : JsEncodeUtils {
             }
             throw e
         }
+        cookieStore?.saveResponse(response)
         if (NetworkLog.isEnabled) {
             NetworkLog.recordEvent(
                 type = "JS",
@@ -637,9 +650,7 @@ interface JsExtensions : JsEncodeUtils {
     }
 
     fun post(urlStr: String, body: String, headers: Map<String, String>, timeout: Int?): Connection.Response {
-        val requestHeaders = if (getSource()?.enabledCookieJar == true) {
-            headers.toMutableMap().apply { put(cookieJarHeader, "1") }
-        } else headers
+        val (requestHeaders, cookieStore) = sourceRequestHeaders(urlStr, headers)
         val rateLimiter = ConcurrentRateLimiter(getSource())
         val start = System.nanoTime()
         val response = try {
@@ -670,6 +681,7 @@ interface JsExtensions : JsEncodeUtils {
             }
             throw e
         }
+        cookieStore?.saveResponse(response)
         if (NetworkLog.isEnabled) {
             NetworkLog.recordEvent(
                 type = "JS",
@@ -685,6 +697,32 @@ interface JsExtensions : JsEncodeUtils {
             )
         }
         return response
+    }
+
+    private fun sourceRequestHeaders(
+        url: String,
+        headers: Map<String, String>
+    ): Pair<Map<String, String>, BookSourceCookieStore?> {
+        val source = getSource()
+        val bookSourceCookieStore = BookSourceCookieStore.forBookSource(source)
+        if (bookSourceCookieStore != null) {
+            val enabledCookieStore = bookSourceCookieStore.takeIf {
+                source?.enabledCookieJar == true
+            }
+            val requestHeaders = headers.toMutableMap().apply {
+                remove(cookieJarHeader)
+                enabledCookieStore?.getCookie(url)?.takeIf(String::isNotEmpty)?.let { cookie ->
+                    mergeCookies(cookie, get("Cookie"))?.let { put("Cookie", it) }
+                }
+            }
+            return requestHeaders to enabledCookieStore
+        }
+        val requestHeaders = if (source?.enabledCookieJar == true) {
+            headers.toMutableMap().apply { put(cookieJarHeader, "1") }
+        } else {
+            headers
+        }
+        return requestHeaders to null
     }
 
     private fun networkElapsedMs(start: Long): Long {

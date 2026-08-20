@@ -19,9 +19,10 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.CacheManager
-import io.legado.app.help.WebCacheManager
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.source.bookSourceCacheStoreOrNull
+import io.legado.app.help.source.webCacheObject
 import io.legado.app.help.webView.PooledWebView
 import io.legado.app.help.webView.WebJsExtensions
 import io.legado.app.help.webView.WebJsExtensions.Companion.getInjectionString
@@ -53,6 +54,7 @@ class BackstageWebView(
     private val html: String? = null,
     private val encode: String? = null,
     private val tag: String? = null,
+    private val source: BaseSource? = null,
     private val headerMap: HashMap<String, String>? = null,
     private val sourceRegex: String? = null,
     private val overrideUrlRegex: String? = null,
@@ -67,6 +69,7 @@ class BackstageWebView(
     private val mHandler = Handler(Looper.getMainLooper())
     private var callback: Callback? = null
     private var pooledWebView: PooledWebView? = null
+    private var resolvedSource: BaseSource? = source
 
     suspend fun getStrResponse(): StrResponse = withTimeout(timeout ?: 60000L) {
         suspendCancellableCoroutine { block ->
@@ -111,35 +114,48 @@ class BackstageWebView(
         try {
             when {
                 !html.isNullOrEmpty() -> {
+                    val ruleSource = source ?: if (isRule) {
+                        tag?.let(appDb.bookSourceDao::getBookSource)
+                    } else {
+                        null
+                    }
+                    resolvedSource = ruleSource
                     if (isRule) {
-                        webView.addJavascriptInterface(WebCacheManager, nameCache)
-                        tag?.let { key ->
-                           appDb.bookSourceDao.getBookSource(key)?.let {
-                               webView.webChromeClient = object : WebChromeClient() {
-                                   /* 监听网页日志 */
-                                   override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                                       val messageLevel = consoleMessage.messageLevel().name
-                                       val message = consoleMessage.message()
-                                       Debug.log(it.bookSourceUrl, "${messageLevel}: $message", true)
-                                       return true
-                                   }
-                               }
-                               webView.addJavascriptInterface(it as BaseSource, nameSource)
-                               val webJsExtensions = WebJsExtensions(it, null, webView)
-                               webView.addJavascriptInterface(webJsExtensions, nameJava)
+                        webView.addJavascriptInterface(ruleSource.webCacheObject(), nameCache)
+                        ruleSource?.let {
+                            webView.webChromeClient = object : WebChromeClient() {
+                                /* 监听网页日志 */
+                                override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                                    val messageLevel = consoleMessage.messageLevel().name
+                                    val message = consoleMessage.message()
+                                    Debug.log(it.getKey(), "${messageLevel}: $message", true)
+                                    return true
+                                }
                             }
+                            webView.addJavascriptInterface(it, nameSource)
+                            val webJsExtensions = WebJsExtensions(it, null, webView)
+                            webView.addJavascriptInterface(webJsExtensions, nameJava)
                         }
                     }
                     result?.let {
-                        CacheManager.put("webview_result", it)
+                        val sourceCache = ruleSource.bookSourceCacheStoreOrNull()
+                        if (sourceCache != null) {
+                            sourceCache.put("webview_result", it)
+                        } else {
+                            CacheManager.put("webview_result", it)
+                        }
                     }
+                    applyBookSourceCookie(url)
                     webView.loadDataWithBaseURL(url, html, "text/html", getEncoding(), url)
                 }
 
-                else -> if (headerMap == null) {
-                    webView.loadUrl(url!!)
-                } else {
-                    webView.loadUrl(url!!, headerMap)
+                else -> {
+                    applyBookSourceCookie(url)
+                    if (headerMap == null) {
+                        webView.loadUrl(url!!)
+                    } else {
+                        webView.loadUrl(url!!, headerMap)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -181,12 +197,23 @@ class BackstageWebView(
     }
 
     private fun setCookie(url: String) {
-        tag?.let {
+        resolvedSource?.let { source ->
             Coroutine.async(executeContext = IO) {
-                val cookie = CookieManager.getInstance().getCookie(url)
-                CookieStore.setCookie(it, cookie)
+                BookSourceCookieStore.forBookSource(source)?.captureFromWebView(
+                    pageUrl = url,
+                    storageUrl = if (source.enabledCookieJar == true) url else source.getKey()
+                ) ?: CookieStore.setCookie(source.getKey(), CookieManager.getInstance().getCookie(url))
             }
         }
+    }
+
+    private fun applyBookSourceCookie(targetUrl: String?) {
+        targetUrl ?: return
+        val source = resolvedSource ?: return
+        BookSourceCookieStore.forBookSource(source)?.applyToWebView(
+            cookieUrl = if (source.enabledCookieJar == true) targetUrl else source.getKey(),
+            targetUrl = targetUrl
+        )
     }
 
     private inner class HtmlWebViewClient : WebViewClient() {

@@ -82,6 +82,14 @@ object CacheManager {
         memoryLruCache.remove(key)
     }
 
+    internal fun deleteMemoryByPrefix(prefix: String) {
+        memoryLruCache.snapshot().keys.forEach { key ->
+            if (key.startsWith(prefix)) {
+                memoryLruCache.remove(key)
+            }
+        }
+    }
+
     fun get(key: String): String? {
         getFromMemory(key)?.let {
             if (it is String) return it

@@ -25,6 +25,7 @@ import io.legado.app.constant.AppConst
 import io.legado.app.constant.AppConst.imagePathKey
 import io.legado.app.databinding.ActivityWebViewBinding
 import io.legado.app.help.http.CookieStore
+import io.legado.app.help.http.BookSourceCookieStore
 import io.legado.app.help.source.SourceVerificationHelp
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.lib.dialogs.alert
@@ -62,7 +63,7 @@ import splitties.systemservices.powerManager
 import java.lang.ref.WeakReference
 import java.net.URLDecoder
 import androidx.core.graphics.createBitmap
-import io.legado.app.help.WebCacheManager
+import io.legado.app.help.source.webCacheObject
 import io.legado.app.help.webView.WebJsExtensions.Companion.nameCache
 
 class WebViewActivity : VMBaseActivity<ActivityWebViewBinding, WebViewModel>() {
@@ -116,7 +117,10 @@ class WebViewActivity : VMBaseActivity<ActivityWebViewBinding, WebViewModel>() {
                         val webJsExtensions = WebJsExtensions(it, this, currentWebView)
                         currentWebView.addJavascriptInterface(webJsExtensions, nameJava)
                     }
-                    currentWebView.addJavascriptInterface(WebCacheManager, nameCache)
+                    currentWebView.addJavascriptInterface(
+                        viewModel.source.webCacheObject(),
+                        nameCache
+                    )
                 }
                 currentWebView.loadDataWithBaseURL(url, html, "text/html", "utf-8", url)
             }
@@ -249,7 +253,15 @@ class WebViewActivity : VMBaseActivity<ActivityWebViewBinding, WebViewModel>() {
                 userAgentString = it
             }
         }
-        AppCookieManager.applyToWebView(url)
+        val sourceCookieStore = BookSourceCookieStore.forBookSource(viewModel.source)
+        if (sourceCookieStore != null) {
+            sourceCookieStore.applyToWebView(
+                cookieUrl = url,
+                targetUrl = url
+            )
+        } else {
+            AppCookieManager.applyToWebView(url)
+        }
         currentWebView.setOnLongClickListener {
             val hitTestResult = currentWebView.hitTestResult
             if (hitTestResult.type == WebView.HitTestResult.IMAGE_TYPE ||
@@ -451,9 +463,10 @@ class WebViewActivity : VMBaseActivity<ActivityWebViewBinding, WebViewModel>() {
         
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
-            val cookieManager = CookieManager.getInstance()
             url?.let {
-                CookieStore.setCookie(it, cookieManager.getCookie(it))
+                BookSourceCookieStore.forBookSource(viewModel.source)?.captureFromWebView(
+                    pageUrl = it
+                ) ?: CookieStore.setCookie(it, CookieManager.getInstance().getCookie(it))
             }
             view?.title?.let { title ->
                 if (title != url && title != view.url && title.isNotBlank()) {

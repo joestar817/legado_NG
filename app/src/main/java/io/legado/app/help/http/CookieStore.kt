@@ -34,7 +34,7 @@ object CookieStore : CookieManagerInterface {
         }
     }
 
-    fun setWebCookie(url: String, cookie: String) {
+    override fun setWebCookie(url: String, cookie: String) {
         try {
             val baseUrl = NetworkUtils.getBaseUrl(url) ?: return
             val cookies = cookie.splitNotBlank(";")
@@ -84,7 +84,7 @@ object CookieStore : CookieManagerInterface {
         return ck
     }
 
-    fun getKey(url: String, key: String): String {
+    override fun getKey(url: String, key: String): String {
         val cookie = getCookie(url)
         val sessionCookie = CookieManager.getSessionCookie(url)
         val cookieMap = mergeCookiesToMap(cookie, sessionCookie)

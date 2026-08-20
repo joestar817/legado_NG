@@ -39,7 +39,7 @@ import io.legado.app.constant.AppLog
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.databinding.DialogWebViewBinding
-import io.legado.app.help.WebCacheManager
+import io.legado.app.help.source.webCacheObject
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.webView.PooledWebView
 import io.legado.app.help.webView.WebJsExtensions
@@ -67,6 +67,7 @@ import io.legado.app.constant.AppConst.imagePathKey
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.http.NetworkLog
+import io.legado.app.help.http.BookSourceCookieStore
 import io.legado.app.help.http.newCallResponse
 import io.legado.app.help.http.newCallResponseBody
 import io.legado.app.help.http.okHttpClient
@@ -561,7 +562,11 @@ class BottomWebViewDialog() : BottomSheetDialogFragment(R.layout.dialog_web_view
                 currentWebView.addJavascriptInterface(webJsExtensions, nameJava)
             }
             currentWebView.addJavascriptInterface(source, nameSource)
-            currentWebView.addJavascriptInterface(WebCacheManager, nameCache)
+            currentWebView.addJavascriptInterface(source.webCacheObject(), nameCache)
+            BookSourceCookieStore.forBookSource(source)?.applyToWebView(
+                cookieUrl = url,
+                targetUrl = url
+            )
         }
         currentWebView.loadDataWithBaseURL(url, html, "text/html", "utf-8", url)
     }
@@ -789,6 +794,15 @@ class BottomWebViewDialog() : BottomSheetDialogFragment(R.layout.dialog_web_view
             currentWebView.evaluateJavascript(basicJs, null)
         }
 
+        override fun onPageFinished(view: WebView?, url: String?) {
+            super.onPageFinished(view, url)
+            if (view != null && url != null) {
+                BookSourceCookieStore.forBookSource(source)?.captureFromWebView(
+                    pageUrl = url
+                )
+            }
+        }
+
         private fun shouldOverrideUrlLoading(url: Uri): Boolean {
             NetworkLog.recordEvent(
                 type = "WebView",
@@ -858,7 +872,8 @@ class BottomWebViewDialog() : BottomSheetDialogFragment(R.layout.dialog_web_view
         private val webCookieManager by lazy { android.webkit.CookieManager.getInstance() }
         private suspend fun getModifiedContentWithJs(url: String, request: WebResourceRequest): WebResourceResponse? {
             try {
-                val cookie = webCookieManager.getCookie(url)
+                val sourceCookieStore = BookSourceCookieStore.forBookSource(source)
+                val cookie = sourceCookieStore?.getCookie(url) ?: webCookieManager.getCookie(url)
                 val res = okHttpClient.newCallResponse {
                     url(url)
                     method(request.method, null)
@@ -871,6 +886,7 @@ class BottomWebViewDialog() : BottomSheetDialogFragment(R.layout.dialog_web_view
                 }
                 res.headers("Set-Cookie").forEach { setCookie ->
                     webCookieManager.setCookie(url, setCookie)
+                    sourceCookieStore?.replaceCookie(url, setCookie)
                 }
                 val body = res.body
                 val contentType = body.contentType()

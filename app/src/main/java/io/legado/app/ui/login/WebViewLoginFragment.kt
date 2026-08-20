@@ -20,6 +20,7 @@ import io.legado.app.base.BaseFragment
 import io.legado.app.constant.AppConst
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.databinding.FragmentWebViewLoginBinding
+import io.legado.app.help.http.BookSourceCookieStore
 import io.legado.app.help.http.CookieStore
 import io.legado.app.help.webView.PooledWebView
 import io.legado.app.lib.theme.accentColor
@@ -85,16 +86,26 @@ class WebViewLoginFragment : BaseFragment(R.layout.fragment_web_view_login) {
             }
         }
         val cookieManager = CookieManager.getInstance()
+        val bookSourceCookieStore = BookSourceCookieStore.forBookSource(source)
+        fun captureCookie(url: String?) {
+            url ?: return
+            if (bookSourceCookieStore != null) {
+                bookSourceCookieStore.captureFromWebView(
+                    pageUrl = url,
+                    storageUrl = source.getKey()
+                )
+            } else {
+                CookieStore.setCookie(source.getKey(), cookieManager.getCookie(url))
+            }
+        }
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                val cookie = cookieManager.getCookie(url)
-                CookieStore.setCookie(source.getKey(), cookie)
+                captureCookie(url)
                 super.onPageStarted(view, url, favicon)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                val cookie = cookieManager.getCookie(url)
-                CookieStore.setCookie(source.getKey(), cookie)
+                captureCookie(url)
                 if (checking) {
                     activity?.finish()
                 }
@@ -152,7 +163,13 @@ class WebViewLoginFragment : BaseFragment(R.layout.fragment_web_view_login) {
     private fun loadUrl(source: BaseSource) {
         val loginUrl = source.loginUrl ?: return
         val absoluteUrl = NetworkUtils.getAbsoluteURL(source.getKey(), loginUrl)
-        currentWebView?.loadUrl(absoluteUrl, viewModel.headerMap)
+        currentWebView?.let { webView ->
+            BookSourceCookieStore.forBookSource(source)?.applyToWebView(
+                cookieUrl = source.getKey(),
+                targetUrl = absoluteUrl
+            )
+            webView.loadUrl(absoluteUrl, viewModel.headerMap)
+        }
     }
 
     override fun onDestroy() {

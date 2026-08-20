@@ -1,6 +1,7 @@
 package io.legado.app.ui.book.source.edit
 
 import android.app.Application
+import android.webkit.CookieManager
 import android.content.Intent
 import io.legado.app.R
 import io.legado.app.base.BaseViewModel
@@ -10,7 +11,7 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.ConcurrentRateLimiter.Companion.concurrentRecordMap
 import io.legado.app.help.RuleComplete
 import io.legado.app.help.config.SourceConfig
-import io.legado.app.help.http.CookieStore
+import io.legado.app.help.http.BookSourceCookieStore
 import io.legado.app.help.http.newCallStrResponse
 import io.legado.app.help.http.okHttpClient
 import io.legado.app.help.source.SourceHelp
@@ -26,6 +27,7 @@ import io.legado.app.utils.isJsonArray
 import io.legado.app.utils.isJsonObject
 import io.legado.app.utils.jsonPath
 import io.legado.app.utils.printOnDebug
+import io.legado.app.utils.removeCookie
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.Dispatchers
 
@@ -141,7 +143,8 @@ class BookSourceEditViewModel(application: Application) : BaseViewModel(applicat
 
     fun clearCookie(url: String) {
         execute {
-            CookieStore.removeCookie(url)
+            BookSourceCookieStore(url).removeCookie(url)
+            CookieManager.getInstance().removeCookie(url)
         }
     }
 

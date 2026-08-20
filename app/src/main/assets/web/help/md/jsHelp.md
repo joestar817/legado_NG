@@ -517,6 +517,8 @@ source.refreshExplore()
 source.refreshJSLib()
 ```
 ## cookie对象的部分可用函数
+
+> 在书源规则中，Cookie 按完整书源 URL 独立保存；同 URL 更新继续使用原登录状态，不同书源不会共享 Cookie。
 ```js
 获取全部cookie
 cookie.getCookie(url: String)
@@ -533,6 +535,8 @@ cookie.setWebCookie(url: String, cookie: String)
 ```
 
 ## cache对象的部分可用函数
+
+> 在书源规则中，缓存按完整书源 URL 独立保存；相同 key 只能访问当前书源自己的数据。
 > saveTime单位:秒，可省略  
 > 保存至数据库和缓存文件(50M)，保存的内容较大时请使用`getFile putFile`
 ```js

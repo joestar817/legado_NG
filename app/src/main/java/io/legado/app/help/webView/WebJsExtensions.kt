@@ -8,6 +8,7 @@ import io.legado.app.data.entities.BaseSource
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.CacheManager
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.source.bookSourceCacheStoreOrNull
 import io.legado.app.model.analyzeRule.AnalyzeRule.Companion.setCoroutineContext
 import io.legado.app.ui.rss.read.RssJsExtensions
 import io.legado.app.utils.GSON
@@ -25,6 +26,7 @@ class WebJsExtensions(
 ): RssJsExtensions(activity, source, bookType) {
     private val callbackRef: WeakReference<Callback> = WeakReference(callback)
     private val webViewRef: WeakReference<WebView?> = WeakReference(webView)
+    private val bookSourceCache = source.bookSourceCacheStoreOrNull()
 
     interface Callback {
         fun upConfig(config: String)
@@ -152,10 +154,18 @@ class WebJsExtensions(
                 else -> throw NoStackTraceException("error funName")
             }
         }.onSuccess { data ->
-            CacheManager.putMemory(id, data)
+            if (bookSourceCache != null) {
+                bookSourceCache.putMemory(id, data)
+            } else {
+                CacheManager.putMemory(id, data)
+            }
             webViewRef.get()?.evaluateJavascript("window.$JSBridgeResult('$id', true);", null)
         }.onError {
-            CacheManager.putMemory(id, it.localizedMessage ?: "err")
+            if (bookSourceCache != null) {
+                bookSourceCache.putMemory(id, it.localizedMessage ?: "err")
+            } else {
+                CacheManager.putMemory(id, it.localizedMessage ?: "err")
+            }
             webViewRef.get()?.evaluateJavascript("window.$JSBridgeResult('$id', false);", null)
         }
     }

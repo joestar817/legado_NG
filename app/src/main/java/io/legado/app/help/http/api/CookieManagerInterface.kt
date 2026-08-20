@@ -22,6 +22,14 @@ interface CookieManagerInterface {
      */
     fun removeCookie(url: String)
 
+    fun getKey(url: String, key: String): String {
+        return cookieToMap(getCookie(url))[key] ?: ""
+    }
+
+    fun setWebCookie(url: String, cookie: String) {
+        replaceCookie(url, cookie)
+    }
+
     fun cookieToMap(cookie: String): MutableMap<String, String>
 
     fun mapToCookie(cookieMap: Map<String, String>?): String?

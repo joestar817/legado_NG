@@ -1,7 +1,6 @@
 package io.legado.app.help.source
 
 import java.io.File
-import java.security.MessageDigest
 
 internal data class BookSourceFileTarget(
     val file: File,
@@ -11,11 +10,10 @@ internal data class BookSourceFileTarget(
 internal object BookSourceFileAccessPolicy {
 
     private const val sourceRootFolder = "source"
-    private const val bookSourceIdentityPrefix = "book\u0000"
 
     fun resolveSourceRoot(cacheRoot: File, sourceUrl: String): File {
         val canonicalCacheRoot = cacheRoot.canonicalFile
-        val namespace = namespace(sourceUrl)
+        val namespace = BookSourceStorageScope.namespace(sourceUrl)
         val sourceRoot = File(canonicalCacheRoot, "$sourceRootFolder${File.separator}$namespace")
             .canonicalFile
         requireStrictChild(canonicalCacheRoot, sourceRoot)
@@ -65,12 +63,6 @@ internal object BookSourceFileAccessPolicy {
         file.listFiles()?.forEach { child ->
             requireContainedTree(canonicalRoot, child, visitedDirectories)
         }
-    }
-
-    private fun namespace(sourceUrl: String): String {
-        return MessageDigest.getInstance("SHA-256")
-            .digest((bookSourceIdentityPrefix + sourceUrl).toByteArray(Charsets.UTF_8))
-            .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }
 
     private fun isAbsolutePathInsideSourceRoot(canonicalRoot: File, path: String): Boolean {
