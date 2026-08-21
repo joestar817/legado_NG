@@ -16,7 +16,6 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
-import androidx.annotation.LayoutRes
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
@@ -33,8 +32,6 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.databinding.DialogReadAloudModeSheetBinding
 import io.legado.app.databinding.DialogReadAloudMoreSheetBinding
-import io.legado.app.databinding.DialogReadAloudSpeedSheetBinding
-import io.legado.app.databinding.DialogReadAloudTimerSheetBinding
 import io.legado.app.help.IntentHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ThemeConfig
@@ -44,7 +41,6 @@ import io.legado.app.help.tts.TtsEngineCapability
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsEngineType
-import io.legado.app.help.tts.TtsSpeedPolicy
 import io.legado.app.lib.theme.view.ThemeSwitch
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
@@ -56,7 +52,6 @@ import io.legado.app.ui.config.TtsEngineSelectionSheet
 import io.legado.app.ui.config.TtsVoiceOption
 import io.legado.app.ui.config.TtsVoiceSelectionSheet
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
-import io.legado.app.ui.widget.dialog.applyNgDialogWindow
 import io.legado.app.ui.widget.recycler.scroller.FastScrollRecyclerView
 import io.legado.app.ui.widget.seekbar.SeekBarChangeListener
 import io.legado.app.utils.ColorUtils
@@ -94,85 +89,6 @@ abstract class ReadAloudBottomSheet(layoutId: Int) : BaseDialogFragment(layoutId
             ThemeConfig.getBgImage(requireContext(), resources.displayMetrics)
         }.getOrNull() ?: return
         view?.background = ReadDrawerStyle.wrapTopRounded(background)
-    }
-}
-
-abstract class ReadAloudSliderDialog(@LayoutRes layoutId: Int) : BaseDialogFragment(layoutId) {
-    override fun onStart() {
-        super.onStart()
-        applyNgDialogWindow(marginDp = 10)
-    }
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        view.setBackgroundResource(R.drawable.ng_bg_read_aloud_slider_dialog)
-    }
-}
-
-class ReadAloudTimerDialog : ReadAloudSliderDialog(R.layout.dialog_read_aloud_timer_sheet) {
-    private val binding by viewBinding(DialogReadAloudTimerSheetBinding::bind)
-
-    override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) = binding.run {
-        seekTimer.applyReadAloudSliderStyle()
-        val activeMinute = BaseReadAloudService.timeMinute
-        val initialMinute = if (activeMinute > 0) {
-            activeMinute
-        } else {
-            AppConfig.ttsTimer
-        }.coerceIn(0, seekTimer.max)
-        seekTimer.progress = initialMinute
-        upTitle(initialMinute)
-        seekTimer.setOnSeekBarChangeListener(object : SeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                upTitle(progress)
-            }
-
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
-                val safeContext = this@ReadAloudTimerDialog.context ?: return
-                val minute = seekBar.progress.coerceIn(0, seekBar.max)
-                AppConfig.ttsTimer = minute
-                ReadAloud.setTimer(safeContext, minute)
-            }
-        })
-    }
-
-    private fun upTitle(minute: Int) {
-        binding.tvTitle.text = if (minute <= 0) {
-            "定时关闭"
-        } else {
-            "定时关闭 ${minute}分钟"
-        }
-    }
-}
-
-class ReadAloudSpeedDialog : ReadAloudSliderDialog(R.layout.dialog_read_aloud_speed_sheet) {
-    private val binding by viewBinding(DialogReadAloudSpeedSheetBinding::bind)
-
-    override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) = binding.run {
-        seekSpeed.applyReadAloudSliderStyle()
-        seekSpeed.progress = AppConfig.ttsSpeechRate.coerceIn(0, seekSpeed.max)
-        upTitle(seekSpeed.progress)
-        seekSpeed.setOnSeekBarChangeListener(object : SeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                upTitle(progress)
-            }
-
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
-                val safeContext = this@ReadAloudSpeedDialog.context ?: return
-                AppConfig.ttsFlowSys = false
-                AppConfig.ttsSpeechRate = seekBar.progress
-                (activity as? ReadAloudPlayerActivity)?.refreshPlaybackSpeedLabel()
-                ReadAloud.upTtsSpeechRate(safeContext)
-                if (BaseReadAloudService.isPlay() && ReadAloud.httpTtsEngineV2 == null) {
-                    ReadAloud.pause(safeContext)
-                    ReadAloud.resume(safeContext)
-                }
-            }
-        })
-    }
-
-    private fun upTitle(progress: Int) {
-        binding.tvTitle.text = "播放速度 ${TtsSpeedPolicy.playbackLabel(progress)}"
     }
 }
 

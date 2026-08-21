@@ -678,6 +678,9 @@
     <string name="set_timer">Timer</string>
     <string name="read_aloud_pause">Speak Paused</string>
     <string name="read_aloud_timer">Speaking(%d min left)</string>
+    <string name="read_aloud_timer_close_title">Timer off</string>
+    <string name="read_aloud_timer_close_minutes">Timer off · %1$d min</string>
+    <string name="read_aloud_playback_speed_title">Playback speed · %1$s</string>
     <string name="playing_timer">Playing(%d min left)</string>
     <string name="ps_hide_navigation_bar">Hide virtual buttons when reading</string>
     <string name="pt_hide_navigation_bar">Hide navigation bar</string>

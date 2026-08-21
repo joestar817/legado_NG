@@ -628,7 +628,7 @@ Provider 试点冻结规格：
 
 冻结外壳：
 
-- 与发音人抽屉使用同一背景策略：主题背景图叠加浅色可读遮罩；无背景图时使用 `ng_surface_soft`。
+- 统一使用 `NgBottomDrawerSurface`／`NgDrawerPalette` 派生的 NG 抽屉材质，不嵌入主题、阅读预设、封面或业务页面背景图。
 - 顶部圆角 28dp，默认展开到屏幕高度约 88%，由 BottomSheet 处理返回、拖拽和安全区。
 - 搜索复用 44dp `NgSearchBar`；Compose 长列表复用 `NgLongDrawerHeader` 的 12dp 紧凑提示线、42dp 标题栏、17sp Medium 标题与 40dp 尾部操作区，普通标题区为 54dp、20sp。
 - 只有搜索、没有其它过滤条件的简单长列表，可以在 compact 标题栏使用 40dp 搜索图标，点击后展开搜索框。
