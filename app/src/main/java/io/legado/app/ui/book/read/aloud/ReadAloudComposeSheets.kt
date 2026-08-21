@@ -29,17 +29,22 @@ import androidx.compose.ui.unit.sp
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.tts.TtsSpeedPolicy
 import io.legado.app.model.ReadAloud
+import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
+import io.legado.app.ui.book.listen.ListeningCoverTheme
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.NgThemeSnapshot
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
@@ -49,6 +54,8 @@ import kotlin.math.roundToInt
  * [NgBottomDrawerSurface]，避免播放器重新维护一套抽屉外观。
  */
 internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment() {
+
+    private var listeningThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         BottomSheetDialog(requireContext(), theme)
@@ -60,6 +67,32 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
     ): View = ComposeView(requireContext()).apply {
         setBackgroundColor(AndroidColor.TRANSPARENT)
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        val book = ReadBook.book
+        val sourceOrigin = ReadBook.bookSource?.bookSourceUrl
+        listeningThemeSnapshot = ListeningCoverTheme.cached(book, sourceOrigin)
+            ?: ListeningCoverTheme.fallback(requireContext())
+        if (book != null) {
+            viewLifecycleOwner.lifecycleScope.launch {
+                listeningThemeSnapshot = ListeningCoverTheme.resolve(
+                    context = requireContext(),
+                    book = book,
+                    sourceOrigin = sourceOrigin,
+                )
+            }
+        }
+    }
+
+    @Composable
+    protected fun ListeningSheetTheme(content: @Composable () -> Unit) {
+        NgAppTheme(
+            snapshot = listeningThemeSnapshot,
+            updateSystemBars = false,
+            content = content,
+        )
     }
 
     override fun onStart() {
@@ -94,7 +127,7 @@ internal class ReadAloudTimerDialog : ReadAloudComposeBottomSheet() {
         val initialMinute = BaseReadAloudService.timeMinute.takeIf { it > 0 }
             ?: AppConfig.ttsTimer
         (view as ComposeView).setContent {
-            NgAppTheme(updateSystemBars = false) {
+            ListeningSheetTheme {
                 ReadAloudTimerSheet(
                     initialMinute = initialMinute.coerceIn(0, TIMER_MAX_MINUTES),
                     onValueCommitted = ::commitMinute,
@@ -116,7 +149,7 @@ internal class ReadAloudSpeedDialog : ReadAloudComposeBottomSheet() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         (view as ComposeView).setContent {
-            NgAppTheme(updateSystemBars = false) {
+            ListeningSheetTheme {
                 ReadAloudSpeedSheet(
                     initialProgress = AppConfig.ttsSpeechRate.coerceIn(0, SPEED_MAX_PROGRESS),
                     onValueCommitted = ::commitSpeed,

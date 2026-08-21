@@ -12,23 +12,17 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
-import androidx.appcompat.widget.AppCompatImageButton
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.google.android.flexbox.FlexboxLayout
 import io.legado.app.R
 import io.legado.app.base.BaseDialogFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
-import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.databinding.DialogReadAloudModeSheetBinding
 import io.legado.app.databinding.DialogReadAloudMoreSheetBinding
@@ -51,11 +45,8 @@ import io.legado.app.ui.config.ConfigTag
 import io.legado.app.ui.config.TtsEngineSelectionSheet
 import io.legado.app.ui.config.TtsVoiceOption
 import io.legado.app.ui.config.TtsVoiceSelectionSheet
-import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
-import io.legado.app.ui.widget.recycler.scroller.FastScrollRecyclerView
 import io.legado.app.ui.widget.seekbar.SeekBarChangeListener
 import io.legado.app.utils.ColorUtils
-import io.legado.app.utils.StringUtils
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.postEvent
@@ -546,222 +537,6 @@ class ReadAloudMoreSheet : ReadAloudBottomSheet(R.layout.dialog_read_aloud_more_
     }
 }
 
-class ReadAloudCatalogSheet(
-    private val activity: ReadAloudPlayerActivity
-) {
-    private lateinit var sheet: NgLongListBottomSheet
-    private lateinit var recyclerChapters: FastScrollRecyclerView
-    private lateinit var textSummary: TextView
-    private lateinit var textEmpty: TextView
-    private lateinit var buttonJumpEdge: AppCompatImageButton
-    private val adapter by lazy {
-        ReadAloudCatalogAdapter(
-            context = activity,
-            currentIndex = { ReadBook.durChapterIndex },
-            onSelect = ::selectChapter
-        )
-    }
-
-    fun show() {
-        sheet = NgLongListBottomSheet(
-            context = activity,
-            searchHint = "搜索章节",
-            title = "目录",
-            showSearch = false
-        )
-        textSummary = TextView(activity).apply {
-            setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface_variant))
-            textSize = 15f
-            includeFontPadding = false
-            setPadding(0, 2.dpToPx(), 0, 12.dpToPx())
-        }
-        recyclerChapters = FastScrollRecyclerView(activity).apply {
-            id = View.generateViewId()
-            layoutManager = LinearLayoutManager(activity)
-            adapter = this@ReadAloudCatalogSheet.adapter
-            clipToPadding = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            setPadding(0, 0, 20.dpToPx(), 64.dpToPx())
-            setFastScrollEnabled(true)
-            setTrackVisible(true)
-            setHideScrollbar(false)
-            setBubbleVisible(false)
-            setHandleColor(ReadDrawerStyle.indicatorColor(activity))
-            setTrackColor(
-                ColorUtils.adjustAlpha(
-                    ContextCompat.getColor(activity, R.color.ng_on_surface_variant),
-                    0.2f
-                )
-            )
-            addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                    updateJumpButton()
-                }
-            })
-        }
-        textEmpty = TextView(activity).apply {
-            text = activity.getString(R.string.chapter_list_empty)
-            setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface_variant))
-            textSize = 15f
-            gravity = Gravity.CENTER
-            isVisible = false
-        }
-        buttonJumpEdge = AppCompatImageButton(activity).apply {
-            background = LayerDrawable(
-                arrayOf(
-                    GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(
-                            ColorUtils.adjustAlpha(
-                                ReadDrawerStyle.indicatorColor(activity),
-                                0.12f,
-                            )
-                        )
-                        setStroke(
-                            1.dpToPx(),
-                            ColorUtils.adjustAlpha(
-                                ReadDrawerStyle.indicatorColor(activity),
-                                0.2f,
-                            )
-                        )
-                    }
-                )
-            ).apply {
-                val inset = 5.dpToPx()
-                setLayerInset(0, inset, inset, inset, inset)
-            }
-            imageTintList = ColorStateList.valueOf(
-                ColorUtils.adjustAlpha(
-                    ReadDrawerStyle.indicatorColor(activity),
-                    0.9f,
-                )
-            )
-            elevation = 1.dpToPx().toFloat()
-            setPadding(13.dpToPx(), 13.dpToPx(), 13.dpToPx(), 13.dpToPx())
-            isVisible = false
-            setOnClickListener { jumpToOppositeEdge() }
-        }
-        val content = FrameLayout(activity).apply {
-            addView(
-                LinearLayout(activity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(
-                        textSummary,
-                        LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        )
-                    )
-                    addView(
-                        FrameLayout(activity).apply {
-                            addView(
-                                recyclerChapters,
-                                FrameLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                                )
-                            )
-                            addView(
-                                textEmpty,
-                                FrameLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                                )
-                            )
-                            addView(
-                                buttonJumpEdge,
-                                FrameLayout.LayoutParams(44.dpToPx(), 44.dpToPx()).apply {
-                                    gravity = Gravity.END or Gravity.BOTTOM
-                                    marginEnd = 10.dpToPx()
-                                    bottomMargin = 10.dpToPx()
-                                }
-                            )
-                        },
-                        LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            0,
-                            1f
-                        )
-                    )
-                },
-                FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            )
-        }
-        sheet.setContent(content) {}
-        sheet.show()
-        loadChapters()
-    }
-
-    private fun loadChapters() {
-        val book = ReadBook.book ?: run {
-            showChapters(emptyList())
-            return
-        }
-        activity.lifecycleScope.launch {
-            val chapters = withContext(Dispatchers.IO) {
-                appDb.bookChapterDao.getChapterList(book.bookUrl)
-            }
-            showChapters(chapters)
-        }
-    }
-
-    private fun showChapters(chapters: List<BookChapter>) {
-        adapter.submitItems(chapters)
-        textSummary.text = "共 ${chapters.size} 章"
-        val empty = chapters.isEmpty()
-        recyclerChapters.isVisible = !empty
-        textSummary.isVisible = !empty
-        textEmpty.isVisible = empty
-        scrollToCurrent()
-        recyclerChapters.post(::updateJumpButton)
-    }
-
-    private fun scrollToCurrent() {
-        val position = adapter.positionOf(ReadBook.durChapterIndex)
-        if (position >= 0) {
-            recyclerChapters.post {
-                (recyclerChapters.layoutManager as? LinearLayoutManager)
-                    ?.scrollToPositionWithOffset((position - 2).coerceAtLeast(0), 0)
-                updateJumpButton()
-            }
-        }
-    }
-
-    private fun updateJumpButton() {
-        if (!::buttonJumpEdge.isInitialized || !::recyclerChapters.isInitialized) return
-        val itemCount = adapter.itemCount
-        val canScroll = recyclerChapters.canScrollVertically(-1) ||
-            recyclerChapters.canScrollVertically(1)
-        buttonJumpEdge.isVisible = itemCount > 0 && canScroll
-        if (!buttonJumpEdge.isVisible) return
-        val layoutManager = recyclerChapters.layoutManager as? LinearLayoutManager ?: return
-        val first = layoutManager.findFirstVisibleItemPosition().coerceAtLeast(0)
-        val last = layoutManager.findLastVisibleItemPosition().coerceAtLeast(first)
-        val jumpToTop = (first + last) / 2 >= itemCount / 2
-        buttonJumpEdge.tag = jumpToTop
-        buttonJumpEdge.setImageResource(
-            if (jumpToTop) R.drawable.ic_expand_less else R.drawable.ic_expand_more
-        )
-        buttonJumpEdge.contentDescription = if (jumpToTop) "回到顶部" else "跳到底部"
-    }
-
-    private fun jumpToOppositeEdge() {
-        val layoutManager = recyclerChapters.layoutManager as? LinearLayoutManager ?: return
-        val jumpToTop = buttonJumpEdge.tag as? Boolean ?: true
-        val target = if (jumpToTop) 0 else (adapter.itemCount - 1).coerceAtLeast(0)
-        layoutManager.scrollToPositionWithOffset(target, 0)
-        recyclerChapters.post(::updateJumpButton)
-    }
-
-    private fun selectChapter(chapter: BookChapter) {
-        sheet.dismiss()
-        activity.openChapterFromCatalog(chapter.index)
-    }
-}
-
 class ReadAloudVoiceSheet(
     private val activity: ReadAloudPlayerActivity
 ) {
@@ -819,108 +594,6 @@ class ReadAloudVoiceSheet(
                 }
                 voiceSheet.dismiss()
             }
-        }
-    }
-}
-
-private class ReadAloudCatalogAdapter(
-    private val context: Context,
-    private val currentIndex: () -> Int,
-    private val onSelect: (BookChapter) -> Unit
-) : RecyclerView.Adapter<ReadAloudCatalogAdapter.ChapterHolder>() {
-
-    private val items = mutableListOf<BookChapter>()
-
-    fun submitItems(newItems: List<BookChapter>) {
-        items.clear()
-        items.addAll(newItems)
-        notifyDataSetChanged()
-    }
-
-    fun positionOf(chapterIndex: Int): Int {
-        return items.indexOfFirst { it.index == chapterIndex }
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ChapterHolder {
-        val itemView = LinearLayout(parent.context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 13.dpToPx(), 0, 13.dpToPx())
-        }
-        return ChapterHolder(itemView)
-    }
-
-    override fun onBindViewHolder(holder: ChapterHolder, position: Int) {
-        holder.bind(items[position])
-    }
-
-    override fun getItemCount(): Int = items.size
-
-    inner class ChapterHolder(
-        private val container: LinearLayout
-    ) : RecyclerView.ViewHolder(container) {
-
-        private val titleView = TextView(context).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-            includeFontPadding = false
-        }
-        private val metaView = TextView(context).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            includeFontPadding = false
-            setPadding(0, 8.dpToPx(), 0, 0)
-        }
-        private val divider = View(context).apply {
-            setBackgroundColor(ContextCompat.getColor(context, R.color.bg_divider_line))
-        }
-
-        init {
-            container.addView(
-                titleView,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
-            container.addView(
-                metaView,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
-            container.addView(
-                divider,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    1
-                ).apply {
-                    topMargin = 14.dpToPx()
-                }
-            )
-        }
-
-        fun bind(chapter: BookChapter) {
-            val isCurrent = chapter.index == currentIndex()
-            titleView.text = chapter.title
-            titleView.typeface = if (isCurrent) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-            titleView.setTextColor(
-                if (isCurrent) ReadDrawerStyle.accentColor(context)
-                else ContextCompat.getColor(context, R.color.ng_on_surface)
-            )
-            val meta = chapter.tag?.takeIf { it.isNotBlank() }
-                ?: "第 ${chapter.index + 1} 章"
-            metaView.text = buildList {
-                add(meta)
-                StringUtils.wordCountFormat(chapter.wordCount)
-                    .takeIf { it.isNotBlank() }
-                    ?.let(::add)
-                if (isCurrent) add("当前播放")
-            }.joinToString(" · ")
-            metaView.setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
-            container.setOnClickListener { onSelect(chapter) }
-            container.layoutParams = RecyclerView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
         }
     }
 }

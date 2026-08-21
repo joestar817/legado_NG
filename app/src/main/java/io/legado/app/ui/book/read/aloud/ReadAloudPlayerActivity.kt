@@ -452,7 +452,7 @@ class ReadAloudPlayerActivity : BaseActivity<ActivityReadAloudPlayerBinding>(
     }
 
     private fun openChapterList() {
-        ReadAloudCatalogSheet(this).show()
+        ReadAloudCatalogDialog().show(supportFragmentManager, "readAloudCatalog")
     }
 
     private fun refreshCurrentChapter() {

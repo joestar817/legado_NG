@@ -31,7 +31,6 @@ import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
-import io.legado.app.ui.book.toc.TocActivityResult
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.widget.seekbar.SeekBarChangeListener
 import io.legado.app.utils.StartActivityContract
@@ -80,15 +79,6 @@ class AudioPlayActivity :
     private var oldLyric: String? = null
     private var menuCustomBtn: MenuItem? = null
 
-    private val tocActivityResult = registerForActivityResult(TocActivityResult()) {
-        it?.let {
-            if (it[0] != AudioPlay.book?.durChapterIndex
-                || it[1] == 0
-            ) {
-                AudioPlay.skipTo(it[0] as Int)
-            }
-        }
-    }
     private val sourceEditResult =
         registerForActivityResult(StartActivityContract(BookSourceEditActivity::class.java)) {
             if (it.resultCode == RESULT_OK) {
@@ -239,9 +229,7 @@ class AudioPlayActivity :
             AudioPlay.prev()
         }
         binding.ivChapter.setOnClickListener {
-            AudioPlay.book?.let {
-                tocActivityResult.launch(it.bookUrl)
-            }
+            AudioCatalogDialog().show(supportFragmentManager, "audioCatalog")
         }
     }
 
