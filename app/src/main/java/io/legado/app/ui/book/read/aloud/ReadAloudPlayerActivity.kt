@@ -132,7 +132,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             ReadAloudPlayerAction.Original -> openOriginal()
             ReadAloudPlayerAction.More -> showMoreSheet()
             ReadAloudPlayerAction.Mode -> {
-                ReadAloudModeSheet(this).show(supportFragmentManager, "readAloudMode")
+                ReadAloudModeDialog().show(supportFragmentManager, "readAloudMode")
             }
             ReadAloudPlayerAction.Catalog -> openChapterList()
             ReadAloudPlayerAction.Voice -> openVoiceOrRoleBindings()
@@ -484,7 +484,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         if (AppConfig.readAloudMultiRole) {
             openCharacterTtsBindings()
         } else {
-            ReadAloudVoiceSheet(this).show()
+            ReadAloudVoiceDialog().show(supportFragmentManager, "readAloudVoice")
         }
     }
 
@@ -619,7 +619,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     private fun showMoreSheet() {
-        ReadAloudMoreSheet().show(supportFragmentManager, "readAloudMore")
+        ReadAloudMoreDialog().show(supportFragmentManager, "readAloudMore")
     }
 
     override fun observeLiveBus() {
