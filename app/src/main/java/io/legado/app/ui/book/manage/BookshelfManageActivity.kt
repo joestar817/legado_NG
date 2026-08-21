@@ -37,6 +37,7 @@ import io.legado.app.utils.cnCompare
 import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.sendToClip
+import io.legado.app.utils.share
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.startService
@@ -391,6 +392,20 @@ class BookshelfManageActivity :
     }
 
     private fun exportBookSources(books: List<Book>) {
+        BookSourceExportSheet(
+            context = this,
+            onShare = { shareBookSources(books) },
+            onSaveLocally = { saveBookSourcesLocally(books) },
+        ).show()
+    }
+
+    private fun shareBookSources(books: List<Book>) {
+        viewModel.saveBookSourcesToFile(books) { file, _ ->
+            share(file)
+        }
+    }
+
+    private fun saveBookSourcesLocally(books: List<Book>) {
         viewModel.saveBookSourcesToFile(books) { file, name ->
             exportSourceFile.launch(CreateFileContract.FileData(name, file, "application/json"))
         }

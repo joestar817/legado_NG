@@ -241,6 +241,8 @@
     <string name="book_source_groups">书源分组</string>
     <string name="book_source">书源</string>
     <string name="export_book_source">导出书源</string>
+    <string name="export_book_source_share_apps">分享到其他应用</string>
+    <string name="export_book_source_save_folder">保存到本地文件夹</string>
     <string name="book_source_manage">书源管理</string>
     <string name="book_source_manage_desc">新建、导入、编辑或管理书源</string>
     <string name="browse_history">浏览记录</string>

@@ -242,6 +242,8 @@
     <string name="book_source_groups">Source groups</string>
     <string name="book_source">Book sources</string>
     <string name="export_book_source">Export book source</string>
+    <string name="export_book_source_share_apps">Share to another app</string>
+    <string name="export_book_source_save_folder">Save to a local folder</string>
     <string name="book_source_manage">Sources management</string>
     <string name="book_source_manage_desc">Create/Import/Edit/Manage Book sources</string>
     <string name="browse_history">Browse history</string>
