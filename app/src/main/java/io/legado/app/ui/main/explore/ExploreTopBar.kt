@@ -43,7 +43,8 @@ internal fun ExploreTopBar(
     layoutMode: ExploreLayoutMode,
     onQueryChange: (String) -> Unit,
     onGroupSelected: (String?) -> Unit,
-    onLayoutModeChange: (ExploreLayoutMode) -> Unit
+    onLayoutModeChange: (ExploreLayoutMode) -> Unit,
+    onManageSources: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val actionContainerColor = androidx.compose.ui.res.colorResource(R.color.ng_search_surface)
@@ -96,6 +97,14 @@ internal fun ExploreTopBar(
                     )
                 }
             }
+            add(
+                NgExpandableActionMenuItem(
+                    itemId = R.id.menu_source_manage,
+                    titleRes = R.string.book_source_manage,
+                    iconRes = R.drawable.ic_cfg_source,
+                    dividerBefore = true,
+                )
+            )
         }
     }
 
@@ -151,6 +160,7 @@ internal fun ExploreTopBar(
                         }
 
                         R.id.menu_1 -> onGroupSelected(null)
+                        R.id.menu_source_manage -> onManageSources()
                         else -> {
                             val index = item.itemId - EXPLORE_GROUP_ITEM_ID_BASE
                             onGroupSelected(groups.getOrNull(index))

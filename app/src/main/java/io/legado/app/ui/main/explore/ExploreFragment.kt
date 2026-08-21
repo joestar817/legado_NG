@@ -32,6 +32,7 @@ import io.legado.app.ui.book.explore.ExploreShowActivity
 import io.legado.app.ui.book.search.SearchActivity
 import io.legado.app.ui.book.search.SearchGroupVisibility
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
+import io.legado.app.ui.book.source.manage.BookSourceActivity
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.main.MainActivity
@@ -131,6 +132,7 @@ class ExploreFragment() : Fragment(), MainFragmentInterface {
                                 }
                             }
                         },
+                        onManageSources = { startActivity<BookSourceActivity>() },
                         onToggleSource = ::toggleSource,
                         onOpenSource = ::openSourceDefault,
                         onOpenKind = ::openExploreKind,

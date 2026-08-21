@@ -97,6 +97,7 @@ internal fun ExploreScreen(
     onQueryChange: (String) -> Unit,
     onGroupSelected: (String?) -> Unit,
     onLayoutModeChange: (ExploreLayoutMode) -> Unit,
+    onManageSources: () -> Unit,
     onToggleSource: (BookSourcePart) -> Unit,
     onOpenSource: (BookSourcePart) -> Unit,
     onOpenKind: (BookSourcePart, ExploreKind) -> Unit,
@@ -118,7 +119,8 @@ internal fun ExploreScreen(
             layoutMode = layoutMode,
             onQueryChange = onQueryChange,
             onGroupSelected = onGroupSelected,
-            onLayoutModeChange = onLayoutModeChange
+            onLayoutModeChange = onLayoutModeChange,
+            onManageSources = onManageSources,
         )
 
         Box(
