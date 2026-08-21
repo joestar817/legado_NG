@@ -161,6 +161,7 @@ class TextChapterLayout(
 
     private fun onPageCompleted() {
         val textPage = pendingTextPage
+        if (!shouldCommitPendingTextPage(textPage.lineSize)) return
         textPage.index = textPages.size
         textPage.chapterIndex = bookChapter.index
         textPage.chapterSize = chaptersSize
@@ -1471,4 +1472,9 @@ class TextChapterLayout(
         return code == 8203 || code == 8204 || code == 8205 || code == 8288
     }
 
+}
+
+internal fun shouldCommitPendingTextPage(lineCount: Int): Boolean {
+    // 章节末尾的 [newpage] 会留下一个没有后续内容的待分页对象。
+    return lineCount > 0
 }
