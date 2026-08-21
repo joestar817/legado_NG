@@ -54,7 +54,7 @@
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
                 android:overScrollMode="never"
-                tools:listitem="@layout/item_book_storyboard_segment" />
+                tools:listitem="@layout/item_book_storyboard_group" />
 
             <LinearLayout
                 android:id="@+id/layout_storyboard_loading"
