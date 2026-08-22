@@ -20,7 +20,10 @@ import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.putPrefString
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import splitties.init.appCtx
+import java.util.concurrent.ConcurrentHashMap
 
 enum class TtsEngineImportConflictAction {
     ASK,
@@ -155,11 +158,50 @@ internal object TtsEngineOrderResolver {
     }
 }
 
+internal data class TtsRoleDefaultPreferences(
+    val multiRoleEngineId: String?,
+    val narratorEngineId: String?,
+    val narratorVoiceId: String?
+)
+
+internal fun resolveFirstUseTtsRoleDefaults(
+    currentMultiRoleEngineId: String?,
+    currentNarratorEngineId: String?,
+    currentNarratorVoiceId: String?,
+    nextEdgeAvailable: Boolean
+): TtsRoleDefaultPreferences {
+    if (!nextEdgeAvailable) {
+        return TtsRoleDefaultPreferences(
+            multiRoleEngineId = currentMultiRoleEngineId,
+            narratorEngineId = currentNarratorEngineId,
+            narratorVoiceId = currentNarratorVoiceId
+        )
+    }
+    val hasNarratorSelection = !currentNarratorEngineId.isNullOrBlank() ||
+        !currentNarratorVoiceId.isNullOrBlank()
+    return TtsRoleDefaultPreferences(
+        multiRoleEngineId = currentMultiRoleEngineId
+            ?.takeIf { it.isNotBlank() }
+            ?: TtsEngineStore.NEXT_EDGE_PROXY_ID,
+        narratorEngineId = if (hasNarratorSelection) {
+            currentNarratorEngineId
+        } else {
+            TtsEngineStore.NEXT_EDGE_PROXY_ID
+        },
+        narratorVoiceId = if (hasNarratorSelection) {
+            currentNarratorVoiceId
+        } else {
+            TtsEngineStore.NEXT_EDGE_DEFAULT_VOICE_ID
+        }
+    )
+}
+
 object TtsEngineStore {
 
     const val SYSTEM_DEFAULT_ID = "system_default"
     const val MULTITTS_FORWARDER_ID = "multitts_forwarder"
     const val NEXT_EDGE_PROXY_ID = "next_edge_proxy"
+    const val NEXT_EDGE_DEFAULT_VOICE_ID = "zh-CN-YunxiNeural"
     const val MIMO_V25_TTS_ID = "mimo_v25_tts"
     const val STEPAUDIO_25_TTS_ID = "stepfun_stepaudio_2_5_tts_v2_manual"
     const val MOSSLAND_TTS_ID = "mossland_moss_tts"
@@ -193,6 +235,10 @@ object TtsEngineStore {
     private val defaultScriptIdSet by lazy(LazyThreadSafetyMode.PUBLICATION) {
         defaultScriptEngineSnapshots.mapTo(hashSetOf()) { it.id }
     }
+    private val voiceCatalogMutexes = ConcurrentHashMap<String, Mutex>()
+
+    private fun voiceCatalogMutex(engineId: String): Mutex =
+        voiceCatalogMutexes.getOrPut(engineId) { Mutex() }
 
     @Synchronized
     fun engines(): List<TtsEngineSetting> {
@@ -249,8 +295,9 @@ object TtsEngineStore {
         val allById = (merged + custom).associateBy { it.id }
         val savedOrder = savedEngines.map { it.id }.filter { it in allById }
         val remainingOrder = allById.keys.filterNot { it in savedOrder }
-        return (savedOrder + remainingOrder).mapNotNull { allById[it] }
-            .map { it.withRuntimeState() }
+        val ordered = (savedOrder + remainingOrder).mapNotNull { allById[it] }
+        applyFirstUseRoleDefaults(ordered)
+        return ordered.map { it.withRuntimeState() }
     }
 
     fun activeEngineId(): String {
@@ -390,6 +437,7 @@ object TtsEngineStore {
         saveEngines(engines().filterNot { it.id == id })
         appDb.ttsVoiceDao.deleteByEngine(id)
         appDb.ttsEngineRuntimeDao.deleteByEngine(id)
+        voiceCatalogMutexes.remove(id)
         if (wasActive) {
             selectFirstEnabledEngine()
         }
@@ -433,12 +481,40 @@ object TtsEngineStore {
             engineId = engineId,
             voices = voices.map { it.toEntity(engineId, now) }
         )
-        val activeVoiceId = engine.activeVoiceId
-            ?.takeIf { voiceId -> voices.any { it.id == voiceId } }
-            ?: voices.firstOrNull()?.id
+        val activeVoiceId = resolveActiveVoiceId(engine, voices)
         val updated = engine.copy(activeVoiceId = activeVoiceId)
         saveEngine(updated, restartReadAloud)
         return updated.copy(runtimeVoices = voices, lastVoiceUpdateTime = now)
+    }
+
+    /**
+     * 确保指定引擎的发音人目录已经写入统一的 ttsVoices 缓存。
+     * 同一引擎的并发首次获取会合并为一次；等待方在锁内重新读取缓存，
+     * 避免听书抽屉、多人选角和引擎设置各自重复获取或维护独立状态。
+     */
+    suspend fun ensureVoiceCatalog(
+        engineId: String,
+        forceRefresh: Boolean = false,
+        restartReadAloud: Boolean = false
+    ): TtsEngineSetting {
+        val initial = engine(engineId) ?: error("朗读引擎不存在")
+        if (!forceRefresh && initial.effectiveVoices().isNotEmpty()) {
+            return initial
+        }
+        return voiceCatalogMutex(engineId).withLock {
+            val latest = engine(engineId) ?: error("朗读引擎不存在")
+            if (!forceRefresh && latest.effectiveVoices().isNotEmpty()) {
+                return@withLock latest
+            }
+            check(latest.supportsVoiceFetch()) { "当前朗读引擎不支持获取发音人" }
+            val voices = TtsScriptEngineClient.fetchVoices(latest)
+            check(voices.isNotEmpty()) { "未获取到发音人" }
+            upsertVoiceList(
+                engineId = latest.id,
+                voices = voices,
+                restartReadAloud = restartReadAloud
+            ) ?: error("保存发音人目录失败")
+        }
     }
 
     @Synchronized
@@ -577,6 +653,51 @@ object TtsEngineStore {
 
     fun voiceCounts(): Map<String, Int> {
         return appDb.ttsVoiceDao.countByEngine().associate { it.engineId to it.count }
+    }
+
+    internal fun resolveActiveVoiceId(
+        engine: TtsEngineSetting,
+        voices: List<TtsVoice>
+    ): String? {
+        return engine.activeVoiceId
+            ?.takeIf { voiceId -> voices.any { it.id == voiceId } }
+            ?: preferredVoiceId(engine.id)
+                ?.takeIf { voiceId -> voices.any { it.id == voiceId } }
+            ?: voices.firstOrNull()?.id
+    }
+
+    private fun preferredVoiceId(engineId: String): String? {
+        return when (engineId) {
+            NEXT_EDGE_PROXY_ID -> NEXT_EDGE_DEFAULT_VOICE_ID
+            else -> null
+        }
+    }
+
+    private fun applyFirstUseRoleDefaults(engines: List<TtsEngineSetting>) {
+        if (appCtx.getPrefBoolean(PreferKey.ttsEngineV2RoleDefaultsApplied, false)) {
+            return
+        }
+        val currentMultiRoleEngineId = AppConfig.multiRoleTtsEngineId
+        val currentNarratorEngineId = AppConfig.defaultNarratorTtsEngineId
+        val currentNarratorVoiceId = AppConfig.defaultNarratorTtsVoiceId
+        val defaults = resolveFirstUseTtsRoleDefaults(
+            currentMultiRoleEngineId = currentMultiRoleEngineId,
+            currentNarratorEngineId = currentNarratorEngineId,
+            currentNarratorVoiceId = currentNarratorVoiceId,
+            nextEdgeAvailable = engines.any {
+                it.id == NEXT_EDGE_PROXY_ID && it.enabled && it.type == TtsEngineType.SCRIPT
+            }
+        )
+        if (defaults.multiRoleEngineId != currentMultiRoleEngineId) {
+            AppConfig.multiRoleTtsEngineId = defaults.multiRoleEngineId
+        }
+        if (defaults.narratorEngineId != currentNarratorEngineId) {
+            AppConfig.defaultNarratorTtsEngineId = defaults.narratorEngineId
+        }
+        if (defaults.narratorVoiceId != currentNarratorVoiceId) {
+            AppConfig.defaultNarratorTtsVoiceId = defaults.narratorVoiceId
+        }
+        appCtx.putPrefBoolean(PreferKey.ttsEngineV2RoleDefaultsApplied, true)
     }
 
     private fun savedEngines(): List<TtsEngineSetting> {
@@ -766,9 +887,10 @@ object TtsEngineStore {
                                 script.contains("// @version 1.0.3") ||
                                 script.contains("// @version 1.0.4") ||
                                 script.contains("// @version 1.0.5") ||
-                                script.contains("// @version 1.0.6")
+                                script.contains("// @version 1.0.6") ||
+                                script.contains("// @version 1.0.7")
                         ) &&
-                builtIn.script.contains("// @version 1.0.7")
+                builtIn.script.contains("// @version 1.0.8")
         val shouldUpdateMimoExpressiveFields = id == MIMO_V25_TTS_ID &&
                 script.contains("// @version 1.0.0") &&
                 builtIn.script.contains("// @version 1.0.1") &&

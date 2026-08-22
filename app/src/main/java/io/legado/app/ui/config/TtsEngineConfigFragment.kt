@@ -1583,22 +1583,13 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                 activity?.setTitle(engine.name)
                 bindVoiceParams(engine)
 
-                val voices = withContext(Dispatchers.IO) {
-                    TtsScriptEngineClient.fetchVoices(engine)
-                }
-                if (voices.isEmpty()) {
-                    binding.textVoiceMessage.isVisible = true
-                    binding.textVoiceMessage.text = "接口返回为空或暂不支持解析"
-                    requireContext().toastOnUi("未获取到发音人")
-                    return@launch
-                }
                 val updated = withContext(Dispatchers.IO) {
-                    TtsEngineStore.upsertVoiceList(
-                        engine.id,
-                        voices,
+                    TtsEngineStore.ensureVoiceCatalog(
+                        engineId = engine.id,
+                        forceRefresh = true,
                         restartReadAloud = false
                     )
-                } ?: return@launch
+                }
                 detailEngineSnapshot = updated
                 val effectiveVoices = updated.effectiveVoices()
                 binding.refreshVoices.isRefreshing = false

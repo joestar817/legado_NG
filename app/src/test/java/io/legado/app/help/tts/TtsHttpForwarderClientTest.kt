@@ -6,6 +6,7 @@ import com.google.gson.JsonSyntaxException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -271,6 +272,7 @@ class TtsHttpForwarderClientTest {
         assertEquals(TtsEngineStore.OPTIONS_EXAMPLE_ID, engine.id)
         assertEquals("脚本选项示例", engine.name)
         assertEquals(TtsEngineType.SCRIPT, engine.type)
+        assertFalse(engine.enabled)
         assertEquals(false, engine.builtIn)
         assertTrue(engine.supportsVoiceFetch())
         assertTrue(engine.script.contains("// @uuid script_options_example"))
@@ -397,6 +399,7 @@ class TtsHttpForwarderClientTest {
         assertEquals(TtsEngineStore.STATIC_VOICES_EXAMPLE_ID, engine.id)
         assertEquals("内置发音人示例", engine.name)
         assertEquals(TtsEngineType.SCRIPT, engine.type)
+        assertFalse(engine.enabled)
         assertEquals(false, engine.builtIn)
         assertEquals(true, engine.supportsVoiceFetch())
         assertEquals(emptyList<TtsVoice>(), engine.voices)
@@ -420,6 +423,7 @@ class TtsHttpForwarderClientTest {
     fun multiTtsBuiltInEngine_convertsVoicesInScript() {
         val engine = scriptEngineFromAssetFile("multitts_forwarder.js")
 
+        assertFalse(engine.enabled)
         assertTrue(engine.script.contains("// @version 1.0.3"))
         assertEquals(50, engine.defaultSpeed)
         assertEquals(50, engine.defaultVolume)
@@ -443,7 +447,7 @@ class TtsHttpForwarderClientTest {
         assertEquals("audio/mpeg", engine.contentType)
         assertEquals("http://5.45.99.149:8075/tts", engine.baseUrl)
         assertTrue(engine.supportsVoiceFetch())
-        assertTrue(engine.script.contains("// @version 1.0.7"))
+        assertTrue(engine.script.contains("// @version 1.0.8"))
         assertTrue(engine.script.contains("defaultValue: \"http://5.45.99.149:8075/tts\""))
         assertFalse(engine.script.contains("36.248.181.23"))
         assertTrue(engine.supportsCapability(TtsEngineCapability.STYLE_TAGS))
@@ -463,7 +467,72 @@ class TtsHttpForwarderClientTest {
         assertFalse(engine.script.contains("0.9s"))
         assertFalse(engine.script.contains("sample_text: \"前不见古人，后不见来者。念天地之悠悠，独怆然而涕下。\""))
         assertTrue(engine.script.contains("zh-CN-XiaoxiaoNeural"))
+        assertTrue(engine.script.contains("name: \"云希\""))
+        assertTrue(engine.script.contains("|| \"zh-CN-YunxiNeural\""))
         assertTrue(engine.script.contains("function synthesize(text, voice, params, options, ctx)"))
+    }
+
+    @Test
+    fun nextEdgeProxyDefaultsToYunxiWithoutOverwritingExistingVoice() {
+        val engine = scriptEngineFromAssetFile("next_edge_proxy.js")
+        val voices = listOf(
+            TtsVoice(id = "zh-CN-XiaoxiaoNeural", name = "晓晓"),
+            TtsVoice(id = TtsEngineStore.NEXT_EDGE_DEFAULT_VOICE_ID, name = "云希")
+        )
+
+        assertEquals(
+            TtsEngineStore.NEXT_EDGE_DEFAULT_VOICE_ID,
+            TtsEngineStore.resolveActiveVoiceId(engine, voices)
+        )
+        assertEquals(
+            "zh-CN-XiaoxiaoNeural",
+            TtsEngineStore.resolveActiveVoiceId(
+                engine.copy(activeVoiceId = "zh-CN-XiaoxiaoNeural"),
+                voices
+            )
+        )
+    }
+
+    @Test
+    fun firstUseRoleDefaultsSelectNextEdgeAndYunxi() {
+        val defaults = resolveFirstUseTtsRoleDefaults(
+            currentMultiRoleEngineId = null,
+            currentNarratorEngineId = null,
+            currentNarratorVoiceId = null,
+            nextEdgeAvailable = true
+        )
+
+        assertEquals(TtsEngineStore.NEXT_EDGE_PROXY_ID, defaults.multiRoleEngineId)
+        assertEquals(TtsEngineStore.NEXT_EDGE_PROXY_ID, defaults.narratorEngineId)
+        assertEquals(TtsEngineStore.NEXT_EDGE_DEFAULT_VOICE_ID, defaults.narratorVoiceId)
+    }
+
+    @Test
+    fun firstUseRoleDefaultsPreserveExistingSelections() {
+        val defaults = resolveFirstUseTtsRoleDefaults(
+            currentMultiRoleEngineId = "dialogue_engine",
+            currentNarratorEngineId = "narrator_engine",
+            currentNarratorVoiceId = "narrator_voice",
+            nextEdgeAvailable = true
+        )
+
+        assertEquals("dialogue_engine", defaults.multiRoleEngineId)
+        assertEquals("narrator_engine", defaults.narratorEngineId)
+        assertEquals("narrator_voice", defaults.narratorVoiceId)
+    }
+
+    @Test
+    fun firstUseRoleDefaultsDoNotRecreateUnavailableNextEdge() {
+        val defaults = resolveFirstUseTtsRoleDefaults(
+            currentMultiRoleEngineId = null,
+            currentNarratorEngineId = null,
+            currentNarratorVoiceId = null,
+            nextEdgeAvailable = false
+        )
+
+        assertNull(defaults.multiRoleEngineId)
+        assertNull(defaults.narratorEngineId)
+        assertNull(defaults.narratorVoiceId)
     }
 
     @Test
@@ -489,7 +558,7 @@ class TtsHttpForwarderClientTest {
         val nextEdge = scriptEngineFromAssetFile("next_edge_proxy.js")
         val savedNextEdge = TtsEngineStore.scriptEngineFromScript(
             nextEdge.script
-                .replace("// @version 1.0.7", "// @version 1.0.5")
+                .replace("// @version 1.0.8", "// @version 1.0.5")
                 .replace(Regex("// @capabilities style_tags,emotion\\r?\\n"), "")
         )!!
         val updatedNextEdge = TtsEngineStore.updateDefaultScriptForTest(savedNextEdge, nextEdge)
@@ -516,7 +585,7 @@ class TtsHttpForwarderClientTest {
     fun nextEdgeProxyEndpointUpgradeReplacesOnlyRetiredDefault() {
         val builtIn = scriptEngineFromAssetFile("next_edge_proxy.js")
         val saved = TtsEngineStore.scriptEngineFromScript(
-            builtIn.script.replace("// @version 1.0.7", "// @version 1.0.6")
+            builtIn.script.replace("// @version 1.0.8", "// @version 1.0.6")
         )!!.copy(
             enabled = false,
             optionValues = mapOf(

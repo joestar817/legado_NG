@@ -1,6 +1,6 @@
 // @name Next Edge TTS
 // @schema 1
-// @version 1.0.7
+// @version 1.0.8
 // @uuid next_edge_proxy
 // @author Legado
 // @url http://5.45.99.149:8075/tts
@@ -183,7 +183,7 @@ var VOICES = [
     { name: "晓悠", id: "zh-CN-XiaoyouNeural", gender: "female", profile: "少女-高亮稚嫩", categories: [], personalities: [], styles: [], roles: [], roleHints: ["少女", "活泼配角", "清亮旁白"] },
     { name: "晓甄", id: "zh-CN-XiaozhenNeural", gender: "female", profile: "女青年-清亮情绪", categories: [], personalities: [], styles: ["angry", "cheerful", "disgruntled", "fearful", "sad", "serious"], roles: [], roleHints: ["女青年", "情绪对白", "剧情配角"] },
     {
-        name: "云溪",
+        name: "云希",
         id: "zh-CN-YunxiNeural",
         gender: "male",
         profile: "青年男声-阳光叙事",
@@ -297,7 +297,7 @@ function appendAll(target, values) {
 
 function synthesize(text, voice, params, options, ctx) {
     var api = String(options.api || "http://5.45.99.149:8075/tts").replace(/\/+$/, "");
-    var voiceId = String((voice && voice.id) || "zh-CN-XiaoxiaoNeural");
+    var voiceId = String((voice && voice.id) || "zh-CN-YunxiNeural");
     var style = selectedStyleValue(voice) || automaticStyleValue(voice, ctx);
     var rate = clamp((Number(params.speed || 50) - 50) * 2, -100, 100);
     var pitch = clamp((Number(params.pitch || 50) - 50) * 2, -100, 100);

@@ -48,6 +48,7 @@ object PreferKey {
     const val ttsEngineV2SettingsJson = "ttsEngineV2SettingsJson"
     const val ttsEngineV2DeletedIds = "ttsEngineV2DeletedIds"
     const val ttsEngineV2SystemDisabledApplied = "ttsEngineV2SystemDisabledApplied"
+    const val ttsEngineV2RoleDefaultsApplied = "ttsEngineV2RoleDefaultsApplied"
     const val multiRoleTtsEngineId = "multiRoleTtsEngineId"
     const val defaultNarratorTtsEngineId = "defaultNarratorTtsEngineId"
     const val defaultNarratorTtsVoiceId = "defaultNarratorTtsVoiceId"

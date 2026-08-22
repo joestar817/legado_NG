@@ -4,7 +4,7 @@
 // @uuid multitts_forwarder
 // @author Legado
 // @url http://localhost:8774
-// @enabled true
+// @enabled false
 // @cookieJar false
 // @audioType audio/x-wav
 // @defaultSpeed 50
