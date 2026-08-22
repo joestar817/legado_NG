@@ -30,6 +30,7 @@ fun NgButton(
     val shape = when (shapeVariant) {
         NgButtonShapeVariant.PILL -> ButtonDefaults.shape
         NgButtonShapeVariant.ROUNDED -> RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
+        NgButtonShapeVariant.SMALL_ROUNDED -> RoundedCornerShape(NgTheme.shapes.smallDp.dp)
     }
     when (variant) {
         NgButtonVariant.PRIMARY -> Button(
@@ -66,6 +67,21 @@ fun NgButton(
             contentPadding = contentPadding,
             colors = ButtonDefaults.filledTonalButtonColors(
                 containerColor = Color(colors.selectedContainer),
+                contentColor = Color(colors.onSurface)
+            ),
+            content = content
+        )
+
+        NgButtonVariant.NEUTRAL -> Button(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            shape = shape,
+            contentPadding = contentPadding,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(colors.surfaceContainerHigh).copy(
+                    alpha = if (NgTheme.snapshot.isEInk) 1f else 0.38f
+                ),
                 contentColor = Color(colors.onSurface)
             ),
             content = content

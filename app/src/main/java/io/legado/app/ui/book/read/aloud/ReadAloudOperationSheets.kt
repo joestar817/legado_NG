@@ -3,12 +3,9 @@ package io.legado.app.ui.book.read.aloud
 import android.os.Bundle
 import android.view.View
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,15 +25,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Groups
-import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Search
@@ -87,10 +80,12 @@ import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.config.TtsVoiceFilterSupport
+import io.legado.app.ui.config.TtsVoiceDrawerGroup
+import io.legado.app.ui.config.TtsVoiceDrawerState
 import io.legado.app.ui.config.TtsVoiceOption
 import io.legado.app.ui.config.TtsVoicePreviewController
-import io.legado.app.ui.config.TtsVoicePreviewState
-import io.legado.app.ui.config.TtsVoicePreviewStatus
+import io.legado.app.ui.config.TtsVoiceSelectionDrawerContent
+import io.legado.app.ui.config.toDrawerCard
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
@@ -98,8 +93,6 @@ import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgManagementLeadingIcon
 import io.legado.app.ui.design.components.compose.NgManagementListCard
-import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
-import io.legado.app.ui.design.components.compose.NgLazyListFastScrollerVariant
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.theme.NgTheme
@@ -912,38 +905,9 @@ private fun WorkerCountRow(
     }
 }
 
-private data class VoiceGroup(
-    val engine: TtsEngineSetting,
-    val cards: List<VoiceCardSnapshot>,
-)
-
-/**
- * 发音人卡片的只读展示快照。必须在 IO 线程一次生成，卡片滚动组合期间禁止再访问
- * [TtsEngineStore.engines] 或重新解析语言／Tag，否则每个新可见项都会重建引擎运行时状态。
- */
-private data class VoiceCardSnapshot(
-    val option: TtsVoiceOption,
-    val key: String,
-    val selected: Boolean,
-    val languageLabels: List<String>,
-    val genderLabel: String?,
-    val style: String?,
-    val tags: List<String>,
-)
-
-private data class VoiceDrawerState(
-    val loading: Boolean = true,
-    val groups: List<VoiceGroup> = emptyList(),
-    val languageOptions: List<String> = emptyList(),
-    val genderOptions: List<String> = emptyList(),
-    val fetchError: String? = null,
-    val canRetryFetch: Boolean = false,
-    val preview: TtsVoicePreviewStatus = TtsVoicePreviewStatus(null, TtsVoicePreviewState.IDLE),
-)
-
 internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
 
-    private var state by mutableStateOf(VoiceDrawerState())
+    private var state by mutableStateOf(TtsVoiceDrawerState())
     private var previewController: TtsVoicePreviewController? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -963,8 +927,12 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
         )
         (view as ComposeView).setContent {
             ListeningSheetTheme {
-                ReadAloudVoiceSheetContent(
+                TtsVoiceSelectionDrawerContent(
+                    title = "发音人",
+                    searchHint = "搜索引擎或发音人",
+                    emptyText = "没有可选发音人",
                     state = state,
+                    enableLongPressPreview = true,
                     onSelect = ::selectVoice,
                     onPreview = { previewController?.preview(it.engine, it.voice, it.systemDefault) },
                     onRetryFetch = ::loadVoices,
@@ -1007,17 +975,24 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
                 val activeVoiceId = engines.firstOrNull { it.id == activeEngineId }
                     ?.activeVoiceId
                 val groups = engines.map { engine ->
-                    VoiceGroup(
-                        engine = engine,
+                    TtsVoiceDrawerGroup(
+                        engineId = engine.id,
+                        engineName = engine.name,
                         cards = voiceOptions(engine).map { option ->
-                            option.toCardSnapshot(activeEngineId, activeVoiceId)
+                            option.toDrawerCard(
+                                selected = activeEngineId == engine.id && if (option.systemDefault) {
+                                    activeVoiceId.isNullOrBlank()
+                                } else {
+                                    activeVoiceId == option.voice.id
+                                }
+                            )
                         },
                     )
                 }.filter { it.cards.isNotEmpty() }
                 val voices = groups.flatMap { group ->
                     group.cards.map { it.option.voice }
                 }
-                VoiceDrawerState(
+                TtsVoiceDrawerState(
                     loading = false,
                     groups = groups,
                     languageOptions = TtsVoiceFilterSupport.availableLanguageLabels(voices),
@@ -1057,42 +1032,6 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
         }
     }
 
-    private fun TtsVoiceOption.toCardSnapshot(
-        activeEngineId: String,
-        activeVoiceId: String?,
-    ): VoiceCardSnapshot {
-        val selected = activeEngineId == engine.id && if (systemDefault) {
-            activeVoiceId.isNullOrBlank()
-        } else {
-            activeVoiceId == voice.id
-        }
-        val languageLabels = if (systemDefault) emptyList() else {
-            TtsVoiceFilterSupport.languageLabels(voice.language)
-        }
-        val genderLabel = if (systemDefault) null else {
-            TtsVoiceFilterSupport.genderLabel(voice.gender)
-        }
-        val style = voice.style
-            ?.takeUnless { systemDefault }
-            ?.takeIf { it.isNotBlank() }
-        val tags = if (systemDefault) {
-            listOf(engine.name.ifBlank { voice.id })
-        } else {
-            voice.tags.filter { it.isNotBlank() }.distinct().ifEmpty {
-                if (style == null) listOf(voice.id) else emptyList()
-            }
-        }
-        return VoiceCardSnapshot(
-            option = this,
-            key = previewKey(),
-            selected = selected,
-            languageLabels = languageLabels,
-            genderLabel = genderLabel,
-            style = style,
-            tags = tags,
-        )
-    }
-
     private fun selectVoice(option: TtsVoiceOption) {
         val player = activity as? ReadAloudPlayerActivity ?: return
         val wasRun = BaseReadAloudService.isRun
@@ -1129,385 +1068,6 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ReadAloudVoiceSheetContent(
-    state: VoiceDrawerState,
-    onSelect: (TtsVoiceOption) -> Unit,
-    onPreview: (TtsVoiceOption) -> Unit,
-    onRetryFetch: () -> Unit,
-) {
-    val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
-    var query by remember { mutableStateOf("") }
-    var selectedLanguages by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var selectedGenders by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var filtersExpanded by remember { mutableStateOf(false) }
-    val voiceListState = rememberLazyListState()
-    val filteredGroups = state.groups.mapNotNull { group ->
-        val cards = group.cards.filter { card ->
-            val languageMatch = selectedLanguages.isEmpty() ||
-                card.languageLabels.any { it in selectedLanguages }
-            val genderMatch = selectedGenders.isEmpty() ||
-                card.genderLabel?.let { it in selectedGenders } == true
-            card.option.matchesName(query) && languageMatch && genderMatch
-        }
-        group.takeIf { cards.isNotEmpty() }?.copy(cards = cards)
-    }
-    val filteredItemCount = filteredGroups.sumOf { group -> group.cards.size + 1 }
-    NgBottomDrawerSurface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(drawerHeight),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-        ) {
-            BackHandler(enabled = filtersExpanded) {
-                filtersExpanded = false
-            }
-            NgLongDrawerHeader(
-                title = "发音人",
-                actionIconRes = R.drawable.ic_tts_params_grid,
-                actionContentDescription = "筛选发音人",
-                actionActive = filtersExpanded || query.isNotBlank() ||
-                    selectedLanguages.isNotEmpty() || selectedGenders.isNotEmpty(),
-                onActionClick = { filtersExpanded = !filtersExpanded },
-            )
-            if (filtersExpanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp, bottom = 8.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(Color(NgTheme.colors.inputContainer))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                ) {
-                    ListeningSearchField(
-                        query = query,
-                        onQueryChange = { query = it },
-                        hint = "搜索引擎或发音人",
-                        hideHintWhenFocused = true,
-                    )
-                    if (state.languageOptions.isNotEmpty()) {
-                        VoiceFilterSection(
-                            label = "语言",
-                            options = state.languageOptions,
-                            selected = selectedLanguages,
-                            onToggle = {
-                                selectedLanguages = selectedLanguages.toggled(it)
-                            },
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                    }
-                    if (state.genderOptions.isNotEmpty()) {
-                        VoiceGenderFilterSection(
-                            options = state.genderOptions,
-                            selected = selectedGenders,
-                            onToggle = {
-                                selectedGenders = selectedGenders.toggled(it)
-                            },
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                    }
-                }
-            }
-            when {
-                state.loading -> ListeningLoadingState(
-                    text = "正在获取发音人…",
-                    showProgress = true,
-                )
-                state.groups.isEmpty() && state.fetchError != null -> ListeningRetryState(
-                    text = state.fetchError,
-                    onRetry = onRetryFetch,
-                )
-                state.groups.isEmpty() && state.canRetryFetch -> ListeningRetryState(
-                    text = "尚未获取到发音人",
-                    onRetry = onRetryFetch,
-                )
-                filteredGroups.isEmpty() -> ListeningLoadingState("没有匹配的发音人")
-                else -> Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                ) {
-                    LazyColumn(
-                        state = voiceListState,
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        filteredGroups.forEach { group ->
-                            item(key = "header:${group.engine.id}") {
-                                Text(
-                                    text = group.engine.name,
-                                    color = Color(NgTheme.colors.primary),
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(
-                                        start = 4.dp,
-                                        top = 8.dp,
-                                        bottom = 2.dp,
-                                    ),
-                                )
-                            }
-                            items(group.cards, key = { it.key }) { card ->
-                                VoiceSelectionCard(
-                                    card = card,
-                                    previewState = state.preview.takeIf {
-                                        it.key == card.key
-                                    }?.state ?: TtsVoicePreviewState.IDLE,
-                                    onSelect = { onSelect(card.option) },
-                                    onPreview = { onPreview(card.option) },
-                                )
-                            }
-                        }
-                    }
-                    NgLazyListFastScroller(
-                        state = voiceListState,
-                        itemCount = filteredItemCount,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 4.dp),
-                        variant = NgLazyListFastScrollerVariant.FLOATING_HANDLE,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun VoiceFilterSection(
-    label: String,
-    options: List<String>,
-    selected: Set<String>,
-    onToggle: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Text(
-            text = label,
-            color = Color(NgTheme.colors.onSurfaceVariant),
-            fontSize = 12.sp,
-            lineHeight = 28.sp,
-            modifier = Modifier.width(40.dp),
-        )
-        FlowRow(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            options.forEach { option ->
-                ListeningChip(
-                    label = option,
-                    selected = option in selected,
-                    onClick = { onToggle(option) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun VoiceGenderFilterSection(
-    options: List<String>,
-    selected: Set<String>,
-    onToggle: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "性别",
-            color = Color(NgTheme.colors.onSurfaceVariant),
-            fontSize = 12.sp,
-            lineHeight = 24.sp,
-            modifier = Modifier.width(40.dp),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            options.forEach { option ->
-                val isSelected = option in selected
-                val isMale = option == "男"
-                Box(
-                    modifier = Modifier
-                        .size(width = 34.dp, height = 24.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (isSelected) Color(NgTheme.colors.selectedContainer)
-                            else Color(NgTheme.colors.surface)
-                        )
-                        .clickable { onToggle(option) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        painter = painterResource(
-                            if (isMale) R.drawable.ic_tts_gender_male
-                            else R.drawable.ic_tts_gender_female
-                        ),
-                        contentDescription = option,
-                        tint = when {
-                            !isSelected -> Color(NgTheme.colors.onSurfaceVariant)
-                            isMale -> colorResource(R.color.ng_tts_gender_male)
-                            else -> colorResource(R.color.ng_tts_gender_female)
-                        },
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
-@Composable
-private fun VoiceSelectionCard(
-    card: VoiceCardSnapshot,
-    previewState: TtsVoicePreviewState,
-    onSelect: () -> Unit,
-    onPreview: () -> Unit,
-) {
-    val option = card.option
-    val shape = RoundedCornerShape(18.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 70.dp)
-            .clip(shape)
-            .background(Color(NgTheme.colors.inputContainer))
-            .combinedClickable(onClick = onSelect, onLongClick = onPreview)
-            .padding(end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .padding(start = 2.dp)
-                .width(4.dp)
-                .height(46.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(
-                    if (card.selected) Color(NgTheme.colors.primary)
-                    else Color.Transparent
-                ),
-        )
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(28.dp)
-                    .horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = option.voice.name,
-                    color = Color(NgTheme.colors.onSurface),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-                when (card.genderLabel) {
-                    "男" -> VoiceGenderIcon(
-                        iconRes = R.drawable.ic_tts_gender_male,
-                        colorRes = R.color.ng_tts_gender_male,
-                    )
-                    "女" -> VoiceGenderIcon(
-                        iconRes = R.drawable.ic_tts_gender_female,
-                        colorRes = R.color.ng_tts_gender_female,
-                    )
-                }
-                card.languageLabels.forEach { label ->
-                    VoiceTagChip(
-                        text = label,
-                        contentColorRes = R.color.ng_tts_language,
-                        containerColorRes = R.color.ng_tts_language_container,
-                        modifier = Modifier.padding(start = 6.dp),
-                    )
-                }
-                card.style?.let {
-                    VoiceTagChip(
-                        text = it,
-                        contentColorRes = R.color.ng_tts_tag_blue,
-                        containerColorRes = R.color.ng_tts_tag_blue_container,
-                        modifier = Modifier.padding(start = 6.dp),
-                    )
-                }
-            }
-            if (card.tags.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(24.dp)
-                        .padding(top = 1.dp)
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    card.tags.forEachIndexed { index, tag ->
-                        val colors = voiceTagPalette(index)
-                        VoiceTagChip(
-                            text = tag,
-                            contentColorRes = colors.first,
-                            containerColorRes = colors.second,
-                        )
-                    }
-                }
-            }
-        }
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onPreview),
-            contentAlignment = Alignment.Center,
-        ) {
-            when (previewState) {
-                TtsVoicePreviewState.LOADING -> CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = Color(NgTheme.colors.primary),
-                    strokeWidth = 2.dp,
-                )
-                TtsVoicePreviewState.PLAYING -> Icon(
-                    imageVector = Icons.Rounded.StopCircle,
-                    contentDescription = "停止试听",
-                    tint = Color(NgTheme.colors.primary),
-                )
-                TtsVoicePreviewState.IDLE -> Icon(
-                    imageVector = Icons.Rounded.Headphones,
-                    contentDescription = "试听",
-                    tint = Color(NgTheme.colors.onSurfaceVariant),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun VoiceGenderIcon(
-    iconRes: Int,
-    colorRes: Int,
-) {
-    Icon(
-        painter = painterResource(iconRes),
-        contentDescription = null,
-        tint = colorResource(colorRes),
-        modifier = Modifier
-            .padding(start = 8.dp)
-            .size(18.dp),
-    )
-}
-
 @Composable
 private fun VoiceTagChip(
     text: String,
@@ -1528,14 +1088,6 @@ private fun VoiceTagChip(
             .background(colorResource(containerColorRes))
             .padding(horizontal = 8.dp, vertical = 3.dp),
     )
-}
-
-private fun voiceTagPalette(index: Int): Pair<Int, Int> = when (index % 5) {
-    0 -> R.color.ng_tts_tag_blue to R.color.ng_tts_tag_blue_container
-    1 -> R.color.ng_tts_tag_purple to R.color.ng_tts_tag_purple_container
-    2 -> R.color.ng_tts_tag_orange to R.color.ng_tts_tag_orange_container
-    3 -> R.color.ng_tts_tag_green to R.color.ng_tts_tag_green_container
-    else -> R.color.ng_tts_tag_pink to R.color.ng_tts_tag_pink_container
 }
 
 @Composable

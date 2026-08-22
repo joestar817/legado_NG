@@ -352,7 +352,8 @@ private fun NgStatusTagRow(tags: List<NgStatusTagSpec>, header: Boolean) {
                         when (tag.style) {
                             NgStatusTagStyle.INLINE -> 4.dp
                             NgStatusTagStyle.COMPACT -> 6.dp
-                            NgStatusTagStyle.REGULAR -> 8.dp
+                            NgStatusTagStyle.REGULAR,
+                            NgStatusTagStyle.TTS_ROLE -> 8.dp
                         }
                     )
                 )
@@ -363,7 +364,8 @@ private fun NgStatusTagRow(tags: List<NgStatusTagSpec>, header: Boolean) {
                     max = when (tag.style) {
                         NgStatusTagStyle.INLINE -> 72.dp
                         NgStatusTagStyle.COMPACT -> 96.dp
-                        NgStatusTagStyle.REGULAR -> 120.dp
+                        NgStatusTagStyle.REGULAR,
+                        NgStatusTagStyle.TTS_ROLE -> 120.dp
                     }
                 )
             )

@@ -414,10 +414,17 @@ object BookTtsCastingCoordinator {
     ): SyncedCastRoles {
         val dao = appDb.bookCharacterDao
         val profile = dao.getOrCreateProfile(book.name, book.author, book.bookUrl)
+        val persistedCharacters = dao.getCharacters(profile.workKey)
+        val persistedRoles = dao.getTtsCastRoles(profile.workKey)
+        val blockedNames = blockedIdentityNames(persistedCharacters, persistedRoles)
+        val blockedRoleIds = persistedRoles
+            .asSequence()
+            .filter { it.ignored }
+            .mapTo(mutableSetOf()) { it.id }
         linkPromotedRoles(profile.workKey, characters)
         applyExplicitIdentityLinks(profile.workKey, storyboard.identityLinks, characters)
         mergeExplicitFormalRoles(profile.workKey, storyboard, characters)
-        val canonicalNames = characters.flatMap { character ->
+        val canonicalNames = persistedCharacters.filter { it.enabled }.flatMap { character ->
             buildList {
                 add(character.name.trim())
                 character.aliasesJson
@@ -436,7 +443,12 @@ object BookTtsCastingCoordinator {
                     it == BookCharacter.Gender.MALE || it == BookCharacter.Gender.FEMALE
                 } ?: BookCharacter.Gender.UNKNOWN
                 val normalizedName = normalizeIdentityName(name)
-                if (normalizedName in canonicalNames) return@mapNotNull null
+                if (normalizedName in canonicalNames || normalizedName in blockedNames) {
+                    return@mapNotNull null
+                }
+                if (segment.castRoleId?.let(blockedRoleIds::contains) == true) {
+                    return@mapNotNull null
+                }
                 DiscoveredOccurrence(
                     name = name,
                     gender = gender,
@@ -864,6 +876,7 @@ object BookTtsCastingCoordinator {
         val role = dao.getTtsCastRole(roleId) ?: return
         val contributions = dao.getTtsCastRoleContributions(roleId)
         if (contributions.isEmpty()) {
+            if (role.ignored) return
             val bindings = dao.getTtsBindings(role.workKey)
             if (role.linkedCharacterId != null || hasProtectedBinding(role.id, bindings)) return
             bindings.filter {
@@ -964,6 +977,29 @@ object BookTtsCastingCoordinator {
             (listOf(role.name) + roleAliases(role)).filter { it.isNotBlank() }.forEach { name ->
                 putIfAbsent(normalizeIdentityName(name), role)
             }
+        }
+    }
+
+    internal fun blockedIdentityNames(
+        characters: List<BookCharacter>,
+        roles: List<BookTtsCastRole>
+    ): Set<String> = buildSet {
+        characters.filter { !it.enabled }.forEach { character ->
+            buildList {
+                add(character.name)
+                character.aliasesJson
+                    ?.let { GSON.fromJsonObject<List<String>>(it).getOrNull() }
+                    .orEmpty()
+                    .forEach(::add)
+            }.map(String::trim)
+                .filter(String::isNotBlank)
+                .mapTo(this, ::normalizeIdentityName)
+        }
+        roles.filter { it.ignored }.forEach { role ->
+            (listOf(role.name) + roleAliases(role))
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .mapTo(this, ::normalizeIdentityName)
         }
     }
 

@@ -16,6 +16,7 @@
     <color name="success">#439b53</color>
     <color name="character_avatar_male">#FF9EB8FF</color>
     <color name="character_avatar_female">#FFFFA1B5</color>
+    <color name="character_avatar_narrator">#FFA58BE3</color>
     <color name="character_avatar_unknown">#FFE8E8E8</color>
 
     <color name="night_mask">#00000000</color>

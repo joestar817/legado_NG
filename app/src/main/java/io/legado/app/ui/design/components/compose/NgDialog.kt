@@ -40,6 +40,7 @@ fun NgDialog(
     val metrics = dialogMetrics(variant)
     val cornerRadius = when (variant) {
         NgDialogVariant.COMPACT_CONFIRMATION -> NgTheme.shapes.largeDp
+        NgDialogVariant.FORM_EDITOR -> NgTheme.shapes.dialogDp
         else -> NgTheme.shapes.extraLargeDp
     }
     Surface(
@@ -231,6 +232,17 @@ private fun dialogMetrics(variant: NgDialogVariant): NgDialogMetrics = when (var
         titleLineHeight = 26.sp,
         titleSpacing = 24.dp,
         actionSpacing = 18.dp,
+        titleAlignment = TextAlign.Start,
+    )
+
+    NgDialogVariant.FORM_EDITOR -> NgDialogMetrics(
+        horizontalPadding = 16.dp,
+        topPadding = 16.dp,
+        bottomPadding = 16.dp,
+        titleSize = 24.sp,
+        titleLineHeight = 30.sp,
+        titleSpacing = 16.dp,
+        actionSpacing = 16.dp,
         titleAlignment = TextAlign.Start,
     )
 

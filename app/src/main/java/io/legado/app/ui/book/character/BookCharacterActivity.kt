@@ -6,7 +6,7 @@ package io.legado.app.ui.book.character
  */
 class BookCharacterActivity : BookCharacterTtsActivity() {
 
-    override fun initialPage(): Page = Page.FORMAL
+    override fun initialPage(): BookCharacterTtsPage = BookCharacterTtsPage.FORMAL
 
     companion object {
         const val EXTRA_WORK_KEY = "workKey"

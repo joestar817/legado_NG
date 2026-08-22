@@ -52,6 +52,13 @@ class NgStatusTagView @JvmOverloads constructor(
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             }
 
+            NgStatusTagStyle.TTS_ROLE -> {
+                minimumWidth = 0
+                minHeight = 24.dp
+                setPadding(8.dp, 0, 8.dp, 0)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            }
+
             NgStatusTagStyle.INLINE -> {
                 minimumWidth = 0
                 minHeight = 18.dp
@@ -66,7 +73,8 @@ class NgStatusTagView @JvmOverloads constructor(
             val colors = NgThemeResolver.resolve(context).colors
             background = GradientDrawable().apply {
                 cornerRadius = when (style) {
-                    NgStatusTagStyle.REGULAR -> 12.dp.toFloat()
+                    NgStatusTagStyle.REGULAR,
+                    NgStatusTagStyle.TTS_ROLE -> 12.dp.toFloat()
                     NgStatusTagStyle.COMPACT -> 7.dp.toFloat()
                     NgStatusTagStyle.INLINE -> 6.dp.toFloat()
                 }
@@ -99,7 +107,8 @@ class NgStatusTagView @JvmOverloads constructor(
                 )
         }
         background = when (style) {
-            NgStatusTagStyle.REGULAR -> ContextCompat.getDrawable(context, backgroundRes)
+            NgStatusTagStyle.REGULAR,
+            NgStatusTagStyle.TTS_ROLE -> ContextCompat.getDrawable(context, backgroundRes)
             NgStatusTagStyle.COMPACT,
             NgStatusTagStyle.INLINE -> GradientDrawable().apply {
                 cornerRadius = when (style) {

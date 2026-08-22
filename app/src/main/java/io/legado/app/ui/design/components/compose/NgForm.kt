@@ -971,6 +971,9 @@ fun NgFormActionButton(
         NgButtonVariant.PRIMARY,
         NgButtonVariant.PRIMARY_LIGHT_CONTENT -> primary
         NgButtonVariant.TONAL -> Color(colors.selectedContainer)
+        NgButtonVariant.NEUTRAL -> Color(colors.surfaceContainerHigh).copy(
+            alpha = if (NgTheme.snapshot.isEInk) 1f else 0.38f
+        )
         NgButtonVariant.DANGER -> Color(colors.error)
         NgButtonVariant.ON_IMAGE -> Color.Black.copy(alpha = 0.56f)
         NgButtonVariant.OUTLINE -> if (dialogAppearance) {
@@ -982,7 +985,8 @@ fun NgFormActionButton(
     val contentColor = when (variant) {
         NgButtonVariant.PRIMARY -> if (dialogAppearance) Color.White else Color(colors.onPrimary)
         NgButtonVariant.PRIMARY_LIGHT_CONTENT -> Color.White
-        NgButtonVariant.TONAL -> Color(colors.onSurface)
+        NgButtonVariant.TONAL,
+        NgButtonVariant.NEUTRAL -> Color(colors.onSurface)
         NgButtonVariant.DANGER -> Color.White
         NgButtonVariant.ON_IMAGE -> Color.White
         NgButtonVariant.OUTLINE -> primary

@@ -1,23 +1,29 @@
 package io.legado.app.ui.book.character
 
+import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
-import io.legado.app.base.BaseDialogFragment
+import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookTtsCastRole
-import io.legado.app.databinding.DialogBookCharacterEditBinding
+import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.widget.dialog.applyNgDialogWindow
 import io.legado.app.ui.widget.dialog.ngDialogMaxHeight
 import io.legado.app.utils.toastOnUi
-import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class BookCharacterEditDialog() : BaseDialogFragment(R.layout.dialog_book_character_edit) {
+class BookCharacterEditDialog() : BaseComposeDialogFragment() {
 
     constructor(workKey: String, characterId: Long = 0L, castRoleId: Long = 0L) : this() {
         arguments = Bundle().apply {
@@ -27,21 +33,21 @@ class BookCharacterEditDialog() : BaseDialogFragment(R.layout.dialog_book_charac
         }
     }
 
-    private val binding by viewBinding(DialogBookCharacterEditBinding::bind)
     private val callback get() = activity as? Callback
     private lateinit var workKey: String
     private var characterId = 0L
     private var castRoleId = 0L
     private var character: BookCharacter? = null
     private var castRole: BookTtsCastRole? = null
+    private var saving by mutableStateOf(false)
 
     override fun onStart() {
         super.onStart()
         applyNgDialogWindow(height = ngDialogMaxHeight(0.86f))
+        dialog?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
-        view.setBackgroundResource(R.drawable.ng_bg_dialog)
         workKey = arguments?.getString(ARG_WORK_KEY).orEmpty()
         characterId = arguments?.getLong(ARG_CHARACTER_ID) ?: 0L
         castRoleId = arguments?.getLong(ARG_CAST_ROLE_ID) ?: 0L
@@ -56,35 +62,47 @@ class BookCharacterEditDialog() : BaseDialogFragment(R.layout.dialog_book_charac
             return
         }
         val isPromote = castRole != null
-        binding.tvTitle.setText(
+        val initialValue = initialCharacterFormValue(character, castRole)
+        val title = getString(
             when {
                 isPromote -> R.string.character_promote_title
                 character != null -> R.string.edit_character
                 else -> R.string.add_character
             }
         )
-        binding.tvConfirm.setText(
+        val confirmText = getString(
             if (isPromote) R.string.character_promote else R.string.save
         )
-        binding.form.initCharacterForm(requireContext())
-        binding.form.bindCharacterForm(character, castRole)
-        binding.tvCancel.setOnClickListener { dismissAllowingStateLoss() }
-        binding.tvConfirm.setOnClickListener { save() }
+        (view as ComposeView).apply {
+            setBackgroundColor(AndroidColor.TRANSPARENT)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    BookCharacterEditDialogContent(
+                        title = title,
+                        confirmText = confirmText,
+                        initialValue = initialValue,
+                        saving = saving,
+                        onCancel = { dismissAllowingStateLoss() },
+                        onConfirm = ::save,
+                    )
+                }
+            }
+        }
     }
 
-    private fun save() {
-        val value = binding.form.readCharacterForm()
+    private fun save(value: BookCharacterFormValue) {
         if (value.name.isEmpty()) {
             toastOnUi(R.string.character_name_empty)
             return
         }
-        binding.tvConfirm.isEnabled = false
+        saving = true
         lifecycleScope.launch(Dispatchers.IO) {
             val savedCharacterId = BookCharacterEditor.save(
                 workKey = workKey,
                 current = character,
                 castRole = castRole,
-                value = value
+                value = value,
             )
             withContext(Dispatchers.Main) {
                 callback?.onCharacterSaved(savedCharacterId, castRoleId)

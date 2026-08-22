@@ -22,6 +22,12 @@
     <item name="menu_show_disabled" type="id" />
     <item name="menu_copy_all" type="id" />
 
+    <!-- Stable role/storyboard actions retained after removing legacy character menus. -->
+    <item name="menu_delete" type="id" />
+    <item name="menu_quick_delete" type="id" />
+    <item name="menu_batch_manage" type="id" />
+    <item name="menu_restore_temporary" type="id" />
+
     <item name="menu_ai_assistant" type="id" />
     <item name="menu_add_books" type="id" />
     <item name="menu_add_local" type="id" />

@@ -3,6 +3,7 @@ package io.legado.app.ui.design.components.compose
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +43,8 @@ fun NgLongDrawerHeader(
     actionContentDescription: String? = null,
     actionActive: Boolean = false,
     onActionClick: (() -> Unit)? = null,
+    trailingActionText: String? = null,
+    onTrailingActionClick: (() -> Unit)? = null,
     @DrawableRes secondaryActionIconRes: Int? = null,
     secondaryActionContentDescription: String? = null,
     secondaryActionActive: Boolean = false,
@@ -128,6 +132,22 @@ fun NgLongDrawerHeader(
                     active = actionActive,
                     onClick = onActionClick,
                 )
+            }
+            if (!trailingActionText.isNullOrBlank() && onTrailingActionClick != null) {
+                TextButton(
+                    onClick = onTrailingActionClick,
+                    modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(
+                        text = trailingActionText,
+                        color = Color(colors.primary),
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }

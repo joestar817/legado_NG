@@ -1,12 +1,8 @@
 package io.legado.app.ui.book.character
 
-import android.content.Context
-import android.widget.ArrayAdapter
-import io.legado.app.R
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookTtsCastRole
-import io.legado.app.databinding.ViewBookCharacterFormBinding
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonObject
 
@@ -18,70 +14,47 @@ data class BookCharacterFormValue(
     val intro: String?
 )
 
-fun ViewBookCharacterFormBinding.initCharacterForm(context: Context) {
-    spinnerGender.adapter = ArrayAdapter(
-        context,
-        R.layout.item_ng_spinner_text,
-        BookCharacterLabels.genderValues.map { BookCharacterLabels.genderLabel(context, it) }
-    ).apply {
-        setDropDownViewResource(R.layout.item_tts_spinner_dropdown)
-    }
-    spinnerRole.adapter = ArrayAdapter(
-        context,
-        R.layout.item_ng_spinner_text,
-        BookCharacterLabels.roleValues.map { BookCharacterLabels.roleLabel(context, it) }
-    ).apply {
-        setDropDownViewResource(R.layout.item_tts_spinner_dropdown)
-    }
-}
-
-fun ViewBookCharacterFormBinding.bindCharacterForm(
+internal fun initialCharacterFormValue(
     character: BookCharacter?,
     castRole: BookTtsCastRole?
-) {
+): BookCharacterFormValue {
     if (character != null) {
-        editName.setText(character.name)
-        editAliases.setText(character.aliases().joinToString(", "))
-        spinnerGender.setSelection(
-            BookCharacterLabels.genderValues.indexOf(character.gender).coerceAtLeast(0)
+        return BookCharacterFormValue(
+            name = character.name,
+            aliases = character.aliases(),
+            gender = character.gender.takeIf { it in BookCharacterLabels.genderValues }
+                ?: BookCharacter.Gender.UNKNOWN,
+            roleTag = character.roleTag.takeIf { it in BookCharacterLabels.roleValues }
+                ?: BookCharacter.RoleTag.UNKNOWN,
+            intro = character.displayIntro(),
         )
-        spinnerRole.setSelection(
-            BookCharacterLabels.roleValues.indexOf(character.roleTag).coerceAtLeast(0)
-        )
-        editIntro.setText(character.displayIntro().orEmpty())
-        return
     }
     if (castRole != null) {
-        editName.setText(castRole.name)
-        editAliases.setText(
-            GSON.fromJsonObject<List<String>>(castRole.aliasesJson)
+        return BookCharacterFormValue(
+            name = castRole.name,
+            aliases = GSON.fromJsonObject<List<String>>(castRole.aliasesJson)
                 .getOrNull()
-                .orEmpty()
-                .joinToString(", ")
-        )
-        spinnerGender.setSelection(
-            BookCharacterLabels.genderValues.indexOf(castRole.gender).coerceAtLeast(0)
-        )
-        spinnerRole.setSelection(
-            BookCharacterLabels.roleValues.indexOf(defaultPromotedRoleTag(castRole.gender)).coerceAtLeast(0)
+                .orEmpty(),
+            gender = castRole.gender.takeIf { it in BookCharacterLabels.genderValues }
+                ?: BookCharacter.Gender.UNKNOWN,
+            roleTag = defaultPromotedRoleTag(castRole.gender),
+            intro = null,
         )
     }
-}
-
-fun ViewBookCharacterFormBinding.readCharacterForm(): BookCharacterFormValue {
     return BookCharacterFormValue(
-        name = editName.text?.toString()?.trim().orEmpty(),
-        aliases = editAliases.text?.toString()
-            ?.split(",", "，", "/", "、")
-            ?.map { it.trim() }
-            ?.filter { it.isNotEmpty() }
-            ?.distinct()
-            .orEmpty(),
-        gender = BookCharacterLabels.genderValues[spinnerGender.selectedItemPosition],
-        roleTag = BookCharacterLabels.roleValues[spinnerRole.selectedItemPosition],
-        intro = editIntro.text?.toString()?.trim()?.ifBlank { null }
+        name = "",
+        aliases = emptyList(),
+        gender = BookCharacter.Gender.UNKNOWN,
+        roleTag = BookCharacter.RoleTag.UNKNOWN,
+        intro = null,
     )
 }
+
+internal fun parseCharacterAliases(raw: String): List<String> = raw
+    .split(",", "，", "/", "、")
+    .map(String::trim)
+    .filter(String::isNotEmpty)
+    .distinct()
 
 object BookCharacterEditor {
     fun save(

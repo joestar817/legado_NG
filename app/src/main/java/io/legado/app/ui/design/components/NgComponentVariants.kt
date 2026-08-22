@@ -11,6 +11,7 @@ enum class NgButtonVariant {
     PRIMARY,
     PRIMARY_LIGHT_CONTENT,
     TONAL,
+    NEUTRAL,
     OUTLINE,
     DANGER,
     ON_IMAGE
@@ -19,6 +20,7 @@ enum class NgButtonVariant {
 enum class NgButtonShapeVariant {
     PILL,
     ROUNDED,
+    SMALL_ROUNDED,
 }
 
 enum class NgSettingsTrailing {
@@ -34,6 +36,7 @@ enum class NgDialogVariant {
     CONFIRMATION,
     COMPACT_CONFIRMATION,
     EDITOR,
+    FORM_EDITOR,
     LONG_CONTENT
 }
 
@@ -49,6 +52,7 @@ enum class NgStatusTagVariant {
 enum class NgStatusTagStyle {
     REGULAR,
     COMPACT,
+    TTS_ROLE,
     INLINE
 }
 

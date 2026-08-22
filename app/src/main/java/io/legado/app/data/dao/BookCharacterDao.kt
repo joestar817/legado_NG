@@ -134,11 +134,16 @@ interface BookCharacterDao {
     @Transaction
     fun ignoreTtsCastRole(role: BookTtsCastRole) {
         markTtsCastRoleIgnored(role.id)
+    }
+
+    @Transaction
+    fun deleteTtsCastRoleWithTts(role: BookTtsCastRole) {
         deleteTtsBindings(
             role.workKey,
             BookCharacterTtsBinding.TargetType.CAST_ROLE,
             role.id
         )
+        deleteTtsCastRole(role)
     }
 
     @Transaction

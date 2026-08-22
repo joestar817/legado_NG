@@ -82,6 +82,15 @@ fun NgStatusTag(
             lineHeight = 13
         )
 
+        NgStatusTagStyle.TTS_ROLE -> TagMetrics(
+            minWidth = 0,
+            height = 24,
+            horizontalPadding = 8,
+            cornerRadius = 12,
+            textSize = 12,
+            lineHeight = 15
+        )
+
         NgStatusTagStyle.INLINE -> TagMetrics(
             minWidth = 0,
             height = 18,

@@ -122,6 +122,33 @@ class BookTtsCastingCoordinatorTest {
     }
 
     @Test
+    fun blockedIdentityNames_includeDisabledFormalAndIgnoredTemporaryAliases() {
+        val blocked = BookTtsCastingCoordinator.blockedIdentityNames(
+            characters = listOf(
+                BookCharacter(name = "保留角色", enabled = true),
+                BookCharacter(
+                    name = "禁用正式角色",
+                    aliasesJson = "[\"正式别名\"]",
+                    enabled = false
+                )
+            ),
+            roles = listOf(
+                BookTtsCastRole(name = "保留临时角色", ignored = false),
+                BookTtsCastRole(
+                    name = "禁用临时角色",
+                    aliasesJson = "[\"临时别名\"]",
+                    ignored = true
+                )
+            )
+        )
+
+        assertEquals(
+            setOf("禁用正式角色", "正式别名", "禁用临时角色", "临时别名"),
+            blocked
+        )
+    }
+
+    @Test
     fun explicitAliasMapping_canResolveCanonicalNameDiscoveredInSameStoryboard() {
         val text = "QQ上有一个添加信息，打开一看，青青子衿是谁？\n" +
             "来源是群添加。\n到同学群看了下，哦，是沈言卿。"

@@ -1,22 +1,16 @@
 package io.legado.app.ui.book.character
 
-import android.content.res.ColorStateList
 import android.os.Bundle
 import android.os.SystemClock
-import android.view.Menu
-import android.view.MenuItem
-import android.view.ViewGroup
-import androidx.core.content.ContextCompat
-import androidx.core.view.isVisible
-import androidx.core.widget.TextViewCompat
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.ItemTouchHelper
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import io.legado.app.R
 import io.legado.app.base.BaseActivity
-import io.legado.app.base.adapter.ItemViewHolder
-import io.legado.app.base.adapter.RecyclerAdapter
+import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
@@ -24,8 +18,6 @@ import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookCharacterTtsBinding
 import io.legado.app.data.entities.BookTtsCastRole
-import io.legado.app.databinding.ActivityBookCharacterTtsBinding
-import io.legado.app.databinding.ItemBookCharacterTtsBinding
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.tts.BookTtsBindingPolicy
 import io.legado.app.help.tts.BookTtsCastingCoordinator
@@ -33,22 +25,18 @@ import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.theme.primaryColor
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.config.TtsSheetLaunchDebouncer
 import io.legado.app.ui.config.TtsVoiceOption
 import io.legado.app.ui.config.TtsVoiceSelectionSheet
-import io.legado.app.ui.widget.recycler.ItemTouchCallback
-import io.legado.app.utils.gone
+import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.observeEvent
-import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
-import io.legado.app.utils.visible
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -57,31 +45,31 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import splitties.init.appCtx
 
-open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBinding>(),
-    ItemTouchCallback.Callback,
+open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
     BookCharacterEditDialog.Callback {
 
-    override val binding by viewBinding(ActivityBookCharacterTtsBinding::inflate)
-    private val adapter by lazy { Adapter() }
+    override val binding by viewBinding(ComposeActivityBinding::inflate)
+    override val bindNgToolbarMenu: Boolean = false
     private val cardClickDebouncer = TtsSheetLaunchDebouncer()
-    private lateinit var itemTouchCallback: ItemTouchCallback
     private lateinit var workKey: String
     private var bookName: String = ""
     private var bookAuthor: String = ""
     private var bookUrl: String? = null
-    private var page: Page = Page.TEMPORARY
+    private var page by mutableStateOf(BookCharacterTtsPage.TEMPORARY)
     private var snapshot = Snapshot()
+    private var renderedRows: List<Row> = emptyList()
+    private var uiRows by mutableStateOf<List<BookCharacterTtsUiRow>>(emptyList())
+    private var disabledRoles by mutableStateOf<List<DisabledRoleUiItem>>(emptyList())
+    private var formalCount by mutableIntStateOf(0)
+    private var temporaryCount by mutableIntStateOf(0)
+    private var routeWarningVisible by mutableStateOf(false)
+    private var disabledRoleDialogVisible by mutableStateOf(false)
+    private var scrollTargetKey by mutableStateOf<String?>(null)
+    private var scrollToTopSignal by mutableIntStateOf(0)
     private var pendingCharacterId: Long? = null
-    private var quickDelete = false
-    private var reassigning = false
+    private var reassigning by mutableStateOf(false)
 
-    protected enum class Page {
-        FORMAL,
-        TEMPORARY,
-        DEFAULTS
-    }
-
-    protected open fun initialPage(): Page = Page.TEMPORARY
+    protected open fun initialPage(): BookCharacterTtsPage = BookCharacterTtsPage.TEMPORARY
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         bookName = intent.getStringExtra(BookCharacterActivity.EXTRA_BOOK_NAME).orEmpty()
@@ -91,21 +79,49 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
             ?: BookCharacterProfile.workKey(bookName, bookAuthor)
         page = initialPage()
         appDb.bookCharacterDao.getOrCreateProfile(bookName, bookAuthor, bookUrl)
-        binding.recyclerView.setEdgeEffectColor(primaryColor)
-        binding.recyclerView.layoutManager = LinearLayoutManager(this)
-        binding.recyclerView.adapter = adapter
-        itemTouchCallback = ItemTouchCallback(this).apply {
-            isCanDrag = page == Page.FORMAL
-            isCanSwipe = page != Page.DEFAULTS
-        }
-        ItemTouchHelper(itemTouchCallback).attachToRecyclerView(binding.recyclerView)
-        binding.tvTabFormal.setOnClickListener { selectPage(Page.FORMAL) }
-        binding.tvTabTemporary.setOnClickListener { selectPage(Page.TEMPORARY) }
-        binding.tvTabDefaults.setOnClickListener { selectPage(Page.DEFAULTS) }
+        initContent()
         observeData()
         linkPromotedRolesOnce()
-        updateTabs()
         renderRouteWarning()
+    }
+
+    private fun initContent() {
+        binding.composeView.setViewCompositionStrategy(
+            ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+        )
+        binding.composeView.setContent {
+            NgAppTheme {
+                BookCharacterTtsScreen(
+                    page = page,
+                    rows = uiRows,
+                    formalCount = formalCount,
+                    temporaryCount = temporaryCount,
+                    reassigning = reassigning,
+                    disabledRoles = disabledRoles,
+                    disabledRoleDialogVisible = disabledRoleDialogVisible,
+                    routeWarningVisible = routeWarningVisible,
+                    scrollTargetKey = scrollTargetKey,
+                    scrollToTopSignal = scrollToTopSignal,
+                    onBack = { onBackPressedDispatcher.onBackPressed() },
+                    onPageSelected = ::selectPage,
+                    onAdd = { showCharacterDialog() },
+                    onReassign = ::confirmReassign,
+                    onShowDisabledRoles = ::showDisabledRoleManager,
+                    onDismissDisabledRoles = { disabledRoleDialogVisible = false },
+                    onReenableDisabledRoles = ::reenableDisabledRoles,
+                    onDeleteDisabledRecords = ::confirmDeleteDisabledRecords,
+                    onRowClick = ::onRowClick,
+                    onVoiceClick = ::onVoiceClick,
+                    onPromote = ::onPromote,
+                    onDeleteRequested = ::deleteRows,
+                    onMove = ::moveRow,
+                    onMoveFinished = ::persistFormalOrder,
+                    onScrollTargetConsumed = { key ->
+                        if (scrollTargetKey == key) scrollTargetKey = null
+                    },
+                )
+            }
+        }
     }
 
     override fun onResume() {
@@ -134,57 +150,7 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
             ?.takeIf {
                 it.bookUrl == bookUrl && it.engineId == AppConfig.multiRoleTtsEngineId
             }
-        binding.layoutRouteWarning.isVisible = warning != null
-        if (warning != null) {
-            binding.tvRouteWarning.setText(R.string.character_tts_route_fallback)
-        }
-    }
-
-    override fun onCompatCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.book_character, menu)
-        menu.findItem(R.id.menu_tts)?.isVisible = false
-        return super.onCompatCreateOptionsMenu(menu)
-    }
-
-    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        val deletedRoles = ignoredTemporaryRoles()
-        menu.findItem(R.id.menu_tts)?.isVisible = false
-        menu.findItem(R.id.menu_add)?.isVisible = page == Page.FORMAL
-        menu.findItem(R.id.menu_quick_delete)?.apply {
-            isVisible = page != Page.DEFAULTS
-            isChecked = quickDelete
-        }
-        menu.findItem(R.id.menu_refresh)?.apply {
-            isVisible = page == Page.TEMPORARY && activeTemporaryRoles().isNotEmpty()
-            isEnabled = !reassigning
-        }
-        menu.findItem(R.id.menu_restore_temporary)?.apply {
-            isVisible = page == Page.TEMPORARY && deletedRoles.isNotEmpty()
-            title = getString(R.string.character_restore_deleted_count, deletedRoles.size)
-        }
-        return super.onPrepareOptionsMenu(menu)
-    }
-
-    override fun onCompatOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
-            R.id.menu_add -> showCharacterDialog()
-            R.id.menu_quick_delete -> {
-                quickDelete = !quickDelete
-                item.isChecked = quickDelete
-                toastOnUi(
-                    if (quickDelete) {
-                        R.string.character_quick_delete_enabled
-                    } else {
-                        R.string.character_quick_delete_disabled
-                    }
-                )
-            }
-
-            R.id.menu_restore_temporary -> showDeletedRoleManager()
-            R.id.menu_refresh -> confirmReassign()
-            else -> return super.onCompatOptionsItemSelected(item)
-        }
-        return true
+        routeWarningVisible = warning != null
     }
 
     private fun observeData() {
@@ -206,74 +172,64 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
             val voiceCatalog = VoiceCatalogSnapshot.load()
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 snapshot = snapshot.copy(voiceCatalog = voiceCatalog)
-                adapter.notifyDataSetChanged()
+                renderPage()
             }
         }
     }
 
-    private fun selectPage(newPage: Page) {
-        if (page == newPage && adapter.getItems().isNotEmpty()) return
+    private fun selectPage(newPage: BookCharacterTtsPage) {
+        if (page == newPage && renderedRows.isNotEmpty()) return
         page = newPage
-        if (::itemTouchCallback.isInitialized) {
-            itemTouchCallback.isCanDrag = page == Page.FORMAL
-            itemTouchCallback.isCanSwipe = page != Page.DEFAULTS
-        }
-        invalidateOptionsMenu()
-        updateTabs()
         renderPage()
-        binding.recyclerView.scrollToPosition(0)
-    }
-
-    private fun updateTabs() {
-        val formalCount = snapshot.characters.count { it.enabled }
-        val temporaryCount = snapshot.castRoles.count {
-            !it.ignored && it.linkedCharacterId == null && it.isVisibleTemporaryRole()
-        }
-        binding.tvTabFormal.text = getString(
-            R.string.character_page_tab_count,
-            getString(R.string.character_page_formal),
-            formalCount
-        )
-        binding.tvTabTemporary.text = getString(
-            R.string.character_page_tab_count,
-            getString(R.string.character_page_temporary),
-            temporaryCount
-        )
-        binding.tvTabDefaults.text = getString(
-            R.string.character_page_tab_count,
-            getString(R.string.character_page_defaults),
-            DEFAULT_VOICE_COUNT
-        )
-        binding.tvTabFormal.isSelected = page == Page.FORMAL
-        binding.tvTabTemporary.isSelected = page == Page.TEMPORARY
-        binding.tvTabDefaults.isSelected = page == Page.DEFAULTS
+        scrollToTopSignal++
     }
 
     private fun renderPage() {
         val rows = buildRows(snapshot.characters, snapshot.castRoles, snapshot.bindings)
-        adapter.setItems(rows)
-        updateTabs()
-        invalidateOptionsMenu()
-        val emptyText = when (page) {
-            Page.FORMAL -> R.string.book_character_empty
-            Page.TEMPORARY -> R.string.character_temporary_empty
-            Page.DEFAULTS -> null
+        renderedRows = rows
+        uiRows = rows.map { it.toUiRow() }
+        formalCount = snapshot.characters.count { it.enabled }
+        temporaryCount = activeTemporaryRoles().size
+        disabledRoles = buildList {
+            snapshot.characters.filter { !it.enabled }
+                .sortedWith(compareBy<BookCharacter> { it.sortOrder }.thenBy { it.id })
+                .forEach { character ->
+                    add(
+                        DisabledRoleUiItem(
+                            key = "character_${character.id}",
+                            name = character.name,
+                            summary = getString(
+                                R.string.character_disabled_formal_summary,
+                                BookCharacterLabels.roleLabel(
+                                    this@BookCharacterTtsActivity,
+                                    character.roleTag,
+                                ),
+                            ),
+                        ),
+                    )
+                }
+            ignoredTemporaryRoles().forEach { role ->
+                add(
+                    DisabledRoleUiItem(
+                        key = "cast_${role.id}",
+                        name = role.name,
+                        summary = getString(
+                            R.string.character_disabled_temporary_summary,
+                            BookCharacterLabels.genderLabel(this@BookCharacterTtsActivity, role.gender),
+                            role.occurrenceCount,
+                        ),
+                    ),
+                )
+            }
         }
-        if (rows.isEmpty() && emptyText != null) {
-            binding.tvEmpty.setText(emptyText)
-            binding.tvEmpty.visible()
-        } else {
-            binding.tvEmpty.gone()
-        }
+        if (disabledRoles.isEmpty()) disabledRoleDialogVisible = false
         val characterId = pendingCharacterId ?: return
-        val position = rows.indexOfFirst {
+        val row = rows.firstOrNull {
             it is Row.Character && it.character.id == characterId
         }
-        if (position >= 0) {
+        if (row != null) {
             pendingCharacterId = null
-            binding.recyclerView.post {
-                binding.recyclerView.smoothScrollToPosition(position)
-            }
+            scrollTargetKey = row.key()
         }
     }
 
@@ -288,7 +244,7 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
             .filter { it.targetType == BookCharacterTtsBinding.TargetType.NARRATOR }
             .maxByOrNull { it.updatedAt }
         return when (page) {
-            Page.FORMAL -> characters.filter { it.enabled }.map { character ->
+            BookCharacterTtsPage.FORMAL -> characters.filter { it.enabled }.map { character ->
                 Row.Character(
                     character = character,
                     binding = bindingMap[
@@ -301,7 +257,7 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
                 )
             }
 
-            Page.TEMPORARY -> castRoles
+            BookCharacterTtsPage.TEMPORARY -> castRoles
                 .filter { !it.ignored && it.linkedCharacterId == null && it.isVisibleTemporaryRole() }
                 .sortedWith(temporaryRoleComparator())
                 .map { role ->
@@ -317,7 +273,7 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
                     )
                 }
 
-            Page.DEFAULTS -> listOf(
+            BookCharacterTtsPage.DEFAULTS -> listOf(
                 Row.Narrator(narratorBinding),
                 Row.DialogueFallback(
                     gender = BookCharacter.Gender.MALE,
@@ -365,7 +321,57 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
     override fun onCharacterSaved(characterId: Long, castRoleId: Long) {
         setResult(RESULT_OK)
         pendingCharacterId = characterId
-        if (castRoleId > 0L || page != Page.FORMAL) selectPage(Page.FORMAL)
+        if (castRoleId > 0L || page != BookCharacterTtsPage.FORMAL) {
+            selectPage(BookCharacterTtsPage.FORMAL)
+        }
+    }
+
+    private fun onRowClick(key: String) {
+        val row = rowForKey(key) ?: return
+        if (row is Row.Character) {
+            showCharacterDialog(characterId = row.character.id)
+        } else if (cardClickDebouncer.tryAcquire(SystemClock.elapsedRealtime())) {
+            showVoiceSheet(row)
+        }
+    }
+
+    private fun onVoiceClick(key: String) {
+        if (cardClickDebouncer.tryAcquire(SystemClock.elapsedRealtime())) {
+            rowForKey(key)?.let(::showVoiceSheet)
+        }
+    }
+
+    private fun onPromote(key: String) {
+        (rowForKey(key) as? Row.CastRole)?.let { showPromoteDialog(it.role) }
+    }
+
+    private fun rowForKey(key: String): Row? = renderedRows.firstOrNull { it.key() == key }
+
+    private fun moveRow(fromIndex: Int, toIndex: Int) {
+        if (page != BookCharacterTtsPage.FORMAL) return
+        val from = renderedRows.getOrNull(fromIndex)
+        val to = renderedRows.getOrNull(toIndex)
+        if (from !is Row.Character || to !is Row.Character) return
+        val moved = renderedRows.toMutableList()
+        moved.add(toIndex, moved.removeAt(fromIndex))
+        renderedRows = moved
+        uiRows = moved.map { it.toUiRow() }
+    }
+
+    private fun persistFormalOrder() {
+        if (page != BookCharacterTtsPage.FORMAL) return
+        val now = System.currentTimeMillis()
+        val sorted = renderedRows.mapIndexedNotNull { index, row ->
+            (row as? Row.Character)?.character?.apply {
+                sortOrder = index
+                updatedAt = now
+            }
+        }
+        lifecycleScope.launch(IO) {
+            appDb.bookCharacterDao.updateCharacters(*sorted.toTypedArray())
+            appDb.bookCharacterDao.updateCharacterCount(workKey, now)
+            setResult(RESULT_OK)
+        }
     }
 
     private fun showVoiceSheet(row: Row) {
@@ -501,7 +507,6 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
     private fun reassignTemporaryRoles() {
         if (reassigning) return
         reassigning = true
-        invalidateOptionsMenu()
         if (BaseReadAloudService.isRun && AppConfig.readAloudMultiRole) {
             ReadAloud.prepareTtsCasting(this)
         }
@@ -511,7 +516,6 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 reassigning = false
-                invalidateOptionsMenu()
                 result.onSuccess { count ->
                     toastOnUi(getString(R.string.character_reassign_done, count))
                 }.onFailure { error ->
@@ -522,38 +526,63 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
         }
     }
 
-    private fun showDeletedRoleManager() {
-        val roles = ignoredTemporaryRoles()
-        if (roles.isEmpty()) return
-        DeletedRoleManageDialog(
-            context = this,
-            roles = roles,
-            onRestore = ::restoreTemporaryRoles,
-            onPermanentlyDelete = ::permanentlyDeleteTemporaryRoles
-        ).show()
+    private fun showDisabledRoleManager() {
+        disabledRoleDialogVisible = true
     }
 
-    private fun restoreTemporaryRoles(roles: List<BookTtsCastRole>) {
-        if (roles.isEmpty()) return
+    private fun reenableDisabledRoles(keys: Set<String>) {
+        val characters = snapshot.characters.filter { !it.enabled && "character_${it.id}" in keys }
+        val roles = ignoredTemporaryRoles().filter { "cast_${it.id}" in keys }
+        val count = characters.size + roles.size
+        if (count == 0) return
+        disabledRoleDialogVisible = false
         lifecycleScope.launch(IO) {
             appDb.runInTransaction {
+                val now = System.currentTimeMillis()
+                characters.forEach { character ->
+                    character.enabled = true
+                    character.updatedAt = now
+                    appDb.bookCharacterDao.updateCharacter(character)
+                }
                 roles.forEach { role ->
-                    appDb.bookCharacterDao.restoreTtsCastRole(role.id)
+                    appDb.bookCharacterDao.restoreTtsCastRole(role.id, now)
+                }
+                if (characters.isNotEmpty()) {
+                    appDb.bookCharacterDao.updateCharacterCount(workKey, now)
                 }
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 setResult(RESULT_OK)
-                toastOnUi(getString(R.string.character_restore_done, roles.size))
+                toastOnUi(getString(R.string.character_reenable_done, count))
                 refreshRunningReadAloud()
             }
         }
     }
 
-    private fun permanentlyDeleteTemporaryRoles(roles: List<BookTtsCastRole>) {
-        if (roles.isEmpty()) return
+    private fun confirmDeleteDisabledRecords(keys: Set<String>) {
+        val count = disabledRoles.count { it.key in keys }
+        if (count == 0) return
+        alert(titleResource = R.string.character_disabled_delete_title) {
+            setMessage(getString(R.string.character_disabled_delete_message, count))
+            yesButton {
+                disabledRoleDialogVisible = false
+                deleteDisabledRecords(keys)
+            }
+            noButton()
+        }
+    }
+
+    private fun deleteDisabledRecords(keys: Set<String>) {
+        val characters = snapshot.characters.filter { !it.enabled && "character_${it.id}" in keys }
+        val roles = ignoredTemporaryRoles().filter { "cast_${it.id}" in keys }
+        if (characters.isEmpty() && roles.isEmpty()) return
         lifecycleScope.launch(IO) {
             var deletedCount = 0
             appDb.runInTransaction {
+                characters.forEach { character ->
+                    appDb.bookCharacterDao.deleteCharacterWithTts(character)
+                    deletedCount++
+                }
                 roles.forEach { role ->
                     if (appDb.bookCharacterDao.permanentlyDeleteIgnoredTtsCastRole(role.id)) {
                         deletedCount++
@@ -562,54 +591,56 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 setResult(RESULT_OK)
-                toastOnUi(getString(R.string.character_deleted_permanent_done, deletedCount))
+                toastOnUi(getString(R.string.character_disabled_delete_done, deletedCount))
+                refreshRunningReadAloud()
             }
         }
     }
 
-    private fun confirmDelete(row: Row, adapterPosition: Int) {
-        val isFormal = row is Row.Character
-        val name = row.title()
-        alert(
-            titleResource = if (isFormal) {
-                R.string.character_delete_formal_title
-            } else {
-                R.string.character_delete_temporary_title
-            }
-        ) {
-            setMessage(
-                getString(
-                    if (isFormal) {
-                        R.string.character_delete_formal_message
-                    } else {
-                        R.string.character_delete_temporary_message
-                    },
-                    name
-                )
-            )
-            yesButton { deleteRow(row) }
-            noButton { adapter.notifyItemChanged(adapterPosition) }
-        }
-    }
-
-    private fun deleteRow(row: Row) {
+    private fun deleteRows(keys: Set<String>, mode: BookCharacterDeleteMode) {
+        val rows = renderedRows.filter { it.key() in keys }
+            .filter { it is Row.Character || it is Row.CastRole }
+        if (rows.isEmpty()) return
         lifecycleScope.launch(IO) {
-            val doneMessage = when (row) {
-                is Row.Character -> {
-                    appDb.bookCharacterDao.deleteCharacterWithTts(row.character)
-                    R.string.character_delete_formal_done
-                }
+            appDb.runInTransaction {
+                val now = System.currentTimeMillis()
+                var disabledFormal = false
+                rows.forEach { row ->
+                    when (row) {
+                        is Row.Character -> if (mode == BookCharacterDeleteMode.DELETE_ONLY) {
+                            appDb.bookCharacterDao.deleteCharacterWithTts(row.character)
+                        } else {
+                            row.character.enabled = false
+                            row.character.updatedAt = now
+                            appDb.bookCharacterDao.updateCharacter(row.character)
+                            disabledFormal = true
+                        }
 
-                is Row.CastRole -> {
-                    appDb.bookCharacterDao.ignoreTtsCastRole(row.role)
-                    R.string.character_delete_temporary_done
-                }
+                        is Row.CastRole -> if (mode == BookCharacterDeleteMode.DELETE_ONLY) {
+                            appDb.bookCharacterDao.deleteTtsCastRoleWithTts(row.role)
+                        } else {
+                            appDb.bookCharacterDao.ignoreTtsCastRole(row.role)
+                        }
 
-                else -> return@launch
+                        else -> Unit
+                    }
+                }
+                if (disabledFormal) {
+                    appDb.bookCharacterDao.updateCharacterCount(workKey, now)
+                }
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 setResult(RESULT_OK)
-                toastOnUi(doneMessage)
+                toastOnUi(
+                    getString(
+                        if (mode == BookCharacterDeleteMode.DELETE_ONLY) {
+                            R.string.character_delete_only_done
+                        } else {
+                            R.string.character_delete_and_disable_done
+                        },
+                        rows.size,
+                    ),
+                )
                 refreshRunningReadAloud()
             }
         }
@@ -812,174 +843,57 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
         is Row.CastRole -> BookCharacterTtsBinding.TargetType.CAST_ROLE to role.id
     }
 
-    override fun swap(srcPosition: Int, targetPosition: Int): Boolean {
-        if (page != Page.FORMAL) return false
-        val from = adapter.getItems().getOrNull(srcPosition)
-        val to = adapter.getItems().getOrNull(targetPosition)
-        if (from !is Row.Character || to !is Row.Character) return false
-        adapter.swapItem(srcPosition, targetPosition)
-        return true
-    }
-
-    override fun getSwipeFlags(adapterPosition: Int, defaultFlags: Int): Int {
-        return when (adapter.getItems().getOrNull(adapterPosition)) {
-            is Row.Character, is Row.CastRole -> ItemTouchHelper.RIGHT
-            else -> 0
-        }
-    }
-
-    override fun onSwiped(adapterPosition: Int, direction: Int) {
-        val row = adapter.getItems().getOrNull(adapterPosition)
-        if (
-            direction != ItemTouchHelper.RIGHT ||
-            row !is Row.Character && row !is Row.CastRole
-        ) {
-            adapter.notifyItemChanged(adapterPosition)
-            return
-        }
-        if (quickDelete) {
-            deleteRow(row)
-        } else {
-            confirmDelete(row, adapterPosition)
-        }
-    }
-
-    override fun onClearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
-        if (page != Page.FORMAL) return
-        val now = System.currentTimeMillis()
-        val sorted = adapter.getItems().mapIndexedNotNull { index, row ->
-            (row as? Row.Character)?.character?.apply {
-                sortOrder = index
-                updatedAt = now
-            }
-        }
-        lifecycleScope.launch(IO) {
-            appDb.bookCharacterDao.updateCharacters(*sorted.toTypedArray())
-            appDb.bookCharacterDao.updateCharacterCount(workKey, now)
-            setResult(RESULT_OK)
-        }
-    }
-
-    private inner class Adapter :
-        RecyclerAdapter<Row, ItemBookCharacterTtsBinding>(this@BookCharacterTtsActivity) {
-
-        override fun getViewBinding(parent: ViewGroup): ItemBookCharacterTtsBinding {
-            return ItemBookCharacterTtsBinding.inflate(inflater, parent, false)
-        }
-
-        override fun convert(
-            holder: ItemViewHolder,
-            binding: ItemBookCharacterTtsBinding,
-            item: Row,
-            payloads: MutableList<Any>
-        ) = binding.run {
-            tvAvatar.text = when (item) {
+    private fun Row.toUiRow(): BookCharacterTtsUiRow {
+        return BookCharacterTtsUiRow(
+            key = key(),
+            title = title(),
+            avatar = when (this) {
                 is Row.Narrator -> getString(R.string.character_tts_narrator_avatar)
                 is Row.DialogueFallback -> getString(
-                    if (item.gender == BookCharacter.Gender.MALE) {
+                    if (gender == BookCharacter.Gender.MALE) {
                         R.string.character_tts_dialogue_male_avatar
                     } else {
                         R.string.character_tts_dialogue_female_avatar
-                    }
+                    },
                 )
 
-                is Row.Character -> item.character.name.firstOrNull()?.toString().orEmpty()
-                is Row.CastRole -> item.role.name.firstOrNull()?.toString().orEmpty()
-            }
-            tvAvatar.setBackgroundResource(item.gender().avatarBackground())
-            tvName.text = item.title()
-            bindGender(tvGender, item.gender())
-            tvVoice.text = item.voiceSummary()
-            tvStyle.isVisible = false
-            val roleLabel = when (item) {
+                is Row.Character -> character.name.firstOrNull()?.toString().orEmpty()
+                is Row.CastRole -> role.name.firstOrNull()?.toString().orEmpty()
+            },
+            gender = when (gender()) {
+                BookCharacter.Gender.MALE -> BookCharacterTtsGender.MALE
+                BookCharacter.Gender.FEMALE -> BookCharacterTtsGender.FEMALE
+                else -> BookCharacterTtsGender.UNKNOWN
+            },
+            roleLabel = when (this) {
                 is Row.Narrator -> null
                 is Row.DialogueFallback -> getString(R.string.character_tts_dialogue_fallback)
                 is Row.Character -> BookCharacterLabels.roleLabel(
                     this@BookCharacterTtsActivity,
-                    item.character.roleTag
+                    character.roleTag,
                 )
 
                 is Row.CastRole -> getString(R.string.character_temporary_role)
-            }
-            tvRole.text = roleLabel
-            tvRole.isVisible = !roleLabel.isNullOrBlank()
-            tvAction.isVisible = item !is Row.CastRole
-            tvPromote.isVisible = item is Row.CastRole
-            tvAction.text = null
-            tvAction.setCompoundDrawablesRelativeWithIntrinsicBounds(
-                R.drawable.ic_chevron_right_20,
-                0,
-                0,
-                0
-            )
-            TextViewCompat.setCompoundDrawableTintList(
-                tvAction,
-                ColorStateList.valueOf(
-                    ContextCompat.getColor(
-                        this@BookCharacterTtsActivity,
-                        R.color.ng_on_surface_variant
-                    )
-                )
-            )
-            tvAction.background = null
-            tvAction.foreground = null
-            tvAction.minWidth = 0
-            tvAction.setPadding(0, 0, 0, 0)
-            tvAction.isClickable = false
-            tvAction.isFocusable = false
-        }
-
-        override fun registerListener(holder: ItemViewHolder, binding: ItemBookCharacterTtsBinding) {
-            binding.root.setOnClickListener {
-                val item = getItemByLayoutPosition(holder) ?: return@setOnClickListener
-                if (item is Row.Character) {
-                    showCharacterDialog(characterId = item.character.id)
-                } else if (cardClickDebouncer.tryAcquire(SystemClock.elapsedRealtime())) {
-                    showVoiceSheet(item)
-                }
-            }
-            binding.tvVoice.setOnClickListener {
-                if (cardClickDebouncer.tryAcquire(SystemClock.elapsedRealtime())) {
-                    getItemByLayoutPosition(holder)?.let(::showVoiceSheet)
-                }
-            }
-            binding.tvPromote.setOnClickListener {
-                (getItemByLayoutPosition(holder) as? Row.CastRole)?.let {
-                    showPromoteDialog(it.role)
-                }
-            }
-        }
-
-        private fun getItemByLayoutPosition(holder: ItemViewHolder): Row? {
-            val position = holder.bindingAdapterPosition
-            return getItem(position)
-        }
-    }
-
-    private fun bindGender(view: android.widget.TextView, gender: String?) {
-        view.isVisible = gender != null
-        view.text = when (gender) {
-            BookCharacter.Gender.MALE -> "♂"
-            BookCharacter.Gender.FEMALE -> "♀"
-            null -> ""
-            else -> "?"
-        }
-        view.setTextColor(
-            ContextCompat.getColor(
-                this,
-                when (gender) {
-                    BookCharacter.Gender.MALE -> R.color.ng_tts_gender_male
-                    BookCharacter.Gender.FEMALE -> R.color.ng_tts_gender_female
-                    else -> R.color.ng_on_surface_variant
-                }
-            )
+            },
+            voiceSummary = voiceSummary(),
+            kind = when (this) {
+                is Row.Character -> BookCharacterTtsRowKind.FORMAL
+                is Row.CastRole -> BookCharacterTtsRowKind.TEMPORARY
+                is Row.Narrator, is Row.DialogueFallback -> BookCharacterTtsRowKind.DEFAULT
+            },
         )
     }
 
-    private fun String?.avatarBackground(): Int = when (this) {
-        BookCharacter.Gender.MALE -> R.drawable.bg_character_avatar_male
-        BookCharacter.Gender.FEMALE -> R.drawable.bg_character_avatar_female
-        else -> R.drawable.bg_character_avatar_unknown
+    private fun Row.key(): String = when (this) {
+        is Row.Narrator -> "narrator"
+        is Row.DialogueFallback -> if (gender == BookCharacter.Gender.MALE) {
+            "dialogue_male"
+        } else {
+            "dialogue_female"
+        }
+
+        is Row.Character -> "character_${character.id}"
+        is Row.CastRole -> "cast_${role.id}"
     }
 
     private data class Snapshot(
@@ -1039,7 +953,4 @@ open class BookCharacterTtsActivity : BaseActivity<ActivityBookCharacterTtsBindi
         ) : Row
     }
 
-    companion object {
-        private const val DEFAULT_VOICE_COUNT = 3
-    }
 }
