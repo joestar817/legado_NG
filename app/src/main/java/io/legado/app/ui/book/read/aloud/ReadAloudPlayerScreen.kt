@@ -1,5 +1,6 @@
 package io.legado.app.ui.book.read.aloud
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -10,14 +11,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,11 +25,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,32 +35,21 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Article
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -74,21 +60,32 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.materialkolor.hct.Hct
+import io.legado.app.R
 import io.legado.app.ui.book.listen.ListeningCoverArtwork
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -104,6 +101,7 @@ internal data class ReadAloudParagraphUi(
 
 internal data class ReadAloudPlayerUiState(
     val bookName: String = "阅读NG",
+    val bookAuthor: String = "",
     val bookUrl: String = "",
     val chapterTitle: String = "正在准备朗读",
     val subtitle: String = "正在准备朗读…",
@@ -147,6 +145,7 @@ internal fun ReadAloudPlayerScreen(
     onAction: (ReadAloudPlayerAction) -> Unit,
 ) {
     val context = LocalContext.current
+    val useNoCoverFallback = state.coverPath.isNullOrBlank()
     val artwork by ListeningCoverArtwork.remember(
         context = context,
         cacheKey = state.bookUrl.ifBlank { state.coverPath.orEmpty() },
@@ -154,80 +153,133 @@ internal fun ReadAloudPlayerScreen(
         sourceOrigin = state.sourceOrigin,
     )
     Box(modifier = Modifier.fillMaxSize()) {
-        ListeningPlayerBackground(artwork = artwork)
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 18.dp),
-        ) {
-            PlayerTopBar(
-                selectedPage = state.page,
-                onClose = { onAction(ReadAloudPlayerAction.Close) },
-            )
-            PlayerContent(
-                state = state,
-                artwork = artwork,
-                onAction = onAction,
-                modifier = Modifier.weight(1f),
-            )
-            PlayerQuickActions(state = state, onAction = onAction)
-            ReadAloudProgressSlider(
-                value = state.progress,
-                bufferedValue = state.bufferedProgress,
-                max = state.progressMax,
-                enabled = state.progressMax > 0,
-                onValueChange = {
-                    onAction(ReadAloudPlayerAction.SeekPreview(it))
-                },
-                onValueChangeFinished = {
-                    onAction(ReadAloudPlayerAction.SeekFinished)
-                },
-                modifier = Modifier.padding(top = 10.dp, bottom = 6.dp),
-            )
-            PlayerControlDock(state = state, onAction = onAction)
-            PlayerVoicePill(
-                label = state.engineLabel,
-                onClick = { onAction(ReadAloudPlayerAction.Voice) },
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .widthIn(min = 220.dp, max = 360.dp)
-                    .padding(top = 12.dp, bottom = 10.dp),
-            )
-        }
+        ListeningPlayerBackground(
+            artwork = artwork,
+            useNoCoverFallback = useNoCoverFallback,
+        )
+        PlayerContent(
+            state = state,
+            artwork = artwork,
+            onAction = onAction,
+        )
+        PlayerTopBar(
+            selectedPage = state.page,
+            onClose = { onAction(ReadAloudPlayerAction.Close) },
+        )
     }
 }
 
 @Composable
-private fun ListeningPlayerBackground(artwork: ImageBitmap?) {
+private fun ListeningPlayerBackground(
+    artwork: ImageBitmap?,
+    useNoCoverFallback: Boolean,
+) {
+    if (useNoCoverFallback) {
+        NoCoverPlayerBackground()
+        return
+    }
     val colors = NgTheme.colors
+    val background = Color(colors.background)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(colors.background)),
+            .background(if (artwork == null) background else Color.Black),
     ) {
         if (artwork != null) {
             Image(
                 bitmap = artwork,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.FillBounds,
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer(scaleX = 1.28f, scaleY = 1.28f)
-                    .blur(54.dp)
-                    .alpha(0.44f),
+                    .graphicsLayer(scaleX = 1.06f, scaleY = 1.06f)
+                    .blur(8.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                    .alpha(0.76f),
             )
         }
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(background.copy(alpha = if (artwork == null) 0f else 0.14f)),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
+                        0.00f to Color.Black.copy(alpha = 0.18f),
+                        0.42f to Color.Black.copy(alpha = 0.36f),
+                        0.68f to Color.Black.copy(alpha = 0.76f),
+                        1.00f to Color.Black.copy(alpha = 0.90f),
+                    )
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
                         colors = listOf(
-                            Color(colors.background).copy(alpha = 0.24f),
-                            Color(colors.background).copy(alpha = 0.50f),
-                            Color(colors.background).copy(alpha = 0.88f),
+                            Color.Black.copy(alpha = 0.20f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.18f),
+                        )
+                    )
+                ),
+        )
+    }
+}
+
+@Composable
+private fun NoCoverPlayerBackground() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF070706)),
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(
+                color = Color(0xFF8D6848).copy(alpha = 0.20f),
+                radius = size.width * 0.72f,
+                center = Offset(size.width * 0.50f, size.height * 0.18f),
+            )
+            drawCircle(
+                color = Color(0xFF5A4635).copy(alpha = 0.12f),
+                radius = size.width * 0.64f,
+                center = Offset(size.width * 0.14f, size.height * 0.48f),
+            )
+        }
+        Image(
+            painter = painterResource(R.drawable.image_cover_default),
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(scaleX = 1.16f, scaleY = 1.16f)
+                .blur(36.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                .alpha(0.07f),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.00f to Color.Black.copy(alpha = 0.12f),
+                        0.34f to Color.Black.copy(alpha = 0.30f),
+                        0.68f to Color.Black.copy(alpha = 0.76f),
+                        1.00f to Color.Black.copy(alpha = 0.94f),
+                    )
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.34f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.30f),
                         )
                     )
                 ),
@@ -242,24 +294,34 @@ private fun PlayerTopBar(
 ) {
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp),
+            .fillMaxSize(),
     ) {
         IconButton(
             onClick = onClose,
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .size(44.dp),
+                .align(Alignment.TopStart)
+                .padding(start = 16.dp, top = 32.dp)
+                .size(38.dp)
+                .shadow(
+                    elevation = 3.dp,
+                    shape = CircleShape,
+                    ambientColor = Color.Black.copy(alpha = 0.18f),
+                    spotColor = Color.Black.copy(alpha = 0.22f),
+                )
+                .clip(CircleShape)
+                .background(Color(NgTheme.colors.surfaceContainerLow).copy(alpha = 0.54f)),
         ) {
             Icon(
-                imageVector = Icons.Rounded.KeyboardArrowDown,
+                painter = painterResource(R.drawable.ic_read_aloud_chevron_down),
                 contentDescription = "关闭听书界面",
                 tint = Color(NgTheme.colors.onSurface),
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
         Row(
-            modifier = Modifier.align(Alignment.Center),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 50.dp),
             horizontalArrangement = Arrangement.spacedBy(7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -286,12 +348,11 @@ private fun PlayerContent(
     state: ReadAloudPlayerUiState,
     artwork: ImageBitmap?,
     onAction: (ReadAloudPlayerAction) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     var horizontalDrag by remember { mutableFloatStateOf(0f) }
     Box(
-        modifier = modifier
-            .fillMaxWidth()
+        modifier = Modifier
+            .fillMaxSize()
             .pointerInput(state.page) {
                 detectHorizontalDragGestures(
                     onDragStart = { horizontalDrag = 0f },
@@ -321,14 +382,16 @@ private fun PlayerContent(
             label = "readAloudPlayerPage",
         ) { page ->
             when (page) {
-                ReadAloudPlayerPage.COVER -> PlayerCoverScene(
+                ReadAloudPlayerPage.COVER -> PlayerCoverPage(
                     state = state,
                     artwork = artwork,
                     onCoverClick = { onAction(ReadAloudPlayerAction.OpenBookInfo) },
+                    onAction = onAction,
                 )
-                ReadAloudPlayerPage.TEXT -> PlayerTextScene(
+                ReadAloudPlayerPage.TEXT -> PlayerTextPage(
                     state = state,
                     artwork = artwork,
+                    onAction = onAction,
                 )
             }
         }
@@ -336,94 +399,247 @@ private fun PlayerContent(
 }
 
 @Composable
-private fun PlayerCoverScene(
+private fun PlayerCoverPage(
     state: ReadAloudPlayerUiState,
     artwork: ImageBitmap?,
     onCoverClick: () -> Unit,
+    onAction: (ReadAloudPlayerAction) -> Unit,
 ) {
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val coverHeight = (maxHeight * 0.47f).coerceIn(170.dp, 276.dp)
+    var titleLineCount by remember(state.bookName) { mutableIntStateOf(1) }
+    val topPadding = if (titleLineCount > 1) 52.dp else 76.dp
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 28.dp, top = topPadding, end = 28.dp, bottom = 46.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        PlayerCover(
+            artwork = artwork,
+            fallbackTitle = state.bookName,
+            fallbackAuthor = state.bookAuthor,
+            useNoCoverFallback = state.coverPath.isNullOrBlank(),
+            contentDescription = state.bookName,
+            modifier = Modifier
+                .size(width = 152.dp, height = 216.dp)
+                .clickable(onClick = onCoverClick),
+            cornerRadius = 10.dp,
+            ambientGlow = true,
+        )
+        Text(
+            text = state.bookName,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp),
+            color = Color(NgTheme.colors.onSurface),
+            fontSize = 20.sp,
+            lineHeight = 25.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { titleLineCount = it.lineCount },
+        )
+        PlayerCoverInfoCard(
+            state = state,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        PlayerQuickActions(
+            state = state,
+            onAction = onAction,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        PlayerProgress(
+            state = state,
+            onAction = onAction,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        PlayerControlDock(
+            state = state,
+            onAction = onAction,
+            modifier = Modifier
+                .offset(y = (-4).dp)
+                .padding(top = 4.dp),
+        )
+        PlayerVoicePill(
+            label = state.engineLabel,
+            onClick = { onAction(ReadAloudPlayerAction.Voice) },
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun PlayerTextPage(
+    state: ReadAloudPlayerUiState,
+    artwork: ImageBitmap?,
+    onAction: (ReadAloudPlayerAction) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 28.dp, top = 82.dp, end = 28.dp, bottom = 46.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        PlayerTextScene(
+            state = state,
+            artwork = artwork,
+            modifier = Modifier.weight(1f),
+        )
+        PlayerQuickActions(
+            state = state,
+            onAction = onAction,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        PlayerProgress(
+            state = state,
+            onAction = onAction,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        PlayerControlDock(
+            state = state,
+            onAction = onAction,
+            modifier = Modifier
+                .offset(y = (-4).dp)
+                .padding(top = 4.dp),
+        )
+        PlayerVoicePill(
+            label = state.engineLabel,
+            onClick = { onAction(ReadAloudPlayerAction.Voice) },
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun PlayerCoverInfoCard(
+    state: ReadAloudPlayerUiState,
+    modifier: Modifier = Modifier,
+) {
+    PlayerTranslucentSurface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(212.dp),
+        shape = RoundedCornerShape(8.dp),
+        containerAlpha = 0.42f,
+        elevation = 7.dp,
+    ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
         ) {
-            PlayerCover(
-                artwork = artwork,
-                contentDescription = state.bookName,
-                modifier = Modifier
-                    .height(coverHeight)
-                    .aspectRatio(0.72f)
-                    .clickable(onClick = onCoverClick),
-            )
             Text(
-                text = state.bookName,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 13.dp, start = 18.dp, end = 18.dp),
+                text = state.chapterTitle,
                 color = Color(NgTheme.colors.onSurface),
-                fontSize = 23.sp,
-                lineHeight = 28.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Surface(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 12.dp)
-                    .heightIn(min = 106.dp, max = 152.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = Color(NgTheme.colors.surface).copy(alpha = 0.72f),
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = state.chapterTitle,
-                        color = Color(NgTheme.colors.onSurface),
-                        fontSize = 18.sp,
-                        lineHeight = 23.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = state.subtitle,
-                        modifier = Modifier.padding(top = 10.dp),
-                        color = Color(NgTheme.colors.onSurface).copy(alpha = 0.90f),
-                        fontSize = 17.sp,
-                        lineHeight = 25.sp,
-                        textAlign = TextAlign.Center,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Text(
+                    text = state.subtitle,
+                    color = Color(NgTheme.colors.onSurface).copy(alpha = 0.92f),
+                    fontSize = 17.sp,
+                    lineHeight = 25.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
+}
+
+@Composable
+private fun PlayerProgress(
+    state: ReadAloudPlayerUiState,
+    onAction: (ReadAloudPlayerAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ReadAloudProgressSlider(
+        value = state.progress,
+        bufferedValue = state.bufferedProgress,
+        max = state.progressMax,
+        enabled = state.progressMax > 0,
+        onValueChange = { onAction(ReadAloudPlayerAction.SeekPreview(it)) },
+        onValueChangeFinished = { onAction(ReadAloudPlayerAction.SeekFinished) },
+        modifier = modifier,
+    )
 }
 
 @Composable
 private fun PlayerTextScene(
     state: ReadAloudPlayerUiState,
     artwork: ImageBitmap?,
+    modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    LaunchedEffect(state.currentParagraphIndex, state.paragraphs.size) {
-        if (state.paragraphs.isNotEmpty()) {
-            listState.animateScrollToItem(
-                (state.currentParagraphIndex - 2).coerceIn(state.paragraphs.indices)
-            )
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val activeParagraphStyle = TextStyle(
+        fontSize = 23.sp,
+        lineHeight = 34.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+    val inactiveParagraphStyle = TextStyle(
+        fontSize = 17.sp,
+        lineHeight = 27.sp,
+        fontWeight = FontWeight.Normal,
+    )
+    var textViewportSize by remember { mutableStateOf(IntSize.Zero) }
+    val currentIndex = state.currentParagraphIndex.takeIf {
+        it in state.paragraphs.indices
+    }
+    val scrollTarget = remember(
+        state.paragraphs,
+        currentIndex,
+        textViewportSize,
+        density.density,
+        density.fontScale,
+    ) {
+        if (currentIndex == null || textViewportSize == IntSize.Zero) {
+            null
+        } else {
+            val horizontalPadding = with(density) { 44.dp.roundToPx() }
+            val verticalPadding = with(density) { 48.dp.roundToPx() }
+            val paragraphSpacing = with(density) { 24.dp.roundToPx() }
+            val textWidth = (textViewportSize.width - horizontalPadding).coerceAtLeast(1)
+            val usableHeight = (textViewportSize.height - verticalPadding).coerceAtLeast(1)
+            fun paragraphHeight(index: Int, style: TextStyle): Int =
+                textMeasurer.measure(
+                    text = state.paragraphs[index].text,
+                    style = style,
+                    constraints = Constraints(maxWidth = textWidth),
+                ).size.height
+
+            var target = currentIndex
+            var occupiedHeight = paragraphHeight(currentIndex, activeParagraphStyle)
+            for (index in currentIndex - 1 downTo (currentIndex - 2).coerceAtLeast(0)) {
+                val nextHeight = occupiedHeight + paragraphSpacing +
+                    paragraphHeight(index, inactiveParagraphStyle)
+                if (nextHeight > usableHeight) break
+                occupiedHeight = nextHeight
+                target = index
+            }
+            target
         }
     }
-    Column(modifier = Modifier.fillMaxSize()) {
+    LaunchedEffect(state.paragraphs, currentIndex, scrollTarget) {
+        if (scrollTarget != null) {
+            listState.animateScrollToItem(scrollTarget)
+        }
+    }
+    Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -433,11 +649,15 @@ private fun PlayerTextScene(
         ) {
             PlayerCover(
                 artwork = artwork,
+                fallbackTitle = state.bookName,
+                fallbackAuthor = state.bookAuthor,
+                useNoCoverFallback = state.coverPath.isNullOrBlank(),
                 contentDescription = null,
                 modifier = Modifier
                     .height(58.dp)
                     .aspectRatio(0.72f),
                 cornerRadius = 8.dp,
+                compactFallback = true,
             )
             Column(
                 modifier = Modifier
@@ -476,7 +696,9 @@ private fun PlayerTextScene(
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { textViewportSize = it },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     horizontal = 22.dp,
                     vertical = 24.dp,
@@ -494,9 +716,7 @@ private fun PlayerTextScene(
                         color = Color(NgTheme.colors.onSurface).copy(
                             alpha = if (active) 1f else 0.36f
                         ),
-                        fontSize = if (active) 23.sp else 17.sp,
-                        lineHeight = if (active) 34.sp else 27.sp,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                        style = if (active) activeParagraphStyle else inactiveParagraphStyle,
                         textAlign = TextAlign.Start,
                     )
                 }
@@ -508,43 +728,159 @@ private fun PlayerTextScene(
 @Composable
 private fun PlayerCover(
     artwork: ImageBitmap?,
+    fallbackTitle: String,
+    fallbackAuthor: String,
+    useNoCoverFallback: Boolean,
     contentDescription: String?,
     modifier: Modifier,
     cornerRadius: androidx.compose.ui.unit.Dp = 16.dp,
+    ambientGlow: Boolean = false,
+    compactFallback: Boolean = false,
 ) {
     val shape = RoundedCornerShape(cornerRadius)
     Box(
-        modifier = modifier
-            .shadow(18.dp, shape, ambientColor = Color(NgTheme.colors.primary).copy(0.30f))
-            .clip(shape)
-            .background(Color(NgTheme.colors.surfaceContainerLow))
-            .border(
-                width = 1.dp,
-                color = Color(NgTheme.colors.primary).copy(alpha = 0.34f),
-                shape = shape,
-            ),
+        modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
-        if (artwork != null) {
+        if (ambientGlow) {
+            if (artwork != null) {
+                Image(
+                    bitmap = artwork,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(scaleX = 1.06f, scaleY = 1.06f)
+                        .blur(22.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                        .alpha(0.32f),
+                )
+            } else if (useNoCoverFallback) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(scaleX = 1.06f, scaleY = 1.06f)
+                        .background(Color(0xFFD8B58B).copy(alpha = 0.24f), shape)
+                        .blur(22.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded),
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .shadow(
+                    elevation = if (ambientGlow) 7.dp else 4.dp,
+                    shape = shape,
+                    ambientColor = Color.Black.copy(alpha = 0.22f),
+                    spotColor = Color.Black.copy(alpha = 0.26f),
+                )
+                .clip(shape)
+                .background(Color(NgTheme.colors.surfaceContainerLow)),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                useNoCoverFallback -> DefaultBookCover(
+                    baseArtwork = artwork,
+                    title = fallbackTitle,
+                    author = fallbackAuthor,
+                    compact = compactFallback,
+                )
+                artwork != null -> Image(
+                    bitmap = artwork,
+                    contentDescription = contentDescription,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                else -> Icon(
+                    painter = painterResource(R.drawable.ic_toc),
+                    contentDescription = contentDescription,
+                    tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.54f),
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultBookCover(
+    baseArtwork: ImageBitmap?,
+    title: String,
+    author: String,
+    compact: Boolean,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFEADCC2)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (baseArtwork != null) {
             Image(
-                bitmap = artwork,
-                contentDescription = contentDescription,
+                bitmap = baseArtwork,
+                contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(0.82f),
             )
         } else {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.MenuBook,
-                contentDescription = contentDescription,
-                tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.54f),
-                modifier = Modifier.size(40.dp),
+            Image(
+                painter = painterResource(R.drawable.image_cover_default),
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(0.82f),
             )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFD8B98A).copy(alpha = 0.16f)),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = if (compact) 4.dp else 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = title,
+                color = Color(0xFF2B251F),
+                fontSize = if (compact) 6.sp else 17.sp,
+                lineHeight = if (compact) 7.sp else 23.sp,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = if (compact) 3 else 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!compact && author.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 14.dp, bottom = 10.dp)
+                        .width(42.dp)
+                        .height(1.dp)
+                        .background(Color(0xFF6F6253).copy(alpha = 0.42f)),
+                )
+                Text(
+                    text = author,
+                    color = Color(0xFF4A4036),
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    fontFamily = FontFamily.Serif,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
 private data class QuickAction(
-    val icon: ImageVector,
+    @param:DrawableRes val iconRes: Int,
     val label: String,
     val action: ReadAloudPlayerAction,
 )
@@ -553,18 +889,19 @@ private data class QuickAction(
 private fun PlayerQuickActions(
     state: ReadAloudPlayerUiState,
     onAction: (ReadAloudPlayerAction) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val actions = listOf(
-        QuickAction(Icons.Rounded.Timer, state.timerLabel, ReadAloudPlayerAction.Timer),
-        QuickAction(Icons.Rounded.Speed, state.speedLabel, ReadAloudPlayerAction.Speed),
-        QuickAction(Icons.Rounded.Refresh, "刷新", ReadAloudPlayerAction.Refresh),
-        QuickAction(Icons.AutoMirrored.Rounded.Article, "原文", ReadAloudPlayerAction.Original),
-        QuickAction(Icons.Rounded.MoreHoriz, "更多", ReadAloudPlayerAction.More),
+        QuickAction(R.drawable.ic_timer_black_24dp, state.timerLabel, ReadAloudPlayerAction.Timer),
+        QuickAction(R.drawable.ic_read_aloud_speed, state.speedLabel, ReadAloudPlayerAction.Speed),
+        QuickAction(R.drawable.ic_refresh_black_24dp, "刷新", ReadAloudPlayerAction.Refresh),
+        QuickAction(R.drawable.ic_read_aloud_original, "原文", ReadAloudPlayerAction.Original),
+        QuickAction(R.drawable.ic_more_horiz, "更多", ReadAloudPlayerAction.More),
     )
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .height(68.dp),
+            .height(58.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         actions.forEach { item ->
@@ -578,22 +915,30 @@ private fun PlayerQuickActions(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(34.dp)
+                        .shadow(
+                            elevation = 2.dp,
+                            shape = CircleShape,
+                            ambientColor = Color.Black.copy(alpha = 0.16f),
+                            spotColor = Color.Black.copy(alpha = 0.20f),
+                        )
                         .clip(CircleShape)
-                        .background(Color(NgTheme.colors.surface).copy(alpha = 0.58f)),
+                        .background(
+                            Color(NgTheme.colors.surfaceContainerLow).copy(alpha = 0.42f)
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = item.icon,
+                        painter = painterResource(item.iconRes),
                         contentDescription = item.label,
-                        tint = Color(NgTheme.colors.onSurfaceVariant),
-                        modifier = Modifier.size(21.dp),
+                        tint = Color(NgTheme.colors.onSurface).copy(alpha = 0.78f),
+                        modifier = Modifier.size(22.dp),
                     )
                 }
                 Text(
                     text = item.label,
-                    modifier = Modifier.padding(top = 3.dp),
-                    color = Color(NgTheme.colors.onSurfaceVariant),
+                    modifier = Modifier.padding(top = 5.dp),
+                    color = Color(NgTheme.colors.onSurface).copy(alpha = 0.74f),
                     fontSize = 12.sp,
                     maxLines = 1,
                 )
@@ -614,12 +959,17 @@ private fun ReadAloudProgressSlider(
 ) {
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnFinished by rememberUpdatedState(onValueChangeFinished)
-    val primary = Color(NgTheme.colors.primary)
-    val surface = Color(NgTheme.colors.surface)
+    val primaryHct = Hct.fromInt(NgTheme.colors.primary)
+    val controlHue = primaryHct.hue
+    val controlChroma = max(primaryHct.chroma, 48.0)
+    val primary = Color(Hct.from(controlHue, controlChroma, 50.0).toInt())
+    val inactive = Color(Hct.from(controlHue, max(primaryHct.chroma, 40.0), 30.0).toInt())
+    val onSurface = Color(NgTheme.colors.onSurface)
     Canvas(
         modifier = modifier
+            .padding(horizontal = 8.dp)
             .fillMaxWidth()
-            .height(38.dp)
+            .height(48.dp)
             .pointerInput(enabled, max) {
                 if (!enabled || max <= 0) return@pointerInput
                 awaitEachGesture {
@@ -657,7 +1007,7 @@ private fun ReadAloudProgressSlider(
         val valueFraction = safeValue.toFloat() / safeMax
         val bufferFraction = bufferedValue.coerceIn(safeValue, safeMax).toFloat() / safeMax
         drawRoundRect(
-            color = primary.copy(alpha = 0.18f),
+            color = inactive,
             topLeft = Offset(trackStart - radius, top),
             size = Size(trackWidth + trackHeight, trackHeight),
             cornerRadius = CornerRadius(radius),
@@ -675,7 +1025,7 @@ private fun ReadAloudProgressSlider(
             cornerRadius = CornerRadius(radius),
         )
         val thumbX = trackStart + trackWidth * valueFraction
-        drawCircle(surface, thumbRadius, Offset(thumbX, size.height / 2f))
+        drawCircle(onSurface, thumbRadius, Offset(thumbX, size.height / 2f))
         drawCircle(primary, innerRadius, Offset(thumbX, size.height / 2f))
         drawCircle(
             color = primary.copy(alpha = 0.40f),
@@ -690,26 +1040,29 @@ private fun ReadAloudProgressSlider(
 private fun PlayerControlDock(
     state: ReadAloudPlayerUiState,
     onAction: (ReadAloudPlayerAction) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = Modifier
+    PlayerTranslucentSurface(
+        modifier = modifier
+            .padding(horizontal = 8.dp)
             .fillMaxWidth()
-            .height(78.dp),
-        shape = RoundedCornerShape(25.dp),
-        color = Color(NgTheme.colors.surface).copy(alpha = 0.84f),
+            .height(48.dp),
+        shape = RoundedCornerShape(8.dp),
+        containerAlpha = 0.46f,
+        elevation = 5.dp,
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PlayerDockSideAction(
-                icon = Icons.Rounded.Tune,
+                iconRes = R.drawable.ic_read_aloud_mode_settings,
                 label = "模式",
                 onClick = { onAction(ReadAloudPlayerAction.Mode) },
                 modifier = Modifier.weight(1.18f),
             )
             PlayerDockIconAction(
-                icon = Icons.Rounded.SkipPrevious,
+                iconRes = R.drawable.ic_skip_previous,
                 contentDescription = "上一章",
                 onClick = { onAction(ReadAloudPlayerAction.PreviousChapter) },
                 modifier = Modifier.weight(0.88f),
@@ -727,21 +1080,24 @@ private fun PlayerControlDock(
                     ListeningLoadingBars()
                 } else {
                     Icon(
-                        imageVector = if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        painter = painterResource(
+                            if (state.isPlaying) R.drawable.ic_pause_24dp
+                            else R.drawable.ic_play_24dp
+                        ),
                         contentDescription = if (state.isPlaying) "暂停" else "播放",
                         tint = Color(NgTheme.colors.onSurface),
-                        modifier = Modifier.size(34.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
             PlayerDockIconAction(
-                icon = Icons.Rounded.SkipNext,
+                iconRes = R.drawable.ic_skip_next,
                 contentDescription = "下一章",
                 onClick = { onAction(ReadAloudPlayerAction.NextChapter) },
                 modifier = Modifier.weight(0.88f),
             )
             PlayerDockSideAction(
-                icon = Icons.AutoMirrored.Rounded.MenuBook,
+                iconRes = R.drawable.ic_toc,
                 label = "目录",
                 onClick = { onAction(ReadAloudPlayerAction.Catalog) },
                 modifier = Modifier.weight(1.18f),
@@ -752,7 +1108,7 @@ private fun PlayerControlDock(
 
 @Composable
 private fun PlayerDockSideAction(
-    icon: ImageVector,
+    @DrawableRes iconRes: Int,
     label: String,
     onClick: () -> Unit,
     modifier: Modifier,
@@ -765,15 +1121,15 @@ private fun PlayerDockSideAction(
         verticalArrangement = Arrangement.Center,
     ) {
         Icon(
-            imageVector = icon,
+            painter = painterResource(iconRes),
             contentDescription = label,
-            tint = Color(NgTheme.colors.onSurfaceVariant),
-            modifier = Modifier.size(21.dp),
+            tint = Color(NgTheme.colors.onSurface).copy(alpha = 0.78f),
+            modifier = Modifier.size(20.dp),
         )
         Text(
             text = label,
             modifier = Modifier.padding(top = 2.dp),
-            color = Color(NgTheme.colors.onSurfaceVariant),
+            color = Color(NgTheme.colors.onSurface).copy(alpha = 0.74f),
             fontSize = 11.sp,
         )
     }
@@ -781,7 +1137,7 @@ private fun PlayerDockSideAction(
 
 @Composable
 private fun PlayerDockIconAction(
-    icon: ImageVector,
+    @DrawableRes iconRes: Int,
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier,
@@ -793,10 +1149,10 @@ private fun PlayerDockIconAction(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = icon,
+            painter = painterResource(iconRes),
             contentDescription = contentDescription,
             tint = Color(NgTheme.colors.onSurface),
-            modifier = Modifier.size(30.dp),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
@@ -838,36 +1194,77 @@ private fun PlayerVoicePill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    Box(
         modifier = modifier
-            .height(52.dp)
+            .height(48.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        color = Color(NgTheme.colors.surface).copy(alpha = 0.78f),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(
+        PlayerTranslucentSurface(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
+                .height(32.dp),
+            shape = RoundedCornerShape(8.dp),
+            containerAlpha = 0.42f,
+            elevation = 3.dp,
         ) {
-            Text(
-                text = label,
-                modifier = Modifier.widthIn(max = 260.dp),
-                color = Color(NgTheme.colors.onSurface),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.width(9.dp))
-            Icon(
-                imageVector = Icons.Rounded.Refresh,
-                contentDescription = null,
-                tint = Color(NgTheme.colors.onSurfaceVariant),
-                modifier = Modifier.size(19.dp),
-            )
+            Row(
+                modifier = Modifier
+                    .widthIn(min = 120.dp, max = 190.dp)
+                    .height(32.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = label,
+                    modifier = Modifier.widthIn(max = 150.dp),
+                    color = Color(NgTheme.colors.onSurface),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_refresh_black_24dp),
+                    contentDescription = null,
+                    tint = Color(NgTheme.colors.onSurface).copy(alpha = 0.74f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun PlayerTranslucentSurface(
+    modifier: Modifier,
+    shape: Shape,
+    containerAlpha: Float,
+    elevation: androidx.compose.ui.unit.Dp,
+    content: @Composable () -> Unit,
+) {
+    val colors = NgTheme.colors
+    Box(
+        modifier = modifier
+            .shadow(
+                elevation = elevation,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.22f),
+                spotColor = Color.Black.copy(alpha = 0.30f),
+            )
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(colors.surfaceContainerLow).copy(
+                            alpha = (containerAlpha + 0.03f).coerceAtMost(1f)
+                        ),
+                        Color(colors.surfaceContainerLow).copy(alpha = containerAlpha),
+                    )
+                )
+            ),
+    ) {
+        content()
     }
 }

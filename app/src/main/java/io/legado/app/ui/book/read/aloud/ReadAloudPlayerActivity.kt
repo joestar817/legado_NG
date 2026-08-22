@@ -108,7 +108,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         coverThemeKey = key
         coverThemeJob?.cancel()
         playerThemeSnapshot = ListeningCoverTheme.cached(book, sourceOrigin)
-            ?: ListeningCoverTheme.fallback(this)
+            ?: ListeningCoverTheme.fallback(this, book)
         coverThemeJob = lifecycleScope.launch {
             playerThemeSnapshot = ListeningCoverTheme.resolve(
                 context = this@ReadAloudPlayerActivity,
@@ -178,6 +178,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         val bookUrlChanged = book?.bookUrl.orEmpty() != uiState.bookUrl
         uiState = uiState.copy(
             bookName = book?.name?.takeIf { it.isNotBlank() } ?: "阅读NG",
+            bookAuthor = book?.getRealAuthor().orEmpty(),
             bookUrl = book?.bookUrl.orEmpty(),
             chapterTitle = chapter?.title ?: "正在准备朗读",
             coverPath = book?.getDisplayCover(),
