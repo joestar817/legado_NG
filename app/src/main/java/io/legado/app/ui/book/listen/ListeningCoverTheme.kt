@@ -30,6 +30,7 @@ internal object ListeningCoverTheme {
 
     private const val SAMPLE_WIDTH = 64
     private const val SAMPLE_HEIGHT = 96
+    private val noCoverSeed = Color.rgb(142, 98, 64)
     private val snapshotCache = LruCache<String, NgThemeSnapshot>(16)
 
     fun cached(
@@ -37,9 +38,51 @@ internal object ListeningCoverTheme {
         sourceOrigin: String?,
     ): NgThemeSnapshot? = cacheKey(book, sourceOrigin)?.let(snapshotCache::get)
 
-    fun fallback(context: Context): NgThemeSnapshot {
+    fun fallback(context: Context, book: Book? = null): NgThemeSnapshot {
         val appContext = context.applicationContext
-        return buildSnapshot(appContext, NgThemeResolver.resolve(appContext).colors.primary)
+        val seed = if (book != null && book.getDisplayCover().isNullOrBlank()) {
+            noCoverSeed
+        } else {
+            NgThemeResolver.resolve(appContext).colors.primary
+        }
+        return buildSnapshot(appContext, seed)
+    }
+
+    /**
+     * 听书抽屉使用封面色底板与浅色内容面，不复用播放器的整套深色语义。
+     *
+     * 抽屉外壳仍由 [io.legado.app.ui.design.theme.NgDrawerPalette] 根据强调色派生，
+     * 而 surface/inputContainer 保持暖白，供设置组、音色卡和目录条目形成稳定层级。
+     */
+    fun drawerSnapshot(playerSnapshot: NgThemeSnapshot): NgThemeSnapshot {
+        val source = Hct.fromInt(playerSnapshot.colors.surfaceTint)
+        val hue = source.hue
+        val accent = Hct.from(
+            hue,
+            max(source.chroma, 40.0),
+            50.0,
+        ).toInt()
+        val background = Hct.from(
+            hue,
+            min(source.chroma * 0.32, 24.0),
+            88.0,
+        ).toInt()
+        val surface = Hct.from(
+            hue,
+            min(source.chroma * 0.10, 6.0),
+            98.0,
+        ).toInt()
+        return NgThemeResolver.resolve(
+            NgLegacyThemeInput(
+                primaryColor = background,
+                accentColor = accent,
+                backgroundColor = background,
+                bottomBackground = surface,
+                errorColor = playerSnapshot.colors.error,
+                isDark = false,
+                isEInk = false,
+            )
+        )
     }
 
     suspend fun resolve(
@@ -50,11 +93,16 @@ internal object ListeningCoverTheme {
         val appContext = context.applicationContext
         val key = requireNotNull(cacheKey(book, sourceOrigin))
         snapshotCache[key]?.let { return@withContext it }
-        val seed = loadCoverSeed(
-            context = appContext,
-            path = book.getDisplayCover(),
-            sourceOrigin = sourceOrigin,
-        ) ?: NgThemeResolver.resolve(appContext).colors.primary
+        val coverPath = book.getDisplayCover()
+        val seed = if (coverPath.isNullOrBlank()) {
+            noCoverSeed
+        } else {
+            loadCoverSeed(
+                context = appContext,
+                path = coverPath,
+                sourceOrigin = sourceOrigin,
+            ) ?: NgThemeResolver.resolve(appContext).colors.primary
+        }
         buildSnapshot(appContext, seed).also { snapshotCache.put(key, it) }
     }
 

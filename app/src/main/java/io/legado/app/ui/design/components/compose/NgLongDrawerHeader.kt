@@ -41,10 +41,15 @@ fun NgLongDrawerHeader(
     actionContentDescription: String? = null,
     actionActive: Boolean = false,
     onActionClick: (() -> Unit)? = null,
+    @DrawableRes secondaryActionIconRes: Int? = null,
+    secondaryActionContentDescription: String? = null,
+    secondaryActionActive: Boolean = false,
+    onSecondaryActionClick: (() -> Unit)? = null,
     centerTitle: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val colors = NgTheme.colors
+    val hasSecondaryAction = secondaryActionIconRes != null && onSecondaryActionClick != null
     Column(modifier = modifier.fillMaxWidth()) {
         NgDrawerDragHandle(variant = NgDrawerDragHandleVariant.COMPACT)
         Row(
@@ -54,12 +59,14 @@ fun NgLongDrawerHeader(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (centerTitle) {
-                DrawerHeaderIconSlot(
-                    iconRes = navigationIconRes,
-                    contentDescription = navigationContentDescription,
-                    active = false,
-                    onClick = onNavigationClick,
-                )
+                repeat(if (hasSecondaryAction) 2 else 1) { index ->
+                    DrawerHeaderIconSlot(
+                        iconRes = navigationIconRes.takeIf { index == 0 },
+                        contentDescription = navigationContentDescription.takeIf { index == 0 },
+                        active = false,
+                        onClick = onNavigationClick.takeIf { index == 0 },
+                    )
+                }
             } else if (navigationIconRes != null && onNavigationClick != null) {
                 DrawerHeaderIconSlot(
                     iconRes = navigationIconRes,
@@ -98,6 +105,14 @@ fun NgLongDrawerHeader(
                         maxLines = 1,
                     )
                 }
+            }
+            if (hasSecondaryAction) {
+                DrawerHeaderIconSlot(
+                    iconRes = secondaryActionIconRes,
+                    contentDescription = secondaryActionContentDescription,
+                    active = secondaryActionActive,
+                    onClick = onSecondaryActionClick,
+                )
             }
             if (centerTitle) {
                 DrawerHeaderIconSlot(

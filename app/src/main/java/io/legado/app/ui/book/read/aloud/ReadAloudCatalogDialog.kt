@@ -19,14 +19,18 @@ internal class ReadAloudCatalogDialog : CatalogDrawerDialog() {
     override fun isLocalBook(): Boolean = ReadBook.isLocalBook
 
     override fun initialCatalogTheme(book: Book): NgThemeSnapshot? =
-        ListeningCoverTheme.cached(book, ReadBook.bookSource?.bookSourceUrl)
-            ?: ListeningCoverTheme.fallback(requireContext())
+        ListeningCoverTheme.drawerSnapshot(
+            ListeningCoverTheme.cached(book, ReadBook.bookSource?.bookSourceUrl)
+                ?: ListeningCoverTheme.fallback(requireContext(), book)
+        )
 
     override suspend fun resolveCatalogTheme(book: Book): NgThemeSnapshot =
-        ListeningCoverTheme.resolve(
-            context = requireContext(),
-            book = book,
-            sourceOrigin = ReadBook.bookSource?.bookSourceUrl,
+        ListeningCoverTheme.drawerSnapshot(
+            ListeningCoverTheme.resolve(
+                context = requireContext(),
+                book = book,
+                sourceOrigin = ReadBook.bookSource?.bookSourceUrl,
+            )
         )
 
     override fun onChapterSelected(chapter: BookChapter) {

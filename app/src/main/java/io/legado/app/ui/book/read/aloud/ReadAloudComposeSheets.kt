@@ -73,14 +73,18 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
         super.onViewCreated(view, savedInstanceState)
         val book = ReadBook.book
         val sourceOrigin = ReadBook.bookSource?.bookSourceUrl
-        listeningThemeSnapshot = ListeningCoverTheme.cached(book, sourceOrigin)
-            ?: ListeningCoverTheme.fallback(requireContext())
+        listeningThemeSnapshot = ListeningCoverTheme.drawerSnapshot(
+            ListeningCoverTheme.cached(book, sourceOrigin)
+                ?: ListeningCoverTheme.fallback(requireContext(), book)
+        )
         if (book != null) {
             viewLifecycleOwner.lifecycleScope.launch {
-                listeningThemeSnapshot = ListeningCoverTheme.resolve(
-                    context = requireContext(),
-                    book = book,
-                    sourceOrigin = sourceOrigin,
+                listeningThemeSnapshot = ListeningCoverTheme.drawerSnapshot(
+                    ListeningCoverTheme.resolve(
+                        context = requireContext(),
+                        book = book,
+                        sourceOrigin = sourceOrigin,
+                    )
                 )
             }
         }

@@ -15,14 +15,18 @@ internal class AudioCatalogDialog : CatalogDrawerDialog() {
     override fun currentChapterIndex(): Int = AudioPlay.durChapterIndex
 
     override fun initialCatalogTheme(book: Book): NgThemeSnapshot? =
-        ListeningCoverTheme.cached(book, AudioPlay.bookSource?.bookSourceUrl)
-            ?: ListeningCoverTheme.fallback(requireContext())
+        ListeningCoverTheme.drawerSnapshot(
+            ListeningCoverTheme.cached(book, AudioPlay.bookSource?.bookSourceUrl)
+                ?: ListeningCoverTheme.fallback(requireContext(), book)
+        )
 
     override suspend fun resolveCatalogTheme(book: Book): NgThemeSnapshot =
-        ListeningCoverTheme.resolve(
-            context = requireContext(),
-            book = book,
-            sourceOrigin = AudioPlay.bookSource?.bookSourceUrl,
+        ListeningCoverTheme.drawerSnapshot(
+            ListeningCoverTheme.resolve(
+                context = requireContext(),
+                book = book,
+                sourceOrigin = AudioPlay.bookSource?.bookSourceUrl,
+            )
         )
 
     override fun onChapterSelected(chapter: BookChapter) {
