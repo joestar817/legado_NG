@@ -4,7 +4,7 @@
     <color name="ng_background">@color/background</color>
     <color name="ng_surface">@color/white</color>
     <color name="ng_surface_card">#FFFFFFFF</color>
-    <color name="ng_book_detail_card_surface">@color/ng_settings_item</color>
+    <color name="ng_book_detail_card_surface">@color/ng_floating_dock_surface</color>
     <color name="ng_book_detail_card_stroke">@color/ng_settings_item_stroke</color>
     <color name="ng_bookshelf_manage_header_surface">#F2FFFFFF</color>
     <color name="ng_bookshelf_manage_control_surface">#E6FFFFFF</color>

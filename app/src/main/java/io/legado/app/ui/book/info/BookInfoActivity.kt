@@ -3,6 +3,7 @@ package io.legado.app.ui.book.info
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -248,6 +249,8 @@ class BookInfoActivity :
     }
 
     private var pooledWebView: PooledWebView? = null
+    private var webIntroSourceUrl: String? = null
+    private var webIntroLoadGeneration = 0
 
     private val imgAvailableWidth: Int
         get() {
@@ -878,7 +881,10 @@ class BookInfoActivity :
         }
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             super.onPageStarted(view, url, favicon)
-            view?.evaluateJavascript(jsStr, null)
+            view?.let {
+                it.evaluateJavascript(jsStr, null)
+                applyWebIntroTheme(it)
+            }
         }
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
@@ -887,22 +893,44 @@ class BookInfoActivity :
                     pageUrl = url
                 )
             }
-            view?.post {
-                introContainer.requestLayout()
+            view?.let { webView ->
+                applyWebIntroTheme(webView)
+                val generation = webIntroLoadGeneration
+                webView.post {
+                    measureWebIntroHeight(webView, generation)
+                    introContainer.requestLayout()
+                }
+                webView.postDelayed(
+                    { measureWebIntroHeight(webView, generation) },
+                    250L,
+                )
+                webView.postDelayed(
+                    { measureWebIntroHeight(webView, generation) },
+                    1_000L,
+                )
             }
         }
     }
 
     private fun showBookIntro(book: Book) {
-        uiState = uiState.copy(introRevision = uiState.introRevision + 1)
         val intro = book.getDisplayIntro()
-        if (intro?.startsWith("<useweb>") == true) {
-            val lastIndex = intro.lastIndexOf("<")
-            if (lastIndex < 8) {
-                introTextView.text = intro
-                return
+        val webHtml = intro
+            ?.takeIf { it.startsWith("<useweb>") }
+            ?.let { value ->
+                val lastIndex = value.lastIndexOf("<")
+                if (lastIndex >= 8) value.substring(8, lastIndex) else null
             }
-            val html = intro.substring(8, lastIndex)
+        if (webHtml != null) {
+            val sourceUrl = viewModel.bookSource?.bookSourceUrl
+            if (pooledWebView != null && webIntroSourceUrl != sourceUrl) {
+                destroyWeb()
+            }
+            webIntroLoadGeneration += 1
+            uiState = uiState.copy(
+                introRevision = uiState.introRevision + 1,
+                introRenderMode = BookInfoIntroRenderMode.WEB,
+                webIntroHeightPx = 48.dpToPx(),
+            )
             val pooledWebView = this.pooledWebView ?: let{
                 val pooledWebView = WebViewPool.acquire(this)
                 val webView = pooledWebView.realWebView
@@ -917,7 +945,9 @@ class BookInfoActivity :
                 }
                 pooledWebView
             }
+            webIntroSourceUrl = sourceUrl
             val webView = pooledWebView.realWebView
+            webView.setBackgroundColor(Color.TRANSPARENT)
             if (initIntroView || this.pooledWebView == null) {
                 initIntroView = false
                 this.pooledWebView = pooledWebView
@@ -933,9 +963,15 @@ class BookInfoActivity :
                     targetUrl = bookUrl
                 )
             }
-            webView.loadDataWithBaseURL(bookUrl, html, "text/html", "utf-8", bookUrl)
+            webView.loadDataWithBaseURL(bookUrl, webHtml, "text/html", "utf-8", bookUrl)
             return
         }
+        uiState = uiState.copy(
+            introRevision = uiState.introRevision + 1,
+            introRenderMode = BookInfoIntroRenderMode.TEXT,
+            webIntroHeightPx = 0,
+        )
+        webIntroLoadGeneration += 1
         if (!initIntroView || pooledWebView != null) {
             destroyWeb()
             introContainer.removeAllViews()
@@ -1003,6 +1039,79 @@ class BookInfoActivity :
             }
         } else {
             tvIntro.text = intro
+        }
+    }
+
+    private fun applyWebIntroTheme(webView: WebView) {
+        val isDark = AppConfig.isNightTheme
+        val themeScript = if (isDark) {
+            """
+                try {
+                    var root = document.documentElement;
+                    if (root) {
+                        root.classList.add('dark');
+                        root.style.removeProperty('--card-bg');
+                    }
+                } catch (e) {}
+            """.trimIndent()
+        } else {
+            """
+                try {
+                    var root = document.documentElement;
+                    if (root) {
+                        root.classList.remove('dark');
+                        var cardBg = getComputedStyle(root).getPropertyValue('--card-bg').trim();
+                        if (cardBg) root.style.setProperty('--card-bg', '#ffffff');
+                    }
+                } catch (e) {}
+            """.trimIndent()
+        }
+        webView.evaluateJavascript(
+            themeScript,
+            null,
+        )
+    }
+
+    private fun measureWebIntroHeight(webView: WebView, generation: Int) {
+        if (
+            pooledWebView?.realWebView !== webView ||
+            uiState.introRenderMode != BookInfoIntroRenderMode.WEB ||
+            webIntroLoadGeneration != generation
+        ) {
+            return
+        }
+        webView.evaluateJavascript(
+            """
+                (function() {
+                    try {
+                        var body = document.body;
+                        if (!body) return 0;
+                        var range = document.createRange();
+                        range.selectNodeContents(body);
+                        var rect = range.getBoundingClientRect();
+                        var bottom = Math.max(0, rect.bottom + (window.scrollY || 0));
+                        var ratio = window.devicePixelRatio || 1;
+                        return Math.min(16700000, Math.ceil(bottom * ratio));
+                    } catch (e) {
+                        return 0;
+                    }
+                })();
+            """.trimIndent(),
+        ) { result ->
+            val measuredHeight = result.trim().trim('"').toDoubleOrNull()?.toInt() ?: return@evaluateJavascript
+            if (
+                measuredHeight <= 0 ||
+                pooledWebView?.realWebView !== webView ||
+                uiState.introRenderMode != BookInfoIntroRenderMode.WEB ||
+                webIntroLoadGeneration != generation
+            ) {
+                return@evaluateJavascript
+            }
+            val targetHeight = measuredHeight.coerceAtLeast(48.dpToPx())
+            if (uiState.webIntroHeightPx != targetHeight) {
+                uiState = uiState.copy(webIntroHeightPx = targetHeight)
+                introContainer.requestLayout()
+            }
         }
     }
 
@@ -1606,8 +1715,13 @@ class BookInfoActivity :
     }
 
     private fun destroyWeb() {
-        pooledWebView?.let { WebViewPool.release(it) }
+        webIntroLoadGeneration += 1
+        pooledWebView?.let {
+            it.realWebView.setBackgroundColor(Color.WHITE)
+            WebViewPool.release(it)
+        }
         pooledWebView = null
+        webIntroSourceUrl = null
     }
 
 }
