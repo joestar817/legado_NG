@@ -33,6 +33,7 @@ import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import io.legado.app.R
+import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadFloatingAppearanceConfig
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.model.BookCover
@@ -40,7 +41,7 @@ import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.book.read.ReadBookActivity
-import io.legado.app.ui.design.theme.NgThemeResolver
+import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.utils.dpToPx
 import java.util.WeakHashMap
 import kotlin.math.abs
@@ -1198,7 +1199,12 @@ object ReadAloudMiniPlayer {
     }
 
     private fun readerMiniPlayerThemeSnapshot(activity: Activity) =
-        NgThemeResolver.resolve(activity)
+        ReadDrawerStyle.themeSnapshot(
+            context = activity,
+            primaryStrengthPercent = ReadFloatingAppearanceConfig.miniPlayerPrimaryStrengthPercent(
+                ReadBookConfig.durConfig.curReadFloatingPrimaryStrength()
+            ),
+        )
 
     private fun readerMiniPlayerAlphaScale(): Float {
         val fixedAlpha = ReadFloatingAppearanceConfig.miniPlayerSurfaceAlpha(

@@ -68,6 +68,10 @@ object ReadFloatingAppearanceConfig {
         return surfaceAlpha(transparencyPercent).pow(4.58f)
     }
 
+    /** 听书胶囊比其它阅读浮窗更显色，按预设浓度的一半派生自身语义色。 */
+    fun miniPlayerPrimaryStrengthPercent(primaryStrengthPercent: Int): Int =
+        normalizePercent(primaryStrengthPercent) / 2
+
     /** 滑块在完整 0%～100% 区间内的位置，仅用于需要全程连续变化的参数。 */
     fun primaryStrengthFraction(primaryStrengthPercent: Int): Float =
         normalizePercent(primaryStrengthPercent) / MAX_PERCENT.toFloat()
