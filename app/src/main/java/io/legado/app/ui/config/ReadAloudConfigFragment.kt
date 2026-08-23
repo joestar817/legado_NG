@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
+import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
@@ -19,6 +20,7 @@ import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.model.ReadAloud
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +62,10 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
                                     putExtra("configTag", ConfigTag.DEFAULT_TTS_VOICE_CONFIG)
                                 }
                             }
-                        }
+                        },
+                        onMediaButtonOnExitChanged = ::setMediaButtonOnExit,
+                        onReadAloudByMediaButtonChanged = ::setReadAloudByMediaButton,
+                        onIgnoreAudioFocusChanged = ::setIgnoreAudioFocus
                     )
                 }
             }
@@ -85,7 +90,27 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
     }
 
     private fun refreshContent() {
+        screenState = screenState.copy(
+            mediaButtonOnExit = AppConfig.mediaButtonOnExit,
+            readAloudByMediaButton = AppConfig.readAloudByMediaButton,
+            ignoreAudioFocus = AppConfig.ignoreAudioFocus
+        )
         refreshMultiRoleEngineSummary()
+    }
+
+    private fun setMediaButtonOnExit(enabled: Boolean) {
+        putPrefBoolean("mediaButtonOnExit", enabled)
+        screenState = screenState.copy(mediaButtonOnExit = enabled)
+    }
+
+    private fun setReadAloudByMediaButton(enabled: Boolean) {
+        putPrefBoolean(PreferKey.readAloudByMediaButton, enabled)
+        screenState = screenState.copy(readAloudByMediaButton = enabled)
+    }
+
+    private fun setIgnoreAudioFocus(enabled: Boolean) {
+        putPrefBoolean(PreferKey.ignoreAudioFocus, enabled)
+        screenState = screenState.copy(ignoreAudioFocus = enabled)
     }
 
     private fun refreshMultiRoleEngineSummary() {

@@ -4,6 +4,7 @@ import android.widget.ImageView
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,13 +21,18 @@ import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MonochromePhotos
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -44,6 +50,7 @@ import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsItem
 import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
+import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
 
 internal data class ThemeConfigScreenState(
@@ -70,14 +77,27 @@ internal data class ThemeConfigScreenState(
     val bookshelfFloatingDockSearchPosition: BookshelfFloatingDockSearchPosition =
         BookshelfFloatingDockSearchPosition.LEFT,
     val transparentAppBars: Boolean = false,
+    val autoRefresh: Boolean = false,
+    val onlyUpdateRead: Boolean = false,
+    val defaultToRead: Boolean = false,
+    val showDiscovery: Boolean = true,
+    val showRss: Boolean = true,
+    val defaultHomePage: String = "bookshelf",
     val fontScaleSummary: String = "",
     val dayBackgroundSummary: String = "",
     val nightBackgroundSummary: String = ""
 )
 
+internal enum class ThemeConfigSection {
+    ALL,
+    APPEARANCE,
+    INTERFACE
+}
+
 @Composable
 internal fun ThemeConfigScreen(
     state: ThemeConfigScreenState,
+    section: ThemeConfigSection,
     onThemeModeSelected: (String) -> Unit,
     onLauncherIconClick: () -> Unit,
     onFloatingBottomBarChanged: (Boolean) -> Unit,
@@ -101,6 +121,12 @@ internal fun ThemeConfigScreen(
     onBookshelfFloatingDockSearchPositionSelected:
         (BookshelfFloatingDockSearchPosition) -> Unit,
     onTransparentAppBarsChanged: (Boolean) -> Unit,
+    onAutoRefreshChanged: (Boolean) -> Unit,
+    onOnlyUpdateReadChanged: (Boolean) -> Unit,
+    onDefaultToReadChanged: (Boolean) -> Unit,
+    onShowDiscoveryChanged: (Boolean) -> Unit,
+    onShowRssChanged: (Boolean) -> Unit,
+    onDefaultHomePageSelected: (String) -> Unit,
     onOpenCustomColors: () -> Unit,
     onOpenFontScale: () -> Unit,
     onOpenCoverConfig: () -> Unit,
@@ -108,6 +134,8 @@ internal fun ThemeConfigScreen(
     onOpenDayBackground: () -> Unit,
     onOpenNightBackground: () -> Unit
 ) {
+    val showAppearance = section != ThemeConfigSection.INTERFACE
+    val showInterface = section != ThemeConfigSection.APPEARANCE
     val selectedMode = THEME_MODES.indexOf(state.themeMode).coerceAtLeast(0)
     var bottomBarExpanded by rememberSaveable { mutableStateOf(false) }
     var drawerAppearanceExpanded by rememberSaveable { mutableStateOf(false) }
@@ -119,32 +147,34 @@ internal fun ThemeConfigScreen(
             .padding(horizontal = 16.dp)
             .padding(top = 16.dp, bottom = 24.dp)
     ) {
-        NgFloatingTabBar(
-            items = listOf(
-                NgFloatingTabSpec(
-                    text = stringResource(R.string.theme_mode_follow_short),
-                    iconVector = Icons.Rounded.BrightnessAuto
+        if (showAppearance) {
+            NgFloatingTabBar(
+                items = listOf(
+                    NgFloatingTabSpec(
+                        text = stringResource(R.string.theme_mode_follow_short),
+                        iconVector = Icons.Rounded.BrightnessAuto
+                    ),
+                    NgFloatingTabSpec(
+                        text = stringResource(R.string.theme_mode_day_short),
+                        iconVector = Icons.Rounded.LightMode
+                    ),
+                    NgFloatingTabSpec(
+                        text = stringResource(R.string.theme_mode_night_short),
+                        iconVector = Icons.Rounded.DarkMode
+                    ),
+                    NgFloatingTabSpec(
+                        text = stringResource(R.string.theme_mode_eink_short),
+                        iconVector = Icons.Rounded.MonochromePhotos
+                    )
                 ),
-                NgFloatingTabSpec(
-                    text = stringResource(R.string.theme_mode_day_short),
-                    iconVector = Icons.Rounded.LightMode
-                ),
-                NgFloatingTabSpec(
-                    text = stringResource(R.string.theme_mode_night_short),
-                    iconVector = Icons.Rounded.DarkMode
-                ),
-                NgFloatingTabSpec(
-                    text = stringResource(R.string.theme_mode_eink_short),
-                    iconVector = Icons.Rounded.MonochromePhotos
-                )
-            ),
-            selectedIndex = selectedMode,
-            onTabSelected = { index -> onThemeModeSelected(THEME_MODES[index]) },
-            modifier = Modifier.fillMaxWidth()
-        )
+                selectedIndex = selectedMode,
+                onTabSelected = { index -> onThemeModeSelected(THEME_MODES[index]) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         NgSettingsGroup {
-            if (state.showLauncherIcon) {
+            if (showAppearance && state.showLauncherIcon) {
                 NgSettingsItem(
                     title = stringResource(R.string.change_icon),
                     summary = stringResource(R.string.change_icon_summary),
@@ -158,7 +188,8 @@ internal fun ThemeConfigScreen(
                     }
                 )
             }
-            NgExpandableSettingsItem(
+            if (showInterface) {
+                NgExpandableSettingsItem(
                 title = stringResource(R.string.main_bottom_bar_style),
                 summary = stringResource(
                     if (state.floatingBottomBar) {
@@ -242,7 +273,7 @@ internal fun ThemeConfigScreen(
                     }
                 }
             }
-            NgExpandableSettingsItem(
+                NgExpandableSettingsItem(
                 title = stringResource(R.string.ng_drawer_appearance),
                 summary = stringResource(
                     R.string.ng_drawer_appearance_summary,
@@ -338,7 +369,7 @@ internal fun ThemeConfigScreen(
                     )
                 }
             }
-            NgExpandableSettingsItem(
+                NgExpandableSettingsItem(
                 title = stringResource(R.string.bookshelf_top_bar_style),
                 summary = stringResource(
                     when (state.bookshelfTopBarStyle) {
@@ -452,7 +483,7 @@ internal fun ThemeConfigScreen(
                         )
                 }
             }
-            NgSettingsItem(
+                NgSettingsItem(
                 title = stringResource(R.string.transparent_app_bars),
                 summary = stringResource(R.string.transparent_app_bars_summary),
                 trailing = NgSettingsTrailing.SWITCH,
@@ -460,45 +491,149 @@ internal fun ThemeConfigScreen(
                 onCheckedChange = onTransparentAppBarsChanged,
                 onClick = { onTransparentAppBarsChanged(!state.transparentAppBars) }
             )
-            NgSettingsItem(
-                title = stringResource(R.string.ng_custom_colors),
-                summary = stringResource(R.string.ng_custom_colors_summary),
-                onClick = onOpenCustomColors
-            )
-            NgSettingsItem(
-                title = stringResource(R.string.font_scale),
-                summary = state.fontScaleSummary,
-                onClick = onOpenFontScale
-            )
-            NgSettingsItem(
-                title = stringResource(R.string.cover_config),
-                summary = stringResource(R.string.cover_config_summary),
-                onClick = onOpenCoverConfig
-            )
-            NgSettingsItem(
-                title = stringResource(R.string.theme_list),
-                summary = stringResource(R.string.theme_list_summary),
-                onClick = onOpenThemeManager
-            )
+            }
+            if (showAppearance) {
+                NgSettingsItem(
+                    title = stringResource(R.string.ng_custom_colors),
+                    summary = stringResource(R.string.ng_custom_colors_summary),
+                    onClick = onOpenCustomColors
+                )
+                NgSettingsItem(
+                    title = stringResource(R.string.font_scale),
+                    summary = state.fontScaleSummary,
+                    onClick = onOpenFontScale
+                )
+                NgSettingsItem(
+                    title = stringResource(R.string.theme_list),
+                    summary = stringResource(R.string.theme_list_summary),
+                    onClick = onOpenThemeManager
+                )
+            }
+            if (section == ThemeConfigSection.ALL) {
+                NgSettingsItem(
+                    title = stringResource(R.string.cover_config),
+                    summary = stringResource(R.string.cover_config_summary),
+                    onClick = onOpenCoverConfig
+                )
+            }
         }
 
-        Spacer(Modifier.height(4.dp))
-        NgSettingsSectionLabel(stringResource(R.string.day))
-        NgSettingsGroup {
-            NgSettingsItem(
-                title = stringResource(R.string.background_image),
-                summary = state.dayBackgroundSummary,
-                onClick = onOpenDayBackground
-            )
+        if (showAppearance) {
+            Spacer(Modifier.height(4.dp))
+            NgSettingsSectionLabel(stringResource(R.string.day))
+            NgSettingsGroup {
+                NgSettingsItem(
+                    title = stringResource(R.string.background_image),
+                    summary = state.dayBackgroundSummary,
+                    onClick = onOpenDayBackground
+                )
+            }
+
+            NgSettingsSectionLabel(stringResource(R.string.night))
+            NgSettingsGroup {
+                NgSettingsItem(
+                    title = stringResource(R.string.background_image),
+                    summary = state.nightBackgroundSummary,
+                    onClick = onOpenNightBackground
+                )
+            }
         }
 
-        NgSettingsSectionLabel(stringResource(R.string.night))
-        NgSettingsGroup {
-            NgSettingsItem(
-                title = stringResource(R.string.background_image),
-                summary = state.nightBackgroundSummary,
-                onClick = onOpenNightBackground
-            )
+        if (section == ThemeConfigSection.INTERFACE) {
+            Spacer(Modifier.height(4.dp))
+            NgSettingsSectionLabel(stringResource(R.string.main_activity))
+            NgSettingsGroup {
+                InterfaceSwitchSettingItem(
+                    title = stringResource(R.string.pt_auto_refresh),
+                    summary = stringResource(R.string.ps_auto_refresh),
+                    checked = state.autoRefresh,
+                    onCheckedChange = onAutoRefreshChanged
+                )
+                AnimatedVisibility(visible = state.autoRefresh) {
+                    InterfaceSwitchSettingItem(
+                        title = stringResource(R.string.only_update_read),
+                        summary = stringResource(R.string.ps_only_update_read),
+                        checked = state.onlyUpdateRead,
+                        onCheckedChange = onOnlyUpdateReadChanged
+                    )
+                }
+                InterfaceSwitchSettingItem(
+                    title = stringResource(R.string.pt_default_read),
+                    summary = stringResource(R.string.ps_default_read),
+                    checked = state.defaultToRead,
+                    onCheckedChange = onDefaultToReadChanged
+                )
+                InterfaceSwitchSettingItem(
+                    title = stringResource(R.string.show_discovery),
+                    checked = state.showDiscovery,
+                    onCheckedChange = onShowDiscoveryChanged
+                )
+                InterfaceSwitchSettingItem(
+                    title = stringResource(R.string.show_rss),
+                    checked = state.showRss,
+                    onCheckedChange = onShowRssChanged
+                )
+                DefaultHomePageSettingItem(
+                    selectedValue = state.defaultHomePage,
+                    onValueSelected = onDefaultHomePageSelected
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InterfaceSwitchSettingItem(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    summary: String? = null
+) {
+    NgSettingsItem(
+        title = title,
+        summary = summary,
+        trailing = NgSettingsTrailing.SWITCH,
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        onClick = { onCheckedChange(!checked) }
+    )
+}
+
+@Composable
+private fun DefaultHomePageSettingItem(
+    selectedValue: String,
+    onValueSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = listOf(
+        "bookshelf" to stringResource(R.string.bookshelf),
+        "explore" to stringResource(R.string.discovery),
+        "rss" to stringResource(R.string.rss),
+        "my" to stringResource(R.string.my)
+    )
+    val selectedLabel = options.firstOrNull { it.first == selectedValue }?.second
+        ?: stringResource(R.string.bookshelf)
+    Box {
+        NgSettingsItem(
+            title = stringResource(R.string.default_home_page),
+            value = selectedLabel,
+            trailing = NgSettingsTrailing.VALUE,
+            onClick = { expanded = true }
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = Color(NgTheme.colors.dialogContainer)
+        ) {
+            options.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label, color = Color(NgTheme.colors.onSurface)) },
+                    onClick = {
+                        expanded = false
+                        onValueSelected(value)
+                    }
+                )
+            }
         }
     }
 }

@@ -76,7 +76,7 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
-        activity?.setTitle(R.string.theme_setting)
+        activity?.setTitle(titleRes())
         refreshContent()
         (view as ComposeView).apply {
             setViewCompositionStrategy(
@@ -86,6 +86,7 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                 NgAppTheme {
                     ThemeConfigScreen(
                         state = screenState,
+                        section = screenSection(),
                         onThemeModeSelected = ::selectThemeMode,
                         onLauncherIconClick = ::showLauncherIconSelection,
                         onFloatingBottomBarChanged = ::setFloatingBottomBar,
@@ -117,6 +118,12 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                         onBookshelfFloatingDockSearchPositionSelected =
                             ::setBookshelfFloatingDockSearchPosition,
                         onTransparentAppBarsChanged = ::setTransparentAppBars,
+                        onAutoRefreshChanged = ::setAutoRefresh,
+                        onOnlyUpdateReadChanged = ::setOnlyUpdateRead,
+                        onDefaultToReadChanged = ::setDefaultToRead,
+                        onShowDiscoveryChanged = ::setShowDiscovery,
+                        onShowRssChanged = ::setShowRss,
+                        onDefaultHomePageSelected = ::setDefaultHomePage,
                         onOpenCustomColors = {
                             (activity as? ConfigActivity)?.openThemeColorConfigPage()
                         },
@@ -172,8 +179,24 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
 
     override fun onResume() {
         super.onResume()
-        activity?.setTitle(R.string.theme_setting)
+        activity?.setTitle(titleRes())
         if (view != null) refreshContent()
+    }
+
+    private fun screenSection(): ThemeConfigSection {
+        return when (activity?.intent?.getStringExtra("configTag")) {
+            ConfigTag.APPEARANCE_CONFIG -> ThemeConfigSection.APPEARANCE
+            ConfigTag.INTERFACE_CONFIG -> ThemeConfigSection.INTERFACE
+            else -> ThemeConfigSection.ALL
+        }
+    }
+
+    private fun titleRes(): Int {
+        return when (screenSection()) {
+            ThemeConfigSection.APPEARANCE -> R.string.appearance_setting
+            ThemeConfigSection.INTERFACE -> R.string.interface_layout_setting
+            ThemeConfigSection.ALL -> R.string.theme_setting
+        }
     }
 
     private fun refreshContent() {
@@ -211,6 +234,12 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
             bookshelfFloatingDockSearchPosition =
                 AppConfig.bookshelfFloatingDockSearchPosition,
             transparentAppBars = getPrefBoolean(PreferKey.tNavBar, false),
+            autoRefresh = AppConfig.autoRefreshBook,
+            onlyUpdateRead = AppConfig.onlyUpdateRead,
+            defaultToRead = getPrefBoolean(PreferKey.defaultToRead, false),
+            showDiscovery = AppConfig.showDiscovery,
+            showRss = AppConfig.showRSS,
+            defaultHomePage = AppConfig.defaultHomePage ?: "bookshelf",
             fontScaleSummary = getString(
                 R.string.font_scale_summary,
                 AppContextWrapper.getFontScale(requireContext())
@@ -372,6 +401,38 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
         screenState = screenState.copy(transparentAppBars = enabled)
         ThemeConfig.applyTheme(requireContext())
         recreateActivities()
+    }
+
+    private fun setAutoRefresh(enabled: Boolean) {
+        putPrefBoolean(PreferKey.autoRefresh, enabled)
+        screenState = screenState.copy(autoRefresh = enabled)
+    }
+
+    private fun setOnlyUpdateRead(enabled: Boolean) {
+        putPrefBoolean(PreferKey.onlyUpdateRead, enabled)
+        screenState = screenState.copy(onlyUpdateRead = enabled)
+    }
+
+    private fun setDefaultToRead(enabled: Boolean) {
+        putPrefBoolean(PreferKey.defaultToRead, enabled)
+        screenState = screenState.copy(defaultToRead = enabled)
+    }
+
+    private fun setShowDiscovery(enabled: Boolean) {
+        putPrefBoolean(PreferKey.showDiscovery, enabled)
+        screenState = screenState.copy(showDiscovery = enabled)
+        postEvent(EventBus.NOTIFY_MAIN, true)
+    }
+
+    private fun setShowRss(enabled: Boolean) {
+        putPrefBoolean(PreferKey.showRss, enabled)
+        screenState = screenState.copy(showRss = enabled)
+        postEvent(EventBus.NOTIFY_MAIN, true)
+    }
+
+    private fun setDefaultHomePage(value: String) {
+        putPrefString(PreferKey.defaultHomePage, value)
+        screenState = screenState.copy(defaultHomePage = value)
     }
 
     private fun openFontScaleEditor() {

@@ -61,6 +61,7 @@
     </io.legado.app.lib.prefs.PreferenceCategory>
 
     <io.legado.app.lib.prefs.PreferenceCategory
+        android:key="otherSettingsCategory"
         android:title="@string/other_setting"
         app:allowDividerBelow="false"
         app:iconSpaceReserved="false"
@@ -74,12 +75,6 @@
             android:key="customHosts"
             android:summary="@string/custom_hosts_summary"
             android:title="@string/custom_hosts" />
-
-        <io.legado.app.lib.prefs.SwitchPreference
-            android:defaultValue="false"
-            android:key="webServiceWakeLock"
-            android:summary="@string/web_service_wake_lock_summary"
-            android:title="@string/web_service_wake_lock" />
 
         <io.legado.app.lib.prefs.Preference
             android:key="defaultBookTreeUri"
@@ -139,26 +134,6 @@
             android:summary="@string/replace_enable_default_s"
             android:title="@string/replace_enable_default_t"
             app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.SwitchPreference
-            android:defaultValue="true"
-            android:key="mediaButtonOnExit"
-            android:summary="@string/media_button_on_exit_summary"
-            android:title="@string/media_button_on_exit_title"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.SwitchPreference
-            android:defaultValue="false"
-            android:key="readAloudByMediaButton"
-            android:summary="@string/read_aloud_by_media_button_summary"
-            android:title="@string/read_aloud_by_media_button_title"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.SwitchPreference
-            android:defaultValue="false"
-            android:key="ignoreAudioFocus"
-            android:summary="@string/ignore_audio_focus_summary"
-            android:title="@string/ignore_audio_focus_title" />
 
         <io.legado.app.lib.prefs.SwitchPreference
             android:defaultValue="true"

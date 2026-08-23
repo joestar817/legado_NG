@@ -10,6 +10,8 @@ import androidx.core.view.postDelayed
 import androidx.fragment.app.activityViewModels
 import androidx.preference.ListPreference
 import androidx.preference.Preference
+import androidx.preference.PreferenceCategory
+import androidx.preference.PreferenceGroup
 import com.jeremyliao.liveeventbus.LiveEventBus
 import io.legado.app.R
 import io.legado.app.constant.EventBus
@@ -64,8 +66,21 @@ class OtherConfigFragment : PreferenceFragment(),
     private var onlyUpdateReadPref: Preference? = null
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        putPrefBoolean(PreferKey.processText, isProcessTextEnabled())
+        val section = configSection()
+        if (section == OtherConfigSection.ALL || section == OtherConfigSection.GENERAL) {
+            putPrefBoolean(PreferKey.processText, isProcessTextEnabled())
+        }
         addPreferencesFromResource(R.xml.pref_config_other)
+        section.allowedKeys?.let { allowedKeys ->
+            retainPreferences(preferenceScreen, allowedKeys)
+        }
+        if (section == OtherConfigSection.GENERAL) {
+            flattenOtherSettingsCategory()
+        } else {
+            section.categoryTitleRes?.let { titleRes ->
+                findPreference<PreferenceCategory>(OTHER_SETTINGS_CATEGORY)?.setTitle(titleRes)
+            }
+        }
         ConfigPreferenceStyle.applyTo(preferenceScreen)
         upPreferenceSummary(PreferKey.userAgent, AppConfig.userAgent)
         upPreferenceSummary(PreferKey.preDownloadNum, AppConfig.preDownloadNum.toString())
@@ -86,10 +101,15 @@ class OtherConfigFragment : PreferenceFragment(),
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        activity?.setTitle(R.string.other_setting)
+        activity?.setTitle(configSection().titleRes)
         preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
         ConfigPreferenceStyle.applyListStyle(this)
         listView.setEdgeEffectColor(primaryColor)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        activity?.setTitle(configSection().titleRes)
     }
 
     override fun onDestroy() {
@@ -363,4 +383,107 @@ class OtherConfigFragment : PreferenceFragment(),
         }
     }
 
+    private fun configSection(): OtherConfigSection {
+        return when (activity?.intent?.getStringExtra("configTag")) {
+            ConfigTag.GENERAL_CONFIG -> OtherConfigSection.GENERAL
+            ConfigTag.STORAGE_CONFIG -> OtherConfigSection.STORAGE
+            ConfigTag.ADVANCED_CONFIG -> OtherConfigSection.ADVANCED
+            else -> OtherConfigSection.ALL
+        }
+    }
+
+    private fun retainPreferences(group: PreferenceGroup?, allowedKeys: Set<String>) {
+        group ?: return
+        for (index in group.preferenceCount - 1 downTo 0) {
+            val preference = group.getPreference(index)
+            if (preference is PreferenceGroup) {
+                retainPreferences(preference, allowedKeys)
+                if (preference.preferenceCount == 0) {
+                    group.removePreference(preference)
+                }
+            } else {
+                val key = preference.key
+                if (key == null || key !in allowedKeys) {
+                    group.removePreference(preference)
+                }
+            }
+        }
+    }
+
+    private fun flattenOtherSettingsCategory() {
+        val root = preferenceScreen ?: return
+        val category = findPreference<PreferenceCategory>(OTHER_SETTINGS_CATEGORY) ?: return
+        val preferences = (0 until category.preferenceCount).map(category::getPreference)
+        preferences.forEach { category.removePreference(it) }
+        root.removePreference(category)
+        val firstOrder = root.preferenceCount
+        preferences.forEachIndexed { index, preference ->
+            preference.order = firstOrder + index
+            root.addPreference(preference)
+        }
+    }
+
+    private companion object {
+        const val OTHER_SETTINGS_CATEGORY = "otherSettingsCategory"
+    }
+
+}
+
+private enum class OtherConfigSection(
+    val titleRes: Int,
+    val categoryTitleRes: Int?,
+    val allowedKeys: Set<String>?
+) {
+    ALL(
+        titleRes = R.string.other_setting,
+        categoryTitleRes = null,
+        allowedKeys = null
+    ),
+    GENERAL(
+        titleRes = R.string.general_setting,
+        categoryTitleRes = null,
+        allowedKeys = setOf(
+            PreferKey.language,
+            PreferKey.replaceEnableDefault,
+            PreferKey.showAddToShelfAlert,
+            PreferKey.updateToVariant,
+            "autoUpdateVariant",
+            PreferKey.showMangaUi,
+            PreferKey.videoSetting,
+            PreferKey.processText
+        )
+    ),
+    STORAGE(
+        titleRes = R.string.storage_cache_setting,
+        categoryTitleRes = R.string.local_data,
+        allowedKeys = setOf(
+            PreferKey.defaultBookTreeUri,
+            PreferKey.defaultFilePicker,
+            PreferKey.bitmapCacheSize,
+            PreferKey.imageRetainNum,
+            PreferKey.preDownloadNum,
+            PreferKey.autoClearExpired,
+            PreferKey.cleanCache,
+            PreferKey.clearWebViewData,
+            PreferKey.shrinkDatabase
+        )
+    ),
+    ADVANCED(
+        titleRes = R.string.advanced_setting,
+        categoryTitleRes = R.string.advanced_options,
+        allowedKeys = setOf(
+            PreferKey.userAgent,
+            PreferKey.customHosts,
+            PreferKey.sourceEditMaxLine,
+            PreferKey.checkSource,
+            PreferKey.uploadRule,
+            PreferKey.cronet,
+            PreferKey.antiAlias,
+            PreferKey.threadCount,
+            PreferKey.recordLog,
+            PreferKey.recordNetworkLog,
+            "networkRequestLog",
+            PreferKey.recordHeapDump
+        )
+    )
 }

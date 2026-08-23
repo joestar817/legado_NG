@@ -18,24 +18,10 @@
             app:iconSpaceReserved="false" />
 
         <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_cfg_source"
-            android:key="txtTocRuleManage"
-            android:summary="@string/config_txt_toc_rule"
-            android:title="@string/txt_toc_rule"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_cfg_replace"
-            android:key="replaceManage"
-            android:summary="@string/replace_purify_desc"
-            android:title="@string/replace_purify"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_translate"
-            android:key="dictRuleManage"
-            android:summary="@string/config_dict_rule"
-            android:title="@string/dict_rule"
+            android:icon="@drawable/ic_toc"
+            android:key="ruleManage"
+            android:summary="@string/rule_management_summary"
+            android:title="@string/rule_management"
             app:iconSpaceReserved="false" />
 
         <io.legado.app.lib.prefs.Preference
@@ -76,17 +62,10 @@
             app:iconSpaceReserved="false" />
 
         <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_cfg_theme"
-            android:key="theme_setting"
-            android:summary="@string/theme_setting_s"
-            android:title="@string/theme_setting"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_cfg_other"
+            android:icon="@drawable/ic_settings"
             android:key="setting"
-            android:summary="@string/other_setting_s"
-            android:title="@string/other_setting"
+            android:summary="@string/settings_menu_summary"
+            android:title="@string/setting"
             app:allowDividerBelow="false"
             app:iconSpaceReserved="false" />
 
