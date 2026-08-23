@@ -2,10 +2,12 @@ package io.legado.app.ui.book.read.aloud
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.BaseActivity
@@ -28,6 +30,7 @@ import io.legado.app.ui.book.character.BookStoryboardActivity
 import io.legado.app.ui.book.listen.ListeningCoverTheme
 import io.legado.app.ui.config.ConfigActivity
 import io.legado.app.ui.config.ConfigTag
+import io.legado.app.ui.config.TtsSheetLaunchDebouncer
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
 import io.legado.app.utils.observeEvent
@@ -59,6 +62,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     private var switchingChapter = false
     private var switchingVoice = false
     private var playButtonLoading = false
+    private val drawerLaunchDebouncer = TtsSheetLaunchDebouncer()
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         refreshListeningTheme(force = true)
@@ -123,16 +127,16 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             ReadAloudPlayerAction.Close -> finish()
             ReadAloudPlayerAction.OpenBookInfo -> openBookInfo()
             ReadAloudPlayerAction.Timer -> {
-                ReadAloudTimerDialog().show(supportFragmentManager, "readAloudTimer")
+                showDrawer("readAloudTimer", ::ReadAloudTimerDialog)
             }
             ReadAloudPlayerAction.Speed -> {
-                ReadAloudSpeedDialog().show(supportFragmentManager, "readAloudSpeed")
+                showDrawer("readAloudSpeed", ::ReadAloudSpeedDialog)
             }
             ReadAloudPlayerAction.Refresh -> refreshCurrentChapter()
             ReadAloudPlayerAction.Original -> openOriginal()
             ReadAloudPlayerAction.More -> showMoreSheet()
             ReadAloudPlayerAction.Mode -> {
-                ReadAloudModeDialog().show(supportFragmentManager, "readAloudMode")
+                showDrawer("readAloudMode", ::ReadAloudModeDialog)
             }
             ReadAloudPlayerAction.Catalog -> openChapterList()
             ReadAloudPlayerAction.Voice -> openVoiceOrRoleBindings()
@@ -340,7 +344,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     private fun openChapterList() {
-        ReadAloudCatalogDialog().show(supportFragmentManager, "readAloudCatalog")
+        showDrawer("readAloudCatalog", ::ReadAloudCatalogDialog)
     }
 
     private fun refreshCurrentChapter() {
@@ -485,7 +489,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         if (AppConfig.readAloudMultiRole) {
             openCharacterTtsBindings()
         } else {
-            ReadAloudVoiceDialog().show(supportFragmentManager, "readAloudVoice")
+            showDrawer("readAloudVoice", ::ReadAloudVoiceDialog)
         }
     }
 
@@ -620,7 +624,14 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     private fun showMoreSheet() {
-        ReadAloudMoreDialog().show(supportFragmentManager, "readAloudMore")
+        showDrawer("readAloudMore", ::ReadAloudMoreDialog)
+    }
+
+    private fun showDrawer(tag: String, create: () -> DialogFragment) {
+        val fragmentManager = supportFragmentManager
+        if (fragmentManager.isStateSaved || fragmentManager.findFragmentByTag(tag) != null) return
+        if (!drawerLaunchDebouncer.tryAcquire(SystemClock.elapsedRealtime())) return
+        create().show(fragmentManager, tag)
     }
 
     override fun observeLiveBus() {
