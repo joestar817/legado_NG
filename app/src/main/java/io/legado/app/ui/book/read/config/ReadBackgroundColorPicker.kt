@@ -351,7 +351,6 @@ private fun PickerActionBar(
     modifier: Modifier = Modifier,
 ) {
     val accent = Color(NgTheme.colors.primary)
-    val onAccent = Color(NgTheme.colors.onPrimary)
     val secondaryContainer = if (NgTheme.snapshot.isDark) {
         Color(0xFF2C2A28)
     } else {
@@ -391,7 +390,7 @@ private fun PickerActionBar(
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = accent,
-                contentColor = onAccent,
+                contentColor = Color.White,
             ),
             elevation = ButtonDefaults.buttonElevation(
                 defaultElevation = 2.dp,

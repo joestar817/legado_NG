@@ -983,7 +983,7 @@ fun NgFormActionButton(
         }
     }
     val contentColor = when (variant) {
-        NgButtonVariant.PRIMARY -> if (dialogAppearance) Color.White else Color(colors.onPrimary)
+        NgButtonVariant.PRIMARY -> Color.White
         NgButtonVariant.PRIMARY_LIGHT_CONTENT -> Color.White
         NgButtonVariant.TONAL,
         NgButtonVariant.NEUTRAL -> Color(colors.onSurface)

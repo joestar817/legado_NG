@@ -248,7 +248,7 @@ private fun BookmarkActionButton(
     } else {
         Color.Transparent
     }
-    val contentColor = if (isPrimary) Color(colors.onPrimary) else accent
+    val contentColor = if (isPrimary) Color.White else accent
 
     Button(
         onClick = onClick,

@@ -14,6 +14,7 @@
 | --- | --- | --- | --- |
 | 页面／抽屉搜索 | `NgSearchBar` | Provider、模型列表、模型选择 BottomSheet | 44dp 胶囊搜索框，15sp 输入，统一搜索、清除和键盘行为 |
 | 次要按钮 | `NgSecondaryButtonView` | Provider 详情、Skill 操作 | 高不透明白底、1dp 主题强调色描边、强调色文字；主操作仍使用强调色实底 |
+| 高饱和实底按钮 | `NgButton`／`NgFormActionButton`／`NgActionBarButton` | 主操作、确认操作、危险确认 | 标准外形对齐书架底部操作栏：稳定矩形、12dp 中圆角，不使用默认胶囊；Primary／Danger 等强调色或错误色实底一律使用白色文字、图标和进度指示，禁止动态 `onPrimary`／`onError` 产生彩底黑字 |
 | 详情页底部切换 | `NgFloatingTabBar` | Provider 配置／模型、TTS 引擎配置／发音人 | 48dp 悬浮栏、等宽项、纯图标居中；文字保留为无障碍描述 |
 | 标题栏菜单 | `NgMenuPopup` + `NgActionPopup` | Provider、TTS 引擎列表菜单 | 标题栏只保留一个操作入口；新增类型与列表查看选项用 18dp 圆角菜单承载 |
 | 选择型长列表抽屉 | `NgLongListBottomSheet` + `NgLongDrawerHeader` | AI 模型、发音人、TTS 引擎、书架批量换源 | 透明筛选承载层、无描边搜索／过滤卡片；Compose 长列表使用 12dp 紧凑提示线、42dp 标题栏和 17sp Medium 标题，标题栏按需展开搜索或“搜索 + 业务过滤项”面板 |
@@ -111,6 +112,7 @@
 
 - AI、调试、设置页的强调色优先使用 `ng_primary`，不要默认变成 MD3 紫色，也不要自行派生更暗颜色替换主题强调色。
 - 原始强调色用于小节标题、主要按钮、次按钮文字／描边和选中状态；主正文仍使用 `ng_on_surface`，避免大段强调色文字影响阅读。
+- Primary／Danger 等高饱和实底按钮的前景固定为白色；不得把动态对比算法得到的黑色 `onPrimary`／`onError` 用作按钮文字、图标或进度指示。浅色 Tonal／Neutral／Outline 承载面继续使用对应深色语义前景，不套用白字规则。
 - 状态色只表达状态，不参与大面积装饰。
 - 背景允许跟随主题和渐变，但承载面必须保证可读性。
 - 透明度统一通过 `ng_surface_card`、`ng_surface_panel`、`ng_icon_container` 等 token 调整，不在单个页面里散写 `#AAFFFFFF` 之类的临时颜色。
@@ -503,21 +505,23 @@ Reading NG 不限定只能使用 Material Symbols Rounded。图标可以来自�
 
 已确认 Variant：
 
-- Primary：主题强调色实底，前景使用可读的 `onPrimary`；一个操作组最多一个主按钮。
+- Primary：主题强调色实底，文字、图标和进度指示固定使用白色；一个操作组最多一个主按钮。
 - Secondary：高不透明白底、1dp 主题强调色描边、主题强调色文字；View 使用 `NgSecondaryButtonView`。
-- Danger：只用于明确的删除或不可逆操作；底部操作栏沿用 Secondary 承载面并改用错误色描边／图文，不能把普通取消、禁用做成危险按钮。
+- Danger：只用于明确的删除或不可逆操作；确认弹窗使用错误色实底时前景固定为白色，底部操作栏可沿用 Secondary 承载面并改用错误色描边／图文；不能把普通取消、禁用做成危险按钮。
 - Disabled：保留原轮廓和尺寸，统一降低表面、描边和文字强度。
 
 尺寸基线：
 
 - 普通小按钮 36dp 高、14sp、最小宽度 76dp、12dp 圆角。
-- 弹窗按钮使用既有 `Ng.DialogButton` 的 42／48dp 规格，不与页面小按钮混用。
+- 弹窗按钮使用既有 `Ng.DialogButton` 的 42／48dp 规格和 12dp 中圆角，不与页面小按钮混用，也不得退回 Material 默认胶囊形。
 - 底部操作栏使用 View `BookInfoActionButton`／Compose `NgActionBarButton` 的 42dp 规格：20dp 图标、8dp 图文间距、14sp、12dp 圆角。
 - 同一排按钮等宽或按内容稳定分配，不能因文案长度产生明显高低和边界跳变。
 
 约束：
 
 - 背景图页面上的非主操作不能只画强调色文字；必须使用可读的白色／高不透明承载面。
+- 禁止“彩色高饱和实底＋黑色／深色文字或图标”。业务页面不得直接读取 `onPrimary`、`onError` 或自动对比色覆盖实底按钮白色前景；需要深色文字时必须改用 Tonal／Neutral／Outline 等浅色具名 Variant。
+- `NgButton` 默认使用 `NgButtonShapeVariant.ROUNDED`（`NgTheme.shapes.mediumDp`，当前 12dp），与书架底部 `NgActionBarButton` 保持同一外形语言。`PILL` 只用于明确的胶囊语义并由调用方显式指定，普通弹窗、确认和页面操作按钮禁止默认使用全圆角胶囊。
 - 不增加 `useWhiteBackground`、`darkText` 一类调用方视觉布尔值，页面只选择具名 Variant。
 
 ### ActionBar
@@ -700,6 +704,8 @@ AI 相关页面必须遵守：
 避免：
 
 - 每个功能单独定义一套卡片、颜色、按钮。
+- 彩色高饱和实底按钮使用黑色／深色文字、图标或进度指示。
+- 普通弹窗、确认或页面操作按钮直接沿用 Material 默认胶囊形，未对齐书架底部 12dp 圆角基线。
 - 大面积使用 MD3 紫色或动态色覆盖阅读 NG 主题。
 - 在同一页混用 PreferenceScreen 风格、RikkaHub 风格和自绘风格。
 - 为了“现代感”增加不必要阴影、渐变、装饰图形。
@@ -715,6 +721,8 @@ AI 相关页面必须遵守：
 - 是否与书架首页、搜索页、调试页冲突。
 - 手机竖屏下文字是否溢出或挤压。
 - 弹窗底部按钮是否遮挡内容。
+- Primary／Danger 等彩色高饱和实底按钮是否统一使用白色文字、图标和进度指示，没有被动态 `onPrimary`／`onError` 改成黑色。
+- 普通 NG 按钮是否使用与书架底部操作栏一致的 12dp 圆角矩形；只有明确胶囊语义才允许显式使用 `PILL`。
 - 状态信息是否一眼可懂。
 - 如果是 AI 功能，是否区分 Provider、Prompt、Skill、Runtime。
 - 页面标题、小节、主次按钮和选中态是否使用当前主题原始强调色，而非固定色或另行派生暗色。

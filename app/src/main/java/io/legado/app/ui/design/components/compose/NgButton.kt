@@ -22,7 +22,7 @@ fun NgButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     variant: NgButtonVariant = NgButtonVariant.PRIMARY,
-    shapeVariant: NgButtonShapeVariant = NgButtonShapeVariant.PILL,
+    shapeVariant: NgButtonShapeVariant = NgButtonShapeVariant.ROUNDED,
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
     content: @Composable RowScope.() -> Unit,
 ) {
@@ -41,7 +41,7 @@ fun NgButton(
             contentPadding = contentPadding,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(colors.primary),
-                contentColor = Color(colors.onPrimary)
+                contentColor = Color.White
             ),
             content = content
         )
@@ -107,7 +107,7 @@ fun NgButton(
             contentPadding = contentPadding,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(colors.error),
-                contentColor = Color(colors.onError)
+                contentColor = Color.White
             ),
             content = content
         )

@@ -92,7 +92,7 @@ fun NgActionBarButton(
             shape = shape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(colors.primary),
-                contentColor = Color(colors.onPrimary)
+                contentColor = Color.White
             ),
             contentPadding = contentPadding,
             content = content
