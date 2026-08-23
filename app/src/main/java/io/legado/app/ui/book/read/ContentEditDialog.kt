@@ -134,6 +134,7 @@ class ContentEditDialog : DialogFragment() {
             showEditorContent(content, ReadBook.durChapterPos)
         }
 
+        ReadFloatingAppearanceState.refreshFromConfig()
         val snapshot = ReadDrawerStyle.themeSnapshot(requireContext())
         (view as ComposeView).setContent {
             NgAppTheme(snapshot = snapshot, updateSystemBars = false) {
@@ -355,9 +356,7 @@ private fun ContentEditorScreen(
             NgGlassSurface(
                 modifier = Modifier.fillMaxSize(),
                 shape = RoundedCornerShape(18.dp),
-                style = NgGlassDefaults.style(
-                    containerAlpha = NgTheme.effects.dialogAlpha
-                ).copy(shadowElevation = 0.dp),
+                style = readFloatingGlassStyle().copy(shadowElevation = 0.dp),
             ) {
                 ContentEditorTextArea(
                     document = document,
