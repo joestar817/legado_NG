@@ -59,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -106,6 +107,8 @@ import io.legado.app.help.book.isLocal
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
+import io.legado.app.ui.book.read.ReadFloatingAppearanceState
+import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.theme.NgAppTheme
@@ -172,6 +175,7 @@ class ReadSearchDialog : BottomSheetDialogFragment() {
 
         query = arguments?.getString(ARG_QUERY).orEmpty()
         selectedResultIndex = arguments?.getInt(ARG_SELECTED_INDEX, -1) ?: -1
+        ReadFloatingAppearanceState.refreshFromConfig()
         val snapshot = ReadDrawerStyle.themeSnapshot(requireContext())
         (view as ComposeView).setContent {
             NgAppTheme(snapshot = snapshot, updateSystemBars = false) {
@@ -263,7 +267,7 @@ class ReadSearchDialog : BottomSheetDialogFragment() {
         ) ?: return
         sheet.setBackgroundColor(AndroidColor.TRANSPARENT)
         sheet.layoutParams = sheet.layoutParams.apply {
-            height = (resources.displayMetrics.heightPixels * 0.94f).toInt()
+            height = (resources.displayMetrics.heightPixels * 0.82f).toInt()
         }
         BottomSheetBehavior.from(sheet).apply {
             isDraggable = false
@@ -511,9 +515,7 @@ private fun ReadSearchPanel(
     NgGlassSurface(
         modifier = Modifier.fillMaxSize(),
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        style = NgGlassDefaults.style(
-            containerAlpha = maxOf(NgTheme.effects.dialogAlpha, 0.94f),
-        ).copy(shadowElevation = 0.dp),
+        style = readFloatingGlassStyle().copy(shadowElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier
@@ -659,6 +661,8 @@ private fun SearchInputRow(
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    var inputFocused by remember { mutableStateOf(false) }
+    val menuButtonShape = RoundedCornerShape(10.dp)
     LaunchedEffect(Unit) {
         if (query.isBlank()) {
             focusRequester.requestFocus()
@@ -677,7 +681,8 @@ private fun SearchInputRow(
             modifier = Modifier
                 .weight(1f)
                 .height(40.dp)
-                .focusRequester(focusRequester),
+                .focusRequester(focusRequester)
+                .onFocusChanged { inputFocused = it.isFocused },
             enabled = !loading,
             singleLine = true,
             textStyle = TextStyle(
@@ -713,7 +718,7 @@ private fun SearchInputRow(
                     )
                     Spacer(Modifier.width(10.dp))
                     Box(modifier = Modifier.weight(1f)) {
-                        if (query.isBlank()) {
+                        if (query.isBlank() && !inputFocused) {
                             Text(
                                 text = stringResource(R.string.search_input_hint),
                                 color = mutedColor.copy(alpha = 0.72f),
@@ -746,13 +751,15 @@ private fun SearchInputRow(
             Box(
                 modifier = Modifier
                     .size(40.dp)
+                    .clip(menuButtonShape)
+                    .background(dockColor)
                     .clickable { onSettingsExpandedChange(true) },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_more_vert),
+                    painter = painterResource(R.drawable.ic_grid_menu),
                     contentDescription = stringResource(R.string.menu),
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(20.dp),
                     tint = contentColor,
                 )
             }
@@ -773,7 +780,7 @@ private fun SearchInputRow(
                     onClick = onToggleApplyReplace,
                 )
                 HorizontalDivider(
-                    modifier = Modifier.padding(start = 40.dp, end = 10.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp),
                     color = mutedColor.copy(alpha = 0.14f),
                 )
                 SearchOptionMenuItem(
