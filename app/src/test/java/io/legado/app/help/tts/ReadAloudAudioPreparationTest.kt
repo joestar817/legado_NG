@@ -216,6 +216,53 @@ class ReadAloudAudioPreparationTest {
     }
 
     @Test
+    fun ttsCacheClear_onlyDeletesTargetBookAndPreservesInProgressAudio() {
+        val root = createTempDirectory("read-aloud-cache-").toFile()
+        try {
+            val currentBook = File(root, "current").apply { mkdirs() }
+            val otherBook = File(root, "other").apply { mkdirs() }
+            val completed = File(currentBook, "completed.mp3").apply { writeBytes(byteArrayOf(1)) }
+            val inProgress = File(currentBook, "writing.mp3.123.part").apply {
+                writeBytes(byteArrayOf(2))
+            }
+            val other = File(otherBook, "completed.mp3").apply { writeBytes(byteArrayOf(3)) }
+
+            val removed = ReadAloudCacheManager.clearTtsAudioCache(
+                directory = currentBook,
+                preserveInProgress = true,
+            )
+
+            assertEquals(1, removed)
+            assertFalse(completed.exists())
+            assertTrue(inProgress.exists())
+            assertTrue(other.exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun ttsCacheClear_removesPartialAudioWhenServiceIsStopped() {
+        val root = createTempDirectory("read-aloud-cache-").toFile()
+        try {
+            val cache = File(root, "current").apply { mkdirs() }
+            val inProgress = File(cache, "stale.mp3.123.part").apply {
+                writeBytes(byteArrayOf(1))
+            }
+
+            val removed = ReadAloudCacheManager.clearTtsAudioCache(
+                directory = cache,
+                preserveInProgress = false,
+            )
+
+            assertEquals(1, removed)
+            assertFalse(inProgress.exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun wavValidation_detectsShortAudioThatEndsMidSpeech() {
         val folder = createTempDirectory("read-aloud-wav-").toFile()
         try {

@@ -29,6 +29,7 @@ import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.tts.BookTtsAutomationConfig
 import io.legado.app.help.tts.BookTtsCastingCoordinator
 import io.legado.app.help.tts.ReadAloudTtsRouter
+import io.legado.app.help.tts.ReadAloudCacheManager
 import io.legado.app.help.tts.ReadAloudAudioTask
 import io.legado.app.help.tts.ReadAloudPreparedItemRange
 import io.legado.app.help.tts.ReadAloudPreparedPlaybackTarget
@@ -102,7 +103,10 @@ class HttpReadAloudService : BaseReadAloudService(),
         )
     }
     private val ttsFolderPath: String by lazy {
-        cacheDir.absolutePath + File.separator + "httpTTS" + File.separator
+        val directory = ReadBook.book?.let { book ->
+            ReadAloudCacheManager.ttsCacheDirectory(this, book)
+        } ?: ReadAloudCacheManager.ttsCacheRootDirectory(this)
+        directory.absolutePath + File.separator
     }
     private var downloadTask: Coroutine<*>? = null
     private var playIndexJob: Job? = null

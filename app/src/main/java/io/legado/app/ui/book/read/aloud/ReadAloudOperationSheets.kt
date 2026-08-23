@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Person
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.constant.EventBus
@@ -71,6 +73,7 @@ import io.legado.app.help.IntentHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.tts.BookTtsAutomationConfig
 import io.legado.app.help.tts.BookTtsCastingCoordinator
+import io.legado.app.help.tts.ReadAloudCacheManager
 import io.legado.app.help.tts.TtsEngineCapability
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
@@ -88,7 +91,11 @@ import io.legado.app.ui.config.TtsVoiceSelectionDrawerContent
 import io.legado.app.ui.config.toDrawerCard
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagVariant
+import io.legado.app.ui.design.components.NgButtonVariant
+import io.legado.app.ui.design.components.NgDialogVariant
+import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgManagementLeadingIcon
@@ -661,6 +668,8 @@ private data class MoreDrawerState(
 internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
 
     private var state by mutableStateOf<MoreDrawerState?>(null)
+    private var showClearCacheConfirmation by mutableStateOf(false)
+    private var clearingCache by mutableStateOf(false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -677,6 +686,8 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
                             dismissAllowingStateLoss()
                         },
                         onOpenSystemTts = IntentHelp::openTTSSetting,
+                        clearingCache = clearingCache,
+                        onClearCache = { showClearCacheConfirmation = true },
                         onStop = {
                             val player = activity as? ReadAloudPlayerActivity ?: return@ReadAloudMoreSheetContent
                             ReadAloud.stop(player)
@@ -685,6 +696,57 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
                         },
                     )
                 }
+                if (showClearCacheConfirmation) {
+                    ReadAloudClearCacheConfirmationDialog(
+                        onDismiss = { showClearCacheConfirmation = false },
+                        onConfirm = {
+                            showClearCacheConfirmation = false
+                            clearReadAloudCaches()
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    private fun clearReadAloudCaches() {
+        val player = activity as? ReadAloudPlayerActivity ?: return
+        val book = ReadBook.book ?: run {
+            player.toastOnUi("当前书籍为空")
+            return
+        }
+        if (clearingCache) return
+        val wasRunning = BaseReadAloudService.isRun
+        val shouldResume = BaseReadAloudService.isPlay()
+        val pageIndex = ReadBook.durPageIndex
+        val startPos = ReadBook.durChapterPos
+        if (wasRunning) ReadAloud.pause(player)
+        clearingCache = true
+        player.lifecycleScope.launch {
+            try {
+                val result = withContext(IO) { ReadAloudCacheManager.clearCurrentBook(book) }
+                player.toastOnUi(
+                    if (result.storyboardChapterCount == 0 && result.ttsFileCount == 0) {
+                        "当前书籍暂无分镜或 TTS 缓存"
+                    } else {
+                        "已清理当前书籍缓存：分镜 ${result.storyboardChapterCount} 章，" +
+                            "TTS ${result.ttsFileCount} 个"
+                    }
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                player.toastOnUi("清理朗读缓存失败\n${error.localizedMessage ?: "未知错误"}")
+            } finally {
+                if (wasRunning && BaseReadAloudService.isRun) {
+                    ReadAloud.playByEventBus(
+                        play = shouldResume,
+                        pageIndex = pageIndex,
+                        startPos = startPos,
+                        forceRebuild = true,
+                    )
+                }
+                clearingCache = false
             }
         }
     }
@@ -763,6 +825,8 @@ private fun ReadAloudMoreSheetContent(
     onWorkerCountChange: (Int) -> Unit,
     onOpenEngine: () -> Unit,
     onOpenSystemTts: () -> Unit,
+    clearingCache: Boolean,
+    onClearCache: () -> Unit,
     onStop: () -> Unit,
 ) {
     val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.86f).dp
@@ -852,6 +916,23 @@ private fun ReadAloudMoreSheetContent(
                 }
                 item {
                     ListeningActionRow(
+                        title = "清理缓存",
+                        summary = if (clearingCache) {
+                            "正在清理当前书籍的分镜与 TTS 缓存…"
+                        } else {
+                            "清理当前书籍的分镜与 TTS 音频缓存"
+                        },
+                        leadingIcon = Icons.Outlined.CleaningServices,
+                        enabled = !clearingCache,
+                        onClick = onClearCache,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(NgTheme.colors.surface).copy(alpha = 0.82f)),
+                    )
+                }
+                item {
+                    ListeningActionRow(
                         title = "停止朗读",
                         summary = "停止服务并关闭播放器",
                         leadingIcon = Icons.Rounded.StopCircle,
@@ -864,6 +945,50 @@ private fun ReadAloudMoreSheetContent(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ReadAloudClearCacheConfirmationDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        NgDialog(
+            title = "清理朗读缓存",
+            variant = NgDialogVariant.CONFIRMATION,
+            actions = {
+                NgButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .width(84.dp)
+                        .height(42.dp),
+                    variant = NgButtonVariant.OUTLINE,
+                ) {
+                    Text("取消", fontSize = 15.sp)
+                }
+                NgButton(
+                    onClick = onConfirm,
+                    modifier = Modifier
+                        .width(84.dp)
+                        .height(42.dp),
+                    variant = NgButtonVariant.DANGER,
+                ) {
+                    Text("清理", fontSize = 15.sp)
+                }
+            },
+        ) {
+            Text(
+                text = "将清理当前书籍的全部分镜缓存和 TTS 音频缓存。" +
+                    "正式角色、人工声音绑定、朗读引擎和设置不会删除；" +
+                    "未绑定的临时演播身份会随分镜重新生成。" +
+                    "清理时朗读会短暂停顿，并从当前位置重新准备。",
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(NgTheme.colors.onSurfaceVariant),
+                fontSize = 15.sp,
+                lineHeight = 21.sp,
+            )
         }
     }
 }
