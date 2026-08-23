@@ -1220,6 +1220,18 @@ private fun PlayerVoicePill(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
             ) {
+                Box(
+                    modifier = Modifier.size(16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_bottom_person_e),
+                        contentDescription = null,
+                        tint = Color(NgTheme.colors.onSurface).copy(alpha = 0.74f),
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
                 Text(
                     text = label,
                     modifier = Modifier.widthIn(max = 150.dp),
@@ -1228,13 +1240,6 @@ private fun PlayerVoicePill(
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(6.dp))
-                Icon(
-                    painter = painterResource(R.drawable.ic_refresh_black_24dp),
-                    contentDescription = null,
-                    tint = Color(NgTheme.colors.onSurface).copy(alpha = 0.74f),
-                    modifier = Modifier.size(16.dp),
                 )
             }
         }

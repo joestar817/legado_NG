@@ -468,7 +468,6 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
                 }, 1200L)
             }, 180L)
         }
-        toastOnUi(if (AppConfig.readAloudMultiRole) "已开启多人模式" else "已切换单人模式")
     }
 
     fun selectMultiRoleEngine(engineId: String?) {
