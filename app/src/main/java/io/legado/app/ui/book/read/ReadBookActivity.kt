@@ -2810,7 +2810,12 @@ class ReadBookActivity : BaseReadBookActivity(),
         }
     }
 
-    override fun onTextHighlightClick(bookmark: Bookmark, top: Float, bottom: Float) {
+    override fun onTextHighlightClick(
+        bookmark: Bookmark,
+        anchorX: Float,
+        top: Float,
+        bottom: Float,
+    ) {
         binding.readView.cancelSelect()
         activeTextHighlight = bookmark
         val navigationBarHeight =
@@ -2822,6 +2827,7 @@ class ReadBookActivity : BaseReadBookActivity(),
         textActionMenu.showTextHighlight(
             view = binding.textMenuPosition,
             windowHeight = binding.root.height + navigationBarHeight,
+            anchorX = anchorX.toInt(),
             anchorTopY = top.toInt(),
             anchorBottomY = bottom.toInt(),
             textHighlight = bookmark,

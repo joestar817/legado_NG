@@ -881,6 +881,7 @@
     <string name="bookmark_note_hint">Add a note (optional)</string>
     <string name="text_highlight">Highlight</string>
     <string name="delete_highlight">Delete highlight</string>
+    <string name="highlight_settings">Highlight settings</string>
     <string name="highlight_style_background">Background highlight</string>
     <string name="highlight_style_underline">Underline</string>
     <string name="highlight_style_wavy">Wavy underline</string>

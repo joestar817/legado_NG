@@ -123,6 +123,70 @@ internal fun textSelectionToolbarHeightDp(
 }
 
 @Composable
+internal fun TextHighlightNotePreview(
+    note: String,
+    onSettings: () -> Unit,
+) {
+    val settingsDescription = stringResource(R.string.highlight_settings)
+    val noteScrollState = rememberScrollState()
+    val settingsContainerColor = if (NgTheme.snapshot.isEInk) {
+        Color.Transparent
+    } else {
+        Color(NgTheme.colors.primary).copy(alpha = 0.10f)
+    }
+    val previewShape = RoundedCornerShape(12.dp)
+    NgGlassSurface(
+        modifier = Modifier.fillMaxSize(),
+        shape = previewShape,
+        style = readFloatingGlassStyle(),
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            Text(
+                text = note.trim(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 16.dp, top = 14.dp, end = 58.dp, bottom = 14.dp)
+                    .verticalScroll(noteScrollState),
+                color = Color(NgTheme.colors.onSurface),
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                ),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp, end = 2.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = settingsDescription,
+                        onClick = onSettings,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(settingsContainerColor),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_settings),
+                        contentDescription = settingsDescription,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color(NgTheme.colors.primary),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 internal fun TextSelectionToolbar(
     primaryActions: List<TextSelectionAction>,
     currentPage: Int,

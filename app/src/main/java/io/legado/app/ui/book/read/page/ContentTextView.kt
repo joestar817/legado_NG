@@ -8,11 +8,15 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.withSave
 import androidx.core.graphics.withTranslation
+import androidx.core.graphics.drawable.DrawableCompat
 import io.legado.app.R
 import io.legado.app.data.entities.Bookmark
 import io.legado.app.help.book.isOnLineTxt
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.association.OpenUrlConfirmActivity
 import io.legado.app.ui.book.read.page.delegate.PageDelegate
@@ -60,6 +64,13 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
     val selectStart = TextPos(0, -1, -1)
     private val selectEnd = TextPos(0, -1, -1)
     private var textHighlights: List<Bookmark> = emptyList()
+    private var textHighlightNotesByEndChapter: Map<Int, List<Bookmark>> = emptyMap()
+    private val textHighlightNoteMarkers = mutableListOf<TextHighlightNoteMarker>()
+    private val textHighlightNoteMarkerDrawable by lazy {
+        AppCompatResources.getDrawable(context, R.drawable.ic_ai_chat_suggestion)
+            ?.let { DrawableCompat.wrap(it) }
+            ?.mutate()
+    }
     var textPage: TextPage = TextPage()
         private set
     var isMainView = false
@@ -93,6 +104,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
      */
     fun setContent(textPage: TextPage) {
         this.textPage = textPage
+        textHighlightNoteMarkers.clear()
         // 非滑动翻页动画需要同步重绘，不然翻页可能会出现闪烁
         if (isScroll) {
             postInvalidate()
@@ -103,6 +115,11 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
 
     fun setTextHighlights(bookmarks: List<Bookmark>) {
         textHighlights = bookmarks.filter(Bookmark::isTextHighlight)
+        textHighlightNotesByEndChapter = textHighlights
+            .filter { it.content.isNotBlank() }
+            .groupBy(Bookmark::endChapterIndex)
+            .mapValues { (_, highlights) -> highlights.sortedBy(Bookmark::time) }
+        textHighlightNoteMarkers.clear()
         postInvalidate()
     }
 
@@ -120,14 +137,18 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
             canvas.translate(0f, scrollY.toFloat())
         }
         check(!visibleRect.isEmpty) { "visibleRect 为空" }
-        canvas.clipRect(visibleRect)
-        drawPage(canvas)
+        canvas.withSave {
+            clipRect(visibleRect)
+            drawPage(this)
+        }
+        drawTextHighlightNoteMarkerIcons(canvas)
     }
 
     /**
      * 绘制页面
      */
     private fun drawPage(canvas: Canvas) {
+        textHighlightNoteMarkers.clear()
         var relativeOffset = relativeOffset(0)
         drawPageWithHighlights(canvas, textPage, relativeOffset)
         if (!callBack.isScroll) return
@@ -149,6 +170,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         page: TextPage,
         relativeOffset: Float,
     ) {
+        collectTextHighlightNoteMarkers(page, relativeOffset)
         drawTextHighlights(canvas, page, relativeOffset, backgroundPass = true)
         page.draw(this, canvas, relativeOffset)
         drawTextHighlights(canvas, page, relativeOffset, backgroundPass = false)
@@ -211,6 +233,40 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         highlight: Bookmark,
     ) {
         if (end <= start) return
+        var segmentStart = start
+        var inlineOffset = 0f
+        textHighlightNoteSpacerPositions(line).forEach { spacerX ->
+            if (spacerX <= segmentStart) {
+                inlineOffset += textHighlightNoteSpacerWidthPx
+            } else if (spacerX < end) {
+                drawTextHighlightSegmentWithoutSpacers(
+                    canvas = canvas,
+                    line = line,
+                    start = segmentStart + inlineOffset,
+                    end = spacerX + inlineOffset,
+                    highlight = highlight,
+                )
+                segmentStart = spacerX
+                inlineOffset += textHighlightNoteSpacerWidthPx
+            }
+        }
+        drawTextHighlightSegmentWithoutSpacers(
+            canvas = canvas,
+            line = line,
+            start = segmentStart + inlineOffset,
+            end = end + inlineOffset,
+            highlight = highlight,
+        )
+    }
+
+    private fun drawTextHighlightSegmentWithoutSpacers(
+        canvas: Canvas,
+        line: TextLine,
+        start: Float,
+        end: Float,
+        highlight: Bookmark,
+    ) {
+        if (end <= start) return
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = highlight.highlightColor
         }
@@ -241,6 +297,136 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                 canvas.drawRoundRect(rect, 2.dpToPx().toFloat(), 2.dpToPx().toFloat(), paint)
             }
         }
+    }
+
+    private fun collectTextHighlightNoteMarkers(
+        page: TextPage,
+        relativeOffset: Float,
+    ) {
+        val highlights = textHighlightNotesByEndChapter[page.chapterIndex].orEmpty()
+        if (highlights.isEmpty()) return
+        val markerSize = NOTE_MARKER_SIZE_DP.dpToPx().toFloat()
+        val markerGap = NOTE_MARKER_GAP_DP.dpToPx().toFloat()
+        val touchSize = NOTE_MARKER_TOUCH_SIZE_DP.dpToPx().toFloat()
+        highlights.forEach { highlight ->
+            val endpoint = findTextHighlightEndpoint(page, highlight.endChapterPos)
+                ?: return@forEach
+            // 备注标记属于划线终点装饰，不能为了避让正文被挪到整行末尾或页边。
+            val inlineOffset = textHighlightNoteSpacerPositions(endpoint.line)
+                .count { it < endpoint.x } * textHighlightNoteSpacerWidthPx
+            val markerLeft = endpoint.x + inlineOffset + markerGap
+            val markerTop = (endpoint.line.lineBottom - markerSize)
+                .coerceAtLeast(endpoint.line.lineTop) + relativeOffset
+            val markerRect = RectF(
+                markerLeft,
+                markerTop,
+                markerLeft + markerSize,
+                markerTop + markerSize,
+            )
+            val markerCenterX = markerRect.centerX()
+            val markerCenterY = markerRect.centerY()
+            val hitRect = RectF(
+                markerCenterX - touchSize / 2,
+                markerCenterY - touchSize / 2,
+                markerCenterX + touchSize / 2,
+                markerCenterY + touchSize / 2,
+            )
+            if (
+                hitRect.intersect(
+                    0f,
+                    visibleRect.top.coerceAtLeast(0f),
+                    width.toFloat(),
+                    visibleRect.bottom.coerceAtMost(height.toFloat()),
+                )
+            ) {
+                textHighlightNoteMarkers += TextHighlightNoteMarker(
+                    bookmark = highlight,
+                    markerRect = markerRect,
+                    hitRect = hitRect,
+                    anchorX = markerCenterX + callBack.imgBgPaddingStart,
+                    anchorTop = endpoint.line.lineTop + relativeOffset + callBack.headerHeight,
+                    anchorBottom = endpoint.line.lineBottom + relativeOffset + callBack.headerHeight,
+                )
+            }
+        }
+    }
+
+    private fun drawTextHighlightNoteMarkerIcons(canvas: Canvas) {
+        if (textHighlightNoteMarkers.isEmpty()) return
+        val drawable = textHighlightNoteMarkerDrawable ?: return
+        val markerColor = if (AppConfig.isEInkMode) {
+            ReadBookConfig.textColor
+        } else {
+            ColorUtils.withAlpha(ReadBookConfig.textAccentColor, NOTE_MARKER_ALPHA)
+        }
+        DrawableCompat.setTint(drawable, markerColor)
+        canvas.withSave {
+            clipRect(
+                0f,
+                visibleRect.top.coerceAtLeast(0f),
+                width.toFloat(),
+                visibleRect.bottom.coerceAtMost(height.toFloat()),
+            )
+            textHighlightNoteMarkers.forEach { marker ->
+                val rect = marker.markerRect
+                drawable.setBounds(
+                    rect.left.toInt(),
+                    rect.top.toInt(),
+                    rect.right.toInt(),
+                    rect.bottom.toInt(),
+                )
+                drawable.draw(this)
+            }
+        }
+    }
+
+    private fun findTextHighlightEndpoint(
+        page: TextPage,
+        endChapterPosition: Int,
+    ): TextHighlightEndpoint? {
+        for (line in page.lines) {
+            val endpointX = textHighlightNoteEndpointX(line, endChapterPosition) ?: continue
+            return TextHighlightEndpoint(line = line, x = endpointX)
+        }
+        return null
+    }
+
+    internal fun hasTextHighlightNoteSpacers(page: TextPage): Boolean {
+        if (textHighlightNotesByEndChapter[page.chapterIndex].isNullOrEmpty()) return false
+        return page.lines.any { textHighlightNoteSpacerPositions(it).isNotEmpty() }
+    }
+
+    internal fun textHighlightNoteSpacerPositions(line: TextLine): List<Float> {
+        val highlights = textHighlightNotesByEndChapter[line.textPage.chapterIndex].orEmpty()
+        if (highlights.isEmpty()) return emptyList()
+        return highlights
+            .mapNotNull { textHighlightNoteEndpointX(line, it.endChapterPos) }
+            .distinct()
+            .sorted()
+    }
+
+    internal val textHighlightNoteSpacerWidthPx: Float
+        get() = (
+            NOTE_MARKER_GAP_DP + NOTE_MARKER_SIZE_DP + NOTE_MARKER_TRAILING_GAP_DP
+        ).dpToPx().toFloat()
+
+    private fun textHighlightNoteEndpointX(
+        line: TextLine,
+        endChapterPosition: Int,
+    ): Float? {
+        var chapterPosition = line.chapterPosition
+        for (column in line.columns) {
+            if (column !is TextBaseColumn) continue
+            val columnEndPosition = chapterPosition + column.charData.length
+            if (
+                endChapterPosition > chapterPosition &&
+                endChapterPosition <= columnEndPosition
+            ) {
+                return column.end
+            }
+            chapterPosition = columnEndPosition
+        }
+        return null
     }
 
     private fun drawTextHighlightWave(
@@ -390,6 +576,15 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         } else {
             false
         }
+        findTextHighlightNoteMarker(x, y)?.let { marker ->
+            callBack.onTextHighlightClick(
+                marker.bookmark,
+                marker.anchorX,
+                marker.anchorTop,
+                marker.anchorBottom,
+            )
+            return true
+        }
         var handled = false
         touch(x, y) { relativeOffset, textPos, textPage, textLine, column ->
             if (column is TextBaseColumn) {
@@ -403,6 +598,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                 if (highlight != null) {
                     callBack.onTextHighlightClick(
                         highlight,
+                        x + callBack.imgBgPaddingStart,
                         textLine.lineTop + relativeOffset + callBack.headerHeight,
                         textLine.lineBottom + relativeOffset + callBack.headerHeight,
                     )
@@ -475,6 +671,25 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
             }
         }
         return handled
+    }
+
+    private fun findTextHighlightNoteMarker(x: Float, y: Float): TextHighlightNoteMarker? {
+        var match: TextHighlightNoteMarker? = null
+        var nearestDistance = Float.MAX_VALUE
+        textHighlightNoteMarkers.forEach { marker ->
+            if (!marker.hitRect.contains(x, y)) return@forEach
+            val deltaX = x - marker.markerRect.centerX()
+            val deltaY = y - marker.markerRect.centerY()
+            val distance = deltaX * deltaX + deltaY * deltaY
+            if (
+                distance < nearestDistance ||
+                distance == nearestDistance && marker.bookmark.time > (match?.bookmark?.time ?: 0L)
+            ) {
+                match = marker
+                nearestDistance = distance
+            }
+        }
+        return match
     }
 
     private fun columnChapterPosition(textLine: TextLine, target: TextBaseColumn): Int {
@@ -576,9 +791,11 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
             }
             val textPage = relativePage(relativePos)
             for ((lineIndex, textLine) in textPage.lines.withIndex()) {
-                if (textLine.isTouch(x, y, relativeOffset)) {
+                if (!textLine.isTouchY(y, relativeOffset)) continue
+                val textX = sourceTextX(textLine, x) ?: return
+                if (textLine.isTouch(textX, y, relativeOffset)) {
                     for ((charIndex, textColumn) in textLine.columns.withIndex()) {
-                        if (textColumn.isTouch(x)) {
+                        if (textColumn.isTouch(textX)) {
                             touched.invoke(
                                 relativeOffset,
                                 TextPos(relativePos, lineIndex, charIndex),
@@ -631,9 +848,11 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                         }
                     }
                     val columns = textLine.columns
+                    val textX = sourceTextX(textLine, x, snapSpacerToPrevious = true)
+                        ?: continue
                     for (charIndex in columns.indices) {
                         val textColumn = columns[charIndex]
-                        if (textColumn.isTouch(x)) {
+                        if (textColumn.isTouch(textX)) {
                             touched.invoke(
                                 relativeOffset,
                                 TextPos(relativePos, lineIndex, charIndex),
@@ -642,7 +861,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                             return
                         }
                     }
-                    val isLast = columns.first().start < x
+                    val isLast = columns.first().start < textX
                     val charIndex = if (isLast) columns.lastIndex + 1 else -1
                     val textColumn = if (isLast) columns.last() else columns.first()
                     touched.invoke(
@@ -654,6 +873,37 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                 }
             }
         }
+    }
+
+    private fun sourceTextX(
+        line: TextLine,
+        visualX: Float,
+        snapSpacerToPrevious: Boolean = false,
+    ): Float? {
+        var inlineOffset = 0f
+        textHighlightNoteSpacerPositions(line).forEach { spacerX ->
+            val spacerStart = spacerX + inlineOffset
+            val spacerEnd = spacerStart + textHighlightNoteSpacerWidthPx
+            when {
+                visualX < spacerStart -> return visualX - inlineOffset
+                visualX <= spacerEnd -> {
+                    return if (snapSpacerToPrevious) spacerX - 0.5f else null
+                }
+            }
+            inlineOffset += textHighlightNoteSpacerWidthPx
+        }
+        return visualX - inlineOffset
+    }
+
+    private fun decoratedTextX(
+        line: TextLine,
+        sourceX: Float,
+        includeSpacerAtPosition: Boolean,
+    ): Float {
+        val spacerCount = textHighlightNoteSpacerPositions(line).count { spacerX ->
+            spacerX < sourceX || includeSpacerAtPosition && spacerX == sourceX
+        }
+        return sourceX + spacerCount * textHighlightNoteSpacerWidthPx
     }
 
     fun getCurVisiblePage(): TextPage {
@@ -720,8 +970,17 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         selectStart.columnIndex = max(0, charIndex)
         val textLine = relativePage(relativePagePos).getLine(lineIndex)
         val textColumn = textLine.getColumn(charIndex)
+        val sourceX = if (charIndex < textLine.columns.size) {
+            textColumn.start
+        } else {
+            textColumn.end
+        }
         upSelectedStart(
-            if (charIndex < textLine.columns.size) textColumn.start else textColumn.end,
+            decoratedTextX(
+                line = textLine,
+                sourceX = sourceX,
+                includeSpacerAtPosition = true,
+            ),
             textLine.lineBottom + relativeOffset(relativePagePos),
             textLine.lineTop + relativeOffset(relativePagePos)
         )
@@ -745,8 +1004,13 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         val textLine = relativePage(relativePage).getLine(lineIndex)
         selectEnd.columnIndex = min(charIndex, textLine.columns.lastIndex)
         val textColumn = textLine.getColumn(charIndex)
+        val sourceX = if (charIndex > -1) textColumn.end else textColumn.start
         upSelectedEnd(
-            if (charIndex > -1) textColumn.end else textColumn.start,
+            decoratedTextX(
+                line = textLine,
+                sourceX = sourceX,
+                includeSpacerAtPosition = false,
+            ),
             textLine.lineBottom + relativeOffset(relativePage)
         )
         upSelectChars()
@@ -979,8 +1243,27 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
             }
         }
         private const val SELECTION_OVERLAY_ALPHA = 0.12f
+        private const val NOTE_MARKER_SIZE_DP = 12
+        private const val NOTE_MARKER_GAP_DP = 2
+        private const val NOTE_MARKER_TRAILING_GAP_DP = 2
+        private const val NOTE_MARKER_TOUCH_SIZE_DP = 24
+        private const val NOTE_MARKER_ALPHA = 0.76f
         private val cursorWidth = 24.dpToPx()
     }
+
+    private data class TextHighlightEndpoint(
+        val line: TextLine,
+        val x: Float,
+    )
+
+    private data class TextHighlightNoteMarker(
+        val bookmark: Bookmark,
+        val markerRect: RectF,
+        val hitRect: RectF,
+        val anchorX: Float,
+        val anchorTop: Float,
+        val anchorBottom: Float,
+    )
 
     interface CallBack {
         val headerHeight: Int
@@ -996,6 +1279,11 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         fun onLongScreenshotTouchEvent(event: MotionEvent): Boolean
         fun oldClickImg(src: String): Boolean
         fun clickImg(click: String, src: String)
-        fun onTextHighlightClick(bookmark: Bookmark, top: Float, bottom: Float)
+        fun onTextHighlightClick(
+            bookmark: Bookmark,
+            anchorX: Float,
+            top: Float,
+            bottom: Float,
+        )
     }
 }

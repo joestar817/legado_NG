@@ -18,6 +18,7 @@ import android.util.LruCache
 import android.text.TextPaint
 import androidx.annotation.Keep
 import androidx.core.graphics.PathParser
+import androidx.core.graphics.withSave
 import io.legado.app.help.PaintPool
 import io.legado.app.help.book.isImage
 import io.legado.app.help.config.AppConfig
@@ -168,7 +169,10 @@ data class TextLine(
     }
 
     fun draw(view: ContentTextView, canvas: Canvas) {
-        if (AppConfig.optimizeRender) {
+        val inlineNoteSpacers = view.textHighlightNoteSpacerPositions(this)
+        if (inlineNoteSpacers.isNotEmpty()) {
+            drawTextLineWithInlineNoteSpacers(view, canvas, inlineNoteSpacers)
+        } else if (AppConfig.optimizeRender) {
             canvasRecorder.recordIfNeededThenDraw(canvas, view.width, height.toInt()) {
                 drawTextLine(view, this)
             }
@@ -202,6 +206,49 @@ data class TextLine(
             ReadBookConfig.fullLineUnderlineEnabled
         ) {
             drawFullLineUnderline(canvas)
+        }
+    }
+
+    private fun drawTextLineWithInlineNoteSpacers(
+        view: ContentTextView,
+        canvas: Canvas,
+        spacerPositions: List<Float>,
+    ) {
+        var sourceStart = 0f
+        var inlineOffset = 0f
+        spacerPositions.forEach { spacerX ->
+            drawTextLineSegment(
+                view = view,
+                canvas = canvas,
+                clipStart = sourceStart + inlineOffset,
+                clipEnd = spacerX + inlineOffset,
+                inlineOffset = inlineOffset,
+            )
+            sourceStart = spacerX
+            inlineOffset += view.textHighlightNoteSpacerWidthPx
+        }
+        drawTextLineSegment(
+            view = view,
+            canvas = canvas,
+            clipStart = sourceStart + inlineOffset,
+            clipEnd = view.width.toFloat(),
+            inlineOffset = inlineOffset,
+        )
+    }
+
+    private fun drawTextLineSegment(
+        view: ContentTextView,
+        canvas: Canvas,
+        clipStart: Float,
+        clipEnd: Float,
+        inlineOffset: Float,
+    ) {
+        if (clipEnd <= clipStart) return
+        val underlineOverflow = 10.dpToPx().toFloat()
+        canvas.withSave {
+            clipRect(clipStart, -underlineOverflow, clipEnd, height + underlineOverflow)
+            translate(inlineOffset, 0f)
+            drawTextLine(view, this)
         }
     }
 
