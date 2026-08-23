@@ -219,7 +219,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
                         "章节: ${ReadBook.curTextChapter?.title}\n" +
                         "触发: $reason"
             )
-            replaceRuleChanged()
+            replaceRuleChanged(curBook.bookUrl)
         }
     }
 
@@ -612,20 +612,24 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
     /**
      * 替换规则变化
      */
-    fun replaceRuleChanged() {
+    fun replaceRuleChanged(expectedBookUrl: String? = null) {
         execute {
             ReadBook.book?.let { book ->
+                val bookUrl = expectedBookUrl ?: book.bookUrl
+                if (book.bookUrl != bookUrl) return@execute
                 val useReplaceRule = book.getUseReplaceRule()
                 val contentProcessor = ContentProcessor.get(book.name, book.origin)
                 contentProcessor.upReplaceRules()
                 if (useReplaceRule) {
                     try {
                         book.setUseReplaceRule(false)
+                        if (ReadBook.book?.bookUrl != bookUrl) return@execute
                         ReadBook.reloadContentForReplaceRuleChangedAwait(resetPageOffset = false)
                     } finally {
                         book.setUseReplaceRule(true)
                     }
                 }
+                if (ReadBook.book?.bookUrl != bookUrl) return@execute
                 ReadBook.reloadContentForReplaceRuleChangedAwait(resetPageOffset = false)
             }
         }

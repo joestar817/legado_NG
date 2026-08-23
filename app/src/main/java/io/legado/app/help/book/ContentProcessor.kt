@@ -170,7 +170,9 @@ class ContentProcessor private constructor(
             }
             if (reSegment && book.getReSegment()) {
                 //重新分段
-                mContent = ContentHelp.reSegment(mContent, chapter.title)
+                mContent = HtmlImageTags.preserveDuringTextTransform(mContent) {
+                    ContentHelp.reSegment(it, chapter.title)
+                }
             }
             if (chineseConvert) {
                 //简繁转换
@@ -194,16 +196,21 @@ class ContentProcessor private constructor(
             if (useReplace && book.getUseReplaceRule()) {
                 //替换
                 effectiveReplaceRules = arrayListOf()
-                mContent = mContent.lines().joinToString("\n") { it.trim() }
+                val replaceRules = getContentReplaceRules()
+                if (replaceRules.any { it.pattern.isNotEmpty() }) {
+                    mContent = HtmlImageTags.preserveDuringTextTransform(mContent) {
+                        it.lines().joinToString("\n") { line -> line.trim() }
+                    }
+                }
                 AppLog.putDebug(
                     "替换净化调试: 开始正文替换\n" +
                             "书籍: ${book.name}\n" +
                             "书源: ${book.origin}\n" +
                             "章节: ${chapter.title}\n" +
-                            "规则数量: ${getContentReplaceRules().size}\n" +
+                            "规则数量: ${replaceRules.size}\n" +
                             "正文长度: ${mContent.length}"
                 )
-                getContentReplaceRules().forEach { item ->
+                replaceRules.forEach { item ->
                     if (item.pattern.isEmpty()) {
                         return@forEach
                     }
