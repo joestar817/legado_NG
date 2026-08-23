@@ -877,7 +877,8 @@
     <string name="bookmark_add">添加书签</string>
     <string name="bookmark_content">书签内容</string>
     <string name="bookmark_note">备注</string>
-    <string name="bookmark_note_hint">添加备注（可选）</string>
+    <string name="bookmark_note_optional">备注（可选）</string>
+    <string name="bookmark_note_hint">添加备注</string>
     <string name="text_highlight">划线</string>
     <string name="delete_highlight">删除划线</string>
     <string name="highlight_settings">划线设置</string>

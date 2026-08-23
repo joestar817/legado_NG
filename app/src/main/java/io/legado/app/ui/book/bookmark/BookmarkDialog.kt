@@ -12,6 +12,7 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.Bookmark
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
+import io.legado.app.ui.book.read.ReadFloatingAppearanceState
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.widget.dialog.applyNgDialogWindow
@@ -48,7 +49,11 @@ class BookmarkDialog() : BaseComposeDialogFragment() {
         }
         bookmark = currentBookmark
         val isEditing = arguments.getInt("editPos", -1) >= 0
-        val themeSnapshot = if (activity is ReadBookActivity) {
+        val useReadPreset = activity is ReadBookActivity
+        if (useReadPreset) {
+            ReadFloatingAppearanceState.refreshFromConfig()
+        }
+        val themeSnapshot = if (useReadPreset) {
             ReadDrawerStyle.themeSnapshot(requireContext())
         } else {
             NgThemeResolver.resolve(requireContext())
@@ -67,6 +72,7 @@ class BookmarkDialog() : BaseComposeDialogFragment() {
                         initialBookmarkText = currentBookmark.bookText,
                         initialNote = currentBookmark.content,
                         showDelete = isEditing,
+                        useReadPreset = useReadPreset,
                         onCancel = ::dismiss,
                         onConfirm = ::saveBookmark,
                         onDelete = ::deleteBookmark,

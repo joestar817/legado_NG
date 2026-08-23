@@ -878,7 +878,8 @@
     <string name="bookmark_add">Add to Bookmarks</string>
     <string name="bookmark_content">Bookmark content</string>
     <string name="bookmark_note">Note</string>
-    <string name="bookmark_note_hint">Add a note (optional)</string>
+    <string name="bookmark_note_optional">Note (optional)</string>
+    <string name="bookmark_note_hint">Add a note</string>
     <string name="text_highlight">Highlight</string>
     <string name="delete_highlight">Delete highlight</string>
     <string name="highlight_settings">Highlight settings</string>

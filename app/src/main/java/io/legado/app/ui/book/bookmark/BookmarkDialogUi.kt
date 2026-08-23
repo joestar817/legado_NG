@@ -2,7 +2,6 @@ package io.legado.app.ui.book.bookmark
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,7 +26,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
@@ -39,6 +38,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.book.read.ReadDrawerStyle
+import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
@@ -50,24 +51,30 @@ internal fun BookmarkDialogContent(
     initialBookmarkText: String,
     initialNote: String,
     showDelete: Boolean,
+    useReadPreset: Boolean,
     onCancel: () -> Unit,
     onConfirm: (bookText: String, content: String) -> Unit,
     onDelete: () -> Unit,
 ) {
     var bookmarkText by rememberSaveable { mutableStateOf(initialBookmarkText) }
     var note by rememberSaveable { mutableStateOf(initialNote) }
+    val glassStyle = if (useReadPreset) {
+        readFloatingGlassStyle()
+    } else {
+        NgGlassDefaults.style(
+            containerAlpha = NgTheme.effects.dialogAlpha,
+        ).copy(depthEdge = Color.Transparent)
+    }
 
     NgGlassSurface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(NgTheme.shapes.dialogDp.dp),
-        style = NgGlassDefaults.style(
-            containerAlpha = NgTheme.effects.dialogAlpha,
-        ).copy(depthEdge = Color.Transparent),
+        shape = RoundedCornerShape(24.dp),
+        style = glassStyle,
         contentPadding = PaddingValues(
             start = 20.dp,
-            top = 20.dp,
+            top = 14.dp,
             end = 20.dp,
-            bottom = 16.dp,
+            bottom = 14.dp,
         ),
     ) {
         Text(
@@ -75,8 +82,8 @@ internal fun BookmarkDialogContent(
             modifier = Modifier.fillMaxWidth(),
             color = Color(NgTheme.colors.onSurface),
             style = TextStyle(
-                fontSize = 22.sp,
-                lineHeight = 28.sp,
+                fontSize = 20.sp,
+                lineHeight = 26.sp,
                 fontWeight = FontWeight.Bold,
                 platformStyle = PlatformTextStyle(includeFontPadding = false),
             ),
@@ -86,35 +93,35 @@ internal fun BookmarkDialogContent(
             text = chapterName,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 10.dp),
+                .padding(top = 4.dp),
             color = Color(NgTheme.colors.onSurfaceVariant),
-            fontSize = 14.sp,
-            lineHeight = 19.sp,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        BookmarkTextField(
+        BookmarkFlatTextField(
             value = bookmarkText,
             onValueChange = { bookmarkText = it },
             label = stringResource(R.string.bookmark_content),
             fieldHeight = 160.dp,
             maxLines = 7,
-            modifier = Modifier.padding(top = 16.dp),
+            modifier = Modifier.padding(top = 8.dp),
         )
-        BookmarkTextField(
+        BookmarkFlatTextField(
             value = note,
             onValueChange = { note = it },
-            label = stringResource(R.string.bookmark_note),
+            label = stringResource(R.string.bookmark_note_optional),
             placeholder = stringResource(R.string.bookmark_note_hint),
-            fieldHeight = 64.dp,
+            fieldHeight = 52.dp,
             maxLines = 2,
-            modifier = Modifier.padding(top = 12.dp),
+            modifier = Modifier.padding(top = 10.dp),
         )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 14.dp),
+                .padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -142,7 +149,7 @@ internal fun BookmarkDialogContent(
 }
 
 @Composable
-private fun BookmarkTextField(
+private fun BookmarkFlatTextField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
@@ -152,24 +159,36 @@ private fun BookmarkTextField(
     placeholder: String = "",
 ) {
     val colors = NgTheme.colors
-    val shape = RoundedCornerShape(14.dp)
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    val outlineColor = if (focused) {
+    val dividerColor = if (focused) {
         Color(colors.primary)
     } else {
-        Color(colors.outline).copy(alpha = 0.62f)
+        Color(colors.outline).copy(alpha = 0.34f)
+    }
+    val fieldColor = if (NgTheme.snapshot.isEInk) {
+        Color(colors.inputContainer)
+    } else {
+        ReadDrawerStyle.dockSurfaceColor(alpha = 0.16f)
     }
 
-    Box(
+    Column(
         modifier = modifier.fillMaxWidth(),
     ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(start = 6.dp),
+            color = Color(colors.primary),
+            fontSize = 13.sp,
+            lineHeight = 16.sp,
+            maxLines = 1,
+        )
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 7.dp)
+                .padding(top = 4.dp)
                 .height(fieldHeight),
             textStyle = TextStyle(
                 color = Color(colors.onSurface),
@@ -186,14 +205,8 @@ private fun BookmarkTextField(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(fieldHeight)
-                        .clip(shape)
-                        .background(Color(colors.inputContainer).copy(alpha = 0.78f))
-                        .border(
-                            width = if (focused) 1.25.dp else 0.8.dp,
-                            color = outlineColor,
-                            shape = shape,
-                        )
-                        .padding(horizontal = 14.dp, vertical = 15.dp),
+                        .background(fieldColor)
+                        .padding(horizontal = 6.dp, vertical = 8.dp),
                     contentAlignment = Alignment.TopStart,
                 ) {
                     if (value.isEmpty() && placeholder.isNotEmpty()) {
@@ -208,16 +221,9 @@ private fun BookmarkTextField(
                 }
             },
         )
-        Text(
-            text = label,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .background(Color(colors.surface))
-                .padding(horizontal = 4.dp),
-            color = Color(colors.primary),
-            fontSize = 13.sp,
-            lineHeight = 16.sp,
-            maxLines = 1,
+        HorizontalDivider(
+            thickness = if (focused) 1.25.dp else 0.8.dp,
+            color = dividerColor,
         )
     }
 }
@@ -240,7 +246,7 @@ private fun BookmarkActionButton(
     val containerColor = if (isPrimary) {
         primary
     } else {
-        Color(colors.surface).copy(alpha = 0.90f)
+        Color.Transparent
     }
     val contentColor = if (isPrimary) Color(colors.onPrimary) else accent
 
