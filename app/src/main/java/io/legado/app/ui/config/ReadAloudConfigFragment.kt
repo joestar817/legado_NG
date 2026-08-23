@@ -127,9 +127,9 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
             },
             selectedEngineId = selectedId,
             onSelect = { engine -> selectMultiRoleEngine(engine.id) },
-            titleAction = selectedId?.takeIf { it.isNotBlank() }?.let {
-                getString(R.string.clear) to { selectMultiRoleEngine(null) }
-            }
+            onClear = selectedId?.takeIf { it.isNotBlank() }?.let {
+                { selectMultiRoleEngine(null) }
+            },
         ).show()
     }
 

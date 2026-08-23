@@ -26,20 +26,16 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.StopCircle
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,17 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,13 +75,12 @@ import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.config.TtsVoiceFilterSupport
 import io.legado.app.ui.config.TtsVoiceDrawerGroup
+import io.legado.app.ui.config.TtsEngineSelectionDrawerContent
 import io.legado.app.ui.config.TtsVoiceDrawerState
 import io.legado.app.ui.config.TtsVoiceOption
 import io.legado.app.ui.config.TtsVoicePreviewController
 import io.legado.app.ui.config.TtsVoiceSelectionDrawerContent
 import io.legado.app.ui.config.toDrawerCard
-import io.legado.app.ui.design.components.NgStatusTagSpec
-import io.legado.app.ui.design.components.NgStatusTagVariant
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgButton
@@ -98,8 +88,6 @@ import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
-import io.legado.app.ui.design.components.compose.NgManagementLeadingIcon
-import io.legado.app.ui.design.components.compose.NgManagementListCard
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.theme.NgTheme
@@ -269,46 +257,45 @@ private fun ReadAloudModeSheetContent(
     onStoryboard: () -> Unit,
 ) {
     val screenHeightDp = LocalConfiguration.current.screenHeightDp
-    val drawerModifier = when (screen) {
-        ModeDrawerScreen.MAIN -> Modifier.heightIn(max = (screenHeightDp * 0.82f).dp)
-        ModeDrawerScreen.ENGINES -> Modifier.height((screenHeightDp * 0.68f).dp)
-    }
     BackHandler(enabled = screen == ModeDrawerScreen.ENGINES, onBack = onBack)
-    NgBottomDrawerSurface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(drawerModifier),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (screen == ModeDrawerScreen.ENGINES) Modifier.fillMaxSize()
-                    else Modifier
-                )
-                .navigationBarsPadding()
-                .padding(
-                    horizontal = if (screen == ModeDrawerScreen.ENGINES) 12.dp else 16.dp,
-                    vertical = 6.dp,
-                ),
-        ) {
-            when (screen) {
-                ModeDrawerScreen.MAIN -> ModeMainContent(
-                    state = state,
-                    onDismiss = onDismiss,
-                    onModeChange = onModeChange,
-                    onOpenEngines = onOpenEngines,
-                    onAutoCreateChange = onAutoCreateChange,
-                    onAutoAssignChange = onAutoAssignChange,
-                    onSceneVoiceChange = onSceneVoiceChange,
-                    onStoryboard = onStoryboard,
-                )
-                ModeDrawerScreen.ENGINES -> EngineSelectionContent(
-                    state = state,
-                    onEngineSelect = onEngineSelect,
-                    onClearEngine = onClearEngine,
-                )
+    when (screen) {
+        ModeDrawerScreen.MAIN -> {
+            NgBottomDrawerSurface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = (screenHeightDp * 0.82f).dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                ) {
+                    ModeMainContent(
+                        state = state,
+                        onDismiss = onDismiss,
+                        onModeChange = onModeChange,
+                        onOpenEngines = onOpenEngines,
+                        onAutoCreateChange = onAutoCreateChange,
+                        onAutoAssignChange = onAutoAssignChange,
+                        onSceneVoiceChange = onSceneVoiceChange,
+                        onStoryboard = onStoryboard,
+                    )
+                }
             }
+        }
+
+        ModeDrawerScreen.ENGINES -> {
+            TtsEngineSelectionDrawerContent(
+                title = "多角色 TTS 引擎",
+                searchHint = "搜索多角色 TTS 引擎",
+                emptyText = "没有可用的多人朗读引擎",
+                engines = state.engines,
+                selectedEngineId = state.selectedEngine?.id,
+                loading = state.loadingEngines,
+                onSelect = onEngineSelect,
+                onClear = onClearEngine,
+            )
         }
     }
 }
@@ -565,93 +552,6 @@ private data class CapabilityTag(
     val text: String,
     val contentColorRes: Int,
     val containerColorRes: Int,
-)
-
-@Composable
-private fun ColumnScope.EngineSelectionContent(
-    state: ModeDrawerState,
-    onEngineSelect: (TtsEngineSetting) -> Unit,
-    onClearEngine: () -> Unit,
-) {
-    var query by remember { mutableStateOf("") }
-    var searchExpanded by remember { mutableStateOf(false) }
-    val searchFocusRequester = remember { FocusRequester() }
-    val engines = state.engines.filter {
-        query.isBlank() || it.name.contains(query.trim(), ignoreCase = true)
-    }
-    BackHandler(enabled = searchExpanded) {
-        searchExpanded = false
-        query = ""
-    }
-    LaunchedEffect(searchExpanded) {
-        if (searchExpanded) searchFocusRequester.requestFocus()
-    }
-    NgLongDrawerHeader(
-        title = "多角色 TTS 引擎",
-        actionIconRes = if (state.selectedEngine != null) R.drawable.ic_clear else null,
-        actionContentDescription = "清除选择",
-        onActionClick = if (state.selectedEngine != null) onClearEngine else null,
-        secondaryActionIconRes = R.drawable.ic_search,
-        secondaryActionContentDescription = if (searchExpanded) "收起搜索" else "搜索",
-        secondaryActionActive = searchExpanded || query.isNotBlank(),
-        onSecondaryActionClick = {
-            searchExpanded = !searchExpanded
-            if (!searchExpanded) query = ""
-        },
-    )
-    if (searchExpanded) {
-        ListeningSearchField(
-            query = query,
-            onQueryChange = { query = it },
-            hint = "搜索多角色 TTS 引擎",
-            focusRequester = searchFocusRequester,
-            hideHintWhenFocused = true,
-            modifier = Modifier.padding(top = 6.dp, bottom = 10.dp),
-        )
-    }
-    when {
-        state.loadingEngines -> ListeningLoadingState("正在加载引擎…")
-        engines.isEmpty() -> ListeningLoadingState("没有可用的多人朗读引擎")
-        else -> LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(engines, key = { it.id }) { engine ->
-                NgManagementListCard(
-                    title = engine.name,
-                    detailTags = engineSelectionTags(engine),
-                    selected = engine.id == state.selectedEngine?.id,
-                    onClick = { onEngineSelect(engine) },
-                    leading = {
-                        NgManagementLeadingIcon(
-                            iconRes = R.drawable.ic_ai_capability_tts,
-                            contentDescription = "TTS 引擎",
-                            tint = Color(NgTheme.colors.primary),
-                        )
-                    },
-                )
-            }
-        }
-    }
-}
-
-private fun engineSelectionTags(engine: TtsEngineSetting): List<NgStatusTagSpec> = listOf(
-    NgStatusTagSpec(
-        text = if (engine.enabled) "已启用" else "已禁用",
-        variant = if (engine.enabled) NgStatusTagVariant.SUCCESS else NgStatusTagVariant.WARNING,
-    ),
-    NgStatusTagSpec(
-        text = if (engine.type == TtsEngineType.SCRIPT) "脚本" else "系统",
-        variant = NgStatusTagVariant.INFO,
-    ),
-    NgStatusTagSpec(
-        text = engine.effectiveVoices().size.takeIf { it > 0 }
-            ?.let { "$it 个发音人" }
-            ?: "未获取",
-        variant = NgStatusTagVariant.INFO,
-    ),
 )
 
 private data class MoreDrawerState(
@@ -1312,62 +1212,6 @@ internal fun ListeningActionRow(
 }
 
 @Composable
-private fun ListeningSearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    hint: String,
-    modifier: Modifier = Modifier,
-    hideHintWhenFocused: Boolean = false,
-    focusRequester: FocusRequester? = null,
-) {
-    var isFocused by remember { mutableStateOf(false) }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(42.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(NgTheme.colors.surface).copy(alpha = 0.86f))
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.Search,
-            contentDescription = null,
-            tint = Color(NgTheme.colors.primary),
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(9.dp))
-        BasicTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = Modifier
-                .weight(1f)
-                .then(
-                    if (focusRequester != null) Modifier.focusRequester(focusRequester)
-                    else Modifier
-                )
-                .onFocusChanged { isFocused = it.isFocused },
-            singleLine = true,
-            textStyle = TextStyle(
-                color = Color(NgTheme.colors.onSurface),
-                fontSize = 14.sp,
-            ),
-            cursorBrush = SolidColor(Color(NgTheme.colors.primary)),
-            decorationBox = { inner ->
-                if (query.isEmpty() && (!hideHintWhenFocused || !isFocused)) {
-                    Text(
-                        text = hint,
-                        color = Color(NgTheme.colors.onSurfaceVariant),
-                        fontSize = 14.sp,
-                    )
-                }
-                inner()
-            },
-        )
-    }
-}
-
-@Composable
 private fun ListeningChip(
     label: String,
     selected: Boolean,
@@ -1387,30 +1231,6 @@ private fun ListeningChip(
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 8.dp, vertical = 4.dp),
     )
-}
-
-@Composable
-private fun ListeningLoadingState(
-    text: String,
-    showProgress: Boolean = false,
-) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (showProgress) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(28.dp),
-                    color = Color(NgTheme.colors.primary),
-                    strokeWidth = 2.5.dp,
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-            Text(
-                text = text,
-                color = Color(NgTheme.colors.onSurfaceVariant),
-                fontSize = 14.sp,
-            )
-        }
-    }
 }
 
 @Composable
