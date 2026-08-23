@@ -338,35 +338,35 @@ private fun CharacterTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp),
+                .height(52.dp),
             color = colorResource(R.color.ng_surface_card),
-            shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
+            shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp),
             tonalElevation = 0.dp,
             shadowElevation = 1.dp,
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 4.dp),
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
+                        .width(34.dp)
+                        .height(36.dp)
                         .clickable(role = Role.Button, onClick = onBack),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_arrow_back),
+                        painter = painterResource(R.drawable.ic_chevron_left_search),
                         contentDescription = stringResource(R.string.back),
-                        tint = Color(NgTheme.colors.onSurface),
-                        modifier = Modifier.size(28.dp),
+                        tint = Color(NgTheme.colors.onTopBar),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
                 Text(
@@ -376,24 +376,41 @@ private fun CharacterTopBar(
                     modifier = Modifier
                         .padding(start = 8.dp)
                         .weight(1f),
-                    color = Color(NgTheme.colors.onSurface),
+                    color = Color(NgTheme.colors.onTopBar),
                     fontSize = 17.sp,
                     lineHeight = 21.sp,
                     fontWeight = FontWeight.Medium,
                 )
-                if (!selectionMode && menuItems.isNotEmpty()) {
+                if (selectionMode) {
+                    Box(
+                        modifier = Modifier
+                            .width(56.dp)
+                            .height(36.dp)
+                            .clickable(role = Role.Button, onClick = onBack),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.character_selection_done),
+                            color = Color(NgTheme.colors.primary),
+                            fontSize = 14.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                        )
+                    }
+                } else if (menuItems.isNotEmpty()) {
                     Box {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
                                 .clickable(role = Role.Button) { menuExpanded = true },
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_grid_menu),
                                 contentDescription = stringResource(R.string.menu),
-                                tint = Color(NgTheme.colors.onSurface),
+                                tint = Color(NgTheme.colors.onTopBar),
                                 modifier = Modifier.size(20.dp),
                             )
                         }
@@ -401,8 +418,7 @@ private fun CharacterTopBar(
                             expanded = menuExpanded,
                             onDismissRequest = { menuExpanded = false },
                             items = menuItems,
-                            width = 176.dp,
-                            rowMinHeight = 48.dp,
+                            rowMinHeight = 44.dp,
                             variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
                             menuContainerColor = colorResource(R.color.ng_surface_card),
                             properties = PopupProperties(
@@ -431,9 +447,9 @@ private fun RouteWarning() {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         color = colorResource(R.color.ng_warning_container),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp),
     ) {
         Text(
             text = stringResource(R.string.character_tts_route_fallback),
@@ -507,9 +523,9 @@ private fun CharacterList(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 16.dp,
-                    top = 10.dp,
-                    end = 16.dp,
+                    start = 14.dp,
+                    top = 4.dp,
+                    end = 14.dp,
                     bottom = 12.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -567,7 +583,7 @@ private fun CharacterCard(
     onVoiceClick: () -> Unit,
     onPromote: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
+    val shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp)
     Surface(
         modifier = Modifier
             .fillMaxWidth()

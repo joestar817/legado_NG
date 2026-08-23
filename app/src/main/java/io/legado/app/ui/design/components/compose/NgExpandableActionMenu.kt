@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +47,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.Dp
@@ -57,6 +60,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
@@ -75,7 +79,8 @@ data class NgExpandableActionMenuItem(
     val title: String? = null,
     val checked: Boolean = false,
     val danger: Boolean = false,
-    val themedIconKind: NgThemedActionIconKind? = null
+    val themedIconKind: NgThemedActionIconKind? = null,
+    val enabled: Boolean = true,
 )
 
 enum class NgExpandableActionMenuVariant {
@@ -84,9 +89,57 @@ enum class NgExpandableActionMenuVariant {
     DRILL_IN
 }
 
-enum class NgExpandableActionMenuWidthVariant(val width: Dp) {
+enum class NgExpandableActionMenuWidthVariant(val width: Dp?) {
+    CONTENT(null),
     STANDARD(152.dp),
     GROUPED_LABELS(160.dp),
+}
+
+@Composable
+private fun rememberNgExpandableMenuContentWidth(
+    items: List<NgExpandableActionMenuItem>,
+): Dp {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val textStyle = MaterialTheme.typography.bodyMedium
+    val minWidth = 96.dp
+    val maxWidth = (configuration.screenWidthDp.dp - 16.dp)
+        .coerceAtMost(240.dp)
+        .coerceAtLeast(minWidth)
+
+    return remember(items, configuration, density, textStyle, maxWidth) {
+        fun itemTitle(item: NgExpandableActionMenuItem): String {
+            return item.title ?: item.titleRes
+                .takeIf { it != 0 }
+                ?.let { titleRes -> context.getString(titleRes) }
+                .orEmpty()
+        }
+
+        fun groupWidthPx(group: List<NgExpandableActionMenuItem>): Float {
+            if (group.isEmpty()) return 0f
+            val reserveIconSpace = group.any {
+                it.iconRes != 0 || it.themedIconKind != null
+            }
+            return group.maxOf { item ->
+                val textWidthPx = textMeasurer.measure(
+                    text = AnnotatedString(itemTitle(item)),
+                    style = textStyle,
+                    maxLines = 1,
+                ).size.width.toFloat()
+                var fixedWidthDp = 24.dp
+                if (reserveIconSpace) fixedWidthDp += 30.dp
+                if (item.checked) fixedWidthDp += 30.dp
+                if (item.children.isNotEmpty()) fixedWidthDp += 30.dp
+                val rowWidthPx = textWidthPx + with(density) { fixedWidthDp.toPx() }
+                maxOf(rowWidthPx, groupWidthPx(item.children))
+            }
+        }
+
+        with(density) { groupWidthPx(items).toDp() }
+            .coerceIn(minWidth, maxWidth)
+    }
 }
 
 /**
@@ -112,9 +165,10 @@ fun NgExpandableActionMenu(
     variant: NgExpandableActionMenuVariant = NgExpandableActionMenuVariant.DROPDOWN,
     properties: PopupProperties = PopupProperties(),
     widthVariant: NgExpandableActionMenuWidthVariant =
-        NgExpandableActionMenuWidthVariant.STANDARD,
+        NgExpandableActionMenuWidthVariant.CONTENT,
 ) {
-    val resolvedWidth = width ?: widthVariant.width
+    val contentWidth = rememberNgExpandableMenuContentWidth(items)
+    val resolvedWidth = width ?: widthVariant.width ?: contentWidth
     var expandedItemIds by remember(items, defaultExpandedItemIds) {
         mutableStateOf(defaultExpandedItemIds)
     }
@@ -227,7 +281,9 @@ private fun NgDrillInExpandableActionMenu(
         if (!expanded) activeParentId = null
     }
     val activeParent = activeParentId?.let { parentId ->
-        items.firstOrNull { it.itemId == parentId && it.children.isNotEmpty() }
+        items.firstOrNull {
+            it.itemId == parentId && it.enabled && it.children.isNotEmpty()
+        }
     }
     val visibleItems = activeParent?.children ?: items
     val shape = RoundedCornerShape(NgTheme.shapes.largeDp.dp)
@@ -457,7 +513,7 @@ private fun NgExpandableActionMenuRows(
                     )
                 )
             }
-            val isExpanded = item.itemId in expandedItemIds
+            val isExpanded = item.enabled && item.itemId in expandedItemIds
             NgExpandableActionMenuRow(
                 item = item,
                 isExpanded = isExpanded,
@@ -494,13 +550,13 @@ private fun NgExpandableActionMenuRow(
 ) {
     val contentColor = Color(
         if (item.danger) NgTheme.colors.error else NgTheme.colors.onSurface
-    )
+    ).copy(alpha = if (item.enabled) 1f else 0.38f)
     val themedIconKind = item.themedIconKind
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = rowMinHeight)
-            .clickable(onClick = onClick)
+            .clickable(enabled = item.enabled, onClick = onClick)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
