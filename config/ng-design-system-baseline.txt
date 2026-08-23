@@ -6,7 +6,6 @@ hex|app/src/main/java/io/legado/app/ui/code/TextMateColorScheme2.kt|5
 hex|app/src/main/java/io/legado/app/ui/widget/anima/RotateLoading.kt|1
 hex|app/src/main/java/io/legado/app/ui/widget/anima/StepLoadingView.kt|1
 hex|app/src/main/java/io/legado/app/ui/widget/image/ArcView.kt|1
-hex|app/src/main/res/layout/activity_audio_play.xml|1
 hex|app/src/main/res/layout/layout_loading_dialog.xml|2
 hex|app/src/main/res/layout/switch_episode_video_dialog.xml|5
 hex|app/src/main/res/layout/switch_speed_video_dialog.xml|4
@@ -15,7 +14,6 @@ hex|app/src/main/res/layout/video_layout_controller_full.xml|8
 hex|app/src/main/res/layout/video_layout_controller.xml|5
 hex|app/src/main/res/layout/video_player_control.xml|1
 hex|app/src/main/res/layout/view_fastscroller.xml|1
-theme_store|app/src/main/java/io/legado/app/ui/book/audio/AudioPlayActivity.kt|1
 theme_store|app/src/main/java/io/legado/app/ui/book/read/page/entities/column/TextColumn.kt|1
 theme_store|app/src/main/java/io/legado/app/ui/book/read/page/AutoPager.kt|2
 theme_store|app/src/main/java/io/legado/app/ui/book/read/BaseReadBookActivity.kt|2

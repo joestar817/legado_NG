@@ -1529,6 +1529,7 @@ class BookInfoActivity :
                 Intent(this, AudioPlayActivity::class.java)
                     .putExtra("bookUrl", book.bookUrl)
                     .putExtra("inBookshelf", viewModel.inBookshelf)
+                    .also(AudioPlayActivity::applyAutoStart)
             )
             book.isVideo -> readBookResult.launch(
                 Intent(this, VideoPlayerActivity::class.java)

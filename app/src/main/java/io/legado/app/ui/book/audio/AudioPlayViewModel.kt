@@ -24,6 +24,7 @@ class AudioPlayViewModel(application: Application) : BaseViewModel(application) 
     val titleData = MutableLiveData<String>()
     val coverData = MutableLiveData<String>()
     val customBtnListData = MutableLiveData<Boolean>()
+    var consumedAutoStartToken: String? = null
 
     fun initData(intent: Intent, success: (() -> Unit)) = AudioPlay.apply {
         execute {

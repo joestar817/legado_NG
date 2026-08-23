@@ -170,7 +170,7 @@ internal fun ReadAloudPlayerScreen(
 }
 
 @Composable
-private fun ListeningPlayerBackground(
+internal fun ListeningPlayerBackground(
     artwork: ImageBitmap?,
     useNoCoverFallback: Boolean,
 ) {
@@ -726,7 +726,7 @@ private fun PlayerTextScene(
 }
 
 @Composable
-private fun PlayerCover(
+internal fun PlayerCover(
     artwork: ImageBitmap?,
     fallbackTitle: String,
     fallbackAuthor: String,
@@ -948,7 +948,7 @@ private fun PlayerQuickActions(
 }
 
 @Composable
-private fun ReadAloudProgressSlider(
+internal fun ReadAloudProgressSlider(
     value: Int,
     bufferedValue: Int,
     max: Int,
@@ -1113,25 +1113,30 @@ private fun PlayerDockSideAction(
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
-    Column(
+    Box(
         modifier = modifier
             .fillMaxHeight()
             .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = label,
-            tint = Color(NgTheme.colors.onSurface).copy(alpha = 0.78f),
-            modifier = Modifier.size(20.dp),
-        )
-        Text(
-            text = label,
-            modifier = Modifier.padding(top = 2.dp),
-            color = Color(NgTheme.colors.onSurface).copy(alpha = 0.74f),
-            fontSize = 11.sp,
-        )
+        Column(
+            modifier = Modifier.offset(y = (-1).dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = label,
+                tint = Color(NgTheme.colors.onSurface).copy(alpha = 0.78f),
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = label,
+                color = Color(NgTheme.colors.onSurface).copy(alpha = 0.74f),
+                fontSize = 10.sp,
+                lineHeight = 11.sp,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -1158,7 +1163,7 @@ private fun PlayerDockIconAction(
 }
 
 @Composable
-private fun ListeningLoadingBars() {
+internal fun ListeningLoadingBars() {
     val contentColor = Color(NgTheme.colors.onSurface)
     val transition = rememberInfiniteTransition(label = "readAloudLoading")
     val phase by transition.animateFloat(
@@ -1237,7 +1242,7 @@ private fun PlayerVoicePill(
 }
 
 @Composable
-private fun PlayerTranslucentSurface(
+internal fun PlayerTranslucentSurface(
     modifier: Modifier,
     shape: Shape,
     containerAlpha: Float,

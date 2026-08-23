@@ -422,7 +422,6 @@ object NgMenuPopup {
             R.id.menu_edit_source,
             R.id.menu_edit_content,
             R.id.menu_fullscreen_edit -> R.drawable.ic_edit
-            R.id.menu_copy_audio_url,
             R.id.menu_copy_video_url,
             R.id.menu_copy_book_url,
             R.id.menu_copy_toc_url,
@@ -485,8 +484,6 @@ object NgMenuPopup {
             R.id.menu_full_screen -> R.drawable.ic_fullscreen
             R.id.menu_config_settings,
             R.id.menu_server_config -> R.drawable.ic_settings
-            R.id.menu_wake_lock -> R.drawable.ic_lock_outline
-            R.id.menu_skip_credits -> R.drawable.ic_skip_next
             else -> titleFallbackIconRes()
         }
     }

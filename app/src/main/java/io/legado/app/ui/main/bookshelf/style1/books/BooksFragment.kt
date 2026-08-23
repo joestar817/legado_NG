@@ -33,6 +33,7 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.data.entities.BookSource
 import io.legado.app.help.book.BookHelp
+import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.removeType
 import io.legado.app.help.config.AppConfig
@@ -47,6 +48,7 @@ import io.legado.app.model.localBook.LocalBook
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.service.ExportBookService
 import io.legado.app.ui.book.character.BookCharacterActivity
+import io.legado.app.ui.book.audio.AudioPlayActivity
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.utils.SelectDirectoryContract
 import io.legado.app.ui.book.info.BookAiAssistantLauncher
@@ -385,6 +387,14 @@ class BooksFragment() : BaseFragment(0),
     }
 
     override fun onListen(book: Book) {
+        if (book.isAudio) {
+            startActivity<AudioPlayActivity> {
+                putExtra("bookUrl", book.bookUrl)
+                putExtra("inBookshelf", true)
+                AudioPlayActivity.applyAutoStart(this)
+            }
+            return
+        }
         viewLifecycleOwner.lifecycleScope.launch {
             val prepared = ReadAloudLauncher.prepareState(
                 book = book,

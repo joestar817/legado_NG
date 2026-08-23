@@ -48,7 +48,7 @@ Material 3 只作为 Compose 实现底层，不能把 Material 默认外观当�
 | P0 | 设置项 `NgSettingsItem` | Chevron、Switch、Value、Custom、启用、禁用、长摘要 | AI 设置菜单、朗读设置菜单、“我的”、朗读更多设置 | `NgSettingsItemView`、`Ng.SettingsItem`、`Ng.SettingsTitle`、`Ng.SettingsSummary` | AI 设置与朗读设置均已通过 View 组件验收，已覆盖 Chevron、Switch、静态／动态摘要、整行点击和导航；下一步校准 Compose，`Value`／`Custom` 仍待真实页面验收 |
 | P0 | 设置图标 `NgSettingsIcon` | 图片图标、文字图标、无图标 | AI 设置菜单、朗读设置菜单、“我的” | `Ng.SettingsIconImage`、`Ng.SettingsIcon`、`ng_bg_settings_icon` | 36dp 图标容器、7dp 内边距、同一图标家族和动态强调色；不允许大小跳变 |
 | P0 | 按钮 `NgButton` | Primary、Secondary、Dialog Primary、Dialog Secondary、Disabled、Danger | Provider 详情、Skill、AI 净化确认、角色编辑 | `NgSecondaryButtonView`、`BookInfoActionButton`、Compose `NgActionBarButton`、`Ng.SmallButton.*`、`Ng.DialogButton.*` | 已通过 View Secondary；Compose 图文操作栏按钮已在主题背景抽屉进入 Trial，复刻 42dp／图标／描边基线，其余 Variant 继续逐页验收 |
-| P0 | 图标按钮 `NgIconButton` | 普通、强调、危险、禁用、图片上操作 | TitleBar、听书播放器、书籍详情、角色页 | 现有 Toolbar menu、`ng_bg_read_aloud_top_button` | 触控区域不小于 40/48dp；图标视口统一；不能用字符代替正式图标 |
+| P0 | 图标按钮 `NgIconButton` | 普通、强调、危险、禁用、图片上操作 | TitleBar、听书播放器、书籍详情、角色页 | 现有 Toolbar menu、Compose 播放器图标按钮 | 触控区域不小于 40/48dp；图标视口统一；不能用字符代替正式图标 |
 | P0 | 内容卡片 `NgCard/ListCard` | Entry、List、Provider、Prompt、Selected、Disabled | AI Provider、AI Prompt、模型列表、TTS 引擎与发音人、书源与替换规则 | `Ng.Card`、`Ng.ProviderCard`、`Ng.PromptCard`、现有 `ng_bg_*card` | 复用当前 14dp 内边距、18dp 圆角和透明白承载面；标题、摘要、状态与尾部操作对齐 |
 | P0 | 搜索 `NgSearchBar` | 页面、BottomSheet、清除、IME Search | Provider、模型列表、模型选择抽屉、TTS 引擎详情 | `NgSearchBar`、`Ng.SearchPill` | 已通过 44dp 高度、15sp、统一图标／清除／焦点；TTS 详情只按显示名称搜索，待真机复验过滤联动和状态 |
 | P0 | 标题栏菜单 `NgActionPopup` | 新增类型、更多、选中、分组 | Provider 新增菜单 | `NgMenuPopup`、`NgActionPopup` | 已通过 18dp 圆角、44dp 行高、自适应宽度；不回退系统方形 PopupMenu |

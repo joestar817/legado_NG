@@ -57,6 +57,10 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
 
     private var listeningThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
 
+    protected open fun listeningBook() = ReadBook.book
+
+    protected open fun listeningSourceOrigin(): String? = ReadBook.bookSource?.bookSourceUrl
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         BottomSheetDialog(requireContext(), theme)
 
@@ -71,8 +75,8 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        val book = ReadBook.book
-        val sourceOrigin = ReadBook.bookSource?.bookSourceUrl
+        val book = listeningBook()
+        val sourceOrigin = listeningSourceOrigin()
         listeningThemeSnapshot = ListeningCoverTheme.drawerSnapshot(
             ListeningCoverTheme.cached(book, sourceOrigin)
                 ?: ListeningCoverTheme.fallback(requireContext(), book)
@@ -226,7 +230,7 @@ private fun ReadAloudSpeedSheet(
 }
 
 @Composable
-private fun ReadAloudSliderSheet(
+internal fun ReadAloudSliderSheet(
     title: String,
     value: Int,
     max: Int,

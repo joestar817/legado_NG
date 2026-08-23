@@ -1091,7 +1091,7 @@ private fun VoiceTagChip(
 }
 
 @Composable
-private fun ListeningSettingsGroup(
+internal fun ListeningSettingsGroup(
     title: String?,
     content: @Composable () -> Unit,
 ) {
@@ -1122,7 +1122,7 @@ private fun ListeningSettingsGroup(
 }
 
 @Composable
-private fun ListeningDivider() {
+internal fun ListeningDivider() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1133,7 +1133,7 @@ private fun ListeningDivider() {
 }
 
 @Composable
-private fun ListeningActionRow(
+internal fun ListeningActionRow(
     title: String,
     summary: String,
     onClick: () -> Unit,

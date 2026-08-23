@@ -28,6 +28,8 @@ import io.legado.app.ui.book.character.BookCharacterActivity
 import io.legado.app.ui.book.character.BookCharacterTtsActivity
 import io.legado.app.ui.book.character.BookStoryboardActivity
 import io.legado.app.ui.book.listen.ListeningCoverTheme
+import io.legado.app.ui.book.read.page.provider.ChapterProvider.reviewChar
+import io.legado.app.ui.book.read.page.provider.ChapterProvider.srcReplaceChar
 import io.legado.app.ui.config.ConfigActivity
 import io.legado.app.ui.config.ConfigTag
 import io.legado.app.ui.config.TtsSheetLaunchDebouncer
@@ -239,6 +241,8 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         lastParagraphIndex = -1
         cachedParagraphs = chapter.getParagraphs(false).mapNotNull { paragraph ->
             val text = paragraph.text
+                .replace(reviewChar, ' ')
+                .replace(srcReplaceChar, ' ')
                 .replace(Regex("\\s+"), " ")
                 .trim()
                 .take(160)

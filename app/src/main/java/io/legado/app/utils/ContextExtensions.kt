@@ -79,6 +79,9 @@ fun Context.startActivityForBook(
     val intent = Intent(this, cls)
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     intent.putExtra("bookUrl", book.bookUrl)
+    if (book.isAudio) {
+        AudioPlayActivity.applyAutoStart(intent)
+    }
     intent.apply(configIntent)
     inheritReadAloudMiniScope(intent, cls)
     startActivity(intent)

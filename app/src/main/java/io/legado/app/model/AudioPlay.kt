@@ -166,6 +166,30 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     /**
+     * 从已保存进度重新开始播放。
+     *
+     * Service 已退出时，内存中的播放地址可能已经失效；只清理地址并重新解析，
+     * 保留 [durChapterIndex] 与 [durChapterPos]，避免通过重新选章才能恢复播放。
+     */
+    fun playFromSavedProgress(): Boolean {
+        val canReuseActivePlayback = AudioPlayService.isRun &&
+                durPlayUrl.isNotEmpty() &&
+                AudioPlayService.url == durPlayUrl
+        when {
+            canReuseActivePlayback && status == Status.PLAY -> return true
+            canReuseActivePlayback && status == Status.PAUSE -> {
+                resume(context)
+                return true
+            }
+            !canReuseActivePlayback -> {
+                durPlayUrl = ""
+            }
+        }
+        loadOrUpPlayUrl()
+        return false
+    }
+
+    /**
      * 加载播放URL
      */
     private fun loadPlayUrl() {
@@ -177,6 +201,7 @@ object AudioPlay : CoroutineScope by MainScope() {
                 upDurChapter()
                 val chapter = durChapter
                 if (chapter == null) {
+                    upLoading(false)
                     removeLoading(index)
                     return
                 }
@@ -190,6 +215,7 @@ object AudioPlay : CoroutineScope by MainScope() {
                     .onSuccess { content ->
                         val content = content.trim()
                         if (content.isEmpty()) {
+                            upLoading(false)
                             appCtx.toastOnUi("未获取到资源链接")
                         } else {
                             contentLoadFinish(chapter, content)
@@ -198,12 +224,14 @@ object AudioPlay : CoroutineScope by MainScope() {
                         AppLog.put("获取资源链接出错\n$it", it, true)
                         upLoading(false)
                     }.onCancel {
+                        upLoading(false)
                         removeLoading(index)
                     }.onFinally {
                         callback?.upLyric(durLyric)
                         removeLoading(index)
                     }
             } else {
+                upLoading(false)
                 removeLoading(index)
                 appCtx.toastOnUi("book or source is null")
             }

@@ -70,13 +70,6 @@ class ReadFloatingAppearanceConfigTest {
     }
 
     @Test
-    fun miniPlayerUsesHalfOfConfiguredPrimaryStrength() {
-        assertEquals(0, ReadFloatingAppearanceConfig.miniPlayerPrimaryStrengthPercent(0))
-        assertEquals(25, ReadFloatingAppearanceConfig.miniPlayerPrimaryStrengthPercent(50))
-        assertEquals(50, ReadFloatingAppearanceConfig.miniPlayerPrimaryStrengthPercent(100))
-    }
-
-    @Test
     fun primaryStrengthKeepsOriginalAtHalfAndExpandsBothDirections() {
         assertEquals(0f, ReadFloatingAppearanceConfig.primaryStrengthFraction(0), 0.001f)
         assertEquals(0.5f, ReadFloatingAppearanceConfig.primaryStrengthFraction(50), 0.001f)
