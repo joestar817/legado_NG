@@ -124,11 +124,9 @@
     <string name="character_delete_formal_title">Delete formal role</string>
     <string name="character_delete_formal_message">Delete “%1$s”?</string>
     <string name="character_delete_formal_done">Formal role deleted.</string>
-    <string name="character_quick_delete">Quick delete</string>
-    <string name="character_quick_delete_enabled">Quick delete enabled. Swiping right deletes immediately.</string>
-    <string name="character_quick_delete_disabled">Quick delete disabled.</string>
     <string name="character_batch_manage">Batch manage</string>
     <string name="character_selection_title">Select roles</string>
+    <string name="character_selection_done">Done</string>
     <string name="character_selected_count">Selected %1$d</string>
     <string name="character_delete_choice_title">Delete %1$d roles</string>
     <string name="character_delete_only_action">Delete only</string>
@@ -180,6 +178,12 @@
     <string name="book_storyboard_delete_message">Delete the storyboard cache for “%1$s”? Chapter text and TTS audio cache will not be deleted.</string>
     <string name="book_storyboard_delete_done">Storyboard cache deleted.</string>
     <string name="book_storyboard_delete_failed">Failed to delete storyboard cache: %1$s</string>
+    <string name="book_storyboard_selection_title">Select storyboards</string>
+    <string name="book_storyboard_selection_done">Done</string>
+    <string name="book_storyboard_batch_delete_title">Delete %1$d storyboards</string>
+    <string name="book_storyboard_batch_delete_message">Delete storyboard caches for the selected %1$d chapters? Chapter text and TTS audio cache will not be deleted.</string>
+    <string name="book_storyboard_batch_delete_done">Deleted %1$d storyboard caches.</string>
+    <string name="book_storyboard_batch_delete_failed">Failed to delete %1$d storyboard caches.</string>
     <string name="character_aliases_hint">Separate aliases with commas</string>
     <string name="character_intro_hint">Briefly describe the role</string>
     <string name="character_promote_title">Promote role</string>

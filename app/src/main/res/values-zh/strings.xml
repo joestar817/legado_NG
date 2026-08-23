@@ -123,11 +123,9 @@
     <string name="character_delete_formal_title">删除正式角色</string>
     <string name="character_delete_formal_message">删除“%1$s”？</string>
     <string name="character_delete_formal_done">已删除正式角色。</string>
-    <string name="character_quick_delete">快速删除</string>
-    <string name="character_quick_delete_enabled">已开启快速删除，右滑后直接删除。</string>
-    <string name="character_quick_delete_disabled">已关闭快速删除。</string>
     <string name="character_batch_manage">批量管理</string>
     <string name="character_selection_title">选择角色</string>
+    <string name="character_selection_done">完成</string>
     <string name="character_selected_count">已选 %1$d</string>
     <string name="character_delete_choice_title">删除 %1$d 个角色</string>
     <string name="character_delete_only_action">仅删除</string>
@@ -179,6 +177,12 @@
     <string name="book_storyboard_delete_message">删除“%1$s”的分镜缓存？不会删除章节正文和 TTS 音频缓存。</string>
     <string name="book_storyboard_delete_done">已删除分镜缓存。</string>
     <string name="book_storyboard_delete_failed">删除分镜缓存失败：%1$s</string>
+    <string name="book_storyboard_selection_title">选择分镜</string>
+    <string name="book_storyboard_selection_done">完成</string>
+    <string name="book_storyboard_batch_delete_title">删除 %1$d 章分镜</string>
+    <string name="book_storyboard_batch_delete_message">删除选中的 %1$d 章分镜缓存？不会删除章节正文和 TTS 音频缓存。</string>
+    <string name="book_storyboard_batch_delete_done">已删除 %1$d 章分镜缓存。</string>
+    <string name="book_storyboard_batch_delete_failed">%1$d 章分镜缓存删除失败。</string>
     <string name="character_aliases_hint">多个别称用逗号分隔</string>
     <string name="character_intro_hint">简要描述角色</string>
     <string name="character_promote_title">角色转正</string>

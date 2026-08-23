@@ -254,16 +254,20 @@ class ReadAloudTtsRouter private constructor(
                 .filter { it.isRoutableRole() }
             val bindings = appDb.bookCharacterDao.getTtsBindings(workKey)
             val multiRoleEngineId = AppConfig.multiRoleTtsEngineId
+            val engineIndex = TtsEngineStore.engines().associateBy { it.id }
+            val engineResolver: (String?) -> TtsEngineSetting? = { engineId ->
+                engineId?.let(engineIndex::get)
+            }
             val currentEngineBindings = bindings
                 .filter { it.targetType != BookCharacterTtsBinding.TargetType.NARRATOR }
                 .filter { isBookBindingCompatible(it, multiRoleEngineId) }
             val bindingMap = currentEngineBindings
                 .mapNotNull { binding ->
-                binding.toRouteBinding()
+                binding.toRouteBinding(engineResolver)
                     ?.let { (binding.targetType to binding.targetId) to it }
                 }.toMap()
             val unavailableBindingKeys = currentEngineBindings
-                .filter(::isBindingUnavailable)
+                .filter { isBindingUnavailable(it, engineResolver) }
                 .map { it.targetType to it.targetId }
                 .toSet()
             val protectedSceneBindingKeys = currentEngineBindings
@@ -273,7 +277,7 @@ class ReadAloudTtsRouter private constructor(
             val narratorBinding = bindings.asSequence()
                 .filter { it.targetType == BookCharacterTtsBinding.TargetType.NARRATOR }
                 .sortedByDescending { it.updatedAt }
-                .mapNotNull { it.toRouteBinding() }
+                .mapNotNull { it.toRouteBinding(engineResolver) }
                 .firstOrNull()
             val globalBindings = resolveGlobalBindings(
                 multiRoleEngineId = AppConfig.multiRoleTtsEngineId,
@@ -281,7 +285,7 @@ class ReadAloudTtsRouter private constructor(
                 narratorVoiceId = AppConfig.defaultNarratorTtsVoiceId,
                 dialogueMaleVoiceId = AppConfig.defaultDialogueMaleTtsVoiceId,
                 dialogueFemaleVoiceId = AppConfig.defaultDialogueFemaleTtsVoiceId,
-                engineResolver = TtsEngineStore::engine
+                engineResolver = engineResolver
             )
             val characterIds = characters.map { it.id }.toSet()
             return createResolved(
@@ -445,8 +449,15 @@ class ReadAloudTtsRouter private constructor(
         }
 
         internal fun isBindingUnavailable(binding: BookCharacterTtsBinding): Boolean {
+            return isBindingUnavailable(binding, TtsEngineStore::engine)
+        }
+
+        private fun isBindingUnavailable(
+            binding: BookCharacterTtsBinding,
+            engineResolver: (String?) -> TtsEngineSetting?
+        ): Boolean {
             if (binding.bindingMode == BookCharacterTtsBinding.BindingMode.INHERIT) return false
-            val engine = TtsEngineStore.engine(binding.engineId)
+            val engine = engineResolver(binding.engineId)
                 ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
                 ?: return true
             val voiceId = binding.voiceId?.takeIf { it.isNotBlank() }
@@ -454,9 +465,11 @@ class ReadAloudTtsRouter private constructor(
             return engine.enabledVoices().none { it.id == voiceId }
         }
 
-        private fun BookCharacterTtsBinding.toRouteBinding(): RouteBinding? {
+        private fun BookCharacterTtsBinding.toRouteBinding(
+            engineResolver: (String?) -> TtsEngineSetting?
+        ): RouteBinding? {
             if (bindingMode == BookCharacterTtsBinding.BindingMode.INHERIT) return null
-            val engine = TtsEngineStore.engine(engineId)?.takeIf { it.enabled } ?: return null
+            val engine = engineResolver(engineId)?.takeIf { it.enabled } ?: return null
             val safeVoiceId = voiceId
                 ?.takeIf { it.isNotBlank() }
                 ?.takeIf { id -> engine.enabledVoices().any { it.id == id } }

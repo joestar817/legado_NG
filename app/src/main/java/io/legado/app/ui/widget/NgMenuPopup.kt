@@ -416,7 +416,6 @@ object NgMenuPopup {
             R.id.menu_clear,
             R.id.menu_clear_cache -> R.drawable.ic_outline_delete
 
-            R.id.menu_quick_delete -> R.drawable.ic_book_info_delete
             R.id.menu_restore_temporary -> R.drawable.ic_restore
 
             R.id.menu_edit,

@@ -1,33 +1,23 @@
 package io.legado.app.ui.book.character
 
-import android.animation.ObjectAnimator
-import android.animation.ValueAnimator
-import android.content.res.ColorStateList
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.view.LayoutInflater
-import android.view.ViewGroup
-import android.view.animation.LinearInterpolator
 import androidx.activity.addCallback
-import androidx.core.view.isVisible
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.recyclerview.widget.ItemTouchHelper
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import io.legado.app.R
 import io.legado.app.base.BaseActivity
+import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookTtsCastRole
-import io.legado.app.databinding.ActivityBookStoryboardBinding
-import io.legado.app.databinding.ItemBookStoryboardCacheBinding
-import io.legado.app.databinding.ItemBookStoryboardGroupBinding
-import io.legado.app.databinding.ItemBookStoryboardGroupSegmentBinding
 import io.legado.app.help.ai.AiTtsStoryboardHelper
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.tts.ReadAloudTtsRouter
@@ -42,20 +32,13 @@ import io.legado.app.help.tts.normalizeStoryboardSynthesisText
 import io.legado.app.help.tts.toTtsSynthesisContext
 import io.legado.app.help.tts.forEngineCapabilities
 import io.legado.app.help.tts.writeReadAloudAudioWithWavRetry
-import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.theme.accentColor
-import io.legado.app.lib.theme.primaryColor
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
-import io.legado.app.ui.widget.NgActionPopup
-import io.legado.app.ui.widget.NgActionPopupItem
-import io.legado.app.ui.widget.recycler.ItemTouchCallback
-import io.legado.app.utils.ColorUtils
+import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonObject
 import io.legado.app.utils.getPrefBoolean
-import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.CancellationException
@@ -66,12 +49,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import splitties.init.appCtx
 
-class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
-    ItemTouchCallback.Callback {
+class BookStoryboardActivity : BaseActivity<ComposeActivityBinding>() {
 
-    override val binding by viewBinding(ActivityBookStoryboardBinding::inflate)
-    private val sceneAdapter by lazy { StoryboardAdapter() }
-    private val cacheAdapter by lazy { StoryboardCacheAdapter() }
+    override val binding by viewBinding(ComposeActivityBinding::inflate)
     private lateinit var workKey: String
     private var bookName: String = ""
     private var bookAuthor: String = ""
@@ -79,16 +59,32 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
     private var storyboardJob: Job? = null
     private var renderJob: Job? = null
     private var previewPlayer: ExoPlayer? = null
-    private var loadingAnimator: ObjectAnimator? = null
-    private var canonicalCharacterIds: Set<Long> = emptySet()
-    private var castRoleNames: Set<String> = emptySet()
-    private var stableCastRoleIds: Set<Long> = emptySet()
-    private var pendingCastRoleIds: Set<Long> = emptySet()
-    private var renderedRouter: ReadAloudTtsRouter? = null
-    private var renderedBaseEngine: TtsEngineSetting? = null
-    private var showingCacheList = true
-    private var cachedRowCount = 0
-    private var quickDelete = false
+    private var showingCacheList by mutableStateOf(true)
+    private var cacheRows by mutableStateOf<List<StoryboardCacheRow>>(emptyList())
+    private var cacheLoading by mutableStateOf(false)
+    private var cacheLoadingMessage by mutableStateOf("正在加载分镜缓存…")
+    private var cacheErrorMessage by mutableStateOf<String?>(null)
+    private var cacheSelectionMode by mutableStateOf(false)
+    private var selectedCacheChapterIndexes by mutableStateOf<Set<Int>>(emptySet())
+    private var detailChapterTitle by mutableStateOf("")
+    private var detailSummary by mutableStateOf<StoryboardDetailSummaryUi?>(null)
+    private var detailChapterIndex: Int? = null
+    private var renderedDetailChapterIndex: Int? = null
+    private var detailRefreshAllowed by mutableStateOf(false)
+    private var detailLoading by mutableStateOf(false)
+    private var detailLoadingMessage by mutableStateOf("正在生成 AI 分镜…")
+    private var detailErrorMessage by mutableStateOf<String?>(null)
+    private var detailScenes by mutableStateOf<List<StoryboardSceneUi>>(emptyList())
+    private var expandedSceneIndexes by mutableStateOf<Set<Int>>(emptySet())
+    private var expandedSegmentKeys by mutableStateOf<Set<String>>(emptySet())
+    private var confirmationRequest by mutableStateOf<StoryboardConfirmationRequest?>(null)
+
+    private data class StoryboardConfirmationRequest(
+        val title: String,
+        val message: String,
+        val destructive: Boolean,
+        val onConfirm: () -> Unit,
+    )
 
     private data class StoryboardCacheRow(
         val chapterIndex: Int,
@@ -101,15 +97,12 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
         val chapterTitle: String,
         val chapterIndex: Int,
         val scenes: List<StoryboardScene>,
-        val visibleDialogueCount: Int,
-        val visibleThoughtCount: Int,
-        val canonicalCharacterIds: Set<Long>,
-        val castRoleNames: Set<String>,
-        val stableCastRoleIds: Set<Long>,
-        val pendingCastRoleIds: Set<Long>,
-        val router: ReadAloudTtsRouter?,
-        val baseEngine: TtsEngineSetting?,
+        val summary: StoryboardDetailSummaryUi,
         val currentParagraphIndex: Int?
+    )
+
+    private data class StoryboardRoutingState(
+        val scenes: List<StoryboardSceneUi>,
     )
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
@@ -117,17 +110,81 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
         bookAuthor = intent.getStringExtra(BookCharacterActivity.EXTRA_BOOK_AUTHOR).orEmpty()
         workKey = intent.getStringExtra(BookCharacterActivity.EXTRA_WORK_KEY)
             ?: BookCharacterProfile.workKey(bookName, bookAuthor)
-        binding.recyclerView.setEdgeEffectColor(primaryColor)
-        binding.recyclerView.layoutManager = LinearLayoutManager(this)
-        binding.recyclerView.adapter = cacheAdapter
-        ItemTouchHelper(ItemTouchCallback(this).apply {
-            isCanSwipe = true
-        }).attachToRecyclerView(binding.recyclerView)
-        binding.ivStoryboardLoading.imageTintList = ColorStateList.valueOf(accentColor)
-        binding.btnClose.setOnClickListener { navigateBack() }
-        binding.btnMore.setOnClickListener { showStoryboardMenu() }
         onBackPressedDispatcher.addCallback(this) { navigateBack() }
+        initContent()
         loadCacheList()
+    }
+
+    private fun initContent() {
+        binding.composeView.setViewCompositionStrategy(
+            ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+        )
+        binding.composeView.setContent {
+            NgAppTheme {
+                if (showingCacheList) {
+                    BookStoryboardCacheScreen(
+                        rows = cacheRows.map { row ->
+                            StoryboardCacheUiRow(
+                                chapterIndex = row.chapterIndex,
+                                chapterNumber = row.chapterTitle.storyboardChapterNumber(row.chapterIndex),
+                                title = row.chapterTitle,
+                                meta = row.entry?.storyboard?.let { storyboard ->
+                                    "${storyboard.scenes.size} 个场景 · ${storyboard.segmentCount} 个片段"
+                                } ?: "尚未生成",
+                                isCurrent = row.isCurrent,
+                                deletable = row.entry != null,
+                            )
+                        },
+                        loading = cacheLoading,
+                        loadingMessage = cacheLoadingMessage,
+                        errorMessage = cacheErrorMessage,
+                        selectionMode = cacheSelectionMode,
+                        selectedChapterIndexes = selectedCacheChapterIndexes,
+                        onBack = ::navigateBack,
+                        onExitSelection = ::exitCacheSelection,
+                        onEnterSelection = { enterCacheSelection() },
+                        onEnterSelectionWithChapter = { chapterIndex ->
+                            enterCacheSelection(chapterIndex)
+                        },
+                        onToggleSelection = ::toggleCacheSelection,
+                        onSelectAll = ::selectAllCachedStoryboards,
+                        onInvertSelection = ::invertCachedStoryboardSelection,
+                        onDeleteSelected = ::confirmDeleteSelectedStoryboards,
+                        onRowClick = ::openCacheRow,
+                        onDeleteRequested = ::requestDeleteCachedStoryboard,
+                    )
+                } else {
+                    BookStoryboardDetailScreen(
+                        chapterTitle = detailChapterTitle,
+                        summary = detailSummary,
+                        scenes = detailScenes,
+                        expandedSceneIndexes = expandedSceneIndexes,
+                        expandedSegmentKeys = expandedSegmentKeys,
+                        refreshEnabled = detailRefreshAllowed,
+                        loading = detailLoading,
+                        loadingMessage = detailLoadingMessage,
+                        errorMessage = detailErrorMessage,
+                        onBack = ::navigateBack,
+                        onRefresh = ::confirmRegenerateStoryboard,
+                        onToggleScene = ::toggleScene,
+                        onToggleSegmentDetails = ::toggleSegmentDetails,
+                        onPreview = ::previewStoryboardSegment,
+                    )
+                }
+                confirmationRequest?.let { request ->
+                    BookStoryboardConfirmationDialog(
+                        title = request.title,
+                        message = request.message,
+                        destructive = request.destructive,
+                        onDismiss = { confirmationRequest = null },
+                        onConfirm = {
+                            confirmationRequest = null
+                            request.onConfirm()
+                        },
+                    )
+                }
+            }
+        }
     }
 
     private fun navigateBack() {
@@ -141,9 +198,13 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
 
     private fun loadCacheList() {
         showingCacheList = true
+        detailChapterIndex = null
+        exitCacheSelection()
         stopPreview()
         renderJob?.cancel()
         renderJob = null
+        cacheRows = emptyList()
+        cacheErrorMessage = null
         setLoading(true, "正在加载分镜缓存…")
         storyboardJob?.cancel()
         storyboardJob = lifecycleScope.launch {
@@ -182,67 +243,96 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
             result
                 .onSuccess { rows ->
                     setLoading(false)
-                    binding.tvChapterTitle.text = getString(R.string.book_storyboard)
-                    val cachedCount = rows.count { it.entry != null }
-                    cachedRowCount = cachedCount
-                    updateCacheListHeader()
-                    binding.recyclerView.adapter = cacheAdapter
-                    cacheAdapter.submitRows(rows)
-                    binding.tvEmpty.isVisible = false
-                    binding.recyclerView.isVisible = true
+                    cacheRows = rows
+                    cacheErrorMessage = null
                 }
                 .onFailure { renderEmpty("分镜缓存加载失败：${it.localizedMessage ?: "未知错误"}") }
             storyboardJob = null
         }
     }
 
-    private fun showStoryboardMenu() {
-        val items = if (showingCacheList) {
-            listOf(
-                NgActionPopupItem(
-                    itemId = R.id.menu_quick_delete,
-                    titleRes = R.string.character_quick_delete,
-                    iconRes = R.drawable.ic_outline_delete,
-                    checked = quickDelete
-                )
-            )
-        } else {
-            listOf(
-                NgActionPopupItem(
-                    itemId = R.id.menu_refresh,
-                    titleRes = R.string.book_storyboard_regenerate,
-                    iconRes = R.drawable.ic_refresh_black_24dp
-                )
-            )
-        }
-        NgActionPopup(
-            context = this,
-            items = items
-        ) { item ->
-            when (item.itemId) {
-                R.id.menu_quick_delete -> {
-                    quickDelete = !quickDelete
-                    toastOnUi(
-                        if (quickDelete) {
-                            R.string.character_quick_delete_enabled
-                        } else {
-                            R.string.character_quick_delete_disabled
-                        }
-                    )
-                }
+    private fun enterCacheSelection(chapterIndex: Int? = null) {
+        cacheSelectionMode = true
+        selectedCacheChapterIndexes = chapterIndex
+            ?.takeIf { index -> cacheRows.any { it.chapterIndex == index && it.entry != null } }
+            ?.let { index -> setOf(index) }
+            ?: emptySet()
+    }
 
-                R.id.menu_refresh -> confirmRegenerateStoryboard()
-            }
-        }.show(binding.btnMore)
+    private fun exitCacheSelection() {
+        cacheSelectionMode = false
+        selectedCacheChapterIndexes = emptySet()
+    }
+
+    private fun toggleCacheSelection(chapterIndex: Int) {
+        if (cacheRows.none { it.chapterIndex == chapterIndex && it.entry != null }) return
+        selectedCacheChapterIndexes = if (chapterIndex in selectedCacheChapterIndexes) {
+            selectedCacheChapterIndexes - chapterIndex
+        } else {
+            selectedCacheChapterIndexes + chapterIndex
+        }
+    }
+
+    private fun selectAllCachedStoryboards() {
+        selectedCacheChapterIndexes = cacheRows
+            .filter { it.entry != null }
+            .mapTo(linkedSetOf()) { it.chapterIndex }
+    }
+
+    private fun invertCachedStoryboardSelection() {
+        val selectableIndexes = cacheRows
+            .filter { it.entry != null }
+            .mapTo(linkedSetOf()) { it.chapterIndex }
+        selectedCacheChapterIndexes = selectableIndexes - selectedCacheChapterIndexes
+    }
+
+    private fun confirmDeleteSelectedStoryboards() {
+        val rows = cacheRows.filter { row ->
+            row.chapterIndex in selectedCacheChapterIndexes && row.entry != null
+        }
+        if (rows.isEmpty()) return
+        confirmationRequest = StoryboardConfirmationRequest(
+            title = getString(R.string.book_storyboard_batch_delete_title, rows.size),
+            message = getString(R.string.book_storyboard_batch_delete_message, rows.size),
+            destructive = true,
+            onConfirm = {
+                exitCacheSelection()
+                deleteCachedStoryboards(rows)
+            },
+        )
+    }
+
+    private fun openCacheRow(chapterIndex: Int) {
+        val row = cacheRows.firstOrNull { it.chapterIndex == chapterIndex } ?: return
+        row.entry?.let { entry ->
+            showStoryboard(entry.storyboard, row.chapterIndex)
+        } ?: run {
+            if (row.isCurrent) loadStoryboard()
+        }
+    }
+
+    private fun requestDeleteCachedStoryboard(chapterIndex: Int) {
+        val row = cacheRows.firstOrNull { it.chapterIndex == chapterIndex } ?: return
+        if (row.entry == null) return
+        confirmDeleteCachedStoryboard(row)
+    }
+
+    private fun String.storyboardChapterNumber(fallbackIndex: Int): String {
+        return Regex("""^\s*第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*[章节卷回]""")
+            .find(this)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?: fallbackIndex.toString()
     }
 
     private fun confirmRegenerateStoryboard() {
         if (storyboardJob?.isActive == true) return
-        alert(titleResource = R.string.book_storyboard_regenerate) {
-            setMessage(getString(R.string.book_storyboard_regenerate_message))
-            yesButton { loadStoryboard(forceRegenerate = true) }
-            noButton()
-        }
+        confirmationRequest = StoryboardConfirmationRequest(
+            title = getString(R.string.book_storyboard_regenerate),
+            message = getString(R.string.book_storyboard_regenerate_message),
+            destructive = false,
+            onConfirm = { loadStoryboard(forceRegenerate = true) },
+        )
     }
 
     private fun loadStoryboard(forceRegenerate: Boolean = false) {
@@ -253,7 +343,17 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
             return
         }
         showingCacheList = false
+        detailChapterIndex = ReadBook.durChapterIndex
+        detailChapterTitle = chapter.title
+        detailSummary = null
+        detailRefreshAllowed = true
+        detailScenes = emptyList()
+        detailErrorMessage = null
+        expandedSceneIndexes = emptySet()
+        expandedSegmentKeys = emptySet()
         if (forceRegenerate) stopPreview()
+        renderJob?.cancel()
+        renderJob = null
         setLoading(true, "正在生成 AI 分镜…")
         storyboardJob?.cancel()
         storyboardJob = lifecycleScope.launch {
@@ -297,219 +397,238 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
         }
     }
 
-    private fun renderEmpty(message: String) = binding.run {
+    private fun renderEmpty(message: String) {
         setLoading(false)
-        tvChapterTitle.text = if (showingCacheList) {
-            getString(R.string.book_storyboard)
-        } else {
+        if (showingCacheList) {
+            cacheRows = emptyList()
+            cacheErrorMessage = message
+            return
+        }
+        detailChapterTitle = detailChapterTitle.ifBlank {
             ReadBook.curTextChapter?.title ?: getString(R.string.book_storyboard)
         }
-        tvSummary.text = ""
-        if (showingCacheList) cachedRowCount = 0
-        tvEmpty.text = message
-        tvEmpty.isVisible = true
-        recyclerView.isVisible = false
+        detailSummary = null
+        detailScenes = emptyList()
+        detailErrorMessage = message
     }
 
     private fun showStoryboard(storyboard: ChapterStoryboard, chapterIndex: Int) {
         showingCacheList = false
+        detailChapterIndex = chapterIndex
         if (storyboard.scenes.isEmpty()) {
             renderEmpty(getString(R.string.book_storyboard_empty))
             return
         }
-        binding.tvChapterTitle.text = storyboard.chapterTitle
-        setLoading(true, "正在加载分镜…")
+        detailChapterTitle = storyboard.chapterTitle
+        detailSummary = null
+        detailRefreshAllowed = chapterIndex == ReadBook.durChapterIndex
+        detailErrorMessage = null
         renderJob?.cancel()
-        renderJob = lifecycleScope.launch {
-            val result = withContext(IO) {
-                runCatching { prepareStoryboardRenderState(storyboard, chapterIndex) }
+        renderJob = null
+        runCatching { prepareStoryboardRenderState(storyboard, chapterIndex) }
+            .onSuccess { state ->
+                renderStoryboard(state)
+                loadStoryboardRoutingState(
+                    chapterIndex = chapterIndex,
+                    chapterTitle = state.chapterTitle,
+                    scenes = state.scenes,
+                )
             }
-            result
-                .onSuccess(::renderStoryboard)
-                .onFailure {
-                    if (it !is CancellationException) {
-                        renderEmpty("分镜加载失败：${it.localizedMessage ?: "未知错误"}")
-                    }
+            .onFailure {
+                if (it !is CancellationException) {
+                    renderEmpty("分镜加载失败：${it.localizedMessage ?: "未知错误"}")
                 }
-            renderJob = null
-        }
+            }
     }
 
     private fun prepareStoryboardRenderState(
         storyboard: ChapterStoryboard,
         chapterIndex: Int
     ): StoryboardRenderState {
-        val canonicalIds = appDb.bookCharacterDao.getCharacters(workKey).mapTo(mutableSetOf()) { it.id }
-        val castRoles = appDb.bookCharacterDao.getTtsCastRoles(workKey)
-            .filter { it.linkedCharacterId == null && it.isRoutableRole() }
         val scenes = storyboard.scenes.map { scene ->
             scene.copy(segments = scene.segments.filterNot { it.isChapterTitleSegment(storyboard.chapterTitle) })
         }.filter { it.segments.isNotEmpty() }
+        val identityKeysByName = buildMap {
+            storyboard.identityLinks.forEach { link ->
+                val identityKey = link.characterId
+                    ?.takeIf { it > 0L }
+                    ?.let { "character:$it" }
+                    ?: link.castRoleId
+                        ?.takeIf { it > 0L }
+                        ?.let { "cast:$it" }
+                if (identityKey != null) {
+                    link.aliasName.normalizedStoryboardPersonName()?.let { name ->
+                        putIfAbsent(name, identityKey)
+                    }
+                }
+            }
+            scenes.forEach { scene ->
+                scene.segments.forEach { segment ->
+                    val identityKey = segment.speakerId
+                        ?.takeIf { it > 0L }
+                        ?.let { "character:$it" }
+                        ?: segment.castRoleId
+                            ?.takeIf { it > 0L }
+                            ?.let { "cast:$it" }
+                    if (identityKey != null) {
+                        segment.speakerName?.normalizedStoryboardPersonName()?.let { name ->
+                            putIfAbsent(name, identityKey)
+                        }
+                    }
+                }
+            }
+        }
+        val participantKeys = buildSet {
+            scenes.forEach { scene ->
+                scene.characters.forEach { name ->
+                    name.normalizedStoryboardPersonName()?.let { normalizedName ->
+                        add(identityKeysByName[normalizedName] ?: "name:$normalizedName")
+                    }
+                }
+                scene.segments.forEach { segment ->
+                    if (segment.type != StoryboardSegmentType.NARRATION) {
+                        val participantKey = segment.speakerId
+                            ?.takeIf { it > 0L }
+                            ?.let { "character:$it" }
+                            ?: segment.castRoleId
+                                ?.takeIf { it > 0L }
+                                ?.let { "cast:$it" }
+                            ?: segment.speakerName
+                                ?.normalizedStoryboardPersonName()
+                                ?.let { identityKeysByName[it] ?: "name:$it" }
+                        participantKey?.let(::add)
+                    }
+                }
+            }
+        }
         return StoryboardRenderState(
             chapterTitle = storyboard.chapterTitle,
             chapterIndex = chapterIndex,
             scenes = scenes,
-            visibleDialogueCount = scenes.sumOf { scene ->
-                scene.segments.count { it.type == StoryboardSegmentType.DIALOGUE }
-            },
-            visibleThoughtCount = scenes.sumOf { scene ->
-                scene.segments.count { it.type == StoryboardSegmentType.THOUGHT }
-            },
-            canonicalCharacterIds = canonicalIds,
-            stableCastRoleIds = castRoles.filter { it.isVisibleTemporaryRole() }
-                .mapTo(mutableSetOf()) { it.id },
-            pendingCastRoleIds = castRoles.filter {
-                it.identityState == BookTtsCastRole.IdentityState.PENDING
-            }.mapTo(mutableSetOf()) { it.id },
-            castRoleNames = castRoles.filter { it.isVisibleTemporaryRole() }
-                .flatMap { role ->
-                    buildList {
-                        add(role.name)
-                        GSON.fromJsonObject<List<String>>(role.aliasesJson).getOrNull().orEmpty().forEach(::add)
-                    }
-                }
-                .map(BookTtsCastingCoordinator::normalizeIdentityName)
-                .toSet(),
-            router = ReadBook.book?.let { ReadAloudTtsRouter.create(it) },
-            baseEngine = currentBaseEngine(),
+            summary = StoryboardDetailSummaryUi(
+                sceneCount = scenes.size,
+                segmentCount = scenes.sumOf { it.segments.size },
+                dialogueCount = scenes.sumOf { scene ->
+                    scene.segments.count { it.type == StoryboardSegmentType.DIALOGUE }
+                },
+                personCount = participantKeys.size,
+            ),
             currentParagraphIndex = currentParagraphIndex(chapterIndex)
         )
     }
 
-    private fun renderStoryboard(state: StoryboardRenderState) = binding.run {
+    private fun loadStoryboardRoutingState(
+        chapterIndex: Int,
+        chapterTitle: String,
+        scenes: List<StoryboardScene>,
+    ) {
+        renderJob = lifecycleScope.launch {
+            val result = withContext(IO) {
+                runCatching { prepareStoryboardRoutingState(chapterTitle, scenes) }
+            }
+            if (!showingCacheList && detailChapterIndex == chapterIndex) {
+                result.onSuccess(::renderStoryboardRoutingState)
+            }
+            renderJob = null
+        }
+    }
+
+    private fun prepareStoryboardRoutingState(
+        chapterTitle: String,
+        scenes: List<StoryboardScene>,
+    ): StoryboardRoutingState {
+        val characters = appDb.bookCharacterDao.getCharacters(workKey)
+        val castRoles = appDb.bookCharacterDao.getTtsCastRoles(workKey)
+            .filter { it.linkedCharacterId == null && it.isRoutableRole() }
+        val canonicalCharacterIds = characters.mapTo(mutableSetOf()) { it.id }
+        val stableCastRoleIds = castRoles.filter { it.isVisibleTemporaryRole() }
+            .mapTo(mutableSetOf()) { it.id }
+        val pendingCastRoleIds = castRoles.filter {
+            it.identityState == BookTtsCastRole.IdentityState.PENDING
+        }.mapTo(mutableSetOf()) { it.id }
+        val castRoleNames = castRoles.filter { it.isVisibleTemporaryRole() }
+            .flatMap { role ->
+                buildList {
+                    add(role.name)
+                    GSON.fromJsonObject<List<String>>(role.aliasesJson).getOrNull().orEmpty().forEach(::add)
+                }
+            }
+            .map(BookTtsCastingCoordinator::normalizeIdentityName)
+            .toSet()
+        val router = ReadBook.book?.let { ReadAloudTtsRouter.create(it) }
+        val baseEngine = currentBaseEngine()
+        return StoryboardRoutingState(
+            scenes = buildStoryboardSceneUi(
+                scenes = scenes,
+                chapterTitle = chapterTitle,
+                canonicalCharacterIds = canonicalCharacterIds,
+                stableCastRoleIds = stableCastRoleIds,
+                pendingCastRoleIds = pendingCastRoleIds,
+                castRoleNames = castRoleNames,
+                router = router,
+                baseEngine = baseEngine,
+            ),
+        )
+    }
+
+    private fun renderStoryboardRoutingState(state: StoryboardRoutingState) {
+        detailScenes = state.scenes
+    }
+
+    private fun renderStoryboard(state: StoryboardRenderState) {
         setLoading(false)
-        canonicalCharacterIds = state.canonicalCharacterIds
-        stableCastRoleIds = state.stableCastRoleIds
-        pendingCastRoleIds = state.pendingCastRoleIds
-        castRoleNames = state.castRoleNames
-        renderedRouter = state.router
-        renderedBaseEngine = state.baseEngine
-        tvChapterTitle.text = state.chapterTitle
-        tvSummary.text = buildList {
-            add("${state.scenes.size} 个场景")
-            add("${state.visibleDialogueCount} 段对白")
-            if (state.visibleThoughtCount > 0) add("${state.visibleThoughtCount} 段心声")
-        }.joinToString(" · ")
+        detailChapterTitle = state.chapterTitle
+        detailSummary = state.summary
+        detailRefreshAllowed = state.chapterIndex == ReadBook.durChapterIndex
         if (state.scenes.isEmpty()) {
             renderEmpty(getString(R.string.book_storyboard_empty))
-            return@run
-        }
-        recyclerView.adapter = sceneAdapter
-        sceneAdapter.submitScenes(
-            newScenes = state.scenes,
-            chapterTitle = state.chapterTitle,
-            chapterIndex = state.chapterIndex,
-            currentParagraphIndex = state.currentParagraphIndex
-        )
-        btnMore.isVisible = state.chapterIndex == ReadBook.durChapterIndex
-        tvEmpty.isVisible = false
-        recyclerView.isVisible = true
-    }
-
-    private fun setLoading(loading: Boolean, message: String = "正在生成 AI 分镜…") = binding.run {
-        layoutStoryboardLoading.isVisible = loading
-        recyclerView.isVisible = !loading
-        tvEmpty.isVisible = false
-        btnMore.isVisible = !loading && if (showingCacheList) cachedRowCount > 0 else true
-        btnMore.isEnabled = !loading
-        btnMore.alpha = if (loading) 0.45f else 1f
-        if (loading) {
-            tvStoryboardLoading.text = message
-            startLoadingAnimation()
-        } else {
-            stopLoadingAnimation()
-        }
-    }
-
-    private fun startLoadingAnimation() {
-        val icon = binding.ivStoryboardLoading
-        if (loadingAnimator?.isStarted == true) return
-        icon.rotation = 0f
-        loadingAnimator = ObjectAnimator.ofFloat(icon, "rotation", 0f, 360f).apply {
-            duration = 750L
-            interpolator = LinearInterpolator()
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.RESTART
-            start()
-        }
-    }
-
-    private fun stopLoadingAnimation() {
-        loadingAnimator?.cancel()
-        loadingAnimator = null
-        binding.ivStoryboardLoading.rotation = 0f
-    }
-
-    private inner class StoryboardCacheAdapter : RecyclerView.Adapter<StoryboardCacheHolder>() {
-
-        private val rows = mutableListOf<StoryboardCacheRow>()
-
-        fun submitRows(newRows: List<StoryboardCacheRow>) {
-            rows.clear()
-            rows.addAll(newRows)
-            notifyDataSetChanged()
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): StoryboardCacheHolder {
-            return StoryboardCacheHolder(
-                ItemBookStoryboardCacheBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-            )
-        }
-
-        override fun onBindViewHolder(holder: StoryboardCacheHolder, position: Int) {
-            holder.bind(rows[position])
-        }
-
-        override fun getItemCount(): Int = rows.size
-
-        fun getRow(position: Int): StoryboardCacheRow? = rows.getOrNull(position)
-
-        fun applyDeletion(row: StoryboardCacheRow) {
-            val position = rows.indexOfFirst { it.chapterIndex == row.chapterIndex }
-            if (position < 0) return
-            if (row.isCurrent) {
-                rows[position] = row.copy(entry = null)
-                notifyItemChanged(position)
-            } else {
-                rows.removeAt(position)
-                notifyItemRemoved(position)
-            }
-        }
-
-        fun restoreRow(row: StoryboardCacheRow) {
-            val position = rows.indexOfFirst { it.chapterIndex == row.chapterIndex }
-            if (position >= 0) notifyItemChanged(position)
-        }
-    }
-
-    override fun getSwipeFlags(adapterPosition: Int, defaultFlags: Int): Int {
-        return if (showingCacheList && cacheAdapter.getRow(adapterPosition)?.entry != null) {
-            ItemTouchHelper.RIGHT
-        } else {
-            0
-        }
-    }
-
-    override fun onSwiped(adapterPosition: Int, direction: Int) {
-        val row = cacheAdapter.getRow(adapterPosition)
-        if (direction != ItemTouchHelper.RIGHT || !showingCacheList || row?.entry == null) {
-            if (adapterPosition >= 0) cacheAdapter.notifyItemChanged(adapterPosition)
             return
         }
-        if (quickDelete) {
-            deleteCachedStoryboard(row)
+        detailScenes = buildStoryboardSceneUi(
+            scenes = state.scenes,
+            chapterTitle = state.chapterTitle,
+        )
+        detailErrorMessage = null
+        val sceneIndexes = state.scenes.mapTo(linkedSetOf()) { it.index }
+        val chapterChanged = renderedDetailChapterIndex != state.chapterIndex
+        if (chapterChanged) {
+            expandedSceneIndexes = emptySet()
+            expandedSegmentKeys = emptySet()
         } else {
-            confirmDeleteCachedStoryboard(row, adapterPosition)
+            expandedSceneIndexes = expandedSceneIndexes.intersect(sceneIndexes)
+        }
+        if (expandedSceneIndexes.isEmpty()) {
+            val initialScene = state.currentParagraphIndex?.let { paragraphIndex ->
+                state.scenes.firstOrNull { scene ->
+                    scene.segments.any { it.paragraphIndex == paragraphIndex }
+                }
+            } ?: state.scenes.firstOrNull()
+            initialScene?.let { expandedSceneIndexes = setOf(it.index) }
+        }
+        renderedDetailChapterIndex = state.chapterIndex
+    }
+
+    private fun setLoading(loading: Boolean, message: String = "正在生成 AI 分镜…") {
+        if (showingCacheList) {
+            cacheLoading = loading
+            cacheLoadingMessage = message
+            if (loading) cacheErrorMessage = null
+            return
+        }
+        detailLoading = loading
+        if (loading) {
+            detailLoadingMessage = message
+            detailErrorMessage = null
         }
     }
 
-    private fun confirmDeleteCachedStoryboard(row: StoryboardCacheRow, adapterPosition: Int) {
-        alert(titleResource = R.string.book_storyboard_delete_title) {
-            setMessage(getString(R.string.book_storyboard_delete_message, row.chapterTitle))
-            yesButton { deleteCachedStoryboard(row) }
-            noButton { cacheAdapter.notifyItemChanged(adapterPosition) }
-            onCancelled { cacheAdapter.notifyItemChanged(adapterPosition) }
-        }
+    private fun confirmDeleteCachedStoryboard(row: StoryboardCacheRow) {
+        confirmationRequest = StoryboardConfirmationRequest(
+            title = getString(R.string.book_storyboard_delete_title),
+            message = getString(R.string.book_storyboard_delete_message, row.chapterTitle),
+            destructive = true,
+            onConfirm = { deleteCachedStoryboard(row) },
+        )
     }
 
     private fun deleteCachedStoryboard(row: StoryboardCacheRow) {
@@ -519,13 +638,20 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 result
                     .onSuccess {
-                        cacheAdapter.applyDeletion(row)
-                        cachedRowCount = (cachedRowCount - 1).coerceAtLeast(0)
-                        updateCacheListHeader()
+                        cacheRows = if (row.isCurrent) {
+                            cacheRows.map { cachedRow ->
+                                if (cachedRow.chapterIndex == row.chapterIndex) {
+                                    cachedRow.copy(entry = null)
+                                } else {
+                                    cachedRow
+                                }
+                            }
+                        } else {
+                            cacheRows.filterNot { it.chapterIndex == row.chapterIndex }
+                        }
                         toastOnUi(R.string.book_storyboard_delete_done)
                     }
                     .onFailure {
-                        cacheAdapter.restoreRow(row)
                         toastOnUi(
                             getString(
                                 R.string.book_storyboard_delete_failed,
@@ -537,153 +663,112 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
         }
     }
 
-    private fun updateCacheListHeader() = binding.run {
-        tvSummary.text = "已缓存 $cachedRowCount 章"
-        btnMore.isVisible = showingCacheList && cachedRowCount > 0
-    }
-
-    private inner class StoryboardCacheHolder(
-        private val itemBinding: ItemBookStoryboardCacheBinding
-    ) : RecyclerView.ViewHolder(itemBinding.root) {
-
-        fun bind(row: StoryboardCacheRow) = itemBinding.run {
-            tvTitle.text = row.chapterTitle
-            tvCurrent.isVisible = row.isCurrent
-            tvMeta.text = row.entry?.let { entry ->
-                val storyboard = entry.storyboard
-                "${storyboard.scenes.size} 个场景 · ${storyboard.segmentCount} 个片段"
-            } ?: "尚未生成"
-            root.setOnClickListener {
-                row.entry?.let { entry ->
-                    showStoryboard(entry.storyboard, row.chapterIndex)
-                } ?: run {
-                    if (row.isCurrent) loadStoryboard()
-                }
+    private fun deleteCachedStoryboards(rows: List<StoryboardCacheRow>) {
+        lifecycleScope.launch(IO) {
+            val deletedIndexes = linkedSetOf<Int>()
+            var failedCount = 0
+            rows.forEach { row ->
+                val entry = row.entry
+                if (entry == null) return@forEach
+                runCatching { AiTtsStoryboardHelper.deleteCachedStoryboard(entry) }
+                    .onSuccess { deletedIndexes += row.chapterIndex }
+                    .onFailure { failedCount += 1 }
             }
-        }
-    }
-
-    private inner class StoryboardAdapter : RecyclerView.Adapter<SceneHolder>() {
-
-        private val scenes = mutableListOf<StoryboardScene>()
-        private val expandedSceneIndexes = mutableSetOf<Int>()
-        private var chapterTitle: String = ""
-        private var chapterIndex: Int? = null
-
-        fun submitScenes(
-            newScenes: List<StoryboardScene>,
-            chapterTitle: String,
-            chapterIndex: Int,
-            currentParagraphIndex: Int?
-        ) {
-            if (this.chapterIndex != chapterIndex) expandedSceneIndexes.clear()
-            this.chapterTitle = chapterTitle
-            this.chapterIndex = chapterIndex
-            scenes.clear()
-            scenes.addAll(newScenes)
-            expandedSceneIndexes.retainAll(newScenes.map { it.index }.toSet())
-            if (expandedSceneIndexes.isEmpty()) {
-                val initialScene = currentParagraphIndex?.let { paragraphIndex ->
-                    newScenes.firstOrNull { scene ->
-                        scene.segments.any { it.paragraphIndex == paragraphIndex }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (deletedIndexes.isNotEmpty()) {
+                    cacheRows = cacheRows.mapNotNull { row ->
+                        when {
+                            row.chapterIndex !in deletedIndexes -> row
+                            row.isCurrent -> row.copy(entry = null)
+                            else -> null
+                        }
                     }
-                } ?: newScenes.firstOrNull()
-                initialScene?.let { expandedSceneIndexes += it.index }
-            }
-            notifyDataSetChanged()
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SceneHolder {
-            return SceneHolder(ItemBookStoryboardGroupBinding.inflate(LayoutInflater.from(parent.context), parent, false))
-        }
-
-        override fun onBindViewHolder(holder: SceneHolder, position: Int) {
-            holder.bind(scenes[position])
-        }
-
-        override fun getItemCount(): Int = scenes.size
-
-        fun toggle(scene: StoryboardScene) {
-            if (!expandedSceneIndexes.add(scene.index)) expandedSceneIndexes.remove(scene.index)
-            notifyItemChanged(scenes.indexOfFirst { it.index == scene.index })
-        }
-
-        fun isExpanded(scene: StoryboardScene): Boolean = scene.index in expandedSceneIndexes
-
-        fun currentChapterTitle(): String = chapterTitle
-    }
-
-    private inner class SceneHolder(
-        private val itemBinding: ItemBookStoryboardGroupBinding
-    ) : RecyclerView.ViewHolder(itemBinding.root) {
-        private var segmentRenderToken: Any? = null
-
-        fun bind(scene: StoryboardScene) = itemBinding.run {
-            val renderToken = Any()
-            segmentRenderToken = renderToken
-            tvTitle.text = scene.displayTitle(sceneAdapter.currentChapterTitle())
-            tvMeta.text = buildList {
-                scene.characters.joinToString("、").takeIf { it.isNotBlank() }?.let(::add)
-                add("${scene.segments.size} 个片段")
-            }.joinToString(" · ")
-            val expanded = sceneAdapter.isExpanded(scene)
-            tvExpand.rotation = if (expanded) 180f else 0f
-            layoutSegments.isVisible = expanded
-            layoutHeader.setOnClickListener { sceneAdapter.toggle(scene) }
-            layoutSegments.removeAllViews()
-            if (expanded) {
-                renderSegments(scene, renderToken, startIndex = 0)
-            }
-        }
-
-        private fun renderSegments(scene: StoryboardScene, renderToken: Any, startIndex: Int) {
-            if (segmentRenderToken !== renderToken || !sceneAdapter.isExpanded(scene)) return
-            val endIndex = (startIndex + SEGMENT_RENDER_BATCH_SIZE).coerceAtMost(scene.segments.size)
-            for (index in startIndex until endIndex) {
-                val segmentBinding = ItemBookStoryboardGroupSegmentBinding.inflate(
-                    LayoutInflater.from(itemBinding.layoutSegments.context),
-                    itemBinding.layoutSegments,
-                    false
-                )
-                bindSegment(segmentBinding, scene, scene.segments[index])
-                itemBinding.layoutSegments.addView(segmentBinding.root)
-            }
-            if (endIndex < scene.segments.size) {
-                itemBinding.layoutSegments.postOnAnimation {
-                    renderSegments(scene, renderToken, endIndex)
+                    toastOnUi(
+                        getString(
+                            R.string.book_storyboard_batch_delete_done,
+                            deletedIndexes.size,
+                        ),
+                    )
+                }
+                if (failedCount > 0) {
+                    toastOnUi(
+                        getString(
+                            R.string.book_storyboard_batch_delete_failed,
+                            failedCount,
+                        ),
+                    )
                 }
             }
         }
     }
 
-    private fun bindSegment(
-        itemBinding: ItemBookStoryboardGroupSegmentBinding,
-        scene: StoryboardScene,
-        segment: StoryboardSegment
-    ) = itemBinding.run {
-        val identity = when (segment.type) {
-            StoryboardSegmentType.NARRATION -> "旁白"
-            StoryboardSegmentType.DIALOGUE, StoryboardSegmentType.THOUGHT ->
-                segment.speakerName ?: segment.virtualSpeakerName()
+    private fun toggleScene(sceneIndex: Int) {
+        expandedSceneIndexes = if (sceneIndex in expandedSceneIndexes) {
+            expandedSceneIndexes - sceneIndex
+        } else {
+            expandedSceneIndexes + sceneIndex
         }
-        tvType.text = identity
-        tvType.setTextColor(accentColor)
-        tvSpeaker.text = buildList {
-            add(segment.type.displayName())
-            add("第 ${segment.paragraphIndex + 1} 段")
-            segment.identityStatus().takeIf { it != identity && it != segment.type.displayName() }?.let(::add)
-        }.joinToString(" · ")
-        tvVoice.text = actualVoiceLabel(scene, segment)
-        tvText.text = segment.text
-        val details = segment.details(scene)
-        tvEvidence.text = details
-        tvEvidence.isVisible = false
-        root.setOnClickListener {
-            if (details.isNotBlank()) tvEvidence.isVisible = !tvEvidence.isVisible
+    }
+
+    private fun toggleSegmentDetails(segmentKey: String) {
+        expandedSegmentKeys = if (segmentKey in expandedSegmentKeys) {
+            expandedSegmentKeys - segmentKey
+        } else {
+            expandedSegmentKeys + segmentKey
         }
-        btnPreview.background = accentCircleBackground()
-        btnPreview.imageTintList = ColorStateList.valueOf(accentColor)
-        btnPreview.setOnClickListener { previewStoryboardSegment(scene, segment) }
+    }
+
+    private fun buildStoryboardSceneUi(
+        scenes: List<StoryboardScene>,
+        chapterTitle: String,
+        canonicalCharacterIds: Set<Long> = emptySet(),
+        stableCastRoleIds: Set<Long> = emptySet(),
+        pendingCastRoleIds: Set<Long> = emptySet(),
+        castRoleNames: Set<String> = emptySet(),
+        router: ReadAloudTtsRouter? = null,
+        baseEngine: TtsEngineSetting? = null,
+    ): List<StoryboardSceneUi> {
+        return scenes.map { scene ->
+            StoryboardSceneUi(
+                index = scene.index,
+                title = scene.displayTitle(chapterTitle),
+                meta = buildList {
+                    scene.characters.joinToString("、").takeIf { it.isNotBlank() }?.let(::add)
+                    add("${scene.segments.size} 个片段")
+                }.joinToString(" · "),
+                source = scene,
+                segments = scene.segments.mapIndexed { segmentIndex, segment ->
+                    val identity = when (segment.type) {
+                        StoryboardSegmentType.NARRATION -> "旁白"
+                        StoryboardSegmentType.DIALOGUE, StoryboardSegmentType.THOUGHT ->
+                            segment.speakerName ?: segment.virtualSpeakerName()
+                    }
+                    val identityStatus = segment.identityStatus(
+                        canonicalCharacterIds = canonicalCharacterIds,
+                        stableCastRoleIds = stableCastRoleIds,
+                        pendingCastRoleIds = pendingCastRoleIds,
+                        castRoleNames = castRoleNames,
+                    )
+                    StoryboardSegmentUi(
+                        key = "${scene.index}:${segment.paragraphIndex}:${segment.start}:${segment.end}:$segmentIndex",
+                        identity = identity,
+                        meta = "第 ${segment.paragraphIndex + 1} 段",
+                        status = identityStatus.takeIf {
+                            it != identity && it != segment.type.displayName()
+                        },
+                        voice = actualVoiceLabel(
+                            scene = scene,
+                            segment = segment,
+                            router = router,
+                            baseEngine = baseEngine,
+                        ),
+                        text = segment.text.trimStart(' ', '\t', '\u3000'),
+                        details = segment.details(scene),
+                        source = segment,
+                    )
+                },
+            )
+        }
     }
 
     private fun StoryboardScene.displayTitle(chapterTitle: String): String {
@@ -709,8 +794,18 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
         StoryboardSegmentType.THOUGHT -> "心声"
     }
 
-    private fun StoryboardSegment.identityStatus(): String = when {
+    private fun StoryboardSegment.identityStatus(
+        canonicalCharacterIds: Set<Long>,
+        stableCastRoleIds: Set<Long>,
+        pendingCastRoleIds: Set<Long>,
+        castRoleNames: Set<String>,
+    ): String = when {
         type == StoryboardSegmentType.NARRATION -> "旁白"
+        identityType == StoryboardSegment.IdentityType.FORMAL_CHARACTER -> "角色卡"
+        identityType == StoryboardSegment.IdentityType.CAST_ROLE ||
+            identityType == StoryboardSegment.IdentityType.STABLE_CANDIDATE -> "临时角色"
+        identityType == StoryboardSegment.IdentityType.PENDING ||
+            identityType == StoryboardSegment.IdentityType.GUEST -> "待确认"
         speakerId != null && speakerId in canonicalCharacterIds -> "角色卡"
         castRoleId != null && castRoleId in stableCastRoleIds -> "临时角色"
         castRoleId != null && castRoleId in pendingCastRoleIds -> "待确认"
@@ -720,9 +815,14 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
         else -> "待确认"
     }
 
-    private fun actualVoiceLabel(scene: StoryboardScene, segment: StoryboardSegment): String {
-        val baseEngine = renderedBaseEngine ?: return "未配置可用声音"
-        val route = resolvedRoute(scene, segment)
+    private fun actualVoiceLabel(
+        scene: StoryboardScene,
+        segment: StoryboardSegment,
+        router: ReadAloudTtsRouter?,
+        baseEngine: TtsEngineSetting?,
+    ): String {
+        baseEngine ?: return "声音加载中…"
+        val route = resolvedRoute(scene, segment, router, baseEngine)
         val engine = route?.engine ?: baseEngine
         val voiceId = route?.voiceId ?: engine.activeVoiceId
         val voiceName = engine.enabledVoices().firstOrNull { it.id == voiceId }?.name
@@ -744,10 +844,11 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
 
     private fun resolvedRoute(
         scene: StoryboardScene,
-        segment: StoryboardSegment
+        segment: StoryboardSegment,
+        router: ReadAloudTtsRouter?,
+        baseEngine: TtsEngineSetting,
     ): ReadAloudTtsRouter.Route? {
-        val baseEngine = renderedBaseEngine ?: return null
-        return renderedRouter?.route(segment, baseEngine, scene) ?: ReadAloudTtsRouter.Route(
+        return router?.route(segment, baseEngine, scene) ?: ReadAloudTtsRouter.Route(
             engine = baseEngine,
             voiceId = baseEngine.activeVoiceId,
             styleId = null,
@@ -803,10 +904,10 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
         return filterNot { it.isWhitespace() || it == '\u3000' }
     }
 
-    private fun accentCircleBackground(): GradientDrawable {
-        return GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(ColorUtils.withAlpha(accentColor, 0.12f))
+    private fun String.normalizedStoryboardPersonName(): String? {
+        val normalizedName = BookTtsCastingCoordinator.normalizeIdentityName(this)
+        return normalizedName.takeIf {
+            it.isNotBlank() && it !in NON_PERSON_STORYBOARD_NAMES
         }
     }
 
@@ -875,12 +976,17 @@ class BookStoryboardActivity : BaseActivity<ActivityBookStoryboardBinding>(),
         renderJob?.cancel()
         renderJob = null
         stopPreview()
-        stopLoadingAnimation()
         super.onDestroy()
     }
 
     private companion object {
-        const val SEGMENT_RENDER_BATCH_SIZE = 4
+        val NON_PERSON_STORYBOARD_NAMES = setOf(
+            "旁白",
+            "对白男",
+            "对白女",
+            "心声",
+            "待确认说话人",
+        )
     }
 
 }

@@ -24,7 +24,6 @@
 
     <!-- Stable role/storyboard actions retained after removing legacy character menus. -->
     <item name="menu_delete" type="id" />
-    <item name="menu_quick_delete" type="id" />
     <item name="menu_batch_manage" type="id" />
     <item name="menu_restore_temporary" type="id" />
 
