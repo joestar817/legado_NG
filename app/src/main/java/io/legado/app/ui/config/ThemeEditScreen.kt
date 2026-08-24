@@ -1,17 +1,25 @@
 package io.legado.app.ui.config
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,12 +27,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -35,14 +44,12 @@ import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.NgManagedTheme
 import io.legado.app.help.config.NgThemeBarProfile
 import io.legado.app.help.config.NgThemeBackground
-import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.components.compose.NgDockSlider
-import io.legado.app.ui.design.components.compose.NgExpandableSettingsItem
 import io.legado.app.ui.design.components.compose.NgFloatingTabBar
 import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
-import io.legado.app.ui.design.components.compose.NgSettingsGroup
-import io.legado.app.ui.design.components.compose.NgSettingsItem
-import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
+import io.legado.app.ui.design.components.compose.NgFormGroup
+import io.legado.app.ui.design.components.compose.NgFormGroupDivider
+import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.theme.NgTheme
 import java.io.File
 import kotlin.math.roundToInt
@@ -57,37 +64,39 @@ internal fun ThemeEditScreen(
     ThemeColorConfigScreen(
         colors = theme.colors,
         onColorsChanged = { onThemeChanged(theme.copy(colors = it)) },
+        compact = true,
         headerContent = {
             item(key = "theme-info") {
-                NgSettingsSectionLabel(stringResource(R.string.ng_theme_details))
-                NgSettingsGroup {
+                NgFormGroup(title = stringResource(R.string.ng_theme_details)) {
                     ThemeNameInput(
                         value = theme.name,
                         onValueChange = { onThemeChanged(theme.copy(name = it)) },
                         isError = theme.name.isBlank()
                     )
                     if (copyOnSave) {
-                        NgSettingsItem(
+                        NgFormGroupDivider()
+                        ThemeCompactSettingRow(
                             title = stringResource(R.string.ng_theme_built_in_copy),
                             summary = stringResource(R.string.ng_theme_built_in_copy_summary),
                             enabled = false,
-                            trailing = NgSettingsTrailing.NONE
                         )
                     }
-                    NgSettingsItem(
+                    NgFormGroupDivider()
+                    NgFormSwitchSettingRow(
                         title = stringResource(R.string.transparent_app_bars),
                         summary = stringResource(R.string.transparent_app_bars_summary),
-                        trailing = NgSettingsTrailing.SWITCH,
                         checked = theme.transparentAppBars,
                         onCheckedChange = {
                             onThemeChanged(theme.copy(transparentAppBars = it))
                         }
                     )
+                    NgFormGroupDivider()
                     ThemeBackgroundItem(
                         dark = false,
                         background = theme.lightBackground,
                         onClick = { onEditBackground(false) }
                     )
+                    NgFormGroupDivider()
                     ThemeBackgroundItem(
                         dark = true,
                         background = theme.darkBackground,
@@ -96,8 +105,7 @@ internal fun ThemeEditScreen(
                 }
             }
             item(key = "theme-bars") {
-                NgSettingsSectionLabel(stringResource(R.string.ng_theme_bars))
-                NgSettingsGroup {
+                NgFormGroup(title = stringResource(R.string.ng_theme_bars)) {
                     ThemeBarProfileEditor(
                         profile = theme.barProfile ?: NgThemeBarProfile(),
                         onProfileChanged = {
@@ -105,9 +113,6 @@ internal fun ThemeEditScreen(
                         }
                     )
                 }
-            }
-            item(key = "theme-colors-title") {
-                NgSettingsSectionLabel(stringResource(R.string.ng_theme_colors))
             }
         }
     )
@@ -137,7 +142,7 @@ private fun ThemeBarProfileEditor(
             ?: BookshelfFloatingDockSearchPosition.LEFT.value
     )
 
-    NgExpandableSettingsItem(
+    ThemeCompactExpandableRow(
         title = stringResource(R.string.main_bottom_bar_style),
         summary = stringResource(
             if (useFloatingBottomBar) {
@@ -199,6 +204,7 @@ private fun ThemeBarProfileEditor(
                     valueRange = FloatingBottomBarConfig.MIN_BOTTOM_DISTANCE_PX.toFloat()..
                         FloatingBottomBarConfig.MAX_BOTTOM_DISTANCE_PX.toFloat(),
                     steps = FloatingBottomBarConfig.BOTTOM_DISTANCE_SLIDER_STEPS,
+                    showBoundLabels = false,
                     onValueChange = { value ->
                         onProfileChanged(
                             profile.copy(
@@ -225,6 +231,7 @@ private fun ThemeBarProfileEditor(
                     value = bottomTransparency.toFloat(),
                     valueRange = FloatingBottomBarConfig.MIN_TRANSPARENCY_PERCENT.toFloat()..
                         FloatingBottomBarConfig.MAX_TRANSPARENCY_PERCENT.toFloat(),
+                    showBoundLabels = false,
                     onValueChange = { value ->
                         onProfileChanged(
                             profile.copy(floatingBottomBarTransparency = value.roundToInt())
@@ -236,7 +243,8 @@ private fun ThemeBarProfileEditor(
         }
     }
 
-    NgExpandableSettingsItem(
+    NgFormGroupDivider()
+    ThemeCompactExpandableRow(
         title = stringResource(R.string.bookshelf_top_bar_style),
         summary = stringResource(
             when (topBarStyle) {
@@ -283,33 +291,30 @@ private fun ThemeBarProfileEditor(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-                NgSettingsItem(
-                    title = stringResource(R.string.bookshelf_floating_dock_search_position),
-                    trailing = NgSettingsTrailing.CUSTOM,
-                    customTrailing = {
-                        NgFloatingTabBar(
-                            items = listOf(
-                                NgFloatingTabSpec(text = stringResource(R.string.left)),
-                                NgFloatingTabSpec(text = stringResource(R.string.right))
-                            ),
-                            selectedIndex =
-                                BookshelfFloatingDockSearchPosition.entries.indexOf(
-                                    searchPosition
-                                ),
-                            onTabSelected = { index ->
-                                onProfileChanged(
-                                    profile.copy(
-                                        bookshelfFloatingDockSearchPosition =
-                                            BookshelfFloatingDockSearchPosition.entries[index].value
-                                    )
+            ThemeCompactSettingRow(
+                title = stringResource(R.string.bookshelf_floating_dock_search_position),
+                trailingContent = {
+                    NgFloatingTabBar(
+                        items = listOf(
+                            NgFloatingTabSpec(text = stringResource(R.string.left)),
+                            NgFloatingTabSpec(text = stringResource(R.string.right))
+                        ),
+                        selectedIndex =
+                            BookshelfFloatingDockSearchPosition.entries.indexOf(searchPosition),
+                        onTabSelected = { index ->
+                            onProfileChanged(
+                                profile.copy(
+                                    bookshelfFloatingDockSearchPosition =
+                                        BookshelfFloatingDockSearchPosition.entries[index].value
                                 )
-                            },
-                            modifier = Modifier.width(132.dp)
-                        )
-                    }
-                )
-                NgDockSlider(
-                    title = stringResource(R.string.bookshelf_floating_dock_top_distance),
+                            )
+                        },
+                        modifier = Modifier.width(132.dp)
+                    )
+                }
+            )
+            NgDockSlider(
+                title = stringResource(R.string.bookshelf_floating_dock_top_distance),
                     valueText = stringResource(
                         R.string.bookshelf_floating_dock_top_distance_value,
                         topDistancePx
@@ -326,6 +331,7 @@ private fun ThemeBarProfileEditor(
                     valueRange = BookshelfFloatingDockConfig.MIN_TOP_DISTANCE_PX.toFloat()..
                         BookshelfFloatingDockConfig.MAX_TOP_DISTANCE_PX.toFloat(),
                     steps = BookshelfFloatingDockConfig.TOP_DISTANCE_SLIDER_STEPS,
+                    showBoundLabels = false,
                     onValueChange = { value ->
                         onProfileChanged(
                             profile.copy(
@@ -334,9 +340,9 @@ private fun ThemeBarProfileEditor(
                         )
                     },
                     onValueChangeFinished = {}
-                )
-                NgDockSlider(
-                    title = stringResource(R.string.bookshelf_floating_dock_transparency),
+            )
+            NgDockSlider(
+                title = stringResource(R.string.bookshelf_floating_dock_transparency),
                     valueText = stringResource(
                         R.string.bookshelf_floating_dock_transparency_value,
                         topTransparency
@@ -352,6 +358,7 @@ private fun ThemeBarProfileEditor(
                     value = topTransparency.toFloat(),
                     valueRange = BookshelfFloatingDockConfig.MIN_TRANSPARENCY_PERCENT.toFloat()..
                         BookshelfFloatingDockConfig.MAX_TRANSPARENCY_PERCENT.toFloat(),
+                    showBoundLabels = false,
                     onValueChange = { value ->
                         onProfileChanged(
                             profile.copy(
@@ -360,7 +367,131 @@ private fun ThemeBarProfileEditor(
                         )
                     },
                     onValueChangeFinished = {}
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThemeCompactExpandableRow(
+    title: String,
+    summary: String?,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        label = "ThemeCompactExpandableArrow",
+    )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onExpandedChange(!expanded) }
+                .heightIn(min = 52.dp)
+                .padding(start = 14.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                Text(
+                    text = title,
+                    color = Color(NgTheme.colors.onSurface),
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                if (!summary.isNullOrBlank()) {
+                    Text(
+                        text = summary,
+                        color = Color(NgTheme.colors.onSurfaceVariant),
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Icon(
+                painter = painterResource(R.drawable.ic_chevron_right_20),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(20.dp)
+                    .rotate(arrowRotation),
+                tint = Color(NgTheme.colors.onSurfaceVariant),
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThemeCompactSettingRow(
+    title: String,
+    summary: String? = null,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    trailingContent: @Composable RowScope.() -> Unit = {},
+) {
+    val contentAlpha = if (enabled) 1f else 0.42f
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(enabled = enabled, onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
+            .heightIn(min = if (summary.isNullOrBlank()) 44.dp else 52.dp)
+            .padding(start = 14.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            Text(
+                text = title,
+                color = Color(NgTheme.colors.onSurface).copy(alpha = contentAlpha),
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!summary.isNullOrBlank()) {
+                Text(
+                    text = summary,
+                    color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = contentAlpha),
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        trailingContent()
+        if (onClick != null) {
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                painter = painterResource(R.drawable.ic_chevron_right_20),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = contentAlpha),
+            )
         }
     }
 }
@@ -371,7 +502,7 @@ private fun ThemeNameInput(
     onValueChange: (String) -> Unit,
     isError: Boolean
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(10.dp)
     val colors = NgTheme.colors
     BasicTextField(
         value = value,
@@ -388,19 +519,15 @@ private fun ThemeNameInput(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 64.dp)
-                    .clip(shape)
-                    .background(colorResource(R.color.ng_settings_item))
-                    .border(
-                        width = if (isError) 1.5.dp else 0.6.dp,
-                        color = if (isError) {
-                            Color(colors.error)
+                    .heightIn(min = 48.dp)
+                    .then(
+                        if (isError) {
+                            Modifier.border(1.2.dp, Color(colors.error), shape)
                         } else {
-                            colorResource(R.color.ng_settings_item_stroke)
-                        },
-                        shape = shape
+                            Modifier
+                        }
                     )
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
                 innerTextField()
@@ -421,7 +548,7 @@ private fun ThemeBackgroundItem(
         path.startsWith("asset://") -> path.substringAfterLast('/')
         else -> File(path).name.ifBlank { path }
     }
-    NgSettingsItem(
+    ThemeCompactSettingRow(
         title = stringResource(
             if (dark) R.string.ng_theme_dark_background else R.string.ng_theme_light_background
         ),

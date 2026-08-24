@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -43,9 +44,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toDrawable
 import io.legado.app.R
-import io.legado.app.help.config.ThemeConfig
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgActionBarButton
+import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.theme.NgTheme
@@ -73,15 +74,8 @@ internal fun ThemeBackgroundEditorSheet(
     onBlurChanged: (Int) -> Unit,
     onSave: () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val snapshot = NgTheme.snapshot
-    val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    val baseSnapshot = NgTheme.snapshot
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val sheetBackground = remember(context, snapshot.isDark) {
-        runCatching {
-            ThemeConfig.getBgImage(context, context.resources.displayMetrics)
-        }.getOrNull()
-    }
     val isNinePatch = state.path?.endsWith(".9.png", ignoreCase = true) == true
 
     ModalBottomSheet(
@@ -89,33 +83,15 @@ internal fun ThemeBackgroundEditorSheet(
         sheetState = sheetState,
         dragHandle = null,
         containerColor = Color.Transparent,
-        contentColor = Color(snapshot.colors.onSurface),
-        shape = shape
+        contentColor = Color(baseSnapshot.colors.onSurface),
+        shape = RectangleShape
     ) {
-        Box(
+        NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.52f)
-                .clip(shape)
-                .background(Color(snapshot.colors.drawerContainer))
         ) {
-            if (sheetBackground != null) {
-                NgDrawerBackground(
-                    drawable = sheetBackground,
-                    modifier = Modifier.fillMaxSize()
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            if (snapshot.isDark) {
-                                Color(snapshot.colors.drawerContainer).copy(alpha = 0.84f)
-                            } else {
-                                Color(0x60FFFFF9)
-                            }
-                        )
-                )
-            }
+            val snapshot = NgTheme.snapshot
             Column(
                 modifier = Modifier
                     .fillMaxSize()

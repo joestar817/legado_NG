@@ -89,7 +89,6 @@ fun NgFormGroup(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = title,
@@ -102,17 +101,52 @@ fun NgFormGroup(
             fontWeight = FontWeight.Medium,
             textAlign = androidx.compose.ui.text.style.TextAlign.Start,
         )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(shape)
-                .background(colorResource(R.color.ng_surface_card))
-                .border(
-                    width = 0.6.dp,
-                    color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
-                    shape = shape,
-                ),
-            content = content,
+        NgFormPanel(content = content)
+    }
+}
+
+/** 不附带外部标题的连续亮白表单底板。 */
+@Composable
+fun NgFormPanel(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colorResource(R.color.ng_surface_card))
+            .border(
+                width = 0.6.dp,
+                color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
+                shape = shape,
+            ),
+        content = content,
+    )
+}
+
+/** 连续表单底板内部的紧凑分区标题。 */
+@Composable
+fun NgFormPanelSectionTitle(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(34.dp)
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = title,
+            color = Color(NgTheme.colors.primary),
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -124,6 +158,91 @@ fun NgFormGroupDivider(modifier: Modifier = Modifier) {
         thickness = 0.6.dp,
         color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
     )
+}
+
+/** 分组内的紧凑单行文本字段；分组容器负责白底、圆角与行间分隔。 */
+@Composable
+fun NgFormInlineTextRow(
+    title: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    valueMuted: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+) {
+    val colors = NgTheme.colors
+    val contentAlpha = if (enabled) 1f else 0.45f
+    val interactionSource = remember { MutableInteractionSource() }
+    val valueColor = when {
+        !enabled -> Color(colors.onSurfaceVariant).copy(alpha = contentAlpha)
+        valueMuted -> Color(colors.onSurfaceVariant).copy(alpha = 0.58f)
+        else -> Color(colors.onSurface)
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(0.38f),
+            color = Color(colors.onSurface).copy(alpha = contentAlpha),
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .weight(0.62f)
+                .height(36.dp)
+                .semantics { contentDescription = title },
+            enabled = enabled,
+            readOnly = readOnly,
+            singleLine = true,
+            textStyle = TextStyle(
+                color = valueColor,
+                fontSize = 15.sp,
+                lineHeight = 19.sp,
+                textAlign = TextAlign.End,
+            ),
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            cursorBrush = SolidColor(
+                if (readOnly) Color.Transparent else Color(colors.primary)
+            ),
+            interactionSource = interactionSource,
+            decorationBox = { innerTextField ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    if (value.isEmpty() && !placeholder.isNullOrBlank()) {
+                        Text(
+                            text = placeholder,
+                            color = Color(colors.onSurfaceVariant).copy(alpha = 0.72f),
+                            fontSize = 15.sp,
+                            lineHeight = 19.sp,
+                            textAlign = TextAlign.End,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+        )
+    }
 }
 
 /** 分组内的紧凑下拉设置行。 */
@@ -951,6 +1070,7 @@ fun NgFormActionRow(
 
 enum class NgFormActionButtonAppearance {
     DEFAULT,
+    SURFACE_CARD,
     DIALOG,
 }
 
@@ -966,7 +1086,8 @@ fun NgFormActionButton(
     val colors = NgTheme.colors
     val primary = Color(colors.primary)
     val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
-    val dialogAppearance = appearance == NgFormActionButtonAppearance.DIALOG
+    val surfaceCardAppearance = appearance == NgFormActionButtonAppearance.DIALOG ||
+        appearance == NgFormActionButtonAppearance.SURFACE_CARD
     val containerColor = when (variant) {
         NgButtonVariant.PRIMARY,
         NgButtonVariant.PRIMARY_LIGHT_CONTENT -> primary
@@ -976,7 +1097,7 @@ fun NgFormActionButton(
         )
         NgButtonVariant.DANGER -> Color(colors.error)
         NgButtonVariant.ON_IMAGE -> Color.Black.copy(alpha = 0.56f)
-        NgButtonVariant.OUTLINE -> if (dialogAppearance) {
+        NgButtonVariant.OUTLINE -> if (surfaceCardAppearance) {
             colorResource(R.color.ng_surface_card)
         } else {
             Color(colors.surface)

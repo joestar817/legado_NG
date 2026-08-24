@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
@@ -52,12 +53,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.help.config.NgManagedTheme
-import io.legado.app.help.config.ThemeConfig
 import io.legado.app.help.config.isBuiltIn
 import io.legado.app.help.config.md3.Md3ThemeImportDraft
 import io.legado.app.help.config.md3.Md3ThemePackageFormat
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgActionBarButton
+import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.theme.NgTheme
@@ -308,77 +310,37 @@ private fun NgThemeEditorSheet(
     onSave: () -> Unit,
     onExport: () -> Unit
 ) {
-    val context = LocalContext.current
-    val snapshot = NgTheme.snapshot
+    val baseSnapshot = NgTheme.snapshot
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-    val sheetBackground = remember(context, snapshot.isDark) {
-        runCatching {
-            ThemeConfig.getBgImage(context, context.resources.displayMetrics)
-        }.getOrNull()
-    }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         dragHandle = null,
         containerColor = Color.Transparent,
-        contentColor = Color(snapshot.colors.onSurface),
-        shape = shape
+        contentColor = Color(baseSnapshot.colors.onSurface),
+        shape = RectangleShape
     ) {
-        Box(
+        NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.90f)
-                .clip(shape)
-                .background(Color(snapshot.colors.dialogContainer))
         ) {
-            if (sheetBackground != null) {
-                NgDrawerBackground(
-                    drawable = sheetBackground,
-                    modifier = Modifier.fillMaxSize()
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            if (snapshot.isDark) {
-                                Color(snapshot.colors.dialogContainer).copy(alpha = 0.84f)
-                            } else {
-                                Color(0x60FFFFF9)
-                            }
-                        )
-                )
-            }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 20.dp, top = 14.dp, end = 12.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(R.string.ng_theme_edit),
-                        modifier = Modifier.weight(1f),
-                        color = Color(snapshot.colors.onSurface),
-                        fontSize = 21.sp,
-                        lineHeight = 25.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    NgThemeEditorHeaderAction(
-                        iconRes = R.drawable.ic_share,
-                        contentDescription = stringResource(R.string.share),
-                        onClick = onExport
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    NgThemeSheetSaveButton(
-                        contentDescription = stringResource(R.string.save),
-                        onClick = onSave
-                    )
-                }
+                NgLongDrawerHeader(
+                    title = stringResource(R.string.ng_theme_edit),
+                    secondaryActionIconRes = R.drawable.ic_share,
+                    secondaryActionContentDescription = stringResource(R.string.share),
+                    onSecondaryActionClick = onExport,
+                    actionIconRes = R.drawable.ic_save,
+                    actionContentDescription = stringResource(R.string.save),
+                    onActionClick = onSave,
+                    centerTitle = true,
+                )
                 Box(modifier = Modifier.weight(1f)) {
                     ThemeEditScreen(
                         theme = draftTheme,
@@ -392,26 +354,6 @@ private fun NgThemeEditorSheet(
     }
 }
 
-@Composable
-private fun NgThemeEditorHeaderAction(
-    iconRes: Int,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    val snapshot = NgTheme.snapshot
-    NgThemeSheetActionButton(
-        onClick = onClick,
-        contentDescription = contentDescription
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = Color(snapshot.colors.onSurface)
-        )
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NgMd3ThemeImportPreviewSheet(
@@ -422,9 +364,8 @@ private fun NgMd3ThemeImportPreviewSheet(
     onSaveAndApply: () -> Unit,
 ) {
     val context = LocalContext.current
-    val snapshot = NgTheme.snapshot
+    val baseSnapshot = NgTheme.snapshot
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     val light = remember(context, draft.theme.colors) {
         NgThemeResolver.resolveColorScheme(context, draft.theme.colors, false)
     }
@@ -440,43 +381,17 @@ private fun NgMd3ThemeImportPreviewSheet(
         Md3ThemePackageFormat.LEGACY_APPLICATION_THEME_V1 ->
             stringResource(R.string.ng_theme_import_legacy_format)
     }
-    val sheetBackground = remember(context, snapshot.isDark) {
-        runCatching {
-            ThemeConfig.getBgImage(context, context.resources.displayMetrics)
-        }.getOrNull()
-    }
 
     ModalBottomSheet(
         onDismissRequest = { if (!installing) onDismissRequest() },
         sheetState = sheetState,
         dragHandle = null,
         containerColor = Color.Transparent,
-        contentColor = Color(snapshot.colors.onSurface),
-        shape = shape,
+        contentColor = Color(baseSnapshot.colors.onSurface),
+        shape = RectangleShape,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(shape)
-                .background(Color(snapshot.colors.dialogContainer)),
-        ) {
-            if (sheetBackground != null) {
-                NgDrawerBackground(
-                    drawable = sheetBackground,
-                    modifier = Modifier.matchParentSize(),
-                )
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(
-                            if (snapshot.isDark) {
-                                Color(snapshot.colors.dialogContainer).copy(alpha = 0.84f)
-                            } else {
-                                Color(0x60FFFFF9)
-                            }
-                        ),
-                )
-            }
+        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
+            val snapshot = NgTheme.snapshot
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

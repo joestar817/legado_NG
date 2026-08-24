@@ -53,11 +53,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -66,7 +66,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.legado.app.R
-import io.legado.app.help.config.ThemeConfig
+import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgFlatActionRail
+import io.legado.app.ui.design.components.compose.NgFlatActionRailItem
+import io.legado.app.ui.design.components.compose.NgFlatActionRailVariant
 import io.legado.app.ui.design.components.compose.NgFormField
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgTopBarTextMode
@@ -104,47 +107,23 @@ internal fun NgColorPickerSheet(
     }
 
     val parsed = parseNgColor(hexInput)
-    val context = LocalContext.current
-    val snapshot = NgTheme.snapshot
+    val drawerHeightFraction = if (initialTopBarTextMode == null) 0.50f else 0.60f
+    val baseSnapshot = NgTheme.snapshot
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-    val sheetBackground = remember(context, snapshot.isDark) {
-        runCatching {
-            ThemeConfig.getBgImage(context, context.resources.displayMetrics)
-        }.getOrNull()
-    }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         dragHandle = null,
         containerColor = Color.Transparent,
-        contentColor = Color(snapshot.colors.onSurface),
-        shape = sheetShape
+        contentColor = Color(baseSnapshot.colors.onSurface),
+        shape = RectangleShape
     ) {
-        Box(
+        NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.60f)
-                .clip(sheetShape)
-                .background(Color(snapshot.colors.dialogContainer))
+                .fillMaxHeight(drawerHeightFraction)
         ) {
-            if (sheetBackground != null) {
-                NgDrawerBackground(
-                    drawable = sheetBackground,
-                    modifier = Modifier.fillMaxSize()
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            if (snapshot.isDark) {
-                                Color(snapshot.colors.dialogContainer).copy(alpha = 0.84f)
-                            } else {
-                                Color(0x60FFFFF9)
-                            }
-                        )
-                )
-            }
+            val snapshot = NgTheme.snapshot
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -389,6 +368,11 @@ private fun NgTopBarTextModeSelector(
     onSelected: (NgTopBarTextMode) -> Unit
 ) {
     val colors = NgTheme.colors
+    val options = listOf(
+        NgTopBarTextMode.AUTO to stringResource(R.string.ng_top_bar_text_auto),
+        NgTopBarTextMode.LIGHT to stringResource(R.string.ng_top_bar_text_light),
+        NgTopBarTextMode.DARK to stringResource(R.string.ng_top_bar_text_dark)
+    )
     Text(
         text = stringResource(R.string.ng_top_bar_text),
         modifier = Modifier.fillMaxWidth(),
@@ -397,41 +381,18 @@ private fun NgTopBarTextModeSelector(
         fontWeight = FontWeight.Medium
     )
     Spacer(Modifier.height(8.dp))
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(colors.surfaceContainer), RoundedCornerShape(22.dp))
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        listOf(
-            NgTopBarTextMode.AUTO to stringResource(R.string.ng_top_bar_text_auto),
-            NgTopBarTextMode.LIGHT to stringResource(R.string.ng_top_bar_text_light),
-            NgTopBarTextMode.DARK to stringResource(R.string.ng_top_bar_text_dark)
-        ).forEach { (mode, label) ->
-            val isSelected = mode == selected
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(40.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(
-                        if (isSelected) Color(colors.selectedContainer) else Color.Transparent
-                    )
-                    .clickable { onSelected(mode) },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = label,
-                    color = Color(
-                        if (isSelected) colors.onPrimaryContainer else colors.onSurfaceVariant
-                    ),
-                    fontSize = 14.sp,
-                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
-                )
-            }
-        }
-    }
+    NgFlatActionRail(
+        items = options.map { (mode, label) ->
+            NgFlatActionRailItem(
+                label = label,
+                emphasized = mode == selected,
+            )
+        },
+        onItemClick = { index ->
+            options.getOrNull(index)?.first?.let(onSelected)
+        },
+        variant = NgFlatActionRailVariant.TEXT_MODE_PICKER,
+    )
 }
 
 @Composable

@@ -1,6 +1,5 @@
 package io.legado.app.ui.config
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,8 +23,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.help.config.NgCoverAlbum
 import io.legado.app.ui.design.components.NgSettingsTrailing
+import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsItem
 import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
@@ -180,52 +179,55 @@ private fun NgCoverAlbumSelectionSheet(
     onSelect: (String?) -> Unit,
     onDismissRequest: () -> Unit,
 ) {
-    val snapshot = NgTheme.snapshot
-    val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    val baseSnapshot = NgTheme.snapshot
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         dragHandle = null,
         containerColor = Color.Transparent,
-        contentColor = Color(snapshot.colors.onSurface),
-        shape = shape,
+        contentColor = Color(baseSnapshot.colors.onSurface),
+        shape = RectangleShape,
     ) {
-        Column(
+        NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.52f)
-                .clip(shape)
-                .background(Color(snapshot.colors.drawerContainer))
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 18.dp),
+                .fillMaxHeight(0.52f),
         ) {
-            Text(
-                text = stringResource(R.string.ng_cover_album),
-                color = Color(snapshot.colors.onSurface),
-                fontSize = 21.sp,
-                lineHeight = 25.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            NgSettingsGroup(modifier = Modifier.padding(top = 8.dp)) {
-                NgCoverAlbumSelectionItem(
-                    title = stringResource(R.string.ng_cover_album_none),
-                    summary = stringResource(R.string.ng_cover_album_none_summary),
-                    selected = selectedAlbumId == null,
-                    onClick = { onSelect(null) },
+            val snapshot = NgTheme.snapshot
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 18.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.ng_cover_album),
+                    color = Color(snapshot.colors.onSurface),
+                    fontSize = 21.sp,
+                    lineHeight = 25.sp,
+                    fontWeight = FontWeight.Bold,
                 )
-                albums.forEach { album ->
+                NgSettingsGroup(modifier = Modifier.padding(top = 8.dp)) {
                     NgCoverAlbumSelectionItem(
-                        title = album.name,
-                        summary = stringResource(
-                            R.string.ng_cover_album_count,
-                            album.lightImages.size,
-                            album.darkImages.size,
-                        ),
-                        selected = album.id == selectedAlbumId,
-                        onClick = { onSelect(album.id) },
+                        title = stringResource(R.string.ng_cover_album_none),
+                        summary = stringResource(R.string.ng_cover_album_none_summary),
+                        selected = selectedAlbumId == null,
+                        onClick = { onSelect(null) },
                     )
+                    albums.forEach { album ->
+                        NgCoverAlbumSelectionItem(
+                            title = album.name,
+                            summary = stringResource(
+                                R.string.ng_cover_album_count,
+                                album.lightImages.size,
+                                album.darkImages.size,
+                            ),
+                            selected = album.id == selectedAlbumId,
+                            onClick = { onSelect(album.id) },
+                        )
+                    }
                 }
             }
         }

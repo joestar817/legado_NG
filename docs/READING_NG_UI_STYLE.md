@@ -13,11 +13,12 @@
 | 能力 | 公共实现 | 已验证场景 | 冻结结论 |
 | --- | --- | --- | --- |
 | 页面／抽屉搜索 | `NgSearchBar` | Provider、模型列表、模型选择 BottomSheet | 44dp 胶囊搜索框，15sp 输入，统一搜索、清除和键盘行为 |
-| 次要按钮 | `NgSecondaryButtonView` | Provider 详情、Skill 操作 | 高不透明白底、1dp 主题强调色描边、强调色文字；主操作仍使用强调色实底 |
+| 次要按钮 | `NgSecondaryButtonView`／`NgFormActionButton(SURFACE_CARD)` | Provider 详情／表单、Skill 操作 | 高不透明亮白底、1dp 主题强调色描边、强调色文字；不得使用发灰的通用 surface，主操作仍使用强调色实底 |
 | 高饱和实底按钮 | `NgButton`／`NgFormActionButton`／`NgActionBarButton` | 主操作、确认操作、危险确认 | 标准外形对齐书架底部操作栏：稳定矩形、12dp 中圆角，不使用默认胶囊；Primary／Danger 等强调色或错误色实底一律使用白色文字、图标和进度指示，禁止动态 `onPrimary`／`onError` 产生彩底黑字 |
 | 详情页底部切换 | `NgFloatingTabBar` | Provider 配置／模型、TTS 引擎配置／发音人 | 48dp 悬浮栏、等宽项、纯图标居中；文字保留为无障碍描述 |
 | 标题栏菜单 | `NgMenuPopup` + `NgActionPopup` | Provider、TTS 引擎列表菜单 | 标题栏只保留一个操作入口；新增类型与列表查看选项用 18dp 圆角菜单承载 |
 | 选择型长列表抽屉 | `NgLongListBottomSheet` + `NgLongDrawerHeader` | AI 模型、发音人、TTS 引擎、书架批量换源 | 透明筛选承载层、无描边搜索／过滤卡片；Compose 长列表使用 12dp 紧凑提示线、42dp 标题栏和 17sp Medium 标题，标题栏按需展开搜索或“搜索 + 业务过滤项”面板 |
+| 侧边导航抽屉（Trial） | `NgSideDrawerSurface` | AI 聊天导航 | 完整复用全局 NG 抽屉的材质、基础颜色、主色浓度和透明度，并作为唯一背景层；不得再传主题图 `backdrop` 后叠第二层 NG 容器。固定右侧 16dp 圆角、65% 宽度、默认页面遮罩及交互保持侧栏原实现，公共侧栏不消费全局水平边距或圆角参数。AI 导航前景统一白色，打开期间系统栏图标同步为白色，关闭后恢复当前主题 |
 | 强调色规则 | 当前主题 `accentColor` | 小节标题、按钮、选中 Tab | 直接保留主题原始强调色，不额外派生暗色文字替代视觉性格 |
 | 图标选择规则 | 现有资源 + Iconify + 必要时单独设计 | AI 设置入口、Provider、Tab、菜单 | 不绑定单一 Material 图标库；统一的是尺寸、视口、线宽和语义，不是来源 |
 | 页面标题栏 | `TitleBar` | AI 设置及同源二级页面 | 返回按钮保留完整触控区域，导航内容 inset 与额外标题前距统一为 0dp，不在单页增加位移补丁 |
@@ -28,9 +29,12 @@
 | 书架管理顶部栏 | `NgGlassSurface` + `NgSearchBar(TOOLBAR)` | 书架批量管理 | 顶栏使用 NG `smallDp` 8dp 小圆角与现有高对比玻璃材质；页面只组织返回、搜索和分组入口，不改公共搜索栏内部几何 |
 | 右侧滑入可展开菜单（Trial） | `NgExpandableActionMenu(SIDE_SLIDE)` | 书架批量管理分组菜单 | 参考阅读菜单使用 156dp 宽、12dp 圆角、44dp 行高和 8dp 右边距；水平方向按整扇窗口贴右，纵向从顶栏菜单按钮底边下移 16dp，使面板覆盖下层容器右上角，展开过长时再向上收口。进入与退出均移动完整 Popup 窗口，使用 `mediumDuration` 的单向减速／加速滑动，禁止固定窗口内裁切式显现、弹簧、缩放和抖动。可通过 `defaultExpandedItemIds` 声明每次打开的默认展开项；书架分组不超过 10 个时默认展开，超过 10 个才收起。保留原位展开、选中反馈、返回与外部点击关闭。书架管理使用不透明暖白 `ng_surface_soft`，不得复用阅读玻璃透明度；默认 `DROPDOWN` Variant 不受影响 |
 | 紧凑批量操作轨（Trial） | `NgFlatActionRail(COMPACT_SEGMENTED / SPACED_COMPACT)` | 书架批量管理底部操作坞 | `COMPACT_SEGMENTED` 使用 28dp 高、8dp 圆角、轻承载面与细边界承载成对选择操作，不使用投影；`SPACED_COMPACT` 四个带文字动作等宽排列，启用态统一只使用主题强调色，不绘制单项遮罩或阴影；业务页只传图标、短文案、可用态与事件 |
+| 类型切换操作轨（Trial） | `NgFlatActionRail(MODE_PICKER / TEXT_MODE_PICKER / FORM_TEXT_PICKER)` | 书架布局、颜色选择顶栏文字、模型编辑 | `MODE_PICKER` 为 58dp 图标＋文字，`TEXT_MODE_PICKER` 为 44dp 独立亮白纯文字轨；`FORM_TEXT_PICKER` 为 44dp 嵌入连续表单的纯文字轨，不重复绘制外壳，选中态只用主题色文字＋小勾，不铺大面积色块。业务页不得再用大胶囊或灰色底手搓同类切换 |
+| 连续表单文本行（Trial） | `NgFormPanel` + `NgFormPanelSectionTitle` + `NgFormInlineTextRow` | 模型编辑 | 多个相关分区共用一张亮白底板，分区标题与控件直接铺在面板内；文本行 48dp，左侧短标签、右侧单行值，只读值使用次要文字色，编辑态保留真实光标，行间只用细分隔线 |
 | 短抽屉选择面板（Trial） | `NgDrawerDragHandle(COMPACT)` + `NgCompactDrawerHeader` + `NgCompactDrawerSelectionPanel` | 书架移动到分组 | 顶部使用 12dp 公共紧凑提示线，标题在 38dp 标题栏中严格居中；所有选项共享单个中性卡面，52dp 行高、无分隔线、无独立卡片和取消按钮；业务页面只提供数据与点击事件 |
 | 少量互斥选项卡（Trial） | `NgChoiceCard` | 书架管理导出格式 | 两到三个互斥选项使用并列卡片表达，整卡可点并保留明确选中反馈；业务页面只传标题、摘要、状态和事件，不单独手搓卡面 |
 | 紧凑展开设置项（Trial） | `NgExpandableSettingsItem(COMPACT)` | 书架管理导出高级设置 | 折叠时只保留单行标题、摘要和箭头；展开后承载低频格式设置，不把高级选项平铺到主流程 |
+| 可展开选择列表（Trial） | `NgExpandableSectionHeader` + `NgExpandableChildGroup` + `NgExpandableChildRow` | AI 功能选择 | 分组标题卡与展开内容统一使用 `ng_surface_card` 亮白承载面；右侧计数列只显示数量，写操作等风险含义放进说明文字，不得用含义不清的单字 Badge 挤乱数字对齐 |
 | 状态 Tag | `NgStatusTagView` | Provider、TTS 引擎、Prompt／Skill | 标题下状态使用 24dp `REGULAR`；标题行右侧短元数据使用 20dp `COMPACT`，不混用尺寸职责 |
 
 以上能力已经可以在同类页面复用，但仍按页面逐项验收。表单字段、Dialog、图片和通用状态页尚未完成同等级验收，不得因已存在类名或 Catalog 示例就标记为全局稳定。
@@ -629,6 +633,11 @@ Provider 试点冻结规格：
 主题主色与日夜语义派生，不嵌入页面背景图；透明度、主色浓度、水平边距和圆角由
 “主题设置 > 抽屉外观”统一控制。水平边距为 0 时抽屉全宽且只保留顶部圆角；边距大于
 0 时使用完整圆角。业务页面不得再自行写死抽屉色值、透明度、外边距或圆角。
+
+尚需保留 XML／View 内容的旧抽屉，通过
+`io.legado.app.ui.widget.dialog.createNgBottomDrawerViewHost` 嵌入同一
+`NgBottomDrawerSurface`；固定高度抽屉使用填满宿主模式，内容自适应短抽屉使用包裹高度模式。
+View 根节点不得再叠加私有抽屉背景或固定圆角。
 
 冻结外壳：
 
