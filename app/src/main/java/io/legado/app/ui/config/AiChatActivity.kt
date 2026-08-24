@@ -141,6 +141,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
@@ -230,6 +231,7 @@ import io.legado.app.ui.widget.compose.toggleNgExpandedKey
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.PhotoDialog
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSideDrawerSurface
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
@@ -2339,6 +2341,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxSize()
                 )
             }
+            if (globalSearchMode || previewMode) {
+                AiChatSearchBackdrop()
+            }
             if (globalSearchMode) {
                 GlobalMessageSearchPage(
                     query = globalSearchQuery,
@@ -3004,6 +3009,23 @@ private fun AiStatCard(
 }
 
 @Composable
+private fun AiChatSearchBackdrop() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+                        MaterialTheme.colorScheme.background.copy(alpha = 0.66f),
+                        MaterialTheme.colorScheme.background.copy(alpha = 0.74f),
+                    )
+                )
+            )
+    )
+}
+
+@Composable
 private fun GlobalMessageSearchPage(
     query: String,
     onQueryChange: (String) -> Unit,
@@ -3042,76 +3064,71 @@ private fun GlobalMessageSearchPage(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f)
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                Box(
+                    modifier = Modifier.size(44.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
-            IconButton(
-                enabled = query.isNotBlank(),
-                onClick = {
-                    onQueryChange("")
-                    submittedQuery = ""
-                }
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
             ) {
-                Icon(Icons.Rounded.Refresh, contentDescription = "Clear search")
+                Box(
+                    modifier = Modifier.size(44.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    IconButton(
+                        enabled = query.isNotBlank(),
+                        onClick = {
+                            onQueryChange("")
+                            submittedQuery = ""
+                        }
+                    ) {
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            contentDescription = "Clear search",
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(18.dp))
         Text(
             text = "搜索消息",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Medium
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.SemiBold,
         )
-        Spacer(Modifier.height(18.dp))
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("搜索消息内容...") },
-            leadingIcon = {
-                Icon(Icons.Rounded.Search, contentDescription = null)
-            },
-            trailingIcon = {
-                IconButton(
-                    enabled = query.isNotBlank(),
-                    onClick = { submittedQuery = query.trim() }
-                ) {
-                    Icon(Icons.Rounded.Search, contentDescription = "Search")
-                }
-            },
-            shape = RoundedCornerShape(32.dp),
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(
-                onSearch = { submittedQuery = query.trim() }
-            )
+        Spacer(Modifier.height(14.dp))
+        NgSearchBar(
+            query = query,
+            onQueryChange = onQueryChange,
+            hint = "搜索消息内容…",
+            onSearch = { submittedQuery = it.trim() },
         )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            when {
-                submittedQuery.isBlank() -> {
-                    Text(
-                        text = "输入关键词并点击搜索以查找消息",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                }
-
-                results.isEmpty() -> {
+            if (submittedQuery.isNotBlank()) {
+                if (results.isEmpty()) {
                     Text(
                         text = "没有找到相关消息",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.Center)
                     )
-                }
-
-                else -> {
+                } else {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(vertical = 18.dp),
@@ -3949,25 +3966,13 @@ private fun RikkaChatSearchPreview(
                 bottom = padding.calculateBottomPadding()
             )
     ) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
+        NgSearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            hint = "搜索",
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            placeholder = { Text("搜索") },
-            leadingIcon = {
-                Icon(Icons.Rounded.Search, contentDescription = null)
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Clear")
-                    }
-                }
-            },
-            shape = RoundedCornerShape(28.dp),
-            singleLine = true
         )
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
