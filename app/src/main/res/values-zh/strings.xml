@@ -574,11 +574,9 @@
     <string name="ai_filter_models">搜索和筛选模型</string>
     <string name="ai_model_enable">启用模型</string>
     <string name="ai_edit_model">编辑模型</string>
+    <string name="ai_model_information">模型信息</string>
     <string name="ai_model_id">模型 ID</string>
     <string name="ai_model_display_name">显示名称</string>
-    <string name="ai_model_basic_settings">基本设置</string>
-    <string name="ai_model_advanced_settings">高级设置</string>
-    <string name="ai_model_builtin_tools">内置工具</string>
     <string name="ai_model_type">模型类型</string>
     <string name="ai_model_type_chat">聊天</string>
     <string name="ai_model_type_image">图像</string>

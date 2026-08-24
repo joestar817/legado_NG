@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -28,10 +29,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.legado.app.R
 
 enum class NgListBadgeTone {
     Neutral,
@@ -67,10 +70,10 @@ fun NgExpandableSectionHeader(
         onClick = onToggleExpanded,
         modifier = modifier,
         shape = RoundedCornerShape(10.dp),
-        color = Color.White.copy(alpha = 0.48f),
+        color = colorResource(R.color.ng_surface_card),
         border = BorderStroke(
             1.dp,
-            Color.White.copy(alpha = 0.52f)
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
         ),
         tonalElevation = 0.dp
     ) {
@@ -121,6 +124,26 @@ fun NgExpandableSectionHeader(
                 )
             }
         }
+    }
+}
+
+/** 展开分组的连续亮白内容面板。 */
+@Composable
+fun NgExpandableChildGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = colorResource(R.color.ng_surface_card),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
+        ),
+        tonalElevation = 0.dp,
+    ) {
+        Column(content = content)
     }
 }
 

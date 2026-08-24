@@ -33,6 +33,7 @@ import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.AiReasoningLevel
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
+import io.legado.app.ui.widget.dialog.createNgBottomDrawerViewHost
 import io.legado.app.utils.applyTint
 
 object AiAssistantConfigUi {
@@ -113,16 +114,7 @@ object AiAssistantConfigUi {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(24.dpToPx(context), 10.dpToPx(context), 24.dpToPx(context), 28.dpToPx(context))
-            background = GradientDrawable().apply {
-                cornerRadii = floatArrayOf(
-                    28.dpToPx(context).toFloat(), 28.dpToPx(context).toFloat(),
-                    28.dpToPx(context).toFloat(), 28.dpToPx(context).toFloat(),
-                    0f, 0f,
-                    0f, 0f
-                )
-                setColor(ContextCompat.getColor(context, R.color.ng_surface_card))
-            }
+            setPadding(16.dpToPx(context), 10.dpToPx(context), 16.dpToPx(context), 28.dpToPx(context))
         }
         root.addView(View(context).apply {
             background = GradientDrawable().apply {
@@ -136,14 +128,29 @@ object AiAssistantConfigUi {
             text = context.getString(R.string.ai_assistant_reasoning_title)
             setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
             typeface = Typeface.DEFAULT_BOLD
-            textSize = 22f
+            textSize = 18f
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply {
-            bottomMargin = 22.dpToPx(context)
+            bottomMargin = 14.dpToPx(context)
         })
+        val contentPanel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            minimumHeight = 240.dpToPx(context)
+            setPadding(
+                20.dpToPx(context),
+                20.dpToPx(context),
+                20.dpToPx(context),
+                20.dpToPx(context),
+            )
+            background = GradientDrawable().apply {
+                cornerRadius = 18.dpToPx(context).toFloat()
+                setColor(ContextCompat.getColor(context, R.color.ng_surface_card))
+            }
+        }
         val currentLabel = TextView(context).apply {
             text = AiConfig.assistantReasoningLevel.displayName(context)
             setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
@@ -158,8 +165,11 @@ object AiAssistantConfigUi {
                 null
             }
         }
-        root.addView(currentIcon, LinearLayout.LayoutParams(42.dpToPx(context), 42.dpToPx(context)))
-        root.addView(currentLabel, LinearLayout.LayoutParams(
+        contentPanel.addView(
+            currentIcon,
+            LinearLayout.LayoutParams(42.dpToPx(context), 42.dpToPx(context)),
+        )
+        contentPanel.addView(currentLabel, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply {
@@ -182,11 +192,11 @@ object AiAssistantConfigUi {
                 onChanged()
             }
         }
-        root.addView(stepBar, LinearLayout.LayoutParams(
+        contentPanel.addView(stepBar, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             42.dpToPx(context)
         ))
-        root.addView(LinearLayout(context).apply {
+        contentPanel.addView(LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             levels.forEach { level ->
                 addView(TextView(context).apply {
@@ -204,8 +214,20 @@ object AiAssistantConfigUi {
         ).apply {
             topMargin = 12.dpToPx(context)
         })
+        root.addView(
+            contentPanel,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
         val dialog = BottomSheetDialog(context)
-        dialog.setContentView(root)
+        dialog.setContentView(
+            context.createNgBottomDrawerViewHost(
+                contentView = root,
+                fillMaxHeight = false,
+            )
+        )
         dialog.setOnShowListener {
             val sheet = dialog.findViewById<View>(
                 com.google.android.material.R.id.design_bottom_sheet
@@ -224,15 +246,6 @@ object AiAssistantConfigUi {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24.dpToPx(context), 10.dpToPx(context), 24.dpToPx(context), 26.dpToPx(context))
-            background = GradientDrawable().apply {
-                cornerRadii = floatArrayOf(
-                    28.dpToPx(context).toFloat(), 28.dpToPx(context).toFloat(),
-                    28.dpToPx(context).toFloat(), 28.dpToPx(context).toFloat(),
-                    0f, 0f,
-                    0f, 0f
-                )
-                setColor(ContextCompat.getColor(context, R.color.ng_surface_card))
-            }
         }
         root.addView(View(context).apply {
             background = GradientDrawable().apply {
@@ -361,7 +374,12 @@ object AiAssistantConfigUi {
             ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         val dialog = BottomSheetDialog(context)
-        dialog.setContentView(root)
+        dialog.setContentView(
+            context.createNgBottomDrawerViewHost(
+                contentView = root,
+                fillMaxHeight = false,
+            )
+        )
         dialog.setOnShowListener {
             val sheet = dialog.findViewById<View>(
                 com.google.android.material.R.id.design_bottom_sheet

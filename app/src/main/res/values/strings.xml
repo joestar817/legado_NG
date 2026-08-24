@@ -576,11 +576,9 @@
     <string name="ai_filter_models">Search and filter models</string>
     <string name="ai_model_enable">Enable model</string>
     <string name="ai_edit_model">Edit model</string>
+    <string name="ai_model_information">Model information</string>
     <string name="ai_model_id">Model ID</string>
     <string name="ai_model_display_name">Display name</string>
-    <string name="ai_model_basic_settings">Basic settings</string>
-    <string name="ai_model_advanced_settings">Advanced settings</string>
-    <string name="ai_model_builtin_tools">Built-in tools</string>
     <string name="ai_model_type">Model type</string>
     <string name="ai_model_type_chat">Chat</string>
     <string name="ai_model_type_image">Image</string>

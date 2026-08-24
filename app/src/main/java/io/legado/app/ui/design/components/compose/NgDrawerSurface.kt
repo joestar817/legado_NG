@@ -16,7 +16,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
 import androidx.compose.ui.unit.dp
 import io.legado.app.help.config.AppConfig
@@ -70,22 +73,7 @@ fun NgBottomDrawerSurface(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val baseSnapshot = NgTheme.snapshot
-    val normalized = remember(appearance) {
-        appearance.copy(
-            transparencyPercent = NgDrawerAppearanceConfig.normalizePercent(
-                appearance.transparencyPercent
-            ),
-            primaryStrengthPercent = NgDrawerAppearanceConfig.normalizePercent(
-                appearance.primaryStrengthPercent
-            ),
-            horizontalMarginDp = NgDrawerAppearanceConfig.normalizeHorizontalMarginDp(
-                appearance.horizontalMarginDp
-            ),
-            cornerRadiusDp = NgDrawerAppearanceConfig.normalizeCornerRadiusDp(
-                appearance.cornerRadiusDp
-            ),
-        )
-    }
+    val normalized = remember(appearance) { appearance.normalized() }
     val radius = normalized.cornerRadiusDp.dp
     val shape = if (normalized.horizontalMarginDp == 0) {
         RoundedCornerShape(topStart = radius, topEnd = radius)
@@ -114,6 +102,60 @@ fun NgBottomDrawerSurface(
         )
     }
 }
+
+/**
+ * 全局 NG 侧边抽屉承载面。
+ *
+ * 颜色、透明度与主色浓度复用底部抽屉设置，并作为侧栏唯一背景层；几何由侧边
+ * 业务结构显式提供，不消费全局边距或圆角参数，也不允许额外叠加背景 backdrop。
+ */
+@Composable
+fun NgSideDrawerSurface(
+    modifier: Modifier = Modifier,
+    appearance: NgDrawerAppearance = NgDrawerDefaults.currentAppearance(),
+    shape: Shape = RectangleShape,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val baseSnapshot = NgTheme.snapshot
+    val configuration = LocalConfiguration.current
+    val normalized = remember(appearance) { appearance.normalized() }
+    val materialViewport = remember(
+        configuration.screenWidthDp,
+        configuration.screenHeightDp,
+    ) {
+        NgGlassMaterialViewport(
+            width = configuration.screenWidthDp.dp,
+            height = (configuration.screenHeightDp * 0.68f).dp,
+        )
+    }
+    val semanticSnapshot = remember(baseSnapshot, normalized.primaryStrengthPercent) {
+        NgDrawerPalette.applySemanticRoles(
+            snapshot = baseSnapshot,
+            primaryStrengthPercent = normalized.primaryStrengthPercent,
+        )
+    }
+    NgAppTheme(
+        snapshot = semanticSnapshot,
+        updateSystemBars = false,
+    ) {
+        NgGlassSurface(
+            modifier = modifier,
+            shape = shape,
+            style = NgDrawerDefaults.style(normalized),
+            materialViewport = materialViewport,
+            contentPadding = contentPadding,
+            content = content,
+        )
+    }
+}
+
+private fun NgDrawerAppearance.normalized(): NgDrawerAppearance = copy(
+    transparencyPercent = NgDrawerAppearanceConfig.normalizePercent(transparencyPercent),
+    primaryStrengthPercent = NgDrawerAppearanceConfig.normalizePercent(primaryStrengthPercent),
+    horizontalMarginDp = NgDrawerAppearanceConfig.normalizeHorizontalMarginDp(horizontalMarginDp),
+    cornerRadiusDp = NgDrawerAppearanceConfig.normalizeCornerRadiusDp(cornerRadiusDp),
+)
 
 /**
  * NG 抽屉顶部的原生拖动抓手。

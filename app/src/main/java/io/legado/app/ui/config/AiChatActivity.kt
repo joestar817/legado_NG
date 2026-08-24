@@ -128,6 +128,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -140,8 +141,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -149,7 +150,9 @@ import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -218,14 +221,16 @@ import io.legado.app.help.ai.runtime.AgentSkillRuntimeDeclaration
 import io.legado.app.help.ai.runtime.ToolExecutionReceipt
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.ui.widget.compose.NgExpandableChildRow
+import io.legado.app.ui.widget.compose.NgExpandableChildGroup
 import io.legado.app.ui.widget.compose.NgExpandableSectionHeader
 import io.legado.app.ui.widget.compose.NgFunctionMenu
 import io.legado.app.ui.widget.compose.NgFunctionMenuAction
 import io.legado.app.ui.widget.compose.NgListBadge
-import io.legado.app.ui.widget.compose.NgListBadgeTone
 import io.legado.app.ui.widget.compose.toggleNgExpandedKey
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.PhotoDialog
+import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgSideDrawerSurface
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.GSON
@@ -296,6 +301,8 @@ private const val MODE_ENTRY_START_PROMPT =
     "[AI_MODE_START] 使用当前固定 Mode 入口上下文完整执行系统工作流，" +
         "直到产生工作流要求的最终可见结果。不要要求用户重复提供入口信息，" +
         "不要复述本条内部触发消息，不要输出中间过程播报。"
+
+private const val AI_CHAT_DRAWER_WIDTH_RATIO = 0.65f
 
 private val MODE_ENTRY_CONTEXT_TOKEN =
     Regex("""\{\{context\.(title|payload\.[A-Za-z0-9_]+)\}\}""")
@@ -2239,7 +2246,6 @@ private fun AiChatRoute(onBack: () -> Unit) {
                 historyLoaded = historyLoaded,
                 activeSessionId = activeSessionId,
                 favoriteItems = drawerFavoriteItems,
-                backgroundDrawable = chatBackgroundDrawable,
                 historyManageMode = historyManageMode,
                 selectedHistoryIds = selectedHistoryIds.toSet(),
                 onSelect = { targetIndex ->
@@ -2333,19 +2339,6 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxSize()
                 )
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.66f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.74f)
-                            )
-                        )
-                    )
-            )
             if (globalSearchMode) {
                 GlobalMessageSearchPage(
                     query = globalSearchQuery,
@@ -2746,16 +2739,20 @@ private fun AiChatStatsPage(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f)
                 ) {
                     Box(
-                        modifier = Modifier.size(56.dp),
+                        modifier = Modifier.size(44.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "返回",
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 }
-                Spacer(Modifier.height(26.dp))
+                Spacer(Modifier.height(18.dp))
                 Text(
                     text = "统计",
-                    style = MaterialTheme.typography.displaySmall,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -3190,7 +3187,6 @@ private fun RikkaChatDrawer(
     historyLoaded: Boolean,
     activeSessionId: String?,
     favoriteItems: List<DrawerFavoriteItem>,
-    backgroundDrawable: Drawable?,
     historyManageMode: Boolean,
     selectedHistoryIds: Set<String>,
     onSelect: (Int) -> Unit,
@@ -3209,55 +3205,45 @@ private fun RikkaChatDrawer(
     onOpenSettings: () -> Unit,
     onNewChat: () -> Unit
 ) {
-    val drawerWidth = LocalConfiguration.current.screenWidthDp.dp * 0.65f
-    Surface(
+    val drawerWidth = LocalConfiguration.current.screenWidthDp.dp * AI_CHAT_DRAWER_WIDTH_RATIO
+    NgSideDrawerSurface(
         modifier = Modifier
             .fillMaxHeight()
             .width(drawerWidth),
-        color = if (backgroundDrawable == null) {
-            MaterialTheme.colorScheme.background
-        } else {
-            Color.Transparent
-        },
-        shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
+        shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (backgroundDrawable != null) {
-                ChatBackgroundImage(
-                    drawableProvider = { backgroundDrawable },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+        val drawerContentColor = drawerPrimaryContentColor()
+        CompositionLocalProvider(LocalContentColor provides drawerContentColor) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
                     .navigationBarsPadding()
                     .padding(horizontal = 6.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Spacer(Modifier.height(8.dp))
                 DrawerActionRow(
                     icon = Icons.Rounded.Search,
                     label = "搜索聊天",
                     selected = selectedIndex == 1,
-                    onClick = { onSelect(1) }
+                    onClick = { onSelect(1) },
                 )
                 DrawerActionRow(
                     icon = Icons.Rounded.History,
                     label = "聊天历史",
                     selected = selectedIndex == 2,
-                    onClick = { onSelect(2) }
+                    onClick = { onSelect(2) },
                 )
                 DrawerActionRow(
                     icon = Icons.Rounded.Favorite,
                     label = "收藏内容",
                     selected = selectedIndex == 3,
-                    onClick = { onSelect(3) }
+                    onClick = { onSelect(3) },
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    color = drawerContentColor.copy(alpha = 0.35f),
                 )
                 Box(modifier = Modifier.weight(1f)) {
                     when (selectedIndex) {
@@ -3265,7 +3251,7 @@ private fun RikkaChatDrawer(
                             favoriteItems = favoriteItems,
                             onSessionSelect = onSessionSelect,
                             onPinFavorite = onPinFavorite,
-                            onDeleteFavorite = onDeleteFavorite
+                            onDeleteFavorite = onDeleteFavorite,
                         )
 
                         else -> DrawerHistoryContent(
@@ -3283,13 +3269,13 @@ private fun RikkaChatDrawer(
                             onToggleSelection = onToggleHistorySelection,
                             onSelectAll = onSelectAllHistory,
                             onDeleteSelected = onDeleteSelectedHistory,
-                            onNewChat = onNewChat
+                            onNewChat = onNewChat,
                         )
                     }
                 }
                 DrawerBottomActions(
                     onOpenStats = onOpenStats,
-                    onOpenSettings = onOpenSettings
+                    onOpenSettings = onOpenSettings,
                 )
             }
         }
@@ -3341,14 +3327,14 @@ private fun DrawerBottomActionButton(
                     imageVector = imageVector,
                     contentDescription = contentDescription,
                     modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurface
+                    tint = drawerPrimaryContentColor(),
                 )
             } else if (iconRes != null) {
                 Icon(
                     painter = painterResource(iconRes),
                     contentDescription = contentDescription,
                     modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurface
+                    tint = drawerPrimaryContentColor(),
                 )
             }
         }
@@ -3357,32 +3343,18 @@ private fun DrawerBottomActionButton(
 
 @Composable
 private fun drawerPrimaryContentColor(): Color {
-    val snapshot = NgTheme.snapshot
-    return if (snapshot.isDark) {
-        Color(snapshot.colors.onSurface)
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
+    return Color(NgTheme.colors.primary)
 }
 
 @Composable
 private fun drawerSecondaryContentColor(): Color {
-    val snapshot = NgTheme.snapshot
-    return if (snapshot.isDark) {
-        Color(snapshot.colors.onSurfaceVariant)
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    return Color(NgTheme.colors.primary).copy(alpha = 0.78f)
 }
 
 @Composable
 private fun drawerAccentContentColor(enabled: Boolean = true): Color {
-    val snapshot = NgTheme.snapshot
-    return when {
-        !enabled -> Color(snapshot.colors.onSurfaceVariant).copy(alpha = 0.45f)
-        snapshot.isDark -> Color(snapshot.colors.onSurface)
-        else -> Color(snapshot.colors.primary)
-    }
+    val color = Color(NgTheme.colors.primary)
+    return if (enabled) color else color.copy(alpha = 0.45f)
 }
 
 @Composable
@@ -7444,68 +7416,73 @@ private fun AiChatContextPreviewSheet(
     attachments: List<AiChatInputAttachment>,
     onDismiss: () -> Unit
 ) {
+    val baseSnapshot = NgTheme.snapshot
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = null,
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+        containerColor = Color.Transparent,
+        contentColor = Color(baseSnapshot.colors.onSurface),
+        shape = RectangleShape,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 18.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "上下文内容",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "这些内容会随下一条消息一次性发送给 AI，可在输入框中移除。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                attachments.forEach { attachment ->
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                Text(
+                    text = "上下文内容",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "这些内容会随下一条消息一次性发送给 AI，可在输入框中移除。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    attachments.forEach { attachment ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
                         ) {
-                            Text(
-                                text = attachment.title,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = attachment.subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                            Text(
-                                text = attachment.prompt,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                            Column(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = attachment.title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = attachment.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                Text(
+                                    text = attachment.prompt,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(12.dp))
             }
-            Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }
@@ -7518,7 +7495,7 @@ private fun AiChatMcpCapabilitySheet(
     onSelectionChange: (Set<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
+    val baseSnapshot = NgTheme.snapshot
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val expandedModuleIds = remember(modules) {
         mutableStateListOf<String>()
@@ -7527,11 +7504,6 @@ private fun AiChatMcpCapabilitySheet(
         modules.flatMap { module ->
             module.capabilities.map { capability -> capability.id }
         }.toSet()
-    }
-    val sheetBackgroundDrawable = remember(context) {
-        runCatching {
-            ThemeConfig.getBgImage(context, context.resources.displayMetrics)
-        }.getOrNull()
     }
     val selectedToolCount = McpInternalToolCatalog
         .resolveToolNames(selectedCapabilityIds)
@@ -7546,25 +7518,14 @@ private fun AiChatMcpCapabilitySheet(
         sheetState = sheetState,
         dragHandle = null,
         containerColor = Color.Transparent,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        contentColor = Color(baseSnapshot.colors.onSurface),
+        shape = RectangleShape,
     ) {
-        Box(
+        NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.68f)
-                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
         ) {
-            if (sheetBackgroundDrawable != null) {
-                ChatBackgroundImage(
-                    drawableProvider = { sheetBackgroundDrawable },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0x66FFFFF9))
-            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -7633,7 +7594,11 @@ private fun AiChatMcpCapabilitySheet(
                                     onSelectionChange = onSelectionChange
                                 )
                                 AnimatedVisibility(visible = expanded) {
-                                    Column(modifier = Modifier.padding(top = 4.dp)) {
+                                    NgExpandableChildGroup(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp),
+                                    ) {
                                         module.capabilities.forEach { capability ->
                                             AiChatMcpCapabilityRow(
                                                 capability = capability,
@@ -7701,14 +7666,14 @@ private fun AiChatMcpCapabilityRow(
 ) {
     NgExpandableChildRow(
         title = capability.title,
-        summary = capability.description,
-        selected = selected,
-        badges = buildList {
-            add(NgListBadge(capability.toolNames.size.toString()))
-            if (capability.requiresUserConfirmation) {
-                add(NgListBadge("写", NgListBadgeTone.Error))
-            }
+        summary = if (capability.requiresUserConfirmation) {
+            "${stringResource(R.string.ai_operation_permission_mode_confirm_write)} · " +
+                capability.description
+        } else {
+            capability.description
         },
+        selected = selected,
+        badges = listOf(NgListBadge(capability.toolNames.size.toString())),
         onToggle = onToggle,
         modifier = Modifier.fillMaxWidth()
     )
@@ -7725,37 +7690,42 @@ private fun AiChatInputAttachmentSheet(
     onAdd: (AiChatInputAttachment) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val baseSnapshot = NgTheme.snapshot
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = null,
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+        containerColor = Color.Transparent,
+        contentColor = Color(baseSnapshot.colors.onSurface),
+        shape = RectangleShape,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 18.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            AiChatAttachmentSheetSection(
-                emptyText = emptyText,
-                attachments = availableAttachments,
-                loadedAttachmentIds = loadedAttachmentIds,
-                onAdd = onAdd
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AiChatAttachmentSheetSection(
+                    emptyText = emptyText,
+                    attachments = availableAttachments,
+                    loadedAttachmentIds = loadedAttachmentIds,
+                    onAdd = onAdd
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
         }
     }
 }
@@ -7782,7 +7752,7 @@ private fun AiChatAttachmentSheetSection(
                     onClick = { if (!loaded) onAdd(attachment) },
                     enabled = !loaded,
                     shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    color = colorResource(R.color.ng_surface_card),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(

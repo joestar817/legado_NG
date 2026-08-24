@@ -17,6 +17,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgFormActionButton
+import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgFormActionGroup
 import io.legado.app.ui.design.components.compose.NgFormActionRow
 import io.legado.app.ui.design.components.compose.NgFormField
@@ -264,7 +265,8 @@ fun AiProviderFormScreen(
                         focusManager.clearFocus()
                         onAction(AiProviderFormScreenAction.TestConnectionRequested)
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    appearance = NgFormActionButtonAppearance.SURFACE_CARD,
                 )
                 NgFormActionButton(
                     text = stringResource(R.string.ai_query_balance),
@@ -272,7 +274,8 @@ fun AiProviderFormScreen(
                         focusManager.clearFocus()
                         onAction(AiProviderFormScreenAction.QueryBalanceRequested)
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    appearance = NgFormActionButtonAppearance.SURFACE_CARD,
                 )
             }
             if (!state.builtIn) {

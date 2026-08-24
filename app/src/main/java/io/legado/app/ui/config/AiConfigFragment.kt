@@ -48,7 +48,6 @@ import io.legado.app.R
 import io.legado.app.base.BaseFragment
 import io.legado.app.base.adapter.ItemViewHolder
 import io.legado.app.base.adapter.RecyclerAdapter
-import io.legado.app.databinding.DialogAiModelEditBinding
 import io.legado.app.databinding.FragmentAiConfigBinding
 import io.legado.app.databinding.ItemAiModelBinding
 import io.legado.app.databinding.ItemAiSkillFileBinding
@@ -88,6 +87,7 @@ import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.widget.NgMenuPopup
 import io.legado.app.ui.widget.dialog.CodeDialog
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
+import io.legado.app.ui.widget.dialog.createNgBottomDrawerComposeHost
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.ui.widget.number.NumberPickerDialog
@@ -1508,19 +1508,20 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun showModelEditDialog(provider: AiProviderSetting, model: AiModel) {
         val dialog = BottomSheetDialog(requireContext())
-        val sheetBinding = DialogAiModelEditBinding.inflate(layoutInflater)
-        dialog.setContentView(sheetBinding.root)
+        dialog.setContentView(
+            requireContext().createNgBottomDrawerComposeHost(
+                fillMaxHeight = true,
+            ) {
+                AiModelEditSheet(
+                    model = model,
+                    onSave = { draft ->
+                        saveModelEdit(provider, model, draft)
+                        dialog.dismiss()
+                    },
+                )
+            }
+        )
         configureModelEditSheet(dialog)
-        sheetBinding.editModelId.setText(model.safeId())
-        sheetBinding.editModelDisplayName.setText(model.displayName())
-        bindModelEditTabs(sheetBinding)
-        bindModelEditSegments(sheetBinding, model)
-        sheetBinding.buttonClose.setOnClickListener { dialog.dismiss() }
-        sheetBinding.buttonCancel.setOnClickListener { dialog.dismiss() }
-        sheetBinding.buttonConfirm.setOnClickListener {
-            saveModelEdit(provider, model, sheetBinding)
-            dialog.dismiss()
-        }
         dialog.show()
     }
 
@@ -1531,203 +1532,30 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             ) ?: return@setOnShowListener
             sheet.setBackgroundColor(Color.TRANSPARENT)
             sheet.layoutParams = sheet.layoutParams.apply {
-                height = (resources.displayMetrics.heightPixels * 0.95f).toInt()
+                height = (resources.displayMetrics.heightPixels * 0.70f).toInt()
             }
             BottomSheetBehavior.from(sheet).apply {
                 skipCollapsed = true
-                isDraggable = false
+                isDraggable = true
                 state = BottomSheetBehavior.STATE_EXPANDED
             }
-        }
-    }
-
-    private fun bindModelEditTabs(sheetBinding: DialogAiModelEditBinding) {
-        val activeColor = accentColor
-        val activeTextColor = accentColor
-        val inactiveColor = ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant)
-        sheetBinding.viewModelEditTabBasicIndicator.setBackgroundColor(activeColor)
-        sheetBinding.tabBasic.setTextColor(activeTextColor)
-        sheetBinding.tabBasic.typeface = Typeface.DEFAULT_BOLD
-        sheetBinding.tabBasic.background = GradientDrawable().apply {
-            setColor(Color.TRANSPARENT)
-            setStroke(0, Color.TRANSPARENT)
-        }
-        sheetBinding.tabAdvanced.setTextColor(inactiveColor)
-        sheetBinding.tabBuiltinTools.setTextColor(inactiveColor)
-        sheetBinding.tabAdvanced.alpha = 0.58f
-        sheetBinding.tabBuiltinTools.alpha = 0.58f
-    }
-
-    private fun bindModelEditSegments(
-        sheetBinding: DialogAiModelEditBinding,
-        model: AiModel
-    ) {
-        val type = model.safeType()
-        selectModelEditType(sheetBinding, type)
-        sheetBinding.segmentModelInputText.isSelected =
-            AiModelModality.TEXT in model.safeInputModalities()
-        sheetBinding.segmentModelInputImage.isSelected =
-            AiModelModality.IMAGE in model.safeInputModalities()
-        sheetBinding.segmentModelOutputText.isSelected =
-            AiModelModality.TEXT in model.safeOutputModalities()
-        sheetBinding.segmentModelOutputImage.isSelected =
-            AiModelModality.IMAGE in model.safeOutputModalities()
-        sheetBinding.segmentModelInputVideo.isSelected =
-            AiModelModality.VIDEO in model.safeInputModalities()
-        sheetBinding.segmentModelOutputVideo.isSelected =
-            AiModelModality.VIDEO in model.safeOutputModalities()
-        sheetBinding.segmentModelAbilityTool.isSelected =
-            AiModelAbility.TOOL in model.safeAbilities()
-        sheetBinding.segmentModelAbilityReasoning.isSelected =
-            AiModelAbility.REASONING in model.safeAbilities()
-        sheetBinding.segmentModelTypeChat.setOnClickListener {
-            selectModelEditType(sheetBinding, AiModelType.CHAT)
-        }
-        sheetBinding.segmentModelTypeImage.setOnClickListener {
-            selectModelEditType(sheetBinding, AiModelType.IMAGE)
-        }
-        sheetBinding.segmentModelTypeEmbedding.setOnClickListener {
-            selectModelEditType(sheetBinding, AiModelType.EMBEDDING)
-        }
-        sheetBinding.segmentModelTypeAsr.setOnClickListener {
-            selectModelEditType(sheetBinding, AiModelType.ASR)
-        }
-        sheetBinding.segmentModelTypeTts.setOnClickListener {
-            selectModelEditType(sheetBinding, AiModelType.TTS)
-        }
-        sheetBinding.segmentModelTypeVideo.setOnClickListener {
-            selectModelEditType(sheetBinding, AiModelType.VIDEO)
-        }
-        listOf(
-            sheetBinding.segmentModelInputText,
-            sheetBinding.segmentModelInputImage,
-            sheetBinding.segmentModelInputVideo,
-            sheetBinding.segmentModelOutputText,
-            sheetBinding.segmentModelOutputImage,
-            sheetBinding.segmentModelOutputVideo,
-            sheetBinding.segmentModelAbilityTool,
-            sheetBinding.segmentModelAbilityReasoning
-        ).forEach { segment ->
-            segment.setOnClickListener {
-                segment.isSelected = !segment.isSelected
-                refreshModelEditSegmentStyles(sheetBinding)
-            }
-        }
-        refreshModelEditSegmentStyles(sheetBinding)
-    }
-
-    private fun selectModelEditType(
-        sheetBinding: DialogAiModelEditBinding,
-        type: AiModelType
-    ) {
-        sheetBinding.segmentModelTypeChat.isSelected = type == AiModelType.CHAT
-        sheetBinding.segmentModelTypeImage.isSelected = type == AiModelType.IMAGE
-        sheetBinding.segmentModelTypeEmbedding.isSelected = type == AiModelType.EMBEDDING
-        sheetBinding.segmentModelTypeAsr.isSelected = type == AiModelType.ASR
-        sheetBinding.segmentModelTypeTts.isSelected = type == AiModelType.TTS
-        sheetBinding.segmentModelTypeVideo.isSelected = type == AiModelType.VIDEO
-        val showModalities = type == AiModelType.CHAT || type == AiModelType.VIDEO
-        val showChatAbilities = type == AiModelType.CHAT
-        sheetBinding.textModelInputModalitiesLabel.isVisible = showModalities
-        sheetBinding.layoutModelInputModalities.isVisible = showModalities
-        sheetBinding.textModelOutputModalitiesLabel.isVisible = showModalities
-        sheetBinding.layoutModelOutputModalities.isVisible = showModalities
-        sheetBinding.textModelAbilitiesLabel.isVisible = showChatAbilities
-        sheetBinding.layoutModelAbilities.isVisible = showChatAbilities
-        refreshModelEditSegmentStyles(sheetBinding)
-    }
-
-    private fun refreshModelEditSegmentStyles(sheetBinding: DialogAiModelEditBinding) {
-        applyModelEditSegmentGroupStyles(
-            sheetBinding.layoutModelType,
-            sheetBinding.segmentModelTypeChat,
-            sheetBinding.segmentModelTypeImage,
-            sheetBinding.segmentModelTypeEmbedding,
-            sheetBinding.segmentModelTypeAsr,
-            sheetBinding.segmentModelTypeTts,
-            sheetBinding.segmentModelTypeVideo
-        )
-        applyModelEditSegmentGroupStyles(
-            sheetBinding.layoutModelInputModalities,
-            sheetBinding.segmentModelInputText,
-            sheetBinding.segmentModelInputImage,
-            sheetBinding.segmentModelInputVideo
-        )
-        applyModelEditSegmentGroupStyles(
-            sheetBinding.layoutModelOutputModalities,
-            sheetBinding.segmentModelOutputText,
-            sheetBinding.segmentModelOutputImage,
-            sheetBinding.segmentModelOutputVideo
-        )
-        applyModelEditSegmentGroupStyles(
-            sheetBinding.layoutModelAbilities,
-            sheetBinding.segmentModelAbilityTool,
-            sheetBinding.segmentModelAbilityReasoning
-        )
-    }
-
-    private fun applyModelEditSegmentGroupStyles(
-        group: LinearLayout,
-        vararg segments: TextView
-    ) {
-        val activeColor = accentColor
-        val outlineColor = ContextCompat.getColor(requireContext(), R.color.ng_outline_strong)
-        val textColor = ContextCompat.getColor(requireContext(), R.color.ng_on_surface)
-        val selectedBackground = ColorUtils.setAlphaComponent(activeColor, 22)
-        group.showDividers = LinearLayout.SHOW_DIVIDER_MIDDLE
-        group.dividerDrawable = GradientDrawable().apply {
-            setColor(outlineColor)
-            setSize(1.dpToPx(), 1.dpToPx())
-        }
-        group.setPadding(1.dpToPx(), 1.dpToPx(), 1.dpToPx(), 1.dpToPx())
-        group.background = GradientDrawable().apply {
-            cornerRadius = 22.dpToPx().toFloat()
-            setColor(Color.TRANSPARENT)
-            setStroke(1.dpToPx(), outlineColor)
-        }
-        segments.forEachIndexed { index, segment ->
-            val rawText = segment.text.toString().removePrefix("✓ ").trim()
-            val selected = segment.isSelected
-            segment.text = if (selected) "✓ $rawText" else rawText
-            segment.setTextColor(textColor)
-            segment.typeface = Typeface.defaultFromStyle(Typeface.NORMAL)
-            segment.background = GradientDrawable().apply {
-                setColor(if (selected) selectedBackground else Color.TRANSPARENT)
-                cornerRadii = segmentCornerRadii(index, segments.lastIndex, 21.dpToPx().toFloat())
-            }
-        }
-    }
-
-    private fun segmentCornerRadii(index: Int, lastIndex: Int, radius: Float): FloatArray {
-        return when {
-            index == 0 && index == lastIndex -> floatArrayOf(
-                radius, radius, radius, radius, radius, radius, radius, radius
-            )
-            index == 0 -> floatArrayOf(
-                radius, radius, 0f, 0f, 0f, 0f, radius, radius
-            )
-            index == lastIndex -> floatArrayOf(
-                0f, 0f, radius, radius, radius, radius, 0f, 0f
-            )
-            else -> FloatArray(8)
         }
     }
 
     private fun saveModelEdit(
         provider: AiProviderSetting,
         original: AiModel,
-        sheetBinding: DialogAiModelEditBinding
+        draft: AiModelEditDraft,
     ) {
-        val type = currentModelEditType(sheetBinding)
         val updated = original.copy(
-            displayName = sheetBinding.editModelDisplayName.text?.toString()?.trim().orEmpty(),
-            type = type,
-            inputModalities = modelInputModalitiesFor(sheetBinding, type),
-            outputModalities = modelOutputModalitiesFor(sheetBinding, type),
+            displayName = draft.displayName.trim(),
+            type = draft.type,
+            inputModalities = modelInputModalitiesForDraft(draft.type, draft.inputModalities),
+            outputModalities = modelOutputModalitiesForDraft(draft.type, draft.outputModalities),
             abilities = mergeModelAbilitiesForEdit(
                 original = original,
-                exposedAbilities = modelAbilitiesFor(sheetBinding, type)
-            )
+                exposedAbilities = modelAbilitiesForDraft(draft.type, draft.abilities),
+            ),
         )
         AiProviderStore.saveProvider(provider.copy(models = provider.models.updatedWithModel(updated)))
         refreshModelList(AiProviderStore.provider(provider.id))
@@ -1831,17 +1659,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             binding.segmentModelTypeAsr.isSelected -> AiModelType.ASR
             binding.segmentModelTypeTts.isSelected -> AiModelType.TTS
             binding.segmentModelTypeVideo.isSelected -> AiModelType.VIDEO
-            else -> AiModelType.CHAT
-        }
-    }
-
-    private fun currentModelEditType(sheetBinding: DialogAiModelEditBinding): AiModelType {
-        return when {
-            sheetBinding.segmentModelTypeImage.isSelected -> AiModelType.IMAGE
-            sheetBinding.segmentModelTypeEmbedding.isSelected -> AiModelType.EMBEDDING
-            sheetBinding.segmentModelTypeAsr.isSelected -> AiModelType.ASR
-            sheetBinding.segmentModelTypeTts.isSelected -> AiModelType.TTS
-            sheetBinding.segmentModelTypeVideo.isSelected -> AiModelType.VIDEO
             else -> AiModelType.CHAT
         }
     }
@@ -3539,20 +3356,20 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
-    private fun modelInputModalitiesFor(
-        sheetBinding: DialogAiModelEditBinding,
-        type: AiModelType
+    private fun modelInputModalitiesForDraft(
+        type: AiModelType,
+        selected: Set<AiModelModality>,
     ): List<AiModelModality> {
         return when (type) {
             AiModelType.CHAT -> normalizeModalities(
-                textChecked = sheetBinding.segmentModelInputText.isSelected,
-                imageChecked = sheetBinding.segmentModelInputImage.isSelected,
-                videoChecked = sheetBinding.segmentModelInputVideo.isSelected
+                textChecked = AiModelModality.TEXT in selected,
+                imageChecked = AiModelModality.IMAGE in selected,
+                videoChecked = AiModelModality.VIDEO in selected,
             )
             AiModelType.VIDEO -> normalizeModalities(
-                textChecked = sheetBinding.segmentModelInputText.isSelected,
-                imageChecked = sheetBinding.segmentModelInputImage.isSelected,
-                videoChecked = sheetBinding.segmentModelInputVideo.isSelected
+                textChecked = AiModelModality.TEXT in selected,
+                imageChecked = AiModelModality.IMAGE in selected,
+                videoChecked = AiModelModality.VIDEO in selected,
             )
 
             AiModelType.IMAGE,
@@ -3562,21 +3379,21 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
-    private fun modelOutputModalitiesFor(
-        sheetBinding: DialogAiModelEditBinding,
-        type: AiModelType
+    private fun modelOutputModalitiesForDraft(
+        type: AiModelType,
+        selected: Set<AiModelModality>,
     ): List<AiModelModality> {
         return when (type) {
             AiModelType.CHAT -> normalizeModalities(
-                textChecked = sheetBinding.segmentModelOutputText.isSelected,
-                imageChecked = sheetBinding.segmentModelOutputImage.isSelected,
-                videoChecked = sheetBinding.segmentModelOutputVideo.isSelected
+                textChecked = AiModelModality.TEXT in selected,
+                imageChecked = AiModelModality.IMAGE in selected,
+                videoChecked = AiModelModality.VIDEO in selected,
             )
             AiModelType.VIDEO -> normalizeModalities(
-                textChecked = sheetBinding.segmentModelOutputText.isSelected,
-                imageChecked = sheetBinding.segmentModelOutputImage.isSelected,
-                videoChecked = sheetBinding.segmentModelOutputVideo.isSelected,
-                defaultModality = AiModelModality.VIDEO
+                textChecked = AiModelModality.TEXT in selected,
+                imageChecked = AiModelModality.IMAGE in selected,
+                videoChecked = AiModelModality.VIDEO in selected,
+                defaultModality = AiModelModality.VIDEO,
             )
 
             AiModelType.IMAGE -> listOf(AiModelModality.IMAGE)
@@ -3586,16 +3403,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
-    private fun modelAbilitiesFor(
-        sheetBinding: DialogAiModelEditBinding,
-        type: AiModelType
+    private fun modelAbilitiesForDraft(
+        type: AiModelType,
+        selected: Set<AiModelAbility>,
     ): List<AiModelAbility> {
         return when (type) {
             AiModelType.CHAT -> buildList {
-                if (sheetBinding.segmentModelAbilityTool.isSelected) add(AiModelAbility.TOOL)
-                if (sheetBinding.segmentModelAbilityReasoning.isSelected) {
-                    add(AiModelAbility.REASONING)
-                }
+                if (AiModelAbility.TOOL in selected) add(AiModelAbility.TOOL)
+                if (AiModelAbility.REASONING in selected) add(AiModelAbility.REASONING)
             }
 
             AiModelType.IMAGE,
