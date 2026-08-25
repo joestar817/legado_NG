@@ -29,6 +29,75 @@ import kotlin.io.path.createTempDirectory
 class ReadAloudAudioPreparationTest {
 
     @Test
+    fun playablePrefix_startsAsSoonAsFirstItemIsReady() {
+        assertFalse(hasReadAloudPlayablePrefix(preparedItemCount = 0, totalItemCount = 8))
+        assertTrue(hasReadAloudPlayablePrefix(preparedItemCount = 1, totalItemCount = 8))
+    }
+
+    @Test
+    fun playablePrefix_doesNotRequireSecondOrThirdItem() {
+        assertTrue(hasReadAloudPlayablePrefix(preparedItemCount = 1, totalItemCount = 3))
+    }
+
+    @Test
+    fun playablePrefix_rejectsEmptyChapter() {
+        assertFalse(hasReadAloudPlayablePrefix(preparedItemCount = 0, totalItemCount = 0))
+    }
+
+    @Test
+    fun productionGap_existsOnlyWhileARequiredItemIsMissing() {
+        assertTrue(hasReadAloudProductionGap(enqueuedItemCount = 1, totalItemCount = 3))
+        assertFalse(hasReadAloudProductionGap(enqueuedItemCount = 3, totalItemCount = 3))
+    }
+
+    @Test
+    fun seamlessChapterQueue_usesTheActualLastPageInsteadOfAStartupWindow() {
+        assertEquals(9, readAloudWholeChapterPageEndIndex(pageCount = 10))
+        assertEquals(1, readAloudWholeChapterPageEndIndex(pageCount = 2))
+        assertNull(readAloudWholeChapterPageEndIndex(pageCount = 0))
+    }
+
+    @Test
+    fun playlistAppend_hasSinglePrepareOwnerForInitialStart() {
+        assertEquals(
+            ReadAloudPlaylistAppendAction.START,
+            readAloudPlaylistAppendAction(
+                resumeProductionGap = false,
+                wasPlaylistEmpty = true,
+                playbackIdle = true
+            )
+        )
+        assertEquals(
+            ReadAloudPlaylistAppendAction.NONE,
+            readAloudPlaylistAppendAction(
+                resumeProductionGap = false,
+                wasPlaylistEmpty = false,
+                playbackIdle = false
+            )
+        )
+    }
+
+    @Test
+    fun playlistAppend_prioritizesGapResumeOverInitialStart() {
+        assertEquals(
+            ReadAloudPlaylistAppendAction.RESUME,
+            readAloudPlaylistAppendAction(
+                resumeProductionGap = true,
+                wasPlaylistEmpty = true,
+                playbackIdle = true
+            )
+        )
+        assertEquals(
+            ReadAloudPlaylistAppendAction.RESUME,
+            readAloudPlaylistAppendAction(
+                resumeProductionGap = true,
+                wasPlaylistEmpty = false,
+                playbackIdle = false
+            )
+        )
+    }
+
+    @Test
     fun playlistProduction_defersEndUntilAllItemsAreProduced() {
         val state = ReadAloudPlaylistProductionState()
         val token = state.begin()
@@ -46,6 +115,18 @@ class ReadAloudAudioPreparationTest {
 
         assertFalse(state.onPlaybackEnded())
         assertTrue(state.finish(token))
+    }
+
+    @Test
+    fun playlistProduction_continuesSameGenerationForNextChapter() {
+        val state = ReadAloudPlaylistProductionState()
+        val token = state.begin()
+
+        assertFalse(state.finish(token))
+        assertTrue(state.continueProduction(token))
+        assertFalse(state.onPlaybackEnded())
+        assertTrue(state.onItemAppended(token))
+        assertFalse(state.finish(token))
     }
 
     @Test

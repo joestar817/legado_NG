@@ -1,10 +1,188 @@
 package io.legado.app.help.tts
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReadAloudProgressTest {
+
+    @Test
+    fun mediaItemIdentity_roundTripsPlaybackSourceRange() {
+        val identity = ReadAloudMediaItemIdentity(
+            generation = 7,
+            chapterIndex = 109,
+            itemIndex = 4,
+            paragraphIndex = 8,
+            start = 12,
+            end = 37
+        )
+
+        assertEquals(identity, parseReadAloudMediaItemIdentity(identity.toMediaId()))
+    }
+
+    @Test
+    fun mediaItemIdentity_rejectsMalformedOrInvalidIdentity() {
+        assertNull(parseReadAloudMediaItemIdentity("read-aloud:7:109:4:8:37:12"))
+        assertNull(parseReadAloudMediaItemIdentity("read-aloud:old:109:4:8:12:37"))
+        assertNull(parseReadAloudMediaItemIdentity("https://example.com/audio.mp3"))
+    }
+
+    @Test
+    fun mediaItemIdentity_exposesStalePlaylistGeneration() {
+        val production = ReadAloudPlaylistProductionState()
+        val staleGeneration = production.begin()
+        val currentGeneration = production.begin()
+        val staleIdentity = parseReadAloudMediaItemIdentity(
+            ReadAloudMediaItemIdentity(
+                generation = staleGeneration,
+                chapterIndex = 109,
+                itemIndex = 0,
+                paragraphIndex = 0,
+                start = 0,
+                end = 12
+            ).toMediaId()
+        )
+
+        assertFalse(production.isCurrent(requireNotNull(staleIdentity).generation))
+        assertTrue(production.isCurrent(currentGeneration))
+    }
+
+    @Test
+    fun mediaItemTransition_syncsPlaylistChangeWhenCurrentIdentityAdvanced() {
+        assertTrue(
+            shouldSyncReadAloudMediaItemTransition(
+                playlistChanged = true,
+                previousItemIndex = 3,
+                currentItemIndex = 4
+            )
+        )
+        assertFalse(
+            shouldSyncReadAloudMediaItemTransition(
+                playlistChanged = true,
+                previousItemIndex = 4,
+                currentItemIndex = 4
+            )
+        )
+    }
+
+    @Test
+    fun mediaItemTransition_handoffsOnlyToStagedNextChapter() {
+        assertTrue(
+            shouldHandoffReadAloudChapter(
+                currentChapterIndex = 5,
+                mediaChapterIndex = 6,
+                stagedChapterIndex = 6
+            )
+        )
+        assertTrue(
+            shouldHandoffReadAloudChapter(
+                currentChapterIndex = 6,
+                mediaChapterIndex = 7,
+                stagedChapterIndex = 7
+            )
+        )
+        assertFalse(
+            shouldHandoffReadAloudChapter(
+                currentChapterIndex = 5,
+                mediaChapterIndex = 7,
+                stagedChapterIndex = 7
+            )
+        )
+        assertFalse(
+            shouldHandoffReadAloudChapter(
+                currentChapterIndex = 5,
+                mediaChapterIndex = 6,
+                stagedChapterIndex = null
+            )
+        )
+    }
+
+    @Test
+    fun seamlessHandoff_removesOnlyItemsBeforeCurrentChapter() {
+        assertEquals(12, previousReadAloudChapterMediaCount(currentMediaItemIndex = 12))
+        assertEquals(0, previousReadAloudChapterMediaCount(currentMediaItemIndex = 0))
+    }
+
+    @Test
+    fun seamlessHandoff_acceptsOnlyThePreparedContinuousPrefix() {
+        assertTrue(isReadAloudSeamlessPrefixReady(itemIndex = 0, preparedItemCount = 1))
+        assertFalse(isReadAloudSeamlessPrefixReady(itemIndex = 1, preparedItemCount = 1))
+        assertFalse(isReadAloudSeamlessPrefixReady(itemIndex = 0, preparedItemCount = 0))
+    }
+
+    @Test
+    fun seamlessQueue_countsSourceItemsOnlyBeforeHandoff() {
+        assertEquals(
+            13,
+            expectedReadAloudSeamlessMediaItemCount(
+                sourceMediaItemCount = 10,
+                preparedItemCount = 3,
+                handedOff = false
+            )
+        )
+        assertEquals(
+            3,
+            expectedReadAloudSeamlessMediaItemCount(
+                sourceMediaItemCount = 10,
+                preparedItemCount = 3,
+                handedOff = true
+            )
+        )
+    }
+
+    @Test
+    fun progress_restoreHandlesDuplicatePositionAfterPreparation() {
+        assertTrue(
+            shouldHandleReadAloudProgress(
+                paragraphSeeking = false,
+                lastProgress = 120,
+                progress = 120,
+                restoreSubtitle = true
+            )
+        )
+        assertFalse(
+            shouldHandleReadAloudProgress(
+                paragraphSeeking = false,
+                lastProgress = 120,
+                progress = 120,
+                restoreSubtitle = false
+            )
+        )
+    }
+
+    @Test
+    fun progress_restoreDoesNotOverrideSeekPreview() {
+        assertFalse(
+            shouldHandleReadAloudProgress(
+                paragraphSeeking = true,
+                lastProgress = 120,
+                progress = 120,
+                restoreSubtitle = true
+            )
+        )
+    }
+
+    @Test
+    fun subtitleProjection_restoresTextInsideSameParagraph() {
+        assertTrue(
+            shouldProjectReadAloudSubtitle(
+                lastParagraphIndex = 8,
+                currentSubtitle = "正在准备朗读…",
+                nextParagraphIndex = 8,
+                nextSubtitle = "齐夏继续向前走。"
+            )
+        )
+        assertFalse(
+            shouldProjectReadAloudSubtitle(
+                lastParagraphIndex = 8,
+                currentSubtitle = "齐夏继续向前走。",
+                nextParagraphIndex = 8,
+                nextSubtitle = "齐夏继续向前走。"
+            )
+        )
+    }
 
     @Test
     fun preparedPlaylist_reusesMatchingChapterForNormalPlayback() {

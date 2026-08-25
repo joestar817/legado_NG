@@ -552,7 +552,6 @@ private fun PlayerCoverInfoCard(
                     fontSize = 17.sp,
                     lineHeight = 25.sp,
                     textAlign = TextAlign.Center,
-                    maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

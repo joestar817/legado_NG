@@ -21,6 +21,8 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.tts.ReadAloudBufferProgress
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsSpeedPolicy
+import io.legado.app.help.tts.shouldHandleReadAloudProgress
+import io.legado.app.help.tts.shouldProjectReadAloudSubtitle
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
@@ -209,8 +211,14 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         uiState = uiState.copy(isPlaying = BaseReadAloudService.isPlay())
     }
 
-    private fun refreshProgress(progress: Int) {
-        if (paragraphSeeking || progress == lastProgress) return
+    private fun refreshProgress(progress: Int, restoreSubtitle: Boolean = false) {
+        if (!shouldHandleReadAloudProgress(
+                paragraphSeeking = paragraphSeeking,
+                lastProgress = lastProgress,
+                progress = progress,
+                restoreSubtitle = restoreSubtitle
+            )
+        ) return
         lastProgress = progress
         if (BaseReadAloudService.isPreparing()) {
             showPreparationMessage()
@@ -224,13 +232,18 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     private fun refreshSubtitle(progress: Int) {
         if (!ensureParagraphCache()) return
         val index = currentParagraphIndex(progress)
-        if (index == lastParagraphIndex) return
+        val subtitle = cachedParagraphs.getOrNull(index)?.text ?: "正在准备朗读…"
+        if (!shouldProjectReadAloudSubtitle(
+                lastParagraphIndex = lastParagraphIndex,
+                currentSubtitle = uiState.subtitle,
+                nextParagraphIndex = index,
+                nextSubtitle = subtitle
+            )
+        ) return
         lastParagraphIndex = index
         syncParagraphProgress(index)
         syncLyrics(index)
-        uiState = uiState.copy(
-            subtitle = cachedParagraphs.getOrNull(index)?.text ?: "正在准备朗读…"
-        )
+        uiState = uiState.copy(subtitle = subtitle)
     }
 
     private fun ensureParagraphCache(): Boolean {
@@ -576,10 +589,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         if (preparing) {
             showPreparationMessage()
         } else if (!paragraphSeeking) {
-            val index = currentParagraphIndex(ReadBook.durChapterPos)
-            uiState = uiState.copy(
-                subtitle = cachedParagraphs.getOrNull(index)?.text ?: "正在准备朗读…"
-            )
+            refreshProgress(ReadBook.durChapterPos, restoreSubtitle = true)
         }
     }
 
@@ -641,11 +651,20 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         observeEvent<Int>(EventBus.ALOUD_STATE) {
             when (it) {
                 Status.LOADING -> {
-                    setPlayButtonLoading(true)
-                    showPreparationMessage()
+                    val preparing = BaseReadAloudService.isPreparing()
+                    setPlayButtonLoading(preparing)
+                    if (preparing) {
+                        showPreparationMessage()
+                    }
                 }
                 Status.PAUSE, Status.STOP -> setPlayButtonLoading(false)
-                Status.PLAY -> setPlayButtonLoading(BaseReadAloudService.isPreparing())
+                Status.PLAY -> {
+                    val preparing = BaseReadAloudService.isPreparing()
+                    setPlayButtonLoading(preparing)
+                    if (!preparing) {
+                        refreshProgress(ReadBook.durChapterPos, restoreSubtitle = true)
+                    }
+                }
             }
             refreshStaticState()
             if (it == Status.STOP && !switchingChapter && !switchingVoice) {
@@ -653,8 +672,9 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             }
         }
         observeEvent<Int>(EventBus.TTS_PROGRESS) {
-            if (!BaseReadAloudService.isPreparing()) setPlayButtonLoading(false)
-            refreshProgress(it)
+            val preparing = BaseReadAloudService.isPreparing()
+            if (!preparing) setPlayButtonLoading(false)
+            refreshProgress(it, restoreSubtitle = !preparing)
         }
         observeEvent<ReadAloudBufferProgress>(EventBus.TTS_BUFFER_PROGRESS) {
             syncParagraphBufferProgress(it)

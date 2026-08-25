@@ -532,6 +532,9 @@ abstract class BaseReadAloudService : BaseService(),
         if (playbackStateOwner !== this) return
         val stateChanged = actualPlaybackConfirmed != isPlaying
         actualPlaybackConfirmed = isPlaying
+        if (isPlaying) {
+            preparationStage = PREPARATION_NONE
+        }
         if (isPlaying && pause) {
             pause = false
             needResumeOnAudioFocusGain = false
@@ -664,6 +667,11 @@ abstract class BaseReadAloudService : BaseService(),
     /**
      * 定时
      */
+    protected fun notifySeamlessChapterChanged() {
+        postEvent(EventBus.READ_ALOUD_DS, timeMinute)
+        upReadAloudNotification()
+    }
+
     @Synchronized
     private fun doDs() {
         postEvent(EventBus.READ_ALOUD_DS, timeMinute)

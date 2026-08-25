@@ -5,6 +5,90 @@ data class ReadAloudBufferProgress(
     val chapterPosition: Int
 )
 
+internal data class ReadAloudMediaItemIdentity(
+    val generation: Long,
+    val chapterIndex: Int,
+    val itemIndex: Int,
+    val paragraphIndex: Int,
+    val start: Int,
+    val end: Int
+) {
+    fun toMediaId(): String = listOf(
+        READ_ALOUD_MEDIA_ID_PREFIX,
+        generation,
+        chapterIndex,
+        itemIndex,
+        paragraphIndex,
+        start,
+        end
+    ).joinToString(":")
+}
+
+private const val READ_ALOUD_MEDIA_ID_PREFIX = "read-aloud"
+
+internal fun parseReadAloudMediaItemIdentity(mediaId: String): ReadAloudMediaItemIdentity? {
+    val parts = mediaId.split(':')
+    if (parts.size != 7 || parts[0] != READ_ALOUD_MEDIA_ID_PREFIX) return null
+    val identity = ReadAloudMediaItemIdentity(
+        generation = parts[1].toLongOrNull() ?: return null,
+        chapterIndex = parts[2].toIntOrNull() ?: return null,
+        itemIndex = parts[3].toIntOrNull() ?: return null,
+        paragraphIndex = parts[4].toIntOrNull() ?: return null,
+        start = parts[5].toIntOrNull() ?: return null,
+        end = parts[6].toIntOrNull() ?: return null
+    )
+    return identity.takeIf {
+        it.generation > 0L &&
+                it.chapterIndex >= 0 &&
+                it.itemIndex >= 0 &&
+                it.paragraphIndex >= 0 &&
+                it.start >= 0 &&
+                it.end >= it.start
+    }
+}
+
+internal fun shouldHandleReadAloudProgress(
+    paragraphSeeking: Boolean,
+    lastProgress: Int,
+    progress: Int,
+    restoreSubtitle: Boolean
+): Boolean = !paragraphSeeking && (restoreSubtitle || progress != lastProgress)
+
+internal fun shouldProjectReadAloudSubtitle(
+    lastParagraphIndex: Int,
+    currentSubtitle: String,
+    nextParagraphIndex: Int,
+    nextSubtitle: String
+): Boolean = lastParagraphIndex != nextParagraphIndex || currentSubtitle != nextSubtitle
+
+internal fun shouldSyncReadAloudMediaItemTransition(
+    playlistChanged: Boolean,
+    previousItemIndex: Int,
+    currentItemIndex: Int
+): Boolean = !playlistChanged || previousItemIndex != currentItemIndex
+
+internal fun shouldHandoffReadAloudChapter(
+    currentChapterIndex: Int,
+    mediaChapterIndex: Int,
+    stagedChapterIndex: Int?
+): Boolean = mediaChapterIndex == currentChapterIndex + 1 &&
+        stagedChapterIndex == mediaChapterIndex
+
+internal fun previousReadAloudChapterMediaCount(
+    currentMediaItemIndex: Int
+): Int = currentMediaItemIndex.coerceAtLeast(0)
+
+internal fun isReadAloudSeamlessPrefixReady(
+    itemIndex: Int,
+    preparedItemCount: Int
+): Boolean = itemIndex in 0 until preparedItemCount
+
+internal fun expectedReadAloudSeamlessMediaItemCount(
+    sourceMediaItemCount: Int,
+    preparedItemCount: Int,
+    handedOff: Boolean
+): Int = preparedItemCount + if (handedOff) 0 else sourceMediaItemCount
+
 internal data class ReadAloudPreparedItemRange(
     val paragraphIndex: Int,
     val start: Int,

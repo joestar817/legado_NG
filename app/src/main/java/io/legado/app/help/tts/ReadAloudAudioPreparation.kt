@@ -16,6 +16,35 @@ internal data class ReadAloudAudioTask<T>(
     val prepare: suspend () -> T
 )
 
+internal fun hasReadAloudPlayablePrefix(
+    preparedItemCount: Int,
+    totalItemCount: Int
+): Boolean = totalItemCount > 0 && preparedItemCount > 0
+
+internal fun hasReadAloudProductionGap(
+    enqueuedItemCount: Int,
+    totalItemCount: Int
+): Boolean = enqueuedItemCount in 0 until totalItemCount
+
+internal fun readAloudWholeChapterPageEndIndex(pageCount: Int): Int? =
+    (pageCount - 1).takeIf { it >= 0 }
+
+internal enum class ReadAloudPlaylistAppendAction {
+    NONE,
+    START,
+    RESUME
+}
+
+internal fun readAloudPlaylistAppendAction(
+    resumeProductionGap: Boolean,
+    wasPlaylistEmpty: Boolean,
+    playbackIdle: Boolean
+): ReadAloudPlaylistAppendAction = when {
+    resumeProductionGap -> ReadAloudPlaylistAppendAction.RESUME
+    wasPlaylistEmpty && playbackIdle -> ReadAloudPlaylistAppendAction.START
+    else -> ReadAloudPlaylistAppendAction.NONE
+}
+
 /**
  * Tracks whether an empty ExoPlayer queue means a real chapter end or only a
  * temporary gap while later TTS items are still being prepared.
@@ -35,6 +64,13 @@ internal class ReadAloudPlaylistProductionState {
 
     @Synchronized
     fun isCurrent(token: Long): Boolean = token == generation
+
+    @Synchronized
+    fun continueProduction(token: Long): Boolean {
+        if (token != generation) return false
+        producing = true
+        return true
+    }
 
     @Synchronized
     fun onItemAppended(token: Long): Boolean {
