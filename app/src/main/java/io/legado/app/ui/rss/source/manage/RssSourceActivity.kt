@@ -201,9 +201,13 @@ class RssSourceActivity :
                 selectedUrls = emptySet()
                 updateSourceFlow(action.query)
             }
-            is RssSourceManageAction.ToggleSelected -> {
+            is RssSourceManageAction.SelectionChanged -> {
                 selectedUrls = selectedUrls.toMutableSet().apply {
-                    if (!add(action.source.sourceUrl)) remove(action.source.sourceUrl)
+                    if (action.selected) {
+                        add(action.source.sourceUrl)
+                    } else {
+                        remove(action.source.sourceUrl)
+                    }
                 }
             }
             is RssSourceManageAction.ToggleEnabled -> {

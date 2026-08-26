@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -66,8 +67,10 @@ import io.legado.app.ui.design.components.compose.NgSearchBarVariant
 import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.components.compose.NgSwitchControlVariant
 import io.legado.app.ui.design.components.compose.ngDraggedItem
-import io.legado.app.ui.design.components.compose.ngReorderHandle
+import io.legado.app.ui.design.components.compose.ngReorderAfterLongPress
+import io.legado.app.ui.design.components.compose.ngSlideSelect
 import io.legado.app.ui.design.components.compose.rememberNgLazyReorderState
+import io.legado.app.ui.design.components.compose.rememberNgLazySlideSelectState
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.rss.RssEmptyState
 
@@ -104,7 +107,10 @@ internal sealed interface RssSourceManageAction {
     data object SelectAll : RssSourceManageAction
     data object InvertSelection : RssSourceManageAction
     data class QueryChanged(val query: String) : RssSourceManageAction
-    data class ToggleSelected(val source: RssSource) : RssSourceManageAction
+    data class SelectionChanged(
+        val source: RssSource,
+        val selected: Boolean
+    ) : RssSourceManageAction
     data class ToggleEnabled(val source: RssSource, val enabled: Boolean) : RssSourceManageAction
     data class Edit(val source: RssSource) : RssSourceManageAction
     data class Delete(val source: RssSource) : RssSourceManageAction
@@ -168,13 +174,16 @@ internal fun RssSourceManageScreen(
             onAction = onAction,
             modifier = Modifier.weight(1f)
         )
-        if (selectedUrls.isNotEmpty()) {
-            SelectionActionBar(
-                count = selectedUrls.size,
-                total = sources.size,
-                onAction = onAction
-            )
-        }
+        RssSourceManageBottomDock(
+            selectedCount = selectedUrls.size,
+            totalCount = sources.size,
+            modifier = Modifier.padding(
+                start = 14.dp,
+                end = 14.dp,
+                bottom = 16.dp
+            ),
+            onAction = onAction
+        )
     }
 }
 
@@ -477,6 +486,19 @@ private fun RssSourceManagePanel(
             }
         }
     )
+    val slideSelectState = rememberNgLazySlideSelectState(
+        listState = reorderState.listState,
+        isSelected = { index ->
+            orderedSources.getOrNull(index)
+                ?.sourceUrl
+                ?.let(selectedUrls::contains) == true
+        },
+        onSelectionChange = { index, selected ->
+            orderedSources.getOrNull(index)?.let { source ->
+                onAction(RssSourceManageAction.SelectionChanged(source, selected))
+            }
+        }
+    )
 
     BoxWithConstraints(
         modifier = modifier
@@ -534,7 +556,15 @@ private fun RssSourceManagePanel(
                 )
             } else {
                 LazyColumn(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .ngSlideSelect(
+                            state = slideSelectState,
+                            enabled = orderedSources.isNotEmpty() &&
+                                !reorderState.isDragging,
+                            slideAreaStart = 0.dp,
+                            slideAreaEnd = 48.dp
+                        ),
                     state = reorderState.listState
                 ) {
                     itemsIndexed(
@@ -546,14 +576,20 @@ private fun RssSourceManagePanel(
                             selected = source.sourceUrl in selectedUrls,
                             showDivider = index < orderedSources.lastIndex,
                             onAction = onAction,
-                            dragModifier = Modifier
-                                .ngDraggedItem(reorderState, source.sourceUrl)
-                                .ngReorderHandle(
+                            modifier = Modifier.ngDraggedItem(
+                                reorderState,
+                                source.sourceUrl
+                            ),
+                            bodyDragModifier = if (query.isBlank()) {
+                                Modifier.ngReorderAfterLongPress(
                                     state = reorderState,
                                     key = source.sourceUrl,
-                                    enabled = query.isBlank(),
+                                    enabled = true,
                                     contentDescription = stringResource(R.string.sort)
                                 )
+                            } else {
+                                null
+                            }
                         )
                     }
                 }
@@ -585,14 +621,15 @@ private fun RssSourceManageRow(
     selected: Boolean,
     showDivider: Boolean,
     onAction: (RssSourceManageAction) -> Unit,
-    dragModifier: Modifier
+    modifier: Modifier,
+    bodyDragModifier: Modifier?
 ) {
     var menuExpanded by remember(source.sourceUrl) { mutableStateOf(false) }
     val dynamicAddress = stringResource(R.string.rss_source_dynamic_address)
     val summary = remember(source.sourceUrl, source.sourceGroup, dynamicAddress) {
         source.managementSummary(dynamicAddress)
     }
-    Column(modifier = dragModifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -601,34 +638,44 @@ private fun RssSourceManageRow(
         ) {
             NgFileSelectionCheckbox(
                 checked = selected,
-                onCheckedChange = { onAction(RssSourceManageAction.ToggleSelected(source)) }
+                onCheckedChange = {
+                    onAction(RssSourceManageAction.SelectionChanged(source, it))
+                }
             )
-            RssSourceBadge(source = source)
-            Spacer(Modifier.width(12.dp))
-            Column(
+            Row(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { onAction(RssSourceManageAction.Edit(source)) }
-                    .padding(vertical = 9.dp)
+                    .fillMaxHeight()
+                    .then(bodyDragModifier ?: Modifier),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = source.sourceName,
-                    color = Color(NgTheme.colors.onSurface),
-                    fontSize = 15.sp,
-                    lineHeight = 19.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = summary,
-                    modifier = Modifier.padding(top = 2.dp),
-                    color = Color(NgTheme.colors.onSurfaceVariant),
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                RssSourceBadge(source = source)
+                Spacer(Modifier.width(12.dp))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onAction(RssSourceManageAction.Edit(source)) }
+                        .padding(vertical = 9.dp)
+                ) {
+                    Text(
+                        text = source.sourceName,
+                        color = Color(NgTheme.colors.onSurface),
+                        fontSize = 15.sp,
+                        lineHeight = 19.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = summary,
+                        modifier = Modifier.padding(top = 2.dp),
+                        color = Color(NgTheme.colors.onSurfaceVariant),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             NgSwitchControl(
                 checked = source.enabled,
@@ -757,74 +804,6 @@ private fun RssSource.managementSummary(dynamicAddress: String): String {
         address.takeIf(String::isNotBlank),
         sourceGroup?.trim()?.takeIf(String::isNotBlank)
     ).joinToString(" · ")
-}
-
-@Composable
-private fun SelectionActionBar(
-    count: Int,
-    total: Int,
-    onAction: (RssSourceManageAction) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-    ) {
-        Text(
-            text = "$count / $total",
-            color = Color(NgTheme.colors.onSurfaceVariant),
-            fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            SelectionButton(R.string.select_all) { onAction(RssSourceManageAction.SelectAll) }
-            SelectionButton(R.string.revert_selection) {
-                onAction(RssSourceManageAction.InvertSelection)
-            }
-            SelectionButton(R.string.enable_selection) {
-                onAction(RssSourceManageAction.EnableSelection)
-            }
-            SelectionButton(R.string.disable_selection) {
-                onAction(RssSourceManageAction.DisableSelection)
-            }
-            SelectionButton(R.string.add_group) {
-                onAction(RssSourceManageAction.AddSelectionToGroup)
-            }
-            SelectionButton(R.string.remove_group) {
-                onAction(RssSourceManageAction.RemoveSelectionFromGroup)
-            }
-            SelectionButton(R.string.selection_to_top) {
-                onAction(RssSourceManageAction.TopSelection)
-            }
-            SelectionButton(R.string.selection_to_bottom) {
-                onAction(RssSourceManageAction.BottomSelection)
-            }
-            SelectionButton(R.string.export_selection) {
-                onAction(RssSourceManageAction.ExportSelection)
-            }
-            SelectionButton(R.string.share_selected_source) {
-                onAction(RssSourceManageAction.ShareSelection)
-            }
-            SelectionButton(R.string.check_selected_interval) {
-                onAction(RssSourceManageAction.CompleteSelectionInterval)
-            }
-            SelectionButton(R.string.delete) {
-                onAction(RssSourceManageAction.DeleteSelection)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SelectionButton(titleRes: Int, onClick: () -> Unit) {
-    TextButton(onClick = onClick) {
-        Text(stringResource(titleRes), maxLines = 1)
-    }
 }
 
 @Composable

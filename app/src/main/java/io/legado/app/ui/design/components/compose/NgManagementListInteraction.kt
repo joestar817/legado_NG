@@ -3,6 +3,7 @@ package io.legado.app.ui.design.components.compose
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.RowScope
@@ -29,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -40,6 +42,7 @@ import io.legado.app.ui.design.theme.NgTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -180,6 +183,43 @@ fun Modifier.ngReorderHandle(
         }
 }
 
+/**
+ * 仅在长按成功后接管拖动；长按前不消费位移，让 LazyColumn 在超过 touch slop 后
+ * 取消长按候选并继续正常滚动。
+ */
+fun Modifier.ngReorderAfterLongPress(
+    state: NgLazyReorderState,
+    key: Any,
+    enabled: Boolean,
+    contentDescription: String? = null
+): Modifier {
+    return this
+        .testTag("management_drag_$key")
+        .then(
+            if (contentDescription != null) {
+                Modifier.semantics { this.contentDescription = contentDescription }
+            } else {
+                Modifier
+            }
+        )
+        .pointerInput(state, key, enabled) {
+            if (!enabled) return@pointerInput
+            try {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { state.start(key) },
+                    onDragEnd = state::finish,
+                    onDragCancel = state::finish,
+                    onDrag = { change, amount ->
+                        change.consume()
+                        state.dragBy(amount.y)
+                    }
+                )
+            } finally {
+                state.finish()
+            }
+        }
+}
+
 @Composable
 fun Modifier.ngDraggedItem(
     state: NgLazyReorderState,
@@ -284,6 +324,8 @@ class NgLazySlideSelectState internal constructor(
     private var startIndex = -1
     private var endIndex = -1
     private var firstWasSelected = false
+    private val originalSelections = mutableMapOf<Int, Boolean>()
+    private val gestureSelections = mutableMapOf<Int, Boolean>()
     private var scrollJob: Job? = null
 
     internal fun itemIndexAt(y: Float): Int? {
@@ -293,10 +335,12 @@ class NgLazySlideSelectState internal constructor(
     }
 
     internal fun start(index: Int) {
+        originalSelections.clear()
+        gestureSelections.clear()
         firstWasSelected = isSelected(index)
         startIndex = index
         endIndex = index
-        onSelectionChange(index, !firstWasSelected)
+        setSelected(index, !firstWasSelected)
     }
 
     internal fun update(y: Float) {
@@ -337,30 +381,45 @@ class NgLazySlideSelectState internal constructor(
         when {
             newStart > oldStart -> {
                 for (position in oldStart until newStart) {
-                    onSelectionChange(position, firstWasSelected)
+                    restoreSelection(position)
                 }
             }
 
             newStart < oldStart -> {
                 for (position in newStart until oldStart) {
-                    onSelectionChange(position, !firstWasSelected)
+                    setSelected(position, !firstWasSelected)
                 }
             }
         }
         when {
             newEnd > oldEnd -> {
                 for (position in (oldEnd + 1)..newEnd) {
-                    onSelectionChange(position, !firstWasSelected)
+                    setSelected(position, !firstWasSelected)
                 }
             }
 
             newEnd < oldEnd -> {
                 for (position in (newEnd + 1)..oldEnd) {
-                    onSelectionChange(position, firstWasSelected)
+                    restoreSelection(position)
                 }
             }
         }
         endIndex = index
+    }
+
+    private fun setSelected(index: Int, selected: Boolean) {
+        val original = originalSelections.getOrPut(index) { isSelected(index) }
+        val current = gestureSelections.getOrPut(index) { original }
+        if (current != selected) {
+            onSelectionChange(index, selected)
+            gestureSelections[index] = selected
+        }
+    }
+
+    private fun restoreSelection(index: Int) {
+        originalSelections[index]?.let { selected ->
+            setSelected(index, selected)
+        }
     }
 
     internal fun finish() {
@@ -368,6 +427,8 @@ class NgLazySlideSelectState internal constructor(
         scrollJob = null
         startIndex = -1
         endIndex = -1
+        originalSelections.clear()
+        gestureSelections.clear()
     }
 }
 
@@ -392,7 +453,10 @@ fun rememberNgLazySlideSelectState(
     }
 }
 
-/** 仅在列表左侧选择区接管手势，列表其余区域继续用于正常滚动。 */
+/**
+ * 仅在列表左侧选择区的纵向位移超过 touch slop 后接管连续选择。
+ * 普通点按不消费事件，继续由复选框自身处理，避免按下与抬起各改一次状态。
+ */
 fun Modifier.ngSlideSelect(
     state: NgLazySlideSelectState,
     enabled: Boolean = true,
@@ -408,20 +472,37 @@ fun Modifier.ngSlideSelect(
             if (!enabled || down.position.x !in slideAreaStartPx..slideAreaEndPx) {
                 return@awaitEachGesture
             }
-            val startIndex = state.itemIndexAt(down.position.y)
-                ?: return@awaitEachGesture
-            down.consume()
-            state.start(startIndex)
+            var selecting = false
             try {
-                do {
-                    val event = awaitPointerEvent()
-                    event.changes.firstOrNull()?.let { change ->
-                        if (change.pressed) state.update(change.position.y)
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == down.id }
+                        ?: break
+                    if (!change.pressed) break
+                    if (!selecting) {
+                        val delta = change.position - down.position
+                        val horizontalDistance = abs(delta.x)
+                        val verticalDistance = abs(delta.y)
+                        when {
+                            verticalDistance > viewConfiguration.touchSlop &&
+                                verticalDistance >= horizontalDistance -> {
+                                val startIndex = state.itemIndexAt(down.position.y)
+                                    ?: break
+                                change.consume()
+                                state.start(startIndex)
+                                state.update(change.position.y)
+                                selecting = true
+                            }
+
+                            horizontalDistance > viewConfiguration.touchSlop -> break
+                        }
+                    } else {
+                        state.update(change.position.y)
                         change.consume()
                     }
-                } while (event.changes.any { it.pressed })
+                }
             } finally {
-                state.finish()
+                if (selecting) state.finish()
             }
         }
     }
