@@ -243,11 +243,14 @@ abstract class BaseActivity<VB : ViewBinding>(
     }
 
     private fun observeReadAloudMiniPlayer() {
-        observeEvent<Int>(io.legado.app.constant.EventBus.ALOUD_STATE) {
-            ReadAloudMiniPlayer.refresh(this)
+        observeEvent<Int>(io.legado.app.constant.EventBus.ALOUD_STATE) { state ->
+            ReadAloudMiniPlayer.onReadAloudStateChanged(this, state)
         }
         observeEvent<Int>(io.legado.app.constant.EventBus.TTS_PROGRESS) {
             ReadAloudMiniPlayer.refresh(this)
+        }
+        observeEvent<Int>(io.legado.app.constant.EventBus.AUDIO_STATE) { state ->
+            ReadAloudMiniPlayer.onAudioStateChanged(this, state)
         }
     }
 

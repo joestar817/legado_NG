@@ -20,6 +20,7 @@ import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
 
 internal data class ReadAloudConfigScreenState(
     val multiRoleEngineSummary: String = "",
+    val showListeningCapsuleOnMain: Boolean = false,
     val mediaButtonOnExit: Boolean = true,
     val readAloudByMediaButton: Boolean = false,
     val ignoreAudioFocus: Boolean = false
@@ -31,6 +32,7 @@ internal fun ReadAloudConfigScreen(
     onOpenTtsEngine: () -> Unit,
     onOpenMultiRoleEngine: () -> Unit,
     onOpenDefaultVoice: () -> Unit,
+    onShowListeningCapsuleOnMainChanged: (Boolean) -> Unit,
     onMediaButtonOnExitChanged: (Boolean) -> Unit,
     onReadAloudByMediaButtonChanged: (Boolean) -> Unit,
     onIgnoreAudioFocusChanged: (Boolean) -> Unit
@@ -66,6 +68,13 @@ internal fun ReadAloudConfigScreen(
 
         NgSettingsSectionLabel(stringResource(R.string.read_aloud_settings_section_controls))
         NgSettingsGroup {
+            ReadAloudConfigSwitchEntry(
+                title = stringResource(R.string.show_listening_capsule_on_main),
+                summary = stringResource(R.string.show_listening_capsule_on_main_summary),
+                iconRes = R.drawable.ic_bookshelf_dock_audio,
+                checked = state.showListeningCapsuleOnMain,
+                onCheckedChange = onShowListeningCapsuleOnMainChanged
+            )
             ReadAloudConfigSwitchEntry(
                 title = stringResource(R.string.media_button_on_exit_title),
                 summary = stringResource(R.string.media_button_on_exit_summary),

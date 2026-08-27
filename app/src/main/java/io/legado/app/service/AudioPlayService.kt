@@ -38,6 +38,7 @@ import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.exoplayer.ExoPlayerHelper
 import io.legado.app.help.glide.ImageLoader
 import io.legado.app.model.AudioPlay
+import io.legado.app.model.ListeningPlaybackCoordinator
 import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.model.analyzeRule.AnalyzeUrl.Companion.getMediaItem
 import io.legado.app.receiver.MediaButtonReceiver
@@ -230,6 +231,7 @@ class AudioPlayService : BaseService(),
         if (!requestFocus()) {
             return
         }
+        ListeningPlaybackCoordinator.beforeAudio(this)
         val book = AudioPlay.book
         execute(context = Main) {
             AudioPlay.status = Status.STOP
@@ -302,6 +304,7 @@ class AudioPlayService : BaseService(),
         }
         try {
             pause = false
+            ListeningPlaybackCoordinator.beforeAudio(this)
             if (url.isEmpty()) {
                 AudioPlay.loadOrUpPlayUrl()
                 return

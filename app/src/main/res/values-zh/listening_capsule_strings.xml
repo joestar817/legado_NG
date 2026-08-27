@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="show_listening_capsule_on_main">主界面显示听书胶囊</string>
+    <string name="show_listening_capsule_on_main_summary">仅在四个主页面显示并自动缩边</string>
+</resources>

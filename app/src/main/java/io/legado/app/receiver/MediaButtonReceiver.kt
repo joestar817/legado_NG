@@ -72,23 +72,15 @@ class MediaButtonReceiver : BroadcastReceiver() {
 
         fun readAloud(context: Context, isMediaKey: Boolean = true) {
             when {
-                BaseReadAloudService.isRun -> {
-                    if (BaseReadAloudService.isPlay()) {
-                        ReadAloud.pause(context)
-                        AudioPlay.pause(context)
-                    } else {
-                        ReadAloud.resume(context)
-                        AudioPlay.resume(context)
-                    }
-                }
+                BaseReadAloudService.isPlay() -> ReadAloud.pause(context)
+
+                AudioPlayService.isRun && !AudioPlayService.pause -> AudioPlay.pause(context)
 
                 AudioPlayService.isRun -> {
-                    if (AudioPlayService.pause) {
-                        AudioPlay.resume(context)
-                    } else {
-                        AudioPlay.pause(context)
-                    }
+                    AudioPlay.resume(context)
                 }
+
+                BaseReadAloudService.isRun -> ReadAloud.resume(context)
 
                 isMediaKey && !AppConfig.readAloudByMediaButton -> {
                     // break

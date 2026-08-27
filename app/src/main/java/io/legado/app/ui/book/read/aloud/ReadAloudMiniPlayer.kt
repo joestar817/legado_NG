@@ -34,17 +34,23 @@ import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import io.legado.app.R
+import io.legado.app.constant.Status
+import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadFloatingAppearanceConfig
 import io.legado.app.lib.theme.accentColor
+import io.legado.app.model.AudioPlay
 import io.legado.app.model.BookCover
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
+import io.legado.app.service.AudioPlayService
 import io.legado.app.service.BaseReadAloudService
+import io.legado.app.ui.book.audio.AudioPlayActivity
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.main.MainActivity
 import io.legado.app.utils.dpToPx
+import io.legado.app.utils.startActivity
 import java.util.WeakHashMap
 import kotlin.math.abs
 
@@ -98,6 +104,7 @@ object ReadAloudMiniPlayer {
     private val bookshelfDockState = DockState(collapsed = true)
     private var readerAutoDockPending = false
     private var bookshelfAutoDockPending = false
+    private var preferredMainPlayback: ListeningPlayback? = null
 
     fun attach(activity: Activity) {
         if (!shouldShowOn(activity)) {
@@ -126,7 +133,13 @@ object ReadAloudMiniPlayer {
         }
         launchPendingStates[view] = true
         view.isVisible = true
-        render(activity, view, preparing = true, immediatePreparation = true)
+        render(
+            activity = activity,
+            view = view,
+            playback = ListeningPlayback.READ_ALOUD,
+            preparing = true,
+            immediatePreparation = true,
+        )
         restorePosition(activity, view)
         view.bringToFront()
         syncEdgeHandle(activity, view)
@@ -162,18 +175,18 @@ object ReadAloudMiniPlayer {
         val content = activity.findViewById<FrameLayout>(android.R.id.content) ?: return
         val view = content.findViewById<View>(TAG_ID) ?: return
         val launchPending = launchPendingStates[view] == true
-        val serviceRunning = BaseReadAloudService.isRun
-        if (serviceRunning) {
+        val playback = activePlayback(activity)
+        if (BaseReadAloudService.isRun) {
             launchPendingStates.remove(view)
         }
-        view.isVisible = (serviceRunning || launchPending) && shouldShowOn(activity)
+        view.isVisible = (playback != null || launchPending) && shouldShowOn(activity)
         syncEdgeHandle(activity, view)
         val cover = view.findViewById<ImageView>(R.id.iv_read_aloud_mini_cover)
         val play = view.findViewById<ImageButton>(R.id.btn_read_aloud_mini_play)
         val status = view.findViewById<TextView>(R.id.tv_read_aloud_mini_status)
         if (!view.isVisible) {
             cancelAutoDock(view)
-            if (!serviceRunning) {
+            if (playback == null) {
                 readerAutoDockPending = false
                 if (activity is MainActivity && !bookshelfAutoDockPending) {
                     prepareBookshelfAutoDock(view)
@@ -189,39 +202,92 @@ object ReadAloudMiniPlayer {
         val waitingForFirstPlayback = activity is ReadBookActivity &&
                 readerAutoDockPending &&
                 !BaseReadAloudService.isActualPlaybackConfirmed()
-        val preparing = launchPending || BaseReadAloudService.isPreparing() || waitingForFirstPlayback
-        render(activity, view, preparing = preparing)
+        val renderedPlayback = playback ?: ListeningPlayback.READ_ALOUD
+        val preparing = renderedPlayback == ListeningPlayback.READ_ALOUD &&
+            (launchPending || BaseReadAloudService.isPreparing() || waitingForFirstPlayback)
+        render(activity, view, renderedPlayback, preparing = preparing)
         scheduleAutoDockIfNeeded(activity, view)
     }
 
     private fun render(
         activity: Activity,
         view: View,
+        playback: ListeningPlayback,
         preparing: Boolean,
         immediatePreparation: Boolean = false
     ) {
         val cover = view.findViewById<ImageView>(R.id.iv_read_aloud_mini_cover)
         val play = view.findViewById<ImageButton>(R.id.btn_read_aloud_mini_play)
         val status = view.findViewById<TextView>(R.id.tv_read_aloud_mini_status)
-        updateCover(activity, cover)
+        updateCover(activity, cover, playback)
         updatePreparationState(view, status, preparing)
         updatePreparationVisualState(
             view,
             cover,
             play,
+            playback,
             preparing,
             immediatePreparation
         )
     }
 
     private fun shouldShowOn(activity: Activity): Boolean {
-        if (activity is ReadAloudPlayerActivity) {
-            return false
+        return ListeningCapsulePolicy.shouldAttach(
+            host = capsuleHost(activity),
+            showOnMain = AppConfig.showListeningCapsuleOnMain,
+        )
+    }
+
+    fun onReadAloudStateChanged(activity: Activity, state: Int) {
+        when {
+            state == Status.STOP -> updatePreferredMainPlayback(
+                ListeningPlayback.READ_ALOUD,
+                active = false,
+            )
+            state == Status.PLAY || !AudioPlayService.isRun -> updatePreferredMainPlayback(
+                ListeningPlayback.READ_ALOUD,
+                active = true,
+            )
         }
-        return activity.intent?.getBooleanExtra(
-            ReadAloudLauncher.EXTRA_SUPPRESS_MINI_PLAYER,
-            false
-        ) != true
+        refresh(activity)
+    }
+
+    fun onAudioStateChanged(activity: Activity, state: Int) {
+        updatePreferredMainPlayback(
+            ListeningPlayback.AUDIO,
+            active = AudioPlayService.isRun || state != Status.STOP,
+        )
+        refresh(activity)
+    }
+
+    private fun updatePreferredMainPlayback(
+        playback: ListeningPlayback,
+        active: Boolean,
+    ) {
+        if (active) {
+            preferredMainPlayback = playback
+        } else if (preferredMainPlayback == playback) {
+            preferredMainPlayback = null
+        }
+    }
+
+    private fun capsuleHost(activity: Activity): ListeningCapsuleHost {
+        return when (activity) {
+            is ReadBookActivity -> ListeningCapsuleHost.READER
+            is MainActivity -> ListeningCapsuleHost.MAIN
+            else -> ListeningCapsuleHost.OTHER
+        }
+    }
+
+    private fun activePlayback(activity: Activity): ListeningPlayback? {
+        return ListeningCapsulePolicy.resolvePlayback(
+            host = capsuleHost(activity),
+            readAloudRunning = BaseReadAloudService.isRun,
+            readAloudPlaying = BaseReadAloudService.isPlay(),
+            audioRunning = AudioPlayService.isRun,
+            audioPlaying = AudioPlay.status == Status.PLAY,
+            preferred = preferredMainPlayback,
+        )
     }
 
     private fun dockState(activity: Activity): DockState? {
@@ -300,7 +366,7 @@ object ReadAloudMiniPlayer {
             isFocusable = true
         }
         installDragTouch(activity, capsule, capsule) {
-            ReadAloudLauncher.openPlayer(activity)
+            openActivePlayer(activity)
         }
         val cover = ImageView(activity).apply {
             id = R.id.iv_read_aloud_mini_cover
@@ -318,7 +384,7 @@ object ReadAloudMiniPlayer {
             }
         }
         installDragTouch(activity, capsule, cover) {
-            ReadAloudLauncher.openPlayer(activity)
+            openActivePlayer(activity)
         }
         capsule.addView(cover, LinearLayout.LayoutParams(42.dpToPx(), 42.dpToPx()))
         val play = ImageButton(activity).apply {
@@ -332,11 +398,7 @@ object ReadAloudMiniPlayer {
             setPadding(11.dpToPx(), 11.dpToPx(), 11.dpToPx(), 11.dpToPx())
         }
         installDragTouch(activity, capsule, play) {
-            if (BaseReadAloudService.isPlay()) {
-                ReadAloud.pause(activity)
-            } else {
-                ReadAloud.resume(activity)
-            }
+            toggleActivePlayback(activity)
         }
         capsule.addView(
             play,
@@ -369,8 +431,7 @@ object ReadAloudMiniPlayer {
             setPadding(0, 0, 0, 0)
         }
         installDragTouch(activity, capsule, close) {
-            ReadAloud.stop(activity)
-            detach(activity)
+            stopActivePlayback(activity)
         }
         capsule.addView(
             close,
@@ -401,10 +462,60 @@ object ReadAloudMiniPlayer {
         return capsule
     }
 
-    private fun updateCover(activity: Activity, cover: ImageView) {
-        val path = ReadBook.book?.getDisplayCover()
-        val sourceOrigin = ReadBook.bookSource?.bookSourceUrl
-        val loadKey = coverLoadKey(ReadBook.book?.bookUrl, path, sourceOrigin)
+    private fun openActivePlayer(activity: Activity) {
+        when (activePlayback(activity)) {
+            ListeningPlayback.READ_ALOUD -> ReadAloudLauncher.openPlayer(activity)
+            ListeningPlayback.AUDIO -> activity.startActivity<AudioPlayActivity> {
+                putExtra("bookUrl", AudioPlay.book?.bookUrl)
+                putExtra("inBookshelf", AudioPlay.inBookshelf)
+            }
+            null -> Unit
+        }
+    }
+
+    private fun toggleActivePlayback(activity: Activity) {
+        when (activePlayback(activity)) {
+            ListeningPlayback.READ_ALOUD -> {
+                if (BaseReadAloudService.isPlay()) {
+                    ReadAloud.pause(activity)
+                } else {
+                    ReadAloud.resume(activity)
+                }
+            }
+            ListeningPlayback.AUDIO -> {
+                if (AudioPlay.status == Status.PLAY) {
+                    AudioPlay.pause(activity)
+                } else {
+                    AudioPlay.resume(activity)
+                }
+            }
+            null -> Unit
+        }
+    }
+
+    private fun stopActivePlayback(activity: Activity) {
+        when (activePlayback(activity)) {
+            ListeningPlayback.READ_ALOUD -> ReadAloud.stop(activity)
+            ListeningPlayback.AUDIO -> AudioPlay.stop()
+            null -> Unit
+        }
+    }
+
+    private fun updateCover(
+        activity: Activity,
+        cover: ImageView,
+        playback: ListeningPlayback,
+    ) {
+        val book = when (playback) {
+            ListeningPlayback.READ_ALOUD -> ReadBook.book
+            ListeningPlayback.AUDIO -> AudioPlay.book
+        }
+        val sourceOrigin = when (playback) {
+            ListeningPlayback.READ_ALOUD -> ReadBook.bookSource?.bookSourceUrl
+            ListeningPlayback.AUDIO -> AudioPlay.bookSource?.bookSourceUrl
+        }
+        val path = book?.getDisplayCover()
+        val loadKey = coverLoadKey(book?.bookUrl, path, sourceOrigin)
         if (coverLoadKeys[cover] == loadKey) return
         coverLoadKeys[cover] = loadKey
         coverRevealAnimators.remove(cover)?.cancel()
@@ -656,7 +767,7 @@ object ReadAloudMiniPlayer {
         return when (activity) {
             is ReadBookActivity -> readerAutoDockPending &&
                     BaseReadAloudService.isActualPlaybackConfirmed()
-            is MainActivity -> bookshelfAutoDockPending && BaseReadAloudService.isRun
+            is MainActivity -> bookshelfAutoDockPending && activePlayback(activity) != null
             else -> false
         }
     }
@@ -811,6 +922,13 @@ object ReadAloudMiniPlayer {
         val state = dockState(activity) ?: return
         val content = activity.findViewById<FrameLayout>(android.R.id.content) ?: return
         val handle = ensureEdgeHandle(activity, content, capsule)
+        handle.contentDescription = activity.getString(
+            if (activePlayback(activity) == ListeningPlayback.AUDIO) {
+                R.string.audio
+            } else {
+                R.string.read_aloud
+            }
+        )
         val shouldShow = capsule.isVisible && collapsedStates[capsule] == true
         handle.isVisible = shouldShow
         if (shouldShow) {
@@ -872,21 +990,22 @@ object ReadAloudMiniPlayer {
         capsule: View,
         cover: ImageView,
         play: ImageButton,
+        playback: ListeningPlayback,
         preparing: Boolean,
         immediate: Boolean
     ) {
         if (!preparing) {
             cancelPreparationVisualDelay(capsule)
             preparationVisualStates[capsule] = false
-            upCoverRotation(cover, preparing = false)
-            updatePlayButton(play, preparing = false)
+            upCoverRotation(cover, playback, preparing = false)
+            updatePlayButton(play, playback, preparing = false)
             return
         }
         if (immediate || preparationVisualStates[capsule] == true) {
             cancelPreparationVisualDelay(capsule)
             preparationVisualStates[capsule] = true
-            upCoverRotation(cover, preparing = true)
-            updatePlayButton(play, preparing = true)
+            upCoverRotation(cover, playback, preparing = true)
+            updatePlayButton(play, playback, preparing = true)
             return
         }
         if (preparationVisualRunnables[capsule] != null) return
@@ -896,8 +1015,8 @@ object ReadAloudMiniPlayer {
                     BaseReadAloudService.isPreparing()
             if (capsule.isVisible && stillPreparing) {
                 preparationVisualStates[capsule] = true
-                upCoverRotation(cover, preparing = true)
-                updatePlayButton(play, preparing = true)
+                upCoverRotation(cover, playback, preparing = true)
+                updatePlayButton(play, playback, preparing = true)
             }
         }
         preparationVisualRunnables[capsule] = runnable
@@ -1026,7 +1145,11 @@ object ReadAloudMiniPlayer {
         else -> "准备朗读中…"
     }
 
-    private fun updatePlayButton(play: ImageButton, preparing: Boolean) {
+    private fun updatePlayButton(
+        play: ImageButton,
+        playback: ListeningPlayback,
+        preparing: Boolean,
+    ) {
         if (preparing) {
             if (play.isEnabled || play.drawable !is Animatable) {
                 (play.drawable as? Animatable)?.stop()
@@ -1040,12 +1163,24 @@ object ReadAloudMiniPlayer {
         }
         (play.drawable as? Animatable)?.stop()
         play.isEnabled = true
-        val playing = BaseReadAloudService.isPlay()
+        val playing = when (playback) {
+            ListeningPlayback.READ_ALOUD -> BaseReadAloudService.isPlay()
+            ListeningPlayback.AUDIO -> AudioPlay.status == Status.PLAY
+        }
         play.setImageResource(if (playing) R.drawable.ic_pause_24dp else R.drawable.ic_play_24dp)
-        play.contentDescription = if (playing) "暂停朗读" else "继续朗读"
+        play.contentDescription = when (playback) {
+            ListeningPlayback.READ_ALOUD -> if (playing) "暂停朗读" else "继续朗读"
+            ListeningPlayback.AUDIO -> play.context.getString(
+                if (playing) R.string.pause else R.string.resume
+            )
+        }
     }
 
-    private fun upCoverRotation(cover: ImageView, preparing: Boolean) {
+    private fun upCoverRotation(
+        cover: ImageView,
+        playback: ListeningPlayback,
+        preparing: Boolean,
+    ) {
         val animator = coverAnimators.getOrPut(cover) {
             ObjectAnimator.ofFloat(cover, View.ROTATION, 0f, 360f).apply {
                 duration = ROTATION_DURATION
@@ -1053,7 +1188,11 @@ object ReadAloudMiniPlayer {
                 repeatCount = ObjectAnimator.INFINITE
             }
         }
-        if (BaseReadAloudService.isPlay() && !preparing) {
+        val playing = when (playback) {
+            ListeningPlayback.READ_ALOUD -> BaseReadAloudService.isPlay()
+            ListeningPlayback.AUDIO -> AudioPlay.status == Status.PLAY
+        }
+        if (playing && !preparing) {
             if (!animator.isStarted) {
                 animator.start()
             } else if (animator.isPaused) {

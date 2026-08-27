@@ -43,6 +43,7 @@ import io.legado.app.lib.permission.Permissions
 import io.legado.app.lib.permission.PermissionsCompat
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
+import io.legado.app.model.ListeningPlaybackCoordinator
 import io.legado.app.receiver.MediaButtonReceiver
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.page.entities.TextChapter
@@ -463,6 +464,7 @@ abstract class BaseReadAloudService : BaseService(),
     @SuppressLint("WakelockTimeout")
     open fun play() {
         if (playbackStateOwner !== this) return
+        ListeningPlaybackCoordinator.beforeReadAloud()
         if (useWakeLock) {
             wakeLock.acquire()
             wifiLock?.acquire()
@@ -512,6 +514,7 @@ abstract class BaseReadAloudService : BaseService(),
     @SuppressLint("WakelockTimeout")
     @CallSuper
     open fun resumeReadAloud() {
+        ListeningPlaybackCoordinator.beforeReadAloud()
         resumeReadAloudInternal()
     }
 

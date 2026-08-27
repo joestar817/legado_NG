@@ -63,6 +63,7 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
                                 }
                             }
                         },
+                        onShowListeningCapsuleOnMainChanged = ::setShowListeningCapsuleOnMain,
                         onMediaButtonOnExitChanged = ::setMediaButtonOnExit,
                         onReadAloudByMediaButtonChanged = ::setReadAloudByMediaButton,
                         onIgnoreAudioFocusChanged = ::setIgnoreAudioFocus
@@ -91,11 +92,17 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
 
     private fun refreshContent() {
         screenState = screenState.copy(
+            showListeningCapsuleOnMain = AppConfig.showListeningCapsuleOnMain,
             mediaButtonOnExit = AppConfig.mediaButtonOnExit,
             readAloudByMediaButton = AppConfig.readAloudByMediaButton,
             ignoreAudioFocus = AppConfig.ignoreAudioFocus
         )
         refreshMultiRoleEngineSummary()
+    }
+
+    private fun setShowListeningCapsuleOnMain(enabled: Boolean) {
+        putPrefBoolean(PreferKey.showListeningCapsuleOnMain, enabled)
+        screenState = screenState.copy(showListeningCapsuleOnMain = enabled)
     }
 
     private fun setMediaButtonOnExit(enabled: Boolean) {

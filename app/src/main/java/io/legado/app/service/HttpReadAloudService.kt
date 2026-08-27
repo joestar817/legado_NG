@@ -64,6 +64,7 @@ import io.legado.app.help.tts.writeReadAloudAudioAtomically
 import io.legado.app.help.tts.writeReadAloudAudioWithWavRetry
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
+import io.legado.app.model.ListeningPlaybackCoordinator
 import io.legado.app.model.CacheBook
 import io.legado.app.ui.book.character.ChapterStoryboard
 import io.legado.app.ui.book.character.StoryboardScene
@@ -1609,6 +1610,7 @@ class HttpReadAloudService : BaseReadAloudService(),
     }
 
     override fun resumeReadAloud() {
+        ListeningPlaybackCoordinator.beforeReadAloud()
         runOnPlayerThread(::resumeReadAloudOnPlayerThread)
     }
 
