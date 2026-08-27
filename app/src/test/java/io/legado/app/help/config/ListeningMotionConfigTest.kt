@@ -1,6 +1,8 @@
 package io.legado.app.help.config
 
+import io.legado.app.ui.book.read.aloud.RainNightProfile
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ListeningMotionConfigTest {
@@ -21,6 +23,7 @@ class ListeningMotionConfigTest {
         }
         assertEquals("flame", ListeningMotionEffect.FLAME.storageValue)
         assertEquals("fluid", ListeningMotionEffect.FLUID.storageValue)
+        assertEquals("cartoon", ListeningMotionEffect.CARTOON.storageValue)
     }
 
     @Test
@@ -54,6 +57,50 @@ class ListeningMotionConfigTest {
         assertEquals("smoke", ListeningFluidType.SMOKE.storageValue)
         assertEquals("water", ListeningFluidType.WATER.storageValue)
         assertEquals("edge", ListeningFluidType.EDGE.storageValue)
+    }
+
+    @Test
+    fun `unknown stored cartoon type falls back to sakura`() {
+        assertEquals(
+            ListeningCartoonType.SAKURA,
+            ListeningCartoonType.fromStorage("future_cartoon_type"),
+        )
+        assertEquals(
+            ListeningCartoonType.SAKURA,
+            ListeningCartoonType.fromStorage(null),
+        )
+    }
+
+    @Test
+    fun `known stored cartoon types remain stable`() {
+        ListeningCartoonType.entries.forEach { type ->
+            assertEquals(type, ListeningCartoonType.fromStorage(type.storageValue))
+        }
+        assertEquals("sakura", ListeningCartoonType.SAKURA.storageValue)
+        assertEquals("cats", ListeningCartoonType.CATS.storageValue)
+        assertEquals("rain_night", ListeningCartoonType.RAIN_NIGHT.storageValue)
+        assertEquals(100, ListeningMotionConfig.DEFAULT_CARTOON_INTENSITY)
+    }
+
+    @Test
+    fun `rain night full-strength profile remains accepted`() {
+        assertEquals(20f, RainNightProfile.DURATION_SECONDS, 0f)
+        assertEquals(2.4f, RainNightProfile.RAIN_DENSITY, 0f)
+        assertEquals(1.6f, RainNightProfile.DROP_LEVEL, 0f)
+        assertEquals(1.6f, RainNightProfile.FOG_LEVEL, 0f)
+        assertEquals(.6f, RainNightProfile.LEAF_LEVEL, 0f)
+        assertEquals(1_272, RainNightProfile.RAIN_LINE_COUNT)
+        assertEquals(504, RainNightProfile.rainCount(210))
+        assertEquals(384, RainNightProfile.rainCount(160))
+        assertEquals(252, RainNightProfile.rainCount(105))
+        assertEquals(132, RainNightProfile.rainCount(55))
+        assertEquals(48, RainNightProfile.DROPLET_COUNT)
+        assertEquals(6, RainNightProfile.FOG_COUNT)
+        assertEquals(25, RainNightProfile.LEAF_COUNT)
+        assertEquals(25, RainNightProfile.leafCount())
+        assertTrue((0 until RainNightProfile.DROPLET_COUNT).all {
+            RainNightProfile.dropletCycles(it) in 2..6
+        })
     }
 
     @Test

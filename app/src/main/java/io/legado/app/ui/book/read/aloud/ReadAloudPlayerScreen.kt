@@ -188,6 +188,10 @@ internal fun ReadAloudPlayerScreen(
                     ListeningMotionEffect.FLUID -> {
                         ReadAloudFluidMotionBackground(settings = state.motionSettings)
                     }
+
+                    ListeningMotionEffect.CARTOON -> {
+                        ReadAloudCartoonMotionBackground(settings = state.motionSettings)
+                    }
                 }
             }
             PlayerContent(

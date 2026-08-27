@@ -16,6 +16,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material3.HorizontalDivider
@@ -32,11 +33,13 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.ListeningFireStyle
 import io.legado.app.help.config.ListeningFluidType
 import io.legado.app.help.config.ListeningMotionColorMode
@@ -60,12 +63,20 @@ internal fun ReadAloudMotionSheetContent(
     onEffectChange: (ListeningMotionEffect) -> Unit,
     onFireStyleChange: (ListeningFireStyle) -> Unit,
     onFluidTypeChange: (ListeningFluidType) -> Unit,
+    onCartoonTypeChange: (ListeningCartoonType) -> Unit,
     onColorModeChange: (ListeningMotionColorMode) -> Unit,
     onCustomColorChange: (Int) -> Unit,
     onIntensityPreview: (Int) -> Unit,
     onIntensityCommitted: () -> Unit,
 ) {
     var editingCustomColor by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val availableCartoonTypes = remember(context) { context.availableCartoonTypes() }
+    val availableEffects = remember(availableCartoonTypes) {
+        ListeningMotionEffect.entries.filter { effect ->
+            effect != ListeningMotionEffect.CARTOON || availableCartoonTypes.isNotEmpty()
+        }
+    }
     NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
         if (editingCustomColor) {
             NgInlineColorPicker(
@@ -101,6 +112,7 @@ internal fun ReadAloudMotionSheetContent(
             MotionEffectRail(
                 selected = state.effect,
                 enabled = state.enabled,
+                effects = availableEffects,
                 onEffectChange = onEffectChange,
                 modifier = Modifier.padding(top = 2.dp),
             )
@@ -116,6 +128,24 @@ internal fun ReadAloudMotionSheetContent(
                     selected = state.fluidType,
                     enabled = state.enabled,
                     onTypeChange = onFluidTypeChange,
+                )
+            }
+            if (
+                state.effect == ListeningMotionEffect.CARTOON &&
+                availableCartoonTypes.isNotEmpty()
+            ) {
+                Text(
+                    text = stringResource(R.string.listening_motion_cartoon_type),
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp),
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                )
+                CartoonTypeRail(
+                    selected = state.cartoonType,
+                    enabled = state.enabled,
+                    types = availableCartoonTypes,
+                    onTypeChange = onCartoonTypeChange,
                 )
             }
             if (state.effect == ListeningMotionEffect.FLAME) {
@@ -413,9 +443,73 @@ private fun FluidTypeRail(
 }
 
 @Composable
+private fun CartoonTypeRail(
+    selected: ListeningCartoonType,
+    enabled: Boolean,
+    types: List<ListeningCartoonType>,
+    onTypeChange: (ListeningCartoonType) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .selectableGroup()
+            .alpha(if (enabled) 1f else 0.42f),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        types.forEach { type ->
+            val isSelected = type == selected
+            val shape = RoundedCornerShape(12.dp)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(46.dp)
+                    .clip(shape)
+                    .background(
+                        if (isSelected) {
+                            Color(NgTheme.colors.selectedContainer).copy(alpha = 0.76f)
+                        } else {
+                            Color.Transparent
+                        }
+                    )
+                    .border(
+                        width = if (isSelected) 1.dp else 0.6.dp,
+                        color = if (isSelected) {
+                            Color(NgTheme.colors.primary).copy(alpha = 0.78f)
+                        } else {
+                            Color(NgTheme.colors.outlineVariant).copy(alpha = 0.28f)
+                        },
+                        shape = shape,
+                    )
+                    .selectable(
+                        selected = isSelected,
+                        enabled = enabled,
+                        role = Role.RadioButton,
+                        onClick = { onTypeChange(type) },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = type.label(),
+                    color = if (isSelected) {
+                        Color(NgTheme.colors.primary)
+                    } else {
+                        Color(NgTheme.colors.onSurface)
+                    },
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MotionEffectRail(
     selected: ListeningMotionEffect,
     enabled: Boolean,
+    effects: List<ListeningMotionEffect>,
     onEffectChange: (ListeningMotionEffect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -426,7 +520,7 @@ private fun MotionEffectRail(
             .alpha(if (enabled) 1f else 0.42f),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        ListeningMotionEffect.entries.forEach { effect ->
+        effects.forEach { effect ->
             val isSelected = effect == selected
             val shape = RoundedCornerShape(12.dp)
             Column(
@@ -490,6 +584,7 @@ private fun MotionEffectRail(
 private fun ListeningMotionEffect.icon(): ImageVector = when (this) {
     ListeningMotionEffect.FLAME -> Icons.Rounded.LocalFireDepartment
     ListeningMotionEffect.FLUID -> Icons.Rounded.WaterDrop
+    ListeningMotionEffect.CARTOON -> Icons.Rounded.AutoAwesome
 }
 
 @Composable
@@ -497,6 +592,16 @@ internal fun ListeningMotionEffect.label(): String = stringResource(
     when (this) {
         ListeningMotionEffect.FLAME -> R.string.listening_motion_flame
         ListeningMotionEffect.FLUID -> R.string.listening_motion_fluid
+        ListeningMotionEffect.CARTOON -> R.string.listening_motion_cartoon
+    }
+)
+
+@Composable
+internal fun ListeningCartoonType.label(): String = stringResource(
+    when (this) {
+        ListeningCartoonType.SAKURA -> R.string.listening_motion_cartoon_sakura
+        ListeningCartoonType.CATS -> R.string.listening_motion_cartoon_cats
+        ListeningCartoonType.RAIN_NIGHT -> R.string.listening_motion_cartoon_rain_night
     }
 )
 

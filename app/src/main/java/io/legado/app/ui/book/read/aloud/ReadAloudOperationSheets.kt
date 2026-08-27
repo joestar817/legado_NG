@@ -64,6 +64,7 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.IntentHelp
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.ListeningFluidType
 import io.legado.app.help.config.ListeningFireStyle
 import io.legado.app.help.config.ListeningMotionConfig
@@ -635,6 +636,7 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
                         onEffectChange = ::setMotionEffect,
                         onFireStyleChange = ::setFireStyle,
                         onFluidTypeChange = ::setFluidType,
+                        onCartoonTypeChange = ::setCartoonType,
                         onColorModeChange = ::setMotionColorMode,
                         onCustomColorChange = ::setMotionCustomColor,
                         onIntensityPreview = ::previewMotionIntensity,
@@ -774,6 +776,12 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
         notifyMotionChanged()
     }
 
+    private fun setCartoonType(type: ListeningCartoonType) {
+        ListeningMotionConfig.cartoonType = type
+        motionState = motionState.copy(cartoonType = type)
+        notifyMotionChanged()
+    }
+
     private fun setMotionColorMode(mode: ListeningMotionColorMode) {
         ListeningMotionConfig.colorMode = mode
         motionState = motionState.copy(colorMode = mode)
@@ -792,10 +800,16 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
     }
 
     private fun commitMotionIntensity() {
-        if (motionState.effect == ListeningMotionEffect.FLUID) {
-            ListeningMotionConfig.fluidIntensity = motionState.intensity
-        } else {
-            ListeningMotionConfig.intensity = motionState.intensity
+        when (motionState.effect) {
+            ListeningMotionEffect.FLAME -> {
+                ListeningMotionConfig.intensity = motionState.intensity
+            }
+            ListeningMotionEffect.FLUID -> {
+                ListeningMotionConfig.fluidIntensity = motionState.intensity
+            }
+            ListeningMotionEffect.CARTOON -> {
+                ListeningMotionConfig.cartoonIntensity = motionState.intensity
+            }
         }
         notifyMotionChanged()
     }
@@ -919,21 +933,31 @@ private fun ReadAloudMoreSheetContent(
                 item {
                     ListeningActionRow(
                         title = stringResource(R.string.listening_motion_entry),
-                        summary = when {
-                            !motionState.enabled -> stringResource(R.string.close)
-                            motionState.effect == ListeningMotionEffect.FLAME -> {
-                                stringResource(
-                                    R.string.listening_motion_flame_summary,
-                                    motionState.fireStyle.label(),
-                                )
+                        summary = if (!motionState.enabled) {
+                            stringResource(R.string.close)
+                        } else {
+                            when (motionState.effect) {
+                                ListeningMotionEffect.FLAME -> {
+                                    stringResource(
+                                        R.string.listening_motion_flame_summary,
+                                        motionState.fireStyle.label(),
+                                    )
+                                }
+
+                                ListeningMotionEffect.FLUID -> {
+                                    stringResource(
+                                        R.string.listening_motion_fluid_summary,
+                                        motionState.fluidType.label(),
+                                    )
+                                }
+
+                                ListeningMotionEffect.CARTOON -> {
+                                    stringResource(
+                                        R.string.listening_motion_cartoon_summary,
+                                        motionState.cartoonType.label(),
+                                    )
+                                }
                             }
-                            motionState.effect == ListeningMotionEffect.FLUID -> {
-                                stringResource(
-                                    R.string.listening_motion_fluid_summary,
-                                    motionState.fluidType.label(),
-                                )
-                            }
-                            else -> motionState.effect.label()
                         },
                         leadingIcon = Icons.Rounded.AutoAwesome,
                         onClick = onOpenMotion,

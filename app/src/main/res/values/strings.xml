@@ -740,6 +740,12 @@
     <string name="listening_motion_fluid_water">Water</string>
     <string name="listening_motion_fluid_edge">Outline</string>
     <string name="listening_motion_fluid_summary">Fluid · %1$s</string>
+    <string name="listening_motion_cartoon">Cartoon</string>
+    <string name="listening_motion_cartoon_type">Cartoon style</string>
+    <string name="listening_motion_cartoon_sakura">Sakura</string>
+    <string name="listening_motion_cartoon_cats">Cats</string>
+    <string name="listening_motion_cartoon_rain_night">Rainy night</string>
+    <string name="listening_motion_cartoon_summary">Cartoon · %1$s</string>
     <string name="listening_motion_color">Effect color</string>
     <string name="listening_motion_color_original">Original</string>
     <string name="listening_motion_color_cover">From cover</string>

@@ -11,11 +11,23 @@ import splitties.init.appCtx
 
 enum class ListeningMotionEffect(val storageValue: String) {
     FLAME("flame"),
-    FLUID("fluid");
+    FLUID("fluid"),
+    CARTOON("cartoon");
 
     companion object {
         fun fromStorage(value: String?): ListeningMotionEffect =
             entries.firstOrNull { it.storageValue == value } ?: FLAME
+    }
+}
+
+enum class ListeningCartoonType(val storageValue: String) {
+    SAKURA("sakura"),
+    CATS("cats"),
+    RAIN_NIGHT("rain_night");
+
+    companion object {
+        fun fromStorage(value: String?): ListeningCartoonType =
+            entries.firstOrNull { it.storageValue == value } ?: SAKURA
     }
 }
 
@@ -57,6 +69,7 @@ data class ListeningMotionSettings(
     val effect: ListeningMotionEffect = ListeningMotionEffect.FLAME,
     val fireStyle: ListeningFireStyle = ListeningFireStyle.GODFIRE,
     val fluidType: ListeningFluidType = ListeningFluidType.SMOKE,
+    val cartoonType: ListeningCartoonType = ListeningCartoonType.SAKURA,
     val colorMode: ListeningMotionColorMode = ListeningMotionColorMode.COVER,
     val customColor: Int = ListeningMotionConfig.DEFAULT_CUSTOM_COLOR,
     val intensity: Int = ListeningMotionConfig.DEFAULT_INTENSITY,
@@ -68,6 +81,7 @@ object ListeningMotionConfig {
 
     const val DEFAULT_INTENSITY = 40
     const val DEFAULT_FLUID_INTENSITY = 100
+    const val DEFAULT_CARTOON_INTENSITY = 100
     const val DEFAULT_CUSTOM_COLOR = -0x002EC5D9
 
     var enabled: Boolean
@@ -91,6 +105,15 @@ object ListeningMotionConfig {
             appCtx.getPrefString(PreferKey.listeningMotionFluidType)
         )
         set(value) = appCtx.putPrefString(PreferKey.listeningMotionFluidType, value.storageValue)
+
+    var cartoonType: ListeningCartoonType
+        get() = ListeningCartoonType.fromStorage(
+            appCtx.getPrefString(PreferKey.listeningMotionCartoonType)
+        )
+        set(value) = appCtx.putPrefString(
+            PreferKey.listeningMotionCartoonType,
+            value.storageValue,
+        )
 
     var colorMode: ListeningMotionColorMode
         get() = ListeningMotionColorMode.fromStorage(
@@ -123,8 +146,23 @@ object ListeningMotionConfig {
             normalizeListeningMotionIntensity(value),
         )
 
-    fun intensityFor(effect: ListeningMotionEffect): Int =
-        if (effect == ListeningMotionEffect.FLUID) fluidIntensity else intensity
+    var cartoonIntensity: Int
+        get() = normalizeListeningMotionIntensity(
+            appCtx.getPrefInt(
+                PreferKey.listeningMotionCartoonIntensity,
+                DEFAULT_CARTOON_INTENSITY,
+            )
+        )
+        set(value) = appCtx.putPrefInt(
+            PreferKey.listeningMotionCartoonIntensity,
+            normalizeListeningMotionIntensity(value),
+        )
+
+    fun intensityFor(effect: ListeningMotionEffect): Int = when (effect) {
+        ListeningMotionEffect.FLAME -> intensity
+        ListeningMotionEffect.FLUID -> fluidIntensity
+        ListeningMotionEffect.CARTOON -> cartoonIntensity
+    }
 
     fun current(): ListeningMotionSettings {
         val currentEffect = effect
@@ -133,6 +171,7 @@ object ListeningMotionConfig {
             effect = currentEffect,
             fireStyle = fireStyle,
             fluidType = fluidType,
+            cartoonType = cartoonType,
             colorMode = colorMode,
             customColor = customColor,
             intensity = intensityFor(currentEffect),
