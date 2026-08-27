@@ -166,7 +166,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         if (!requestFocus()) return
         if (contentList.isEmpty()) {
             AppLog.putDebug("朗读列表为空")
-            ReadBook.readAloud()
+            ReadBook.readAloud(engineVerified = true)
         } else {
             while (nowSpeak in contentList.indices && isReadAloudTextSilent()) {
                 if (!skipCurrentReadAloudTextIfNeeded()) {
@@ -1623,6 +1623,10 @@ class HttpReadAloudService : BaseReadAloudService(),
         kotlin.runCatching { exoPlayer.play() }
             .onSuccess {
                 super.resumeReadAloud()
+                // play() 可能在进入 onSuccess 前同步触发 onIsPlayingChanged(true)，
+                // 当时 Base 的 pause 仍为 true，真实回调会被拒绝。清除 pause 后补齐确认，
+                // 已经在播放时立即收敛；仍在缓冲时继续等待后续 listener 回调。
+                syncActualPlaybackState(exoPlayer.isPlaying)
                 upPlayPos()
             }
             .onFailure { AppLog.put("继续在线朗读失败", it) }

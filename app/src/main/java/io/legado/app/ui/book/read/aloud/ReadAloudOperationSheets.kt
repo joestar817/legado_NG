@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CleaningServices
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Person
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +64,12 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.IntentHelp
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ListeningFluidType
+import io.legado.app.help.config.ListeningFireStyle
+import io.legado.app.help.config.ListeningMotionConfig
+import io.legado.app.help.config.ListeningMotionColorMode
+import io.legado.app.help.config.ListeningMotionEffect
+import io.legado.app.help.config.ListeningMotionSettings
 import io.legado.app.help.tts.BookTtsAutomationConfig
 import io.legado.app.help.tts.BookTtsCastingCoordinator
 import io.legado.app.help.tts.ReadAloudCacheManager
@@ -565,35 +573,72 @@ private data class MoreDrawerState(
     val engineName: String,
 )
 
+private enum class MoreDrawerScreen {
+    SETTINGS,
+    MOTION,
+}
+
 internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
 
     private var state by mutableStateOf<MoreDrawerState?>(null)
+    private var motionState by mutableStateOf(ListeningMotionConfig.current())
+    private var screen by mutableStateOf(MoreDrawerScreen.SETTINGS)
     private var showClearCacheConfirmation by mutableStateOf(false)
     private var clearingCache by mutableStateOf(false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        state = loadState()
+        state = loadState(engineName = "正在读取…")
+        viewLifecycleOwner.lifecycleScope.launch {
+            val engineName = withContext(IO) {
+                runCatching {
+                    TtsEngineStore.activeEngine().takeIf { it.enabled }?.name ?: "未选择"
+                }.getOrDefault("未选择")
+            }
+            state = state?.copy(engineName = engineName)
+        }
+        motionState = ListeningMotionConfig.current()
         (view as ComposeView).setContent {
             ListeningSheetTheme {
-                state?.let { current ->
-                    ReadAloudMoreSheetContent(
-                        state = current,
-                        onToggle = ::toggle,
-                        onWorkerCountChange = ::setWorkerCount,
-                        onOpenEngine = {
-                            (activity as? ReadAloudPlayerActivity)?.openEngineConfig()
-                            dismissAllowingStateLoss()
-                        },
-                        onOpenSystemTts = IntentHelp::openTTSSetting,
-                        clearingCache = clearingCache,
-                        onClearCache = { showClearCacheConfirmation = true },
-                        onStop = {
-                            val player = activity as? ReadAloudPlayerActivity ?: return@ReadAloudMoreSheetContent
-                            ReadAloud.stop(player)
-                            dismissAllowingStateLoss()
-                            player.finish()
-                        },
+                BackHandler(enabled = screen == MoreDrawerScreen.MOTION) {
+                    screen = MoreDrawerScreen.SETTINGS
+                }
+                when (screen) {
+                    MoreDrawerScreen.SETTINGS -> state?.let { current ->
+                        ReadAloudMoreSheetContent(
+                            state = current,
+                            motionState = motionState,
+                            onToggle = ::toggle,
+                            onWorkerCountChange = ::setWorkerCount,
+                            onOpenMotion = { screen = MoreDrawerScreen.MOTION },
+                            onOpenEngine = {
+                                (activity as? ReadAloudPlayerActivity)?.openEngineConfig()
+                                dismissAllowingStateLoss()
+                            },
+                            onOpenSystemTts = IntentHelp::openTTSSetting,
+                            clearingCache = clearingCache,
+                            onClearCache = { showClearCacheConfirmation = true },
+                            onStop = {
+                                val player = activity as? ReadAloudPlayerActivity
+                                    ?: return@ReadAloudMoreSheetContent
+                                ReadAloud.stop(player)
+                                dismissAllowingStateLoss()
+                                player.finish()
+                            },
+                        )
+                    }
+
+                    MoreDrawerScreen.MOTION -> ReadAloudMotionSheetContent(
+                        state = motionState,
+                        onBack = { screen = MoreDrawerScreen.SETTINGS },
+                        onEnabledChange = ::setMotionEnabled,
+                        onEffectChange = ::setMotionEffect,
+                        onFireStyleChange = ::setFireStyle,
+                        onFluidTypeChange = ::setFluidType,
+                        onColorModeChange = ::setMotionColorMode,
+                        onCustomColorChange = ::setMotionCustomColor,
+                        onIntensityPreview = ::previewMotionIntensity,
+                        onIntensityCommitted = ::commitMotionIntensity,
                     )
                 }
                 if (showClearCacheConfirmation) {
@@ -617,7 +662,7 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
         }
         if (clearingCache) return
         val wasRunning = BaseReadAloudService.isRun
-        val shouldResume = BaseReadAloudService.isPlay()
+        val shouldResume = player.wantsPlayback()
         val pageIndex = ReadBook.durPageIndex
         val startPos = ReadBook.durChapterPos
         if (wasRunning) ReadAloud.pause(player)
@@ -651,7 +696,7 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
         }
     }
 
-    private fun loadState(): MoreDrawerState {
+    private fun loadState(engineName: String): MoreDrawerState {
         val context = requireContext()
         return MoreDrawerState(
             ignoreAudioFocus = context.getPrefBoolean(PreferKey.ignoreAudioFocus, false),
@@ -661,7 +706,7 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
             readByPage = context.getPrefBoolean(PreferKey.readAloudByPage, false),
             skipChapterTitle = context.getPrefBoolean(PreferKey.skipReadAloudChapterTitle, false),
             workerCount = AppConfig.readAloudWorkerCount.coerceIn(1, 5),
-            engineName = runCatching { TtsEngineStore.activeEngine().name }.getOrDefault("未选择"),
+            engineName = engineName,
         )
     }
 
@@ -704,6 +749,61 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
         notifyRuntimeChanged()
     }
 
+    private fun setMotionEnabled(enabled: Boolean) {
+        ListeningMotionConfig.enabled = enabled
+        motionState = motionState.copy(enabled = enabled)
+        notifyMotionChanged()
+    }
+
+    private fun setMotionEffect(effect: ListeningMotionEffect) {
+        ListeningMotionConfig.effect = effect
+        val intensity = ListeningMotionConfig.intensityFor(effect)
+        motionState = motionState.copy(effect = effect, intensity = intensity)
+        notifyMotionChanged()
+    }
+
+    private fun setFireStyle(style: ListeningFireStyle) {
+        ListeningMotionConfig.fireStyle = style
+        motionState = motionState.copy(fireStyle = style)
+        notifyMotionChanged()
+    }
+
+    private fun setFluidType(type: ListeningFluidType) {
+        ListeningMotionConfig.fluidType = type
+        motionState = motionState.copy(fluidType = type)
+        notifyMotionChanged()
+    }
+
+    private fun setMotionColorMode(mode: ListeningMotionColorMode) {
+        ListeningMotionConfig.colorMode = mode
+        motionState = motionState.copy(colorMode = mode)
+        notifyMotionChanged()
+    }
+
+    private fun setMotionCustomColor(color: Int) {
+        ListeningMotionConfig.customColor = color
+        motionState = motionState.copy(customColor = color)
+        notifyMotionChanged()
+    }
+
+    private fun previewMotionIntensity(intensity: Int) {
+        motionState = motionState.copy(intensity = intensity.coerceIn(0, 100))
+        notifyMotionChanged()
+    }
+
+    private fun commitMotionIntensity() {
+        if (motionState.effect == ListeningMotionEffect.FLUID) {
+            ListeningMotionConfig.fluidIntensity = motionState.intensity
+        } else {
+            ListeningMotionConfig.intensity = motionState.intensity
+        }
+        notifyMotionChanged()
+    }
+
+    private fun notifyMotionChanged() {
+        (activity as? ReadAloudPlayerActivity)?.previewMotionSettings(motionState)
+    }
+
     private fun notifyRuntimeChanged() {
         if (BaseReadAloudService.isRun) postEvent(EventBus.MEDIA_BUTTON, false)
     }
@@ -721,8 +821,10 @@ private enum class MoreToggle {
 @Composable
 private fun ReadAloudMoreSheetContent(
     state: MoreDrawerState,
+    motionState: ListeningMotionSettings,
     onToggle: (MoreToggle, Boolean) -> Unit,
     onWorkerCountChange: (Int) -> Unit,
+    onOpenMotion: () -> Unit,
     onOpenEngine: () -> Unit,
     onOpenSystemTts: () -> Unit,
     clearingCache: Boolean,
@@ -813,6 +915,33 @@ private fun ReadAloudMoreSheetContent(
                             onClick = onOpenSystemTts,
                         )
                     }
+                }
+                item {
+                    ListeningActionRow(
+                        title = stringResource(R.string.listening_motion_entry),
+                        summary = when {
+                            !motionState.enabled -> stringResource(R.string.close)
+                            motionState.effect == ListeningMotionEffect.FLAME -> {
+                                stringResource(
+                                    R.string.listening_motion_flame_summary,
+                                    motionState.fireStyle.label(),
+                                )
+                            }
+                            motionState.effect == ListeningMotionEffect.FLUID -> {
+                                stringResource(
+                                    R.string.listening_motion_fluid_summary,
+                                    motionState.fluidType.label(),
+                                )
+                            }
+                            else -> motionState.effect.label()
+                        },
+                        leadingIcon = Icons.Rounded.AutoAwesome,
+                        onClick = onOpenMotion,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(NgTheme.colors.surface).copy(alpha = 0.82f)),
+                    )
                 }
                 item {
                     ListeningActionRow(
@@ -1036,6 +1165,7 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
                 )
             }
             state = snapshot.copy(preview = state.preview)
+            (activity as? ReadAloudPlayerActivity)?.invalidateVoiceLabel()
         }
     }
 
@@ -1060,7 +1190,12 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
     private fun selectVoice(option: TtsVoiceOption) {
         val player = activity as? ReadAloudPlayerActivity ?: return
         val wasRun = BaseReadAloudService.isRun
-        val oldEngineType = runCatching { TtsEngineStore.activeEngine().type }.getOrNull()
+        val oldEngineType = when {
+            !wasRun -> null
+            ReadAloud.httpTtsEngineV2 != null -> TtsEngineType.SCRIPT
+            else -> TtsEngineType.SYSTEM
+        }
+        val shouldPlay = player.wantsPlayback()
         val pageIndex = ReadBook.durPageIndex
         val startPos = player.currentPageStartPos()
         player.runVoiceSwitch {
@@ -1072,10 +1207,11 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
                 voiceId = option.voice.id.takeUnless { option.systemDefault },
             )
             if (selected != null) {
+                player.invalidateVoiceLabel()
                 if (wasRun) {
                     ReadAloud.play(
                         player,
-                        play = true,
+                        play = shouldPlay,
                         pageIndex = pageIndex,
                         startPos = startPos,
                         forceRebuild = true,

@@ -81,6 +81,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.materialkolor.hct.Hct
 import io.legado.app.R
+import io.legado.app.help.config.ListeningMotionEffect
+import io.legado.app.help.config.ListeningMotionSettings
 import io.legado.app.ui.book.listen.ListeningCoverArtwork
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.PI
@@ -118,6 +120,7 @@ internal data class ReadAloudPlayerUiState(
     val timerLabel: String = "定时",
     val speedLabel: String = "1.0x",
     val engineLabel: String = "选择朗读音色",
+    val motionSettings: ListeningMotionSettings = ListeningMotionSettings(),
 )
 
 internal sealed interface ReadAloudPlayerAction {
@@ -157,6 +160,15 @@ internal fun ReadAloudPlayerScreen(
             artwork = artwork,
             useNoCoverFallback = useNoCoverFallback,
         )
+        when (state.motionSettings.effect) {
+            ListeningMotionEffect.FLAME -> {
+                ReadAloudFireMotionBackground(settings = state.motionSettings)
+            }
+
+            ListeningMotionEffect.FLUID -> {
+                ReadAloudFluidMotionBackground(settings = state.motionSettings)
+            }
+        }
         PlayerContent(
             state = state,
             artwork = artwork,
@@ -973,6 +985,7 @@ internal fun ReadAloudProgressSlider(
                 if (!enabled || max <= 0) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    var lastEmittedValue = Int.MIN_VALUE
                     fun valueAt(x: Float): Int {
                         val radius = 11.dp.toPx()
                         val width = (size.width - radius * 2f).coerceAtLeast(1f)
@@ -980,12 +993,18 @@ internal fun ReadAloudProgressSlider(
                             .roundToInt()
                             .coerceIn(0, max)
                     }
-                    currentOnValueChange(valueAt(down.position.x))
+                    fun emitValue(x: Float) {
+                        val nextValue = valueAt(x)
+                        if (nextValue == lastEmittedValue) return
+                        lastEmittedValue = nextValue
+                        currentOnValueChange(nextValue)
+                    }
+                    emitValue(down.position.x)
                     var pressed: Boolean
                     do {
                         val event = awaitPointerEvent()
                         event.changes.firstOrNull()?.let { change ->
-                            if (change.pressed) currentOnValueChange(valueAt(change.position.x))
+                            if (change.pressed) emitValue(change.position.x)
                             change.consume()
                         }
                         pressed = event.changes.any { it.pressed }
@@ -1070,7 +1089,7 @@ private fun PlayerControlDock(
                 modifier = Modifier
                     .weight(0.94f)
                     .fillMaxHeight()
-                    .clickable(enabled = !state.isPreparing) {
+                    .clickable {
                         onAction(ReadAloudPlayerAction.TogglePlay)
                     },
                 contentAlignment = Alignment.Center,

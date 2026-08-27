@@ -18,6 +18,8 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ListeningMotionConfig
+import io.legado.app.help.config.ListeningMotionSettings
 import io.legado.app.help.tts.ReadAloudBufferProgress
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsSpeedPolicy
@@ -63,15 +65,31 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     private var lastParagraphIndex = -1
     private var paragraphSeeking = false
     private var pendingSeekParagraphIndex = -1
+    private var pendingBufferProgress: ReadAloudBufferProgress? = null
+    private var bufferProgressFramePosted = false
     private var switchingChapter = false
     private var switchingVoice = false
+    private var loadingChapterContent = false
     private var playButtonLoading = false
+    private var pendingPlayState: Boolean? = null
+    private var pendingPlayCommandDispatched = false
+    private var voiceLabelDirty = true
+    private var voiceLabelRevision = 0L
+    private var voiceLabelJob: Job? = null
+    private var hasEnabledEngineSnapshot: Boolean? = null
     private val drawerLaunchDebouncer = TtsSheetLaunchDebouncer()
+    private val applyPendingBufferProgress = Runnable {
+        bufferProgressFramePosted = false
+        val progress = pendingBufferProgress
+        pendingBufferProgress = null
+        if (progress != null) syncParagraphBufferProgress(progress)
+    }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         refreshListeningTheme(force = true)
         initContent()
         refreshStaticState()
+        refreshVoiceLabelIfDirty()
         refreshPreparationState()
         refreshProgress(ReadBook.durChapterPos)
         consumeAutoStart(intent)
@@ -82,6 +100,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         setIntent(intent)
         refreshListeningTheme(force = true)
         refreshStaticState()
+        refreshVoiceLabelIfDirty()
         refreshPreparationState()
         refreshProgress(ReadBook.durChapterPos)
         consumeAutoStart(intent)
@@ -91,6 +110,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         super.onResume()
         ReadAloudMiniPlayer.detach(this)
         refreshStaticState()
+        refreshVoiceLabelIfDirty()
         refreshPreparationState()
     }
 
@@ -181,34 +201,71 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         val book = ReadBook.book
         val chapter = ReadBook.curTextChapter
         val multiRole = AppConfig.readAloudMultiRole
-        val engine = runCatching { TtsEngineStore.activeEngine() }.getOrNull()
-        val voice = runCatching { engine?.activeVoice()?.name }.getOrNull()
         val bookUrlChanged = book?.bookUrl.orEmpty() != uiState.bookUrl
-        uiState = uiState.copy(
+        val nextState = uiState.copy(
             bookName = book?.name?.takeIf { it.isNotBlank() } ?: "阅读NG",
             bookAuthor = book?.getRealAuthor().orEmpty(),
             bookUrl = book?.bookUrl.orEmpty(),
             chapterTitle = chapter?.title ?: "正在准备朗读",
             coverPath = book?.getDisplayCover(),
             sourceOrigin = ReadBook.bookSource?.bookSourceUrl,
-            engineLabel = when {
-                multiRole -> "多人朗读 · 角色音色"
-                engine == null || !engine.enabled -> "选择朗读音色"
-                voice.isNullOrBlank() -> "朗读音色 · ${engine.name}"
-                else -> "朗读音色 · $voice"
-            },
+            engineLabel = if (multiRole) MULTI_ROLE_ENGINE_LABEL else uiState.engineLabel,
             speedLabel = speedLabel(),
             timerLabel = BaseReadAloudService.timeMinute.takeIf { it > 0 }
                 ?.let { "${it}分" }
                 ?: "定时",
+            motionSettings = ListeningMotionConfig.current(),
         )
+        if (nextState != uiState) uiState = nextState
         if (bookUrlChanged) refreshListeningTheme()
         refreshPlayState()
     }
 
+    private fun refreshVoiceLabelIfDirty() {
+        if (AppConfig.readAloudMultiRole) {
+            voiceLabelJob?.cancel()
+            if (uiState.engineLabel != MULTI_ROLE_ENGINE_LABEL) {
+                uiState = uiState.copy(engineLabel = MULTI_ROLE_ENGINE_LABEL)
+            }
+            return
+        }
+        if (!voiceLabelDirty || voiceLabelJob?.isActive == true) return
+        val revision = voiceLabelRevision
+        voiceLabelJob = lifecycleScope.launch {
+            val (label, hasEnabledEngine) = withContext(IO) {
+                val engine = runCatching { TtsEngineStore.activeEngine() }.getOrNull()
+                val voice = runCatching { engine?.activeVoice()?.name }.getOrNull()
+                val resolvedLabel = when {
+                    engine == null || !engine.enabled -> "选择朗读音色"
+                    voice.isNullOrBlank() -> "朗读音色 · ${engine.name}"
+                    else -> "朗读音色 · $voice"
+                }
+                resolvedLabel to (engine?.enabled == true)
+            }
+            if (revision != voiceLabelRevision || AppConfig.readAloudMultiRole) return@launch
+            voiceLabelDirty = false
+            voiceLabelJob = null
+            hasEnabledEngineSnapshot = hasEnabledEngine
+            if (uiState.engineLabel != label) uiState = uiState.copy(engineLabel = label)
+        }
+    }
+
+    fun invalidateVoiceLabel(refreshNow: Boolean = true) {
+        voiceLabelDirty = true
+        voiceLabelRevision += 1
+        hasEnabledEngineSnapshot = null
+        voiceLabelJob?.cancel()
+        voiceLabelJob = null
+        if (!AppConfig.readAloudMultiRole && uiState.engineLabel == MULTI_ROLE_ENGINE_LABEL) {
+            uiState = uiState.copy(engineLabel = "选择朗读音色")
+        }
+        if (refreshNow) refreshVoiceLabelIfDirty()
+    }
+
     private fun refreshPlayState() {
-        if (playButtonLoading) return
-        uiState = uiState.copy(isPlaying = BaseReadAloudService.isPlay())
+        if (playButtonLoading || pendingPlayState != null) return
+        val playing = BaseReadAloudService.isPlay()
+        if (uiState.isPlaying != playing) uiState = uiState.copy(isPlaying = playing)
     }
 
     private fun refreshProgress(progress: Int, restoreSubtitle: Boolean = false) {
@@ -290,9 +347,28 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     private fun syncParagraphBufferProgress(buffer: ReadAloudBufferProgress) {
         if (buffer.chapterIndex != ReadBook.durChapterIndex || !ensureParagraphCache()) return
         val bufferedIndex = currentParagraphIndex(buffer.chapterPosition)
-        uiState = uiState.copy(
-            bufferedProgress = maxOf(uiState.bufferedProgress, uiState.progress, bufferedIndex)
-        )
+        val nextBufferedProgress = maxOf(uiState.bufferedProgress, uiState.progress, bufferedIndex)
+        if (nextBufferedProgress == uiState.bufferedProgress) return
+        uiState = uiState.copy(bufferedProgress = nextBufferedProgress)
+    }
+
+    private fun enqueueParagraphBufferProgress(buffer: ReadAloudBufferProgress) {
+        if (buffer.chapterIndex != ReadBook.durChapterIndex) return
+        val current = pendingBufferProgress
+        pendingBufferProgress = when {
+            current == null || current.chapterIndex != buffer.chapterIndex -> buffer
+            buffer.chapterPosition > current.chapterPosition -> buffer
+            else -> current
+        }
+        if (bufferProgressFramePosted) return
+        bufferProgressFramePosted = true
+        binding.root.postOnAnimation(applyPendingBufferProgress)
+    }
+
+    private fun clearPendingBufferProgress() {
+        pendingBufferProgress = null
+        bufferProgressFramePosted = false
+        binding.root.removeCallbacks(applyPendingBufferProgress)
     }
 
     private fun syncLyrics(index: Int) {
@@ -306,11 +382,16 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         if (!ensureParagraphCache()) return
         paragraphSeeking = true
         val safeIndex = index.coerceIn(0, cachedParagraphs.lastIndex)
+        val maxIndex = cachedParagraphs.lastIndex.coerceAtLeast(0)
         pendingSeekParagraphIndex = safeIndex
         lastParagraphIndex = safeIndex
-        syncParagraphProgress(safeIndex)
-        syncLyrics(safeIndex)
-        uiState = uiState.copy(subtitle = cachedParagraphs[safeIndex].text)
+        uiState = uiState.copy(
+            progressMax = maxIndex,
+            progress = safeIndex,
+            bufferedProgress = maxOf(uiState.bufferedProgress, safeIndex),
+            currentParagraphIndex = safeIndex,
+            subtitle = cachedParagraphs[safeIndex].text,
+        )
     }
 
     private fun finishParagraphSeek() {
@@ -334,29 +415,52 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         val pageStart = chapter.getReadLength(targetPage)
         val pageStartPos = (targetPos - pageStart).coerceAtLeast(0)
         val wasRun = BaseReadAloudService.isRun
-        val wasPlaying = BaseReadAloudService.isPlay()
+        val wasPlaying = wantsPlayback()
         ReadBook.durChapterPos = targetPos
         lastProgress = -1
         refreshProgress(targetPos)
         if (wasRun) {
-            ReadAloud.play(this, play = wasPlaying, pageIndex = targetPage, startPos = pageStartPos)
+            ReadAloud.play(
+                context = this,
+                play = wasPlaying,
+                pageIndex = targetPage,
+                startPos = pageStartPos,
+                engineVerified = true,
+            )
         }
     }
 
     private fun togglePlay() {
-        when {
-            !BaseReadAloudService.isRun -> {
-                if (!TtsEngineStore.hasEnabledEngine()) {
-                    toastOnUi("未启用朗读引擎")
-                    return
-                }
-                startReadAloudAfterContentReady()
-            }
-            !BaseReadAloudService.isPlay() -> {
-                setPlayButtonLoading(true)
-                ReadAloud.resume(this)
-            }
-            else -> ReadAloud.pause(this)
+        val target = !(pendingPlayState ?: uiState.isPlaying)
+        if (!BaseReadAloudService.isRun && !loadingChapterContent &&
+            !switchingChapter && !switchingVoice && target
+        ) {
+            startReadAloudAfterContentReady()
+        } else {
+            requestPlayState(target)
+        }
+    }
+
+    private fun requestPlayState(playing: Boolean) {
+        pendingPlayState = playing
+        pendingPlayCommandDispatched = false
+        playButtonLoading = false
+        val nextState = uiState.copy(isPreparing = false, isPlaying = playing)
+        if (nextState != uiState) uiState = nextState
+        dispatchPendingPlayCommandIfPossible()
+    }
+
+    private fun dispatchPendingPlayCommandIfPossible() {
+        val playing = pendingPlayState ?: return
+        if (pendingPlayCommandDispatched || !BaseReadAloudService.isRun) return
+        pendingPlayCommandDispatched = true
+        runCatching {
+            if (playing) ReadAloud.resume(this) else ReadAloud.pause(this)
+        }.onFailure { error ->
+            clearPendingPlayRequest()
+            playButtonLoading = false
+            refreshPlayState()
+            toastOnUi("切换播放状态失败\n${error.localizedMessage ?: "未知错误"}")
         }
     }
 
@@ -372,7 +476,6 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         val chapterIndex = ReadBook.durChapterIndex
         val chapterPos = ReadBook.durChapterPos
         val wasRun = BaseReadAloudService.isRun
-        val wasPlaying = BaseReadAloudService.isPlay()
         switchingChapter = true
         if (wasRun) {
             setPlayButtonLoading(true)
@@ -400,14 +503,14 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             if (!result.isSuccess) {
                 toastOnUi("刷新失败：${result.exceptionOrNull()?.localizedMessage ?: "未知错误"}")
                 switchingChapter = false
-                setPlayButtonLoading(false)
+                settlePlayState(false)
                 return@launch
             }
             val chapter = ReadBook.curTextChapter?.takeIf { it.isCompleted }
             if (chapter == null) {
                 toastOnUi("刷新失败：章节内容未加载")
                 switchingChapter = false
-                setPlayButtonLoading(false)
+                settlePlayState(false)
                 refreshStaticState()
                 return@launch
             }
@@ -416,35 +519,62 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             refreshStaticState()
             refreshProgress(ReadBook.durChapterPos)
             if (wasRun) {
-                resumeReadAloudAfterReload(wasPlaying)
+                resumeReadAloudAfterReload(wantsPlayback())
+            } else if (pendingPlayState == true) {
+                ReadBook.readAloud(
+                    play = true,
+                    startPos = currentPageStartPos(),
+                )
+                pendingPlayCommandDispatched = true
             } else {
                 setPlayButtonLoading(false)
             }
-            binding.root.postDelayed({ switchingChapter = false }, 1200L)
+            binding.root.postDelayed(::finishChapterSwitch, 1200L)
         }
     }
 
     private fun startReadAloudAfterContentReady() {
-        if (!TtsEngineStore.hasEnabledEngine()) {
-            toastOnUi("未启用朗读引擎")
-            return
-        }
+        if (loadingChapterContent) return
+        loadingChapterContent = true
+        pendingPlayState = true
+        pendingPlayCommandDispatched = false
         setPlayButtonLoading(true)
         lifecycleScope.launch {
-            val prepared = ReadAloudLauncher.loadCurrentChapter(this@ReadAloudPlayerActivity)
-            if (!prepared) {
-                setPlayButtonLoading(false)
+            try {
+                voiceLabelJob?.join()
+                val hasEnabledEngine = hasEnabledEngineSnapshot
+                    ?: withContext(IO) { TtsEngineStore.hasEnabledEngine() }
+                if (!hasEnabledEngine) {
+                    settlePlayState(false)
+                    toastOnUi("未启用朗读引擎")
+                    return@launch
+                }
+                val prepared = ReadAloudLauncher.loadCurrentChapter(this@ReadAloudPlayerActivity)
+                if (!prepared) {
+                    settlePlayState(false)
+                    refreshStaticState()
+                    toastOnUi(ReadBook.msg ?: "加载正文失败")
+                    return@launch
+                }
+                resetParagraphCache()
                 refreshStaticState()
-                toastOnUi(ReadBook.msg ?: "加载正文失败")
-                return@launch
+                refreshProgress(ReadBook.durChapterPos)
+                if (pendingPlayState == false) {
+                    settlePlayState(false)
+                    return@launch
+                }
+                switchingChapter = true
+                withContext(IO) { ReadAloud.upReadAloudClass() }
+                ReadBook.readAloud(
+                    play = true,
+                    startPos = currentPageStartPos(),
+                    engineVerified = true,
+                )
+                pendingPlayCommandDispatched = true
+                binding.root.postDelayed(::finishChapterSwitch, 1200L)
+            } finally {
+                loadingChapterContent = false
             }
-            resetParagraphCache()
-            refreshStaticState()
-            refreshProgress(ReadBook.durChapterPos)
-            switchingChapter = true
-            ReadAloud.upReadAloudClass()
-            ReadBook.readAloud(play = true, startPos = currentPageStartPos())
-            binding.root.postDelayed({ switchingChapter = false }, 1200L)
         }
     }
 
@@ -456,7 +586,13 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             ?: ReadBook.durPageIndex
         val pageStart = chapter?.getReadLength(targetPage) ?: 0
         val startPos = (ReadBook.durChapterPos - pageStart).coerceAtLeast(0)
-        ReadAloud.play(this, play = wasPlaying, pageIndex = targetPage, startPos = startPos)
+        ReadAloud.play(
+            context = this,
+            play = wasPlaying,
+            pageIndex = targetPage,
+            startPos = startPos,
+            engineVerified = true,
+        )
         if (!wasPlaying) {
             binding.root.postDelayed({ setPlayButtonLoading(false) }, 1200L)
         }
@@ -465,20 +601,28 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     fun setMultiRoleEnabled(enabled: Boolean) {
         if (AppConfig.readAloudMultiRole == enabled) return
         val wasRun = BaseReadAloudService.isRun
-        val wasPlaying = BaseReadAloudService.isPlay()
         val startPos = currentPageStartPos()
         AppConfig.readAloudScenarioMode = if (enabled) 1 else 0
         refreshStaticState()
+        if (!enabled) invalidateVoiceLabel()
         if (wasRun) {
             switchingVoice = true
             setPlayButtonLoading(true)
             ReadAloud.stop(this)
             binding.root.postDelayed({
-                ReadBook.readAloud(play = wasPlaying, startPos = startPos)
-                binding.root.postDelayed({
-                    switchingVoice = false
-                    if (!wasPlaying) setPlayButtonLoading(false)
-                }, 1200L)
+                lifecycleScope.launch {
+                    withContext(IO) { ReadAloud.refreshReadAloudClass() }
+                    ReadBook.readAloud(
+                        play = wantsPlayback(),
+                        startPos = startPos,
+                        engineVerified = true,
+                    )
+                    binding.root.postDelayed({
+                        switchingVoice = false
+                        if (!wantsPlayback()) setPlayButtonLoading(false)
+                        refreshPreparationState()
+                    }, 1200L)
+                }
             }, 180L)
         }
     }
@@ -519,17 +663,21 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     fun openChapterFromCatalog(chapterIndex: Int) {
         if (chapterIndex == ReadBook.durChapterIndex) return
-        val wasPlaying = BaseReadAloudService.isPlay()
+        val wasRun = BaseReadAloudService.isRun
         switchingChapter = true
-        if (BaseReadAloudService.isRun) {
+        if (wasRun) {
             ReadAloud.stop(this)
         }
         resetChapterUi("正在加载章节")
         ReadBook.openChapter(chapterIndex, durChapterPos = 0, upContent = false) {
             refreshStaticState()
             refreshProgress(0)
-            ReadBook.readAloud(wasPlaying, startPos = 0)
-            binding.root.postDelayed({ switchingChapter = false }, 800L)
+            ReadBook.readAloud(
+                play = wantsPlayback(),
+                startPos = 0,
+                engineVerified = wasRun,
+            )
+            binding.root.postDelayed(::finishChapterSwitch, 800L)
         }
     }
 
@@ -539,8 +687,18 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         try {
             block()
         } finally {
-            binding.root.postDelayed({ switchingVoice = false }, 1200L)
+            binding.root.postDelayed(::finishVoiceSwitch, 1200L)
         }
+    }
+
+    private fun finishChapterSwitch() {
+        switchingChapter = false
+        refreshPreparationState()
+    }
+
+    private fun finishVoiceSwitch() {
+        switchingVoice = false
+        refreshPreparationState()
     }
 
     fun currentPageStartPos(): Int {
@@ -552,16 +710,35 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     private fun setPlayButtonLoading(loading: Boolean) {
-        if (playButtonLoading == loading) {
-            if (!loading) refreshPlayState()
+        val effectiveLoading = loading && pendingPlayState != false
+        if (playButtonLoading == effectiveLoading) {
+            if (!effectiveLoading && pendingPlayState == null) refreshPlayState()
             return
         }
-        playButtonLoading = loading
-        uiState = uiState.copy(
-            isPreparing = loading,
-            isPlaying = if (loading) uiState.isPlaying else BaseReadAloudService.isPlay(),
+        playButtonLoading = effectiveLoading
+        val nextState = uiState.copy(
+            isPreparing = effectiveLoading,
+            isPlaying = when {
+                pendingPlayState != null -> checkNotNull(pendingPlayState)
+                else -> BaseReadAloudService.isPlay()
+            },
         )
+        if (nextState != uiState) uiState = nextState
     }
+
+    private fun settlePlayState(playing: Boolean) {
+        clearPendingPlayRequest()
+        playButtonLoading = false
+        val nextState = uiState.copy(isPreparing = false, isPlaying = playing)
+        if (nextState != uiState) uiState = nextState
+    }
+
+    private fun clearPendingPlayRequest() {
+        pendingPlayState = null
+        pendingPlayCommandDispatched = false
+    }
+
+    fun wantsPlayback(): Boolean = pendingPlayState ?: uiState.isPlaying
 
     fun openOriginal() {
         ReadBook.book?.let {
@@ -585,18 +762,27 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     private fun refreshPreparationState() {
         val preparing = BaseReadAloudService.isPreparing()
-        setPlayButtonLoading(preparing)
-        if (preparing) {
-            showPreparationMessage()
-        } else if (!paragraphSeeking) {
-            refreshProgress(ReadBook.durChapterPos, restoreSubtitle = true)
+        when {
+            preparing && pendingPlayState != false -> {
+                setPlayButtonLoading(true)
+                showPreparationMessage()
+            }
+            preparing -> setPlayButtonLoading(false)
+            loadingChapterContent || switchingChapter || switchingVoice -> Unit
+            playButtonLoading && BaseReadAloudService.isRun &&
+                !BaseReadAloudService.isActualPlaybackConfirmed() -> Unit
+            else -> {
+                setPlayButtonLoading(false)
+                if (!paragraphSeeking) {
+                    refreshProgress(ReadBook.durChapterPos, restoreSubtitle = true)
+                }
+            }
         }
     }
 
     private fun showPreparationMessage() {
-        uiState = uiState.copy(
-            subtitle = BaseReadAloudService.preparationMessage().ifBlank { "正在准备朗读…" }
-        )
+        val subtitle = BaseReadAloudService.preparationMessage().ifBlank { "正在准备朗读…" }
+        if (uiState.subtitle != subtitle) uiState = uiState.copy(subtitle = subtitle)
     }
 
     private fun openCharacterTtsBindings() {
@@ -630,10 +816,17 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     fun openEngineConfig() {
+        invalidateVoiceLabel(refreshNow = false)
         startActivity<ConfigActivity> {
             ReadAloudLauncher.markPlayerDerived(this)
             putExtra("configTag", ConfigTag.TTS_ENGINE_CONFIG)
         }
+    }
+
+    fun previewMotionSettings(settings: ListeningMotionSettings) {
+        uiState = uiState.copy(
+            motionSettings = settings.copy(intensity = settings.intensity.coerceIn(0, 100))
+        )
     }
 
     private fun showMoreSheet() {
@@ -652,16 +845,41 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             when (it) {
                 Status.LOADING -> {
                     val preparing = BaseReadAloudService.isPreparing()
-                    setPlayButtonLoading(preparing)
-                    if (preparing) {
+                    if (preparing && pendingPlayState != false) {
+                        setPlayButtonLoading(true)
                         showPreparationMessage()
                     }
                 }
-                Status.PAUSE, Status.STOP -> setPlayButtonLoading(false)
+                Status.PAUSE -> {
+                    if (pendingPlayState == true) {
+                        pendingPlayCommandDispatched = false
+                        dispatchPendingPlayCommandIfPossible()
+                    } else {
+                        settlePlayState(false)
+                    }
+                }
+                Status.STOP -> {
+                    if (switchingChapter || switchingVoice) {
+                        setPlayButtonLoading(true)
+                    } else {
+                        settlePlayState(false)
+                    }
+                }
                 Status.PLAY -> {
                     val preparing = BaseReadAloudService.isPreparing()
-                    setPlayButtonLoading(preparing)
-                    if (!preparing) {
+                    if (pendingPlayState == false) {
+                        setPlayButtonLoading(false)
+                        pendingPlayCommandDispatched = false
+                        dispatchPendingPlayCommandIfPossible()
+                    } else if (preparing) {
+                        setPlayButtonLoading(true)
+                    } else if (!BaseReadAloudService.isActualPlaybackConfirmed()) {
+                        if (pendingPlayState == null) {
+                            uiState = uiState.copy(isPlaying = true)
+                        }
+                        setPlayButtonLoading(true)
+                    } else {
+                        settlePlayState(true)
                         refreshProgress(ReadBook.durChapterPos, restoreSubtitle = true)
                     }
                 }
@@ -673,11 +891,15 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         }
         observeEvent<Int>(EventBus.TTS_PROGRESS) {
             val preparing = BaseReadAloudService.isPreparing()
-            if (!preparing) setPlayButtonLoading(false)
+            if (!preparing && !switchingChapter && !switchingVoice &&
+                pendingPlayState != false && BaseReadAloudService.isActualPlaybackConfirmed()
+            ) {
+                settlePlayState(true)
+            }
             refreshProgress(it, restoreSubtitle = !preparing)
         }
         observeEvent<ReadAloudBufferProgress>(EventBus.TTS_BUFFER_PROGRESS) {
-            syncParagraphBufferProgress(it)
+            enqueueParagraphBufferProgress(it)
         }
         observeEvent<Int>(EventBus.READ_ALOUD_DS) {
             refreshStaticState()
@@ -687,10 +909,12 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     private fun speedLabel(): String = TtsSpeedPolicy.playbackLabel(AppConfig.speechRatePlay)
 
     fun refreshPlaybackSpeedLabel() {
-        uiState = uiState.copy(speedLabel = speedLabel())
+        val speedLabel = speedLabel()
+        if (uiState.speedLabel != speedLabel) uiState = uiState.copy(speedLabel = speedLabel)
     }
 
     private fun resetParagraphCache() {
+        clearPendingBufferProgress()
         cachedChapterIndex = -1
         cachedParagraphs = emptyList()
         lastParagraphIndex = -1
@@ -714,6 +938,13 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     override fun onDestroy() {
         coverThemeJob?.cancel()
+        voiceLabelJob?.cancel()
+        clearPendingBufferProgress()
+        clearPendingPlayRequest()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val MULTI_ROLE_ENGINE_LABEL = "多人朗读 · 角色音色"
     }
 }

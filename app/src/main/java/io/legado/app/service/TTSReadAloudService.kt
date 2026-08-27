@@ -52,8 +52,9 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
     @Synchronized
     private fun initTts() {
         ttsInitFinish = false
-        val engine = if (ReadAloud.ttsEngineV2.type == TtsEngineType.SYSTEM) {
-            ReadAloud.ttsEngineV2.enginePackage
+        val preparedEngine = ReadAloud.preparedTtsEngineV2
+        val engine = if (preparedEngine.type == TtsEngineType.SYSTEM) {
+            preparedEngine.enginePackage
         } else {
             GSON.fromJsonObject<SelectItem<String>>(ReadAloud.ttsEngine).getOrNull()?.value
         }
@@ -94,7 +95,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
         if (!requestFocus()) return
         if (contentList.isEmpty()) {
             AppLog.putDebug("朗读列表为空")
-            ReadBook.readAloud()
+            ReadBook.readAloud(engineVerified = true)
             return
         }
         super.play()
@@ -163,7 +164,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
             clearTTS()
             initTts()
         }
-        val engine = ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
+        val engine = ReadAloud.preparedTtsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
         val engineBaseRate = systemEngineBaseRate(engine)
         val enginePitch = systemEnginePitch(engine)
         if (!AppConfig.ttsFlowSys || engineBaseRate != 1f) {
@@ -185,14 +186,14 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
 
     private fun systemEngineBaseRate(
         engine: TtsEngineSetting? =
-            ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
+            ReadAloud.preparedTtsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
     ): Float {
         return ((engine?.effectiveSpeed() ?: 50) / 50f).coerceIn(0.1f, 5f)
     }
 
     private fun systemEnginePitch(
         engine: TtsEngineSetting? =
-            ReadAloud.ttsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
+            ReadAloud.preparedTtsEngineV2.takeIf { it.type == TtsEngineType.SYSTEM }
     ): Float {
         return ((engine?.effectivePitch() ?: 50) / 50f).coerceIn(0.1f, 2f)
     }
@@ -225,7 +226,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
 
         override fun onStart(s: String) {
             LogUtils.d(TAG, "onStart nowSpeak:$nowSpeak pageIndex:$pageIndex utteranceId:$s")
-            syncActualPlaybackState(isPlaying = true)
+            if (!syncActualPlaybackState(isPlaying = true)) return
             textChapter?.let {
                 if (isReadAloudTextSilent()) {
                     nextParagraph()

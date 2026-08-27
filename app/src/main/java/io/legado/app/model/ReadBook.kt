@@ -537,12 +537,22 @@ object ReadBook : CoroutineScope by MainScope() {
 
     /**
      * 朗读
+     * @param engineVerified 透传给 [ReadAloud.play]，普通入口必须保持 false。
      */
-    fun readAloud(play: Boolean = true, startPos: Int = 0) {
+    fun readAloud(
+        play: Boolean = true,
+        startPos: Int = 0,
+        engineVerified: Boolean = false,
+    ) {
         book ?: return
         val textChapter = curTextChapter ?: return
         if (textChapter.isCompleted) {
-            ReadAloud.play(appCtx, play, startPos = startPos)
+            ReadAloud.play(
+                context = appCtx,
+                play = play,
+                startPos = startPos,
+                engineVerified = engineVerified,
+            )
         }
     }
 

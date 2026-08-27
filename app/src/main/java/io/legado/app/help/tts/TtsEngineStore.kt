@@ -301,15 +301,18 @@ object TtsEngineStore {
     }
 
     fun activeEngineId(): String {
-        val saved = appCtx.getPrefString(PreferKey.ttsEngineV2ActiveId)
-        return saved?.takeIf { id -> engines().any { it.id == id && it.enabled } }
-            ?: engines().firstOrNull { it.enabled }?.id.orEmpty()
+        return resolveActiveEngine(engines())?.id.orEmpty()
     }
 
     fun activeEngine(): TtsEngineSetting {
-        return engine(activeEngineId())
-            ?: engines().firstOrNull { it.enabled }
+        return resolveActiveEngine(engines())
             ?: builtInEngines().first()
+    }
+
+    private fun resolveActiveEngine(engines: List<TtsEngineSetting>): TtsEngineSetting? {
+        val saved = appCtx.getPrefString(PreferKey.ttsEngineV2ActiveId)
+        return saved?.let { id -> engines.firstOrNull { it.id == id && it.enabled } }
+            ?: engines.firstOrNull { it.enabled }
     }
 
     fun hasEnabledEngine(): Boolean {
@@ -341,6 +344,9 @@ object TtsEngineStore {
             appDb.ttsVoiceDao.deleteByEngine(engine.id)
         }
         val effectiveEngine = TtsEngineStore.engine(engine.id) ?: engine
+        if (wasActive) {
+            ReadAloud.updatePreparedTtsEngine(effectiveEngine)
+        }
         if (wasActive && restartReadAloud) {
             if (effectiveEngine.enabled) {
                 ReadAloud.httpTtsEngineV2 = effectiveEngine.takeIf {
@@ -621,8 +627,11 @@ object TtsEngineStore {
         val updated = engine(engineId)
         val isActiveEngine = activeEngineId() == engineId
         if (isActiveEngine) {
-            ReadAloud.httpTtsEngineV2 = updated?.takeIf {
-                it.type == TtsEngineType.SCRIPT
+            updated?.let { engine ->
+                ReadAloud.updatePreparedTtsEngine(engine)
+                ReadAloud.httpTtsEngineV2 = engine.takeIf {
+                    it.type == TtsEngineType.SCRIPT
+                }
             }
         }
         when {
