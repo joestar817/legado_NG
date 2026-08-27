@@ -1,12 +1,15 @@
 package io.legado.app.ui.book.read.aloud
 
+import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -15,6 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +68,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -84,6 +90,13 @@ import io.legado.app.R
 import io.legado.app.help.config.ListeningMotionEffect
 import io.legado.app.help.config.ListeningMotionSettings
 import io.legado.app.ui.book.listen.ListeningCoverArtwork
+import io.legado.app.ui.design.components.compose.NgGlassDefaults
+import io.legado.app.ui.design.components.compose.NgLiquidGlassBackdropProvider
+import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.NgVisualSurface
+import io.legado.app.ui.design.components.compose.currentNgLiquidGlassBackdrop
+import io.legado.app.ui.design.components.compose.ngRecordLiquidGlassBackdrop
+import io.legado.app.ui.design.components.compose.rememberNgLiquidGlassBackdrop
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.PI
 import kotlin.math.abs
@@ -155,29 +168,38 @@ internal fun ReadAloudPlayerScreen(
         path = state.coverPath,
         sourceOrigin = state.sourceOrigin,
     )
-    Box(modifier = Modifier.fillMaxSize()) {
-        ListeningPlayerBackground(
-            artwork = artwork,
-            useNoCoverFallback = useNoCoverFallback,
-        )
-        when (state.motionSettings.effect) {
-            ListeningMotionEffect.FLAME -> {
-                ReadAloudFireMotionBackground(settings = state.motionSettings)
-            }
+    val liquidBackdrop = rememberNgLiquidGlassBackdrop()
+    NgLiquidGlassBackdropProvider(liquidBackdrop) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .ngRecordLiquidGlassBackdrop(liquidBackdrop),
+            ) {
+                ListeningPlayerBackground(
+                    artwork = artwork,
+                    useNoCoverFallback = useNoCoverFallback,
+                )
+                when (state.motionSettings.effect) {
+                    ListeningMotionEffect.FLAME -> {
+                        ReadAloudFireMotionBackground(settings = state.motionSettings)
+                    }
 
-            ListeningMotionEffect.FLUID -> {
-                ReadAloudFluidMotionBackground(settings = state.motionSettings)
+                    ListeningMotionEffect.FLUID -> {
+                        ReadAloudFluidMotionBackground(settings = state.motionSettings)
+                    }
+                }
             }
+            PlayerContent(
+                state = state,
+                artwork = artwork,
+                onAction = onAction,
+            )
+            PlayerTopBar(
+                selectedPage = state.page,
+                onClose = { onAction(ReadAloudPlayerAction.Close) },
+            )
         }
-        PlayerContent(
-            state = state,
-            artwork = artwork,
-            onAction = onAction,
-        )
-        PlayerTopBar(
-            selectedPage = state.page,
-            onClose = { onAction(ReadAloudPlayerAction.Close) },
-        )
     }
 }
 
@@ -304,31 +326,45 @@ private fun PlayerTopBar(
     selectedPage: ReadAloudPlayerPage,
     onClose: () -> Unit,
 ) {
+    val closeInteractionSource = remember { MutableInteractionSource() }
+    val closePressed by closeInteractionSource.collectIsPressedAsState()
+    val closePressProgress by animateFloatAsState(
+        targetValue = if (closePressed && NgTheme.usesLiquidGlass) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 720f),
+        label = "closeLiquidPress",
+    )
     Box(
         modifier = Modifier
             .fillMaxSize(),
     ) {
-        IconButton(
-            onClick = onClose,
+        Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(start = 16.dp, top = 32.dp)
-                .size(38.dp)
-                .shadow(
-                    elevation = 3.dp,
-                    shape = CircleShape,
-                    ambientColor = Color.Black.copy(alpha = 0.18f),
-                    spotColor = Color.Black.copy(alpha = 0.22f),
-                )
-                .clip(CircleShape)
-                .background(Color(NgTheme.colors.surfaceContainerLow).copy(alpha = 0.54f)),
+                .size(38.dp),
         ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_read_aloud_chevron_down),
-                contentDescription = "关闭听书界面",
-                tint = Color(NgTheme.colors.onSurface),
-                modifier = Modifier.size(22.dp),
-            )
+            PlayerTranslucentSurface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .playerLiquidPressTransform(closePressProgress),
+                shape = CircleShape,
+                role = NgMaterialRole.INTERACTIVE,
+                liquidCornerRadius = 19.dp,
+                containerAlpha = 0.54f,
+                elevation = 3.dp,
+            ) {}
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.fillMaxSize(),
+                interactionSource = closeInteractionSource,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_read_aloud_chevron_down),
+                    contentDescription = "关闭听书界面",
+                    tint = Color(NgTheme.colors.onSurface),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
         }
         Row(
             modifier = Modifier
@@ -916,35 +952,45 @@ private fun PlayerQuickActions(
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         actions.forEach { item ->
+            val interactionSource = remember(item.action) { MutableInteractionSource() }
+            val pressed by interactionSource.collectIsPressedAsState()
+            val pressProgress by animateFloatAsState(
+                targetValue = if (pressed && NgTheme.usesLiquidGlass) 1f else 0f,
+                animationSpec = spring(dampingRatio = 0.68f, stiffness = 720f),
+                label = "${item.action}LiquidPress",
+            )
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clickable { onAction(item.action) },
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                    ) { onAction(item.action) },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Box(
+                PlayerTranslucentSurface(
                     modifier = Modifier
                         .size(34.dp)
-                        .shadow(
-                            elevation = 2.dp,
-                            shape = CircleShape,
-                            ambientColor = Color.Black.copy(alpha = 0.16f),
-                            spotColor = Color.Black.copy(alpha = 0.20f),
-                        )
-                        .clip(CircleShape)
-                        .background(
-                            Color(NgTheme.colors.surfaceContainerLow).copy(alpha = 0.42f)
-                        ),
-                    contentAlignment = Alignment.Center,
+                        .playerLiquidPressTransform(pressProgress),
+                    shape = CircleShape,
+                    role = NgMaterialRole.INTERACTIVE,
+                    liquidCornerRadius = 17.dp,
+                    containerAlpha = 0.42f,
+                    elevation = 2.dp,
                 ) {
-                    Icon(
-                        painter = painterResource(item.iconRes),
-                        contentDescription = item.label,
-                        tint = Color(NgTheme.colors.onSurface).copy(alpha = 0.78f),
-                        modifier = Modifier.size(22.dp),
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(item.iconRes),
+                            contentDescription = item.label,
+                            tint = Color(NgTheme.colors.onSurface).copy(alpha = 0.78f),
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
                 Text(
                     text = item.label,
@@ -976,11 +1022,19 @@ internal fun ReadAloudProgressSlider(
     val primary = Color(Hct.from(controlHue, controlChroma, 50.0).toInt())
     val inactive = Color(Hct.from(controlHue, max(primaryHct.chroma, 40.0), 30.0).toInt())
     val onSurface = Color(NgTheme.colors.onSurface)
-    Canvas(
+    val useLiquidThumb = NgTheme.usesLiquidGlass && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val safeMax = max.coerceAtLeast(1)
+    val safeValue = value.coerceIn(0, safeMax)
+    val valueFraction = safeValue.toFloat() / safeMax
+    val bufferFraction = bufferedValue.coerceIn(safeValue, safeMax).toFloat() / safeMax
+    var sliderSize by remember { mutableStateOf(IntSize.Zero) }
+    val density = LocalDensity.current
+    Box(
         modifier = modifier
             .padding(horizontal = 8.dp)
             .fillMaxWidth()
             .height(48.dp)
+            .onSizeChanged { sliderSize = it }
             .pointerInput(enabled, max) {
                 if (!enabled || max <= 0) return@pointerInput
                 awaitEachGesture {
@@ -1013,44 +1067,77 @@ internal fun ReadAloudProgressSlider(
                 }
             },
     ) {
-        val thumbRadius = 11.dp.toPx()
-        val innerRadius = 7.dp.toPx()
-        val trackHeight = 6.dp.toPx()
-        val trackStart = thumbRadius
-        val trackWidth = (size.width - thumbRadius * 2f).coerceAtLeast(0f)
-        val top = (size.height - trackHeight) / 2f
-        val radius = trackHeight / 2f
-        val safeMax = max.coerceAtLeast(1)
-        val safeValue = value.coerceIn(0, safeMax)
-        val valueFraction = safeValue.toFloat() / safeMax
-        val bufferFraction = bufferedValue.coerceIn(safeValue, safeMax).toFloat() / safeMax
-        drawRoundRect(
-            color = inactive,
-            topLeft = Offset(trackStart - radius, top),
-            size = Size(trackWidth + trackHeight, trackHeight),
-            cornerRadius = CornerRadius(radius),
-        )
-        drawRoundRect(
-            color = primary.copy(alpha = 0.42f),
-            topLeft = Offset(trackStart - radius, top),
-            size = Size((trackWidth * bufferFraction + trackHeight).coerceAtLeast(trackHeight), trackHeight),
-            cornerRadius = CornerRadius(radius),
-        )
-        drawRoundRect(
-            color = primary,
-            topLeft = Offset(trackStart - radius, top),
-            size = Size((trackWidth * valueFraction + trackHeight).coerceAtLeast(trackHeight), trackHeight),
-            cornerRadius = CornerRadius(radius),
-        )
-        val thumbX = trackStart + trackWidth * valueFraction
-        drawCircle(onSurface, thumbRadius, Offset(thumbX, size.height / 2f))
-        drawCircle(primary, innerRadius, Offset(thumbX, size.height / 2f))
-        drawCircle(
-            color = primary.copy(alpha = 0.40f),
-            radius = thumbRadius,
-            center = Offset(thumbX, size.height / 2f),
-            style = Stroke(1.dp.toPx()),
-        )
+        Canvas(Modifier.fillMaxSize()) {
+            val thumbRadius = 11.dp.toPx()
+            val innerRadius = 7.dp.toPx()
+            val trackHeight = 6.dp.toPx()
+            val trackStart = thumbRadius
+            val trackWidth = (size.width - thumbRadius * 2f).coerceAtLeast(0f)
+            val top = (size.height - trackHeight) / 2f
+            val radius = trackHeight / 2f
+            drawRoundRect(
+                color = inactive,
+                topLeft = Offset(trackStart - radius, top),
+                size = Size(trackWidth + trackHeight, trackHeight),
+                cornerRadius = CornerRadius(radius),
+            )
+            drawRoundRect(
+                color = primary.copy(alpha = 0.42f),
+                topLeft = Offset(trackStart - radius, top),
+                size = Size(
+                    (trackWidth * bufferFraction + trackHeight).coerceAtLeast(trackHeight),
+                    trackHeight,
+                ),
+                cornerRadius = CornerRadius(radius),
+            )
+            drawRoundRect(
+                color = primary,
+                topLeft = Offset(trackStart - radius, top),
+                size = Size(
+                    (trackWidth * valueFraction + trackHeight).coerceAtLeast(trackHeight),
+                    trackHeight,
+                ),
+                cornerRadius = CornerRadius(radius),
+            )
+            if (!useLiquidThumb) {
+                val thumbX = trackStart + trackWidth * valueFraction
+                drawCircle(onSurface, thumbRadius, Offset(thumbX, size.height / 2f))
+                drawCircle(primary, innerRadius, Offset(thumbX, size.height / 2f))
+                drawCircle(
+                    color = primary.copy(alpha = 0.40f),
+                    radius = thumbRadius,
+                    center = Offset(thumbX, size.height / 2f),
+                    style = Stroke(1.dp.toPx()),
+                )
+            }
+        }
+        if (useLiquidThumb && sliderSize.width > 0) {
+            val thumbRadiusPx = with(density) { 11.dp.toPx() }
+            val trackWidthPx = (sliderSize.width - thumbRadiusPx * 2f).coerceAtLeast(0f)
+            val thumbX = thumbRadiusPx + trackWidthPx * valueFraction
+            val thumbOffset = with(density) { (thumbX - thumbRadiusPx).toDp() }
+            PlayerTranslucentSurface(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset(x = thumbOffset)
+                    .size(22.dp),
+                shape = CircleShape,
+                role = NgMaterialRole.INTERACTIVE,
+                liquidCornerRadius = 11.dp,
+                containerAlpha = 0.36f,
+                elevation = 1.dp,
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    drawCircle(primary, 7.dp.toPx(), center)
+                    drawCircle(
+                        color = primary.copy(alpha = 0.52f),
+                        radius = 10.dp.toPx(),
+                        center = center,
+                        style = Stroke(1.dp.toPx()),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1066,6 +1153,8 @@ private fun PlayerControlDock(
             .fillMaxWidth()
             .height(48.dp),
         shape = RoundedCornerShape(8.dp),
+        role = NgMaterialRole.NAVIGATION,
+        liquidCornerRadius = 8.dp,
         containerAlpha = 0.46f,
         elevation = 5.dp,
     ) {
@@ -1227,6 +1316,8 @@ private fun PlayerVoicePill(
             modifier = Modifier
                 .height(32.dp),
             shape = RoundedCornerShape(8.dp),
+            role = NgMaterialRole.INTERACTIVE,
+            liquidCornerRadius = 8.dp,
             containerAlpha = 0.42f,
             elevation = 3.dp,
         ) {
@@ -1264,15 +1355,84 @@ private fun PlayerVoicePill(
     }
 }
 
+internal fun Modifier.playerLiquidPressTransform(progress: Float): Modifier = graphicsLayer {
+    scaleX = 1f + progress * 0.08f
+    scaleY = 1f - progress * 0.07f
+}
+
 @Composable
 internal fun PlayerTranslucentSurface(
     modifier: Modifier,
     shape: Shape,
     containerAlpha: Float,
     elevation: androidx.compose.ui.unit.Dp,
+    role: NgMaterialRole = NgMaterialRole.SOFT_SURFACE,
+    liquidCornerRadius: androidx.compose.ui.unit.Dp = 8.dp,
     content: @Composable () -> Unit,
 ) {
     val colors = NgTheme.colors
+    val liquidBackdrop = currentNgLiquidGlassBackdrop()
+    val supportsLiquidControl = role == NgMaterialRole.NAVIGATION ||
+        role == NgMaterialRole.INTERACTIVE
+    if (
+        supportsLiquidControl &&
+        NgTheme.usesLiquidGlass &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        liquidBackdrop != null
+    ) {
+        val baseStyle = NgGlassDefaults.floatingStyle()
+        val snapshot = NgTheme.snapshot
+        val surfaceColor = Color(colors.surfaceContainerLow)
+        val primary = Color(colors.primary)
+        val clearSurface = lerp(
+            surfaceColor,
+            Color.White,
+            if (snapshot.isDark) 0.05f else 0.025f,
+        )
+        val clearTint = lerp(clearSurface, primary, 0.025f)
+        val liquidStyle = remember(
+            baseStyle,
+            clearSurface,
+            clearTint,
+            primary,
+            snapshot.isDark,
+            containerAlpha,
+        ) {
+            baseStyle.copy(
+                containerTop = clearTint.copy(
+                    alpha = (containerAlpha + 0.02f).coerceAtMost(1f)
+                ),
+                containerBottom = clearSurface.copy(alpha = containerAlpha),
+                accentGlow = primary.copy(alpha = 0.04f),
+                edgeHighlight = Color.White.copy(
+                    alpha = if (snapshot.isDark) 0.38f else 0.32f,
+                ),
+                surfaceGloss = Color.White.copy(
+                    alpha = if (snapshot.isDark) 0.07f else 0.05f,
+                ),
+                depthEdge = Color.Black.copy(alpha = 0.08f),
+                contentColor = Color(colors.onSurface),
+                shadowElevation = 0.dp,
+            )
+        }
+        val liquidElevation = (elevation * 0.35f).coerceAtLeast(1.dp)
+        NgVisualSurface(
+            modifier = modifier.shadow(
+                elevation = liquidElevation,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.08f),
+                spotColor = Color.Black.copy(alpha = 0.12f),
+            ),
+            role = role,
+            cornerRadius = liquidCornerRadius,
+            shape = shape,
+            style = liquidStyle,
+            liquidBackdrop = liquidBackdrop,
+        ) {
+            content()
+        }
+        return
+    }
     Box(
         modifier = modifier
             .shadow(

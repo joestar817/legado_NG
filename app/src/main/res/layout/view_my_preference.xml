@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<io.legado.app.ui.design.components.view.NgSettingsItemGlassLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     style="@style/Ng.SettingsItem"
     android:layout_marginStart="@dimen/ng_page_padding"
@@ -52,4 +52,4 @@
         android:textColor="@color/ng_settings_arrow"
         android:textSize="30sp" />
 
-</LinearLayout>
+</io.legado.app.ui.design.components.view.NgSettingsItemGlassLayout>

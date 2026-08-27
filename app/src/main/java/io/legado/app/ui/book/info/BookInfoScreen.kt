@@ -90,7 +90,10 @@ import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuWidthVariant
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
+import io.legado.app.ui.design.components.compose.NgVisualIconButton
+import io.legado.app.ui.design.components.compose.NgWindowLiquidGlassBackdropHost
 import io.legado.app.ui.design.theme.NgTheme
 import androidx.compose.ui.window.PopupProperties
 
@@ -243,10 +246,19 @@ internal fun BookInfoScreen(
     onEvent: (BookInfoUiEvent) -> Unit,
 ) {
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    if (isLandscape) {
-        BookInfoLandscape(state = state, introView = introView, onEvent = onEvent)
-    } else {
-        BookInfoPortrait(state = state, introView = introView, onEvent = onEvent)
+    NgWindowLiquidGlassBackdropHost(
+        modifier = Modifier.fillMaxSize(),
+        backgroundOverlay = if (isLandscape) {
+            Color(NgTheme.colors.background)
+        } else {
+            Color.Transparent
+        },
+    ) {
+        if (isLandscape) {
+            BookInfoLandscape(state = state, introView = introView, onEvent = onEvent)
+        } else {
+            BookInfoPortrait(state = state, introView = introView, onEvent = onEvent)
+        }
     }
     if (state.deleteDialogVisible) {
         BookInfoDeleteDialog(state = state, onEvent = onEvent)
@@ -599,7 +611,7 @@ private fun BookInfoToolbarIcon(
     contentDescription: String,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+    NgVisualIconButton(onClick = onClick) {
         Icon(
             painter = painterResource(iconRes),
             contentDescription = contentDescription,
@@ -1325,6 +1337,8 @@ private fun BookInfoCard(
         modifier = modifier,
         shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp),
         style = NgGlassDefaults.bookDetailStyle(),
+        role = NgMaterialRole.CONTENT,
+        liquidCornerRadius = NgTheme.shapes.smallDp.dp,
         contentPadding = contentPadding,
         content = content,
     )

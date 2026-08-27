@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
+import io.legado.app.BuildConfig
 import io.legado.app.base.AppContextWrapper
 import io.legado.app.base.BaseFragment
 import io.legado.app.constant.EventBus
@@ -22,6 +23,8 @@ import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.NgDrawerAppearanceConfig
+import io.legado.app.help.config.NgVisualSystem
+import io.legado.app.help.config.NgVisualSystemStore
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.help.config.normalizeThemeMode
 import io.legado.app.help.http.addHeaders
@@ -88,6 +91,7 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                         state = screenState,
                         section = screenSection(),
                         onThemeModeSelected = ::selectThemeMode,
+                        onVisualSystemSelected = ::setVisualSystem,
                         onLauncherIconClick = ::showLauncherIconSelection,
                         onFloatingBottomBarChanged = ::setFloatingBottomBar,
                         onFloatingBottomBarBottomDistanceChanged =
@@ -206,6 +210,8 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
         val statusBarHeightPx = requireContext().statusBarHeight
         screenState = ThemeConfigScreenState(
             themeMode = normalizeThemeMode(AppConfig.themeMode),
+            visualSystem = NgVisualSystemStore.current(requireContext()),
+            showVisualSystemEntry = BuildConfig.DEBUG,
             showLauncherIcon = Build.VERSION.SDK_INT >= 26,
             launcherIconRes = launcherIconResource(launcherIcon),
             floatingBottomBar = getPrefBoolean(PreferKey.useFloatingBottomBar, false),
@@ -277,6 +283,12 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
         if (normalized == screenState.themeMode) return
         screenState = screenState.copy(themeMode = normalized)
         ThemeConfig.applyThemeMode(requireContext(), normalized)
+    }
+
+    private fun setVisualSystem(visualSystem: NgVisualSystem) {
+        if (visualSystem == screenState.visualSystem) return
+        NgVisualSystemStore.update(requireContext(), visualSystem)
+        screenState = screenState.copy(visualSystem = visualSystem)
     }
 
     private fun showLauncherIconSelection() {

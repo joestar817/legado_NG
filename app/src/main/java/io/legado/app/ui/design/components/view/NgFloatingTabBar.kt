@@ -2,11 +2,14 @@ package io.legado.app.ui.design.components.view
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.Gravity
+import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -18,6 +21,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.widget.ImageViewCompat
 import io.legado.app.R
+import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.FloatingBottomBarConfig
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.theme.NgThemeResolver
 import kotlin.math.roundToInt
 
@@ -63,6 +69,9 @@ class NgFloatingTabBar @JvmOverloads constructor(
     private var items: List<NgFloatingTabItem> = emptyList()
     private var onTabSelected: ((Int) -> Unit)? = null
     private var tabColors: TabColors? = null
+    private var currentVariant = NgFloatingTabBarVariant.DETAIL
+    private var configuredSurfaceAlpha: Float? = null
+    private val liquidRenderer = NgViewLiquidGlassRenderer(this)
     var selectedIndex: Int = 0
         private set
 
@@ -72,30 +81,39 @@ class NgFloatingTabBar @JvmOverloads constructor(
         minimumHeight = 48.dp
         setPadding(3.dp, 3.dp, 3.dp, 3.dp)
         setBackgroundResource(R.drawable.ng_bg_character_tabs)
+        setWillNotDraw(false)
     }
 
     fun setVariant(variant: NgFloatingTabBarVariant) {
-        setBackgroundResource(
-            when (variant) {
-                NgFloatingTabBarVariant.DETAIL -> R.drawable.ng_bg_character_tabs
-                NgFloatingTabBarVariant.CONTENT_OVERLAY ->
-                    R.drawable.ng_bg_floating_tabs_overlay
-            }
-        )
+        currentVariant = variant
+        updateMaterialBackground()
     }
 
     /** 只调整 Dock 表面，不改变图标和文字的透明度。 */
     fun setSurfaceAlpha(alpha: Float) {
-        val surfaceColor = ContextCompat.getColor(context, R.color.ng_floating_dock_surface)
-        background = GradientDrawable().apply {
-            cornerRadius = 12.dp.toFloat()
-            setColor(
-                ColorUtils.setAlphaComponent(
-                    surfaceColor,
-                    (alpha.coerceIn(0f, 1f) * 255).roundToInt()
-                )
-            )
-        }
+        configuredSurfaceAlpha = alpha.coerceIn(0f, 1f)
+        updateMaterialBackground()
+    }
+
+    /**
+     * 显式绑定页面内容源；主界面用它绑定 ViewPager。
+     *
+     * 未显式绑定时，详情页会在 attach 后自动查找约定的页面级 source。
+     */
+    fun setLiquidBackdropSource(sourceView: View?) {
+        configureLiquidBackdropSource(sourceView)
+        updateMaterialBackground()
+    }
+
+    private fun configureLiquidBackdropSource(sourceView: View?) {
+        liquidRenderer.sourceView = sourceView
+        liquidRenderer.role = NgMaterialRole.BOTTOM_NAVIGATION
+        liquidRenderer.cornerRadiusPx = 12.dp.toFloat()
+        liquidRenderer.surfaceColor = ContextCompat.getColor(
+            context,
+            R.color.ng_floating_dock_surface,
+        )
+        liquidRenderer.drawsSurface = true
     }
 
     fun setContentColors(
@@ -232,6 +250,7 @@ class NgFloatingTabBar @JvmOverloads constructor(
     private fun refreshStyles() {
         val colors = NgThemeResolver.resolve(context).colors
         val customColors = tabColors
+        val usesLiquidGlass = usesLiquidGlassMaterial()
         for (index in 0 until childCount) {
             val tab = getChildAt(index) as LinearLayout
             val content = tab.tag as TabContent
@@ -253,7 +272,7 @@ class NgFloatingTabBar @JvmOverloads constructor(
                     setColor(colors.primary)
                 }
             }
-            tab.background = if (selected) {
+            tab.background = if (selected && AppConfig.isEInkMode) {
                 GradientDrawable().apply {
                     cornerRadius = 10.dp.toFloat()
                     setColor(customColors?.selectedContainer ?: colors.selectedContainer)
@@ -262,6 +281,14 @@ class NgFloatingTabBar @JvmOverloads constructor(
                 null
             }
             content.icon?.let { icon ->
+                icon.alpha = when {
+                    AppConfig.isEInkMode || selected -> 1f
+                    usesLiquidGlass -> 0.62f
+                    else -> 0.72f
+                }
+                val iconScale = if (usesLiquidGlass && selected) 1.08f else 1f
+                icon.scaleX = iconScale
+                icon.scaleY = iconScale
                 if (content.iconDrawable != null) {
                     icon.setImageDrawable(content.iconDrawable.newDrawable())
                 } else {
@@ -282,6 +309,69 @@ class NgFloatingTabBar @JvmOverloads constructor(
 
     private fun Drawable.newDrawable(): Drawable =
         constantState?.newDrawable(resources)?.mutate() ?: mutate()
+
+    override fun onDraw(canvas: Canvas) {
+        liquidRenderer.surfaceAlpha = configuredSurfaceAlpha
+            ?: FloatingBottomBarConfig.surfaceAlpha(
+                AppConfig.floatingBottomBarTransparency,
+            )
+        liquidRenderer.draw(canvas)
+        super.onDraw(canvas)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        bindPageLiquidBackdropSource()
+        liquidRenderer.onAttachedToWindow()
+        updateMaterialBackground()
+    }
+
+    override fun onDetachedFromWindow() {
+        liquidRenderer.onDetachedFromWindow()
+        super.onDetachedFromWindow()
+    }
+
+    private fun usesLiquidGlassMaterial(): Boolean = liquidRenderer.isEnabled()
+
+    private fun bindPageLiquidBackdropSource() {
+        if (liquidRenderer.sourceView != null) return
+        val pageSource = rootView.findViewById<View>(
+            R.id.ng_liquid_glass_backdrop_source,
+        ) ?: return
+        if (pageSource === this) return
+        configureLiquidBackdropSource(pageSource)
+    }
+
+    private fun updateMaterialBackground() {
+        val usesLiquidGlass = usesLiquidGlassMaterial()
+        if (usesLiquidGlass) {
+            setBackgroundColor(Color.TRANSPARENT)
+        } else {
+            val alpha = configuredSurfaceAlpha
+            if (alpha != null) {
+                val surfaceColor = ContextCompat.getColor(context, R.color.ng_floating_dock_surface)
+                background = GradientDrawable().apply {
+                    cornerRadius = 12.dp.toFloat()
+                    setColor(
+                        ColorUtils.setAlphaComponent(
+                            surfaceColor,
+                            (alpha * 255).roundToInt()
+                        )
+                    )
+                }
+            } else {
+                setBackgroundResource(
+                    when (currentVariant) {
+                        NgFloatingTabBarVariant.DETAIL -> R.drawable.ng_bg_character_tabs
+                        NgFloatingTabBarVariant.CONTENT_OVERLAY ->
+                            R.drawable.ng_bg_floating_tabs_overlay
+                    }
+                )
+            }
+        }
+        if (childCount > 0) refreshStyles()
+        invalidate()
+    }
 
     private val Int.dp: Int
         get() = (this * resources.displayMetrics.density + 0.5f).toInt()

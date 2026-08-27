@@ -5,6 +5,7 @@ object PreferKey {
     const val language = "language"
     const val fontScale = "fontScale"
     const val themeMode = "themeMode"
+    const val ngVisualSystem = "ngVisualSystem.v1"
     const val userAgent = "userAgent"
     const val customHosts = "customHosts"
     const val videoSetting = "videoSetting"

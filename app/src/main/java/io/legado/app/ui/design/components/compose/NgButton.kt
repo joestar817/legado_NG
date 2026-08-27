@@ -1,7 +1,13 @@
 package io.legado.app.ui.design.components.compose
 
+import android.os.Build
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -9,8 +15,12 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.legado.app.ui.design.components.NgButtonShapeVariant
 import io.legado.app.ui.design.components.NgButtonVariant
@@ -140,4 +150,61 @@ fun NgIconButton(
         enabled = enabled,
         content = content
     )
+}
+
+/**
+ * 透明体系保持普通图标按钮；存在页面级 backdrop 时，液态体系自动使用交互玻璃面。
+ */
+@Composable
+fun NgVisualIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    touchSize: Dp = 48.dp,
+    surfaceSize: Dp = 38.dp,
+    role: NgMaterialRole = NgMaterialRole.ICON_ACTION,
+    content: @Composable () -> Unit,
+) {
+    val usesLiquidSurface = NgTheme.usesLiquidGlass &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        hasCurrentNgLiquidGlassBackdrop()
+    if (!usesLiquidSurface) {
+        NgIconButton(
+            onClick = onClick,
+            modifier = modifier.size(touchSize),
+            enabled = enabled,
+            content = content,
+        )
+        return
+    }
+
+    val shape = CircleShape
+    val style = NgGlassDefaults.style(containerAlpha = 0.52f)
+    Box(
+        modifier = modifier
+            .size(touchSize)
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        NgVisualSurface(
+            modifier = Modifier
+                .size(surfaceSize)
+                .alpha(if (enabled) 1f else 0.45f),
+            role = role,
+            cornerRadius = surfaceSize / 2,
+            shape = shape,
+            style = style,
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                content()
+            }
+        }
+    }
 }

@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import android.view.View
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -42,9 +43,10 @@ import io.legado.app.ui.book.read.ReadFloatingPalette
 import kotlin.math.max
 
 /**
- * NG 的透明玻璃承载面。
+ * NG 既有玻璃组件的视觉体系兼容入口。
  *
- * 组件只负责材质、裁切和内容承载，不负责决定抽屉结构。调用方若提供 [backdrop]，
+ * 旧调用无需感知透明／液态后端；只需按组件语义补充 [role]。页面若提供统一的
+ * 液态 backdrop host，同一树中的既有调用会自动切换。调用方若提供 [backdrop]，
  * 必须传入已经与当前界面对齐的背景内容，不能把整张主题图再次缩放到局部区域。
  */
 @Composable
@@ -55,6 +57,33 @@ fun NgGlassSurface(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     backdrop: (@Composable BoxScope.() -> Unit)? = null,
     materialViewport: NgGlassMaterialViewport? = null,
+    role: NgMaterialRole = NgMaterialRole.SOFT_SURFACE,
+    liquidCornerRadius: Dp? = null,
+    viewBackdropSource: View? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    NgVisualSurface(
+        modifier = modifier,
+        role = role,
+        cornerRadius = liquidCornerRadius ?: NgTheme.shapes.dialogDp.dp,
+        shape = shape,
+        style = style,
+        contentPadding = contentPadding,
+        viewBackdropSource = viewBackdropSource,
+        transparentBackdrop = backdrop,
+        materialViewport = materialViewport,
+        content = content,
+    )
+}
+
+@Composable
+internal fun NgTransparentGlassSurface(
+    modifier: Modifier = Modifier,
+    shape: Shape,
+    style: NgGlassStyle,
+    contentPadding: PaddingValues,
+    backdrop: (@Composable BoxScope.() -> Unit)?,
+    materialViewport: NgGlassMaterialViewport?,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Surface(
@@ -549,7 +578,7 @@ internal fun resolveNgDrawerGlassStyle(
     )
 }
 
-private fun Modifier.ngGlassLayer(
+internal fun Modifier.ngGlassLayer(
     shape: Shape,
     style: NgGlassStyle,
     materialViewport: NgGlassMaterialViewport?,

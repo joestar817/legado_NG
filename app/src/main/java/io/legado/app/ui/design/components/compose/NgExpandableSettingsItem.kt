@@ -7,8 +7,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,10 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -42,7 +38,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.legado.app.R
 import io.legado.app.ui.design.theme.NgTheme
 
 enum class NgExpandableSettingsItemVariant {
@@ -65,27 +60,17 @@ fun NgExpandableSettingsItem(
 ) {
     val compact = variant != NgExpandableSettingsItemVariant.REGULAR
     val withLeading = variant == NgExpandableSettingsItemVariant.COMPACT_LEADING
-    val shape = RoundedCornerShape(if (compact) 16.dp else 18.dp)
-    val containerColor = if (withLeading) {
-        colorResource(R.color.ng_settings_item)
-    } else {
-        colorResource(R.color.ng_settings_item)
-    }
-    val strokeColor = if (withLeading) {
-        colorResource(R.color.ng_settings_item_stroke)
-    } else {
-        colorResource(R.color.ng_settings_item_stroke)
-    }
+    val cornerRadius = if (compact) 16.dp else 18.dp
+    val shape = RoundedCornerShape(cornerRadius)
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
         label = "NgExpandableSettingsArrow"
     )
-    Column(
+    NgSettingsCardSurface(
         modifier = modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(containerColor)
-            .border(0.6.dp, strokeColor, shape)
+            .fillMaxWidth(),
+        cornerRadius = cornerRadius,
+        shape = shape,
     ) {
         Row(
             modifier = Modifier

@@ -42,6 +42,7 @@ import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.NgDrawerAppearanceConfig
+import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.components.compose.NgDockSlider
 import io.legado.app.ui.design.components.compose.NgExpandableSettingsItem
@@ -55,6 +56,8 @@ import kotlin.math.roundToInt
 
 internal data class ThemeConfigScreenState(
     val themeMode: String = "0",
+    val visualSystem: NgVisualSystem = NgVisualSystem.TRANSPARENT_GLASS,
+    val showVisualSystemEntry: Boolean = false,
     val showLauncherIcon: Boolean = true,
     @param:DrawableRes val launcherIconRes: Int = R.mipmap.ic_launcher,
     val floatingBottomBar: Boolean = false,
@@ -99,6 +102,7 @@ internal fun ThemeConfigScreen(
     state: ThemeConfigScreenState,
     section: ThemeConfigSection,
     onThemeModeSelected: (String) -> Unit,
+    onVisualSystemSelected: (NgVisualSystem) -> Unit,
     onLauncherIconClick: () -> Unit,
     onFloatingBottomBarChanged: (Boolean) -> Unit,
     onFloatingBottomBarBottomDistanceChanged: (Int) -> Unit,
@@ -137,6 +141,7 @@ internal fun ThemeConfigScreen(
     val showAppearance = section != ThemeConfigSection.INTERFACE
     val showInterface = section != ThemeConfigSection.APPEARANCE
     val selectedMode = THEME_MODES.indexOf(state.themeMode).coerceAtLeast(0)
+    var visualSystemExpanded by rememberSaveable { mutableStateOf(false) }
     var bottomBarExpanded by rememberSaveable { mutableStateOf(false) }
     var drawerAppearanceExpanded by rememberSaveable { mutableStateOf(false) }
     var bookshelfTopBarExpanded by rememberSaveable { mutableStateOf(false) }
@@ -174,6 +179,45 @@ internal fun ThemeConfigScreen(
         }
 
         NgSettingsGroup {
+            if (showAppearance && state.showVisualSystemEntry) {
+                NgExpandableSettingsItem(
+                    title = stringResource(R.string.ng_visual_system),
+                    summary = stringResource(state.visualSystem.labelRes()),
+                    expanded = visualSystemExpanded,
+                    onExpandedChange = { visualSystemExpanded = it },
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        NgFloatingTabBar(
+                            items = listOf(
+                                NgFloatingTabSpec(
+                                    text = stringResource(
+                                        R.string.ng_visual_system_transparent_glass
+                                    )
+                                ),
+                                NgFloatingTabSpec(
+                                    text = stringResource(
+                                        R.string.ng_visual_system_liquid_glass
+                                    )
+                                ),
+                            ),
+                            selectedIndex = NgVisualSystem.entries.indexOf(state.visualSystem),
+                            onTabSelected = { index ->
+                                onVisualSystemSelected(NgVisualSystem.entries[index])
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        if (NgTheme.snapshot.isEInk) {
+                            Text(
+                                text = stringResource(R.string.ng_visual_system_eink_override),
+                                color = Color(NgTheme.colors.onSurfaceVariant),
+                            )
+                        }
+                    }
+                }
+            }
             if (showAppearance && state.showLauncherIcon) {
                 NgSettingsItem(
                     title = stringResource(R.string.change_icon),
@@ -580,6 +624,11 @@ internal fun ThemeConfigScreen(
             }
         }
     }
+}
+
+private fun NgVisualSystem.labelRes(): Int = when (this) {
+    NgVisualSystem.TRANSPARENT_GLASS -> R.string.ng_visual_system_transparent_glass
+    NgVisualSystem.LIQUID_GLASS -> R.string.ng_visual_system_liquid_glass
 }
 
 @Composable

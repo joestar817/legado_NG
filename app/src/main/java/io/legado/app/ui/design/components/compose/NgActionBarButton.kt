@@ -1,8 +1,13 @@
 package io.legado.app.ui.design.components.compose
 
+import android.os.Build
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -10,13 +15,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.ui.design.components.NgButtonVariant
@@ -54,7 +65,8 @@ fun NgActionBarButton(
 ) {
     val colors = NgTheme.colors
     val compact = sizeVariant == NgActionBarButtonSizeVariant.COMPACT
-    val shape = RoundedCornerShape(if (compact) 8.dp else 12.dp)
+    val cornerRadius = if (compact) 8.dp else 12.dp
+    val shape = RoundedCornerShape(cornerRadius)
     val background = when (surfaceVariant) {
         NgActionBarButtonSurfaceVariant.LIGHT_GLASS -> Color.White.copy(alpha = 0.82f)
         NgActionBarButtonSurfaceVariant.THEMED ->
@@ -82,6 +94,30 @@ fun NgActionBarButton(
             fontSize = if (compact) 13.sp else 14.sp,
             maxLines = 1
         )
+    }
+
+    val usesLiquidSurface = variant != NgButtonVariant.PRIMARY &&
+        variant != NgButtonVariant.PRIMARY_LIGHT_CONTENT &&
+        NgTheme.usesLiquidGlass &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        hasCurrentNgLiquidGlassBackdrop()
+    if (usesLiquidSurface) {
+        NgLiquidActionBarButton(
+            onClick = onClick,
+            modifier = buttonModifier,
+            enabled = enabled,
+            shape = shape,
+            cornerRadius = cornerRadius,
+            background = background,
+            accent = if (variant == NgButtonVariant.DANGER) {
+                Color(colors.error)
+            } else {
+                outlineAccent
+            },
+            contentPadding = contentPadding,
+            content = content,
+        )
+        return
     }
 
     when (variant) {
@@ -132,6 +168,50 @@ fun NgActionBarButton(
             contentPadding = contentPadding,
             content = content
         )
+    }
+}
+
+@Composable
+private fun NgLiquidActionBarButton(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
+    shape: RoundedCornerShape,
+    cornerRadius: androidx.compose.ui.unit.Dp,
+    background: Color,
+    accent: Color,
+    contentPadding: PaddingValues,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    val resolvedAccent = accent.copy(alpha = if (enabled) 1f else 0.38f)
+    val style = NgGlassDefaults.flatNeutralStyle(containerAlpha = background.alpha).copy(
+        containerTop = background,
+        containerBottom = background,
+        contentColor = resolvedAccent,
+    )
+    NgVisualSurface(
+        modifier = modifier
+            .clip(shape)
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .alpha(if (enabled) 1f else 0.55f),
+        role = NgMaterialRole.ACTION,
+        cornerRadius = cornerRadius,
+        shape = shape,
+        style = style,
+        contentPadding = contentPadding,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides resolvedAccent) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                content = content,
+            )
+        }
     }
 }
 

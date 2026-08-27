@@ -1,8 +1,8 @@
 package io.legado.app.ui.design.components.compose
 
+import android.os.Build
 import androidx.appcompat.widget.SwitchCompat
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,14 +22,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -68,6 +71,66 @@ fun NgSettingsGroup(
             .padding(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         content = content
+    )
+}
+
+/**
+ * 设置菜单卡的统一材质边界。
+ *
+ * 页面只需提供一次约定的 backdrop source；普通项、滑轨项和可展开项都会在这里
+ * 自动选择透明玻璃或 SETTINGS 液态材质，业务屏幕不感知视觉体系。
+ */
+@Composable
+internal fun NgSettingsCardSurface(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 18.dp,
+    shape: Shape = RoundedCornerShape(cornerRadius),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val snapshot = NgTheme.snapshot
+    val transparentContainer = colorResource(R.color.ng_settings_item)
+    val strokeColor = colorResource(R.color.ng_settings_item_stroke)
+    val usesLiquidSurface = NgTheme.usesLiquidGlass &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        hasCurrentNgLiquidGlassBackdrop()
+    val containerColor = if (usesLiquidSurface) {
+        Color.White.copy(alpha = if (snapshot.isDark) 0.18f else 0.68f)
+    } else {
+        transparentContainer
+    }
+    val contentColor = Color(snapshot.colors.onSurface)
+    val style = remember(
+        snapshot.isEInk,
+        containerColor,
+        strokeColor,
+        contentColor,
+    ) {
+        NgGlassStyle(
+            containerTop = containerColor,
+            containerBottom = containerColor,
+            accentGlow = Color.Transparent,
+            borderColor = strokeColor,
+            edgeHighlight = if (snapshot.isEInk) {
+                Color.Transparent
+            } else {
+                Color.White.copy(alpha = 0.60f)
+            },
+            surfaceGloss = Color.Transparent,
+            depthEdge = Color.Transparent,
+            contentColor = contentColor,
+            blurRadius = 0.dp,
+            shadowElevation = 0.dp,
+            borderWidth = 0.6.dp,
+            highlightWidth = 0.dp,
+        )
+    }
+    NgVisualSurface(
+        modifier = modifier,
+        role = NgMaterialRole.SETTINGS,
+        cornerRadius = cornerRadius,
+        shape = shape,
+        style = style,
+        content = content,
     )
 }
 
@@ -120,84 +183,88 @@ fun NgSettingsItem(
     customTrailing: (@Composable RowScope.() -> Unit)? = null
 ) {
     val itemShape = RoundedCornerShape(18.dp)
-    Row(
+    NgSettingsCardSurface(
         modifier = modifier
-            .fillMaxWidth()
-            .clip(itemShape)
-            .background(colorResource(R.color.ng_settings_item))
-            .border(0.6.dp, colorResource(R.color.ng_settings_item_stroke), itemShape)
-            .then(
-                if (onClick != null) {
-                    Modifier.clickable(enabled = enabled, onClick = onClick)
-                } else {
-                    Modifier
-                }
-            )
-            .heightIn(min = 64.dp)
-            .padding(start = 16.dp, top = 10.dp, end = 14.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .fillMaxWidth(),
+        cornerRadius = 18.dp,
+        shape = itemShape,
     ) {
-        if (leading != null) {
-            leading()
-            Spacer(Modifier.width(14.dp))
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable(enabled = enabled, onClick = onClick)
+                    } else {
+                        Modifier
+                    }
+                )
+                .heightIn(min = 64.dp)
+                .padding(start = 16.dp, top = 10.dp, end = 14.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = title,
-                color = Color(NgTheme.colors.onSurface)
-                    .copy(alpha = if (enabled) 1f else 0.45f),
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = NgTheme.typography.itemTitleSp.sp,
-                    lineHeight = 19.sp,
-                    fontWeight = FontWeight.Normal
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (!summary.isNullOrBlank()) {
+            if (leading != null) {
+                leading()
+                Spacer(Modifier.width(14.dp))
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
-                    text = summary,
-                    color = Color(NgTheme.colors.onSurfaceVariant)
+                    text = title,
+                    color = Color(NgTheme.colors.onSurface)
                         .copy(alpha = if (enabled) 1f else 0.45f),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = NgTheme.typography.summarySp.sp,
-                        lineHeight = 16.sp,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = NgTheme.typography.itemTitleSp.sp,
+                        lineHeight = 19.sp,
                         fontWeight = FontWeight.Normal
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (!summary.isNullOrBlank()) {
+                    Text(
+                        text = summary,
+                        color = Color(NgTheme.colors.onSurfaceVariant)
+                            .copy(alpha = if (enabled) 1f else 0.45f),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = NgTheme.typography.summarySp.sp,
+                            lineHeight = 16.sp,
+                            fontWeight = FontWeight.Normal
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
-        }
-        Spacer(Modifier.width(8.dp))
-        when (trailing) {
-            NgSettingsTrailing.NONE -> Unit
-            NgSettingsTrailing.CHEVRON -> Text(
-                text = "›",
-                color = Color(NgTheme.colors.onSurfaceVariant),
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Normal,
-                maxLines = 1
-            )
-            NgSettingsTrailing.SWITCH -> NgSettingsSwitch(
-                checked = checked,
-                enabled = enabled,
-                onCheckedChange = onCheckedChange
-            )
-            NgSettingsTrailing.VALUE -> Text(
-                text = value.orEmpty(),
-                color = Color(NgTheme.colors.onSurfaceVariant),
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = NgTheme.typography.bodySp.sp,
-                    fontWeight = FontWeight.Normal
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            NgSettingsTrailing.CUSTOM -> customTrailing?.invoke(this)
+            Spacer(Modifier.width(8.dp))
+            when (trailing) {
+                NgSettingsTrailing.NONE -> Unit
+                NgSettingsTrailing.CHEVRON -> Text(
+                    text = "›",
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1
+                )
+                NgSettingsTrailing.SWITCH -> NgSettingsSwitch(
+                    checked = checked,
+                    enabled = enabled,
+                    onCheckedChange = onCheckedChange
+                )
+                NgSettingsTrailing.VALUE -> Text(
+                    text = value.orEmpty(),
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = NgTheme.typography.bodySp.sp,
+                        fontWeight = FontWeight.Normal
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                NgSettingsTrailing.CUSTOM -> customTrailing?.invoke(this)
+            }
         }
     }
 }
@@ -219,33 +286,37 @@ fun NgSettingsSliderItem(
     onValueChangeFinished: () -> Unit,
 ) {
     val itemShape = RoundedCornerShape(18.dp)
-    Row(
+    NgSettingsCardSurface(
         modifier = modifier
-            .fillMaxWidth()
-            .clip(itemShape)
-            .background(colorResource(R.color.ng_settings_item))
-            .border(0.6.dp, colorResource(R.color.ng_settings_item_stroke), itemShape)
-            .padding(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .fillMaxWidth(),
+        cornerRadius = 18.dp,
+        shape = itemShape,
     ) {
-        if (leading != null) {
-            leading()
-            Spacer(Modifier.width(12.dp))
-        }
-        Box(modifier = Modifier.weight(1f)) {
-            NgDockSlider(
-                title = title,
-                valueText = valueText,
-                minimumText = minimumText,
-                maximumText = maximumText,
-                showBoundLabels = false,
-                value = value,
-                valueRange = valueRange,
-                steps = steps,
-                variant = variant,
-                onValueChange = onValueChange,
-                onValueChangeFinished = onValueChangeFinished,
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (leading != null) {
+                leading()
+                Spacer(Modifier.width(12.dp))
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                NgDockSlider(
+                    title = title,
+                    valueText = valueText,
+                    minimumText = minimumText,
+                    maximumText = maximumText,
+                    showBoundLabels = false,
+                    value = value,
+                    valueRange = valueRange,
+                    steps = steps,
+                    variant = variant,
+                    onValueChange = onValueChange,
+                    onValueChangeFinished = onValueChangeFinished,
+                )
+            }
         }
     }
 }

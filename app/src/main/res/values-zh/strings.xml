@@ -290,6 +290,10 @@
     <string name="advanced_setting_summary">网络、书源、性能和诊断</string>
     <string name="advanced_options">高级选项</string>
     <string name="theme_setting">主题设置</string>
+    <string name="ng_visual_system">视觉体系</string>
+    <string name="ng_visual_system_transparent_glass">透明玻璃</string>
+    <string name="ng_visual_system_liquid_glass">液态玻璃</string>
+    <string name="ng_visual_system_eink_override">墨水模式下统一使用高可读实色材质</string>
     <string name="ng_drawer_appearance">抽屉外观</string>
     <string name="ng_drawer_appearance_summary">透明度 %1$d%% · 主色 %2$d%% · 边距 %3$ddp · 圆角 %4$ddp</string>
     <string name="ng_drawer_transparency">透明度</string>

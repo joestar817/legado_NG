@@ -56,6 +56,9 @@ internal fun BookshelfScreen(
 ) {
     val density = LocalDensity.current
     val hostView = LocalView.current
+    val backdropSource = remember(hostView) {
+        hostView.rootView.findViewById<View>(R.id.bookshelf_content_panel)
+    }
     val dockProgress = remember { Animatable(0f) }
     val topInset = with(density) { dockContentTopInsetPx.toDp() }
     val dockTranslation = with(density) { (-4).dp.toPx() }
@@ -119,6 +122,7 @@ internal fun BookshelfScreen(
                 contentTopInsetPx = dockContentTopInsetPx,
                 transparencyPercent = dockTransparency,
                 searchPosition = dockSearchPosition,
+                backdropSource = backdropSource,
                 modifier = dockModifier,
             )
         } else {
@@ -136,6 +140,7 @@ internal fun BookshelfScreen(
                 contentTopInsetPx = dockContentTopInsetPx,
                 transparencyPercent = dockTransparency,
                 searchPosition = dockSearchPosition,
+                backdropSource = backdropSource,
                 modifier = dockModifier,
             )
             BookshelfContentToolbar(
