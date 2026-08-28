@@ -747,8 +747,8 @@
     <string name="listening_motion_fluid_summary">流体 · %1$s</string>
     <string name="listening_motion_cartoon">卡通</string>
     <string name="listening_motion_cartoon_type">卡通样式</string>
-    <string name="listening_motion_cartoon_sakura">樱花</string>
-    <string name="listening_motion_cartoon_cats">猫咪</string>
+    <string name="listening_motion_cartoon_sakura">湖畔樱花</string>
+    <string name="listening_motion_cartoon_cats">好奇猫咪</string>
     <string name="listening_motion_cartoon_rain_night">雨夜</string>
     <string name="listening_motion_cartoon_summary">卡通 · %1$s</string>
     <string name="listening_motion_color">动效配色</string>

@@ -44,6 +44,20 @@
 
 - [交流反馈群组](https://t.me/+lYttMZGrQ1RkOTE1)
 
+## 动态主题素材来源
+
+阅读 NG 的“湖畔樱花”“好奇猫咪”动态主题及播放器“雨夜”动效，使用了由 Wallpaper Engine
+创意工坊社区作品适配而来的场景素材。本项目免费开源，不单独销售这些素材：
+
+- “湖畔樱花”：取材自 [Workshop 3056182945「樱花」](https://steamcommunity.com/sharedfiles/filedetails/?id=3056182945)
+- “好奇猫咪”：取材自 [Workshop 3455074362「4K Curious Cats (PHONE)」](https://steamcommunity.com/sharedfiles/filedetails/?id=3455074362)
+- “雨夜”：取材自 [Workshop 3503882817「Convenience Store in the Rain」](https://steamcommunity.com/sharedfiles/filedetails/?id=3503882817)
+
+项目中的裁切、超分、固定动画协议及程序化动效改造，详见
+[`app/src/main/assets/listening_motion/cartoon/README.md`](app/src/main/assets/listening_motion/cartoon/README.md)。
+原作品著作权归各自作者所有。如权利人认为相关使用不当，请通过项目 Issue 或交流渠道联系我们，
+我们会及时删除或替换相关素材。
+
 ## 致谢
 
 - [gedoor/legado](https://github.com/gedoor/legado) - Legado 原项目。

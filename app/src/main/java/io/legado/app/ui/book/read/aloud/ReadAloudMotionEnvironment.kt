@@ -64,6 +64,16 @@ internal fun rememberMotionEnvironmentAllowed(): Boolean {
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
+    return motionEnvironmentAllowed(
+        resumed = resumed,
+        powerSave = powerSave,
+    )
+}
+
+internal fun motionEnvironmentAllowed(
+    resumed: Boolean,
+    powerSave: Boolean,
+): Boolean {
     val animatorsEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
         ValueAnimator.areAnimatorsEnabled()
     return resumed && !powerSave && !AppConfig.isEInkMode && animatorsEnabled

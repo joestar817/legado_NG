@@ -89,12 +89,12 @@ internal object ReadAloudPlayerTheme {
 }
 
 /**
- * 使用与封面取色相同的主色采样规则，从三张已验收场景底图离线得到稳定色种。
- * 场景素材更新时应连同对应色种一起重新验收。
+ * 卡通场景使用已验收的固定主色，避免在相同背景下再次生成或漂移色种。
+ * 场景素材更新时应连同对应主色一起重新验收。
  */
 @ColorInt
 internal fun ListeningCartoonType.playerThemeSeed(): Int = when (this) {
-    ListeningCartoonType.SAKURA -> 0xFF084888.toInt()
+    ListeningCartoonType.SAKURA -> 0xFFFFA3D1.toInt()
     ListeningCartoonType.CATS -> 0xFF98B848.toInt()
     ListeningCartoonType.RAIN_NIGHT -> 0xFF081818.toInt()
 }

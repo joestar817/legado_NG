@@ -26,8 +26,11 @@ enum class ListeningCartoonType(val storageValue: String) {
     RAIN_NIGHT("rain_night");
 
     companion object {
+        fun fromStorageOrNull(value: String?): ListeningCartoonType? =
+            entries.firstOrNull { it.storageValue == value }
+
         fun fromStorage(value: String?): ListeningCartoonType =
-            entries.firstOrNull { it.storageValue == value } ?: SAKURA
+            fromStorageOrNull(value) ?: SAKURA
     }
 }
 

@@ -34,15 +34,20 @@ internal class ListeningSakuraTextureView(context: Context) :
 
     init {
         // Keep the initial buffer transparent so the normal player background remains a safe
-        // fallback until all three trial textures have decoded and uploaded successfully.
+        // fallback until all three scene textures have decoded and uploaded successfully.
         isOpaque = false
         surfaceTextureListener = this
     }
 
-    override fun update(intensity: Int, animationAllowed: Boolean) {
+    override fun update(
+        intensity: Int,
+        animationAllowed: Boolean,
+        timelineOriginNanos: Long?,
+    ) {
         val config = SakuraConfig(
             intensity = intensity.coerceIn(0, 100),
             animationAllowed = animationAllowed,
+            timelineOriginNanos = timelineOriginNanos,
         )
         val currentSession = synchronized(sessionLock) {
             renderConfig = config
@@ -51,8 +56,13 @@ internal class ListeningSakuraTextureView(context: Context) :
         currentSession?.update(config)
     }
 
-    override fun release() {
-        synchronized(sessionLock) { session }?.requestStop()
+    override fun release(onReleased: (() -> Unit)?) {
+        val currentSession = synchronized(sessionLock) { session }
+        if (currentSession == null) {
+            onReleased?.invoke()
+        } else {
+            currentSession.requestStop(onReleased)
+        }
     }
 
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -97,7 +107,11 @@ internal class ListeningSakuraTextureView(context: Context) :
         initialConfig: SakuraConfig,
     ) {
         private val motionRenderer = ReadAloudSakuraRenderer(appContext).apply {
-            update(initialConfig.intensity, initialConfig.animationAllowed)
+            update(
+                initialConfig.intensity,
+                initialConfig.animationAllowed,
+                initialConfig.timelineOriginNanos,
+            )
         }
         private val thread = HandlerThread("ListeningSakuraGL", Process.THREAD_PRIORITY_BACKGROUND)
         private val decoderThread = HandlerThread(
@@ -125,11 +139,17 @@ internal class ListeningSakuraTextureView(context: Context) :
         private val releaseCompleted = CountDownLatch(1)
         private val surfaceHandoffLock = Any()
         private var releaseSurfaceWhenFinished = false
+        private val releaseCallbackLock = Any()
+        private val releaseCallbacks = mutableListOf<() -> Unit>()
 
         fun owns(surface: SurfaceTexture): Boolean = surfaceTexture === surface
 
         fun update(config: SakuraConfig) {
-            motionRenderer.update(config.intensity, config.animationAllowed)
+            motionRenderer.update(
+                config.intensity,
+                config.animationAllowed,
+                config.timelineOriginNanos,
+            )
             if (!active || !::handler.isInitialized) return
             handler.post {
                 if (active && framesReady) {
@@ -176,7 +196,8 @@ internal class ListeningSakuraTextureView(context: Context) :
             }
         }
 
-        fun requestStop() {
+        fun requestStop(onReleased: (() -> Unit)? = null) {
+            onReleased?.let(::registerReleaseCallback)
             active = false
             if (!stopRequested.compareAndSet(false, true)) return
             if (!::handler.isInitialized) {
@@ -316,6 +337,22 @@ internal class ListeningSakuraTextureView(context: Context) :
                 if (releaseSurfaceWhenFinished) releaseOwnedSurfaceTexture()
                 releaseCompleted.countDown()
             }
+            val callbacks = synchronized(releaseCallbackLock) {
+                releaseCallbacks.toList().also { releaseCallbacks.clear() }
+            }
+            callbacks.forEach { callback -> runCatching(callback) }
+        }
+
+        private fun registerReleaseCallback(callback: () -> Unit) {
+            val invokeImmediately = synchronized(releaseCallbackLock) {
+                if (releaseCompleted.count == 0L) {
+                    true
+                } else {
+                    releaseCallbacks.add(callback)
+                    false
+                }
+            }
+            if (invokeImmediately) callback()
         }
 
         private fun releaseOwnedSurfaceTexture() {
@@ -337,6 +374,7 @@ internal class ListeningSakuraTextureView(context: Context) :
     private data class SakuraConfig(
         val intensity: Int = 100,
         val animationAllowed: Boolean = true,
+        val timelineOriginNanos: Long? = null,
     )
 
     private class EglWindow private constructor(

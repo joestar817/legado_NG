@@ -39,10 +39,15 @@ internal class ListeningRainNightTextureView(context: Context) :
         surfaceTextureListener = this
     }
 
-    override fun update(intensity: Int, animationAllowed: Boolean) {
+    override fun update(
+        intensity: Int,
+        animationAllowed: Boolean,
+        timelineOriginNanos: Long?,
+    ) {
         val config = RainNightConfig(
             intensity = intensity.coerceIn(0, 100),
             animationAllowed = animationAllowed,
+            timelineOriginNanos = timelineOriginNanos,
         )
         val currentSession = synchronized(sessionLock) {
             renderConfig = config
@@ -51,8 +56,13 @@ internal class ListeningRainNightTextureView(context: Context) :
         currentSession?.update(config)
     }
 
-    override fun release() {
-        synchronized(sessionLock) { session }?.requestStop()
+    override fun release(onReleased: (() -> Unit)?) {
+        val currentSession = synchronized(sessionLock) { session }
+        if (currentSession == null) {
+            onReleased?.invoke()
+        } else {
+            currentSession.requestStop(onReleased)
+        }
     }
 
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
@@ -97,7 +107,11 @@ internal class ListeningRainNightTextureView(context: Context) :
         initialConfig: RainNightConfig,
     ) {
         private val motionRenderer = ReadAloudRainNightRenderer(appContext).apply {
-            update(initialConfig.intensity, initialConfig.animationAllowed)
+            update(
+                initialConfig.intensity,
+                initialConfig.animationAllowed,
+                initialConfig.timelineOriginNanos,
+            )
         }
         private val thread = HandlerThread(
             "ListeningRainNightGL",
@@ -128,11 +142,17 @@ internal class ListeningRainNightTextureView(context: Context) :
         private val releaseCompleted = CountDownLatch(1)
         private val surfaceHandoffLock = Any()
         private var releaseSurfaceWhenFinished = false
+        private val releaseCallbackLock = Any()
+        private val releaseCallbacks = mutableListOf<() -> Unit>()
 
         fun owns(surface: SurfaceTexture): Boolean = surfaceTexture === surface
 
         fun update(config: RainNightConfig) {
-            motionRenderer.update(config.intensity, config.animationAllowed)
+            motionRenderer.update(
+                config.intensity,
+                config.animationAllowed,
+                config.timelineOriginNanos,
+            )
             if (!active || !::handler.isInitialized) return
             handler.post {
                 if (active && framesReady) {
@@ -179,7 +199,8 @@ internal class ListeningRainNightTextureView(context: Context) :
             }
         }
 
-        fun requestStop() {
+        fun requestStop(onReleased: (() -> Unit)? = null) {
+            onReleased?.let(::registerReleaseCallback)
             active = false
             if (!stopRequested.compareAndSet(false, true)) return
             if (!::handler.isInitialized) {
@@ -321,6 +342,22 @@ internal class ListeningRainNightTextureView(context: Context) :
                 if (releaseSurfaceWhenFinished) releaseOwnedSurfaceTexture()
                 releaseCompleted.countDown()
             }
+            val callbacks = synchronized(releaseCallbackLock) {
+                releaseCallbacks.toList().also { releaseCallbacks.clear() }
+            }
+            callbacks.forEach { callback -> runCatching(callback) }
+        }
+
+        private fun registerReleaseCallback(callback: () -> Unit) {
+            val invokeImmediately = synchronized(releaseCallbackLock) {
+                if (releaseCompleted.count == 0L) {
+                    true
+                } else {
+                    releaseCallbacks.add(callback)
+                    false
+                }
+            }
+            if (invokeImmediately) callback()
         }
 
         private fun releaseOwnedSurfaceTexture() {
@@ -344,6 +381,7 @@ internal class ListeningRainNightTextureView(context: Context) :
     private data class RainNightConfig(
         val intensity: Int = 100,
         val animationAllowed: Boolean = true,
+        val timelineOriginNanos: Long? = null,
     )
 
     private class EglWindow private constructor(

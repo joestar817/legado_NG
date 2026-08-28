@@ -61,6 +61,8 @@ class ListeningMotionConfigTest {
 
     @Test
     fun `unknown stored cartoon type falls back to sakura`() {
+        assertEquals(null, ListeningCartoonType.fromStorageOrNull("future_cartoon_type"))
+        assertEquals(null, ListeningCartoonType.fromStorageOrNull(null))
         assertEquals(
             ListeningCartoonType.SAKURA,
             ListeningCartoonType.fromStorage("future_cartoon_type"),

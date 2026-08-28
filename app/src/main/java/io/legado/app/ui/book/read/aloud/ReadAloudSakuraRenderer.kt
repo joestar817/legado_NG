@@ -49,13 +49,23 @@ internal class ReadAloudSakuraRenderer(context: Context) {
     private var petalProgram: GlProgram? = null
     private var validateNextFrame = true
 
-    fun update(intensity: Int, animationAllowed: Boolean) {
+    fun update(
+        intensity: Int,
+        animationAllowed: Boolean,
+        timelineOriginNanos: Long? = null,
+    ) {
         val previous = renderState
         renderState = SakuraRenderState(
             intensity = intensity.coerceIn(0, 100),
             animationAllowed = animationAllowed,
+            timelineOriginNanos = timelineOriginNanos,
         )
-        if (previous.animationAllowed != animationAllowed) resetFrameClock.set(true)
+        if (
+            previous.animationAllowed != animationAllowed ||
+            previous.timelineOriginNanos != timelineOriginNanos
+        ) {
+            resetFrameClock.set(true)
+        }
     }
 
     fun shouldAnimate(): Boolean {
@@ -147,12 +157,21 @@ internal class ReadAloudSakuraRenderer(context: Context) {
         val state = renderState
         val animationActive = state.animationAllowed && state.intensity > 0
         if (animationActive) {
-            val delta = if (lastFrameNanos == 0L) {
-                0.0
+            val timelineOriginNanos = state.timelineOriginNanos
+            if (timelineOriginNanos != null) {
+                elapsedSeconds = (
+                    (frameTimeNanos - timelineOriginNanos).coerceAtLeast(0L) /
+                        1_000_000_000.0
+                    )
             } else {
-                ((frameTimeNanos - lastFrameNanos) / 1_000_000_000.0).coerceIn(0.0, 0.05)
+                val delta = if (lastFrameNanos == 0L) {
+                    0.0
+                } else {
+                    ((frameTimeNanos - lastFrameNanos) / 1_000_000_000.0)
+                        .coerceIn(0.0, 0.05)
+                }
+                elapsedSeconds += delta
             }
-            elapsedSeconds += delta
             lastFrameNanos = frameTimeNanos
         } else {
             lastFrameNanos = 0L
@@ -422,6 +441,7 @@ internal class ReadAloudSakuraRenderer(context: Context) {
     private data class SakuraRenderState(
         val intensity: Int = 100,
         val animationAllowed: Boolean = true,
+        val timelineOriginNanos: Long? = null,
     )
 
     private data class Petal(

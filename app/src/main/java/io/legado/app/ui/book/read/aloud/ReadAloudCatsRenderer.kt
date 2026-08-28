@@ -49,15 +49,21 @@ internal class ReadAloudCatsRenderer(context: Context) {
     private var decorationBuffer = 0
     private var validateNextFrame = true
 
-    fun update(intensity: Int, animationAllowed: Boolean) {
+    fun update(
+        intensity: Int,
+        animationAllowed: Boolean,
+        timelineOriginNanos: Long? = null,
+    ) {
         val previous = renderState
         renderState = CatsRenderState(
             intensity = intensity.coerceIn(0, 100),
             animationAllowed = animationAllowed,
+            timelineOriginNanos = timelineOriginNanos,
         )
         if (
             previous.animationAllowed != animationAllowed ||
-            (previous.intensity == 0) != (renderState.intensity == 0)
+            (previous.intensity == 0) != (renderState.intensity == 0) ||
+            previous.timelineOriginNanos != timelineOriginNanos
         ) {
             resetFrameClock.set(true)
         }
@@ -290,21 +296,24 @@ internal class ReadAloudCatsRenderer(context: Context) {
         }
         lastFrameNanos = frameTimeNanos
         if (state.animationAllowed && state.intensity > 0) {
-            elapsedSeconds = (elapsedSeconds + deltaSeconds) % LOOP_SECONDS
+            elapsedSeconds = state.timelineOriginNanos?.let { origin ->
+                ((frameTimeNanos - origin).coerceAtLeast(0L) / 1_000_000_000.0) % LOOP_SECONDS
+            } ?: ((elapsedSeconds + deltaSeconds) % LOOP_SECONDS)
         }
         val intensity = state.intensity / 100f
+        val motionIntensity = if (state.animationAllowed) intensity else 0f
         val animationFrame = floor(elapsedSeconds * FRAME_RATE).toInt() % FRAME_COUNT
 
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-        drawLayer(0, animationFrame, intensity)
-        drawSoftLight(intensity)
-        drawBirds(intensity)
-        drawLayer(1, animationFrame, intensity)
-        drawLeaves(intensity, front = false)
+        drawLayer(0, animationFrame, motionIntensity)
+        drawSoftLight(motionIntensity)
+        drawBirds(motionIntensity)
+        drawLayer(1, animationFrame, motionIntensity)
+        drawLeaves(motionIntensity, front = false)
         for (layerIndex in 2 until LAYER_COUNT) {
-            drawLayer(layerIndex, animationFrame, intensity)
+            drawLayer(layerIndex, animationFrame, motionIntensity)
         }
-        drawLeaves(intensity, front = true)
+        drawLeaves(motionIntensity, front = true)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
         GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, 0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
@@ -650,6 +659,7 @@ internal class ReadAloudCatsRenderer(context: Context) {
     private data class CatsRenderState(
         val intensity: Int = 100,
         val animationAllowed: Boolean = true,
+        val timelineOriginNanos: Long? = null,
     )
 
     private class GlProgram(vertexSource: String, fragmentSource: String) {

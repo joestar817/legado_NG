@@ -49,4 +49,21 @@ class NgBuiltInThemePackageTest {
         assertTrue(File(requireNotNull(installed.lightBackground.path)).isFile)
         assertTrue(File(requireNotNull(installed.darkBackground.path)).isFile)
     }
+
+    @Test
+    fun `dynamic theme package keeps its scene and poster`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val installed = NgThemePackageManager.installBuiltInThemes(
+            context = context,
+            definitions = listOf(NgBuiltInThemes.cats),
+        ).single()
+
+        assertEquals(ListeningCartoonType.CATS, installed.sceneProfile?.sceneType())
+        assertEquals(
+            NgThemeSceneProfile.DEFAULT_INTENSITY,
+            installed.sceneProfile?.intensity,
+        )
+        assertTrue(File(requireNotNull(installed.lightBackground.path)).isFile)
+        assertEquals(installed.lightBackground.path, installed.darkBackground.path)
+    }
 }

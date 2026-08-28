@@ -235,6 +235,7 @@ import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSideDrawerSurface
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.NgThemeSceneBackground
 import io.legado.app.utils.GSON
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.openUrl
@@ -2341,6 +2342,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxSize()
                 )
             }
+            NgThemeSceneBackground(modifier = Modifier.fillMaxSize())
             if (globalSearchMode || previewMode) {
                 AiChatSearchBackdrop()
             }

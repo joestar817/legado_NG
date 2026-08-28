@@ -10,7 +10,7 @@ class NgManagedThemeResourceProfileTest {
 
     @Test
     fun `normalization keeps safe package relative resource paths`() {
-        val normalized = NgBuiltInThemes.warm.copy(
+        val normalized = NgBuiltInThemes.autumn.copy(
             resourceProfile = NgThemeResourceProfile(
                 navigation = NgThemeNavigationAssets(
                     bookshelf = "assets/icons/bookshelf.png",
@@ -28,7 +28,7 @@ class NgManagedThemeResourceProfileTest {
 
     @Test
     fun `normalization rejects package traversal and absolute paths`() {
-        val normalized = NgBuiltInThemes.warm.copy(
+        val normalized = NgBuiltInThemes.autumn.copy(
             resourceProfile = NgThemeResourceProfile(
                 navigation = NgThemeNavigationAssets(
                     bookshelf = "../outside.png",
@@ -47,7 +47,7 @@ class NgManagedThemeResourceProfileTest {
 
     @Test
     fun `managed theme persists functional cover profile`() {
-        val theme = NgBuiltInThemes.warm.copy(
+        val theme = NgBuiltInThemes.autumn.copy(
             coverProfile = NgThemeCoverProfile(
                 applyAlbumSelection = true,
                 albumId = " album-id ",

@@ -11,7 +11,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
-import io.legado.app.BuildConfig
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.ListeningMotionEffect
@@ -35,11 +34,7 @@ internal fun ReadAloudCartoonMotionBackground(
 
     key(settings.cartoonType) {
         val textureView: TextureView = remember(context) {
-            when (settings.cartoonType) {
-                ListeningCartoonType.SAKURA -> ListeningSakuraTextureView(context)
-                ListeningCartoonType.CATS -> ListeningCatsTextureView(context)
-                ListeningCartoonType.RAIN_NIGHT -> ListeningRainNightTextureView(context)
-            }
+            context.createCartoonMotionTextureView(settings.cartoonType)
         }
         val textureHost = textureView as ListeningCartoonTextureHost
         DisposableEffect(textureHost) {
@@ -59,9 +54,21 @@ internal fun ReadAloudCartoonMotionBackground(
 }
 
 internal interface ListeningCartoonTextureHost {
-    fun update(intensity: Int, animationAllowed: Boolean)
+    fun update(
+        intensity: Int,
+        animationAllowed: Boolean,
+        timelineOriginNanos: Long? = null,
+    )
 
-    fun release()
+    fun release(onReleased: (() -> Unit)? = null)
+}
+
+internal fun Context.createCartoonMotionTextureView(
+    type: ListeningCartoonType,
+): TextureView = when (type) {
+    ListeningCartoonType.SAKURA -> ListeningSakuraTextureView(this)
+    ListeningCartoonType.CATS -> ListeningCatsTextureView(this)
+    ListeningCartoonType.RAIN_NIGHT -> ListeningRainNightTextureView(this)
 }
 
 private val cartoonAvailabilityLock = Any()
@@ -70,8 +77,9 @@ private val cartoonAvailabilityLock = Any()
 private var cachedAvailableCartoonTypes: List<ListeningCartoonType>? = null
 
 /**
- * The accepted scenes are local Wallpaper Engine derivatives without redistribution permission.
- * Keep each item available only to Debug builds that actually contain its complete trial assets.
+ * The bundled scenes are available only when the current device can render their complete assets.
+ * Source attribution and modification notes live beside the assets in
+ * assets/listening_motion/cartoon/README.md.
  */
 internal fun Context.availableCartoonTypes(): List<ListeningCartoonType> {
     if (AppConfig.isEInkMode) return emptyList()
@@ -103,7 +111,7 @@ private fun Context.resolveAvailableCartoonTypes(): List<ListeningCartoonType> {
 }
 
 private fun Context.isCartoonMotionEnvironmentAvailable(): Boolean {
-    if (!BuildConfig.DEBUG || AppConfig.isEInkMode) return false
+    if (AppConfig.isEInkMode) return false
     val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
     val deviceInfo = activityManager?.deviceConfigurationInfo ?: return false
     if (deviceInfo.reqGlEsVersion < 0x00030000 || activityManager.isLowRamDevice) return false
