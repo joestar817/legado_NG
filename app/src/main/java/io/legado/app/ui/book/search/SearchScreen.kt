@@ -62,6 +62,7 @@ import io.legado.app.ui.book.source.BookSourceGroupIcon
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgSearchBar
+import io.legado.app.ui.design.components.compose.NgSearchBarActionButton
 import io.legado.app.ui.design.components.compose.NgSearchBarVariant
 import io.legado.app.ui.design.theme.NgTheme
 import kotlinx.coroutines.delay
@@ -281,8 +282,6 @@ private fun SearchTopBar(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val contentColor = Color(NgTheme.colors.onTopBar)
-    val searchActionContainer = colorResource(R.color.ng_search_surface)
-    val searchActionContent = colorResource(R.color.ng_search_icon)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -314,21 +313,10 @@ private fun SearchTopBar(
         )
         Spacer(Modifier.width(8.dp))
         Box {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(searchActionContainer)
-                    .clickable { menuExpanded = true },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_grid_menu),
-                    contentDescription = stringResource(R.string.menu),
-                    tint = searchActionContent,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+            NgSearchBarActionButton(
+                onClick = { menuExpanded = true },
+                contentDescription = stringResource(R.string.menu),
+            )
             val menuItems = searchMenuItems(
                 historyVisible = historyVisible,
                 groups = groups,

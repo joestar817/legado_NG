@@ -568,7 +568,7 @@ Reading NG 不限定只能使用 Material Symbols Rounded。图标可以来自�
 - 搜索框获得焦点后立即隐藏提示文字；输入后显示清除按钮；点击清除后保留焦点；IME 使用搜索动作。
 - 搜索胶囊统一使用 `ng_search_surface`、`ng_search_content`、`ng_search_icon`、`ng_search_hint`：日间为白色胶囊配深色内容，夜间为深色胶囊配浅色内容，不跟随顶栏文字的浅色／深色模式。
 - 顶栏 36dp 紧凑规格只调整高度、圆角和留白，颜色继续使用同一日夜搜索 token。
-- 搜索框旁的网格／分组按钮与搜索框使用同一日夜容器和图标色，禁止单独固定为白底或读取 `onTopBar`。
+- 搜索框旁的网格／分组按钮统一使用 `NgSearchBarActionButton`，与 Toolbar 搜索框共享 `TOP_NAVIGATION` 材质、日夜容器和图标色；液态体系下两者共同采样页面 backdrop，禁止单独固定为白底、读取 `onTopBar`，或在已有玻璃父容器内重复叠加液态面。
 
 约束：
 
@@ -618,6 +618,7 @@ Provider 试点冻结规格：
 - 选中项使用主题 selected container，图标使用主题原始强调色；未选中项使用主正文色。
 - 可见标签可省略，但必须保留 `contentDescription`，不能把空 TextView 当图标定位容器。
 - 液态玻璃体系下，View 详情 Dock 复用书架悬浮底栏的 `BOTTOM_NAVIGATION` 材质、表面色、12dp 圆角和底栏透明度配置；页面有约定 backdrop source 时由公共组件自动绑定，业务页不得另传一套液态参数。透明玻璃和降级路径仍使用原 `ng_bg_character_tabs`。
+- 需要覆盖主页面内容的 Compose 分组浮层统一使用 `NgVisualOverlayDialog`：组件在跨入 Dialog Window 前捕获宿主页面真实根视图，并以 `OVERLAY` 角色渲染；业务页不得在子窗口内自行查找 backdrop，也不得把普通输入／确认弹窗无差别改成液态浮层。
 
 约束：
 

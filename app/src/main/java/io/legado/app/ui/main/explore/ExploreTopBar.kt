@@ -1,17 +1,12 @@
 package io.legado.app.ui.main.explore
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,8 +14,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
@@ -28,6 +21,7 @@ import io.legado.app.ui.book.source.BookSourceGroupIcon
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgSearchBar
+import io.legado.app.ui.design.components.compose.NgSearchBarActionButton
 import io.legado.app.ui.design.components.compose.NgSearchBarVariant
 
 private const val EXPLORE_GROUP_ITEM_ID_BASE = 0x51000000
@@ -47,8 +41,6 @@ internal fun ExploreTopBar(
     onManageSources: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    val actionContainerColor = androidx.compose.ui.res.colorResource(R.color.ng_search_surface)
-    val actionContentColor = androidx.compose.ui.res.colorResource(R.color.ng_search_icon)
     val menuItems = remember(groups, selectedGroup, layoutMode) {
         buildList {
             add(
@@ -125,21 +117,10 @@ internal fun ExploreTopBar(
         )
         Spacer(Modifier.width(12.dp))
         Box {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(actionContainerColor)
-                    .clickable { menuExpanded = true },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_grid_menu),
-                    contentDescription = stringResource(R.string.group),
-                    tint = actionContentColor,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+            NgSearchBarActionButton(
+                onClick = { menuExpanded = true },
+                contentDescription = stringResource(R.string.group),
+            )
             NgExpandableActionMenu(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },

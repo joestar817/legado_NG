@@ -39,13 +39,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import io.legado.app.R
 import io.legado.app.constant.AppPattern
 import io.legado.app.data.entities.BookSourcePart
-import io.legado.app.ui.design.components.NgSurfaceVariant
-import io.legado.app.ui.design.components.compose.NgSurface
+import io.legado.app.ui.design.components.compose.NgVisualOverlayDialog
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.splitNotBlank
 
@@ -246,40 +243,35 @@ private fun ExploreSourceFolderDialog(
         .coerceAtMost((screenHeight * 0.74f).toInt())
         .dp
 
-    Dialog(
+    NgVisualOverlayDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        modifier = Modifier
+            .fillMaxWidth(0.92f)
+            .height(dialogHeight),
     ) {
-        NgSurface(
+        Text(
+            text = folder.title,
+            color = Color(NgTheme.colors.onSurface),
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 4.dp)
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            contentPadding = PaddingValues(bottom = 8.dp),
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .height(dialogHeight),
-            variant = NgSurfaceVariant.OVERLAY
+                .fillMaxWidth()
+                .weight(1f)
         ) {
-            Text(
-                text = folder.title,
-                color = Color(NgTheme.colors.onSurface),
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 4.dp)
-            )
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                contentPadding = PaddingValues(bottom = 8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                items(folder.sources, key = { it.bookSourceUrl }) { source ->
-                    ExploreGridSourceItem(
-                        source = source,
-                        loading = source.bookSourceUrl in loadingSourceUrls,
-                        onClick = { onOpenSource(source) },
-                        onAction = { actionId -> onSourceAction(source, actionId) }
-                    )
-                }
+            items(folder.sources, key = { it.bookSourceUrl }) { source ->
+                ExploreGridSourceItem(
+                    source = source,
+                    loading = source.bookSourceUrl in loadingSourceUrls,
+                    onClick = { onOpenSource(source) },
+                    onAction = { actionId -> onSourceAction(source, actionId) }
+                )
             }
         }
     }

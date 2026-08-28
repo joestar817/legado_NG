@@ -45,8 +45,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
@@ -56,12 +54,11 @@ import io.legado.app.help.book.isOnLineTxt
 import io.legado.app.help.book.isVideo
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.BookshelfLayoutMode
-import io.legado.app.ui.design.components.NgSurfaceVariant
 import io.legado.app.ui.design.components.compose.NgBookCover
 import io.legado.app.ui.design.components.compose.NgCoverMosaic
 import io.legado.app.ui.design.components.compose.NgCoverMosaicPresentationVariant
 import io.legado.app.ui.design.components.compose.NgCoverMosaicVariant
-import io.legado.app.ui.design.components.compose.NgSurface
+import io.legado.app.ui.design.components.compose.NgVisualOverlayDialog
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.main.bookshelf.bookshelfAuthorText
 import io.legado.app.utils.cnCompare
@@ -253,46 +250,41 @@ private fun BookshelfGroupFolderDialog(
         screenHeight = screenHeight,
     )
 
-    Dialog(
+    NgVisualOverlayDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier
+            .fillMaxWidth(0.92f)
+            .height(dialogHeight),
     ) {
-        NgSurface(
-            modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .height(dialogHeight),
-            variant = NgSurfaceVariant.OVERLAY,
-        ) {
-            Text(
-                text = folder.group.groupName,
-                color = Color(NgTheme.colors.onSurface),
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(
-                    start = 20.dp,
-                    top = 18.dp,
-                    end = 20.dp,
-                    bottom = 8.dp,
-                ),
+        Text(
+            text = folder.group.groupName,
+            color = Color(NgTheme.colors.onSurface),
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(
+                start = 20.dp,
+                top = 18.dp,
+                end = 20.dp,
+                bottom = 8.dp,
+            ),
+        )
+        if (folder.books.isEmpty()) {
+            BookshelfFolderEmptyState(
+                modifier = Modifier.weight(1f),
             )
-            if (folder.books.isEmpty()) {
-                BookshelfFolderEmptyState(
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-                BookshelfFolderBookGrid(
-                    books = folder.books,
-                    columns = profile.innerColumns,
-                    showBookName = profile.showBookName,
-                    coverRadius = profile.coverRadius,
-                    spacing = profile.spacing,
-                    onOpenBook = onOpenBook,
-                    onOpenBookInfo = onOpenBookInfo,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+        } else {
+            BookshelfFolderBookGrid(
+                books = folder.books,
+                columns = profile.innerColumns,
+                showBookName = profile.showBookName,
+                coverRadius = profile.coverRadius,
+                spacing = profile.spacing,
+                onOpenBook = onOpenBook,
+                onOpenBookInfo = onOpenBookInfo,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }

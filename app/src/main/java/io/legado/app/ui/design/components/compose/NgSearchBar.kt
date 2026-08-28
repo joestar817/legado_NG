@@ -1,5 +1,7 @@
 package io.legado.app.ui.design.components.compose
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -29,6 +32,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -40,6 +44,48 @@ import io.legado.app.ui.design.theme.NgTheme
 enum class NgSearchBarVariant {
     STANDARD,
     TOOLBAR
+}
+
+/** 与 Toolbar 搜索框并排使用的 36dp 图标动作；两者共享同一视觉材质语义。 */
+@Composable
+fun NgSearchBarActionButton(
+    onClick: () -> Unit,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    icon: Painter = painterResource(R.drawable.ic_grid_menu),
+) {
+    val cornerRadius = 10.dp
+    val shape = RoundedCornerShape(cornerRadius)
+    val containerColor = colorResource(R.color.ng_search_surface)
+    val contentColor = colorResource(R.color.ng_search_icon)
+    val surfaceStyle = rememberNgSearchSurfaceStyle(
+        containerColor = containerColor,
+        strokeColor = Color.Transparent,
+        contentColor = contentColor,
+        isToolbar = true,
+    )
+    NgVisualSurface(
+        modifier = modifier
+            .size(36.dp)
+            .clip(shape)
+            .clickable(role = Role.Button, onClick = onClick),
+        role = NgMaterialRole.TOP_NAVIGATION,
+        cornerRadius = cornerRadius,
+        shape = shape,
+        style = surfaceStyle,
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(20.dp),
+                tint = contentColor,
+            )
+        }
+    }
 }
 
 /** 统一 NG 搜索框；列表页使用 44dp 标准规格，顶栏使用 36dp Toolbar 规格。 */
@@ -69,33 +115,12 @@ fun NgSearchBar(
     } else {
         colorResource(R.color.ng_card_stroke)
     }
-    val snapshot = NgTheme.snapshot
-    val surfaceStyle = remember(
-        resolvedContainerColor,
-        strokeColor,
-        contentColor,
-        snapshot.isEInk,
-        isToolbar,
-    ) {
-        NgGlassStyle(
-            containerTop = resolvedContainerColor,
-            containerBottom = resolvedContainerColor,
-            accentGlow = Color.Transparent,
-            borderColor = strokeColor,
-            edgeHighlight = if (snapshot.isEInk) {
-                Color.Transparent
-            } else {
-                Color.White.copy(alpha = 0.60f)
-            },
-            surfaceGloss = Color.Transparent,
-            depthEdge = Color.Transparent,
-            contentColor = contentColor,
-            blurRadius = 0.dp,
-            shadowElevation = 0.dp,
-            borderWidth = if (isToolbar) 0.dp else 0.8.dp,
-            highlightWidth = 0.dp,
-        )
-    }
+    val surfaceStyle = rememberNgSearchSurfaceStyle(
+        containerColor = resolvedContainerColor,
+        strokeColor = strokeColor,
+        contentColor = contentColor,
+        isToolbar = isToolbar,
+    )
     var focused by remember { mutableStateOf(false) }
     NgVisualSurface(
         modifier = modifier
@@ -182,6 +207,42 @@ fun NgSearchBar(
                     }
                 }
             }
+        )
+    }
+}
+
+@Composable
+private fun rememberNgSearchSurfaceStyle(
+    containerColor: Color,
+    strokeColor: Color,
+    contentColor: Color,
+    isToolbar: Boolean,
+): NgGlassStyle {
+    val snapshot = NgTheme.snapshot
+    return remember(
+        containerColor,
+        strokeColor,
+        contentColor,
+        snapshot.isEInk,
+        isToolbar,
+    ) {
+        NgGlassStyle(
+            containerTop = containerColor,
+            containerBottom = containerColor,
+            accentGlow = Color.Transparent,
+            borderColor = strokeColor,
+            edgeHighlight = if (snapshot.isEInk) {
+                Color.Transparent
+            } else {
+                Color.White.copy(alpha = 0.60f)
+            },
+            surfaceGloss = Color.Transparent,
+            depthEdge = Color.Transparent,
+            contentColor = contentColor,
+            blurRadius = 0.dp,
+            shadowElevation = 0.dp,
+            borderWidth = if (isToolbar) 0.dp else 0.8.dp,
+            highlightWidth = 0.dp,
         )
     }
 }
