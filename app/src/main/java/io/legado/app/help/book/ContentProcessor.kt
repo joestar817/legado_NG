@@ -19,7 +19,6 @@ import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.CancellationException
 import splitties.init.appCtx
 import java.lang.ref.WeakReference
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.regex.Pattern
 
 class ContentProcessor private constructor(
@@ -51,8 +50,8 @@ class ContentProcessor private constructor(
 
     }
 
-    private val titleReplaceRules = CopyOnWriteArrayList<ReplaceRule>()
-    private val contentReplaceRules = CopyOnWriteArrayList<ReplaceRule>()
+    @Volatile
+    private var replaceRuleSnapshot = ReplaceRuleSnapshot()
 
     private fun String.limitLogText(maxLength: Int = 80): String {
         return replace("\n", "\\n").let {
@@ -107,25 +106,27 @@ class ContentProcessor private constructor(
         upReplaceRules()
     }
 
+    @Synchronized
     fun upReplaceRules() {
-        titleReplaceRules.run {
-            clear()
-            addAll(appDb.replaceRuleDao.findEnabledByTitleScope(bookName, bookOrigin))
-        }
-        contentReplaceRules.run {
-            clear()
-            addAll(appDb.replaceRuleDao.findEnabledByContentScope(bookName, bookOrigin))
-        }
+        replaceRuleSnapshot = ReplaceRuleSnapshot(
+            titleRules = appDb.replaceRuleDao.findEnabledByTitleScope(bookName, bookOrigin),
+            contentRules = appDb.replaceRuleDao.findEnabledByContentScope(bookName, bookOrigin)
+        )
     }
 
     fun getTitleReplaceRules(): List<ReplaceRule> {
-        return titleReplaceRules
+        return replaceRuleSnapshot.titleRules
     }
 
     @Suppress("MemberVisibilityCanBePrivate")
     fun getContentReplaceRules(): List<ReplaceRule> {
-        return contentReplaceRules
+        return replaceRuleSnapshot.contentRules
     }
+
+    private data class ReplaceRuleSnapshot(
+        val titleRules: List<ReplaceRule> = emptyList(),
+        val contentRules: List<ReplaceRule> = emptyList()
+    )
 
     fun getContent(
         book: Book,
@@ -153,7 +154,7 @@ class ContentProcessor private constructor(
                 } else if (useReplace && book.getUseReplaceRule()) {
                     title = Pattern.quote(
                         chapter.getDisplayTitle(
-                            titleReplaceRules,
+                            getTitleReplaceRules(),
                             chineseConvert = false,
                             replaceBook = replaceBook
                         )
