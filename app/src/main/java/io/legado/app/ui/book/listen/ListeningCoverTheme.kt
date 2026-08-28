@@ -48,6 +48,10 @@ internal object ListeningCoverTheme {
         return buildSnapshot(appContext, seed)
     }
 
+    /** 让封面以外的沉浸视觉源复用同一套播放器深色语义。 */
+    fun seedSnapshot(context: Context, seed: Int): NgThemeSnapshot =
+        buildSnapshot(context.applicationContext, seed)
+
     /**
      * 听书抽屉使用封面色底板与浅色内容面，不复用播放器的整套深色语义。
      *

@@ -32,11 +32,12 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ListeningMotionConfig
+import io.legado.app.help.config.ListeningMotionSettings
 import io.legado.app.help.tts.TtsSpeedPolicy
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
-import io.legado.app.ui.book.listen.ListeningCoverTheme
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSlider
@@ -44,6 +45,7 @@ import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -56,6 +58,7 @@ import kotlin.math.roundToInt
 internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment() {
 
     private var listeningThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
+    private var listeningThemeJob: Job? = null
 
     protected open fun listeningBook() = ReadBook.book
 
@@ -75,22 +78,29 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        refreshListeningSheetTheme()
+    }
+
+    protected fun refreshListeningSheetTheme(
+        settings: ListeningMotionSettings = ListeningMotionConfig.current(),
+    ) {
+        val safeContext = context ?: return
         val book = listeningBook()
         val sourceOrigin = listeningSourceOrigin()
-        listeningThemeSnapshot = ListeningCoverTheme.drawerSnapshot(
-            ListeningCoverTheme.cached(book, sourceOrigin)
-                ?: ListeningCoverTheme.fallback(requireContext(), book)
+        listeningThemeJob?.cancel()
+        listeningThemeSnapshot = ReadAloudPlayerTheme.initialDrawerSnapshot(
+            context = safeContext,
+            book = book,
+            sourceOrigin = sourceOrigin,
+            settings = settings,
         )
-        if (book != null) {
-            viewLifecycleOwner.lifecycleScope.launch {
-                listeningThemeSnapshot = ListeningCoverTheme.drawerSnapshot(
-                    ListeningCoverTheme.resolve(
-                        context = requireContext(),
-                        book = book,
-                        sourceOrigin = sourceOrigin,
-                    )
-                )
-            }
+        listeningThemeJob = viewLifecycleOwner.lifecycleScope.launch {
+            listeningThemeSnapshot = ReadAloudPlayerTheme.resolveDrawerSnapshot(
+                context = safeContext,
+                book = book,
+                sourceOrigin = sourceOrigin,
+                settings = settings,
+            )
         }
     }
 

@@ -71,6 +71,8 @@ import io.legado.app.help.config.ListeningMotionConfig
 import io.legado.app.help.config.ListeningMotionColorMode
 import io.legado.app.help.config.ListeningMotionEffect
 import io.legado.app.help.config.ListeningMotionSettings
+import io.legado.app.help.config.ReadAloudPlayerDisplayConfig
+import io.legado.app.help.config.ReadAloudPlayerDisplaySettings
 import io.legado.app.help.tts.BookTtsAutomationConfig
 import io.legado.app.help.tts.BookTtsCastingCoordinator
 import io.legado.app.help.tts.ReadAloudCacheManager
@@ -572,6 +574,7 @@ private data class MoreDrawerState(
     val skipChapterTitle: Boolean,
     val workerCount: Int,
     val engineName: String,
+    val displaySettings: ReadAloudPlayerDisplaySettings,
 )
 
 private enum class MoreDrawerScreen {
@@ -709,6 +712,7 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
             skipChapterTitle = context.getPrefBoolean(PreferKey.skipReadAloudChapterTitle, false),
             workerCount = AppConfig.readAloudWorkerCount.coerceIn(1, 5),
             engineName = engineName,
+            displaySettings = ReadAloudPlayerDisplayConfig.current(),
         )
     }
 
@@ -741,7 +745,30 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
                 state = state?.copy(skipChapterTitle = enabled)
                 notifyRuntimeChanged()
             }
+            MoreToggle.SHOW_PAGE_INDICATOR -> {
+                ReadAloudPlayerDisplayConfig.showPageIndicator = enabled
+                updateDisplaySettings(
+                    state?.displaySettings?.copy(showPageIndicator = enabled) ?: return
+                )
+            }
+            MoreToggle.SHOW_COVER -> {
+                ReadAloudPlayerDisplayConfig.showCover = enabled
+                updateDisplaySettings(state?.displaySettings?.copy(showCover = enabled) ?: return)
+            }
+            MoreToggle.SHOW_BOOK_NAME -> {
+                ReadAloudPlayerDisplayConfig.showBookName = enabled
+                updateDisplaySettings(state?.displaySettings?.copy(showBookName = enabled) ?: return)
+            }
+            MoreToggle.SHOW_SUBTITLE -> {
+                ReadAloudPlayerDisplayConfig.showSubtitle = enabled
+                updateDisplaySettings(state?.displaySettings?.copy(showSubtitle = enabled) ?: return)
+            }
         }
+    }
+
+    private fun updateDisplaySettings(settings: ReadAloudPlayerDisplaySettings) {
+        state = state?.copy(displaySettings = settings)
+        (activity as? ReadAloudPlayerActivity)?.previewDisplaySettings(settings)
     }
 
     private fun setWorkerCount(count: Int) {
@@ -816,6 +843,7 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
 
     private fun notifyMotionChanged() {
         (activity as? ReadAloudPlayerActivity)?.previewMotionSettings(motionState)
+        refreshListeningSheetTheme(motionState)
     }
 
     private fun notifyRuntimeChanged() {
@@ -824,6 +852,10 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
 }
 
 private enum class MoreToggle {
+    SHOW_PAGE_INDICATOR,
+    SHOW_COVER,
+    SHOW_BOOK_NAME,
+    SHOW_SUBTITLE,
     IGNORE_AUDIO_FOCUS,
     PAUSE_ON_CALL,
     WAKE_LOCK,
@@ -864,6 +896,36 @@ private fun ReadAloudMoreSheetContent(
                     .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                item {
+                    ListeningSettingsGroup(title = "显示设置") {
+                        NgFormSwitchSettingRow(
+                            title = "分页提示线",
+                            summary = "关闭后禁用左右滑动",
+                            checked = state.displaySettings.showPageIndicator,
+                            onCheckedChange = {
+                                onToggle(MoreToggle.SHOW_PAGE_INDICATOR, it)
+                            },
+                        )
+                        ListeningDivider()
+                        NgFormSwitchSettingRow(
+                            title = "封面",
+                            checked = state.displaySettings.showCover,
+                            onCheckedChange = { onToggle(MoreToggle.SHOW_COVER, it) },
+                        )
+                        ListeningDivider()
+                        NgFormSwitchSettingRow(
+                            title = "书名",
+                            checked = state.displaySettings.showBookName,
+                            onCheckedChange = { onToggle(MoreToggle.SHOW_BOOK_NAME, it) },
+                        )
+                        ListeningDivider()
+                        NgFormSwitchSettingRow(
+                            title = "实时字幕",
+                            checked = state.displaySettings.showSubtitle,
+                            onCheckedChange = { onToggle(MoreToggle.SHOW_SUBTITLE, it) },
+                        )
+                    }
+                }
                 item {
                     ListeningSettingsGroup(title = "播放设置") {
                         NgFormSwitchSettingRow(

@@ -20,6 +20,8 @@ import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ListeningMotionConfig
 import io.legado.app.help.config.ListeningMotionSettings
+import io.legado.app.help.config.ReadAloudPlayerDisplayConfig
+import io.legado.app.help.config.ReadAloudPlayerDisplaySettings
 import io.legado.app.help.tts.ReadAloudBufferProgress
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsSpeedPolicy
@@ -31,7 +33,6 @@ import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.book.character.BookCharacterActivity
 import io.legado.app.ui.book.character.BookCharacterTtsActivity
 import io.legado.app.ui.book.character.BookStoryboardActivity
-import io.legado.app.ui.book.listen.ListeningCoverTheme
 import io.legado.app.ui.book.read.page.provider.ChapterProvider.reviewChar
 import io.legado.app.ui.book.read.page.provider.ChapterProvider.srcReplaceChar
 import io.legado.app.ui.config.ConfigActivity
@@ -57,8 +58,8 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     private var uiState by mutableStateOf(ReadAloudPlayerUiState())
     private var playerThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
-    private var coverThemeJob: Job? = null
-    private var coverThemeKey: String? = null
+    private var playerThemeJob: Job? = null
+    private var playerThemeKey: String? = null
     private var lastProgress = -1
     private var cachedChapterIndex = -1
     private var cachedParagraphs = emptyList<ReadAloudParagraphUi>()
@@ -128,20 +129,28 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         }
     }
 
-    private fun refreshListeningTheme(force: Boolean = false) {
+    private fun refreshListeningTheme(
+        force: Boolean = false,
+        settings: ListeningMotionSettings = ListeningMotionConfig.current(),
+    ) {
         val book = ReadBook.book ?: return
         val sourceOrigin = ReadBook.bookSource?.bookSourceUrl
-        val key = "${book.bookUrl}|${book.getDisplayCover()}|${sourceOrigin.orEmpty()}"
-        if (!force && coverThemeKey == key) return
-        coverThemeKey = key
-        coverThemeJob?.cancel()
-        playerThemeSnapshot = ListeningCoverTheme.cached(book, sourceOrigin)
-            ?: ListeningCoverTheme.fallback(this, book)
-        coverThemeJob = lifecycleScope.launch {
-            playerThemeSnapshot = ListeningCoverTheme.resolve(
+        val key = ReadAloudPlayerTheme.key(this, book, sourceOrigin, settings)
+        if (!force && playerThemeKey == key) return
+        playerThemeKey = key
+        playerThemeJob?.cancel()
+        playerThemeSnapshot = ReadAloudPlayerTheme.initialSnapshot(
+            context = this,
+            book = book,
+            sourceOrigin = sourceOrigin,
+            settings = settings,
+        )
+        playerThemeJob = lifecycleScope.launch {
+            playerThemeSnapshot = ReadAloudPlayerTheme.resolveSnapshot(
                 context = this@ReadAloudPlayerActivity,
                 book = book,
                 sourceOrigin = sourceOrigin,
+                settings = settings,
             )
         }
     }
@@ -201,7 +210,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         val book = ReadBook.book
         val chapter = ReadBook.curTextChapter
         val multiRole = AppConfig.readAloudMultiRole
-        val bookUrlChanged = book?.bookUrl.orEmpty() != uiState.bookUrl
+        val motionSettings = ListeningMotionConfig.current()
         val nextState = uiState.copy(
             bookName = book?.name?.takeIf { it.isNotBlank() } ?: "阅读NG",
             bookAuthor = book?.getRealAuthor().orEmpty(),
@@ -214,10 +223,11 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             timerLabel = BaseReadAloudService.timeMinute.takeIf { it > 0 }
                 ?.let { "${it}分" }
                 ?: "定时",
-            motionSettings = ListeningMotionConfig.current(),
+            motionSettings = motionSettings,
+            displaySettings = ReadAloudPlayerDisplayConfig.current(),
         )
         if (nextState != uiState) uiState = nextState
-        if (bookUrlChanged) refreshListeningTheme()
+        refreshListeningTheme(settings = motionSettings)
         refreshPlayState()
     }
 
@@ -824,9 +834,13 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     fun previewMotionSettings(settings: ListeningMotionSettings) {
-        uiState = uiState.copy(
-            motionSettings = settings.copy(intensity = settings.intensity.coerceIn(0, 100))
-        )
+        val normalized = settings.copy(intensity = settings.intensity.coerceIn(0, 100))
+        uiState = uiState.copy(motionSettings = normalized)
+        refreshListeningTheme(settings = normalized)
+    }
+
+    fun previewDisplaySettings(settings: ReadAloudPlayerDisplaySettings) {
+        uiState = uiState.copy(displaySettings = settings)
     }
 
     private fun showMoreSheet() {
@@ -937,7 +951,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     override fun onDestroy() {
-        coverThemeJob?.cancel()
+        playerThemeJob?.cancel()
         voiceLabelJob?.cancel()
         clearPendingBufferProgress()
         clearPendingPlayRequest()

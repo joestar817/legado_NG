@@ -2,9 +2,9 @@ package io.legado.app.ui.book.read.aloud
 
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
+import io.legado.app.help.config.ListeningMotionConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.CatalogDrawerDialog
-import io.legado.app.ui.book.listen.ListeningCoverTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
 
 /** TTS 播放器的目录宿主；列表、搜索、排序和滚动全部复用共享目录内容。 */
@@ -19,18 +19,19 @@ internal class ReadAloudCatalogDialog : CatalogDrawerDialog() {
     override fun isLocalBook(): Boolean = ReadBook.isLocalBook
 
     override fun initialCatalogTheme(book: Book): NgThemeSnapshot? =
-        ListeningCoverTheme.drawerSnapshot(
-            ListeningCoverTheme.cached(book, ReadBook.bookSource?.bookSourceUrl)
-                ?: ListeningCoverTheme.fallback(requireContext(), book)
+        ReadAloudPlayerTheme.initialDrawerSnapshot(
+            context = requireContext(),
+            book = book,
+            sourceOrigin = ReadBook.bookSource?.bookSourceUrl,
+            settings = ListeningMotionConfig.current(),
         )
 
     override suspend fun resolveCatalogTheme(book: Book): NgThemeSnapshot =
-        ListeningCoverTheme.drawerSnapshot(
-            ListeningCoverTheme.resolve(
-                context = requireContext(),
-                book = book,
-                sourceOrigin = ReadBook.bookSource?.bookSourceUrl,
-            )
+        ReadAloudPlayerTheme.resolveDrawerSnapshot(
+            context = requireContext(),
+            book = book,
+            sourceOrigin = ReadBook.bookSource?.bookSourceUrl,
+            settings = ListeningMotionConfig.current(),
         )
 
     override fun onChapterSelected(chapter: BookChapter) {

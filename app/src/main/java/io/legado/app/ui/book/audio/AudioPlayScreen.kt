@@ -2,8 +2,6 @@ package io.legado.app.ui.book.audio
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -13,7 +11,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,15 +65,10 @@ import io.legado.app.ui.book.read.aloud.ListeningPlayerBackground
 import io.legado.app.ui.book.read.aloud.PlayerCover
 import io.legado.app.ui.book.read.aloud.PlayerTranslucentSurface
 import io.legado.app.ui.book.read.aloud.ReadAloudProgressSlider
-import io.legado.app.ui.book.read.aloud.playerLiquidPressTransform
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgDialog
-import io.legado.app.ui.design.components.compose.NgLiquidGlassBackdropProvider
-import io.legado.app.ui.design.components.compose.NgMaterialRole
-import io.legado.app.ui.design.components.compose.ngRecordLiquidGlassBackdrop
-import io.legado.app.ui.design.components.compose.rememberNgLiquidGlassBackdrop
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.toDurationTime
@@ -145,33 +137,22 @@ internal fun AudioPlayScreen(
         sourceOrigin = state.sourceOrigin,
     )
     val hasLyrics = !state.lyric.isNullOrBlank()
-    val liquidBackdrop = rememberNgLiquidGlassBackdrop()
     Box(modifier = Modifier.fillMaxSize()) {
-        NgLiquidGlassBackdropProvider(liquidBackdrop) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .ngRecordLiquidGlassBackdrop(liquidBackdrop),
-                ) {
-                    ListeningPlayerBackground(
-                        artwork = artwork,
-                        useNoCoverFallback = state.coverPath.isNullOrBlank(),
-                    )
-                }
-                AudioPlayerContent(
-                    state = state,
-                    artwork = artwork,
-                    hasLyrics = hasLyrics,
-                    onAction = onAction,
-                )
-                AudioPlayerTopBar(
-                    selectedPage = state.page,
-                    showPageIndicator = hasLyrics,
-                    onClose = { onAction(AudioPlayerAction.Close) },
-                )
-            }
-        }
+        ListeningPlayerBackground(
+            artwork = artwork,
+            useNoCoverFallback = state.coverPath.isNullOrBlank(),
+        )
+        AudioPlayerContent(
+            state = state,
+            artwork = artwork,
+            hasLyrics = hasLyrics,
+            onAction = onAction,
+        )
+        AudioPlayerTopBar(
+            selectedPage = state.page,
+            showPageIndicator = hasLyrics,
+            onClose = { onAction(AudioPlayerAction.Close) },
+        )
         if (state.showExitConfirmation) {
             AudioExitConfirmationDialog(
                 bookName = state.bookName,
@@ -233,13 +214,6 @@ private fun AudioPlayerTopBar(
     showPageIndicator: Boolean,
     onClose: () -> Unit,
 ) {
-    val closeInteractionSource = remember { MutableInteractionSource() }
-    val closePressed by closeInteractionSource.collectIsPressedAsState()
-    val closePressProgress by animateFloatAsState(
-        targetValue = if (closePressed && NgTheme.usesLiquidGlass) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.68f, stiffness = 720f),
-        label = "audioCloseLiquidPress",
-    )
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -248,19 +222,14 @@ private fun AudioPlayerTopBar(
                 .size(38.dp),
         ) {
             PlayerTranslucentSurface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .playerLiquidPressTransform(closePressProgress),
+                modifier = Modifier.fillMaxSize(),
                 shape = CircleShape,
-                role = NgMaterialRole.INTERACTIVE,
-                liquidCornerRadius = 19.dp,
                 containerAlpha = 0.54f,
                 elevation = 3.dp,
             ) {}
             IconButton(
                 onClick = onClose,
                 modifier = Modifier.fillMaxSize(),
-                interactionSource = closeInteractionSource,
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_read_aloud_chevron_down),
@@ -505,12 +474,6 @@ private fun AudioQuickActions(
     ) {
         actions.forEach { item ->
             val interactionSource = remember(item.action) { MutableInteractionSource() }
-            val pressed by interactionSource.collectIsPressedAsState()
-            val pressProgress by animateFloatAsState(
-                targetValue = if (pressed && NgTheme.usesLiquidGlass) 1f else 0f,
-                animationSpec = spring(dampingRatio = 0.68f, stiffness = 720f),
-                label = "${item.action}LiquidPress",
-            )
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -523,12 +486,8 @@ private fun AudioQuickActions(
                 verticalArrangement = Arrangement.Center,
             ) {
                 PlayerTranslucentSurface(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .playerLiquidPressTransform(pressProgress),
+                    modifier = Modifier.size(34.dp),
                     shape = CircleShape,
-                    role = NgMaterialRole.INTERACTIVE,
-                    liquidCornerRadius = 17.dp,
                     containerAlpha = 0.42f,
                     elevation = 2.dp,
                 ) {
@@ -606,8 +565,6 @@ private fun AudioControlDock(
             .fillMaxWidth()
             .height(48.dp),
         shape = RoundedCornerShape(8.dp),
-        role = NgMaterialRole.NAVIGATION,
-        liquidCornerRadius = 8.dp,
         containerAlpha = 0.46f,
         elevation = 5.dp,
     ) {
@@ -742,8 +699,6 @@ private fun AudioSourcePill(
                 .height(30.dp)
                 .clickable(onClick = onClick),
             shape = RoundedCornerShape(8.dp),
-            role = NgMaterialRole.INTERACTIVE,
-            liquidCornerRadius = 8.dp,
             containerAlpha = 0.42f,
             elevation = 3.dp,
         ) {

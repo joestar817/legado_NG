@@ -64,11 +64,25 @@ internal interface ListeningCartoonTextureHost {
     fun release()
 }
 
+private val cartoonAvailabilityLock = Any()
+
+@Volatile
+private var cachedAvailableCartoonTypes: List<ListeningCartoonType>? = null
+
 /**
  * The accepted scenes are local Wallpaper Engine derivatives without redistribution permission.
  * Keep each item available only to Debug builds that actually contain its complete trial assets.
  */
 internal fun Context.availableCartoonTypes(): List<ListeningCartoonType> {
+    if (AppConfig.isEInkMode) return emptyList()
+    cachedAvailableCartoonTypes?.let { return it }
+    return synchronized(cartoonAvailabilityLock) {
+        cachedAvailableCartoonTypes?.let { return@synchronized it }
+        resolveAvailableCartoonTypes().also { cachedAvailableCartoonTypes = it }
+    }
+}
+
+private fun Context.resolveAvailableCartoonTypes(): List<ListeningCartoonType> {
     if (!isCartoonMotionEnvironmentAvailable()) return emptyList()
     return buildList {
         if (hasCartoonMotionAssets(SakuraMotionAssets.ROOT, SakuraMotionAssets.REQUIRED_FILES)) {
