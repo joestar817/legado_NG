@@ -1,20 +1,31 @@
 package io.legado.app.ui.design.components.compose
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
@@ -27,6 +38,56 @@ enum class NgSliderVariant {
     CONTINUOUS,
     DISCRETE,
     COMPACT
+}
+
+internal fun ngSliderStepValue(
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    stepDelta: Int = 0,
+): Float {
+    require(valueRange.start < valueRange.endInclusive) {
+        "valueRange must have a positive length"
+    }
+    require(steps > 0) { "steps must be positive" }
+    val intervals = steps + 1
+    val rangeLength = valueRange.endInclusive - valueRange.start
+    val currentIndex = (((value.coerceIn(valueRange) - valueRange.start) / rangeLength) * intervals)
+        .roundToInt()
+    val targetIndex = (currentIndex + stepDelta).coerceIn(0, intervals)
+    return valueRange.start + rangeLength * targetIndex / intervals
+}
+
+/** 无常驻底色的滑轨微调按钮；图标保持轻量，整行高度承担触控区域。 */
+@Composable
+fun NgSliderStepButton(
+    @DrawableRes iconRes: Int,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = Color(NgTheme.colors.onSurface),
+) {
+    Box(
+        modifier = modifier
+            .width(36.dp)
+            .height(44.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .semantics { this.contentDescription = contentDescription }
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.width(18.dp).height(18.dp),
+            tint = tint.copy(alpha = tint.alpha * if (enabled) 0.74f else 0.28f),
+        )
+    }
 }
 
 /**
@@ -59,12 +120,7 @@ fun NgSlider(
     val compact = variant == NgSliderVariant.COMPACT
     fun snapToStep(rawValue: Float): Float {
         if (steps == 0) return rawValue.coerceIn(valueRange)
-        val intervals = steps + 1
-        val fraction = ((rawValue - valueRange.start) /
-            (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
-        val snappedFraction = (fraction * intervals).roundToInt().toFloat() / intervals
-        return valueRange.start +
-            (valueRange.endInclusive - valueRange.start) * snappedFraction
+        return ngSliderStepValue(rawValue, valueRange, steps)
     }
 
     fun valueForPosition(x: Float, width: Float, thumbRadius: Float): Float {

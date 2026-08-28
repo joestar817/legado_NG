@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -44,10 +45,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.ColorUtils
+import io.legado.app.R
 import io.legado.app.utils.applyTint
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgSliderStepButton
 import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
@@ -162,6 +165,12 @@ internal fun ReadConfigSliderRow(
     val currentRange = rememberUpdatedState(valueRange)
     val committedValue = value.coerceIn(valueRange)
     val displayValue = if (trackingState.value) dragState.intValue else committedValue
+    fun applyStep(delta: Int) {
+        val updatedValue = (displayValue + delta).coerceIn(currentRange.value)
+        dragState.intValue = updatedValue
+        trackingState.value = false
+        currentCallback.value(updatedValue)
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -174,6 +183,13 @@ internal fun ReadConfigSliderRow(
             color = Color(colors.onSurface),
             fontSize = 14.sp,
             maxLines = 1,
+        )
+        NgSliderStepButton(
+            iconRes = R.drawable.ic_reduce,
+            contentDescription = "$title，${stringResource(R.string.reduce)}",
+            enabled = displayValue > valueRange.first,
+            onClick = { applyStep(-1) },
+            tint = Color(colors.onSurface),
         )
         AndroidView(
             modifier = Modifier
@@ -220,6 +236,13 @@ internal fun ReadConfigSliderRow(
                 }
                 seekBar.applyTint(colors.primary)
             },
+        )
+        NgSliderStepButton(
+            iconRes = R.drawable.ic_add,
+            contentDescription = "$title，${stringResource(R.string.plus)}",
+            enabled = displayValue < valueRange.last,
+            onClick = { applyStep(1) },
+            tint = Color(colors.onSurface),
         )
         Text(
             text = displayValue.toString(),

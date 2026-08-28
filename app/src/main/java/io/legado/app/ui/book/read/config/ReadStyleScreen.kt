@@ -70,8 +70,10 @@ import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgSlider
+import io.legado.app.ui.design.components.compose.NgSliderStepButton
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.components.compose.NgSwitchControl
+import io.legado.app.ui.design.components.compose.ngSliderStepValue
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.config.NgInlineColorPicker
 import kotlin.math.abs
@@ -1600,6 +1602,7 @@ private fun AdjustSliderRow(
     contentColor: Color,
     onValueChange: (Float) -> Unit,
 ) {
+    val currentValue = value.coerceIn(valueRange)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1614,13 +1617,31 @@ private fun AdjustSliderRow(
             fontSize = 15.sp,
             maxLines = 1,
         )
+        NgSliderStepButton(
+            iconRes = R.drawable.ic_reduce,
+            contentDescription = "$title，${stringResource(R.string.reduce)}",
+            enabled = currentValue > valueRange.start,
+            onClick = {
+                onValueChange(ngSliderStepValue(currentValue, valueRange, steps, -1))
+            },
+            tint = contentColor,
+        )
         NgSlider(
-            value = value,
+            value = currentValue,
             onValueChange = onValueChange,
             valueRange = valueRange,
             steps = steps,
             variant = NgSliderVariant.COMPACT,
             modifier = Modifier.weight(1f),
+        )
+        NgSliderStepButton(
+            iconRes = R.drawable.ic_add,
+            contentDescription = "$title，${stringResource(R.string.plus)}",
+            enabled = currentValue < valueRange.endInclusive,
+            onClick = {
+                onValueChange(ngSliderStepValue(currentValue, valueRange, steps, 1))
+            },
+            tint = contentColor,
         )
         Text(
             text = valueText,
