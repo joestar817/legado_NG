@@ -269,8 +269,11 @@ class PageView(context: Context) : FrameLayout(context) {
 
     fun upTipVisibility(readerOverlayVisible: Boolean = this.readerOverlayVisible) {
         this.readerOverlayVisible = readerOverlayVisible
-        binding.llHeader.isGone = ReadTipConfig.headerMode != 1 ||
-                !ReadBookConfig.hideStatusBar || readerOverlayVisible
+        val headerEnabled = ReadTipConfig.headerMode == 1 && ReadBookConfig.hideStatusBar
+        binding.llHeader.isGone = !headerEnabled
+        if (headerEnabled) {
+            binding.llHeader.isInvisible = readerOverlayVisible
+        }
     }
 
     /**
