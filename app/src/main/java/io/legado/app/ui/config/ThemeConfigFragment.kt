@@ -11,7 +11,6 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
-import io.legado.app.BuildConfig
 import io.legado.app.base.AppContextWrapper
 import io.legado.app.base.BaseFragment
 import io.legado.app.constant.EventBus
@@ -211,7 +210,6 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
         screenState = ThemeConfigScreenState(
             themeMode = normalizeThemeMode(AppConfig.themeMode),
             visualSystem = NgVisualSystemStore.current(requireContext()),
-            showVisualSystemEntry = BuildConfig.DEBUG,
             showLauncherIcon = Build.VERSION.SDK_INT >= 26,
             launcherIconRes = launcherIconResource(launcherIcon),
             floatingBottomBar = getPrefBoolean(PreferKey.useFloatingBottomBar, false),

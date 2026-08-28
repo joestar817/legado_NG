@@ -57,7 +57,6 @@ import kotlin.math.roundToInt
 internal data class ThemeConfigScreenState(
     val themeMode: String = "0",
     val visualSystem: NgVisualSystem = NgVisualSystem.DEFAULT,
-    val showVisualSystemEntry: Boolean = false,
     val showLauncherIcon: Boolean = true,
     @param:DrawableRes val launcherIconRes: Int = R.mipmap.ic_launcher,
     val floatingBottomBar: Boolean = false,
@@ -179,7 +178,7 @@ internal fun ThemeConfigScreen(
         }
 
         NgSettingsGroup {
-            if (showAppearance && state.showVisualSystemEntry) {
+            if (showAppearance) {
                 NgExpandableSettingsItem(
                     title = stringResource(R.string.ng_visual_system),
                     summary = stringResource(state.visualSystem.labelRes()),

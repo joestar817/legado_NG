@@ -59,7 +59,7 @@ View `NgFloatingTabBar` 的详情 Dock 在页面存在约定 source 时自动接
 
 整体偏暗的播放器不复用书架偏亮磨砂。TTS 听书与有声书播放页明确退出液态后端：页面不创建 `NgLiquidGlassBackdropProvider`、不录制实时 backdrop，`PlayerTranslucentSurface` 只渲染稳定暗色透明材质；关闭按钮、快捷圆钮、普通圆形进度 Thumb、播放 Dock、音色／来源胶囊以及章节／字幕、文本场景、音频信息／歌词卡均不再按视觉体系切换为实时折射。该页面级边界只影响两个播放器，不改变其它页面继续通过公共语义表面选择透明或液态后端。
 
-当前第一阶段只在 Debug 的“设置 → 外观设置 → 视觉体系”中开放。主界面书架顶部 Compose Dock、底部 View `NgFloatingTabBar`、书籍详情页、“我的”一级菜单、配置页／关于页的同类设置卡，以及 AI Provider／TTS 引擎详情页底部切换 Dock 已接入真实背景采样；其它页面在接入宿主和完成性能验收前会由统一入口可靠回退透明玻璃。
+“设置 → 外观设置 → 视觉体系”在 Debug 与 Release 中统一开放。主界面书架顶部 Compose Dock、底部 View `NgFloatingTabBar`、书籍详情页、“我的”一级菜单、配置页／关于页的同类设置卡，以及 AI Provider／TTS 引擎详情页底部切换 Dock 已接入真实背景采样；其它页面在接入宿主和完成性能验收前会由统一入口可靠回退透明玻璃。
 
 ## 上游来源
 
