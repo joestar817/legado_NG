@@ -2,6 +2,8 @@ package io.legado.app.ui.book.audio
 
 import android.os.Bundle
 import android.view.View
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,6 +11,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -17,23 +22,37 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ListeningCartoonType
+import io.legado.app.help.config.ListeningFireStyle
+import io.legado.app.help.config.ListeningFluidType
+import io.legado.app.help.config.ListeningMotionColorMode
+import io.legado.app.help.config.ListeningMotionConfig
+import io.legado.app.help.config.ListeningMotionEffect
+import io.legado.app.help.config.ListeningMotionSettings
+import io.legado.app.help.config.ReadAloudPlayerDisplayConfig
+import io.legado.app.help.config.ReadAloudPlayerDisplaySettings
 import io.legado.app.model.AudioPlay
 import io.legado.app.service.AudioPlayService
 import io.legado.app.ui.book.read.aloud.ListeningActionRow
 import io.legado.app.ui.book.read.aloud.ListeningDivider
 import io.legado.app.ui.book.read.aloud.ListeningSettingsGroup
 import io.legado.app.ui.book.read.aloud.ReadAloudComposeBottomSheet
+import io.legado.app.ui.book.read.aloud.ReadAloudMotionSheetContent
 import io.legado.app.ui.book.read.aloud.ReadAloudSliderSheet
+import io.legado.app.ui.book.read.aloud.label
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSettingsSliderItem
+import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
 
 internal enum class AudioPlayMoreAction {
@@ -169,29 +188,162 @@ internal class AudioSkipCreditsDialog : AudioPlayComposeBottomSheet() {
     }
 }
 
+private enum class AudioMoreScreen {
+    SETTINGS,
+    MOTION,
+}
+
 internal class AudioPlayMoreDialog : AudioPlayComposeBottomSheet() {
+
+    private var screen by mutableStateOf(AudioMoreScreen.SETTINGS)
+    private var motionState by mutableStateOf(ListeningMotionConfig.current())
+    private var displaySettings by mutableStateOf(ReadAloudPlayerDisplayConfig.current())
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val host = activity as? AudioPlayActivity ?: return
         val hasSource = AudioPlay.bookSource != null
         val customVisible = host.hasCustomAudioAction()
         val loginVisible = !AudioPlay.bookSource?.loginUrl.isNullOrBlank()
+        screen = AudioMoreScreen.SETTINGS
+        motionState = ListeningMotionConfig.current()
+        displaySettings = ReadAloudPlayerDisplayConfig.current()
         (view as ComposeView).setContent {
             ListeningSheetTheme {
-                AudioMoreSheet(
-                    customVisible = customVisible,
-                    loginVisible = loginVisible,
-                    hasSource = hasSource,
-                    wakeLockEnabled = AppConfig.audioPlayUseWakeLock,
-                    onAction = { action ->
-                        if (action != AudioPlayMoreAction.TOGGLE_WAKE_LOCK) {
-                            dismissAllowingStateLoss()
-                        }
-                        host.handleMoreAction(action)
-                    },
-                )
+                BackHandler(enabled = screen == AudioMoreScreen.MOTION) {
+                    screen = AudioMoreScreen.SETTINGS
+                }
+                when (screen) {
+                    AudioMoreScreen.SETTINGS -> AudioMoreSheet(
+                        customVisible = customVisible,
+                        loginVisible = loginVisible,
+                        hasSource = hasSource,
+                        hasLyricsPage = host.hasLyricsPage(),
+                        wakeLockEnabled = AppConfig.audioPlayUseWakeLock,
+                        displaySettings = displaySettings,
+                        motionState = motionState,
+                        onShowPageIndicatorChange = ::setShowPageIndicator,
+                        onShowCoverChange = ::setShowCover,
+                        onShowBookNameChange = ::setShowBookName,
+                        onShowSubtitleChange = ::setShowSubtitle,
+                        onOpenMotion = { screen = AudioMoreScreen.MOTION },
+                        onAction = { action ->
+                            if (action != AudioPlayMoreAction.TOGGLE_WAKE_LOCK) {
+                                dismissAllowingStateLoss()
+                            }
+                            host.handleMoreAction(action)
+                        },
+                    )
+
+                    AudioMoreScreen.MOTION -> ReadAloudMotionSheetContent(
+                        state = motionState,
+                        onBack = { screen = AudioMoreScreen.SETTINGS },
+                        onEnabledChange = ::setMotionEnabled,
+                        onEffectChange = ::setMotionEffect,
+                        onFireStyleChange = ::setFireStyle,
+                        onFluidTypeChange = ::setFluidType,
+                        onCartoonTypeChange = ::setCartoonType,
+                        onColorModeChange = ::setMotionColorMode,
+                        onCustomColorChange = ::setMotionCustomColor,
+                        onIntensityPreview = ::previewMotionIntensity,
+                        onIntensityCommitted = ::commitMotionIntensity,
+                    )
+                }
             }
         }
+    }
+
+    private fun setShowPageIndicator(enabled: Boolean) {
+        ReadAloudPlayerDisplayConfig.showPageIndicator = enabled
+        updateDisplaySettings(displaySettings.copy(showPageIndicator = enabled))
+    }
+
+    private fun setShowCover(enabled: Boolean) {
+        ReadAloudPlayerDisplayConfig.showCover = enabled
+        updateDisplaySettings(displaySettings.copy(showCover = enabled))
+    }
+
+    private fun setShowBookName(enabled: Boolean) {
+        ReadAloudPlayerDisplayConfig.showBookName = enabled
+        updateDisplaySettings(displaySettings.copy(showBookName = enabled))
+    }
+
+    private fun setShowSubtitle(enabled: Boolean) {
+        ReadAloudPlayerDisplayConfig.showSubtitle = enabled
+        updateDisplaySettings(displaySettings.copy(showSubtitle = enabled))
+    }
+
+    private fun updateDisplaySettings(settings: ReadAloudPlayerDisplaySettings) {
+        displaySettings = settings
+        (activity as? AudioPlayActivity)?.previewDisplaySettings(settings)
+    }
+
+    private fun setMotionEnabled(enabled: Boolean) {
+        ListeningMotionConfig.enabled = enabled
+        motionState = motionState.copy(enabled = enabled)
+        notifyMotionChanged()
+    }
+
+    private fun setMotionEffect(effect: ListeningMotionEffect) {
+        ListeningMotionConfig.effect = effect
+        motionState = motionState.copy(
+            effect = effect,
+            intensity = ListeningMotionConfig.intensityFor(effect),
+        )
+        notifyMotionChanged()
+    }
+
+    private fun setFireStyle(style: ListeningFireStyle) {
+        ListeningMotionConfig.fireStyle = style
+        motionState = motionState.copy(fireStyle = style)
+        notifyMotionChanged()
+    }
+
+    private fun setFluidType(type: ListeningFluidType) {
+        ListeningMotionConfig.fluidType = type
+        motionState = motionState.copy(fluidType = type)
+        notifyMotionChanged()
+    }
+
+    private fun setCartoonType(type: ListeningCartoonType) {
+        ListeningMotionConfig.cartoonType = type
+        motionState = motionState.copy(cartoonType = type)
+        notifyMotionChanged()
+    }
+
+    private fun setMotionColorMode(mode: ListeningMotionColorMode) {
+        ListeningMotionConfig.colorMode = mode
+        motionState = motionState.copy(colorMode = mode)
+        notifyMotionChanged()
+    }
+
+    private fun setMotionCustomColor(color: Int) {
+        ListeningMotionConfig.customColor = color
+        motionState = motionState.copy(customColor = color)
+        notifyMotionChanged()
+    }
+
+    private fun previewMotionIntensity(intensity: Int) {
+        motionState = motionState.copy(intensity = intensity.coerceIn(0, 100))
+        notifyMotionChanged()
+    }
+
+    private fun commitMotionIntensity() {
+        when (motionState.effect) {
+            ListeningMotionEffect.FLAME -> ListeningMotionConfig.intensity = motionState.intensity
+            ListeningMotionEffect.FLUID -> {
+                ListeningMotionConfig.fluidIntensity = motionState.intensity
+            }
+            ListeningMotionEffect.CARTOON -> {
+                ListeningMotionConfig.cartoonIntensity = motionState.intensity
+            }
+        }
+        notifyMotionChanged()
+    }
+
+    private fun notifyMotionChanged() {
+        (activity as? AudioPlayActivity)?.previewMotionSettings(motionState)
+        refreshListeningSheetTheme(motionState)
     }
 }
 
@@ -200,7 +352,15 @@ private fun AudioMoreSheet(
     customVisible: Boolean,
     loginVisible: Boolean,
     hasSource: Boolean,
+    hasLyricsPage: Boolean,
     wakeLockEnabled: Boolean,
+    displaySettings: ReadAloudPlayerDisplaySettings,
+    motionState: ListeningMotionSettings,
+    onShowPageIndicatorChange: (Boolean) -> Unit,
+    onShowCoverChange: (Boolean) -> Unit,
+    onShowBookNameChange: (Boolean) -> Unit,
+    onShowSubtitleChange: (Boolean) -> Unit,
+    onOpenMotion: () -> Unit,
     onAction: (AudioPlayMoreAction) -> Unit,
 ) {
     val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.62f).dp
@@ -222,6 +382,71 @@ private fun AudioMoreSheet(
                     .heightIn(max = maxListHeight),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                item {
+                    ListeningSettingsGroup(
+                        title = stringResource(R.string.listening_display_settings),
+                    ) {
+                        if (hasLyricsPage) {
+                            NgFormSwitchSettingRow(
+                                title = stringResource(
+                                    R.string.listening_display_page_indicator
+                                ),
+                                summary = stringResource(
+                                    R.string.listening_display_page_indicator_summary
+                                ),
+                                checked = displaySettings.showPageIndicator,
+                                onCheckedChange = onShowPageIndicatorChange,
+                            )
+                            ListeningDivider()
+                        }
+                        NgFormSwitchSettingRow(
+                            title = stringResource(R.string.listening_display_cover),
+                            checked = displaySettings.showCover,
+                            onCheckedChange = onShowCoverChange,
+                        )
+                        ListeningDivider()
+                        NgFormSwitchSettingRow(
+                            title = stringResource(R.string.listening_display_book_name),
+                            checked = displaySettings.showBookName,
+                            onCheckedChange = onShowBookNameChange,
+                        )
+                        ListeningDivider()
+                        NgFormSwitchSettingRow(
+                            title = stringResource(R.string.listening_display_chapter_lyrics),
+                            checked = displaySettings.showSubtitle,
+                            onCheckedChange = onShowSubtitleChange,
+                        )
+                    }
+                }
+                item {
+                    ListeningActionRow(
+                        title = stringResource(R.string.listening_motion_entry),
+                        summary = if (!motionState.enabled) {
+                            stringResource(R.string.close)
+                        } else {
+                            when (motionState.effect) {
+                                ListeningMotionEffect.FLAME -> stringResource(
+                                    R.string.listening_motion_flame_summary,
+                                    motionState.fireStyle.label(),
+                                )
+                                ListeningMotionEffect.FLUID -> stringResource(
+                                    R.string.listening_motion_fluid_summary,
+                                    motionState.fluidType.label(),
+                                )
+                                ListeningMotionEffect.CARTOON -> stringResource(
+                                    R.string.listening_motion_cartoon_summary,
+                                    motionState.cartoonType.label(),
+                                )
+                            }
+                        },
+                        leadingIcon = Icons.Rounded.AutoAwesome,
+                        onClick = onOpenMotion,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(NgTheme.colors.surface).copy(alpha = 0.82f)),
+                    )
+                }
                 item {
                     ListeningSettingsGroup(
                         title = stringResource(R.string.audio_player_source_actions),

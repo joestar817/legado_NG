@@ -57,6 +57,9 @@ import androidx.compose.ui.window.Dialog
 import com.dirror.lyricviewx.LyricViewX
 import com.dirror.lyricviewx.OnPlayClickListener
 import io.legado.app.R
+import io.legado.app.help.config.ListeningMotionEffect
+import io.legado.app.help.config.ListeningMotionSettings
+import io.legado.app.help.config.ReadAloudPlayerDisplaySettings
 import io.legado.app.model.AudioPlay
 import io.legado.app.ui.book.listen.ListeningCoverArtwork
 import io.legado.app.ui.book.listen.ListeningCoverTheme
@@ -64,6 +67,9 @@ import io.legado.app.ui.book.read.aloud.ListeningLoadingBars
 import io.legado.app.ui.book.read.aloud.ListeningPlayerBackground
 import io.legado.app.ui.book.read.aloud.PlayerCover
 import io.legado.app.ui.book.read.aloud.PlayerTranslucentSurface
+import io.legado.app.ui.book.read.aloud.ReadAloudCartoonMotionBackground
+import io.legado.app.ui.book.read.aloud.ReadAloudFireMotionBackground
+import io.legado.app.ui.book.read.aloud.ReadAloudFluidMotionBackground
 import io.legado.app.ui.book.read.aloud.ReadAloudProgressSlider
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
@@ -99,6 +105,8 @@ internal data class AudioPlayerUiState(
     val canPrevious: Boolean = false,
     val canNext: Boolean = false,
     val showExitConfirmation: Boolean = false,
+    val motionSettings: ListeningMotionSettings = ListeningMotionSettings(),
+    val displaySettings: ReadAloudPlayerDisplaySettings = ReadAloudPlayerDisplaySettings(),
 )
 
 internal sealed interface AudioPlayerAction {
@@ -136,12 +144,27 @@ internal fun AudioPlayScreen(
         path = state.coverPath,
         sourceOrigin = state.sourceOrigin,
     )
-    val hasLyrics = !state.lyric.isNullOrBlank()
+    val hasLyrics = state.displaySettings.showSubtitle && !state.lyric.isNullOrBlank()
     Box(modifier = Modifier.fillMaxSize()) {
-        ListeningPlayerBackground(
-            artwork = artwork,
-            useNoCoverFallback = state.coverPath.isNullOrBlank(),
-        )
+        Box(modifier = Modifier.fillMaxSize()) {
+            ListeningPlayerBackground(
+                artwork = artwork,
+                useNoCoverFallback = state.coverPath.isNullOrBlank(),
+            )
+            when (state.motionSettings.effect) {
+                ListeningMotionEffect.FLAME -> {
+                    ReadAloudFireMotionBackground(settings = state.motionSettings)
+                }
+
+                ListeningMotionEffect.FLUID -> {
+                    ReadAloudFluidMotionBackground(settings = state.motionSettings)
+                }
+
+                ListeningMotionEffect.CARTOON -> {
+                    ReadAloudCartoonMotionBackground(settings = state.motionSettings)
+                }
+            }
+        }
         AudioPlayerContent(
             state = state,
             artwork = artwork,
@@ -150,7 +173,7 @@ internal fun AudioPlayScreen(
         )
         AudioPlayerTopBar(
             selectedPage = state.page,
-            showPageIndicator = hasLyrics,
+            showPageIndicator = hasLyrics && state.displaySettings.showPageIndicator,
             onClose = { onAction(AudioPlayerAction.Close) },
         )
         if (state.showExitConfirmation) {
@@ -175,8 +198,14 @@ private fun AudioPlayerContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(state.page, hasLyrics) {
-                if (!hasLyrics) return@pointerInput
+            .pointerInput(
+                state.page,
+                hasLyrics,
+                state.displaySettings.showPageIndicator,
+            ) {
+                if (!hasLyrics || !state.displaySettings.showPageIndicator) {
+                    return@pointerInput
+                }
                 detectHorizontalDragGestures(
                     onDragStart = { horizontalDrag = 0f },
                     onHorizontalDrag = { _, amount -> horizontalDrag += amount },
@@ -271,6 +300,7 @@ private fun AudioCoverPage(
     artwork: ImageBitmap?,
     onAction: (AudioPlayerAction) -> Unit,
 ) {
+    val display = state.displaySettings
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -278,32 +308,42 @@ private fun AudioCoverPage(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        PlayerCover(
-            artwork = artwork,
-            fallbackTitle = state.bookName,
-            fallbackAuthor = state.bookAuthor,
-            useNoCoverFallback = state.coverPath.isNullOrBlank(),
-            contentDescription = state.bookName,
-            modifier = Modifier
-                .size(width = 142.dp, height = 202.dp)
-                .clickable { onAction(AudioPlayerAction.OpenBookInfo) },
-            cornerRadius = 10.dp,
-            ambientGlow = true,
-        )
-        Text(
-            text = state.bookName,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp),
-            color = Color(NgTheme.colors.onSurface),
-            fontSize = 20.sp,
-            lineHeight = 25.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        AudioInfoCard(state, Modifier.padding(top = 10.dp))
+        if (display.showCover) {
+            PlayerCover(
+                artwork = artwork,
+                fallbackTitle = if (display.showBookName) state.bookName else "",
+                fallbackAuthor = state.bookAuthor,
+                useNoCoverFallback = state.coverPath.isNullOrBlank(),
+                contentDescription = state.bookName,
+                modifier = Modifier
+                    .size(width = 142.dp, height = 202.dp)
+                    .clickable { onAction(AudioPlayerAction.OpenBookInfo) },
+                cornerRadius = 10.dp,
+                ambientGlow = true,
+            )
+        } else {
+            Spacer(modifier = Modifier.size(width = 142.dp, height = 202.dp))
+        }
+        if (display.showBookName) {
+            Text(
+                text = state.bookName,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                color = Color(NgTheme.colors.onSurface),
+                fontSize = 20.sp,
+                lineHeight = 25.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Spacer(modifier = Modifier.height(33.dp))
+        }
+        if (display.showSubtitle) {
+            AudioInfoCard(state, Modifier.padding(top = 10.dp))
+        }
         AudioQuickActions(state, onAction, Modifier.padding(top = 8.dp))
         AudioProgress(state, onAction, Modifier.padding(top = 2.dp))
         AudioControlDock(
@@ -325,42 +365,49 @@ private fun AudioLyricsPage(
     artwork: ImageBitmap?,
     onAction: (AudioPlayerAction) -> Unit,
 ) {
+    val display = state.displaySettings
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(start = 24.dp, top = 76.dp, end = 24.dp, bottom = 40.dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(70.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PlayerCover(
-                artwork = artwork,
-                fallbackTitle = state.bookName,
-                fallbackAuthor = state.bookAuthor,
-                useNoCoverFallback = state.coverPath.isNullOrBlank(),
-                contentDescription = state.bookName,
-                modifier = Modifier.size(width = 50.dp, height = 70.dp),
-                cornerRadius = 6.dp,
-                compactFallback = true,
-            )
+            if (display.showCover) {
+                PlayerCover(
+                    artwork = artwork,
+                    fallbackTitle = if (display.showBookName) state.bookName else "",
+                    fallbackAuthor = state.bookAuthor,
+                    useNoCoverFallback = state.coverPath.isNullOrBlank(),
+                    contentDescription = state.bookName,
+                    modifier = Modifier.size(width = 50.dp, height = 70.dp),
+                    cornerRadius = 6.dp,
+                    compactFallback = true,
+                )
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 14.dp),
+                    .padding(start = if (display.showCover) 14.dp else 0.dp),
             ) {
-                Text(
-                    text = state.bookName,
-                    color = Color(NgTheme.colors.onSurface),
-                    fontSize = 17.sp,
-                    lineHeight = 21.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (display.showBookName) {
+                    Text(
+                        text = state.bookName,
+                        color = Color(NgTheme.colors.onSurface),
+                        fontSize = 17.sp,
+                        lineHeight = 21.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     text = state.chapterTitle,
-                    modifier = Modifier.padding(top = 5.dp),
+                    modifier = Modifier.padding(top = if (display.showBookName) 5.dp else 0.dp),
                     color = Color(NgTheme.colors.onSurfaceVariant),
                     fontSize = 13.sp,
                     lineHeight = 18.sp,

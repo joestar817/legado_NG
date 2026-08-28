@@ -897,10 +897,14 @@ private fun ReadAloudMoreSheetContent(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    ListeningSettingsGroup(title = "显示设置") {
+                    ListeningSettingsGroup(
+                        title = stringResource(R.string.listening_display_settings),
+                    ) {
                         NgFormSwitchSettingRow(
-                            title = "分页提示线",
-                            summary = "关闭后禁用左右滑动",
+                            title = stringResource(R.string.listening_display_page_indicator),
+                            summary = stringResource(
+                                R.string.listening_display_page_indicator_summary
+                            ),
                             checked = state.displaySettings.showPageIndicator,
                             onCheckedChange = {
                                 onToggle(MoreToggle.SHOW_PAGE_INDICATOR, it)
@@ -908,19 +912,19 @@ private fun ReadAloudMoreSheetContent(
                         )
                         ListeningDivider()
                         NgFormSwitchSettingRow(
-                            title = "封面",
+                            title = stringResource(R.string.listening_display_cover),
                             checked = state.displaySettings.showCover,
                             onCheckedChange = { onToggle(MoreToggle.SHOW_COVER, it) },
                         )
                         ListeningDivider()
                         NgFormSwitchSettingRow(
-                            title = "书名",
+                            title = stringResource(R.string.listening_display_book_name),
                             checked = state.displaySettings.showBookName,
                             onCheckedChange = { onToggle(MoreToggle.SHOW_BOOK_NAME, it) },
                         )
                         ListeningDivider()
                         NgFormSwitchSettingRow(
-                            title = "实时字幕",
+                            title = stringResource(R.string.listening_display_realtime_subtitle),
                             checked = state.displaySettings.showSubtitle,
                             onCheckedChange = { onToggle(MoreToggle.SHOW_SUBTITLE, it) },
                         )

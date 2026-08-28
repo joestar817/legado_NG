@@ -24,6 +24,10 @@ import io.legado.app.data.entities.BookSource
 import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.removeType
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ListeningMotionConfig
+import io.legado.app.help.config.ListeningMotionSettings
+import io.legado.app.help.config.ReadAloudPlayerDisplayConfig
+import io.legado.app.help.config.ReadAloudPlayerDisplaySettings
 import io.legado.app.model.AudioPlay
 import io.legado.app.model.SourceCallBack
 import io.legado.app.service.AudioPlayService
@@ -31,8 +35,8 @@ import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.info.BookInfoActivity
-import io.legado.app.ui.book.listen.ListeningCoverTheme
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
+import io.legado.app.ui.book.read.aloud.ReadAloudPlayerTheme
 import io.legado.app.ui.config.TtsSheetLaunchDebouncer
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
@@ -66,8 +70,8 @@ class AudioPlayActivity :
 
     private var uiState by mutableStateOf(AudioPlayerUiState())
     private var playerThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
-    private var coverThemeJob: Job? = null
-    private var coverThemeKey: String? = null
+    private var playerThemeJob: Job? = null
+    private var playerThemeKey: String? = null
     private var adjustingProgress = false
     private var finishImmediately = false
     private val drawerLaunchDebouncer = TtsSheetLaunchDebouncer()
@@ -165,6 +169,8 @@ class AudioPlayActivity :
         val lyric = AudioPlay.durChapter?.getVariable("lyric")
             ?.takeIf { it.isNotBlank() }
             ?: AudioPlay.durLyric
+        val motionSettings = ListeningMotionConfig.current()
+        val displaySettings = ReadAloudPlayerDisplayConfig.current()
         uiState = uiState.copy(
             bookName = book?.name ?: uiState.bookName,
             bookAuthor = book?.author.orEmpty(),
@@ -176,7 +182,11 @@ class AudioPlayActivity :
                 ?.takeIf { it.isNotBlank() }
                 ?: getString(R.string.audio_player_source_context),
             lyric = lyric,
-            page = if (lyric.isNullOrBlank()) AudioPlayerPage.COVER else uiState.page,
+            page = if (lyric.isNullOrBlank() || !displaySettings.showSubtitle) {
+                AudioPlayerPage.COVER
+            } else {
+                uiState.page
+            },
             duration = AudioPlay.durAudioSize.coerceAtLeast(0),
             position = AudioPlay.durChapterPos.coerceAtLeast(0),
             isPlaying = AudioPlay.status == Status.PLAY,
@@ -188,7 +198,10 @@ class AudioPlayActivity :
             playMode = AudioPlay.playMode,
             canPrevious = AudioPlay.durChapterIndex > 0,
             canNext = AudioPlay.durChapterIndex < AudioPlay.simulatedChapterSize - 1,
+            motionSettings = motionSettings,
+            displaySettings = displaySettings,
         )
+        refreshListeningTheme(settings = motionSettings)
     }
 
     private fun refreshLyricFromCurrentChapter() {
@@ -197,24 +210,36 @@ class AudioPlayActivity :
             ?: AudioPlay.durLyric
         uiState = uiState.copy(
             lyric = lyric,
-            page = if (lyric.isNullOrBlank()) AudioPlayerPage.COVER else uiState.page,
+            page = if (lyric.isNullOrBlank() || !uiState.displaySettings.showSubtitle) {
+                AudioPlayerPage.COVER
+            } else {
+                uiState.page
+            },
         )
     }
 
-    private fun refreshListeningTheme(force: Boolean = false) {
+    private fun refreshListeningTheme(
+        force: Boolean = false,
+        settings: ListeningMotionSettings = ListeningMotionConfig.current(),
+    ) {
         val book = AudioPlay.book ?: return
         val sourceOrigin = AudioPlay.bookSource?.bookSourceUrl
-        val key = "${book.bookUrl}|${book.getDisplayCover()}|${sourceOrigin.orEmpty()}"
-        if (!force && coverThemeKey == key) return
-        coverThemeKey = key
-        coverThemeJob?.cancel()
-        playerThemeSnapshot = ListeningCoverTheme.cached(book, sourceOrigin)
-            ?: ListeningCoverTheme.fallback(this, book)
-        coverThemeJob = lifecycleScope.launch {
-            playerThemeSnapshot = ListeningCoverTheme.resolve(
+        val key = ReadAloudPlayerTheme.key(this, book, sourceOrigin, settings)
+        if (!force && playerThemeKey == key) return
+        playerThemeKey = key
+        playerThemeJob?.cancel()
+        playerThemeSnapshot = ReadAloudPlayerTheme.initialSnapshot(
+            context = this,
+            book = book,
+            sourceOrigin = sourceOrigin,
+            settings = settings,
+        )
+        playerThemeJob = lifecycleScope.launch {
+            playerThemeSnapshot = ReadAloudPlayerTheme.resolveSnapshot(
                 context = this@AudioPlayActivity,
                 book = book,
                 sourceOrigin = sourceOrigin,
+                settings = settings,
             )
         }
     }
@@ -238,7 +263,10 @@ class AudioPlayActivity :
             AudioPlayerAction.Next -> AudioPlay.next()
             AudioPlayerAction.Catalog -> showDrawer("audioCatalog", ::AudioCatalogDialog)
             is AudioPlayerAction.SelectPage -> {
-                if (action.page == AudioPlayerPage.COVER || !uiState.lyric.isNullOrBlank()) {
+                if (
+                    action.page == AudioPlayerPage.COVER ||
+                    (uiState.displaySettings.showSubtitle && !uiState.lyric.isNullOrBlank())
+                ) {
                     uiState = uiState.copy(page = action.page)
                 }
             }
@@ -291,6 +319,8 @@ class AudioPlayActivity :
     internal fun hasCustomAudioAction(): Boolean =
         viewModel.customBtnListData.value == true
 
+    internal fun hasLyricsPage(): Boolean = !uiState.lyric.isNullOrBlank()
+
     internal fun handleMoreAction(action: AudioPlayMoreAction) {
         when (action) {
             AudioPlayMoreAction.CUSTOM -> {
@@ -340,6 +370,19 @@ class AudioPlayActivity :
             AudioPlayMoreAction.APP_LOG -> showDialogFragment<AppLogDialog>()
             AudioPlayMoreAction.NETWORK_LOG -> showDialogFragment<NetworkLogDialog>()
         }
+    }
+
+    internal fun previewMotionSettings(settings: ListeningMotionSettings) {
+        val normalized = settings.copy(intensity = settings.intensity.coerceIn(0, 100))
+        uiState = uiState.copy(motionSettings = normalized)
+        refreshListeningTheme(settings = normalized)
+    }
+
+    internal fun previewDisplaySettings(settings: ReadAloudPlayerDisplaySettings) {
+        uiState = uiState.copy(
+            displaySettings = settings,
+            page = if (!settings.showSubtitle) AudioPlayerPage.COVER else uiState.page,
+        )
     }
 
     private fun playButton(noLyricToggle: Boolean = true) {
@@ -420,7 +463,7 @@ class AudioPlayActivity :
     }
 
     override fun onDestroy() {
-        coverThemeJob?.cancel()
+        playerThemeJob?.cancel()
         if (AudioPlay.status != Status.PLAY) {
             AudioPlay.stop()
         }
@@ -490,7 +533,11 @@ class AudioPlayActivity :
         runOnUiThread {
             uiState = uiState.copy(
                 lyric = lyric,
-                page = if (lyric.isNullOrBlank()) AudioPlayerPage.COVER else uiState.page,
+                page = if (lyric.isNullOrBlank() || !uiState.displaySettings.showSubtitle) {
+                    AudioPlayerPage.COVER
+                } else {
+                    uiState.page
+                },
             )
         }
     }

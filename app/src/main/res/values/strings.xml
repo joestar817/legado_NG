@@ -725,6 +725,13 @@
     <string name="read_aloud_timer_close_title">Timer off</string>
     <string name="read_aloud_timer_close_minutes">Timer off · %1$d min</string>
     <string name="read_aloud_playback_speed_title">Playback speed · %1$s</string>
+    <string name="listening_display_settings">Display</string>
+    <string name="listening_display_page_indicator">Page indicator</string>
+    <string name="listening_display_page_indicator_summary">Disabling also turns off horizontal swiping</string>
+    <string name="listening_display_cover">Cover</string>
+    <string name="listening_display_book_name">Book title</string>
+    <string name="listening_display_realtime_subtitle">Live subtitles</string>
+    <string name="listening_display_chapter_lyrics">Chapter and lyrics</string>
     <string name="listening_motion_title">Playback effects</string>
     <string name="listening_motion_entry">Playback effects</string>
     <string name="listening_motion_enable">Enable playback effects</string>

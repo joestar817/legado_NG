@@ -723,6 +723,13 @@
     <string name="read_aloud_timer_close_title">定时关闭</string>
     <string name="read_aloud_timer_close_minutes">定时关闭 · %1$d 分钟</string>
     <string name="read_aloud_playback_speed_title">播放速度 · %1$s</string>
+    <string name="listening_display_settings">显示设置</string>
+    <string name="listening_display_page_indicator">分页提示线</string>
+    <string name="listening_display_page_indicator_summary">关闭后禁用左右滑动</string>
+    <string name="listening_display_cover">封面</string>
+    <string name="listening_display_book_name">书名</string>
+    <string name="listening_display_realtime_subtitle">实时字幕</string>
+    <string name="listening_display_chapter_lyrics">章节与歌词</string>
     <string name="listening_motion_title">播放动效</string>
     <string name="listening_motion_entry">播放动效</string>
     <string name="listening_motion_enable">启用播放动效</string>
