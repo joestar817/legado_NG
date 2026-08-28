@@ -13,8 +13,10 @@ enum class NgVisualSystem(val storedValue: String) {
     LIQUID_GLASS("liquid_glass");
 
     companion object {
+        val DEFAULT = LIQUID_GLASS
+
         fun fromStoredValue(value: String?): NgVisualSystem {
-            return entries.firstOrNull { it.storedValue == value } ?: TRANSPARENT_GLASS
+            return entries.firstOrNull { it.storedValue == value } ?: DEFAULT
         }
     }
 }

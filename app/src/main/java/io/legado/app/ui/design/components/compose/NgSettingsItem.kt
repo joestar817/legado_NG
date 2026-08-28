@@ -85,6 +85,7 @@ internal fun NgSettingsCardSurface(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 18.dp,
     shape: Shape = RoundedCornerShape(cornerRadius),
+    role: NgMaterialRole = NgMaterialRole.SETTINGS,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val snapshot = NgTheme.snapshot
@@ -126,7 +127,7 @@ internal fun NgSettingsCardSurface(
     }
     NgVisualSurface(
         modifier = modifier,
-        role = NgMaterialRole.SETTINGS,
+        role = role,
         cornerRadius = cornerRadius,
         shape = shape,
         style = style,

@@ -23,6 +23,7 @@ import android.view.ViewTreeObserver
 import androidx.annotation.ColorInt
 import androidx.annotation.RequiresApi
 import androidx.core.graphics.ColorUtils
+import io.legado.app.R
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.help.config.NgVisualSystemStore
@@ -36,6 +37,7 @@ import kotlin.math.roundToInt
  * 为 View/独立 ComposeView 边界提供实时背景采样。
  *
  * [sourceView] 必须是承载面后方的真实内容 View，不能包含 [owner]，避免递归录制。
+ * 若页面提供统一背景 source，渲染器会先合成背景，再录制该实时内容 View。
  */
 internal class NgViewLiquidGlassRenderer(
     private val owner: View,
@@ -113,17 +115,19 @@ internal class NgViewLiquidGlassRenderer(
         node.setPosition(-paddingInt, -paddingInt, owner.width + paddingInt, owner.height + paddingInt)
 
         owner.getLocationInWindow(ownerLocation)
-        source.getLocationInWindow(sourceLocation)
         val recordingCanvas = node.beginRecording(paddedWidth, paddedHeight)
         try {
             drawWindowBackground(recordingCanvas, paddingInt)
-            recordingCanvas.save()
-            recordingCanvas.translate(
-                (paddingInt + sourceLocation[0] - ownerLocation[0]).toFloat(),
-                (paddingInt + sourceLocation[1] - ownerLocation[1]).toFloat(),
-            )
-            source.draw(recordingCanvas)
-            recordingCanvas.restore()
+            owner.rootView.findViewById<View>(R.id.ng_liquid_glass_backdrop_source)
+                ?.takeIf { pageSource ->
+                    pageSource !== source &&
+                        pageSource.isAttachedToWindow &&
+                        !pageSource.containsDescendant(owner)
+                }
+                ?.let { pageSource ->
+                    drawSource(recordingCanvas, pageSource, paddingInt)
+                }
+            drawSource(recordingCanvas, source, paddingInt)
         } finally {
             node.endRecording()
         }
@@ -157,6 +161,17 @@ internal class NgViewLiquidGlassRenderer(
         )
         canvas.clipPath(clipPath)
         canvas.drawRenderNode(node)
+        canvas.restoreToCount(saveCount)
+    }
+
+    private fun drawSource(canvas: Canvas, source: View, padding: Int) {
+        source.getLocationInWindow(sourceLocation)
+        val saveCount = canvas.save()
+        canvas.translate(
+            (padding + sourceLocation[0] - ownerLocation[0]).toFloat(),
+            (padding + sourceLocation[1] - ownerLocation[1]).toFloat(),
+        )
+        source.draw(canvas)
         canvas.restoreToCount(saveCount)
     }
 

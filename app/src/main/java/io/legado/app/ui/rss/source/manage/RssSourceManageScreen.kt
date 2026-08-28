@@ -60,6 +60,7 @@ import io.legado.app.ui.design.components.compose.NgFormField
 import io.legado.app.ui.design.components.compose.NgFormFieldVariant
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgManagementDrawerPanel
 import io.legado.app.ui.design.components.compose.NgManagementDrawerPanelVariant
 import io.legado.app.ui.design.components.compose.NgSearchBar
@@ -350,6 +351,7 @@ private fun RssSourceManageTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 4.dp),
+        role = NgMaterialRole.CONTROL,
         shape = headerShape,
         style = headerStyle
     ) {

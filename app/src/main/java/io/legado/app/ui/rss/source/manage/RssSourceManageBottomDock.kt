@@ -32,6 +32,7 @@ import io.legado.app.ui.design.components.compose.NgFlatActionRailItem
 import io.legado.app.ui.design.components.compose.NgFlatActionRailVariant
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.theme.NgTheme
 
 @Composable
@@ -46,6 +47,7 @@ internal fun RssSourceManageBottomDock(
     val dockShape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
     NgGlassSurface(
         modifier = modifier.fillMaxWidth(),
+        role = NgMaterialRole.CONTROL,
         shape = dockShape,
         style = NgGlassDefaults.bookDetailStyle(
             containerColor = colorResource(R.color.ng_bookshelf_manage_control_surface)

@@ -37,7 +37,7 @@ private val LocalNgThemeSnapshot = staticCompositionLocalOf<NgThemeSnapshot> {
 }
 
 private val LocalNgVisualSystem = staticCompositionLocalOf {
-    NgVisualSystem.TRANSPARENT_GLASS
+    NgVisualSystem.DEFAULT
 }
 
 object NgTheme {

@@ -7,7 +7,9 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -63,22 +65,7 @@ fun NgFloatingTabBar(
         }
     }
     val outerShape = RoundedCornerShape(12.dp)
-    val surfaceColor = when (variant) {
-        NgFloatingTabBarVariant.STANDARD -> colorResource(R.color.ng_settings_item)
-        NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT ->
-            colorResource(R.color.ng_neutral_container)
-    }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .clip(outerShape)
-            .background(surfaceColor)
-            .border(0.6.dp, colorResource(R.color.ng_settings_item_stroke), outerShape)
-            .padding(3.dp)
-            .selectableGroup(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    val tabs: @Composable RowScope.() -> Unit = {
         items.forEachIndexed { index, item ->
             val selected = index == selectedIndex.coerceIn(items.indices)
             val contentColor = when {
@@ -152,5 +139,41 @@ fun NgFloatingTabBar(
                 }
             }
         }
+    }
+    when (variant) {
+        NgFloatingTabBarVariant.STANDARD -> NgSettingsCardSurface(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            cornerRadius = 12.dp,
+            shape = outerShape,
+            role = NgMaterialRole.CONTROL,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(3.dp)
+                    .selectableGroup(),
+                verticalAlignment = Alignment.CenterVertically,
+                content = tabs,
+            )
+        }
+
+        NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT -> Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(outerShape)
+                .background(colorResource(R.color.ng_neutral_container))
+                .border(
+                    0.6.dp,
+                    colorResource(R.color.ng_settings_item_stroke),
+                    outerShape,
+                )
+                .padding(3.dp)
+                .selectableGroup(),
+            verticalAlignment = Alignment.CenterVertically,
+            content = tabs,
+        )
     }
 }

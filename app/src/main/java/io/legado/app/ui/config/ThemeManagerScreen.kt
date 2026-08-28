@@ -1,7 +1,6 @@
 package io.legado.app.ui.config
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,6 +60,7 @@ import io.legado.app.ui.design.components.compose.NgActionBarButton
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSearchBar
+import io.legado.app.ui.design.components.compose.NgSettingsCardSurface
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
@@ -202,80 +202,80 @@ private fun NgThemeManagementCard(
     }
     val themePrimary = if (NgTheme.snapshot.isDark) dark.primary else light.primary
     val shape = RoundedCornerShape(18.dp)
-    Row(
+    NgSettingsCardSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(colorResource(R.color.ng_settings_item))
-            .drawWithContent {
-                drawContent()
-                if (selected) {
-                    drawRect(
-                        color = Color(themePrimary),
-                        size = androidx.compose.ui.geometry.Size(10.dp.toPx(), size.height)
-                    )
-                }
-            }
-            .border(
-                width = 0.6.dp,
-                color = colorResource(R.color.ng_settings_item_stroke),
-                shape = shape
-            )
-            .semantics { this.selected = selected }
-            .clickable(onClick = onClick)
-            .heightIn(min = 64.dp)
-            .padding(start = 16.dp, top = 10.dp, end = 8.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .semantics { this.selected = selected },
+        cornerRadius = 18.dp,
+        shape = shape,
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(colorResource(R.color.ng_settings_icon_bg))
-                .padding(7.dp),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .drawWithContent {
+                    drawContent()
+                    if (selected) {
+                        drawRect(
+                            color = Color(themePrimary),
+                            size = androidx.compose.ui.geometry.Size(10.dp.toPx(), size.height)
+                        )
+                    }
+                }
+                .clickable(onClick = onClick)
+                .heightIn(min = 64.dp)
+                .padding(start = 16.dp, top = 10.dp, end = 8.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_cfg_theme),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                tint = Color(themePrimary)
-            )
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(
-            modifier = Modifier
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = theme.name,
-                color = colorResource(R.color.ng_on_surface),
-                fontSize = 16.sp,
-                lineHeight = 19.sp,
-                fontWeight = FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            ThemeColorPreview(
-                lightColors = intArrayOf(light.primary, light.secondary, light.background),
-                darkColors = intArrayOf(dark.primary, dark.secondary, dark.background)
-            )
-        }
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onMoreClick),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "›",
-                color = colorResource(R.color.ng_on_surface_variant),
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Normal,
-                maxLines = 1
-            )
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(colorResource(R.color.ng_settings_icon_bg))
+                    .padding(7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_cfg_theme),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    tint = Color(themePrimary)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = theme.name,
+                    color = colorResource(R.color.ng_on_surface),
+                    fontSize = 16.sp,
+                    lineHeight = 19.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                ThemeColorPreview(
+                    lightColors = intArrayOf(light.primary, light.secondary, light.background),
+                    darkColors = intArrayOf(dark.primary, dark.secondary, dark.background)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onMoreClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "›",
+                    color = colorResource(R.color.ng_on_surface_variant),
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1
+                )
+            }
         }
     }
 }

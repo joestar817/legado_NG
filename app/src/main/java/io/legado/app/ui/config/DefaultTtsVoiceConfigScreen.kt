@@ -1,7 +1,6 @@
 package io.legado.app.ui.config
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -41,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgStatusTagVariant
+import io.legado.app.ui.design.components.compose.NgSettingsCardSurface
 import io.legado.app.ui.design.components.compose.NgStatusTag
 import io.legado.app.ui.design.theme.NgTheme
 
@@ -160,82 +159,86 @@ private fun DefaultTtsVoiceCard(
 ) {
     val colors = NgTheme.colors
     val shape = RoundedCornerShape(NgTheme.shapes.largeDp.dp)
-    Row(
+    NgSettingsCardSurface(
         modifier = modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = DefaultVoiceCardMinHeight)
-            .alpha(if (model.enabled) 1f else DisabledCardAlpha)
-            .clip(shape)
-            .background(colorResource(R.color.ng_settings_item))
-            .border(DefaultVoiceCardStroke, colorResource(R.color.ng_settings_item_stroke), shape)
-            .then(
-                if (model.isInteractive) {
-                    Modifier.clickable(role = Role.Button, onClick = onClick)
-                } else {
-                    Modifier.semantics {
-                        if (!model.enabled) disabled()
-                    }
-                }
-            )
-            .padding(
-                start = NgTheme.spacing.largeDp.dp,
-                top = NgTheme.spacing.mediumDp.dp,
-                end = NgTheme.spacing.mediumDp.dp,
-                bottom = NgTheme.spacing.mediumDp.dp
-            ),
-        verticalAlignment = Alignment.CenterVertically
+            .alpha(if (model.enabled) 1f else DisabledCardAlpha),
+        cornerRadius = NgTheme.shapes.largeDp.dp,
+        shape = shape,
     ) {
-        DefaultTtsVoiceAvatar(
-            text = model.avatarText,
-            role = model.avatarRole
-        )
-        Spacer(Modifier.width(NgTheme.spacing.mediumDp.dp))
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.Center
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = model.title,
-                    modifier = Modifier.weight(1f, fill = false),
-                    color = Color(colors.onSurface),
-                    fontSize = DefaultVoiceTitleSize,
-                    lineHeight = DefaultVoiceTitleLineHeight,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                model.fallbackTag
-                    ?.takeIf(String::isNotBlank)
-                    ?.let { tag ->
-                        Spacer(Modifier.width(NgTheme.spacing.smallDp.dp))
-                        NgStatusTag(
-                            text = tag,
-                            variant = NgStatusTagVariant.INFO
-                        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (model.isInteractive) {
+                        Modifier.clickable(role = Role.Button, onClick = onClick)
+                    } else {
+                        Modifier.semantics {
+                            if (!model.enabled) disabled()
+                        }
                     }
-            }
-            Box(
-                modifier = Modifier.heightIn(min = DefaultVoiceSummaryMinHeight),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Text(
-                    text = model.summary,
-                    color = Color(colors.onSurfaceVariant),
-                    fontSize = DefaultVoiceSummarySize,
-                    lineHeight = DefaultVoiceSummaryLineHeight,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
+                .padding(
+                    start = NgTheme.spacing.largeDp.dp,
+                    top = NgTheme.spacing.mediumDp.dp,
+                    end = NgTheme.spacing.mediumDp.dp,
+                    bottom = NgTheme.spacing.mediumDp.dp
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            DefaultTtsVoiceAvatar(
+                text = model.avatarText,
+                role = model.avatarRole
+            )
+            Spacer(Modifier.width(NgTheme.spacing.mediumDp.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = model.title,
+                        modifier = Modifier.weight(1f, fill = false),
+                        color = Color(colors.onSurface),
+                        fontSize = DefaultVoiceTitleSize,
+                        lineHeight = DefaultVoiceTitleLineHeight,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    model.fallbackTag
+                        ?.takeIf(String::isNotBlank)
+                        ?.let { tag ->
+                            Spacer(Modifier.width(NgTheme.spacing.smallDp.dp))
+                            NgStatusTag(
+                                text = tag,
+                                variant = NgStatusTagVariant.INFO
+                            )
+                        }
+                }
+                Box(
+                    modifier = Modifier.heightIn(min = DefaultVoiceSummaryMinHeight),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Text(
+                        text = model.summary,
+                        color = Color(colors.onSurfaceVariant),
+                        fontSize = DefaultVoiceSummarySize,
+                        lineHeight = DefaultVoiceSummaryLineHeight,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
+            Spacer(Modifier.width(NgTheme.spacing.smallDp.dp))
+            Icon(
+                painter = painterResource(R.drawable.ic_chevron_right_20),
+                contentDescription = null,
+                modifier = Modifier.size(DefaultVoiceChevronSize),
+                tint = Color(colors.onSurfaceVariant)
+            )
         }
-        Spacer(Modifier.width(NgTheme.spacing.smallDp.dp))
-        Icon(
-            painter = painterResource(R.drawable.ic_chevron_right_20),
-            contentDescription = null,
-            modifier = Modifier.size(DefaultVoiceChevronSize),
-            tint = Color(colors.onSurfaceVariant)
-        )
     }
 }
 
@@ -275,7 +278,6 @@ private fun DefaultTtsVoiceAvatarRole.containerColor(): Color {
 
 private val DefaultVoiceCardMinHeight = 78.dp
 private val DefaultVoiceCardGap = 10.dp
-private val DefaultVoiceCardStroke = 0.6.dp
 private val DefaultVoiceAvatarSize = 44.dp
 private val DefaultVoiceChevronSize = 20.dp
 private val DefaultVoiceSummaryMinHeight = 32.dp

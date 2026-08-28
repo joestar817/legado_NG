@@ -36,6 +36,7 @@ import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSearchBarVariant
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.theme.NgTheme
 
 private const val ALL_GROUP_ITEM_ID = 0x53FFFFFF
@@ -113,6 +114,7 @@ internal fun BookshelfManageTopBar(
     ) {
         NgGlassSurface(
             modifier = Modifier.fillMaxWidth(),
+            role = NgMaterialRole.CONTROL,
             shape = headerShape,
             style = headerStyle
         ) {

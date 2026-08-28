@@ -304,6 +304,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         bottomNavigationView.setOnNavigationItemSelectedListener(this@MainActivity)
         bottomNavigationView.setOnNavigationItemReselectedListener(this@MainActivity)
         floatingBottomNavigation.setVariant(NgFloatingTabBarVariant.CONTENT_OVERLAY)
+        // The shared renderer composites the page background before this live scrolling content.
         floatingBottomNavigation.setLiquidBackdropSource(viewPagerMain)
         if (AppConfig.isEInkMode) {
             bottomNavigationView.setBackgroundResource(R.drawable.bg_eink_border_top)

@@ -33,6 +33,7 @@ enum class NgMaterialRole {
     BOTTOM_NAVIGATION,
     OVERLAY,
     INTERACTIVE,
+    CONTROL,
     ICON_ACTION,
     ACTION,
     CONTENT,
@@ -73,10 +74,26 @@ object NgLiquidGlassDefaults {
             depthEdgeAlphaScale = 0.18f,
         )
         NgMaterialRole.TOP_NAVIGATION -> NgLiquidGlassSpec(
-            8.dp, 6.dp, 8.dp, 0.60f, 1.15f, 0.18f, 0.04f, 0.60f, 0.50.dp
+            blurRadius = 8.dp,
+            refractionHeight = 6.dp,
+            refractionAmount = 8.dp,
+            surfaceAlphaScale = 0.44f,
+            saturation = 1.15f,
+            depthEffect = 0.18f,
+            chromaticAberration = 0.04f,
+            highlightAlphaScale = 0.60f,
+            highlightWidth = 0.50.dp,
         )
         NgMaterialRole.BOTTOM_NAVIGATION -> NgLiquidGlassSpec(
-            12.dp, 10.dp, 14.dp, 1f, 1.15f, 0.25f, 0.05f, 0.65f, 0.50.dp
+            blurRadius = 10.dp,
+            refractionHeight = 8.dp,
+            refractionAmount = 10.dp,
+            surfaceAlphaScale = 0.44f,
+            saturation = 1.15f,
+            depthEffect = 0.25f,
+            chromaticAberration = 0.05f,
+            highlightAlphaScale = 0.65f,
+            highlightWidth = 0.50.dp,
         )
         NgMaterialRole.OVERLAY -> NgLiquidGlassSpec(
             8.dp, 10.dp, 14.dp, 0.48f, 1.18f, 0.20f, 0f, 0.45f, 0.40.dp
@@ -94,6 +111,20 @@ object NgLiquidGlassDefaults {
             accentAlphaScale = 0.26f,
             surfaceGlossAlphaScale = 0.36f,
             depthEdgeAlphaScale = 0.16f,
+        )
+        NgMaterialRole.CONTROL -> NgLiquidGlassSpec(
+            blurRadius = 10.dp,
+            refractionHeight = 4.dp,
+            refractionAmount = 5.dp,
+            surfaceAlphaScale = 0.78f,
+            saturation = 1.08f,
+            depthEffect = 0.12f,
+            chromaticAberration = 0.01f,
+            highlightAlphaScale = 0.58f,
+            highlightWidth = 0.45.dp,
+            accentAlphaScale = 0.14f,
+            surfaceGlossAlphaScale = 0.18f,
+            depthEdgeAlphaScale = 0.22f,
         )
         NgMaterialRole.ICON_ACTION -> NgLiquidGlassSpec(
             8.dp, 6.dp, 8.dp, 0.78f, 1.15f, 0.18f, 0.04f, 0.75f, 0.50.dp

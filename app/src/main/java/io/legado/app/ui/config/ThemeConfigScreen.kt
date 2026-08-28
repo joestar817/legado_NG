@@ -56,7 +56,7 @@ import kotlin.math.roundToInt
 
 internal data class ThemeConfigScreenState(
     val themeMode: String = "0",
-    val visualSystem: NgVisualSystem = NgVisualSystem.TRANSPARENT_GLASS,
+    val visualSystem: NgVisualSystem = NgVisualSystem.DEFAULT,
     val showVisualSystemEntry: Boolean = false,
     val showLauncherIcon: Boolean = true,
     @param:DrawableRes val launcherIconRes: Int = R.mipmap.ic_launcher,

@@ -52,6 +52,7 @@ import io.legado.app.ui.design.components.compose.NgFormFieldVariant
 import io.legado.app.ui.design.components.compose.NgFormMultilineField
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.theme.NgTheme
 
 internal const val BOOK_TYPE_TEXT = 0
@@ -329,6 +330,7 @@ private fun BookInfoEditCard(
 ) {
     NgGlassSurface(
         modifier = Modifier.fillMaxWidth(),
+        role = NgMaterialRole.CONTENT,
         shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
         style = NgGlassDefaults.bookDetailStyle(
             containerColor = colorResource(R.color.ng_surface_card),
