@@ -1,5 +1,7 @@
 package io.legado.app.data.entities.rule
 
+import com.google.gson.annotations.SerializedName
+
 data class RowUi(
     val name: String = "",
     val type: String = "text",
@@ -7,7 +9,17 @@ data class RowUi(
     val chars: Array<String?>? = null,
     val default: String? = null,
     var viewName: String? = null,
-    val style: FlexChildStyle? = null
+    val style: FlexChildStyle? = null,
+    @SerializedName("key")
+    val key: String? = null,
+    @SerializedName("hint")
+    val hint: String? = null,
+    @SerializedName("value")
+    val value: String? = null,
+    @SerializedName("options")
+    val options: List<String>? = null,
+    @SerializedName("countdown")
+    val countdown: Int? = null
 ) {
 
     @Suppress("ConstPropertyName")
@@ -16,6 +28,7 @@ data class RowUi(
         const val text = "text"
         const val password = "password"
         const val button = "button"
+        const val label = "label"
         const val toggle = "toggle"
         const val select = "select"
 

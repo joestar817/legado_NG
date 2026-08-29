@@ -7,6 +7,7 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.Cookie as CookieEntity
+import io.legado.app.data.dao.deleteByUrlsChunked
 import io.legado.app.help.CacheManager
 import io.legado.app.help.http.api.CookieManagerInterface
 import io.legado.app.help.source.BookSourceStorageScope
@@ -167,10 +168,20 @@ class BookSourceCookieStore(
         }
 
         fun clear(sourceUrl: String) {
-            val namespace = BookSourceStorageScope.namespace(sourceUrl)
-            val prefix = "book_source_cookie_$namespace:"
-            appDb.cookieDao.deleteByPrefix(prefix)
-            CacheManager.deleteMemoryByPrefix(prefix)
+            clear(listOf(sourceUrl))
+        }
+
+        fun clear(sourceUrls: Collection<String>) {
+            if (sourceUrls.isEmpty()) return
+            val prefixes = sourceUrls.distinct().map { sourceUrl ->
+                val namespace = BookSourceStorageScope.namespace(sourceUrl)
+                "book_source_cookie_$namespace:"
+            }
+            val scopedUrls = appDb.cookieDao.allUrls().filter { url ->
+                url.startsWith("book_source_cookie_") && prefixes.any(url::startsWith)
+            }
+            appDb.cookieDao.deleteByUrlsChunked(scopedUrls)
+            CacheManager.deleteMemoryByPrefixes(prefixes)
         }
     }
 }

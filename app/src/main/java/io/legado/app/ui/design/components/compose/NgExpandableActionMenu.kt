@@ -8,6 +8,7 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.IdRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -339,22 +341,25 @@ private fun NgSideSlideExpandableActionMenu(
     properties: PopupProperties,
     onFullyHidden: () -> Unit
 ) {
-    val slideFraction = remember { Animatable(1f) }
+    val slideFraction = remember {
+        Animatable(if (expanded) 0f else 1f)
+    }
     var popupVisible by remember { mutableStateOf(expanded) }
     val motion = NgTheme.snapshot.motion
     val durationMs = if (motion.enabled) motion.mediumDurationMs else 0
     val density = LocalDensity.current
     val endMarginPx = with(density) { 8.dp.roundToPx() }
     val anchorBottomOffsetPx = with(density) { 16.dp.roundToPx() }
+    // Popup observes snapshot reads made by its position provider. Keep this
+    // provider stable so a submenu remeasure cannot recreate the slide source.
     val positionProvider = remember(
         endMarginPx,
-        anchorBottomOffsetPx,
-        slideFraction.value
+        anchorBottomOffsetPx
     ) {
         NgWindowEndBelowAnchorPopupPositionProvider(
             marginPx = endMarginPx,
             anchorBottomOffsetPx = anchorBottomOffsetPx,
-            horizontalSlideFraction = slideFraction.value
+            horizontalSlideFraction = { slideFraction.value }
         )
     }
     val maxHeight = (LocalConfiguration.current.screenHeightDp.dp - 220.dp)
@@ -390,34 +395,50 @@ private fun NgSideSlideExpandableActionMenu(
             properties = properties
         ) {
             val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
-            Surface(
-                modifier = Modifier.width(width),
-                shape = shape,
-                color = menuContainerColor ?: colorResource(R.color.ng_surface_card),
-                contentColor = Color(NgTheme.colors.onSurface),
-                border = BorderStroke(
-                    width = if (NgTheme.snapshot.isEInk) 1.dp else 0.5.dp,
-                    color = Color(NgTheme.colors.outlineVariant).copy(
-                        alpha = if (NgTheme.snapshot.isEInk) 1f else 0.45f
-                    )
-                ),
-                tonalElevation = 0.dp,
-                shadowElevation = NgTheme.effects.overlayElevationDp.dp
+            Column(
+                modifier = Modifier
+                    .width(width)
+                    .height(maxHeight)
             ) {
-                Column(
-                    modifier = Modifier
-                        .heightIn(max = maxHeight)
-                        .verticalScroll(rememberScrollState())
-                        .padding(vertical = 4.dp)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = shape,
+                    color = menuContainerColor ?: colorResource(R.color.ng_surface_card),
+                    contentColor = Color(NgTheme.colors.onSurface),
+                    border = BorderStroke(
+                        width = if (NgTheme.snapshot.isEInk) 1.dp else 0.5.dp,
+                        color = Color(NgTheme.colors.outlineVariant).copy(
+                            alpha = if (NgTheme.snapshot.isEInk) 1f else 0.45f
+                        )
+                    ),
+                    tonalElevation = 0.dp,
+                    shadowElevation = NgTheme.effects.overlayElevationDp.dp
                 ) {
-                    NgExpandableActionMenuRows(
-                        items = items,
-                        expandedItemIds = expandedItemIds,
-                        onToggle = onToggle,
-                        onItemClick = onItemClick,
-                        rowMinHeight = rowMinHeight
-                    )
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = maxHeight)
+                            .verticalScroll(rememberScrollState())
+                            .padding(vertical = 4.dp)
+                    ) {
+                        NgExpandableActionMenuRows(
+                            items = items,
+                            expandedItemIds = expandedItemIds,
+                            onToggle = onToggle,
+                            onItemClick = onItemClick,
+                            rowMinHeight = rowMinHeight
+                        )
+                    }
                 }
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDismissRequest
+                        )
+                )
             }
         }
     }
@@ -430,7 +451,7 @@ private fun NgSideSlideExpandableActionMenu(
 private class NgWindowEndBelowAnchorPopupPositionProvider(
     private val marginPx: Int,
     private val anchorBottomOffsetPx: Int,
-    private val horizontalSlideFraction: Float
+    private val horizontalSlideFraction: () -> Float
 ) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
@@ -441,7 +462,8 @@ private class NgWindowEndBelowAnchorPopupPositionProvider(
         val maxX = (windowSize.width - popupContentSize.width - marginPx)
             .coerceAtLeast(marginPx)
         val slideOffsetPx = (
-            (popupContentSize.width + marginPx) * horizontalSlideFraction.coerceIn(0f, 1f)
+            (popupContentSize.width + marginPx) *
+                horizontalSlideFraction().coerceIn(0f, 1f)
             ).roundToInt()
         val x = when (layoutDirection) {
             LayoutDirection.Ltr -> maxX + slideOffsetPx

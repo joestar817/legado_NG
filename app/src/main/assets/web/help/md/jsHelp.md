@@ -571,3 +571,99 @@ java.openUrl(url: String, mimeType: String = null)
 * @param isFloat 是否悬浮窗打开
 java.openVideoPlayer(url: String, title: String, isFloat: Boolean = false)
 ```
+
+## JavaScript 单文件书源
+
+JavaScript 单文件书源使用一个 `.js` 文件描述书源。它与原有 JSON 规则书源并存，
+不使用 `ruleSearch`、`ruleBookInfo`、`ruleToc` 等声明式规则。
+
+### 基本结构
+
+脚本顶层必须提供 `config` 配置对象和 `search` 函数。文本、音频、图片与视频源还必须提供
+`getChapters`、`getContent`；文件源（`bookSourceType: 3`）必须提供 `getBookInfo`。
+`getBookInfo`、`explore` 和登录函数按配置与源类型决定是否需要。
+
+```js
+var config = {
+    bookSourceUrl: "https://example.com",
+    bookSourceName: "示例 JS 书源",
+    bookSourceType: 0,
+    bookSourceGroup: "",
+    exploreUrl: [
+        { title: "分类", url: "https://example.com/list" }
+    ],
+    lastUpdateTime: 0
+};
+
+function search(key, page) {
+    return [];
+}
+
+function explore(url, page) {
+    return [];
+}
+
+function getBookInfo(book) {
+    return { tocUrl: book.bookUrl };
+}
+
+function getChapters(book) {
+    return [];
+}
+
+function getContent(chapter, book, nextChapterUrl) {
+    return String(java.ajax(chapter.url) || "");
+}
+```
+
+保存或导入时，应用会先在不含 `java`、`source`、`sourceApi` 等运行时绑定的安全作用域中
+执行脚本，提取配置并检查函数。因此网络请求和其他运行时代码应写在函数内部，不要放在顶层。
+旧脚本可以继续使用顶层 `source` 作为配置对象，并通过 `sourceApi` 访问运行时书源；新脚本应使用
+`config`，运行时通过 `source` 访问登录信息、变量等能力。
+
+### 函数契约
+
+|函数|要求|返回值|
+|---|---|---|
+|`search(key, page)`|必选，页码从 1 开始|书籍数组|
+|`explore(url, page)`|`exploreUrl` 非空时必选|书籍数组|
+|`getBookInfo(book)`|文件源必选，其他类型可选|详情字段对象|
+|`getChapters(book)`|非文件源必选|非空章节数组|
+|`getContent(chapter, book, nextChapterUrl)`|非文件源必选|非空正文字符串|
+|`login()`|旧版表单登录配置非空时必选|失败时可抛出错误|
+|`loginUi(state)`|动态登录，与 `loginAction` 成对声明|`{rows:[...]}`|
+|`loginAction(action, state, form)`|动态登录，与 `loginUi` 成对声明|命令对象或空值|
+
+返回值可直接使用 JavaScript 对象／数组，也可以返回 `JSON.stringify(...)` 后的字符串。
+搜索结果至少需要非空 `name`、`bookUrl`；章节至少需要非空 `title`、`url`。
+详情允许返回 `name`、`author`、`intro`、`coverUrl`、`kind`、`wordCount`、
+`latestChapterTitle`、`tocUrl`、`variable`、`type` 和 `downloadUrls`。
+
+### 登录
+
+- WebView 登录：配置 `loginUrl`。
+- 静态表单登录：配置非空 `loginUi` 行数组，并实现 `login()`。
+- 动态登录：实现 `loginUi(state)` 与 `loginAction(action, state, form)`，不要再配置 `config.loginUi`。
+
+动态行支持 `text`、`password`、`label`、`select`、`toggle`、`button`。
+`loginAction` 可返回 `state`（重新渲染）、`error`（字段错误）、`login`（保存登录数据）和
+`close: true`（关闭弹窗）。
+
+### 运行环境与兼容
+
+函数运行时可使用 `java`、`source`、`sourceApi`、`baseUrl`、`cookie`、`cache` 和当前函数参数。
+Cookie、缓存、共享 `jsLib` 与文件访问均按完整书源 URL 隔离。内置 `CryptoJS` 可直接使用，例如：
+
+```js
+CryptoJS.MD5("text").toString();
+```
+
+每次业务调用都会建立局部作用域并重新执行主脚本。不要依赖顶层可变变量跨请求保存状态；
+持久状态请使用 `cache`、`source.put/get` 或书源变量。来自 Java 对象的方法返回值可能仍是
+Java 字符串包装对象，需要 JavaScript 字符串语义时先使用 `String(value)` 转换。
+
+### 导入与导出
+
+- 书源管理菜单可分别新建规则书源和 JavaScript 书源。
+- 本地 `.js`／`.txt`、在线脚本文本和直接粘贴的脚本均可导入。
+- 选择单个 JavaScript 书源导出或分享时生成 `.js` 原文；多选或混合选择时生成 JSON 容器。

@@ -21,6 +21,12 @@ interface CacheDao {
     @Query("delete from caches where `key` = :key")
     fun delete(key: String)
 
+    @Query("select `key` from caches")
+    fun allKeys(): List<String>
+
+    @Query("delete from caches where `key` in (:keys)")
+    fun deleteByKeys(keys: List<String>)
+
     @Query("select * from caches where substr(`key`, 1, length(:prefix)) = :prefix")
     fun getByPrefix(prefix: String): List<Cache>
 
@@ -39,4 +45,8 @@ interface CacheDao {
     @Query("delete from caches where deadline > 0 and deadline < :now")
     fun clearDeadline(now: Long)
 
+}
+
+internal fun CacheDao.deleteByKeysChunked(keys: Collection<String>) {
+    keys.chunked(900).forEach(::deleteByKeys)
 }

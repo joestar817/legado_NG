@@ -423,6 +423,7 @@ private fun BookInfoTopBar(
         BookInfoToolbarIcon(
             iconRes = R.drawable.ic_arrow_back,
             contentDescription = stringResource(R.string.back),
+            tint = colorResource(R.color.ng_search_icon),
             onClick = { onEvent(BookInfoUiEvent.Back) },
         )
         Spacer(Modifier.weight(1f))
@@ -609,13 +610,14 @@ private fun BookInfoMenuAction.item(
 private fun BookInfoToolbarIcon(
     iconRes: Int,
     contentDescription: String,
+    tint: Color = Color(NgTheme.colors.onTopBar),
     onClick: () -> Unit,
 ) {
     NgVisualIconButton(onClick = onClick) {
         Icon(
             painter = painterResource(iconRes),
             contentDescription = contentDescription,
-            tint = Color(NgTheme.colors.onTopBar),
+            tint = tint,
             modifier = Modifier.size(24.dp),
         )
     }

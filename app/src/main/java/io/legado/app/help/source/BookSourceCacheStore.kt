@@ -3,6 +3,7 @@ package io.legado.app.help.source
 import android.webkit.JavascriptInterface
 import androidx.annotation.Keep
 import io.legado.app.data.appDb
+import io.legado.app.data.dao.deleteByKeysChunked
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.data.entities.BookSource
 import io.legado.app.help.CacheManager
@@ -85,19 +86,33 @@ class BookSourceCacheStore(
 
     internal companion object {
         fun clear(sourceUrl: String) {
-            val namespace = BookSourceStorageScope.namespace(sourceUrl)
-            val storagePrefix = "book_source_cache_$namespace:"
-            val registryPrefix = "book_source_cache_registry_$namespace:"
-            appDb.cacheDao.getByPrefix(registryPrefix).forEach { registry ->
-                registry.value?.let(CacheManager::delete)
+            clear(listOf(sourceUrl), appDb.cacheDao.allKeys())
+        }
+
+        fun clear(sourceUrls: Collection<String>, cacheKeys: Collection<String>) {
+            if (sourceUrls.isEmpty()) return
+            val namespaces = sourceUrls.distinct().map(BookSourceStorageScope::namespace)
+            val storagePrefixes = namespaces.map { "book_source_cache_$it:" }
+            val registryPrefixes = namespaces.map { "book_source_cache_registry_$it:" }
+            val prefixes = storagePrefixes + registryPrefixes
+            val registryValues = appDb.cacheDao
+                .getByPrefix("book_source_cache_registry_")
+                .filter { registry -> registryPrefixes.any(registry.key::startsWith) }
+                .mapNotNull { it.value }
+            val scopedKeys = cacheKeys.filter { key ->
+                key.startsWith("book_source_cache_") && prefixes.any(key::startsWith)
             }
-            appDb.cacheDao.deleteByPrefix(storagePrefix)
-            appDb.cacheDao.deleteByPrefix(registryPrefix)
-            CacheManager.deleteMemoryByPrefix(storagePrefix)
-            CacheManager.deleteMemoryByPrefix(registryPrefix)
-            ACache.get(
-                File(appCtx.cacheDir, "bookSourceCache${File.separator}$namespace")
-            ).clear()
+
+            appDb.cacheDao.deleteByKeysChunked((scopedKeys + registryValues).distinct())
+            CacheManager.deleteMemoryByPrefixes(prefixes)
+            registryValues.forEach(CacheManager::deleteMemory)
+            val globalFileCache = ACache.get()
+            registryValues.forEach(globalFileCache::remove)
+            namespaces.forEach { namespace ->
+                ACache.get(
+                    File(appCtx.cacheDir, "bookSourceCache${File.separator}$namespace")
+                ).clear()
+            }
         }
     }
 }

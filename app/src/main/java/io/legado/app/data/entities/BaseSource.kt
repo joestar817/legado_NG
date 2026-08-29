@@ -18,6 +18,7 @@ import io.legado.app.help.source.scriptCacheObject
 import io.legado.app.help.source.clearExploreKindsCache
 import io.legado.app.help.source.getShareScope
 import io.legado.app.help.source.withBookSourceClassPolicy
+import io.legado.app.model.SharedJsScope
 import io.legado.app.model.SharedJsScope.remove
 import io.legado.app.utils.GSON
 import io.legado.app.utils.GSONStrict
@@ -71,7 +72,7 @@ interface BaseSource : JsExtensions {
         return this
     }
 
-    fun getLoginJs(): String? {
+    open fun getLoginJs(): String? {
         val loginJs = loginUrl
         return when {
             loginJs == null -> null
@@ -329,12 +330,18 @@ interface BaseSource : JsExtensions {
             val bindings = buildScriptBindings { bindings ->
                 bindings["java"] = this
                 bindings["source"] = this
+                bindings["sourceApi"] = this
                 bindings["baseUrl"] = getKey()
                 bindings["cookie"] = BookSourceCookieStore.forSource(this)
                 bindings["cache"] = this.scriptCacheObject()
                 bindings.apply(bindingsConfig)
             }
-            val sharedScope = getShareScope()
+            val sharedScope = getShareScope() ?: SharedJsScope.getCryptoScope(
+                scopeNamespace = getKey(),
+                coroutineContext = null,
+                bookSourceClassPolicy = this is BookSource,
+                bookSourceLabel = getTag(),
+            )
             val scope = if (sharedScope == null) {
                 RhinoScriptEngine.getRuntimeScope(bindings)
             } else {

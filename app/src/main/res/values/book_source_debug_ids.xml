@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="menu_scan" type="id" />
+    <item name="menu_search_src" type="id" />
+    <item name="menu_book_src" type="id" />
+    <item name="menu_toc_src" type="id" />
+    <item name="menu_refresh_explore" type="id" />
+</resources>

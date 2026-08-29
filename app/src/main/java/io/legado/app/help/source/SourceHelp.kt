@@ -6,6 +6,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import io.legado.app.constant.SourceType
 import io.legado.app.data.appDb
+import io.legado.app.data.dao.deleteByKeysChunked
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.BookSourcePart
@@ -72,21 +73,34 @@ object SourceHelp {
     }
 
     fun deleteBookSourceParts(sources: List<BookSourcePart>) {
-        appDb.runInTransaction {
-            sources.forEach {
-                deleteBookSourceInternal(it.bookSourceUrl)
-            }
-        }
+        deleteBookSourceKeys(sources.map { it.bookSourceUrl }.distinct())
         AppCacheManager.clearSourceVariables()
     }
 
     fun deleteBookSources(sources: List<BookSource>) {
-        appDb.runInTransaction {
-            sources.forEach {
-                deleteBookSourceInternal(it.bookSourceUrl)
-            }
-        }
+        deleteBookSourceKeys(sources.map { it.bookSourceUrl }.distinct())
         AppCacheManager.clearSourceVariables()
+    }
+
+    private fun deleteBookSourceKeys(sourceKeys: List<String>) {
+        if (sourceKeys.isEmpty()) return
+        appDb.runInTransaction {
+            appDb.bookSourceDao.deleteByKeysChunked(sourceKeys)
+            val cacheKeys = appDb.cacheDao.allKeys()
+            deleteBookSourceVariables(sourceKeys, cacheKeys)
+            BookSourceCookieStore.clear(sourceKeys)
+            BookSourceCacheStore.clear(sourceKeys, cacheKeys)
+            SourceConfig.removeSources(sourceKeys)
+        }
+    }
+
+    private fun deleteBookSourceVariables(
+        sourceKeys: Collection<String>,
+        cacheKeys: Collection<String>,
+    ) {
+        appDb.cacheDao.deleteByKeysChunked(
+            matchingBookSourceVariableCacheKeys(cacheKeys, sourceKeys)
+        )
     }
 
     private fun deleteBookSourceInternal(key: String) {
@@ -207,4 +221,24 @@ object SourceHelp {
         }
     }
 
+}
+
+internal fun matchingBookSourceVariableCacheKeys(
+    cacheKeys: Collection<String>,
+    sourceKeys: Collection<String>,
+): List<String> {
+    if (cacheKeys.isEmpty() || sourceKeys.isEmpty()) return emptyList()
+    val exactKeys = buildSet(sourceKeys.size * 4) {
+        sourceKeys.forEach { sourceKey ->
+            add("userInfo_$sourceKey")
+            add("loginHeader_$sourceKey")
+            add("sourceVariable_$sourceKey")
+            add("infoMap_$sourceKey")
+        }
+    }
+    val variablePrefixes = sourceKeys.map { "v_${it}_" }
+    return cacheKeys.filter { cacheKey ->
+        cacheKey in exactKeys ||
+            (cacheKey.startsWith("v_") && variablePrefixes.any(cacheKey::startsWith))
+    }
 }

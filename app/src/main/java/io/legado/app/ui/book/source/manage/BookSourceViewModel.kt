@@ -2,7 +2,6 @@ package io.legado.app.ui.book.source.manage
 
 import android.app.Application
 import android.text.TextUtils
-import io.legado.app.R
 import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.BookSourceType
 import io.legado.app.data.appDb
@@ -10,16 +9,15 @@ import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.data.entities.toBookSource
 import io.legado.app.help.source.SourceHelp
+import io.legado.app.model.jsSource.isJsSource
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.GSON
-import io.legado.app.utils.cnCompare
 import io.legado.app.utils.normalizeFileName
 import io.legado.app.utils.outputStream
 import io.legado.app.utils.splitNotBlank
 import io.legado.app.utils.stackTraceStr
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.writeToOutputStream
-import splitties.init.appCtx
 import java.io.File
 import java.util.Date
 import java.util.Locale
@@ -75,33 +73,36 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
         }
     }
 
-    fun enableSelection(sources: List<BookSourcePart>) {
-        execute {
-            appDb.bookSourceDao.enable(true, sources)
-        }
-    }
-
-    fun disableSelection(sources: List<BookSourcePart>) {
-        execute {
-            appDb.bookSourceDao.enable(false, sources)
-        }
-    }
-
     fun enableExplore(enable: Boolean, items: List<BookSourcePart>) {
         execute {
             appDb.bookSourceDao.enableExplore(enable, items)
         }
     }
 
-    fun enableSelectExplore(sources: List<BookSourcePart>) {
+    fun updateSourceSwitches(
+        source: BookSourcePart,
+        searchEnabled: Boolean,
+        exploreEnabled: Boolean,
+    ) {
         execute {
-            appDb.bookSourceDao.enableExplore(true, sources)
+            appDb.bookSourceDao.enable(source.bookSourceUrl, searchEnabled)
+            if (source.hasExploreUrl) {
+                appDb.bookSourceDao.enableExplore(source.bookSourceUrl, exploreEnabled)
+            }
         }
     }
 
-    fun disableSelectExplore(sources: List<BookSourcePart>) {
+    fun updateSelectionCapabilities(
+        sources: List<BookSourcePart>,
+        searchEnabled: Boolean,
+        exploreEnabled: Boolean,
+    ) {
         execute {
-            appDb.bookSourceDao.enableExplore(false, sources)
+            appDb.bookSourceDao.enable(searchEnabled, sources)
+            appDb.bookSourceDao.enableExplore(
+                exploreEnabled,
+                sources.filter(BookSourcePart::hasExploreUrl),
+            )
         }
     }
 
@@ -110,17 +111,6 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
             val array = sources.map {
                 it.copy().apply {
                     addGroup(groups)
-                }
-            }
-            appDb.bookSourceDao.upGroup(array)
-        }
-    }
-
-    fun selectionRemoveFromGroups(sources: List<BookSourcePart>, groups: String) {
-        execute {
-            val array = sources.map {
-                it.copy().apply {
-                    removeGroup(groups)
                 }
             }
             appDb.bookSourceDao.upGroup(array)
@@ -136,19 +126,34 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
         }
     }
 
-    fun selectionAutoGroup(sources: List<BookSourcePart>) {
+    internal fun selectionAutoGroup(
+        sources: List<BookSourcePart>,
+        selectedRuleTypes: Set<BookSourceAutoGroupRuleType>,
+    ) {
         execute {
-            val sharedBaseUrlGroups = BookSourceAutoGroup.sharedBaseUrlGroups(
-                appDb.bookSourceDao.allPart.map { it.bookSourceUrl }
-            )
+            val sharedBaseUrlGroups = if (
+                BookSourceAutoGroupRuleType.URL_CATEGORY in selectedRuleTypes
+            ) {
+                BookSourceAutoGroup.sharedBaseUrlGroups(
+                    appDb.bookSourceDao.allPart.map { it.bookSourceUrl }
+                )
+            } else {
+                emptyMap()
+            }
+            val needsDebugSource = BookSourceAutoGroupRuleType.DEBUG_FEATURES in selectedRuleTypes
             val array = sources.map {
-                val fullSource = appDb.bookSourceDao.getBookSource(it.bookSourceUrl)
+                val fullSource = if (needsDebugSource) {
+                    appDb.bookSourceDao.getBookSource(it.bookSourceUrl)
+                } else {
+                    null
+                }
                 it.copy(
                     bookSourceGroup = autoGroupNames(
-                        it,
-                        fullSource,
-                        sharedBaseUrlGroups[it.bookSourceUrl]
-                    )
+                        source = it,
+                        fullSource = fullSource,
+                        sharedBaseUrlGroup = sharedBaseUrlGroups[it.bookSourceUrl],
+                        selectedRuleTypes = selectedRuleTypes,
+                    ).joinToString(",")
                 )
             }
             appDb.bookSourceDao.upGroup(array)
@@ -158,37 +163,33 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
     private fun autoGroupNames(
         source: BookSourcePart,
         fullSource: BookSource?,
-        sharedBaseUrlGroup: String?
-    ): String {
-        val groups = arrayListOf(
-            when (source.bookSourceType) {
-                BookSourceType.image -> "漫画"
-                BookSourceType.audio -> "音频"
-                BookSourceType.video -> "视频"
-                BookSourceType.file -> "其它"
-                else -> "小说"
+        sharedBaseUrlGroup: String?,
+        selectedRuleTypes: Set<BookSourceAutoGroupRuleType>,
+    ): List<String> {
+        return buildList {
+            if (BookSourceAutoGroupRuleType.SOURCE_CATEGORY in selectedRuleTypes) {
+                add(
+                    when (source.bookSourceType) {
+                        BookSourceType.image -> "漫画"
+                        BookSourceType.audio -> "音频"
+                        BookSourceType.video -> "视频"
+                        BookSourceType.file -> "其它"
+                        else -> "小说"
+                    }
+                )
             }
-        )
-        sharedBaseUrlGroup?.let(groups::add)
-        if (source.hasLoginUrl) {
-            groups.add("有登录入口")
+            if (BookSourceAutoGroupRuleType.DEBUG_FEATURES in selectedRuleTypes) {
+                if (source.hasLoginUrl) add("有登录入口")
+                if (!source.hasSearchUrl) add("无搜索")
+                if (source.hasExploreUrl) add("有发现")
+                if (source.eventListener) add("事件监听")
+                if (usesWebView(fullSource)) add("WebView")
+                if (usesVerificationCode(fullSource)) add("有验证码")
+            }
+            if (BookSourceAutoGroupRuleType.URL_CATEGORY in selectedRuleTypes) {
+                sharedBaseUrlGroup?.let(::add)
+            }
         }
-        if (!source.hasSearchUrl) {
-            groups.add("无搜索")
-        }
-        if (source.hasExploreUrl) {
-            groups.add("有发现")
-        }
-        if (source.eventListener) {
-            groups.add("事件监听")
-        }
-        if (usesWebView(fullSource)) {
-            groups.add("WebView")
-        }
-        if (usesVerificationCode(fullSource)) {
-            groups.add("有验证码")
-        }
-        return TextUtils.join(",", groups)
     }
 
     private fun usesWebView(source: BookSource?): Boolean {
@@ -218,7 +219,8 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
             source.ruleBookInfo?.let { GSON.toJson(it) },
             source.ruleToc?.let { GSON.toJson(it) },
             source.ruleContent?.let { GSON.toJson(it) },
-            source.ruleReview?.let { GSON.toJson(it) }
+            source.ruleReview?.let { GSON.toJson(it) },
+            source.mainJs
         )
     }
 
@@ -227,7 +229,8 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
         return listOfNotNull(
             source.ruleSearch?.let { GSON.toJson(it) },
             source.ruleToc?.let { GSON.toJson(it) },
-            source.ruleContent?.let { GSON.toJson(it) }
+            source.ruleContent?.let { GSON.toJson(it) },
+            source.mainJs,
         )
     }
 
@@ -238,6 +241,7 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
             bookSourceComment,
             variableComment,
             searchUrl,
+            mainJs,
             ruleSearch?.let { GSON.toJson(it) },
             ruleToc?.let { GSON.toJson(it) },
             ruleContent?.let { GSON.toJson(it) }
@@ -279,134 +283,47 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
 
     private fun saveToFile(sources: List<BookSource>, name: String, success: (file: File, name: String) -> Unit) {
         execute {
-            val path = "${context.filesDir}/shareBookSource.json"
-            FileUtils.delete(path)
-            val file = FileUtils.createFileWithReplace(path)
-            file.outputStream().buffered().use {
-                GSON.writeToOutputStream(it, sources)
+            val single = sources.singleOrNull()
+            if (single != null && single.isJsSource()) {
+                val outputName = "${single.bookSourceName.normalizeFileName()}.js"
+                val file = File(context.cacheDir, outputName)
+                file.writeText(single.mainJs.orEmpty())
+                file to outputName
+            } else {
+                val path = "${context.filesDir}/shareBookSource.json"
+                FileUtils.delete(path)
+                val file = FileUtils.createFileWithReplace(path)
+                file.outputStream().buffered().use {
+                    GSON.writeToOutputStream(it, sources)
+                }
+                file to name
             }
-            file
         }.onSuccess {
-            success.invoke(it, name)
+            success.invoke(it.first, it.second)
         }.onError {
             context.toastOnUi(it.stackTraceStr)
         }
     }
 
     fun saveToFile(
-        adapter: BookSourceAdapter,
-        searchKey: String?,
-        sortAscending: Boolean,
-        sort: BookSourceSort,
+        selection: List<BookSourcePart>,
         success: (file: File, name: String) -> Unit
     ) {
         execute {
-            val selection = adapter.selection
-            val selectionSize = selection.size
-            val sourceCount = adapter.sourceCount
-            val selectedRate = if (sourceCount == 0) 0f else selectionSize.toFloat() / sourceCount.toFloat()
-            val sources = if (selectedRate == 1f) {
-                getBookSources(searchKey, sortAscending, sort)
-            } else if (selectedRate < 0.3) {
-                selection.toBookSource()
-            } else {
-                val keys = selection.map { it.bookSourceUrl }.toHashSet()
-                val bookSources = getBookSources(searchKey, sortAscending, sort)
-                bookSources.filter {
-                    keys.contains(it.bookSourceUrl)
-                }
-            }
-            val name = if (selectionSize == 1) {
+            selection.toBookSource()
+        }.onSuccess { sources ->
+            val name = if (selection.size == 1) {
                 "bookSource_${selection.first().bookSourceName.normalizeFileName()}.json"
             } else {
-                val timestamp = java.text.SimpleDateFormat("yyyyMMddHHmm", Locale.getDefault()).format(Date())
+                val timestamp = java.text.SimpleDateFormat(
+                    "yyyyMMddHHmm",
+                    Locale.getDefault()
+                ).format(Date())
                 "bookSource_$timestamp.json"
             }
             saveToFile(sources, name, success)
-        }
-    }
-
-    private fun getBookSources(
-        searchKey: String?,
-        sortAscending: Boolean,
-        sort: BookSourceSort
-    ): List<BookSource> {
-        return when {
-            searchKey.isNullOrEmpty() -> {
-                appDb.bookSourceDao.all
-            }
-
-            searchKey == appCtx.getString(R.string.enabled) -> {
-                appDb.bookSourceDao.allEnabled
-            }
-
-            searchKey == appCtx.getString(R.string.disabled) -> {
-                appDb.bookSourceDao.allDisabled
-            }
-
-            searchKey == appCtx.getString(R.string.need_login) -> {
-                appDb.bookSourceDao.allLogin
-            }
-
-            searchKey == appCtx.getString(R.string.no_group) -> {
-                appDb.bookSourceDao.allNoGroup
-            }
-
-            searchKey == appCtx.getString(R.string.enabled_explore) -> {
-                appDb.bookSourceDao.allEnabledExplore
-            }
-
-            searchKey == appCtx.getString(R.string.disabled_explore) -> {
-                appDb.bookSourceDao.allDisabledExplore
-            }
-
-            searchKey.startsWith("group:") -> {
-                val key = searchKey.substringAfter("group:")
-                appDb.bookSourceDao.groupSearch(key)
-            }
-
-            else -> {
-                appDb.bookSourceDao.search(searchKey)
-            }
-        }.let { data ->
-            if (sortAscending) when (sort) {
-                BookSourceSort.Weight -> data.sortedBy { it.weight }
-                BookSourceSort.Name -> data.sortedWith { o1, o2 ->
-                    o1.bookSourceName.cnCompare(o2.bookSourceName)
-                }
-
-                BookSourceSort.Url -> data.sortedBy { it.bookSourceUrl }
-                BookSourceSort.Update -> data.sortedByDescending { it.lastUpdateTime }
-                BookSourceSort.Respond -> data.sortedBy { it.respondTime }
-                BookSourceSort.Enable -> data.sortedWith { o1, o2 ->
-                    var sortNum = -o1.enabled.compareTo(o2.enabled)
-                    if (sortNum == 0) {
-                        sortNum = o1.bookSourceName.cnCompare(o2.bookSourceName)
-                    }
-                    sortNum
-                }
-
-                else -> data
-            }
-            else when (sort) {
-                BookSourceSort.Weight -> data.sortedByDescending { it.weight }
-                BookSourceSort.Name -> data.sortedWith { o1, o2 ->
-                    o2.bookSourceName.cnCompare(o1.bookSourceName)
-                }
-
-                BookSourceSort.Url -> data.sortedByDescending { it.bookSourceUrl }
-                BookSourceSort.Update -> data.sortedBy { it.lastUpdateTime }
-                BookSourceSort.Respond -> data.sortedByDescending { it.respondTime }
-                BookSourceSort.Enable -> data.sortedWith { o1, o2 ->
-                    var sortNum = o1.enabled.compareTo(o2.enabled)
-                    if (sortNum == 0) {
-                        sortNum = o1.bookSourceName.cnCompare(o2.bookSourceName)
-                    }
-                    sortNum
-                }
-
-                else -> data.reversed()
-            }
+        }.onError {
+            context.toastOnUi(it.stackTraceStr)
         }
     }
 
@@ -437,13 +354,17 @@ class BookSourceViewModel(application: Application) : BaseViewModel(application)
 
     fun delGroup(group: String) {
         execute {
-            execute {
-                val sources = appDb.bookSourceDao.getByGroup(group)
-                sources.forEach { source ->
-                    source.removeGroup(group)
-                }
-                appDb.bookSourceDao.update(*sources.toTypedArray())
+            val sources = appDb.bookSourceDao.getExactByGroup(group)
+            sources.forEach { source ->
+                source.removeGroup(group)
             }
+            appDb.bookSourceDao.update(*sources.toTypedArray())
+        }
+    }
+
+    fun delGroupAndSources(group: String) {
+        execute {
+            SourceHelp.deleteBookSources(appDb.bookSourceDao.getExactByGroup(group))
         }
     }
 

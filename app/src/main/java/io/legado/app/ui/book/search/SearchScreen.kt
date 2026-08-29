@@ -61,6 +61,8 @@ import io.legado.app.data.entities.SearchKeyword
 import io.legado.app.ui.book.source.BookSourceGroupIcon
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgFloatingToolbarBackButton
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSearchBarActionButton
 import io.legado.app.ui.design.components.compose.NgSearchBarVariant
@@ -280,8 +282,7 @@ private fun SearchTopBar(
     onAllSources: () -> Unit,
     onDynamicScope: (String, Boolean) -> Unit
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    val contentColor = Color(NgTheme.colors.onTopBar)
+    val menuState = remember { NgPopupToggleState() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -289,20 +290,7 @@ private fun SearchTopBar(
             .padding(end = 10.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .width(34.dp)
-                .height(36.dp)
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_left_search),
-                contentDescription = stringResource(R.string.back),
-                tint = contentColor,
-                modifier = Modifier.size(24.dp)
-            )
-        }
+        NgFloatingToolbarBackButton(onClick = onBack)
         SearchQueryField(
             query = query,
             onQueryChange = onQueryChange,
@@ -314,7 +302,7 @@ private fun SearchTopBar(
         Spacer(Modifier.width(8.dp))
         Box {
             NgSearchBarActionButton(
-                onClick = { menuExpanded = true },
+                onClick = menuState::onAnchorClick,
                 contentDescription = stringResource(R.string.menu),
             )
             val menuItems = searchMenuItems(
@@ -326,11 +314,11 @@ private fun SearchTopBar(
                 blockSourceDialogs = blockSourceDialogs
             )
             NgExpandableActionMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false },
+                expanded = menuState.expanded,
+                onDismissRequest = menuState::onDismissRequest,
                 items = menuItems,
                 onItemClick = { item ->
-                    menuExpanded = false
+                    menuState.close()
                     when (item.itemId) {
                         R.id.menu_clear_history -> onClearHistory()
                         R.id.menu_precision_search -> onTogglePrecisionSearch()

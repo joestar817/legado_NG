@@ -43,8 +43,16 @@ import io.legado.app.utils.viewbindingdelegate.viewBinding
 
 class CodeEditActivity :
     VMBaseActivity<ActivityCodeEditBinding, CodeEditViewModel>(),
-    KeyboardToolPop.CallBack, ChangeThemeDialog.CallBack, SettingsDialog.CallBack {
+    KeyboardToolPop.CallBack, ChangeThemeDialog.CallBack, SettingsDialog.CallBack,
+    CodeEditSaveExitDialog.Callback {
     companion object {
+        const val EXTRA_SHOW_DEBUG_SOURCE = "showDebugSource"
+        const val EXTRA_SHOW_LOGIN_SOURCE = "showLoginSource"
+        const val EXTRA_CONFIRM_SAVE_ON_EXIT = "confirmSaveOnExit"
+        const val EXTRA_RESULT_ACTION = "resultAction"
+        const val RESULT_ACTION_DEBUG_SOURCE = "debugSource"
+        const val RESULT_ACTION_LOGIN_SOURCE = "loginSource"
+
         private var isInitialized = false
         private var findText = ""
         private var replaceText = ""
@@ -106,12 +114,19 @@ class CodeEditActivity :
      * */
     private fun save(check: Boolean) {
         if (!viewModel.writable) return super.finish()
+        if (check && intent.getBooleanExtra(EXTRA_CONFIRM_SAVE_ON_EXIT, false)) {
+            showDialogFragment<CodeEditSaveExitDialog>()
+            return
+        }
         val text = editor.text.toString()
         val cursorPos = editor.cursor?.left ?: 0
         when {
             text == viewModel.initialText -> {
-                if (cursorPos > 0) {
+                if (cursorPos > 0 || intent.getBooleanExtra("returnUnchangedText", false)) {
                     val result = Intent().apply {
+                        if (intent.getBooleanExtra("returnUnchangedText", false)) {
+                            putExtra("text", text)
+                        }
                         putExtra("cursorPosition", cursorPos)
                     }
                     setResult(RESULT_OK, result)
@@ -188,6 +203,10 @@ class CodeEditActivity :
         menuSaveBtn = menu.findItem(R.id.menu_save).apply {
             isVisible = viewModel.writable
         }
+        menu.findItem(R.id.menu_debug_source)?.isVisible =
+            intent.getBooleanExtra(EXTRA_SHOW_DEBUG_SOURCE, false)
+        menu.findItem(R.id.menu_login)?.isVisible =
+            intent.getBooleanExtra(EXTRA_SHOW_LOGIN_SOURCE, false)
         return super.onCompatCreateOptionsMenu(menu)
     }
 
@@ -319,6 +338,8 @@ class CodeEditActivity :
         when (item.itemId) {
             R.id.menu_search -> search()
             R.id.menu_save -> save(false)
+            R.id.menu_debug_source -> returnText(RESULT_ACTION_DEBUG_SOURCE)
+            R.id.menu_login -> returnText(RESULT_ACTION_LOGIN_SOURCE)
             R.id.menu_format_code -> viewModel.formatCode(editor)
             R.id.menu_change_theme -> showDialogFragment(ChangeThemeDialog())
             R.id.menu_config_settings -> showDialogFragment(SettingsDialog(this, this))
@@ -333,8 +354,26 @@ class CodeEditActivity :
         return super.onCompatOptionsItemSelected(item)
     }
 
+    private fun returnText(action: String) {
+        val result = Intent().apply {
+            putExtra("text", editor.text.toString())
+            putExtra("cursorPosition", editor.cursor?.left ?: 0)
+            putExtra(EXTRA_RESULT_ACTION, action)
+        }
+        setResult(RESULT_OK, result)
+        super.finish()
+    }
+
     override fun finish() {
         save(true)
+    }
+
+    override fun onCodeEditSaveAndExit() {
+        save(false)
+    }
+
+    override fun onCodeEditDiscardAndExit() {
+        super.finish()
     }
 
     override fun helpActions(): List<SelectItem<String>> {

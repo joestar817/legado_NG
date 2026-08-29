@@ -58,9 +58,11 @@ import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgFileSelectionCheckbox
 import io.legado.app.ui.design.components.compose.NgFormField
 import io.legado.app.ui.design.components.compose.NgFormFieldVariant
+import io.legado.app.ui.design.components.compose.NgFloatingToolbarBackButton
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgManagementDrawerPanel
 import io.legado.app.ui.design.components.compose.NgManagementDrawerPanelVariant
 import io.legado.app.ui.design.components.compose.NgSearchBar
@@ -197,12 +199,11 @@ private fun RssSourceManageTopBar(
     onBack: () -> Unit,
     onAction: (RssSourceManageAction) -> Unit
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
+    val menuState = remember { NgPopupToggleState() }
     val enabledFilter = stringResource(R.string.enabled)
     val disabledFilter = stringResource(R.string.disabled)
     val loginFilter = stringResource(R.string.need_login)
     val noGroupFilter = stringResource(R.string.no_group)
-    val contentColor = Color(NgTheme.colors.onTopBar)
     val actionContentColor = colorResource(R.color.ng_search_icon)
     val headerShape = RoundedCornerShape(NgTheme.shapes.smallDp.dp)
     val headerStyle = NgGlassDefaults.bookDetailStyle(
@@ -362,20 +363,7 @@ private fun RssSourceManageTopBar(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .width(34.dp)
-                    .height(36.dp)
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_chevron_left_search),
-                    contentDescription = stringResource(R.string.back),
-                    tint = contentColor,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+            NgFloatingToolbarBackButton(onClick = onBack)
             NgSearchBar(
                 query = query,
                 onQueryChange = onQueryChange,
@@ -391,7 +379,7 @@ private fun RssSourceManageTopBar(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { menuExpanded = true },
+                        .clickable { menuState.onAnchorClick() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -402,8 +390,8 @@ private fun RssSourceManageTopBar(
                     )
                 }
                 NgExpandableActionMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
+                    expanded = menuState.expanded,
+                    onDismissRequest = menuState::onDismissRequest,
                     items = menuItems,
                     defaultExpandedItemIds = defaultExpandedItemIds,
                     variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
@@ -414,7 +402,7 @@ private fun RssSourceManageTopBar(
                         clippingEnabled = false
                     ),
                     onItemClick = { item ->
-                        menuExpanded = false
+                        menuState.close()
                         when (item.itemId) {
                             FILTER_ALL_ITEM_ID -> {
                                 onAction(RssSourceManageAction.QueryChanged(""))

@@ -63,6 +63,8 @@ fun NgLazyListFastScroller(
     itemCount: Int,
     modifier: Modifier = Modifier,
     variant: NgLazyListFastScrollerVariant = NgLazyListFastScrollerVariant.TRACK,
+    trackColor: Color? = null,
+    handleColor: Color? = null,
 ) {
     val visibleItemCount by remember {
         derivedStateOf { state.layoutInfo.visibleItemsInfo.size }
@@ -159,8 +161,9 @@ fun NgLazyListFastScroller(
                             .width(2.dp)
                             .fillMaxHeight()
                             .background(
-                                Color(NgTheme.colors.onSurfaceVariant)
-                                    .copy(alpha = 0.30f * alpha)
+                                (trackColor
+                                    ?: Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.30f))
+                                    .copy(alpha = (trackColor?.alpha ?: 0.30f) * alpha)
                             ),
                     )
                     Box(
@@ -174,7 +177,10 @@ fun NgLazyListFastScroller(
                             }
                             .width(8.dp)
                             .height(thumbHeight)
-                            .background(Color(NgTheme.colors.primary).copy(alpha = alpha)),
+                            .background(
+                                (handleColor ?: Color(NgTheme.colors.primary))
+                                    .copy(alpha = alpha)
+                            ),
                     )
                 }
 

@@ -22,6 +22,7 @@ import io.legado.app.help.http.NetworkLog
 import io.legado.app.help.source.exploreKinds
 import io.legado.app.help.source.renderRole
 import io.legado.app.model.Debug
+import io.legado.app.model.jsSource.isJsSource
 import io.legado.app.model.ReadBook
 import io.legado.app.model.webBook.SearchModel
 import io.legado.app.ui.book.search.SearchScope
@@ -925,7 +926,8 @@ object McpServer {
                 "bookSourceName" to it.bookSourceName,
                 "bookSourceType" to it.bookSourceType,
                 "bookSourceUrl" to it.bookSourceUrl,
-                "enabled" to it.enabled
+                "enabled" to it.enabled,
+                "isJsSource" to it.isJsSource()
             )
         }
         return toolResult(
@@ -954,7 +956,8 @@ object McpServer {
                 "disabled" to sources.count { !it.enabled },
                 "enabled_explore" to sources.count { it.enabledExplore },
                 "disabled_explore" to sources.count { !it.enabledExplore },
-                "login_required" to sources.count { !it.loginUrl.isNullOrBlank() },
+                "login_required" to parts.count { it.hasLoginUrl },
+                "javascript" to parts.count { it.hasJs },
                 "type_counts" to sourceTypeCounts(sources.map { it.bookSourceType }),
                 "group_counts" to sourceGroupCounts(sources.map { it.bookSourceGroup }),
                 "capability_counts" to mapOf(

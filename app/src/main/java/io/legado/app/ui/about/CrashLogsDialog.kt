@@ -99,7 +99,6 @@ class CrashLogsDialog : BaseDialogFragment(R.layout.dialog_ng_recycler_view),
                         code = content,
                         title = getString(R.string.crash_log),
                         highlightMode = CodeDialog.HighlightMode.DebugLog,
-                        exportCode = content,
                         exportFilePrefix = "legado-crash-log"
                     )
                 )

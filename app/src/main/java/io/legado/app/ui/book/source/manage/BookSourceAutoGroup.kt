@@ -2,6 +2,12 @@ package io.legado.app.ui.book.source.manage
 
 import io.legado.app.utils.NetworkUtils
 
+internal enum class BookSourceAutoGroupRuleType {
+    SOURCE_CATEGORY,
+    DEBUG_FEATURES,
+    URL_CATEGORY,
+}
+
 internal object BookSourceAutoGroup {
 
     fun sharedBaseUrlGroups(sourceUrls: Iterable<String>): Map<String, String> {

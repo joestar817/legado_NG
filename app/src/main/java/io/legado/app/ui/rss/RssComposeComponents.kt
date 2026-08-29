@@ -23,10 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +44,7 @@ import io.legado.app.help.glide.ImageLoader
 import io.legado.app.help.glide.OkHttpModelLoader
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.theme.NgTheme
 
 class RssComposeBinding private constructor(
@@ -110,7 +108,7 @@ private fun RssPageTopBar(
     actions: List<RssToolbarAction>,
     onAction: (Int) -> Unit
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
+    val menuState = remember { NgPopupToggleState() }
     val contentColor = Color(NgTheme.colors.onTopBar)
     val containerColor = Color(NgTheme.colors.topBarContainer)
     val endActionSlotCount = when (actions.size) {
@@ -166,11 +164,11 @@ private fun RssPageTopBar(
                             RssToolbarIconButton(
                                 iconRes = R.drawable.ic_grid_menu,
                                 description = stringResource(R.string.menu),
-                                onClick = { menuExpanded = true },
+                                onClick = menuState::onAnchorClick,
                             )
                             NgExpandableActionMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false },
+                                expanded = menuState.expanded,
+                                onDismissRequest = menuState::onDismissRequest,
                                 items = actions.drop(1).map {
                                     NgExpandableActionMenuItem(
                                         itemId = it.id,
@@ -180,7 +178,7 @@ private fun RssPageTopBar(
                                     )
                                 },
                                 onItemClick = {
-                                    menuExpanded = false
+                                    menuState.close()
                                     onAction(it.itemId)
                                 },
                                 width = 152.dp

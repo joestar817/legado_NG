@@ -218,6 +218,8 @@ object NetworkLog {
         }
     }
 
+    fun redactFreeTextForLog(text: String): String = text.redactedForNetworkLog()
+
     private fun requestBodyText(request: Request): String? {
         val body = request.body ?: return null
         return runCatching {

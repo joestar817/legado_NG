@@ -83,8 +83,13 @@ object CacheManager {
     }
 
     internal fun deleteMemoryByPrefix(prefix: String) {
+        deleteMemoryByPrefixes(listOf(prefix))
+    }
+
+    internal fun deleteMemoryByPrefixes(prefixes: Collection<String>) {
+        if (prefixes.isEmpty()) return
         memoryLruCache.snapshot().keys.forEach { key ->
-            if (key.startsWith(prefix)) {
+            if (prefixes.any(key::startsWith)) {
                 memoryLruCache.remove(key)
             }
         }

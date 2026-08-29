@@ -21,9 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -41,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.theme.NgTheme
 
 internal fun bookshelfMenuItems(
@@ -152,19 +151,19 @@ internal fun BookshelfMenuHost(
     menuOffset: DpOffset = DpOffset.Zero,
     anchor: @Composable BoxScope.((() -> Unit)) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    val menuState = remember { NgPopupToggleState() }
     val items = remember(includeBrowseHistory) {
         bookshelfMenuItems(includeBrowseHistory)
     }
     Box(modifier = modifier) {
-        anchor { expanded = true }
+        anchor { menuState.onAnchorClick() }
         NgExpandableActionMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
+            expanded = menuState.expanded,
+            onDismissRequest = menuState::onDismissRequest,
             items = items,
             offset = menuOffset,
             onItemClick = { item ->
-                expanded = false
+                menuState.close()
                 onMenuItemClick(item.itemId)
             }
         )

@@ -94,6 +94,35 @@ class BookSourceStorageIsolationTest {
     }
 
     @Test
+    fun batchVariableCleanupOnlyMatchesSelectedSources() {
+        val selected = "https://example.com/source_a"
+        val other = "${selected}_other"
+        val cacheKeys = listOf(
+            "v_${selected}_token",
+            "userInfo_$selected",
+            "loginHeader_$selected",
+            "sourceVariable_$selected",
+            "infoMap_$selected",
+            "v_${other}_token",
+            "userInfo_$other",
+            "nh-123-4-0-text",
+            "source_cache_legacy",
+            "book_source_cache_unrelated:value",
+        )
+
+        assertEquals(
+            setOf(
+                "v_${selected}_token",
+                "userInfo_$selected",
+                "loginHeader_$selected",
+                "sourceVariable_$selected",
+                "infoMap_$selected",
+            ),
+            matchingBookSourceVariableCacheKeys(cacheKeys, listOf(selected)).toSet(),
+        )
+    }
+
+    @Test
     fun rhinoBindingsKeepCookieAndCacheCompatibility() {
         val sourceA = BookSource(
             bookSourceUrl = "https://example.com/source#a",

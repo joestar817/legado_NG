@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 替换规则导入仍引用该共享动作 ID；书源导入菜单本体已迁移为 Compose。 -->
+    <item name="menu_keep_original_name" type="id" />
+</resources>

@@ -35,6 +35,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -44,6 +45,34 @@ import io.legado.app.ui.design.theme.NgTheme
 enum class NgSearchBarVariant {
     STANDARD,
     TOOLBAR
+}
+
+/**
+ * 悬浮搜索顶栏的返回按钮。
+ *
+ * 返回箭头属于悬浮控件自身，不读取可自定义的普通顶栏文字色，避免液态／透明
+ * 承载面上因顶栏配色变浅而失去对比度。
+ */
+@Composable
+fun NgFloatingToolbarBackButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    width: Dp = 34.dp,
+) {
+    Box(
+        modifier = modifier
+            .width(width)
+            .height(36.dp)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_left_search),
+            contentDescription = stringResource(R.string.back),
+            tint = colorResource(R.color.ng_search_icon),
+            modifier = Modifier.size(24.dp),
+        )
+    }
 }
 
 /** 与 Toolbar 搜索框并排使用的 36dp 图标动作；两者共享同一视觉材质语义。 */

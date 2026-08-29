@@ -97,23 +97,37 @@ object SourceEditCodeHighlighter {
         "style"
     )
 
+    enum class Group {
+        LEGADO,
+        JS,
+        JSON,
+        HTML,
+        CSS,
+    }
+
+    fun groupsOf(key: String?): Set<Group> {
+        return when (key ?: return emptySet()) {
+            in jsKeys -> setOf(Group.LEGADO, Group.JS)
+            in jsJsonKeys -> setOf(Group.LEGADO, Group.JS, Group.JSON)
+            in jsonKeys -> setOf(Group.JSON)
+            in htmlKeys -> setOf(Group.HTML)
+            in cssKeys -> setOf(Group.CSS)
+            in ruleKeys -> setOf(Group.LEGADO)
+            else -> emptySet()
+        }
+    }
+
     fun applyTo(codeView: CodeView, key: String) {
         codeView.setMaxHighlightLength(EDITOR_MAX_HIGHLIGHT_LENGTH)
         codeView.resetSyntaxPatternList()
-        when {
-            key in jsKeys -> {
-                codeView.addLegadoPattern()
-                codeView.addJsPattern()
+        groupsOf(key).forEach { group ->
+            when (group) {
+                Group.LEGADO -> codeView.addLegadoPattern()
+                Group.JS -> codeView.addJsPattern()
+                Group.JSON -> codeView.addJsonPattern()
+                Group.HTML -> codeView.addHtmlPattern()
+                Group.CSS -> codeView.addCssPattern()
             }
-            key in jsJsonKeys -> {
-                codeView.addLegadoPattern()
-                codeView.addJsPattern()
-                codeView.addJsonPattern()
-            }
-            key in jsonKeys -> codeView.addJsonPattern()
-            key in htmlKeys -> codeView.addHtmlPattern()
-            key in cssKeys -> codeView.addCssPattern()
-            key in ruleKeys -> codeView.addLegadoPattern()
         }
     }
 

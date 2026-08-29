@@ -1,6 +1,7 @@
 package io.legado.app.service
 
 import android.content.Intent
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.lifecycleScope
 import com.script.ScriptException
@@ -20,10 +21,18 @@ import io.legado.app.exception.TocEmptyException
 import io.legado.app.help.IntentData
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.source.exploreKinds
+import io.legado.app.help.source.SourceInteractionBlockedException
+import io.legado.app.help.source.SourceInteractionKind
+import io.legado.app.help.source.SourceInteractionPolicy
 import io.legado.app.model.CheckSource
+import io.legado.app.model.CheckSourceStage
+import io.legado.app.model.CheckSourceResultKind
+import io.legado.app.model.CheckSourceTaskStatus
+import io.legado.app.model.CheckSourceTaskStore
 import io.legado.app.model.Debug
 import io.legado.app.model.webBook.WebBook
-import io.legado.app.ui.book.source.manage.BookSourceActivity
+import io.legado.app.model.jsSource.isJsSource
+import io.legado.app.ui.book.source.manage.BookSourceCheckActivity
 import io.legado.app.utils.activityPendingIntent
 import io.legado.app.utils.onEachParallel
 import io.legado.app.utils.postEvent
@@ -40,6 +49,7 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.mozilla.javascript.WrappedException
 import splitties.init.appCtx
@@ -64,12 +74,12 @@ class CheckSourceService : BaseService() {
 
     private val notificationBuilder by lazy {
         NotificationCompat.Builder(this, AppConst.channelIdReadAloud)
-            .setSmallIcon(R.drawable.ic_network_check)
+            .setSmallIcon(R.drawable.ic_check_source)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentTitle(getString(R.string.check_book_source))
             .setContentIntent(
-                activityPendingIntent<BookSourceActivity>("activity")
+                activityPendingIntent<BookSourceCheckActivity>("activity")
             )
             .addAction(
                 R.drawable.ic_stop_black_24dp,
@@ -94,6 +104,9 @@ class CheckSourceService : BaseService() {
     override fun onDestroy() {
         super.onDestroy()
         Debug.finishChecking()
+        if (CheckSourceTaskStore.state.value.status == CheckSourceTaskStatus.RUNNING) {
+            CheckSourceTaskStore.finish(cancelled = true)
+        }
         searchCoroutine.close()
         postEvent(EventBus.CHECK_SOURCE_DONE, 0)
         notificationManager.cancel(NotificationId.CheckSourceService)
@@ -128,30 +141,83 @@ class CheckSourceService : BaseService() {
                 )
                 upNotification()
                 appDb.bookSourceDao.update(it)
-            }.onCompletion {
+            }.onCompletion { cause ->
+                CheckSourceTaskStore.finish(cancelled = cause != null)
                 stopSelf()
             }.collect()
         }
     }
 
     private suspend fun checkSource(source: BookSource) {
-        kotlin.runCatching {
-            withTimeout(CheckSource.timeout) {
-                doCheckSource(source)
+        val startedAt = SystemClock.elapsedRealtime()
+        CheckSourceTaskStore.markRunning(
+            origin = source.bookSourceUrl,
+            sourceName = source.bookSourceName,
+            sourceType = source.bookSourceType,
+        )
+        try {
+            val interactionPolicy = SourceInteractionPolicy(
+                blockDialogs = CheckSource.blockSourceDialogs,
+                blockMediaLaunches = CheckSource.blockSourceDialogs,
+                throwOnBlocked = CheckSource.blockSourceDialogs,
+            )
+            withContext(interactionPolicy) {
+                withTimeout(CheckSource.timeout) {
+                    doCheckSource(source)
+                }
             }
-        }.onSuccess {
+            interactionPolicy.blockedRequest?.let {
+                throw SourceInteractionBlockedException(it)
+            }
             Debug.updateFinalMessage(source.bookSourceUrl, "校验成功")
-        }.onFailure {
+            CheckSourceTaskStore.markPassed(
+                source.bookSourceUrl,
+                SystemClock.elapsedRealtime() - startedAt,
+                source.contentResultKind(),
+            )
+        } catch (throwable: Throwable) {
             currentCoroutineContext().ensureActive()
-            when (it) {
+            val interaction = throwable.findSourceInteraction()
+            if (interaction != null) {
+                if (interaction.request.kind == SourceInteractionKind.VIDEO_PLAYER) {
+                    Debug.updateFinalMessage(source.bookSourceUrl, "校验成功:播放地址已解析")
+                    CheckSourceTaskStore.markPassed(
+                        origin = source.bookSourceUrl,
+                        durationMillis = SystemClock.elapsedRealtime() - startedAt,
+                        resultKind = CheckSourceResultKind.CONTENT_PARSED,
+                    )
+                    source.respondTime = Debug.getRespondTime(source.bookSourceUrl)
+                    return
+                }
+                source.addGroup("已阻止弹窗")
+                Debug.updateFinalMessage(
+                    source.bookSourceUrl,
+                    "校验已阻止:已阻止弹窗",
+                )
+                CheckSourceTaskStore.markBlocked(
+                    origin = source.bookSourceUrl,
+                    durationMillis = SystemClock.elapsedRealtime() - startedAt,
+                )
+                source.respondTime = Debug.getRespondTime(source.bookSourceUrl)
+                return
+            }
+            when (throwable) {
                 is TimeoutCancellationException -> source.addGroup("校验超时")
                 is ScriptException, is WrappedException -> source.addGroup("js失效")
                 !is NoStackTraceException -> source.addGroup("网站失效")
             }
             if (CheckSource.wSourceComment) {
-                source.addErrorComment(it)
+                source.addErrorComment(throwable)
             }
-            Debug.updateFinalMessage(source.bookSourceUrl, "校验失败:${it.localizedMessage}")
+            val message = throwable.localizedMessage.orEmpty().ifBlank {
+                throwable.javaClass.simpleName
+            }
+            Debug.updateFinalMessage(source.bookSourceUrl, "校验失败:$message")
+            CheckSourceTaskStore.markFailed(
+                origin = source.bookSourceUrl,
+                message = message,
+                durationMillis = SystemClock.elapsedRealtime() - startedAt,
+            )
         }
         source.respondTime = Debug.getRespondTime(source.bookSourceUrl)
     }
@@ -177,6 +243,7 @@ class CheckSourceService : BaseService() {
         }
         //检测源地址可访问性
         if (CheckSource.checkDomain) {
+            markStage(source, CheckSourceStage.DOMAIN)
             val domain = source.bookSourceUrl
             if (!domain.startsWith("http", ignoreCase = true)) {
                 throw NoStackTraceException("源地址不是http链接")
@@ -190,8 +257,9 @@ class CheckSourceService : BaseService() {
         }
         //校验搜索书籍
         if (CheckSource.checkSearch) {
+            markStage(source, CheckSourceStage.SEARCH)
             val searchWord = source.getCheckKeyword(CheckSource.keyword)
-            if (!source.searchUrl.isNullOrBlank()) {
+            if (source.isJsSource() || !source.searchUrl.isNullOrBlank()) {
                 source.removeGroup("搜索链接规则为空")
                 val searchBooks = WebBook.searchBookAwait(source, searchWord)
                 if (searchBooks.isEmpty()) {
@@ -206,6 +274,7 @@ class CheckSourceService : BaseService() {
         }
         //校验发现书籍
         if (CheckSource.checkDiscovery && !source.exploreUrl.isNullOrBlank()) {
+            markStage(source, CheckSourceStage.DISCOVERY)
             val url = source.exploreKinds().firstOrNull {
                 !it.url.isNullOrBlank()
             }?.url
@@ -238,12 +307,14 @@ class CheckSourceService : BaseService() {
             }
             //校验详情
             if (book.tocUrl.isBlank()) {
+                markStage(source, CheckSourceStage.INFO)
                 WebBook.getBookInfoAwait(source, book)
             }
             if (!CheckSource.checkCategory || source.bookSourceType == BookSourceType.file) {
                 return
             }
             //校验目录
+            markStage(source, CheckSourceStage.CATALOG)
             val toc = WebBook.getChapterListAwait(source, book).getOrThrow().asSequence()
                 .filter { !(it.isVolume && it.url.startsWith(it.title)) }
                 .take(2)
@@ -253,6 +324,7 @@ class CheckSourceService : BaseService() {
                 return
             }
             //校验正文
+            markStage(source, CheckSourceStage.CONTENT)
             WebBook.getContentAwait(
                 bookSource = source,
                 book = book,
@@ -279,6 +351,37 @@ class CheckSourceService : BaseService() {
         notificationBuilder.setProgress(originSize, finishCount, false)
         postEvent(EventBus.CHECK_SOURCE, notificationMsg)
         notificationManager.notify(NotificationId.CheckSourceService, notificationBuilder.build())
+    }
+
+    private fun markStage(source: BookSource, stage: CheckSourceStage) {
+        CheckSourceTaskStore.markStage(
+            origin = source.bookSourceUrl,
+            sourceName = source.bookSourceName,
+            stage = stage,
+        )
+    }
+
+    private fun Throwable.findSourceInteraction(): SourceInteractionBlockedException? {
+        val visited = hashSetOf<Throwable>()
+        var current: Throwable? = this
+        while (current != null && visited.add(current)) {
+            if (current is SourceInteractionBlockedException) return current
+            current = if (current is WrappedException) {
+                current.wrappedException
+            } else {
+                current.cause
+            }
+        }
+        return null
+    }
+
+    private fun BookSource.contentResultKind(): CheckSourceResultKind {
+        return when (bookSourceType) {
+            BookSourceType.image,
+            BookSourceType.audio,
+            BookSourceType.video -> CheckSourceResultKind.CONTENT_PARSED
+            else -> CheckSourceResultKind.STANDARD
+        }
     }
 
     /**

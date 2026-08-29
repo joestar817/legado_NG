@@ -53,6 +53,8 @@ enum class NgFlatActionRailVariant {
     SPACED_COMPACT,
     MODE_PICKER,
     TEXT_MODE_PICKER,
+    INLINE_MODE_PICKER,
+    INLINE_DIVIDED,
     FORM_TEXT_PICKER,
 }
 
@@ -80,8 +82,10 @@ fun NgFlatActionRail(
     val compactSegmented = variant == NgFlatActionRailVariant.COMPACT_SEGMENTED
     val modePicker = variant == NgFlatActionRailVariant.MODE_PICKER
     val textModePicker = variant == NgFlatActionRailVariant.TEXT_MODE_PICKER
+    val inlineModePicker = variant == NgFlatActionRailVariant.INLINE_MODE_PICKER
+    val inlineDivided = variant == NgFlatActionRailVariant.INLINE_DIVIDED
     val formTextPicker = variant == NgFlatActionRailVariant.FORM_TEXT_PICKER
-    val picker = modePicker || textModePicker || formTextPicker
+    val picker = modePicker || textModePicker || inlineModePicker || formTextPicker
     val segmented = variant != NgFlatActionRailVariant.SPACED_COMPACT
     val dividerColor = Color(NgTheme.colors.outlineVariant).copy(
         alpha = if (NgTheme.snapshot.isEInk) 1f else 0.32f
@@ -93,12 +97,13 @@ fun NgFlatActionRail(
                 when {
                     modePicker -> 58.dp
                     textModePicker || formTextPicker -> 44.dp
+                    inlineModePicker || inlineDivided -> 36.dp
                     compactSegmented -> 28.dp
                     else -> 36.dp
                 }
             )
             .then(
-                if (compactSegmented || (picker && !formTextPicker)) {
+                if (compactSegmented || (picker && !formTextPicker && !inlineModePicker)) {
                     val railShape = RoundedCornerShape(if (picker) 12.dp else 8.dp)
                     Modifier
                         .clip(railShape)
@@ -170,14 +175,17 @@ private fun NgFlatActionRailSegment(
     val disabledColor = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.48f)
     val neutralColor = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.90f)
     val textModePicker = variant == NgFlatActionRailVariant.TEXT_MODE_PICKER
+    val inlineModePicker = variant == NgFlatActionRailVariant.INLINE_MODE_PICKER
+    val inlineDivided = variant == NgFlatActionRailVariant.INLINE_DIVIDED
     val formTextPicker = variant == NgFlatActionRailVariant.FORM_TEXT_PICKER
     val textOnlyPicker = textModePicker || formTextPicker
-    val picker = variant == NgFlatActionRailVariant.MODE_PICKER || textOnlyPicker
+    val picker = variant == NgFlatActionRailVariant.MODE_PICKER || inlineModePicker || textOnlyPicker
     val contentColor = when {
         !item.enabled -> disabledColor
         picker -> {
             if (item.emphasized) primaryColor else neutralColor
         }
+        inlineDivided -> if (item.emphasized) primaryColor else neutralColor
         variant == NgFlatActionRailVariant.COMPACT_SEGMENTED -> neutralColor
         else -> primaryColor
     }
@@ -206,7 +214,32 @@ private fun NgFlatActionRailSegment(
                 .then(interactionModifier),
             contentAlignment = Alignment.Center,
         ) {
-            if (formTextPicker) {
+            if (inlineModePicker) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    item.iconRes?.let { iconRes ->
+                        Icon(
+                            painter = painterResource(iconRes),
+                            contentDescription = null,
+                            tint = contentColor,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Box(
+                        modifier = Modifier
+                            .width(18.dp)
+                            .height(2.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(
+                                if (item.emphasized) primaryColor else Color.Transparent
+                            )
+                    )
+                }
+            } else if (formTextPicker) {
                 Row(
                     modifier = Modifier
                         .fillMaxSize()

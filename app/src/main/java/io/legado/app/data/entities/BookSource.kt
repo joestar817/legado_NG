@@ -8,6 +8,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import com.google.gson.annotations.SerializedName
 import io.legado.app.constant.AppPattern
 import io.legado.app.constant.BookSourceType
 import io.legado.app.data.entities.rule.BookInfoRule
@@ -96,6 +97,9 @@ data class BookSource(
     var ruleContent: ContentRule? = null,
     // 段评规则
     var ruleReview: ReviewRule? = null,
+    // 纯 JavaScript 单文件书源主脚本，非空时优先使用脚本抓取流程
+    @SerializedName("mainJs")
+    var mainJs: String? = null,
     @ColumnInfo(defaultValue = "0")
     var eventListener: Boolean = false, // 是否监听事件来执行回调规则
     @ColumnInfo(defaultValue = "0")
@@ -108,6 +112,10 @@ data class BookSource(
 
     override fun getKey(): String {
         return bookSourceUrl
+    }
+
+    override fun getLoginJs(): String? {
+        return mainJs?.takeIf { it.isNotBlank() } ?: super.getLoginJs()
     }
 
     override fun hashCode(): Int {
@@ -221,7 +229,8 @@ data class BookSource(
 
     fun getInvalidGroupNames(): String {
         return bookSourceGroup?.splitNotBlank(AppPattern.splitGroupRegex)?.toHashSet()?.filter {
-            "失效" in it || it == "校验超时"
+            "失效" in it || "规则为空" in it ||
+                it == "校验超时" || it == "已阻止弹窗"
         }?.joinToString() ?: ""
     }
 
@@ -247,6 +256,7 @@ data class BookSource(
                 && equal(variableComment, source.variableComment)
                 && equal(concurrentRate, source.concurrentRate)
                 && equal(jsLib, source.jsLib)
+                && equal(mainJs, source.mainJs)
                 && equal(header, source.header)
                 && equal(loginUrl, source.loginUrl)
                 && equal(loginUi, source.loginUi)

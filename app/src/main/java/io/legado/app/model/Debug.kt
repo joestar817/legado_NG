@@ -84,6 +84,10 @@ object Debug {
         }
     }
 
+    fun isDebugging(sourceUrl: String): Boolean {
+        return callback != null && debugSource == sourceUrl
+    }
+
     fun startChecking(source: BookSource) {
         isChecking = true
         debugTimeMap[source.bookSourceUrl] = System.currentTimeMillis()

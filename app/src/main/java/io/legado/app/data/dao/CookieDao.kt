@@ -21,9 +21,19 @@ interface CookieDao {
     @Query("delete from cookies where url = :url")
     fun delete(url: String)
 
+    @Query("select url from cookies")
+    fun allUrls(): List<String>
+
+    @Query("delete from cookies where url in (:urls)")
+    fun deleteByUrls(urls: List<String>)
+
     @Query("delete from cookies where substr(url, 1, length(:prefix)) = :prefix")
     fun deleteByPrefix(prefix: String)
 
     @Query("delete from cookies where url like '%|%'")
     fun deleteOkHttp()
+}
+
+internal fun CookieDao.deleteByUrlsChunked(urls: Collection<String>) {
+    urls.chunked(900).forEach(::deleteByUrls)
 }

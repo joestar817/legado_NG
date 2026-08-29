@@ -46,13 +46,7 @@ object SourceVerificationHelp {
         clearResult(source.getKey())
 
         if (!useBrowser) {
-            appCtx.startActivity<VerificationCodeActivity> {
-                putExtra("imageUrl", url)
-                putExtra("sourceOrigin", source.getKey())
-                putExtra("sourceName", source.getTag())
-                putExtra("sourceType", source.getSourceType())
-                IntentData.put(getVerificationResultKey(source), Thread.currentThread())
-            }
+            startVerificationCode(source, url, Thread.currentThread())
         } else {
             startBrowser(source, url, title, true, refetchAfterSuccess, html)
         }
@@ -69,6 +63,26 @@ object SourceVerificationHelp {
         clearResult(source.getKey())
         if (result.second.isEmpty()) throw NoStackTraceException("验证结果为空")
         return result
+    }
+
+    fun startVerificationCode(source: BaseSource, imageUrl: String) {
+        startVerificationCode(source, imageUrl, null)
+    }
+
+    private fun startVerificationCode(
+        source: BaseSource,
+        imageUrl: String,
+        waitingThread: Thread?,
+    ) {
+        appCtx.startActivity<VerificationCodeActivity> {
+            putExtra("imageUrl", imageUrl)
+            putExtra("sourceOrigin", source.getKey())
+            putExtra("sourceName", source.getTag())
+            putExtra("sourceType", source.getSourceType())
+            waitingThread?.let {
+                IntentData.put(getVerificationResultKey(source), it)
+            }
+        }
     }
 
     /**

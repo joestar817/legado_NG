@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="action_sort" type="id" />
+    <item name="menu_add_book_source" type="id" />
+    <item name="menu_auto_complete" type="id" />
+    <item name="menu_clear_cookie" type="id" />
+    <item name="menu_disabled_explore_group" type="id" />
+    <item name="menu_enable_explore" type="id" />
+    <item name="menu_enabled_explore_group" type="id" />
+    <item name="menu_group_sort" type="id" />
+    <item name="menu_qr_code_camera" type="id" />
+    <item name="menu_share_qr" type="id" />
+    <item name="menu_sort_auto" type="id" />
+    <item name="menu_sort_desc" type="id" />
+    <item name="menu_sort_enable" type="id" />
+    <item name="menu_sort_manual" type="id" />
+    <item name="menu_sort_respondTime" type="id" />
+    <item name="menu_sort_url" type="id" />
+    <item name="menu_clear_group" type="id" />
+    <item name="menu_auto_group" type="id" />
+    <item name="menu_disable_explore" type="id" />
+    <item name="menu_check_source" type="id" />
+</resources>

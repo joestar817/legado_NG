@@ -111,6 +111,7 @@ import io.legado.app.ui.book.read.ReadFloatingAppearanceState
 import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import kotlinx.coroutines.Dispatchers
@@ -510,7 +511,7 @@ private fun ReadSearchPanel(
     val dockColor = ReadDrawerStyle.dockSurfaceColor(alpha = 0.34f)
     val chapterCount = chapterTargets.size
     val showResultSummary = query.isNotBlank() || searching || resultCount > 0
-    var settingsExpanded by remember { mutableStateOf(false) }
+    val settingsMenuState = remember { NgPopupToggleState() }
 
     NgGlassSurface(
         modifier = Modifier.fillMaxSize(),
@@ -536,8 +537,9 @@ private fun ReadSearchPanel(
                 dockColor = dockColor,
                 onQueryChange = onQueryChange,
                 onSearch = onSearch,
-                settingsExpanded = settingsExpanded,
-                onSettingsExpandedChange = { settingsExpanded = it },
+                settingsExpanded = settingsMenuState.expanded,
+                onSettingsAnchorClick = settingsMenuState::onAnchorClick,
+                onSettingsDismiss = settingsMenuState::onDismissRequest,
                 applyReplace = applyReplace,
                 supportRegex = supportRegex,
                 onToggleApplyReplace = onToggleApplyReplace,
@@ -653,7 +655,8 @@ private fun SearchInputRow(
     onQueryChange: (String) -> Unit,
     onSearch: (String) -> Unit,
     settingsExpanded: Boolean,
-    onSettingsExpandedChange: (Boolean) -> Unit,
+    onSettingsAnchorClick: () -> Unit,
+    onSettingsDismiss: () -> Unit,
     applyReplace: Boolean,
     supportRegex: Boolean,
     onToggleApplyReplace: () -> Unit,
@@ -753,7 +756,7 @@ private fun SearchInputRow(
                     .size(40.dp)
                     .clip(menuButtonShape)
                     .background(dockColor)
-                    .clickable { onSettingsExpandedChange(true) },
+                    .clickable(onClick = onSettingsAnchorClick),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -765,7 +768,7 @@ private fun SearchInputRow(
             }
             DropdownMenu(
                 expanded = settingsExpanded,
-                onDismissRequest = { onSettingsExpandedChange(false) },
+                onDismissRequest = onSettingsDismiss,
                 modifier = Modifier.width(136.dp),
                 shape = RoundedCornerShape(18.dp),
                 containerColor = MaterialTheme.colorScheme.surface,

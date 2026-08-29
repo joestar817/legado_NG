@@ -268,6 +268,20 @@ class RhinoBookSourceClassPolicyTest {
         assertNull(RhinoClassShutter.currentBookSourceLabel())
     }
 
+    @Test
+    fun mainJsIsReadableButCannotBeMutatedFromBookSourceScript() {
+        val source = BookSource(
+            bookSourceUrl = "https://example.com/js-guard",
+            bookSourceName = "JS 守卫",
+            mainJs = "original",
+        )
+
+        assertEquals("original", source.evalJS("String(source.mainJs)"))
+        assertEquals("undefined", source.evalJS("typeof source.setMainJs"))
+        source.evalJS("source.mainJs = 'changed'")
+        assertEquals("original", source.mainJs)
+    }
+
     companion object {
         @JvmStatic
         @BeforeClass

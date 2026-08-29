@@ -74,6 +74,7 @@ import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgStatusTag
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.components.compose.ngDraggedItem
@@ -281,7 +282,7 @@ private fun CharacterTopBar(
     onReassign: () -> Unit,
     onShowDisabledRoles: () -> Unit,
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
+    val menuState = remember { NgPopupToggleState() }
     val disabledRolesTitle = stringResource(
         R.string.character_disabled_count,
         disabledRoleCount,
@@ -331,7 +332,7 @@ private fun CharacterTopBar(
         }
     }
     LaunchedEffect(page, selectionMode) {
-        menuExpanded = false
+        menuState.close()
     }
 
     Box(
@@ -404,7 +405,7 @@ private fun CharacterTopBar(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable(role = Role.Button) { menuExpanded = true },
+                                .clickable(role = Role.Button) { menuState.onAnchorClick() },
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
@@ -415,8 +416,8 @@ private fun CharacterTopBar(
                             )
                         }
                         NgExpandableActionMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
+                            expanded = menuState.expanded,
+                            onDismissRequest = menuState::onDismissRequest,
                             items = menuItems,
                             rowMinHeight = 44.dp,
                             variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
@@ -426,7 +427,7 @@ private fun CharacterTopBar(
                                 clippingEnabled = false,
                             ),
                             onItemClick = { item ->
-                                menuExpanded = false
+                                menuState.close()
                                 when (item.itemId) {
                                     R.id.menu_add -> onAdd()
                                     R.id.menu_batch_manage -> onEnterSelection()

@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.theme.NgTheme
@@ -34,12 +36,15 @@ fun NgDialog(
     title: String,
     modifier: Modifier = Modifier,
     variant: NgDialogVariant = NgDialogVariant.STANDARD,
+    titleFontSize: TextUnit? = null,
+    titleFontWeight: FontWeight = FontWeight.Bold,
     actions: @Composable RowScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val metrics = dialogMetrics(variant)
     val cornerRadius = when (variant) {
         NgDialogVariant.COMPACT_CONFIRMATION -> NgTheme.shapes.largeDp
+        NgDialogVariant.CLASSIC_CONFIRMATION -> NgTheme.shapes.mediumDp
         NgDialogVariant.FORM_EDITOR -> NgTheme.shapes.dialogDp
         else -> NgTheme.shapes.extraLargeDp
     }
@@ -61,9 +66,9 @@ fun NgDialog(
                 text = title,
                 modifier = Modifier.fillMaxWidth(),
                 color = Color(NgTheme.colors.onSurface),
-                fontSize = metrics.titleSize,
+                fontSize = titleFontSize ?: metrics.titleSize,
                 lineHeight = metrics.titleLineHeight,
-                fontWeight = FontWeight.Bold,
+                fontWeight = titleFontWeight,
                 textAlign = metrics.titleAlignment,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -78,6 +83,33 @@ fun NgDialog(
                 content = actions,
             )
         }
+    }
+}
+
+/** 提示／确认弹窗使用的纯文字操作，保留触控面积但不绘制大按钮容器。 */
+@Composable
+fun NgDialogTextActionButton(
+    text: String,
+    onClick: () -> Unit,
+    danger: Boolean = false,
+    enabled: Boolean = true,
+) {
+    val contentColor = Color(
+        if (danger) NgTheme.colors.error else NgTheme.colors.primary
+    ).let { if (enabled) it else it.copy(alpha = 0.45f) }
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        contentPadding = PaddingValues(horizontal = 16.dp),
+    ) {
+        Text(
+            text = text,
+            color = contentColor,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Normal,
+            maxLines = 1,
+        )
     }
 }
 
@@ -222,6 +254,17 @@ private fun dialogMetrics(variant: NgDialogVariant): NgDialogMetrics = when (var
         titleSpacing = 12.dp,
         actionSpacing = 14.dp,
         titleAlignment = TextAlign.Center,
+    )
+
+    NgDialogVariant.CLASSIC_CONFIRMATION -> NgDialogMetrics(
+        horizontalPadding = 24.dp,
+        topPadding = 18.dp,
+        bottomPadding = 10.dp,
+        titleSize = 20.sp,
+        titleLineHeight = 26.sp,
+        titleSpacing = 12.dp,
+        actionSpacing = 6.dp,
+        titleAlignment = TextAlign.Start,
     )
 
     NgDialogVariant.EDITOR -> NgDialogMetrics(

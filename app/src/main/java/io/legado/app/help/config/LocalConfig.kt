@@ -49,9 +49,6 @@ by appCtx.getSharedPreferences("local", Context.MODE_PRIVATE) {
     val backupHelpVersionIsLast: Boolean
         get() = isLastVersion(1, "backupHelpVersion", "firstBackup")
 
-    val bookSourcesHelpVersionIsLast: Boolean
-        get() = isLastVersion(1, "bookSourceHelpVersion", "firstOpenBookSources")
-
     val webDavBookHelpVersionIsLast: Boolean
         get() = isLastVersion(1, "webDavBookHelpVersion", "firstOpenWebDavBook")
 

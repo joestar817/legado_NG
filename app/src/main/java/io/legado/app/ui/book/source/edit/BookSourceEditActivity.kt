@@ -1,57 +1,49 @@
 package io.legado.app.ui.book.source.edit
 
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
-import android.widget.EditText
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.annotation.RequiresApi
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.tabs.TabLayout
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import io.legado.app.R
+import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.BookSourceType
+import io.legado.app.constant.AppConst
+import io.legado.app.constant.AppLog
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookSource
+import io.legado.app.data.entities.KeyboardAssist
 import io.legado.app.data.entities.rule.BookInfoRule
 import io.legado.app.data.entities.rule.ContentRule
 import io.legado.app.data.entities.rule.ExploreRule
 import io.legado.app.data.entities.rule.SearchRule
 import io.legado.app.data.entities.rule.TocRule
-import io.legado.app.databinding.ActivityBookSourceEditBinding
+import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
-import io.legado.app.lib.dialogs.SelectItem
-import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.dialogs.selector
-import io.legado.app.lib.theme.accentColor
-import io.legado.app.lib.theme.backgroundColor
-import io.legado.app.lib.theme.primaryColor
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.search.SearchActivity
 import io.legado.app.ui.book.source.debug.BookSourceDebugActivity
 import io.legado.app.ui.code.CodeEditActivity
+import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.qrcode.QrCodeResult
 import io.legado.app.ui.source.edit.SourceEditCodeHighlighter
-import io.legado.app.ui.widget.dialog.UrlOptionDialog
 import io.legado.app.ui.widget.dialog.VariableDialog
-import io.legado.app.ui.widget.keyboard.KeyboardToolPop
-import io.legado.app.ui.widget.recycler.NoChildScrollLinearLayoutManager
+import io.legado.app.ui.widget.keyboard.KeyboardAssistsConfig
 import io.legado.app.ui.widget.text.EditEntity
+import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.utils.GSON
 import io.legado.app.utils.SelectFileContract
-import io.legado.app.utils.imeHeight
 import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.launch
-import io.legado.app.utils.navigationBarHeight
 import io.legado.app.utils.sendToClip
-import io.legado.app.utils.setEdgeEffectColor
-import io.legado.app.utils.setOnApplyWindowInsetsListenerCompat
 import io.legado.app.utils.share
 import io.legado.app.utils.shareWithQr
 import io.legado.app.utils.showDialogFragment
@@ -61,25 +53,42 @@ import io.legado.app.utils.takePersistableReadPermission
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import splitties.views.bottomPadding
+import java.util.ArrayDeque
 
 class BookSourceEditActivity :
-    VMBaseActivity<ActivityBookSourceEditBinding, BookSourceEditViewModel>(),
-    KeyboardToolPop.CallBack,
+    VMBaseActivity<ComposeActivityBinding, BookSourceEditViewModel>(imageBg = false),
     VariableDialog.Callback {
 
-    override val binding by viewBinding(ActivityBookSourceEditBinding::inflate)
+    override val binding by viewBinding(ComposeActivityBinding::inflate)
     override val viewModel by viewModels<BookSourceEditViewModel>()
 
-    private val adapter by lazy { BookSourceEditAdapter() }
+    private val editEntityMaxLine = AppConfig.sourceEditMaxLine
     private val sourceEntities: ArrayList<EditEntity> = ArrayList()
     private val searchEntities: ArrayList<EditEntity> = ArrayList()
     private val exploreEntities: ArrayList<EditEntity> = ArrayList()
     private val infoEntities: ArrayList<EditEntity> = ArrayList()
     private val tocEntities: ArrayList<EditEntity> = ArrayList()
     private val contentEntities: ArrayList<EditEntity> = ArrayList()
+    private var controls by mutableStateOf(BookSourceEditControls())
+    private var selectedTab by mutableIntStateOf(0)
+    private var sourceRevision by mutableIntStateOf(0)
+    private var fieldValueRevision by mutableIntStateOf(0)
+    private var autoComplete by mutableStateOf(false)
+    private var focusedField by mutableStateOf<BookSourceEditorSelection?>(null)
+    private var pendingExit by mutableStateOf(false)
+    private var groupSelectorVisible by mutableStateOf(false)
+    private var groupOptions by mutableStateOf<List<String>>(emptyList())
+    private var urlOptionEditorVisible by mutableStateOf(false)
+    private var keyboardAssists by mutableStateOf<List<KeyboardAssist>>(emptyList())
+    private var keyboardRowCount by mutableIntStateOf(AppConfig.showBoardLine)
+    private var forceFinish = false
+    private var editingFieldKey: String? = null
+    private val undoHistory = mutableMapOf<String, ArrayDeque<FieldSnapshot>>()
+    private val redoHistory = mutableMapOf<String, ArrayDeque<FieldSnapshot>>()
 
     //    private val reviewEntities: ArrayList<EditEntity> = ArrayList()
     private val qrCodeResult = registerForActivityResult(QrCodeResult()) {
@@ -99,13 +108,20 @@ class BookSourceEditActivity :
         }
     }
 
-    private val softKeyboardTool by lazy {
-        KeyboardToolPop(this, lifecycleScope, binding.root, this)
-    }
-
     override fun onActivityCreated(savedInstanceState: Bundle?) {
-        softKeyboardTool.attachToWindow(window)
+        intent.getStringExtra("sourceUrl")?.let { sourceUrl ->
+            if (appDb.bookSourceDao.hasJsSource(sourceUrl)) {
+                startActivity<JsSourceEditActivity> {
+                    putExtra("sourceUrl", sourceUrl)
+                }
+                super.finish()
+                return
+            }
+        }
+        observeKeyboardAssists()
+        autoComplete = viewModel.autoComplete
         initView()
+        upSourceView(null)
         viewModel.initData(intent) {
             upSourceView(viewModel.bookSource)
         }
@@ -113,60 +129,45 @@ class BookSourceEditActivity :
 
     override fun onPostCreate(savedInstanceState: Bundle?) {
         super.onPostCreate(savedInstanceState)
-        if (!LocalConfig.ruleHelpVersionIsLast) {
+        if (!isFinishing && !LocalConfig.ruleHelpVersionIsLast) {
             showHelp("ruleHelp")
         }
     }
 
-    override fun onCompatCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.source_edit, menu)
-        return super.onCompatCreateOptionsMenu(menu)
-    }
-
-    override fun onMenuOpened(featureId: Int, menu: Menu): Boolean {
-        menu.findItem(R.id.menu_login)?.isVisible = !getSource().loginUrl.isNullOrBlank()
-        menu.findItem(R.id.menu_auto_complete)?.isChecked = viewModel.autoComplete
-        return super.onMenuOpened(featureId, menu)
-    }
-
     private val textEditLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val view = window.decorView.findFocus()
-            if (view is EditText) {
-                result.data?.getStringExtra("text")?.let {
-                    view.setText(it)
-                }
-                result.data?.getIntExtra("cursorPosition", -1)?.takeIf { it in 0 ..< view.text.length }?.let {
-                    view.setSelection(it)
-                }
-            } else {
-                toastOnUi(R.string.focus_lost_on_textbox)
+        val key = editingFieldKey
+        editingFieldKey = null
+        if (result.resultCode == RESULT_OK && key != null) {
+            result.data?.getStringExtra("text")?.let { text ->
+                val cursor = result.data?.getIntExtra("cursorPosition", text.length)
+                    ?.coerceIn(0, text.length)
+                    ?: text.length
+                replaceFieldValue(key, text, cursor, cursor)
             }
         }
     }
 
     private fun onFullEditClicked() {
-        val view = window.decorView.findFocus()
-        if (view is EditText) {
-            val hint = findParentTextInputLayout(view)?.hint?.toString()
-            val currentText = view.text.toString()
+        focusedField?.let { focused ->
+            val entity = findEditEntity(focused.key) ?: return@let
+            val currentText = entity.value.orEmpty()
+            editingFieldKey = focused.key
             val intent = Intent(this, CodeEditActivity::class.java).apply {
                 putExtra("text", currentText)
-                putExtra("title", hint)
-                putExtra("cursorPosition", view.selectionStart)
-                SourceEditCodeHighlighter.languageNameOf(view.getTag(R.id.tag) as? String)?.let {
+                putExtra("title", entity.hint)
+                putExtra("cursorPosition", focused.end.coerceIn(0, currentText.length))
+                SourceEditCodeHighlighter.languageNameOf(focused.key)?.let {
                     putExtra("languageName", it)
                 }
             }
             textEditLauncher.launch(intent)
-        }
-        else {
+        } ?: run {
             toastOnUi(R.string.please_focus_cursor_on_textbox)
         }
     }
 
-    override fun onCompatOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
+    private fun onEditorAction(itemId: Int) {
+        when (itemId) {
             R.id.menu_fullscreen_edit -> onFullEditClicked()
 
             R.id.menu_save -> viewModel.save(getSource()) {
@@ -181,7 +182,10 @@ class BookSourceEditActivity :
             }
 
             R.id.menu_clear_cookie -> viewModel.clearCookie(getSource().bookSourceUrl)
-            R.id.menu_auto_complete -> viewModel.autoComplete = !viewModel.autoComplete
+            R.id.menu_auto_complete -> {
+                autoComplete = !autoComplete
+                viewModel.autoComplete = autoComplete
+            }
             R.id.menu_copy_source -> sendToClip(GSON.toJson(getSource()))
             R.id.menu_paste_source -> viewModel.pasteSource { upSourceView(it) }
             R.id.menu_qr_code_camera -> qrCodeResult.launch()
@@ -208,84 +212,87 @@ class BookSourceEditActivity :
             }
 
         }
-        return super.onCompatOptionsItemSelected(item)
     }
 
     private fun initView() {
-        binding.tabLayout.addTab(binding.tabLayout.newTab().apply {
-            setText(R.string.source_tab_base)
-        })
-        binding.tabLayout.addTab(binding.tabLayout.newTab().apply {
-            setText(R.string.source_tab_search)
-        })
-        binding.tabLayout.addTab(binding.tabLayout.newTab().apply {
-            setText(R.string.source_tab_find)
-        })
-        binding.tabLayout.addTab(binding.tabLayout.newTab().apply {
-            setText(R.string.source_tab_info)
-        })
-        binding.tabLayout.addTab(binding.tabLayout.newTab().apply {
-            setText(R.string.source_tab_toc)
-        })
-        binding.tabLayout.addTab(binding.tabLayout.newTab().apply {
-            setText(R.string.source_tab_content)
-        })
-        binding.recyclerView.setEdgeEffectColor(primaryColor)
-        if (adapter.editEntityMaxLine < 999) {
-            binding.recyclerView.layoutManager = NoChildScrollLinearLayoutManager(this) //启用后会阻止RecyclerView跟随光标滚动,行数少时,用的TextView跟随
-        }
-        binding.recyclerView.adapter = adapter
-        binding.recyclerView.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
-            if (newFocus is EditText) {
-                newFocus.postDelayed({ sendText("") }, 120)
+        binding.composeView.setContent {
+            NgAppTheme {
+                BookSourceEditScreen(
+                    controls = controls,
+                    selectedTab = selectedTab,
+                    editEntities = editEntitiesFor(selectedTab),
+                    sourceRevision = sourceRevision,
+                    fieldValueRevision = fieldValueRevision,
+                    editEntityMaxLine = editEntityMaxLine,
+                    autoComplete = autoComplete,
+                    focusedField = focusedField,
+                    keyboardAssists = keyboardAssists,
+                    keyboardRowCount = keyboardRowCount,
+                    keyboardHelpActions = keyboardHelpActions(),
+                    onControlsChange = { controls = it },
+                    onTabSelected = ::setEditEntities,
+                    onBack = ::finish,
+                    onAction = ::onEditorAction,
+                    onPrepareOverflow = { !getSource().loginUrl.isNullOrBlank() },
+                    onFieldValueChange = ::onFieldValueChange,
+                    onFieldFocused = { key, start, end ->
+                        focusedField = BookSourceEditorSelection(key, start, end)
+                    },
+                    onKeyboardHelpAction = ::onHelpActionSelect,
+                    onOpenKeyboardConfig = ::openKeyboardConfig,
+                    onInsertText = ::sendText,
+                    onUndo = ::onUndoClicked,
+                    onRedo = ::onRedoClicked,
+                )
+                if (pendingExit) {
+                    BookSourceExitDialog(
+                        onDismiss = { pendingExit = false },
+                        onDiscard = {
+                            pendingExit = false
+                            forceFinish = true
+                            finish()
+                        },
+                    )
+                }
+                if (groupSelectorVisible) {
+                    BookSourceGroupSelectorDialog(
+                        groups = groupOptions,
+                        onDismiss = { groupSelectorVisible = false },
+                        onSelected = { group ->
+                            groupSelectorVisible = false
+                            sendText(group)
+                        },
+                    )
+                }
+                if (urlOptionEditorVisible) {
+                    BookSourceUrlOptionDialog(
+                        charsets = AppConst.charsets,
+                        onDismiss = { urlOptionEditorVisible = false },
+                        onConfirm = { input ->
+                            urlOptionEditorVisible = false
+                            insertUrlOption(input)
+                        },
+                    )
+                }
             }
-        }
-        binding.tabLayout.setBackgroundColor(backgroundColor)
-        binding.tabLayout.setSelectedTabIndicatorColor(accentColor)
-        binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabReselected(tab: TabLayout.Tab?) {
-
-            }
-
-            override fun onTabUnselected(tab: TabLayout.Tab?) {
-
-            }
-
-            override fun onTabSelected(tab: TabLayout.Tab?) {
-                setEditEntities(tab?.position)
-            }
-        })
-        binding.recyclerView.setOnApplyWindowInsetsListenerCompat { view, windowInsets ->
-            val navigationBarHeight = windowInsets.navigationBarHeight
-            val imeHeight = windowInsets.imeHeight
-            view.bottomPadding = if (imeHeight == 0) navigationBarHeight else 0
-            softKeyboardTool.initialPadding = imeHeight
-            windowInsets
         }
     }
 
     override fun finish() {
+        if (forceFinish) {
+            super.finish()
+            return
+        }
         val source = getSource()
         if (!source.equal(viewModel.bookSource ?: BookSource())) {
-            alert(R.string.exit) {
-                setMessage(R.string.exit_no_save)
-                positiveButton(R.string.yes)
-                negativeButton(R.string.no) {
-                    super.finish()
-                }
-            }
+            pendingExit = true
         } else {
             super.finish()
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        softKeyboardTool.dismiss()
-    }
-
-    private fun setEditEntities(tabPosition: Int?) {
-        adapter.editEntities = when (tabPosition) {
+    private fun editEntitiesFor(tabPosition: Int): List<EditEntity> {
+        return when (tabPosition) {
             1 -> searchEntities
             2 -> exploreEntities
             3 -> infoEntities
@@ -294,28 +301,103 @@ class BookSourceEditActivity :
 //            6 -> reviewEntities
             else -> sourceEntities
         }
-        binding.recyclerView.scrollToPosition(0)
-        window.decorView.rootView.clearFocus()
+    }
+
+    private fun findEditEntity(key: String): EditEntity? {
+        return sequenceOf(
+            sourceEntities,
+            searchEntities,
+            exploreEntities,
+            infoEntities,
+            tocEntities,
+            contentEntities,
+        ).flatMap(List<EditEntity>::asSequence).firstOrNull { it.key == key }
+    }
+
+    private fun onFieldValueChange(key: String, value: String, start: Int, end: Int) {
+        val entity = findEditEntity(key) ?: return
+        val current = entity.value.orEmpty()
+        if (current != value) {
+            pushHistory(
+                undoHistory,
+                key,
+                FieldSnapshot(
+                    current,
+                    focusedField?.takeIf { it.key == key }?.start ?: current.length,
+                    focusedField?.takeIf { it.key == key }?.end ?: current.length,
+                ),
+            )
+            redoHistory.remove(key)
+            entity.value = value
+        }
+        focusedField = BookSourceEditorSelection(
+            key,
+            start.coerceIn(0, value.length),
+            end.coerceIn(0, value.length),
+        )
+    }
+
+    private fun replaceFieldValue(
+        key: String,
+        value: String,
+        start: Int,
+        end: Int,
+        recordHistory: Boolean = true,
+    ) {
+        val entity = findEditEntity(key) ?: return
+        val current = entity.value.orEmpty()
+        if (current != value && recordHistory) {
+            pushHistory(
+                undoHistory,
+                key,
+                FieldSnapshot(
+                    current,
+                    focusedField?.takeIf { it.key == key }?.start ?: current.length,
+                    focusedField?.takeIf { it.key == key }?.end ?: current.length,
+                ),
+            )
+            redoHistory.remove(key)
+        }
+        entity.value = value
+        focusedField = BookSourceEditorSelection(
+            key,
+            start.coerceIn(0, value.length),
+            end.coerceIn(0, value.length),
+        )
+        fieldValueRevision += 1
+    }
+
+    private fun pushHistory(
+        histories: MutableMap<String, ArrayDeque<FieldSnapshot>>,
+        key: String,
+        snapshot: FieldSnapshot,
+    ) {
+        val history = histories.getOrPut(key) { ArrayDeque() }
+        if (history.peekLast() != snapshot) history.addLast(snapshot)
+        while (history.size > MAX_FIELD_HISTORY) history.removeFirst()
+    }
+
+    private fun setEditEntities(tabPosition: Int) {
+        selectedTab = tabPosition
+        focusedField = null
     }
 
     private fun upSourceView(bookSource: BookSource?) {
         val bs = bookSource ?: BookSource()
-        bs.let {
-            binding.cbIsEnable.isChecked = it.enabled
-            binding.cbIsEnableExplore.isChecked = it.enabledExplore
-            binding.cbIsEnableCookie.isChecked = it.enabledCookieJar ?: false
-            binding.spType.setSelection(
-                when (it.bookSourceType) {
-                    BookSourceType.video -> 4
-                    BookSourceType.file -> 3
-                    BookSourceType.image -> 2
-                    BookSourceType.audio -> 1
-                    else -> 0
-                }
-            )
-            binding.cbIsEventListener.isChecked = it.eventListener
-            binding.cbIsCustomButton.isChecked = it.customButton
-        }
+        controls = BookSourceEditControls(
+            typeIndex = when (bs.bookSourceType) {
+                BookSourceType.video -> 4
+                BookSourceType.file -> 3
+                BookSourceType.image -> 2
+                BookSourceType.audio -> 1
+                else -> 0
+            },
+            enabled = bs.enabled,
+            enabledExplore = bs.enabledExplore,
+            enabledCookieJar = bs.enabledCookieJar ?: false,
+            eventListener = bs.eventListener,
+            customButton = bs.customButton,
+        )
         // 基本信息
         sourceEntities.clear()
         sourceEntities.apply {
@@ -426,24 +508,28 @@ class BookSourceEditActivity :
 //            add(EditEntity("postQuoteUrl", rr.postQuoteUrl, R.string.post_quote_url))
 //            add(EditEntity("deleteUrl", rr.deleteUrl, R.string.delete_review_url))
 //        }
-        binding.tabLayout.selectTab(binding.tabLayout.getTabAt(0))
-        setEditEntities(0)
+        selectedTab = 0
+        focusedField = null
+        undoHistory.clear()
+        redoHistory.clear()
+        sourceRevision += 1
+        fieldValueRevision += 1
     }
 
     private fun getSource(): BookSource {
         val source = viewModel.bookSource?.copy() ?: BookSource()
-        source.enabled = binding.cbIsEnable.isChecked
-        source.enabledExplore = binding.cbIsEnableExplore.isChecked
-        source.enabledCookieJar = binding.cbIsEnableCookie.isChecked
-        source.bookSourceType = when (binding.spType.selectedItemPosition) {
+        source.enabled = controls.enabled
+        source.enabledExplore = controls.enabledExplore
+        source.enabledCookieJar = controls.enabledCookieJar
+        source.bookSourceType = when (controls.typeIndex) {
             4 -> BookSourceType.video
             3 -> BookSourceType.file
             2 -> BookSourceType.image
             1 -> BookSourceType.audio
             else -> BookSourceType.default
         }
-        source.eventListener = binding.cbIsEventListener.isChecked
-        source.customButton = binding.cbIsCustomButton.isChecked
+        source.eventListener = controls.eventListener
+        source.customButton = controls.customButton
         val searchRule = SearchRule()
         val exploreRule = ExploreRule()
         val bookInfoRule = BookInfoRule()
@@ -643,31 +729,42 @@ class BookSourceEditActivity :
             val groups = withContext(IO) {
                 appDb.bookSourceDao.allGroups()
             }
-            selector(groups) { _, s, _ ->
-                sendText(s)
+            if (groups.isNotEmpty()) {
+                groupOptions = groups
+                groupSelectorVisible = true
             }
         }
     }
 
-    override fun helpActions(): List<SelectItem<String>> {
+    private fun observeKeyboardAssists() {
+        lifecycleScope.launch {
+            appDb.keyboardAssistsDao.flowByType(0)
+                .catch {
+                    AppLog.put("键盘帮助浮窗获取数据失败\n${it.localizedMessage}", it)
+                }
+                .flowOn(IO)
+                .collect { keyboardAssists = it }
+        }
+    }
+
+    private fun keyboardHelpActions(): List<BookSourceKeyboardHelpAction> {
         val helpActions = arrayListOf(
-            SelectItem("插入URL参数", "urlOption"),
-            SelectItem("书源教程", "ruleHelp"),
-            SelectItem("js教程", "jsHelp"),
-            SelectItem("正则教程", "regexHelp"),
+            BookSourceKeyboardHelpAction("插入URL参数", "urlOption"),
+            BookSourceKeyboardHelpAction("书源教程", "ruleHelp"),
+            BookSourceKeyboardHelpAction("js教程", "jsHelp"),
+            BookSourceKeyboardHelpAction("正则教程", "regexHelp"),
         )
-        val view = window.decorView.findFocus()
-        if (view is EditText) {
-            when (view.getTag(R.id.tag)) {
+        focusedField?.let { focused ->
+            when (focused.key) {
                 "bookSourceGroup" -> {
                     helpActions.add(
-                        SelectItem("插入分组", "addGroup")
+                        BookSourceKeyboardHelpAction("插入分组", "addGroup")
                     )
                 }
 
                 else -> {
                     helpActions.add(
-                        SelectItem("选择文件", "selectFile")
+                        BookSourceKeyboardHelpAction("选择文件", "selectFile")
                     )
                 }
             }
@@ -675,10 +772,10 @@ class BookSourceEditActivity :
         return helpActions
     }
 
-    override fun onHelpActionSelect(action: String) {
+    private fun onHelpActionSelect(action: String) {
         when (action) {
             "addGroup" -> alertGroups()
-            "urlOption" -> UrlOptionDialog(this) { sendText(it) }.show()
+            "urlOption" -> urlOptionEditorVisible = true
             "ruleHelp" -> showHelp("ruleHelp")
             "jsHelp" -> showHelp("jsHelp")
             "regexHelp" -> showHelp("regexHelp")
@@ -686,50 +783,46 @@ class BookSourceEditActivity :
         }
     }
 
-    override fun sendText(text: String) {
-        val view = window.decorView.findFocus()
-        if (view is EditText) {
-            var start = view.selectionStart
-            var end = view.selectionEnd
-            if (start > end) {
-                val temp = start
-                start = end
-                end = temp
-            }
-            if (text.isNotEmpty()) {
-                val edit = view.editableText//获取EditText的文字
-                if (start < 0 || start >= edit.length) {
-                    edit.append(text)
-                } else {
-                    edit.replace(start, end, text)//光标所在位置插入文字
-                }
-            }
-            if (adapter.editEntityMaxLine >= 999) {
-                view.post {
-                    val editTextLocation = IntArray(2)
-                    view.getLocationOnScreen(editTextLocation)
-                    val recyclerViewLocation = IntArray(2)
-                    binding.recyclerView.getLocationOnScreen(recyclerViewLocation)
-                    val layout = view.layout
-                    if (layout != null) {
-                        val line = layout.getLineForOffset(end)
-                        val cursorYInEditText = layout.getLineTop(line)
-                        // 光标相对于屏幕的位置
-                        val cursorYOnScreen = editTextLocation[1] + cursorYInEditText
-                        // 光标相对于RecyclerView的位置
-                        val cursorYInRecyclerView = cursorYOnScreen - recyclerViewLocation[1]
-                        val recyclerViewBottom = binding.recyclerView.height - 120 //考虑键盘的经验值
-                        // 如果光标不在可见范围内，则滚动到光标位置
-                        if (cursorYInRecyclerView !in 0..recyclerViewBottom) {
-                            val scrollDistance = cursorYInRecyclerView - recyclerViewBottom / 3
-                            if (scrollDistance > 0 && binding.recyclerView.canScrollVertically(1) || scrollDistance < 0 && binding.recyclerView.canScrollVertically(-1)) {
-                                binding.recyclerView.smoothScrollBy(0, scrollDistance)
-                            }
-                        }
+    private fun openKeyboardConfig() {
+        showDialogFragment(
+            KeyboardAssistsConfig(
+                object : KeyboardAssistsConfig.CallBack {
+                    override fun requestLayout() {
+                        keyboardRowCount = AppConfig.showBoardLine
                     }
                 }
-            }
+            )
+        )
+    }
+
+    private fun insertUrlOption(input: BookSourceUrlOptionInput) {
+        val option = AnalyzeUrl.UrlOption().apply {
+            useWebView(input.useWebView)
+            setMethod(input.method)
+            setCharset(input.charset)
+            setHeaders(input.headers)
+            setBody(input.body)
+            setRetry(input.retry)
+            setType(input.type)
+            setWebJs(input.webJs)
+            setJs(input.js)
+            // 保留旧弹窗的实际序列化行为：bodyJs 会覆盖 js 字段。
+            setJs(input.bodyJs)
+            setDnsIp(input.dnsIp)
         }
+        sendText(GSON.toJson(option))
+    }
+
+    private fun sendText(text: String) {
+        if (text.isEmpty()) return
+        val focused = focusedField ?: return
+        val entity = findEditEntity(focused.key) ?: return
+        val current = entity.value.orEmpty()
+        val start = minOf(focused.start, focused.end).coerceIn(0, current.length)
+        val end = maxOf(focused.start, focused.end).coerceIn(0, current.length)
+        val updated = current.replaceRange(start, end, text)
+        val cursor = start + text.length
+        replaceFieldValue(focused.key, updated, cursor, cursor)
     }
 
     private fun setSourceVariable() {
@@ -754,20 +847,50 @@ class BookSourceEditActivity :
         viewModel.bookSource?.setVariable(variable)
     }
 
-    @RequiresApi(Build.VERSION_CODES.M)
-    override fun onUndoClicked() {
-        val editText = window.decorView.findFocus()
-        if (editText is EditText) {
-            editText.onTextContextMenuItem(android.R.id.undo)
-        }
+    private fun onUndoClicked() {
+        val focused = focusedField ?: return
+        val entity = findEditEntity(focused.key) ?: return
+        val target = undoHistory[focused.key]?.pollLast() ?: return
+        pushHistory(
+            redoHistory,
+            focused.key,
+            FieldSnapshot(entity.value.orEmpty(), focused.start, focused.end),
+        )
+        replaceFieldValue(
+            focused.key,
+            target.text,
+            target.start,
+            target.end,
+            recordHistory = false,
+        )
     }
 
-    @RequiresApi(Build.VERSION_CODES.M)
-    override fun onRedoClicked() {
-        val editText = window.decorView.findFocus()
-        if (editText is EditText) {
-            editText.onTextContextMenuItem(android.R.id.redo)
-        }
+    private fun onRedoClicked() {
+        val focused = focusedField ?: return
+        val entity = findEditEntity(focused.key) ?: return
+        val target = redoHistory[focused.key]?.pollLast() ?: return
+        pushHistory(
+            undoHistory,
+            focused.key,
+            FieldSnapshot(entity.value.orEmpty(), focused.start, focused.end),
+        )
+        replaceFieldValue(
+            focused.key,
+            target.text,
+            target.start,
+            target.end,
+            recordHistory = false,
+        )
+    }
+
+    private data class FieldSnapshot(
+        val text: String,
+        val start: Int,
+        val end: Int,
+    )
+
+    private companion object {
+        const val MAX_FIELD_HISTORY = 100
     }
 
 }

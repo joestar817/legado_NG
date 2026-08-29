@@ -20,6 +20,8 @@ import io.legado.app.help.http.newCallResponseBody
 import io.legado.app.help.http.okHttpClient
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.model.RuleUpdate
+import io.legado.app.model.jsSource.JsSourceConfig
+import io.legado.app.model.jsSource.JsSourceUpsert
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonArray
 import io.legado.app.utils.fromJsonObject
@@ -29,6 +31,8 @@ import io.legado.app.utils.isJsonArray
 import io.legado.app.utils.isJsonObject
 import io.legado.app.utils.isUri
 import io.legado.app.utils.splitNotBlank
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withTimeout
 
 
 class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
@@ -131,59 +135,68 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
 
     fun importSource(text: String) {
         execute {
-            val mText = text.trim()
-            when {
-                mText.isJsonObject() -> {
-                    kotlin.runCatching {
-                        val json = JsonPath.parse(mText)
-                        json.read<List<String>>("$.sourceUrls")
-                    }.onSuccess { listUrl ->
-                        listUrl.forEach {
-                            importSourceUrl(it)
-                        }
-                    }.onFailure {
-                        GSON.fromJsonObject<BookSource>(mText).getOrThrow().let {
-                            if (it.bookSourceUrl.isEmpty()) {
-                                throw NoStackTraceException("不是书源")
-                            }
-                            allSources.add(it)
-                        }
-                    }
-                }
-
-                mText.isJsonArray() -> GSON.fromJsonArray<BookSource>(mText).getOrThrow()
-                    .let { items ->
-                        val source = items.firstOrNull() ?: return@let
-                        if (source.bookSourceUrl.isEmpty()) {
-                            throw NoStackTraceException("不是书源")
-                        }
-                        allSources.addAll(items)
-                    }
-
-                mText.isAbsUrl() -> {
-                    importSourceUrl(mText)
-                }
-
-                mText.isUri() -> {
-                    val uri = Uri.parse(mText)
-                    uri.inputStream(context).getOrThrow().use { inputS ->
-                        GSON.fromJsonArray<BookSource>(inputS).getOrThrow().let {
-                            val source = it.firstOrNull() ?: return@let
-                            if (source.bookSourceUrl.isEmpty()) {
-                                throw NoStackTraceException("不是书源")
-                            }
-                            allSources.addAll(it)
-                        }
-                    }
-                }
-
-                else -> throw NoStackTraceException(context.getString(R.string.wrong_format))
-            }
+            importSourceText(text.trim(), allowSourceUrls = true)
         }.onError {
             errorLiveData.postValue("ImportError:${it.localizedMessage}")
             AppLog.put("ImportError:${it.localizedMessage}", it)
         }.onSuccess {
             comparisonSource()
+        }
+    }
+
+    private suspend fun importSourceText(text: String, allowSourceUrls: Boolean) {
+        val content = text.trim()
+        when {
+            content.isJsonObject() -> {
+                val sourceUrls = if (allowSourceUrls) {
+                    runCatching {
+                        JsonPath.parse(content).read<List<String>>("$.sourceUrls")
+                    }.getOrNull()
+                } else {
+                    null
+                }
+                if (sourceUrls != null) {
+                    sourceUrls.forEach { importSourceUrl(it) }
+                } else {
+                    val source = GSON.fromJsonObject<BookSource>(content).getOrThrow()
+                    if (source.bookSourceUrl.isEmpty()) throw NoStackTraceException("不是书源")
+                    allSources.add(source)
+                }
+            }
+
+            content.isJsonArray() -> {
+                val items = GSON.fromJsonArray<BookSource>(content).getOrThrow()
+                val source = items.firstOrNull() ?: return
+                if (source.bookSourceUrl.isEmpty()) throw NoStackTraceException("不是书源")
+                allSources.addAll(items)
+            }
+
+            allowSourceUrls && content.isAbsUrl() -> importSourceUrl(content)
+
+            allowSourceUrls && content.isUri() -> {
+                val uri = Uri.parse(content)
+                val payload = uri.inputStream(context).getOrThrow().bufferedReader().use {
+                    it.readText()
+                }
+                importSourceText(payload, allowSourceUrls = false)
+            }
+
+            else -> {
+                JsSourceUpsert.validatePayload(content)?.let {
+                    throw NoStackTraceException(
+                        if (it == JsSourceUpsert.PayloadIssue.EMPTY) {
+                            context.getString(R.string.wrong_format)
+                        } else {
+                            "JS 书源不能超过 1 MiB"
+                        }
+                    )
+                }
+                allSources.add(
+                    withTimeout(30_000L) {
+                        JsSourceConfig.extract(content, currentCoroutineContext())
+                    }
+                )
+            }
         }
     }
 
@@ -200,14 +213,8 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
             } else {
                 url(url)
             }
-        }.decompressed().byteStream().use {
-            GSON.fromJsonArray<BookSource>(it).getOrThrow().let { list ->
-                val source = list.firstOrNull() ?: return@let
-                if (source.bookSourceUrl.isEmpty()) {
-                    throw NoStackTraceException("不是书源")
-                }
-                allSources.addAll(list)
-            }
+        }.decompressed().byteStream().bufferedReader().use {
+            importSourceText(it.readText(), allowSourceUrls = false)
         }
     }
 

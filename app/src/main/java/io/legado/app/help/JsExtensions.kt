@@ -26,7 +26,9 @@ import io.legado.app.help.source.BookSourceFileAccessPolicy
 import io.legado.app.help.source.bookSourceCacheStoreOrNull
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.source.SourceInteractionBlockedException
+import io.legado.app.help.source.SourceInteractionKind
 import io.legado.app.help.source.SourceInteractionPolicy
+import io.legado.app.help.source.SourceInteractionRequest
 import io.legado.app.help.source.SourceVerificationHelp
 import io.legado.app.help.source.getSourceType
 import io.legado.app.model.Debug
@@ -120,11 +122,18 @@ interface JsExtensions : JsEncodeUtils {
         AppLog.putDebug("${getTag() ?: "书源"}已禁止弹窗：$action")
     }
 
-    private fun requireSourceDialogAllowed(action: String) {
-        if (blockSourceDialogs) {
-            logBlockedSourceDialog(action)
-            throw SourceInteractionBlockedException(action)
+    private fun blockSourceInteraction(
+        request: SourceInteractionRequest,
+        alwaysThrow: Boolean = false,
+    ): Boolean {
+        val policy = context[SourceInteractionPolicy] ?: return false
+        if (!policy.shouldBlock(request.kind)) return false
+        policy.recordBlocked(request)
+        logBlockedSourceDialog(request.actionName)
+        if (alwaysThrow || policy.throwOnBlocked) {
+            throw SourceInteractionBlockedException(request)
         }
+        return true
     }
 
     /**
@@ -347,6 +356,17 @@ interface JsExtensions : JsEncodeUtils {
      */
     @JavascriptInterface
     fun openVideoPlayer(url: String, title: String, isFloat: Boolean) {
+        rhinoContext.ensureActive()
+        if (
+            blockSourceInteraction(
+                SourceInteractionRequest(
+                    kind = SourceInteractionKind.VIDEO_PLAYER,
+                    url = url,
+                    title = title,
+                    isFloat = isFloat,
+                )
+            )
+        ) return
         SourceHelp.openVideoPlayer(getSource(), url, title, isFloat)
     }
 
@@ -361,10 +381,16 @@ interface JsExtensions : JsEncodeUtils {
 
     fun startBrowser(url: String, title: String, html: String?) {
         rhinoContext.ensureActive()
-        if (blockSourceDialogs) {
-            logBlockedSourceDialog("网页")
-            return
-        }
+        if (
+            blockSourceInteraction(
+                SourceInteractionRequest(
+                    kind = SourceInteractionKind.BROWSER,
+                    url = url,
+                    title = title,
+                    html = html,
+                )
+            )
+        ) return
         SourceVerificationHelp.startBrowser(getSource(), url, title, html=html)
     }
 
@@ -381,7 +407,17 @@ interface JsExtensions : JsEncodeUtils {
 
     fun startBrowserAwait(url: String, title: String, refetchAfterSuccess: Boolean, html: String?): StrResponse {
         rhinoContext.ensureActive()
-        requireSourceDialogAllowed("验证网页")
+        blockSourceInteraction(
+            request = SourceInteractionRequest(
+                kind = SourceInteractionKind.BROWSER_VERIFICATION,
+                url = url,
+                title = title,
+                html = html,
+                saveResult = true,
+                refetchAfterSuccess = refetchAfterSuccess,
+            ),
+            alwaysThrow = true,
+        )
         val pair = SourceVerificationHelp.getVerificationResult(
             getSource(), url, title, true, refetchAfterSuccess, html
         )
@@ -394,7 +430,13 @@ interface JsExtensions : JsEncodeUtils {
      */
     fun getVerificationCode(imageUrl: String): String {
         rhinoContext.ensureActive()
-        requireSourceDialogAllowed("验证码")
+        blockSourceInteraction(
+            request = SourceInteractionRequest(
+                kind = SourceInteractionKind.VERIFICATION_CODE,
+                url = imageUrl,
+            ),
+            alwaysThrow = true,
+        )
         return SourceVerificationHelp.getVerificationResult(getSource(), imageUrl, "", false).second
     }
 

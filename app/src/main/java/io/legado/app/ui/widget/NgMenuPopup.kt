@@ -364,8 +364,6 @@ object NgMenuPopup {
             R.id.menu_group_null,
             R.id.menu_enabled_explore_group,
             R.id.menu_disabled_explore_group,
-            R.id.menu_group_sources_by_domain -> R.drawable.ic_groups
-
             R.id.action_sort,
             R.id.menu_sort,
             R.id.menu_sort_desc,

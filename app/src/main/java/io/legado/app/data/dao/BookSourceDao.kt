@@ -150,6 +150,16 @@ interface BookSourceDao {
     fun getByGroup(group: String): List<BookSource>
 
     @Query(
+        """select * from book_sources
+        where bookSourceGroup = :group
+            or bookSourceGroup like :group || ',%'
+            or bookSourceGroup like '%,' || :group
+            or bookSourceGroup like '%,' || :group || ',%'
+        order by customOrder asc"""
+    )
+    fun getExactByGroup(group: String): List<BookSource>
+
+    @Query(
         """select * from book_sources 
         where enabled = 1 
         and (bookSourceGroup = :group
@@ -220,7 +230,13 @@ interface BookSourceDao {
     @get:Query("select * from book_sources where enabledExplore = 0 order by customOrder")
     val allDisabledExplore: List<BookSource>
 
-    @get:Query("select * from book_sources where loginUrl is not null and loginUrl != ''")
+    @get:Query(
+        """select * from book_sources
+        where (loginUrl is not null and trim(loginUrl) <> '')
+        or (mainJs is not null and trim(mainJs) <> ''
+            and loginUi is not null
+            and replace(replace(replace(replace(loginUi, ' ', ''), char(9), ''), char(10), ''), char(13), '') not in ('', '[]'))"""
+    )
     val allLogin: List<BookSource>
 
     @get:Query(
@@ -245,6 +261,9 @@ interface BookSourceDao {
     @Query("select * from book_sources where bookSourceUrl = :key")
     fun getBookSource(key: String): BookSource?
 
+    @Query("select * from book_sources where bookSourceUrl in (:keys)")
+    fun getBookSources(keys: List<String>): List<BookSource>
+
     @Query("select * from book_sources_part where bookSourceUrl = :key")
     fun getBookSourcePart(key: String): BookSourcePart?
 
@@ -253,6 +272,11 @@ interface BookSourceDao {
 
     @Query("SELECT EXISTS(select 1 from book_sources where bookSourceUrl = :key)")
     fun has(key: String): Boolean
+
+    @Query("select mainJs from book_sources where bookSourceUrl = :key")
+    fun getMainJs(key: String): String?
+
+    fun hasJsSource(key: String): Boolean = !getMainJs(key).isNullOrBlank()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(vararg bookSource: BookSource)
@@ -266,11 +290,16 @@ interface BookSourceDao {
     @Query("delete from book_sources where bookSourceUrl = :key")
     fun delete(key: String)
 
+    @Query("delete from book_sources where bookSourceUrl in (:keys)")
+    fun deleteByKeys(keys: List<String>)
+
+    fun deleteByKeysChunked(keys: Collection<String>) {
+        keys.chunked(900).forEach(::deleteByKeys)
+    }
+
     @Transaction
     fun delete(bookSources: List<BookSourcePart>) {
-        for (bs in bookSources) {
-            delete(bs.bookSourceUrl)
-        }
+        deleteByKeysChunked(bookSources.map { it.bookSourceUrl })
     }
 
     @get:Query("select min(customOrder) from book_sources")

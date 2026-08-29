@@ -30,12 +30,17 @@ object SourceConfig {
 
 
     fun removeSource(origin: String) {
-        sp.all.keys.filter {
-            it.startsWith(origin)
-        }.let {
+        removeSources(listOf(origin))
+    }
+
+    fun removeSources(origins: Collection<String>) {
+        if (origins.isEmpty()) return
+        sp.all.keys.filter { key ->
+            origins.any(key::startsWith)
+        }.let { keys ->
             sp.edit {
-                it.forEach {
-                    remove(it)
+                keys.forEach { key ->
+                    remove(key)
                 }
             }
         }

@@ -9,9 +9,15 @@ import io.legado.app.utils.splitNotBlank
 
 @DatabaseView(
     """select bookSourceUrl, bookSourceName, bookSourceGroup, customOrder, enabled, enabledExplore, 
-    (loginUrl is not null and trim(loginUrl) <> '') hasLoginUrl, lastUpdateTime, respondTime, weight, 
-    (searchUrl is not null and trim(searchUrl) <> '') hasSearchUrl,
-    (exploreUrl is not null and trim(exploreUrl) <> '') hasExploreUrl, eventListener, bookSourceType
+    (loginUrl is not null and trim(loginUrl) <> ''
+     or (mainJs is not null and trim(mainJs) <> ''
+         and loginUi is not null
+         and replace(replace(replace(replace(loginUi, ' ', ''), char(9), ''), char(10), ''), char(13), '') not in ('', '[]'))) hasLoginUrl,
+    lastUpdateTime, respondTime, weight,
+    (searchUrl is not null and trim(searchUrl) <> ''
+     or mainJs is not null and trim(mainJs) <> '') hasSearchUrl,
+    (exploreUrl is not null and trim(exploreUrl) <> '') hasExploreUrl, eventListener, bookSourceType,
+    (mainJs is not null and trim(mainJs) <> '') hasJs
     from book_sources""",
     viewName = "book_sources_part"
 )
@@ -28,7 +34,7 @@ data class BookSourcePart(
     var enabled: Boolean = true,
     // 启用发现
     var enabledExplore: Boolean = true,
-    // 是否有登录地址
+    // 是否有登录地址或 JS 表单登录
     var hasLoginUrl: Boolean = false,
     // 最后更新时间，用于排序
     var lastUpdateTime: Long = 0,
@@ -43,7 +49,9 @@ data class BookSourcePart(
     // 是否启用事件监听
     var eventListener: Boolean = false,
     // 书源类型
-    var bookSourceType: Int = 0
+    var bookSourceType: Int = 0,
+    // 是否为纯 JavaScript 单文件书源
+    var hasJs: Boolean = false
 ) {
 
     override fun hashCode(): Int {
