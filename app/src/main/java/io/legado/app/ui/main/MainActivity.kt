@@ -102,6 +102,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     private var bookshelfReselected: Long = 0
     private var exploreReselected: Long = 0
     private var pagePosition = 0
+    private var mainPagerScrollState = ViewPager.SCROLL_STATE_IDLE
     private var aiChatSwipeStartX = 0f
     private var aiChatSwipeStartY = 0f
     private var aiChatSwipeStartedOnBookshelf = false
@@ -304,8 +305,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         bottomNavigationView.setOnNavigationItemSelectedListener(this@MainActivity)
         bottomNavigationView.setOnNavigationItemReselectedListener(this@MainActivity)
         floatingBottomNavigation.setVariant(NgFloatingTabBarVariant.CONTENT_OVERLAY)
-        // The shared renderer composites the page background before this live scrolling content.
-        floatingBottomNavigation.setLiquidBackdropSource(viewPagerMain)
+        bindFloatingBottomBackdropToCurrentPage()
         if (AppConfig.isEInkMode) {
             bottomNavigationView.setBackgroundResource(R.drawable.bg_eink_border_top)
         }
@@ -325,6 +325,17 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             }
         }
         refreshAiChatFab()
+    }
+
+    private fun bindFloatingBottomBackdropToCurrentPage() = binding.run {
+        val position = viewPagerMain.currentItem.coerceIn(0, bottomMenuCount - 1)
+        val pageView = fragmentMap[getFragmentId(position)]
+            ?.view
+            ?.takeIf { it.isAttachedToWindow }
+        val backgroundSource = root.rootView.findViewById<View>(
+            R.id.ng_liquid_glass_backdrop_source,
+        )
+        floatingBottomNavigation.setLiquidBackdropSource(pageView ?: backgroundSource)
     }
 
     private fun startBookshelfGenericAiChat() {
@@ -673,10 +684,24 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     private inner class PageChangeCallback : ViewPager.SimpleOnPageChangeListener() {
 
+        override fun onPageScrollStateChanged(state: Int) {
+            mainPagerScrollState = state
+            if (state == ViewPager.SCROLL_STATE_IDLE) {
+                bindFloatingBottomBackdropToCurrentPage()
+            } else {
+                binding.floatingBottomNavigation.setLiquidBackdropSource(
+                    binding.viewPagerMain,
+                )
+            }
+        }
+
         override fun onPageSelected(position: Int) {
             pagePosition = position
             binding.bottomNavigationView.menu[realPositions[position]].isChecked = true
             binding.floatingBottomNavigation.select(position, notify = false)
+            if (mainPagerScrollState == ViewPager.SCROLL_STATE_IDLE) {
+                bindFloatingBottomBackdropToCurrentPage()
+            }
         }
 
     }
@@ -723,6 +748,16 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 fragment = super.instantiateItem(container, position) as Fragment
             }
             fragmentMap[getId(position)] = fragment
+            if (position == binding.viewPagerMain.currentItem) {
+                container.post {
+                    if (
+                        position == binding.viewPagerMain.currentItem &&
+                        mainPagerScrollState == ViewPager.SCROLL_STATE_IDLE
+                    ) {
+                        bindFloatingBottomBackdropToCurrentPage()
+                    }
+                }
+            }
             return fragment
         }
 

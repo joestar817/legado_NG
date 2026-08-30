@@ -96,7 +96,7 @@ class NgFloatingTabBar @JvmOverloads constructor(
     }
 
     /**
-     * 显式绑定页面内容源；主界面用它绑定 ViewPager。
+     * 显式绑定页面内容源；多页宿主稳定后应绑定当前页根 View。
      *
      * 未显式绑定时，详情页会在 attach 后自动查找约定的页面级 source。
      */
