@@ -118,7 +118,7 @@ import io.legado.app.ui.dict.DictDialog
 import io.legado.app.utils.SelectDirectoryContract
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.replace.ReplaceRuleActivity
-import io.legado.app.ui.replace.edit.ReplaceEditActivity
+import io.legado.app.ui.replace.edit.ReplaceRuleEditDialog
 import io.legado.app.ui.widget.NgActionPopupItem
 import io.legado.app.ui.widget.NgActionPopup
 import io.legado.app.ui.widget.NgMenuPopup
@@ -187,6 +187,7 @@ class ReadBookActivity : BaseReadBookActivity(),
     ReadBook.CallBack,
     AutoReadDialog.CallBack,
     TxtTocRuleDialog.CallBack,
+    ReplaceRuleEditDialog.Callback,
     ColorPickerDialogListener,
     LayoutProgressListener {
 
@@ -922,11 +923,10 @@ class ReadBookActivity : BaseReadBookActivity(),
                     scopes.add(it)
                 }
                 val text = selectedText.lineSequence().map { it.trim() }.joinToString("\n")
-                replaceActivity.launch(
-                    ReplaceEditActivity.startIntent(
-                        this,
+                showDialogFragment(
+                    ReplaceRuleEditDialog.newRule(
                         pattern = text,
-                        scope = scopes.joinToString(";")
+                        scope = scopes.joinToString(";"),
                     )
                 )
                 return true
@@ -3286,6 +3286,10 @@ class ReadBookActivity : BaseReadBookActivity(),
                 keepScreenOn(false)
             }
         }
+    }
+
+    override fun onReplaceRuleSaved() {
+        viewModel.replaceRuleChanged()
     }
 
     companion object {

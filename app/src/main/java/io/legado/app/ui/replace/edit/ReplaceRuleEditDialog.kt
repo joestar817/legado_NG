@@ -1,10 +1,9 @@
-package io.legado.app.ui.dict.rule
+package io.legado.app.ui.replace.edit
 
 import android.app.Activity.RESULT_OK
-import android.app.Application
-import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -41,10 +42,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,9 +56,7 @@ import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.viewModels
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
-import io.legado.app.base.BaseViewModel
-import io.legado.app.data.appDb
-import io.legado.app.data.entities.DictRule
+import io.legado.app.data.entities.ReplaceRule
 import io.legado.app.lib.theme.view.ThemeEditText
 import io.legado.app.ui.code.CodeEditActivity
 import io.legado.app.ui.design.components.NgButtonVariant
@@ -67,29 +68,24 @@ import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
-import io.legado.app.ui.widget.code.CodeView
-import io.legado.app.ui.widget.code.addJsPattern
-import io.legado.app.ui.widget.code.addJsonPattern
-import io.legado.app.ui.widget.code.addLegadoPattern
 import io.legado.app.ui.widget.dialog.applyNgDialogWindow
 import io.legado.app.utils.GSON
-import io.legado.app.utils.fromJsonObject
-import io.legado.app.utils.getClipText
 import io.legado.app.utils.sendToClip
+import io.legado.app.utils.showHelp
 import io.legado.app.utils.toastOnUi
-import kotlinx.coroutines.Dispatchers
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-class DictRuleEditDialog() : BaseComposeDialogFragment() {
+class ReplaceRuleEditDialog() : BaseComposeDialogFragment() {
 
-    constructor(name: String) : this() {
-        arguments = Bundle().apply { putString(ARG_NAME, name) }
+    constructor(id: Long) : this() {
+        arguments = Bundle().apply { putLong(ARG_ID, id) }
     }
 
-    private val viewModel by viewModels<DictRuleEditViewModel>()
-    private var rule by mutableStateOf(DictRule(), referentialEqualityPolicy())
-    private var originalFields = DictRuleFields()
+    private val viewModel by viewModels<ReplaceEditViewModel>()
+    private var baseRule by mutableStateOf(ReplaceRule(), referentialEqualityPolicy())
+    private var draft by mutableStateOf(ReplaceRuleDraft())
+    private var originalDraft = ReplaceRuleDraft()
     private var loaded by mutableStateOf(false)
     private var showDiscardConfirmation by mutableStateOf(false)
     private var focusedEditText: EditText? = null
@@ -119,35 +115,32 @@ class DictRuleEditDialog() : BaseComposeDialogFragment() {
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         isCancelable = false
-        val isEditing = arguments?.containsKey(ARG_NAME) == true
+        val isEditing = arguments?.containsKey(ARG_ID) == true
         (view as ComposeView).apply {
             setBackgroundColor(AndroidColor.TRANSPARENT)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 NgAppTheme(updateSystemBars = false) {
                     BackHandler { requestDismiss() }
-                    DictRuleEditorDialogContent(
-                        rule = rule,
+                    ReplaceRuleEditorDialogContent(
+                        draft = draft,
                         loading = !loaded,
                         isEditing = isEditing,
-                        onRuleChange = { rule = it },
+                        onDraftChange = { draft = it },
                         onFocused = { focusedEditText = it },
                         onFullEdit = ::openFullEdit,
-                        onCopy = { requireContext().sendToClip(GSON.toJson(rule)) },
-                        onPaste = {
-                            viewModel.pasteRule { pasted ->
-                                rule = rule.copy(
-                                    name = pasted.name,
-                                    urlRule = pasted.urlRule,
-                                    showRule = pasted.showRule,
-                                )
-                            }
+                        onCopy = {
+                            requireContext().sendToClip(GSON.toJson(draft.toRule(baseRule)))
                         },
+                        onPaste = {
+                            viewModel.pasteRule { pasted -> draft = pasted.toDraft() }
+                        },
+                        onRegexHelp = { showHelp("regexHelp") },
                         onCancel = ::requestDismiss,
                         onSave = ::save,
                     )
                     if (showDiscardConfirmation) {
-                        DictRuleDiscardDialog(
+                        ReplaceRuleDiscardDialog(
                             onContinueEditing = { showDiscardConfirmation = false },
                             onDiscard = ::dismissDirectly,
                         )
@@ -155,10 +148,15 @@ class DictRuleEditDialog() : BaseComposeDialogFragment() {
                 }
             }
         }
-        viewModel.initData(arguments?.getString(ARG_NAME)) {
-            val initialRule = it?.copy() ?: DictRule()
-            originalFields = initialRule.fields()
-            rule = initialRule
+        viewModel.initData(
+            id = arguments?.getLong(ARG_ID, -1L) ?: -1L,
+            pattern = arguments?.getString(ARG_PATTERN),
+            isRegex = arguments?.getBoolean(ARG_IS_REGEX, false) ?: false,
+            scope = arguments?.getString(ARG_SCOPE),
+        ) { initial ->
+            baseRule = initial.copy()
+            originalDraft = initial.toDraft()
+            draft = originalDraft
             loaded = true
         }
     }
@@ -170,7 +168,7 @@ class DictRuleEditDialog() : BaseComposeDialogFragment() {
             return
         }
         textEditLauncher.launch(
-            Intent(requireActivity(), CodeEditActivity::class.java).apply {
+            android.content.Intent(requireActivity(), CodeEditActivity::class.java).apply {
                 putExtra("text", view.text.toString())
                 putExtra("title", view.tag?.toString().orEmpty())
                 putExtra("cursorPosition", view.selectionStart)
@@ -179,7 +177,7 @@ class DictRuleEditDialog() : BaseComposeDialogFragment() {
     }
 
     private fun requestDismiss() {
-        if (!loaded || rule.fields() == originalFields) {
+        if (!loaded || draft == originalDraft) {
             dismissDirectly()
         } else {
             showDiscardConfirmation = true
@@ -191,68 +189,89 @@ class DictRuleEditDialog() : BaseComposeDialogFragment() {
     }
 
     private fun save() {
-        viewModel.save(rule) { dismissDirectly() }
+        viewModel.save(draft.toRule(baseRule)) {
+            (parentFragment as? Callback)?.onReplaceRuleSaved()
+                ?: (activity as? Callback)?.onReplaceRuleSaved()
+            dismissDirectly()
+        }
     }
 
-    class DictRuleEditViewModel(application: Application) : BaseViewModel(application) {
-
-        private var dictRule: DictRule? = null
-
-        fun initData(name: String?, onFinally: (DictRule?) -> Unit) {
-            dictRule?.let {
-                onFinally(it)
-                return
-            }
-            execute {
-                if (name != null) dictRule = appDb.dictRuleDao.getByName(name)
-            }.onFinally { onFinally(dictRule) }
-        }
-
-        fun save(newDictRule: DictRule, onFinally: () -> Unit) {
-            execute {
-                dictRule?.let { appDb.dictRuleDao.delete(it) }
-                appDb.dictRuleDao.insert(newDictRule)
-                dictRule = newDictRule
-            }.onFinally { onFinally() }
-        }
-
-        fun pasteRule(success: (DictRule) -> Unit) {
-            val text = context.getClipText()
-            if (text.isNullOrBlank()) {
-                context.toastOnUi("剪贴板没有内容")
-                return
-            }
-            execute(context = Dispatchers.Main) {
-                GSON.fromJsonObject<DictRule>(text).getOrThrow()
-            }.onSuccess { success(it) }.onError {
-                context.toastOnUi("格式不对")
-            }
-        }
+    interface Callback {
+        fun onReplaceRuleSaved()
     }
 
     companion object {
-        private const val ARG_NAME = "name"
+        private const val ARG_ID = "id"
+        private const val ARG_PATTERN = "pattern"
+        private const val ARG_IS_REGEX = "isRegex"
+        private const val ARG_SCOPE = "scope"
+
+        fun newRule(
+            pattern: String? = null,
+            isRegex: Boolean = false,
+            scope: String? = null,
+        ): ReplaceRuleEditDialog {
+            return ReplaceRuleEditDialog().apply {
+                arguments = Bundle().apply {
+                    putString(ARG_PATTERN, pattern)
+                    putBoolean(ARG_IS_REGEX, isRegex)
+                    putString(ARG_SCOPE, scope)
+                }
+            }
+        }
     }
 }
 
-private data class DictRuleFields(
+private data class ReplaceRuleDraft(
     val name: String = "",
-    val urlRule: String = "",
-    val showRule: String = "",
+    val group: String = "",
+    val pattern: String = "",
+    val isRegex: Boolean = false,
+    val replacement: String = "",
+    val scopeTitle: Boolean = false,
+    val scopeContent: Boolean = true,
+    val scope: String = "",
+    val excludeScope: String = "",
+    val timeout: String = "3000",
 )
 
-private fun DictRule.fields() = DictRuleFields(name, urlRule, showRule)
+private fun ReplaceRule.toDraft() = ReplaceRuleDraft(
+    name = name,
+    group = group.orEmpty(),
+    pattern = pattern,
+    isRegex = isRegex,
+    replacement = replacement,
+    scopeTitle = scopeTitle,
+    scopeContent = scopeContent,
+    scope = scope.orEmpty(),
+    excludeScope = excludeScope.orEmpty(),
+    timeout = timeoutMillisecond.toString(),
+)
+
+private fun ReplaceRuleDraft.toRule(base: ReplaceRule) = base.copy(
+    name = name,
+    group = group,
+    pattern = pattern,
+    isRegex = isRegex,
+    replacement = replacement,
+    scopeTitle = scopeTitle,
+    scopeContent = scopeContent,
+    scope = scope,
+    excludeScope = excludeScope,
+    timeoutMillisecond = timeout.ifBlank { "3000" }.toLongOrNull() ?: 3000L,
+)
 
 @Composable
-private fun DictRuleEditorDialogContent(
-    rule: DictRule,
+private fun ReplaceRuleEditorDialogContent(
+    draft: ReplaceRuleDraft,
     loading: Boolean,
     isEditing: Boolean,
-    onRuleChange: (DictRule) -> Unit,
+    onDraftChange: (ReplaceRuleDraft) -> Unit,
     onFocused: (EditText) -> Unit,
     onFullEdit: () -> Unit,
     onCopy: () -> Unit,
     onPaste: () -> Unit,
+    onRegexHelp: () -> Unit,
     onCancel: () -> Unit,
     onSave: () -> Unit,
 ) {
@@ -262,21 +281,21 @@ private fun DictRuleEditorDialogContent(
         titleLineHeight = 24.sp,
         titleFontWeight = FontWeight.Medium,
         titleAction = {
-            DictRuleHeaderAction(
+            ReplaceRuleHeaderAction(
                 iconRes = R.drawable.ic_code,
                 iconSize = 20.dp,
                 description = stringResource(R.string.edit_content),
                 enabled = !loading,
                 onClick = onFullEdit,
             )
-            DictRuleHeaderAction(
+            ReplaceRuleHeaderAction(
                 iconRes = R.drawable.ic_copy,
                 iconSize = 20.dp,
                 description = stringResource(R.string.copy_rule),
                 enabled = !loading,
                 onClick = onCopy,
             )
-            DictRuleHeaderAction(
+            ReplaceRuleHeaderAction(
                 iconRes = R.drawable.ic_paste,
                 iconSize = 16.dp,
                 description = stringResource(R.string.paste_rule),
@@ -289,47 +308,113 @@ private fun DictRuleEditorDialogContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp),
+                    .height(220.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator(Modifier.size(28.dp))
             }
         } else {
+            val maxFormHeight = (LocalConfiguration.current.screenHeightDp.dp - 270.dp)
+                .coerceIn(320.dp, 520.dp)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 350.dp)
+                    .heightIn(max = maxFormHeight)
                     .padding(start = 4.dp, top = 12.dp, end = 4.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                DictRuleUnderlineAndroidField(
-                    label = stringResource(R.string.name),
-                    value = rule.name,
-                    onValueChange = { onRuleChange(rule.copy(name = it)) },
+                ReplaceRuleUnderlineField(
+                    label = stringResource(R.string.replace_rule_summary),
+                    value = draft.name,
+                    onValueChange = { onDraftChange(draft.copy(name = it)) },
                     onFocused = onFocused,
                     fieldHeight = 38.dp,
                     singleLine = true,
                     maxLines = 1,
                 )
-                DictRuleUnderlineAndroidField(
-                    label = stringResource(R.string.url_rule),
-                    value = rule.urlRule,
-                    onValueChange = { onRuleChange(rule.copy(urlRule = it)) },
+                ReplaceRuleUnderlineField(
+                    label = stringResource(R.string.group),
+                    value = draft.group,
+                    onValueChange = { onDraftChange(draft.copy(group = it)) },
                     onFocused = onFocused,
-                    fieldHeight = 90.dp,
-                    singleLine = false,
-                    maxLines = 4,
+                    fieldHeight = 38.dp,
+                    singleLine = true,
+                    maxLines = 1,
                 )
-                DictRuleUnderlineAndroidField(
-                    label = stringResource(R.string.show_rule),
-                    value = rule.showRule,
-                    onValueChange = { onRuleChange(rule.copy(showRule = it)) },
+                ReplaceRuleUnderlineField(
+                    label = stringResource(R.string.replace_rule),
+                    value = draft.pattern,
+                    onValueChange = { onDraftChange(draft.copy(pattern = it)) },
                     onFocused = onFocused,
-                    fieldHeight = 126.dp,
+                    fieldHeight = 72.dp,
                     singleLine = false,
-                    maxLines = 6,
-                    codeField = true,
+                    maxLines = 3,
+                )
+                ReplaceRuleRegexOption(
+                    checked = draft.isRegex,
+                    onCheckedChange = { onDraftChange(draft.copy(isRegex = it)) },
+                    onHelp = onRegexHelp,
+                )
+                ReplaceRuleUnderlineField(
+                    label = stringResource(R.string.replace_to),
+                    value = draft.replacement,
+                    onValueChange = { onDraftChange(draft.copy(replacement = it)) },
+                    onFocused = onFocused,
+                    fieldHeight = 56.dp,
+                    singleLine = false,
+                    maxLines = 2,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ReplaceRuleCheckOption(
+                        checked = draft.scopeTitle,
+                        label = stringResource(R.string.scope_title),
+                        onCheckedChange = {
+                            onDraftChange(draft.copy(scopeTitle = it))
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ReplaceRuleCheckOption(
+                        checked = draft.scopeContent,
+                        label = stringResource(R.string.scope_content),
+                        onCheckedChange = {
+                            onDraftChange(draft.copy(scopeContent = it))
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                ReplaceRuleUnderlineField(
+                    label = stringResource(R.string.replace_scope),
+                    value = draft.scope,
+                    onValueChange = { onDraftChange(draft.copy(scope = it)) },
+                    onFocused = onFocused,
+                    fieldHeight = 56.dp,
+                    singleLine = false,
+                    maxLines = 2,
+                )
+                ReplaceRuleUnderlineField(
+                    label = stringResource(R.string.replace_exclude_scope),
+                    value = draft.excludeScope,
+                    onValueChange = { onDraftChange(draft.copy(excludeScope = it)) },
+                    onFocused = onFocused,
+                    fieldHeight = 56.dp,
+                    singleLine = false,
+                    maxLines = 2,
+                )
+                ReplaceRuleUnderlineField(
+                    label = stringResource(R.string.timeout_millisecond),
+                    value = draft.timeout,
+                    onValueChange = { onDraftChange(draft.copy(timeout = it)) },
+                    onFocused = onFocused,
+                    fieldHeight = 38.dp,
+                    singleLine = true,
+                    maxLines = 1,
+                    numberOnly = true,
                 )
             }
         }
@@ -358,7 +443,7 @@ private fun DictRuleEditorDialogContent(
 }
 
 @Composable
-private fun DictRuleHeaderAction(
+private fun ReplaceRuleHeaderAction(
     iconRes: Int,
     iconSize: Dp,
     description: String,
@@ -383,7 +468,7 @@ private fun DictRuleHeaderAction(
 }
 
 @Composable
-private fun DictRuleUnderlineAndroidField(
+private fun ReplaceRuleUnderlineField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
@@ -391,7 +476,7 @@ private fun DictRuleUnderlineAndroidField(
     fieldHeight: Dp,
     singleLine: Boolean,
     maxLines: Int,
-    codeField: Boolean = false,
+    numberOnly: Boolean = false,
 ) {
     val colors = NgTheme.colors
     val currentOnValueChange by rememberUpdatedState(onValueChange)
@@ -403,6 +488,8 @@ private fun DictRuleUnderlineAndroidField(
             fontSize = 13.sp,
             lineHeight = 16.sp,
             fontWeight = FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Box(
             modifier = Modifier
@@ -423,16 +510,7 @@ private fun DictRuleUnderlineAndroidField(
                 factory = { context ->
                     val horizontal = (2 * context.resources.displayMetrics.density).roundToInt()
                     val vertical = (5 * context.resources.displayMetrics.density).roundToInt()
-                    val editText: EditText = if (codeField) {
-                        CodeView(context).apply {
-                            addLegadoPattern()
-                            addJsonPattern()
-                            addJsPattern()
-                        }
-                    } else {
-                        ThemeEditText(context)
-                    }
-                    editText.apply {
+                    ThemeEditText(context).apply {
                         tag = label
                         background = null
                         gravity = Gravity.TOP or Gravity.START
@@ -444,6 +522,7 @@ private fun DictRuleUnderlineAndroidField(
                         isSingleLine = singleLine
                         this.maxLines = maxLines
                         setHorizontallyScrolling(false)
+                        if (numberOnly) inputType = InputType.TYPE_CLASS_NUMBER
                         onFocusChangeListener = View.OnFocusChangeListener { view, hasFocus ->
                             focused = hasFocus
                             if (hasFocus) onFocused(view as EditText)
@@ -457,11 +536,7 @@ private fun DictRuleUnderlineAndroidField(
                     editText.tag = label
                     if (editText.text?.toString() != value) {
                         val oldSelection = editText.selectionStart.coerceAtLeast(0)
-                        if (editText is CodeView && value.isNotEmpty()) {
-                            editText.setTextHighlighted(value)
-                        } else {
-                            editText.setText(value)
-                        }
+                        editText.setText(value)
                         editText.setSelection(min(oldSelection, value.length))
                     }
                 },
@@ -472,7 +547,72 @@ private fun DictRuleUnderlineAndroidField(
 }
 
 @Composable
-private fun DictRuleDiscardDialog(
+private fun ReplaceRuleRegexOption(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    onHelp: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(42.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ReplaceRuleCheckOption(
+            checked = checked,
+            label = stringResource(R.string.use_regex),
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clickable(onClick = onHelp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_help),
+                contentDescription = stringResource(R.string.help),
+                tint = Color(NgTheme.colors.onSurface),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReplaceRuleCheckOption(
+    checked: Boolean,
+    label: String,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxHeight()
+            .clickable { onCheckedChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier.size(36.dp),
+        )
+        Text(
+            text = label,
+            modifier = Modifier.padding(start = 4.dp),
+            color = Color(NgTheme.colors.onSurface),
+            fontSize = 13.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.Normal,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ReplaceRuleDiscardDialog(
     onContinueEditing: () -> Unit,
     onDiscard: () -> Unit,
 ) {

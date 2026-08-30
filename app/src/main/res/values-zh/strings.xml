@@ -42,6 +42,9 @@
     <string name="not_available">暂无</string>
     <string name="enable">启用</string>
     <string name="replace_purify_search">替换净化-搜索</string>
+    <string name="replace_rule_selected_count">已选 %1$d</string>
+    <string name="new_rule">新建规则</string>
+    <string name="edit_rule">编辑规则</string>
     <string name="bookshelf">书架</string>
     <string name="favorites">收藏夹</string>
     <string name="favorite">收藏</string>
@@ -1025,6 +1028,10 @@
     <string name="ps_show_all_find">关闭则只显示勾选源的发现</string>
     <string name="update_toc">更新目录</string>
     <string name="txt_toc_rule">TXT 目录规则</string>
+    <string name="search_txt_toc_rule">搜索目录规则</string>
+    <string name="txt_toc_rule_selected_count">已选 %1$d</string>
+    <string name="continue_editing">继续编辑</string>
+    <string name="discard_changes">不保存</string>
     <string name="select_section_export">选择待导出章节</string>
     <string name="set_charset">设置编码</string>
     <string name="swap_sort">倒序-顺序</string>
@@ -1936,6 +1943,8 @@
     <string name="clear_webview_data_summary">清除内置浏览器所有数据</string>
     <string name="source_tab_list">列表</string>
     <string name="dict_rule">字典规则</string>
+    <string name="search_dict_rule">搜索字典规则</string>
+    <string name="dict_rule_selected_count">已选 %1$d</string>
     <string name="config_dict_rule">配置字典规则</string>
     <string name="create">新建</string>
     <string name="url_rule">url规则(urlRule)</string>

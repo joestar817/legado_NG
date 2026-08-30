@@ -6,8 +6,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -58,26 +56,20 @@ import io.legado.app.ui.book.read.config.ReadConfigDialogSurface
 import io.legado.app.ui.book.read.config.ReadConfigDialogTitle
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
-import io.legado.app.ui.replace.edit.ReplaceEditActivity
+import io.legado.app.ui.replace.edit.ReplaceRuleEditDialog
 import io.legado.app.ui.widget.dialog.applyNgDialogWindow
 import io.legado.app.utils.setLayout
+import io.legado.app.utils.showDialogFragment
 
 /**
  * 起效的替换规则
  */
-class EffectiveReplacesDialog : DialogFragment() {
+class EffectiveReplacesDialog : DialogFragment(), ReplaceRuleEditDialog.Callback {
 
     private val viewModel by activityViewModels<ReadBookViewModel>()
     private var effectiveItems by mutableStateOf(emptyList<EffectiveReplaceItem>())
     private var showChineseConverterSelector by mutableStateOf(false)
     private var isEdit = false
-
-    private val editActivity =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            if (it.resultCode == AppCompatActivity.RESULT_OK) {
-                isEdit = true
-            }
-        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -176,10 +168,12 @@ class EffectiveReplacesDialog : DialogFragment() {
         if (item.isChineseConverter) {
             showChineseConverterSelector = true
         } else {
-            editActivity.launch(
-                ReplaceEditActivity.startIntent(requireContext(), item.rule.id)
-            )
+            showDialogFragment(ReplaceRuleEditDialog(item.rule.id))
         }
+    }
+
+    override fun onReplaceRuleSaved() {
+        isEdit = true
     }
 
     private fun removeItem(item: EffectiveReplaceItem) {

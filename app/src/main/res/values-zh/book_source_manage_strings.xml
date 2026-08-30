@@ -70,5 +70,7 @@
     <string name="book_source_import_add_group">添加到原分组</string>
     <string name="book_source_import_replace_group_summary">使用所选分组替换书源原分组</string>
     <string name="book_source_import_add_group_summary">保留原分组，并追加到所选分组</string>
+    <string name="rule_import_replace_group_summary">使用所选分组覆盖规则原有分组</string>
+    <string name="rule_import_add_group_summary">保留原分组，并追加到所选分组</string>
     <string name="book_source_import_apply">应用</string>
 </resources>

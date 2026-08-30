@@ -1,7 +1,6 @@
 package io.legado.app.ui.replace
 
 import android.app.Application
-import android.text.TextUtils
 import io.legado.app.base.BaseViewModel
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.ReplaceRule
@@ -30,8 +29,9 @@ class ReplaceRuleViewModel(application: Application) : BaseViewModel(application
 
     fun toTop(rule: ReplaceRule) {
         execute {
-            rule.order = appDb.replaceRuleDao.minOrder - 1
-            appDb.replaceRuleDao.update(rule)
+            appDb.replaceRuleDao.update(
+                rule.copy(order = appDb.replaceRuleDao.minOrder - 1)
+            )
             ContentProcessor.upReplaceRules()
         }
     }
@@ -39,18 +39,19 @@ class ReplaceRuleViewModel(application: Application) : BaseViewModel(application
     fun topSelect(rules: List<ReplaceRule>) {
         execute {
             var minOrder = appDb.replaceRuleDao.minOrder - rules.size
-            rules.forEach {
-                it.order = ++minOrder
+            val updates = rules.map {
+                it.copy(order = ++minOrder)
             }
-            appDb.replaceRuleDao.update(*rules.toTypedArray())
+            appDb.replaceRuleDao.update(*updates.toTypedArray())
             ContentProcessor.upReplaceRules()
         }
     }
 
     fun toBottom(rule: ReplaceRule) {
         execute {
-            rule.order = appDb.replaceRuleDao.maxOrder + 1
-            appDb.replaceRuleDao.update(rule)
+            appDb.replaceRuleDao.update(
+                rule.copy(order = appDb.replaceRuleDao.maxOrder + 1)
+            )
             ContentProcessor.upReplaceRules()
         }
     }
@@ -58,10 +59,20 @@ class ReplaceRuleViewModel(application: Application) : BaseViewModel(application
     fun bottomSelect(rules: List<ReplaceRule>) {
         execute {
             var maxOrder = appDb.replaceRuleDao.maxOrder
-            rules.forEach {
-                it.order = maxOrder++
+            val updates = rules.map {
+                it.copy(order = maxOrder++)
             }
-            appDb.replaceRuleDao.update(*rules.toTypedArray())
+            appDb.replaceRuleDao.update(*updates.toTypedArray())
+            ContentProcessor.upReplaceRules()
+        }
+    }
+
+    fun updateOrder(rules: List<ReplaceRule>) {
+        execute {
+            val updates = rules.mapIndexed { index, rule ->
+                rule.copy(order = index + 1)
+            }
+            appDb.replaceRuleDao.update(*updates.toTypedArray())
             ContentProcessor.upReplaceRules()
         }
     }
@@ -106,44 +117,36 @@ class ReplaceRuleViewModel(application: Application) : BaseViewModel(application
 
     fun addGroup(group: String) {
         execute {
-            val sources = appDb.replaceRuleDao.noGroup
-            sources.forEach { source ->
-                source.group = group
+            val updates = appDb.replaceRuleDao.noGroup.map { source ->
+                source.copy(group = group)
             }
-            appDb.replaceRuleDao.update(*sources.toTypedArray())
+            appDb.replaceRuleDao.update(*updates.toTypedArray())
             ContentProcessor.upReplaceRules()
         }
     }
 
     fun upGroup(oldGroup: String, newGroup: String?) {
         execute {
-            val sources = appDb.replaceRuleDao.getByGroup(oldGroup)
-            sources.forEach { source ->
-                source.group?.splitNotBlank(",")?.toHashSet()?.let {
-                    it.remove(oldGroup)
-                    if (!newGroup.isNullOrEmpty())
-                        it.add(newGroup)
-                    source.group = TextUtils.join(",", it)
-                }
+            val updates = appDb.replaceRuleDao.getByGroup(oldGroup).map { source ->
+                val groups = source.group?.splitNotBlank(",")?.toMutableSet() ?: mutableSetOf()
+                groups.remove(oldGroup)
+                if (!newGroup.isNullOrEmpty()) groups.add(newGroup)
+                source.copy(group = groups.joinToString(","))
             }
-            appDb.replaceRuleDao.update(*sources.toTypedArray())
+            appDb.replaceRuleDao.update(*updates.toTypedArray())
             ContentProcessor.upReplaceRules()
         }
     }
 
     fun delGroup(group: String) {
         execute {
-            execute {
-                val sources = appDb.replaceRuleDao.getByGroup(group)
-                sources.forEach { source ->
-                    source.group?.splitNotBlank(",")?.toHashSet()?.let {
-                        it.remove(group)
-                        source.group = TextUtils.join(",", it)
-                    }
-                }
-                appDb.replaceRuleDao.update(*sources.toTypedArray())
-                ContentProcessor.upReplaceRules()
+            val updates = appDb.replaceRuleDao.getByGroup(group).map { source ->
+                val groups = source.group?.splitNotBlank(",")?.toMutableSet() ?: mutableSetOf()
+                groups.remove(group)
+                source.copy(group = groups.joinToString(","))
             }
+            appDb.replaceRuleDao.update(*updates.toTypedArray())
+            ContentProcessor.upReplaceRules()
         }
     }
 }

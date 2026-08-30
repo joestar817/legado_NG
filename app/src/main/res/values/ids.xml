@@ -22,6 +22,10 @@
     <item name="menu_show_disabled" type="id" />
     <item name="menu_copy_all" type="id" />
 
+    <!-- Stable actions retained after the legacy replacement-rule menus were removed. -->
+    <item name="menu_enable" type="id" />
+    <item name="menu_add_replace_rule" type="id" />
+
     <!-- Stable role/storyboard actions retained after removing legacy character menus. -->
     <item name="menu_delete" type="id" />
     <item name="menu_batch_manage" type="id" />

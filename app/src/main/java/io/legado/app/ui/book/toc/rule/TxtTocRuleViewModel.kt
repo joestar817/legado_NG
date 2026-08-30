@@ -35,30 +35,29 @@ class TxtTocRuleViewModel(app: Application) : BaseViewModel(app) {
     fun toTop(vararg rules: TxtTocRule) {
         execute {
             val minOrder = appDb.txtTocRuleDao.minOrder - 1
-            rules.forEachIndexed { index, source ->
-                source.serialNumber = minOrder - index
+            val updated = rules.mapIndexed { index, source ->
+                source.copy(serialNumber = minOrder - index)
             }
-            appDb.txtTocRuleDao.update(*rules)
+            appDb.txtTocRuleDao.update(*updated.toTypedArray())
         }
     }
 
     fun toBottom(vararg sources: TxtTocRule) {
         execute {
             val maxOrder = appDb.txtTocRuleDao.maxOrder + 1
-            sources.forEachIndexed { index, source ->
-                source.serialNumber = maxOrder + index
+            val updated = sources.mapIndexed { index, source ->
+                source.copy(serialNumber = maxOrder + index)
             }
-            appDb.txtTocRuleDao.update(*sources)
+            appDb.txtTocRuleDao.update(*updated.toTypedArray())
         }
     }
 
-    fun upOrder() {
+    fun updateOrder(rules: List<TxtTocRule>) {
         execute {
-            val sources = appDb.txtTocRuleDao.all
-            for ((index: Int, source: TxtTocRule) in sources.withIndex()) {
-                source.serialNumber = index + 1
+            val updated = rules.mapIndexed { index, rule ->
+                rule.copy(serialNumber = index + 1)
             }
-            appDb.txtTocRuleDao.update(*sources.toTypedArray())
+            appDb.txtTocRuleDao.update(*updated.toTypedArray())
         }
     }
 

@@ -122,6 +122,9 @@ fun NgDialogTextActionButton(
 fun NgCompactEditorDialog(
     title: String,
     modifier: Modifier = Modifier,
+    titleFontSize: TextUnit = 18.sp,
+    titleLineHeight: TextUnit = 22.sp,
+    titleFontWeight: FontWeight = FontWeight.Medium,
     titleAction: @Composable RowScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -143,9 +146,9 @@ fun NgCompactEditorDialog(
                     text = title,
                     modifier = Modifier.weight(1f),
                     color = Color(NgTheme.colors.onSurface),
-                    fontSize = 18.sp,
-                    lineHeight = 22.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = titleFontSize,
+                    lineHeight = titleLineHeight,
+                    fontWeight = titleFontWeight,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

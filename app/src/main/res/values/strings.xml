@@ -43,6 +43,9 @@
     <string name="not_available">Not available now</string>
     <string name="enable">Enable</string>
     <string name="replace_purify_search">Search Replacement</string>
+    <string name="replace_rule_selected_count">Selected %1$d</string>
+    <string name="new_rule">New rule</string>
+    <string name="edit_rule">Edit rule</string>
     <string name="bookshelf">Bookshelf</string>
     <string name="favorites">Favorites</string>
     <string name="favorite">Favorite</string>
@@ -1026,6 +1029,10 @@
     <string name="ps_show_all_find">Display the selected origin\'s Discovery if closed</string>
     <string name="update_toc">Update chapters</string>
     <string name="txt_toc_rule">Txt Catalog Rule</string>
+    <string name="search_txt_toc_rule">Search TXT catalog rules</string>
+    <string name="txt_toc_rule_selected_count">Selected %1$d</string>
+    <string name="continue_editing">Continue editing</string>
+    <string name="discard_changes">Don\'t save</string>
     <string name="select_section_export">Choose some chapters to be exported</string>
     <string name="set_charset">Text encoding</string>
     <string name="swap_sort">Ascending/Descending order</string>
@@ -1941,6 +1948,8 @@
     <string name="clear_webview_data_summary">Clear all data in WebView</string>
     <string name="source_tab_list">List</string>
     <string name="dict_rule">Dict rule</string>
+    <string name="search_dict_rule">Search dictionary rules</string>
+    <string name="dict_rule_selected_count">Selected %1$d</string>
     <string name="config_dict_rule">Config dict rule</string>
     <string name="create">Create</string>
     <string name="url_rule">url规则(urlRule)</string>

@@ -70,5 +70,7 @@
     <string name="book_source_import_add_group">Add to original groups</string>
     <string name="book_source_import_replace_group_summary">Replace the source’s original groups with the selected group</string>
     <string name="book_source_import_add_group_summary">Keep original groups and append the selected group</string>
+    <string name="rule_import_replace_group_summary">Use the selected group to replace the rule’s original groups</string>
+    <string name="rule_import_add_group_summary">Keep original groups and append the selected group</string>
     <string name="book_source_import_apply">Apply</string>
 </resources>

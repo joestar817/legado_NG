@@ -31,13 +31,26 @@ class DictRuleViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    fun upSortNumber() {
+    fun toTop(rule: DictRule) {
         execute {
-            val rules = appDb.dictRuleDao.all
-            for ((index, rule) in rules.withIndex()) {
-                rule.sortNumber = index + 1
+            val minOrder = appDb.dictRuleDao.all.minOfOrNull(DictRule::sortNumber) ?: 0
+            appDb.dictRuleDao.update(rule.copy(sortNumber = minOrder - 1))
+        }
+    }
+
+    fun toBottom(rule: DictRule) {
+        execute {
+            val maxOrder = appDb.dictRuleDao.all.maxOfOrNull(DictRule::sortNumber) ?: 0
+            appDb.dictRuleDao.update(rule.copy(sortNumber = maxOrder + 1))
+        }
+    }
+
+    fun updateOrder(rules: List<DictRule>) {
+        execute {
+            val updated = rules.mapIndexed { index, rule ->
+                rule.copy(sortNumber = index + 1)
             }
-            appDb.dictRuleDao.insert(*rules.toTypedArray())
+            appDb.dictRuleDao.insert(*updated.toTypedArray())
         }
     }
 

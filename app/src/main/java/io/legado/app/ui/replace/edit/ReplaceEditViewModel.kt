@@ -1,7 +1,6 @@
 package io.legado.app.ui.replace.edit
 
 import android.app.Application
-import android.content.Intent
 import io.legado.app.base.BaseViewModel
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.ReplaceRule
@@ -14,18 +13,25 @@ class ReplaceEditViewModel(application: Application) : BaseViewModel(application
 
     var replaceRule: ReplaceRule? = null
 
-    fun initData(intent: Intent, finally: (replaceRule: ReplaceRule) -> Unit) {
+    fun initData(
+        id: Long,
+        pattern: String?,
+        isRegex: Boolean,
+        scope: String?,
+        finally: (replaceRule: ReplaceRule) -> Unit,
+    ) {
+        replaceRule?.let {
+            finally(it)
+            return
+        }
         execute {
-            val id = intent.getLongExtra("id", -1)
             replaceRule = if (id > 0) {
                 appDb.replaceRuleDao.findById(id)
             } else {
-                val pattern = intent.getStringExtra("pattern") ?: ""
-                val isRegex = intent.getBooleanExtra("isRegex", false)
-                val scope = intent.getStringExtra("scope")
+                val initialPattern = pattern ?: ""
                 ReplaceRule(
-                    name = pattern,
-                    pattern = pattern,
+                    name = initialPattern,
+                    pattern = initialPattern,
                     isRegex = isRegex,
                     scope = scope
                 )
@@ -56,10 +62,13 @@ class ReplaceEditViewModel(application: Application) : BaseViewModel(application
     fun save(replaceRule: ReplaceRule, success: () -> Unit) {
         execute {
             replaceRule.checkValid()
-            if (replaceRule.order == Int.MIN_VALUE) {
-                replaceRule.order = appDb.replaceRuleDao.maxOrder + 1
+            val savedRule = if (replaceRule.order == Int.MIN_VALUE) {
+                replaceRule.copy(order = appDb.replaceRuleDao.maxOrder + 1)
+            } else {
+                replaceRule
             }
-            appDb.replaceRuleDao.insert(replaceRule)
+            appDb.replaceRuleDao.insert(savedRule)
+            this@ReplaceEditViewModel.replaceRule = savedRule
             ContentProcessor.upReplaceRules()
         }.onSuccess {
             success()

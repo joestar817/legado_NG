@@ -98,7 +98,7 @@ enum class NgExpandableActionMenuWidthVariant(val width: Dp?) {
 }
 
 @Composable
-private fun rememberNgExpandableMenuContentWidth(
+internal fun rememberNgExpandableActionMenuContentWidth(
     items: List<NgExpandableActionMenuItem>,
 ): Dp {
     val context = LocalContext.current
@@ -166,10 +166,11 @@ fun NgExpandableActionMenu(
     defaultExpandedItemIds: Set<Int> = emptySet(),
     variant: NgExpandableActionMenuVariant = NgExpandableActionMenuVariant.DROPDOWN,
     properties: PopupProperties = PopupProperties(),
+    sideSlideEndMargin: Dp = 8.dp,
     widthVariant: NgExpandableActionMenuWidthVariant =
         NgExpandableActionMenuWidthVariant.CONTENT,
 ) {
-    val contentWidth = rememberNgExpandableMenuContentWidth(items)
+    val contentWidth = rememberNgExpandableActionMenuContentWidth(items)
     val resolvedWidth = width ?: widthVariant.width ?: contentWidth
     var expandedItemIds by remember(items, defaultExpandedItemIds) {
         mutableStateOf(defaultExpandedItemIds)
@@ -193,6 +194,7 @@ fun NgExpandableActionMenu(
             rowMinHeight = rowMinHeight,
             menuContainerColor = menuContainerColor,
             properties = properties,
+            endMargin = sideSlideEndMargin,
             onFullyHidden = { expandedItemIds = defaultExpandedItemIds }
         )
         return
@@ -231,6 +233,32 @@ fun NgExpandableActionMenu(
     }
     val containerColor = menuContainerColor ?: colorResource(R.color.ng_surface_card)
 
+    if (bottomPointerHeight > 0.dp) {
+        NgBottomPointerExpandableActionMenu(
+            expanded = expanded,
+            onDismissRequest = onDismissRequest,
+            items = items,
+            expandedItemIds = expandedItemIds,
+            onToggle = { itemId ->
+                expandedItemIds = if (itemId in expandedItemIds) {
+                    expandedItemIds - itemId
+                } else {
+                    expandedItemIds + itemId
+                }
+            },
+            onItemClick = onItemClick,
+            modifier = modifier,
+            offset = offset,
+            width = resolvedWidth,
+            rowMinHeight = rowMinHeight,
+            shape = shape,
+            containerColor = containerColor,
+            properties = properties,
+            bottomPointerHeight = bottomPointerHeight,
+        )
+        return
+    }
+
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
@@ -255,8 +283,76 @@ fun NgExpandableActionMenu(
             onItemClick = onItemClick,
             rowMinHeight = rowMinHeight
         )
-        if (bottomPointerHeight > 0.dp) {
-            Spacer(Modifier.heightIn(min = bottomPointerHeight))
+    }
+}
+
+/**
+ * 带底部指向角的菜单需要严格锚在触发段上方。Material DropdownMenu 会额外参与
+ * 窗口边界候选定位，靠近页面底部时会让业务层偏移量难以直接对应最终几何；这里
+ * 保留同款 Surface 材质与内容留白，只把定位改为明确的“菜单底边对齐锚点顶边”。
+ */
+@Composable
+private fun NgBottomPointerExpandableActionMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    items: List<NgExpandableActionMenuItem>,
+    expandedItemIds: Set<Int>,
+    onToggle: (Int) -> Unit,
+    onItemClick: (NgExpandableActionMenuItem) -> Unit,
+    modifier: Modifier,
+    offset: DpOffset,
+    width: Dp,
+    rowMinHeight: Dp,
+    shape: Shape,
+    containerColor: Color,
+    properties: PopupProperties,
+    bottomPointerHeight: Dp,
+) {
+    if (!expanded) return
+
+    val density = LocalDensity.current
+    val horizontalOffsetPx = with(density) { offset.x.roundToPx() }
+    val verticalOffsetPx = with(density) { offset.y.roundToPx() }
+    val windowMarginPx = with(density) { 8.dp.roundToPx() }
+    val positionProvider = remember(
+        horizontalOffsetPx,
+        verticalOffsetPx,
+        windowMarginPx,
+    ) {
+        NgAnchorAbovePopupPositionProvider(
+            horizontalOffsetPx = horizontalOffsetPx,
+            verticalOffsetPx = verticalOffsetPx,
+            windowMarginPx = windowMarginPx,
+        )
+    }
+
+    Popup(
+        popupPositionProvider = positionProvider,
+        onDismissRequest = onDismissRequest,
+        properties = properties,
+    ) {
+        Surface(
+            modifier = modifier.width(width),
+            shape = shape,
+            color = containerColor,
+            contentColor = Color(NgTheme.colors.onSurface),
+            tonalElevation = 0.dp,
+            shadowElevation = NgTheme.effects.overlayElevationDp.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 8.dp),
+            ) {
+                NgExpandableActionMenuRows(
+                    items = items,
+                    expandedItemIds = expandedItemIds,
+                    onToggle = onToggle,
+                    onItemClick = onItemClick,
+                    rowMinHeight = rowMinHeight,
+                )
+                Spacer(Modifier.height(bottomPointerHeight))
+            }
         }
     }
 }
@@ -339,6 +435,7 @@ private fun NgSideSlideExpandableActionMenu(
     rowMinHeight: Dp,
     menuContainerColor: Color?,
     properties: PopupProperties,
+    endMargin: Dp,
     onFullyHidden: () -> Unit
 ) {
     val slideFraction = remember {
@@ -348,7 +445,7 @@ private fun NgSideSlideExpandableActionMenu(
     val motion = NgTheme.snapshot.motion
     val durationMs = if (motion.enabled) motion.mediumDurationMs else 0
     val density = LocalDensity.current
-    val endMarginPx = with(density) { 8.dp.roundToPx() }
+    val endMarginPx = with(density) { endMargin.roundToPx() }
     val anchorBottomOffsetPx = with(density) { 16.dp.roundToPx() }
     // Popup observes snapshot reads made by its position provider. Keep this
     // provider stable so a submenu remeasure cannot recreate the slide source.
@@ -473,6 +570,37 @@ private class NgWindowEndBelowAnchorPopupPositionProvider(
             .coerceAtLeast(marginPx)
         val y = (anchorBounds.bottom + anchorBottomOffsetPx)
             .coerceIn(marginPx, maxY)
+        return IntOffset(x, y)
+    }
+}
+
+/**
+ * 让带底部指向角的菜单稳定展开在锚点上方；偏移量直接作用于最终位置，不再经过
+ * DropdownMenu 的多候选位置选择。
+ */
+private class NgAnchorAbovePopupPositionProvider(
+    private val horizontalOffsetPx: Int,
+    private val verticalOffsetPx: Int,
+    private val windowMarginPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val desiredX = when (layoutDirection) {
+            LayoutDirection.Ltr -> anchorBounds.left + horizontalOffsetPx
+            LayoutDirection.Rtl -> anchorBounds.right - popupContentSize.width - horizontalOffsetPx
+        }
+        val maxX = (windowSize.width - popupContentSize.width - windowMarginPx)
+            .coerceAtLeast(windowMarginPx)
+        val x = desiredX.coerceIn(windowMarginPx, maxX)
+
+        val desiredY = anchorBounds.top - popupContentSize.height + verticalOffsetPx
+        val maxY = (windowSize.height - popupContentSize.height - windowMarginPx)
+            .coerceAtLeast(windowMarginPx)
+        val y = desiredY.coerceIn(windowMarginPx, maxY)
         return IntOffset(x, y)
     }
 }
