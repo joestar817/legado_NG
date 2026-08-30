@@ -25,9 +25,10 @@
 package com.script.rhino
 
 import android.os.Build
-import org.mozilla.javascript.ClassShutter
-import org.mozilla.javascript.Context
-import org.mozilla.javascript.Scriptable
+import org.htmlunit.corejs.javascript.ClassShutter
+import org.htmlunit.corejs.javascript.Context
+import org.htmlunit.corejs.javascript.Scriptable
+import org.htmlunit.corejs.javascript.VarScope
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import java.lang.reflect.Member
@@ -110,7 +111,7 @@ object RhinoClassShutter : ClassShutter {
             "cn.hutool.core.util.ReflectUtil",
             "cn.hutool.core.util.SerializeUtil",
             "cn.hutool.core.util.ClassUtil",
-            "org.mozilla.javascript.DefiningClassLoader",
+            "org.htmlunit.corejs.javascript.DefiningClassLoader",
             "io.legado.app.data.AppDatabase",
             "io.legado.app.data.AppDatabase_Impl",
             "io.legado.app.data.AppDatabaseKt",
@@ -136,6 +137,7 @@ object RhinoClassShutter : ClassShutter {
             "java.lang.invoke",
             "io.legado.app.data.dao",
             "com.script",
+            "org.htmlunit.corejs",
             "org.mozilla",
             "sun",
             "libcore",
@@ -240,7 +242,7 @@ object RhinoClassShutter : ClassShutter {
         }
     }
 
-    fun wrapJavaClass(scope: Scriptable, javaClass: Class<*>): Scriptable {
+    fun wrapJavaClass(scope: VarScope, javaClass: Class<*>): Scriptable {
         return when (javaClass) {
             System::class.java -> {
                 ProtectedNativeJavaClass(scope, javaClass, systemClassProtectedName)

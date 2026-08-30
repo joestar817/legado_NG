@@ -400,7 +400,7 @@ class AnalyzeUrl(
                 RhinoScriptEngine.getRuntimeScope(bindings)
             } else {
                 bindings.apply {
-                    prototype = sharedScope
+                    chainTo(sharedScope)
                 }
             }
             RhinoScriptEngine.eval(jsStr, scope, coroutineContext)

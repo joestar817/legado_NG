@@ -15,10 +15,11 @@ import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.isAbsUrl
 import io.legado.app.utils.isJsonObject
 import kotlinx.coroutines.runBlocking
-import org.mozilla.javascript.BaseFunction
-import org.mozilla.javascript.Context
-import org.mozilla.javascript.Scriptable
-import org.mozilla.javascript.ScriptableObject
+import org.htmlunit.corejs.javascript.BaseFunction
+import org.htmlunit.corejs.javascript.Context
+import org.htmlunit.corejs.javascript.Scriptable
+import org.htmlunit.corejs.javascript.ScriptableObject
+import org.htmlunit.corejs.javascript.VarScope
 import splitties.init.appCtx
 import java.io.File
 import java.lang.ref.WeakReference
@@ -34,8 +35,8 @@ object SharedJsScope {
         ACache.get(File(appCtx.cacheDir, "shareJs"))
     }
 
-    private val scopeMap = LruCache<String, WeakReference<Scriptable>>(16)
-    private val cryptoScopeMap = LruCache<String, WeakReference<Scriptable>>(16)
+    private val scopeMap = LruCache<String, WeakReference<ScriptBindings>>(16)
+    private val cryptoScopeMap = LruCache<String, WeakReference<ScriptBindings>>(16)
     private val cryptoScopeLock = Any()
     @Volatile
     private var cryptoJsScript: CompiledScript? = null
@@ -43,7 +44,7 @@ object SharedJsScope {
     private val secureRandom by lazy { SecureRandom() }
 
     internal fun installCryptoJs(
-        scope: Scriptable,
+        scope: ScriptBindings,
         coroutineContext: CoroutineContext?,
     ): Boolean {
         val cryptoJs = compiledCryptoJs() ?: return false
@@ -51,7 +52,7 @@ object SharedJsScope {
         val secureRandomFunction = object : BaseFunction() {
             override fun call(
                 cx: Context,
-                callScope: Scriptable,
+                callScope: VarScope,
                 thisObj: Scriptable,
                 args: Array<Any>,
             ): Any = secureRandom.nextInt().toDouble()
@@ -73,7 +74,7 @@ object SharedJsScope {
         coroutineContext: CoroutineContext?,
         bookSourceClassPolicy: Boolean = false,
         bookSourceLabel: String? = null,
-    ): Scriptable? {
+    ): ScriptBindings? {
         return RhinoClassShutter.withBookSourceClassPolicy(
             enabled = bookSourceClassPolicy,
             sourceLabel = bookSourceLabel,
@@ -86,7 +87,7 @@ object SharedJsScope {
                 if (!installCryptoJs(scope, coroutineContext)) {
                     return@withBookSourceClassPolicy null
                 }
-                if (scope is ScriptableObject) scope.preventExtensions()
+                scope.globalThis.preventExtensions()
                 cryptoScopeMap.put(key, WeakReference(scope))
                 scope
             }
@@ -99,7 +100,7 @@ object SharedJsScope {
         bookSourceClassPolicy: Boolean = false,
         bookSourceLabel: String? = null,
         scopeNamespace: String? = null
-    ): Scriptable? {
+    ): ScriptBindings? {
         if (jsLib.isNullOrBlank()) {
             return null
         }
@@ -145,12 +146,10 @@ object SharedJsScope {
                 } else {
                     RhinoScriptEngine.eval(jsLib, scope, coroutineContext)
                 }
-                if (scope is ScriptableObject) {
-                    /**
-                     * 阻止新全局增加（即函数内未用var的隐性全局变量创建）,会直接隐性创建失败,提示变量未定义
-                     */
-                    scope.preventExtensions()
-                }
+                /**
+                 * 阻止新全局增加（即函数内未用var的隐性全局变量创建）,会直接隐性创建失败,提示变量未定义
+                 */
+                scope.globalThis.preventExtensions()
                 scopeMap.put(key, WeakReference(scope))
             }
             scope

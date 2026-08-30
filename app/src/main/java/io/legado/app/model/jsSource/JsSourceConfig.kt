@@ -11,17 +11,17 @@ import io.legado.app.model.SharedJsScope
 import io.legado.app.model.login.LoginUiV2
 import io.legado.app.utils.GSON
 import kotlinx.coroutines.CancellationException
-import org.mozilla.javascript.Function
-import org.mozilla.javascript.Parser
-import org.mozilla.javascript.Scriptable
-import org.mozilla.javascript.ScriptableObject
-import org.mozilla.javascript.ast.FunctionCall
-import org.mozilla.javascript.ast.Name
-import org.mozilla.javascript.ast.NumberLiteral
-import org.mozilla.javascript.ast.ObjectLiteral
-import org.mozilla.javascript.ast.ObjectProperty
-import org.mozilla.javascript.ast.StringLiteral
-import org.mozilla.javascript.ast.VariableInitializer
+import org.htmlunit.corejs.javascript.Function
+import org.htmlunit.corejs.javascript.Parser
+import org.htmlunit.corejs.javascript.Scriptable
+import org.htmlunit.corejs.javascript.ScriptableObject
+import org.htmlunit.corejs.javascript.ast.FunctionCall
+import org.htmlunit.corejs.javascript.ast.Name
+import org.htmlunit.corejs.javascript.ast.NumberLiteral
+import org.htmlunit.corejs.javascript.ast.ObjectLiteral
+import org.htmlunit.corejs.javascript.ast.ObjectProperty
+import org.htmlunit.corejs.javascript.ast.StringLiteral
+import org.htmlunit.corejs.javascript.ast.VariableInitializer
 import kotlin.coroutines.CoroutineContext
 
 /** 从单文件脚本提取稳定的 [BookSource] 配置并校验函数契约。 */
@@ -120,7 +120,7 @@ object JsSourceConfig {
     }
 
     private fun findConfig(
-        scope: Scriptable,
+        scope: ScriptBindings,
         coroutineContext: CoroutineContext?,
     ): Pair<String, Any> {
         val config = ScriptableObject.getProperty(scope, CONFIG_PROPERTY)
@@ -203,12 +203,12 @@ object JsSourceConfig {
                         return@visit true
                     }
                     config.elements.filterIsInstance<ObjectProperty>().forEach { property ->
-                        val key = when (val nodeKey = property.left) {
+                        val key = when (val nodeKey = property.key) {
                             is Name -> nodeKey.identifier
                             is StringLiteral -> nodeKey.value
                             else -> null
                         }
-                        val value = property.right
+                        val value = property.value
                         val supported = value is NumberLiteral ||
                             value is FunctionCall && value.arguments.isEmpty() &&
                             value.target.toSource() == "Date.now"

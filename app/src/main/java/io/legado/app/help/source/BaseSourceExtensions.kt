@@ -6,10 +6,10 @@ import io.legado.app.data.entities.BaseSource
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.RssSource
 import io.legado.app.model.SharedJsScope
-import org.mozilla.javascript.Scriptable
+import org.htmlunit.corejs.javascript.TopLevel
 import kotlin.coroutines.CoroutineContext
 
-fun BaseSource.getShareScope(coroutineContext: CoroutineContext? = null): Scriptable? {
+fun BaseSource.getShareScope(coroutineContext: CoroutineContext? = null): TopLevel? {
     val bookSource = this as? BookSource
     return SharedJsScope.getScope(
         jsLib = jsLib,

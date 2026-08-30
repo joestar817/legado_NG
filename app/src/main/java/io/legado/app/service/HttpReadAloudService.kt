@@ -91,7 +91,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.mozilla.javascript.WrappedException
+import org.htmlunit.corejs.javascript.WrappedException
 import java.io.File
 import java.io.InputStream
 import java.net.ConnectException

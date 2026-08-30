@@ -1,18 +1,18 @@
 package com.script.rhino
 
-import org.mozilla.javascript.LambdaFunction
-import org.mozilla.javascript.NativeJavaObject
-import org.mozilla.javascript.Scriptable
-import org.mozilla.javascript.Undefined
+import org.htmlunit.corejs.javascript.LambdaFunction
+import org.htmlunit.corejs.javascript.Scriptable
+import org.htmlunit.corejs.javascript.Undefined
+import org.htmlunit.corejs.javascript.VarScope
 
 class ReadOnlyJavaObject(
-    scope: Scriptable?,
+    scope: VarScope?,
     javaObject: Any,
     staticType: Class<*>?,
     private val blockedMethods: Set<String> = emptySet(),
-    private val onBlockedMethod: ((String) -> Unit)? = null
+    private val onBlockedMethod: ((String) -> Unit)? = null,
 ) :
-    NativeJavaObject(scope, javaObject, staticType) {
+    CatchableNativeJavaObject(scope, javaObject, staticType) {
 
     private fun isBlockedMethod(name: String): Boolean {
         return blockedMethods.any { method ->
@@ -36,7 +36,7 @@ class ReadOnlyJavaObject(
     override fun get(name: String, start: Scriptable): Any? {
         if (isBlockedMethod(name)) {
             val functionName = name.substringBefore('(')
-            return LambdaFunction(parentScope ?: start, functionName, 0) { _, _, _, _ ->
+            return LambdaFunction(requireNotNull(parentScope), functionName, 0) { _, _, _, _ ->
                 onBlockedMethod?.invoke(name)
                 Undefined.instance
             }
@@ -51,8 +51,8 @@ class ReadOnlyJavaObject(
     }
 
     override fun put(
-        name: String?,
-        start: Scriptable?,
+        name: String,
+        start: Scriptable,
         value: Any?
     ) {
         // do nothing
@@ -65,17 +65,16 @@ class ReadOnlyJavaObject(
 
         fun factory(
             blockedMethods: Set<String>,
-            onBlockedMethod: ((String) -> Unit)? = null
-        ) =
-            JavaObjectWrapFactory { scope, javaObject, staticType ->
-                ReadOnlyJavaObject(
-                    scope,
-                    javaObject,
-                    staticType,
-                    blockedMethods,
-                    onBlockedMethod
-                )
-            }
+            onBlockedMethod: ((String) -> Unit)? = null,
+        ) = JavaObjectWrapFactory { scope, javaObject, staticType ->
+            ReadOnlyJavaObject(
+                scope,
+                javaObject,
+                staticType,
+                blockedMethods,
+                onBlockedMethod,
+            )
+        }
     }
 
 }

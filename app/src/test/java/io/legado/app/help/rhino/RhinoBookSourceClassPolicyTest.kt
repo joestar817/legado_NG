@@ -251,6 +251,29 @@ class RhinoBookSourceClassPolicyTest {
     }
 
     @Test
+    fun htmlUnitMigrationKeepsEngineAndDangerousClassesBlocked() {
+        val source = BookSource(
+            bookSourceUrl = "https://example.com/htmlunit-policy",
+            bookSourceName = "HtmlUnit策略测试",
+        )
+        val blockedClasses = listOf(
+            "org.htmlunit.corejs.javascript.Context",
+            "org.htmlunit.corejs.javascript.DefiningClassLoader",
+            "java.lang.Runtime",
+            "java.io.File",
+        )
+
+        blockedClasses.forEach { className ->
+            val result = source.evalJS("String(Packages.$className)").toString()
+            assertTrue(result, result.startsWith("[JavaPackage "))
+        }
+        assertEquals(
+            "ok",
+            source.evalJS("Packages.java.lang.Thread.sleep(1); 'ok'")
+        )
+    }
+
+    @Test
     fun diagnosticSourceLabelSupportsNestingAndCleanup() {
         assertNull(RhinoClassShutter.currentBookSourceLabel())
 

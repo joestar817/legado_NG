@@ -1,14 +1,15 @@
 package io.legado.app.help.rhino
 
+import com.script.rhino.CatchableNativeJavaObject
 import com.script.rhino.JavaObjectWrapFactory
 import io.legado.app.data.entities.Book
-import org.mozilla.javascript.LambdaFunction
-import org.mozilla.javascript.NativeJavaObject
-import org.mozilla.javascript.Scriptable
-import org.mozilla.javascript.Undefined
+import org.htmlunit.corejs.javascript.LambdaFunction
+import org.htmlunit.corejs.javascript.Scriptable
+import org.htmlunit.corejs.javascript.Undefined
+import org.htmlunit.corejs.javascript.VarScope
 
-class NativeBook(scope: Scriptable?, javaObject: Any, staticType: Class<*>?) :
-    NativeJavaObject(scope, javaObject, staticType) {
+class NativeBook(scope: VarScope?, javaObject: Any, staticType: Class<*>?) :
+    CatchableNativeJavaObject(scope, javaObject, staticType) {
 
     private val sourceHint = (javaObject as? Book)?.let { book ->
         book.originName.takeIf { it.isNotBlank() }
@@ -25,7 +26,7 @@ class NativeBook(scope: Scriptable?, javaObject: Any, staticType: Class<*>?) :
     override fun get(name: String, start: Scriptable): Any? {
         if (isBlockedMethod(name)) {
             val functionName = name.substringBefore('(')
-            return LambdaFunction(parentScope ?: start, functionName, 0) { _, _, _, _ ->
+            return LambdaFunction(requireNotNull(parentScope), functionName, 0) { _, _, _, _ ->
                 BookSourceGuardLog.noOp("Book", name, sourceHint)
                 Undefined.instance
             }

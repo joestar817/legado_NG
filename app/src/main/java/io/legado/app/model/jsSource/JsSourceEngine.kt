@@ -18,13 +18,13 @@ import io.legado.app.model.SharedJsScope
 import io.legado.app.utils.GSON
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import org.mozilla.javascript.Context
-import org.mozilla.javascript.Function
-import org.mozilla.javascript.NativeJSON
-import org.mozilla.javascript.Scriptable
-import org.mozilla.javascript.ScriptableObject
-import org.mozilla.javascript.Undefined
-import org.mozilla.javascript.Wrapper
+import org.htmlunit.corejs.javascript.Context
+import org.htmlunit.corejs.javascript.Function
+import org.htmlunit.corejs.javascript.NativeJSON
+import org.htmlunit.corejs.javascript.Scriptable
+import org.htmlunit.corejs.javascript.ScriptableObject
+import org.htmlunit.corejs.javascript.Undefined
+import org.htmlunit.corejs.javascript.Wrapper
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -83,7 +83,7 @@ class JsSourceEngine(
         val value: String?,
     )
 
-    private fun buildScope(args: List<Pair<String, Any?>>): Scriptable {
+    private fun buildScope(args: List<Pair<String, Any?>>): ScriptBindings {
         val script = source.mainJs?.takeIf { it.isNotBlank() }
             ?: throw NoStackTraceException("mainJs 为空，不是 JS 书源")
         val bindings = buildScriptBindings { values ->
@@ -105,7 +105,7 @@ class JsSourceEngine(
         val scope = if (sharedScope == null) {
             RhinoScriptEngine.getRuntimeScope(bindings)
         } else {
-            bindings.apply { prototype = sharedScope }
+            bindings.apply { chainTo(sharedScope) }
         }
         compile(script).eval(scope, coroutineContext)
         return scope
@@ -141,7 +141,7 @@ class JsSourceEngine(
             coroutineContext: CoroutineContext?,
         ): String? {
             val topScope = value.parentScope?.let(ScriptableObject::getTopLevelScope)
-                ?: ScriptableObject.getTopLevelScope(value)
+                ?: return null
             val context = Context.enter() as RhinoContext
             val previousCoroutineContext = context.coroutineContext
             val previousAllowScriptRun = context.allowScriptRun

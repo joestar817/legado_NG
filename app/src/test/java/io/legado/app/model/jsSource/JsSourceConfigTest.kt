@@ -33,6 +33,34 @@ class JsSourceConfigTest {
     }
 
     @Test
+    fun extractsReferenceStyleSourceUsingConstAndLookbehind() {
+        val script = """
+            const config = {
+                bookSourceUrl: "banxia-reference",
+                bookSourceName: "半夏兼容测试"
+            };
+            const compact = "中 文".replace(
+                /(?<=[^\x00-\x7F])[t\x20](?=[^\x00-\x7F])/, ""
+            );
+            const punctuation = "中?文".replace(
+                /(?<=[\u4e00-\u9fa5])\?(?=[\u4e00-\u9fa5])/, ""
+            );
+            if (compact !== "中文" || punctuation !== "中文") {
+                throw new Error("lookbehind mismatch");
+            }
+            function search(key, page) { return []; }
+            function getChapters(book) { return []; }
+            function getContent(chapter, book) { return "正文"; }
+        """.trimIndent()
+
+        val source = JsSourceConfig.extract(script)
+
+        assertEquals("banxia-reference", source.bookSourceUrl)
+        assertEquals("半夏兼容测试", source.bookSourceName)
+        assertEquals(script, source.mainJs)
+    }
+
+    @Test
     fun validatesFunctionPairsAndRequiredFunctions() {
         val missingExplore = validScript.replace(
             "function explore(url, page) { return []; }",
