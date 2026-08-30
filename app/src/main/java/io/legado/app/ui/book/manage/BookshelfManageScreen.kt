@@ -126,7 +126,7 @@ internal fun BookshelfManageScreen(
                 start = 14.dp,
                 top = 4.dp,
                 end = 14.dp,
-                bottom = 10.dp,
+                bottom = 4.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -171,8 +171,9 @@ internal fun BookshelfManageScreen(
             totalCount = books.size,
             modifier = Modifier.padding(
                 start = 14.dp,
+                top = 8.dp,
                 end = 14.dp,
-                bottom = 16.dp,
+                bottom = 8.dp,
             ),
             onSelectAll = onSelectAll,
             onInvertSelection = onInvertSelection,

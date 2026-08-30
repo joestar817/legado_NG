@@ -127,7 +127,7 @@ class BookStoryboardActivity : BaseActivity<ComposeActivityBinding>() {
                             StoryboardCacheUiRow(
                                 chapterIndex = row.chapterIndex,
                                 chapterNumber = row.chapterTitle.storyboardChapterNumber(row.chapterIndex),
-                                title = row.chapterTitle,
+                                title = row.chapterTitle.storyboardArabicChapterTitle(row.chapterIndex),
                                 meta = row.entry?.storyboard?.let { storyboard ->
                                     "${storyboard.scenes.size} 个场景 · ${storyboard.segmentCount} 个片段"
                                 } ?: "尚未生成",
@@ -318,11 +318,87 @@ class BookStoryboardActivity : BaseActivity<ComposeActivityBinding>() {
     }
 
     private fun String.storyboardChapterNumber(fallbackIndex: Int): String {
-        return Regex("""^\s*第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*[章节卷回]""")
-            .find(this)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?: fallbackIndex.toString()
+        return STORYBOARD_CHAPTER_PREFIX.find(this)
+            ?.groups
+            ?.get(1)
+            ?.value
+            ?.storyboardArabicNumber()
+            ?: (fallbackIndex + 1).toString()
+    }
+
+    private fun String.storyboardArabicChapterTitle(fallbackIndex: Int): String {
+        val numberGroup = STORYBOARD_CHAPTER_PREFIX.find(this)
+            ?.groups
+            ?.get(1)
+            ?: return this
+        val number = numberGroup.value.storyboardArabicNumber()
+            ?: (fallbackIndex + 1).toString()
+        return replaceRange(numberGroup.range, number)
+    }
+
+    private fun String.storyboardArabicNumber(): String? {
+        val normalized = map { char ->
+            if (char in '０'..'９') {
+                ('0'.code + char.code - '０'.code).toChar()
+            } else {
+                char
+            }
+        }.joinToString("")
+        normalized.toLongOrNull()?.let { return it.toString() }
+
+        fun digitOf(char: Char): Long? = when (char) {
+            '零', '〇' -> 0L
+            '一' -> 1L
+            '二', '两' -> 2L
+            '三' -> 3L
+            '四' -> 4L
+            '五' -> 5L
+            '六' -> 6L
+            '七' -> 7L
+            '八' -> 8L
+            '九' -> 9L
+            in '0'..'9' -> char.digitToInt().toLong()
+            else -> null
+        }
+
+        val hasUnit = normalized.any { it == '十' || it == '百' || it == '千' || it == '万' }
+        if (!hasUnit) {
+            var value = 0L
+            normalized.forEach { char ->
+                val digit = digitOf(char) ?: return null
+                value = value * 10L + digit
+            }
+            return value.toString()
+        }
+
+        var total = 0L
+        var section = 0L
+        var currentDigit: Long? = null
+        normalized.forEach { char ->
+            digitOf(char)?.let { digit ->
+                currentDigit = digit
+                return@forEach
+            }
+            when (char) {
+                '十', '百', '千' -> {
+                    val unit = when (char) {
+                        '十' -> 10L
+                        '百' -> 100L
+                        else -> 1_000L
+                    }
+                    section += (currentDigit ?: 1L) * unit
+                    currentDigit = null
+                }
+                '万' -> {
+                    section += currentDigit ?: 0L
+                    total += (if (section == 0L) 1L else section) * 10_000L
+                    section = 0L
+                    currentDigit = null
+                }
+                else -> return null
+            }
+        }
+        return (total + section + (currentDigit ?: 0L)).toString()
     }
 
     private fun confirmRegenerateStoryboard() {
@@ -980,6 +1056,9 @@ class BookStoryboardActivity : BaseActivity<ComposeActivityBinding>() {
     }
 
     private companion object {
+        val STORYBOARD_CHAPTER_PREFIX = Regex(
+            """^\s*第\s*([0-9０-９一二三四五六七八九十百千万零〇两]+)\s*[章节卷回]"""
+        )
         val NON_PERSON_STORYBOARD_NAMES = setOf(
             "旁白",
             "对白男",

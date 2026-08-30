@@ -57,6 +57,9 @@ import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgFileEntryIcon
 import io.legado.app.ui.design.components.compose.NgFileEntryIconKind
 import io.legado.app.ui.design.components.compose.NgFileSelectionCheckbox
+import io.legado.app.ui.design.components.compose.NgGlassDefaults
+import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSearchBarVariant
 import io.legado.app.ui.design.components.compose.NgStatusTag
@@ -142,19 +145,21 @@ private fun RemoteBookTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp),
+            .padding(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 4.dp),
     ) {
-        Surface(
+        NgGlassSurface(
             modifier = Modifier.fillMaxWidth(),
-            color = cardColor,
+            role = NgMaterialRole.CONTROL,
             shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
-            shadowElevation = NgTheme.effects.cardElevationDp.dp,
+            style = NgGlassDefaults.bookDetailStyle(
+                containerColor = colorResource(R.color.ng_bookshelf_manage_header_surface),
+            ),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .padding(horizontal = 8.dp),
+                    .height(52.dp)
+                    .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {

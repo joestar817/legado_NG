@@ -183,7 +183,7 @@ internal fun RssSourceManageScreen(
             modifier = Modifier.padding(
                 start = 14.dp,
                 end = 14.dp,
-                bottom = 16.dp
+                bottom = 8.dp
             ),
             onAction = onAction
         )
@@ -205,7 +205,7 @@ private fun RssSourceManageTopBar(
     val loginFilter = stringResource(R.string.need_login)
     val noGroupFilter = stringResource(R.string.no_group)
     val actionContentColor = colorResource(R.color.ng_search_icon)
-    val headerShape = RoundedCornerShape(NgTheme.shapes.smallDp.dp)
+    val headerShape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
     val headerStyle = NgGlassDefaults.bookDetailStyle(
         containerColor = colorResource(R.color.ng_bookshelf_manage_header_surface)
     )
@@ -493,7 +493,7 @@ private fun RssSourceManagePanel(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 14.dp, top = 4.dp, end = 14.dp, bottom = 4.dp)
+            .padding(start = 14.dp, top = 4.dp, end = 14.dp, bottom = 8.dp)
     ) {
         val headerHeight = 44.dp
         val dividerHeight = 0.6.dp

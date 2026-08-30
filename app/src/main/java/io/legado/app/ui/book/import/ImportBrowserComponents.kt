@@ -1,7 +1,6 @@
 package io.legado.app.ui.book.import
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,6 +30,9 @@ import io.legado.app.R
 import io.legado.app.ui.design.components.NgButtonShapeVariant
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgButton
+import io.legado.app.ui.design.components.compose.NgFlatActionRail
+import io.legado.app.ui.design.components.compose.NgFlatActionRailItem
+import io.legado.app.ui.design.components.compose.NgFlatActionRailVariant
 import io.legado.app.ui.design.theme.NgTheme
 
 @Composable
@@ -89,37 +91,37 @@ internal fun ImportSelectionDock(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .padding(start = 16.dp, end = 10.dp),
+            .height(52.dp)
+            .padding(start = 12.dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = stringResource(R.string.bookshelf_manage_selected_count, selectedCount),
             modifier = Modifier.weight(1f),
             color = Color(NgTheme.colors.onSurface),
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
         )
-        TextButton(
-            onClick = onSelectAll,
-            enabled = itemCount > 0,
-            contentPadding = PaddingValues(horizontal = 8.dp),
-        ) {
-            Text(stringResource(R.string.select_all), fontSize = 13.sp)
-        }
-        Box(
-            modifier = Modifier
-                .width(1.dp)
-                .height(18.dp)
-                .background(Color(NgTheme.colors.outlineVariant).copy(alpha = 0.28f)),
-        )
-        TextButton(
-            onClick = onInvertSelection,
-            enabled = itemCount > 0,
-            contentPadding = PaddingValues(horizontal = 8.dp),
-        ) {
-            Text(stringResource(R.string.revert_selection), fontSize = 13.sp)
+        Box(modifier = Modifier.width(146.dp)) {
+            NgFlatActionRail(
+                items = listOf(
+                    NgFlatActionRailItem(
+                        iconRes = R.drawable.ic_select_all,
+                        label = stringResource(R.string.select_all),
+                        enabled = itemCount > 0,
+                    ),
+                    NgFlatActionRailItem(
+                        iconRes = R.drawable.ic_refresh_black_24dp,
+                        label = stringResource(R.string.revert_selection),
+                        enabled = itemCount > 0,
+                    ),
+                ),
+                onItemClick = { index ->
+                    if (index == 0) onSelectAll() else onInvertSelection()
+                },
+                variant = NgFlatActionRailVariant.INLINE_DIVIDED,
+            )
         }
         Spacer(Modifier.width(6.dp))
         NgButton(

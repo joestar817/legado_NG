@@ -208,7 +208,7 @@ internal fun BookSourceManageScreen(
         BookSourceManageBottomDock(
             selectedCount = selectedUrls.size,
             totalCount = sources.distinctBy(BookSourcePart::bookSourceUrl).size,
-            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 16.dp),
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
             onAction = onAction,
         )
     }
@@ -490,7 +490,7 @@ private fun BookSourceManageTopBar(
             .fillMaxWidth()
             .padding(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 4.dp),
         role = NgMaterialRole.CONTROL,
-        shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp),
+        shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
         style = NgGlassDefaults.bookDetailStyle(
             containerColor = colorResource(R.color.ng_bookshelf_manage_header_surface)
         ),

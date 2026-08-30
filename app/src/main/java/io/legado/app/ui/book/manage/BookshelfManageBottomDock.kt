@@ -1,26 +1,22 @@
 package io.legado.app.ui.book.manage
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -32,8 +28,13 @@ import io.legado.app.ui.design.components.compose.NgFlatActionRailVariant
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgThemedActionIconKind
 import io.legado.app.ui.design.theme.NgTheme
+
+private const val CACHE_ACTION_ID = 0x56200001
+private const val EXPORT_CONTENT_ACTION_ID = 0x56200002
+private const val GROUP_ACTION_ID = 0x56200003
 
 internal enum class BookshelfManageDockAction {
     CACHE,
@@ -57,127 +58,79 @@ internal fun BookshelfManageBottomDock(
     onInvertSelection: () -> Unit,
     onAction: (BookshelfManageDockAction) -> Unit
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    val enabled = selectedCount > 0
-    val dockShape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
+    val menuState = remember { NgPopupToggleState() }
     NgGlassSurface(
         modifier = modifier.fillMaxWidth(),
         role = NgMaterialRole.CONTROL,
-        shape = dockShape,
+        shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
         style = NgGlassDefaults.bookDetailStyle(
             containerColor = colorResource(R.color.ng_bookshelf_manage_control_surface)
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(96.dp)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .height(52.dp)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(34.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(
-                        R.string.bookshelf_manage_selected_count,
-                        selectedCount
-                    ),
-                    color = Color(NgTheme.colors.onSurface),
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    maxLines = 1
-                )
-                Spacer(Modifier.weight(1f))
-                Box(modifier = Modifier.width(132.dp)) {
-                    NgFlatActionRail(
-                        items = listOf(
-                            NgFlatActionRailItem(
-                                iconRes = R.drawable.ic_select_all,
-                                label = stringResource(R.string.select_all),
-                                enabled = totalCount > 0
-                            ),
-                            NgFlatActionRailItem(
-                                iconRes = R.drawable.ic_refresh_black_24dp,
-                                label = stringResource(R.string.revert_selection),
-                                enabled = totalCount > 0
-                            )
-                        ),
-                        onItemClick = { index ->
-                            if (index == 0) {
-                                onSelectAll()
-                            } else {
-                                onInvertSelection()
-                            }
-                        },
-                        variant = NgFlatActionRailVariant.COMPACT_SEGMENTED
-                    )
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 8.dp),
-                color = Color(NgTheme.colors.outlineVariant).copy(
-                    alpha = if (NgTheme.snapshot.isEInk) 1f else 0.24f
-                )
+            Text(
+                text = stringResource(
+                    R.string.bookshelf_manage_selected_count,
+                    selectedCount
+                ),
+                modifier = Modifier.weight(1f),
+                color = Color(NgTheme.colors.onSurface),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(3.dp))
-            Box(modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.width(220.dp)) {
                 NgFlatActionRail(
                     items = listOf(
                         NgFlatActionRailItem(
-                            iconRes = R.drawable.ic_bookshelf_action_download,
-                            label = stringResource(R.string.book_cache),
-                            enabled = enabled
+                            iconRes = R.drawable.ic_select_all,
+                            label = stringResource(R.string.select_all),
+                            enabled = totalCount > 0,
                         ),
                         NgFlatActionRailItem(
-                            iconRes = R.drawable.ic_bookshelf_action_upload,
-                            label = stringResource(R.string.export),
-                            enabled = enabled
-                        ),
-                        NgFlatActionRailItem(
-                            iconRes = R.drawable.ic_bookshelf_action_folder,
-                            label = stringResource(R.string.group),
-                            enabled = enabled
+                            iconRes = R.drawable.ic_refresh_black_24dp,
+                            label = stringResource(R.string.revert_selection),
+                            enabled = totalCount > 0,
                         ),
                         NgFlatActionRailItem(
                             iconRes = R.drawable.ic_more_horiz,
                             label = stringResource(R.string.more),
-                            enabled = enabled
-                        )
+                            enabled = selectedCount > 0,
+                            emphasized = menuState.expanded,
+                        ),
                     ),
                     onItemClick = { index ->
                         when (index) {
-                            0 -> onAction(BookshelfManageDockAction.CACHE)
-                            1 -> onAction(BookshelfManageDockAction.EXPORT_CONTENT)
-                            2 -> onAction(BookshelfManageDockAction.GROUP)
-                            else -> menuExpanded = true
+                            0 -> onSelectAll()
+                            1 -> onInvertSelection()
+                            else -> menuState.onAnchorClick()
                         }
                     },
-                    variant = NgFlatActionRailVariant.SPACED_COMPACT,
+                    variant = NgFlatActionRailVariant.INLINE_DIVIDED,
                     trailingOverlay = {
                         NgExpandableActionMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
+                            expanded = menuState.expanded,
+                            onDismissRequest = menuState::onDismissRequest,
                             items = dockMoreItems(),
                             onItemClick = { item ->
-                                menuExpanded = false
+                                menuState.close()
                                 onAction(item.toDockAction())
                             },
-                            width = 136.dp,
+                            width = 174.dp,
                             rowMinHeight = 36.dp,
                             bottomPointerHeight = 8.dp,
                             bottomPointerWidth = 18.dp,
-                            bottomPointerEndOffset = 26.dp,
+                            bottomPointerEndOffset = 65.dp,
                             menuContainerColor = colorResource(R.color.ng_surface_card),
-                            offset = androidx.compose.ui.unit.DpOffset(
-                                x = (-90).dp,
-                                y = (-45).dp
-                            )
+                            offset = DpOffset(x = (-89).dp, y = (-12).dp),
                         )
-                    }
+                    },
                 )
             }
         }
@@ -186,6 +139,21 @@ internal fun BookshelfManageBottomDock(
 
 @Composable
 private fun dockMoreItems(): List<NgExpandableActionMenuItem> = listOf(
+    NgExpandableActionMenuItem(
+        itemId = CACHE_ACTION_ID,
+        titleRes = R.string.book_cache,
+        iconRes = R.drawable.ic_bookshelf_action_download,
+    ),
+    NgExpandableActionMenuItem(
+        itemId = EXPORT_CONTENT_ACTION_ID,
+        titleRes = R.string.export,
+        iconRes = R.drawable.ic_bookshelf_action_upload,
+    ),
+    NgExpandableActionMenuItem(
+        itemId = GROUP_ACTION_ID,
+        titleRes = R.string.group,
+        iconRes = R.drawable.ic_bookshelf_action_folder,
+    ),
     NgExpandableActionMenuItem(
         itemId = R.id.menu_export_selection,
         titleRes = R.string.export_book_source,
@@ -228,12 +196,16 @@ private fun dockMoreItems(): List<NgExpandableActionMenuItem> = listOf(
 
 private fun NgExpandableActionMenuItem.toDockAction(): BookshelfManageDockAction {
     return when (itemId) {
+        CACHE_ACTION_ID -> BookshelfManageDockAction.CACHE
+        EXPORT_CONTENT_ACTION_ID -> BookshelfManageDockAction.EXPORT_CONTENT
+        GROUP_ACTION_ID -> BookshelfManageDockAction.GROUP
         R.id.menu_export_selection -> BookshelfManageDockAction.EXPORT_SOURCE
         R.id.menu_change_source -> BookshelfManageDockAction.CHANGE_SOURCE
         R.id.menu_update_enable -> BookshelfManageDockAction.ENABLE_UPDATE
         R.id.menu_update_disable -> BookshelfManageDockAction.DISABLE_UPDATE
         R.id.menu_remove_to_group -> BookshelfManageDockAction.REMOVE_GROUP
         R.id.menu_clear_cache -> BookshelfManageDockAction.CLEAR_CACHE
-        else -> BookshelfManageDockAction.DELETE
+        R.id.menu_del_selection -> BookshelfManageDockAction.DELETE
+        else -> error("Unknown bookshelf dock action: $itemId")
     }
 }

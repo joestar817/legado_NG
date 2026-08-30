@@ -54,7 +54,7 @@ internal fun BookshelfManageTopBar(
 ) {
     val menuState = remember { NgPopupToggleState() }
     val actionContentColor = colorResource(R.color.ng_search_icon)
-    val headerShape = RoundedCornerShape(NgTheme.shapes.smallDp.dp)
+    val headerShape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
     val headerStyle = NgGlassDefaults.bookDetailStyle(
         containerColor = colorResource(R.color.ng_bookshelf_manage_header_surface)
     )

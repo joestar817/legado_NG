@@ -53,6 +53,7 @@ import io.legado.app.ui.design.components.compose.NgDrawerDragHandleVariant
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgFormField
+import io.legado.app.ui.design.components.compose.NgFormFieldVariant
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.toastOnUi
@@ -309,11 +310,12 @@ private fun BookshelfCreateGroupDialog(
                     errorText = null
                 },
                 modifier = Modifier.focusRequester(focusRequester),
-                placeholder = groupNameHint,
+                placeholder = stringResource(R.string.group_name),
                 isError = errorText != null,
                 supportingText = errorText,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { confirm() }),
+                variant = NgFormFieldVariant.PLAIN_UNDERLINE,
             )
         }
     }
