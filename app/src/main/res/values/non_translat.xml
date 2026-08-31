@@ -3,7 +3,9 @@
     <string name="pk_bookshelf_px" translatable="false">bookshelf_px</string>
     <string name="email" translatable="false">gekunfei@live.com</string>
 
-    <string name="contributors_url" translatable="false">https://github.com/joestar817/legado_NG/graphs/contributors</string>
+    <string name="contributors_url" translatable="false">https://github.com/joestar817/legado_NG</string>
+    <string name="telegram_group_url" translatable="false">https://t.me/+lYttMZGrQ1RkOTE1</string>
+    <string name="telegram" translatable="false">Telegram</string>
 
     <string name="http_ip" translatable="false">http://%1$s:%2$d</string>
     <string name="git_hub" translatable="false">GitHub</string>

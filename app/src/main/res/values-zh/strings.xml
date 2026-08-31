@@ -2310,4 +2310,6 @@
     <string name="book_source_type_image">漫画</string>
     <string name="book_source_type_audio">音频</string>
     <string name="book_source_type_video">视频</string>
+    <string name="about_action_github">GitHub</string>
+    <string name="about_action_update">更新</string>
 </resources>

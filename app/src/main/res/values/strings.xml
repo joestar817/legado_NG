@@ -2143,6 +2143,8 @@
     <string name="app_name_ng">阅读NG</string>
     <string name="about_description_ng">致力于打造下一代阅读体验</string>
     <string name="contributors_summary_ng">详情请在 GitHub 中查看</string>
+    <string name="about_action_github">GitHub</string>
+    <string name="about_action_update">Update</string>
     <string name="app_share_description_ng">
         阅读NG 下载地址：\nhttps://github.com/joestar817/legado_NG/releases
     </string>

@@ -1,6 +1,5 @@
 package io.legado.app.ui.config
 
-import android.widget.ImageView
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import io.legado.app.R
 import io.legado.app.help.config.BookshelfFloatingDockConfig
 import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
@@ -48,6 +46,7 @@ import io.legado.app.ui.design.components.compose.NgDockSlider
 import io.legado.app.ui.design.components.compose.NgExpandableSettingsItem
 import io.legado.app.ui.design.components.compose.NgFloatingTabBar
 import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
+import io.legado.app.ui.design.components.compose.NgLauncherIcon
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsItem
 import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
@@ -691,19 +690,12 @@ private fun LauncherIconPreview(
     @DrawableRes iconRes: Int,
     contentDescription: String
 ) {
-    AndroidView(
-        factory = { context ->
-            ImageView(context).apply {
-                scaleType = ImageView.ScaleType.FIT_CENTER
-            }
-        },
-        update = { imageView ->
-            imageView.setImageResource(iconRes)
-            imageView.contentDescription = contentDescription
-        },
+    NgLauncherIcon(
+        iconRes = iconRes,
+        contentDescription = contentDescription,
         modifier = Modifier
             .size(50.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(12.dp)),
     )
 }
 
