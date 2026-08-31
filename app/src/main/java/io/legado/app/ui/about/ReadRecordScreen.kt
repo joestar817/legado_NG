@@ -2,11 +2,11 @@ package io.legado.app.ui.about
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,10 +16,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -34,12 +34,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,12 +58,19 @@ import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgBookCover
 import io.legado.app.ui.design.components.compose.NgButton
+import io.legado.app.ui.design.components.compose.NgDefaultBookCover
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
-import io.legado.app.ui.design.components.compose.NgSearchBar
-import io.legado.app.ui.design.components.compose.NgSearchBarVariant
+import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingTitleToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
+import io.legado.app.ui.design.components.compose.NgGlassDefaults
+import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.theme.NgTheme
+import kotlin.math.cos
+import kotlin.math.sin
 
 internal data class ReadRecordUiItem(
     val record: ReadRecordShow,
@@ -101,6 +114,7 @@ internal fun ReadRecordScreen(
             onSortChange = onSortChange,
             onRecordEnabledChange = onRecordEnabledChange,
             onClearAllRequest = onClearAllRequest,
+            modifier = Modifier.padding(horizontal = 16.dp),
         )
         ReadRecordPanel(
             items = items,
@@ -111,7 +125,7 @@ internal fun ReadRecordScreen(
             modifier = Modifier
                 .weight(1f)
                 .navigationBarsPadding()
-                .padding(start = 10.dp, top = 4.dp, end = 10.dp, bottom = 10.dp),
+                .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp),
         )
     }
 
@@ -143,63 +157,39 @@ private fun ReadRecordTopBar(
     onSortChange: (Int) -> Unit,
     onRecordEnabledChange: (Boolean) -> Unit,
     onClearAllRequest: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = Modifier
-            .statusBarsPadding()
-            .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 4.dp)
-            .fillMaxWidth()
-            .height(56.dp),
-        color = colorResource(R.color.ng_surface_card),
-        shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
-        shadowElevation = NgTheme.effects.cardElevationDp.dp,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    if (searchExpanded) {
+        NgFloatingSearchToolbar(
+            query = query,
+            onQueryChange = onQueryChange,
+            hint = stringResource(R.string.search),
+            onBack = onBack,
+            modifier = modifier,
         ) {
-            ReadRecordToolbarIcon(
-                iconRes = R.drawable.ic_arrow_back,
-                contentDescription = stringResource(R.string.back),
-                onClick = onBack,
+            NgFloatingToolbarActionButton(
+                iconRes = R.drawable.ic_baseline_close,
+                contentDescription = stringResource(R.string.close),
+                onClick = { onSearchExpandedChange(false) },
             )
-            if (searchExpanded) {
-                NgSearchBar(
-                    query = query,
-                    onQueryChange = onQueryChange,
-                    hint = stringResource(R.string.search),
-                    variant = NgSearchBarVariant.TOOLBAR,
-                    onSearch = {},
-                    modifier = Modifier.weight(1f),
-                )
-                ReadRecordToolbarIcon(
-                    iconRes = R.drawable.ic_baseline_close,
-                    contentDescription = stringResource(R.string.close),
-                    onClick = { onSearchExpandedChange(false) },
-                )
-            } else {
-                Text(
-                    text = stringResource(R.string.read_record),
-                    modifier = Modifier.weight(1f).padding(start = 4.dp),
-                    color = Color(NgTheme.colors.onSurface),
-                    fontSize = 17.sp,
-                    lineHeight = 21.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                ReadRecordToolbarIcon(
-                    iconRes = R.drawable.ic_search,
-                    contentDescription = stringResource(R.string.search),
-                    onClick = { onSearchExpandedChange(true) },
-                )
-                ReadRecordSortMenu(sortMode = sortMode, onSortChange = onSortChange)
-                ReadRecordMoreMenu(
-                    recordEnabled = recordEnabled,
-                    onRecordEnabledChange = onRecordEnabledChange,
-                    onClearAllRequest = onClearAllRequest,
-                )
-            }
+        }
+    } else {
+        NgFloatingTitleToolbar(
+            title = stringResource(R.string.read_record),
+            onBack = onBack,
+            modifier = modifier,
+        ) {
+            NgFloatingToolbarActionButton(
+                iconRes = R.drawable.ic_search,
+                contentDescription = stringResource(R.string.search),
+                onClick = { onSearchExpandedChange(true) },
+            )
+            ReadRecordSortMenu(sortMode = sortMode, onSortChange = onSortChange)
+            ReadRecordMoreMenu(
+                recordEnabled = recordEnabled,
+                onRecordEnabledChange = onRecordEnabledChange,
+                onClearAllRequest = onClearAllRequest,
+            )
         }
     }
 }
@@ -211,7 +201,7 @@ private fun ReadRecordSortMenu(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        ReadRecordToolbarIcon(
+        NgFloatingToolbarActionButton(
             iconRes = R.drawable.ic_baseline_sort_24,
             contentDescription = stringResource(R.string.sort),
             onClick = { expanded = true },
@@ -263,7 +253,7 @@ private fun ReadRecordMoreMenu(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        ReadRecordToolbarIcon(
+        NgFloatingToolbarActionButton(
             iconRes = R.drawable.ic_more_vert,
             contentDescription = stringResource(R.string.menu),
             onClick = { expanded = true },
@@ -300,22 +290,6 @@ private fun ReadRecordMoreMenu(
 }
 
 @Composable
-private fun ReadRecordToolbarIcon(
-    iconRes: Int,
-    contentDescription: String,
-    onClick: () -> Unit,
-) {
-    IconButton(onClick = onClick, modifier = Modifier.size(44.dp)) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = Color(NgTheme.colors.onSurface),
-            modifier = Modifier.size(22.dp),
-        )
-    }
-}
-
-@Composable
 private fun ReadRecordPanel(
     items: List<ReadRecordUiItem>,
     totalReadTime: String,
@@ -324,11 +298,11 @@ private fun ReadRecordPanel(
     onDeleteRequest: (ReadRecordUiItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    NgVisualSurface(
         modifier = modifier.fillMaxWidth(),
-        color = colorResource(R.color.ng_surface_card),
-        shape = RoundedCornerShape(NgTheme.shapes.largeDp.dp),
-        shadowElevation = NgTheme.effects.cardElevationDp.dp,
+        role = NgMaterialRole.CONTENT,
+        cornerRadius = NgTheme.shapes.mediumDp.dp,
+        style = NgGlassDefaults.neutralStyle(),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             ReadRecordSummary(
@@ -373,57 +347,45 @@ private fun ReadRecordSummary(
     recordEnabled: Boolean,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().height(96.dp).padding(horizontal = 16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(116.dp)
+            .padding(start = 14.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            modifier = Modifier.size(54.dp),
-            color = Color(NgTheme.colors.selectedContainer),
-            shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_history),
-                    contentDescription = null,
-                    tint = Color(NgTheme.colors.primary),
-                    modifier = Modifier.size(26.dp),
-                )
-            }
-        }
-        Spacer(Modifier.width(14.dp))
+        ReadRecordTimeDial()
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.all_read_time),
-                color = Color(NgTheme.colors.onSurfaceVariant),
-                fontSize = 13.sp,
-                lineHeight = 17.sp,
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = totalReadTime,
-                color = Color(NgTheme.colors.onSurface),
-                fontSize = 22.sp,
-                lineHeight = 27.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(7.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ReadRecordSolidTag(
-                    text = stringResource(R.string.read_record_count, recordCount),
-                    containerColor = colorResource(R.color.ng_info),
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.all_read_time),
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
                 )
-                ReadRecordSolidTag(
-                    text = stringResource(
-                        if (recordEnabled) R.string.read_record_active
-                        else R.string.read_record_paused,
-                    ),
-                    containerColor = if (recordEnabled) {
-                        colorResource(R.color.ng_success)
-                    } else {
-                        Color(NgTheme.colors.onSurfaceVariant)
-                    },
+                ReadRecordStatusTag(recordEnabled = recordEnabled)
+            }
+            Spacer(Modifier.height(7.dp))
+            ReadRecordDurationText(totalReadTime)
+            Spacer(Modifier.height(9.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_book_info_read),
+                    contentDescription = null,
+                    tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.78f),
+                    modifier = Modifier.size(15.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = stringResource(R.string.read_record_count, recordCount),
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -431,27 +393,150 @@ private fun ReadRecordSummary(
 }
 
 @Composable
-private fun ReadRecordSolidTag(
-    text: String,
-    containerColor: Color,
+private fun ReadRecordTimeDial(
+    modifier: Modifier = Modifier,
 ) {
-    Box(
+    val primary = Color(NgTheme.colors.primary)
+    val track = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.18f)
+    val endpointHalo = Color(NgTheme.colors.selectedContainer)
+    Canvas(modifier = modifier.size(44.dp).padding(2.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        val radius = (size.minDimension - strokeWidth) / 2f
+        val arcBoundsTopLeft = Offset(center.x - radius, center.y - radius)
+        val arcSize = androidx.compose.ui.geometry.Size(radius * 2f, radius * 2f)
+        val startAngle = -90f
+        val sweepAngle = 152f
+        drawArc(
+            color = track,
+            startAngle = 0f,
+            sweepAngle = 360f,
+            useCenter = false,
+            topLeft = arcBoundsTopLeft,
+            size = arcSize,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+        )
+        drawArc(
+            color = primary,
+            startAngle = startAngle,
+            sweepAngle = sweepAngle,
+            useCenter = false,
+            topLeft = arcBoundsTopLeft,
+            size = arcSize,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+        )
+        drawLine(
+            color = primary,
+            start = center,
+            end = Offset(center.x, center.y - 9.dp.toPx()),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = primary,
+            start = center,
+            end = Offset(center.x + 7.dp.toPx(), center.y + 6.dp.toPx()),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        drawCircle(color = primary, radius = 1.5.dp.toPx(), center = center)
+        val endpointRadians = Math.toRadians((startAngle + sweepAngle).toDouble())
+        val endpoint = Offset(
+            x = center.x + radius * cos(endpointRadians).toFloat(),
+            y = center.y + radius * sin(endpointRadians).toFloat(),
+        )
+        drawCircle(color = endpointHalo, radius = 4.5.dp.toPx(), center = endpoint)
+        drawCircle(color = primary, radius = 3.dp.toPx(), center = endpoint)
+    }
+}
+
+@Composable
+private fun ReadRecordStatusTag(recordEnabled: Boolean) {
+    val tint = if (recordEnabled) {
+        colorResource(R.color.ng_success)
+    } else {
+        Color(NgTheme.colors.onSurfaceVariant)
+    }
+    Row(
         modifier = Modifier
-            .height(20.dp)
-            .defaultMinSize(minWidth = 42.dp)
-            .clip(RoundedCornerShape(7.dp))
-            .background(containerColor)
+            .height(22.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(tint.copy(alpha = 0.12f))
             .padding(horizontal = 8.dp),
-        contentAlignment = Alignment.Center,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(tint),
+        )
         Text(
-            text = text,
-            color = Color.White,
+            text = stringResource(
+                if (recordEnabled) R.string.read_record_active else R.string.read_record_paused,
+            ),
+            color = tint,
             fontSize = 11.sp,
-            lineHeight = 13.sp,
+            lineHeight = 14.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun ReadRecordDurationText(totalReadTime: String) {
+    val numberColor = Color(NgTheme.colors.onSurface)
+    val unitColor = Color(NgTheme.colors.onSurfaceVariant)
+    val parts = READ_DURATION_PART_REGEX.findAll(totalReadTime).map { match ->
+        match.groupValues[1] to when (match.groupValues[2]) {
+            "分钟" -> "分"
+            else -> match.groupValues[2]
+        }
+    }.toList()
+    if (parts.isEmpty()) {
+        Text(
+            text = totalReadTime,
+            color = numberColor,
+            fontSize = 23.sp,
+            lineHeight = 29.sp,
+            fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    } else {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            parts.forEach { (number, unit) ->
+                val styledPart = buildAnnotatedString {
+                    withStyle(
+                        SpanStyle(
+                            color = numberColor,
+                            fontSize = 23.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                    ) {
+                        append(number)
+                    }
+                    withStyle(
+                        SpanStyle(
+                            color = unitColor,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                    ) {
+                        append(unit)
+                    }
+                }
+                Text(
+                    text = styledPart,
+                    lineHeight = 29.sp,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
@@ -542,17 +627,15 @@ private fun ReadRecordRow(
 private fun ReadRecordMissingCover(bookName: String) {
     Surface(
         modifier = Modifier.size(width = 44.dp, height = 60.dp),
-        color = Color(NgTheme.colors.surfaceContainerLow),
+        color = Color.Transparent,
         shape = RoundedCornerShape(6.dp),
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(R.drawable.ic_book_info_read),
-                contentDescription = bookName,
-                tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f),
-                modifier = Modifier.size(23.dp),
-            )
-        }
+        NgDefaultBookCover(
+            title = bookName,
+            author = "",
+            compact = true,
+            coverContentDescription = bookName,
+        )
     }
 }
 
@@ -610,3 +693,4 @@ private const val MENU_SORT_DURATION = 0x7202
 private const val MENU_SORT_LAST_READ = 0x7203
 private const val MENU_ENABLE_RECORD = 0x7204
 private const val MENU_CLEAR_RECORDS = 0x7205
+private val READ_DURATION_PART_REGEX = Regex("(\\d+)(天|小时|分钟|秒)")

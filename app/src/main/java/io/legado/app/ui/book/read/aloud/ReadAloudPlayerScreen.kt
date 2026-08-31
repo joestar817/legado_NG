@@ -71,7 +71,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -86,6 +85,7 @@ import io.legado.app.help.config.ListeningMotionEffect
 import io.legado.app.help.config.ListeningMotionSettings
 import io.legado.app.help.config.ReadAloudPlayerDisplaySettings
 import io.legado.app.ui.book.listen.ListeningCoverArtwork
+import io.legado.app.ui.design.components.compose.NgDefaultBookCover
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.PI
 import kotlin.math.abs
@@ -823,7 +823,7 @@ internal fun PlayerCover(
             contentAlignment = Alignment.Center,
         ) {
             when {
-                useNoCoverFallback -> DefaultBookCover(
+                useNoCoverFallback -> NgDefaultBookCover(
                     baseArtwork = artwork,
                     title = fallbackTitle,
                     author = fallbackAuthor,
@@ -840,84 +840,6 @@ internal fun PlayerCover(
                     contentDescription = contentDescription,
                     tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.54f),
                     modifier = Modifier.size(40.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DefaultBookCover(
-    baseArtwork: ImageBitmap?,
-    title: String,
-    author: String,
-    compact: Boolean,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFEADCC2)),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (baseArtwork != null) {
-            Image(
-                bitmap = baseArtwork,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .alpha(0.82f),
-            )
-        } else {
-            Image(
-                painter = painterResource(R.drawable.image_cover_default),
-                contentDescription = null,
-                contentScale = ContentScale.FillBounds,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .alpha(0.82f),
-            )
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFFD8B98A).copy(alpha = 0.16f)),
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = if (compact) 4.dp else 18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = title,
-                color = Color(0xFF2B251F),
-                fontSize = if (compact) 6.sp else 17.sp,
-                lineHeight = if (compact) 7.sp else 23.sp,
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                maxLines = if (compact) 3 else 4,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (!compact && author.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .padding(top = 14.dp, bottom = 10.dp)
-                        .width(42.dp)
-                        .height(1.dp)
-                        .background(Color(0xFF6F6253).copy(alpha = 0.42f)),
-                )
-                Text(
-                    text = author,
-                    color = Color(0xFF4A4036),
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                    fontFamily = FontFamily.Serif,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

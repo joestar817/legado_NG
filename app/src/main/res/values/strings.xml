@@ -1552,13 +1552,13 @@
     <string name="read_record">Read record</string>
     <string name="del_read_record">Delete Read record</string>
     <string name="read_record_summary">Read record summary</string>
-    <string name="read_record_count">%1$d books</string>
+    <string name="read_record_count">Recorded %1$d books</string>
     <string name="read_record_active">Recording</string>
     <string name="read_record_paused">Paused</string>
     <string name="read_record_empty">No reading records</string>
     <string name="local_tts">Local TTS</string>
     <string name="thread_count">Thread count</string>
-    <string name="all_read_time">Total read time</string>
+    <string name="all_read_time">Total reading time</string>
     <string name="un_select_all">Unselect all</string>
     <string name="import_str">Import</string>
     <string name="export_str">Export</string>
