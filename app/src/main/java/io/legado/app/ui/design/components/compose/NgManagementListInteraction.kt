@@ -5,15 +5,19 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.pullToRefreshIndicator
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
@@ -274,6 +278,11 @@ fun NgSwipeToDelete(
     )
 }
 
+enum class NgPullRefreshIndicatorVariant {
+    MATERIAL,
+    SINGLE_SPINNER,
+}
+
 /** 把 Material 3 实验性的刷新 API 隔离在组件层，业务页面只消费稳定的 NG 接口。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -283,6 +292,7 @@ fun NgPullRefreshBox(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     showIndicator: Boolean = true,
+    indicatorVariant: NgPullRefreshIndicatorVariant = NgPullRefreshIndicatorVariant.MATERIAL,
     content: @Composable BoxScope.() -> Unit
 ) {
     val state = rememberPullToRefreshState()
@@ -295,13 +305,37 @@ fun NgPullRefreshBox(
         state = state,
         indicator = {
             if (showIndicator) {
-                PullToRefreshDefaults.Indicator(
-                    state = state,
-                    isRefreshing = isRefreshing,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                    containerColor = Color(NgTheme.colors.cardContainer),
-                    color = Color(NgTheme.colors.primary)
-                )
+                when (indicatorVariant) {
+                    NgPullRefreshIndicatorVariant.MATERIAL -> {
+                        PullToRefreshDefaults.Indicator(
+                            state = state,
+                            isRefreshing = isRefreshing,
+                            modifier = Modifier.align(Alignment.TopCenter),
+                            containerColor = Color(NgTheme.colors.cardContainer),
+                            color = Color(NgTheme.colors.primary)
+                        )
+                    }
+
+                    NgPullRefreshIndicatorVariant.SINGLE_SPINNER -> {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .size(40.dp)
+                                .pullToRefreshIndicator(
+                                    state = state,
+                                    isRefreshing = isRefreshing,
+                                    containerColor = Color(NgTheme.colors.cardContainer),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = Color(NgTheme.colors.primary),
+                                strokeWidth = 2.5.dp,
+                            )
+                        }
+                    }
+                }
             }
         },
         content = content

@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.appcompat.widget.SwitchCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,7 @@ fun NgSettingsSectionLabel(
         color = Color(NgTheme.colors.primary),
         fontSize = 13.sp,
         lineHeight = 16.sp,
+        letterSpacing = 0.sp,
         fontWeight = FontWeight.Bold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
@@ -181,9 +183,13 @@ fun NgSettingsItem(
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
-    customTrailing: (@Composable RowScope.() -> Unit)? = null
+    customTrailing: (@Composable RowScope.() -> Unit)? = null,
+    summaryMaxLines: Int = 1,
+    trailingSpacing: Dp = 8.dp,
+    showClickIndication: Boolean = true,
 ) {
     val itemShape = RoundedCornerShape(18.dp)
+    val interactionSource = remember { MutableInteractionSource() }
     NgSettingsCardSurface(
         modifier = modifier
             .fillMaxWidth(),
@@ -195,7 +201,16 @@ fun NgSettingsItem(
                 .fillMaxWidth()
                 .then(
                     if (onClick != null) {
-                        Modifier.clickable(enabled = enabled, onClick = onClick)
+                        if (showClickIndication) {
+                            Modifier.clickable(enabled = enabled, onClick = onClick)
+                        } else {
+                            Modifier.clickable(
+                                interactionSource = interactionSource,
+                                indication = null,
+                                enabled = enabled,
+                                onClick = onClick,
+                            )
+                        }
                     } else {
                         Modifier
                     }
@@ -219,6 +234,7 @@ fun NgSettingsItem(
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontSize = NgTheme.typography.itemTitleSp.sp,
                         lineHeight = 19.sp,
+                        letterSpacing = 0.sp,
                         fontWeight = FontWeight.Normal
                     ),
                     maxLines = 1,
@@ -232,20 +248,22 @@ fun NgSettingsItem(
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontSize = NgTheme.typography.summarySp.sp,
                             lineHeight = 16.sp,
+                            letterSpacing = 0.sp,
                             fontWeight = FontWeight.Normal
                         ),
-                        maxLines = 1,
+                        maxLines = summaryMaxLines,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(trailingSpacing))
             when (trailing) {
                 NgSettingsTrailing.NONE -> Unit
                 NgSettingsTrailing.CHEVRON -> Text(
                     text = "›",
                     color = Color(NgTheme.colors.onSurfaceVariant),
                     fontSize = 30.sp,
+                    letterSpacing = 0.sp,
                     fontWeight = FontWeight.Normal,
                     maxLines = 1
                 )
@@ -259,6 +277,7 @@ fun NgSettingsItem(
                     color = Color(NgTheme.colors.onSurfaceVariant),
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = NgTheme.typography.bodySp.sp,
+                        letterSpacing = 0.sp,
                         fontWeight = FontWeight.Normal
                     ),
                     maxLines = 1,

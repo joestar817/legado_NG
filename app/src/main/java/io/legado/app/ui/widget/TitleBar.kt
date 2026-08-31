@@ -63,6 +63,7 @@ class TitleBar @JvmOverloads constructor(
     private val fitNavigationBar: Boolean
     private val attachToActivity: Boolean
     private val opaque: Boolean
+    private var temporarySolidSurface = false
 
     init {
         val a = context.obtainStyledAttributes(
@@ -183,15 +184,7 @@ class TitleBar @JvmOverloads constructor(
                 }
             }
 
-            if (AppConfig.isEInkMode) {
-                setBackgroundResource(R.drawable.bg_eink_border_bottom)
-            } else if (!opaque && context.transparentNavBar) {
-                setBackgroundColor(Color.TRANSPARENT)
-                elevation = 0f
-            } else {
-                setBackgroundColor(context.primaryColor)
-                elevation = context.elevation
-            }
+            applyConfiguredBackground()
             applyTopBarContentColor()
 
             stateListAnimator = null
@@ -204,16 +197,59 @@ class TitleBar @JvmOverloads constructor(
         attachToActivity()
         if (!isInEditMode) {
             // ActionBar 会在 attachToActivity() 时才创建返回图标，因此需在挂载后重新应用。
-            applyTopBarContentColor()
+            applyCurrentTopBarContentColor()
         }
     }
 
-    private fun applyTopBarContentColor() {
-        val color = NgThemeResolver.resolve(context).colors.onTopBar
+    private fun applyConfiguredBackground() {
+        when {
+            AppConfig.isEInkMode -> {
+                setBackgroundResource(R.drawable.bg_eink_border_bottom)
+                elevation = 0f
+            }
+
+            !opaque && context.transparentNavBar -> {
+                setBackgroundColor(Color.TRANSPARENT)
+                elevation = 0f
+            }
+
+            else -> {
+                setBackgroundColor(context.primaryColor)
+                elevation = context.elevation
+            }
+        }
+    }
+
+    private fun applyTopBarContentColor(
+        @ColorInt color: Int = NgThemeResolver.resolve(context).colors.onTopBar
+    ) {
         setTextColor(color)
         setColorFilter(color)
         toolbar.findViewById<SearchView>(R.id.search_view)?.setContentColor(color)
         toolbar.findViewById<TabLayout>(R.id.tab_layout)?.setTabTextColors(color, color)
+    }
+
+    private fun applyCurrentTopBarContentColor() {
+        val colors = NgThemeResolver.resolve(context).colors
+        applyTopBarContentColor(
+            if (temporarySolidSurface) colors.onSurface else colors.onTopBar
+        )
+    }
+
+    /**
+     * 为共享宿主中的局部工作页临时切换不透明语义表面；关闭时恢复 XML 配置的外观。
+     */
+    fun setTemporarySolidSurface(enabled: Boolean) {
+        if (isInEditMode) return
+        temporarySolidSurface = enabled
+        if (enabled && !AppConfig.isEInkMode) {
+            val colors = NgThemeResolver.resolve(context).colors
+            setBackgroundColor(colors.surface)
+            elevation = context.elevation
+        } else {
+            applyConfiguredBackground()
+        }
+        applyCurrentTopBarContentColor()
     }
 
     fun setNavigationOnClickListener(clickListener: ((View) -> Unit)) {

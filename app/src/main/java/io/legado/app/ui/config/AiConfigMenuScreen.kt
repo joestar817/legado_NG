@@ -100,6 +100,8 @@ private fun AiConfigMenuEntry(
         checked = checked,
         onCheckedChange = onCheckedChange,
         onClick = onClick,
+        trailingSpacing = 0.dp,
+        showClickIndication = trailing != NgSettingsTrailing.SWITCH,
         leading = {
             NgSettingsIcon(
                 painter = painterResource(iconRes),

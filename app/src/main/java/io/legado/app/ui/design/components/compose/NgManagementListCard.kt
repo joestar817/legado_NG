@@ -76,6 +76,7 @@ fun NgManagementListCard(
     require(headerTags.size <= 2) { "Management card supports at most 2 header tags" }
     require(detailTags.size <= 3) { "Management card supports at most 3 detail tags" }
     val isCompactGrid = variant == NgManagementListCardVariant.COMPACT_GRID
+    val isMultilineSummary = variant == NgManagementListCardVariant.MULTILINE_SUMMARY
     val shape = RoundedCornerShape(
         if (isCompactGrid) NgTheme.shapes.smallDp.dp else NgTheme.shapes.largeDp.dp
     )
@@ -146,6 +147,7 @@ fun NgManagementListCard(
                         NgTheme.typography.itemTitleSp.sp
                     },
                     lineHeight = if (isCompactGrid) 14.sp else 19.sp,
+                    letterSpacing = 0.sp,
                     fontWeight = if (isCompactGrid) FontWeight.Medium else FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -170,7 +172,8 @@ fun NgManagementListCard(
                         NgTheme.typography.summarySp.sp
                     },
                     lineHeight = if (isCompactGrid) 12.sp else 16.sp,
-                    maxLines = 1,
+                    letterSpacing = 0.sp,
+                    maxLines = if (isMultilineSummary) 2 else 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -310,6 +313,7 @@ fun NgManagementLeadingText(
             color = textColor,
             fontSize = if (isCompactGrid) NgTheme.typography.denseBadgeSp.sp else 15.sp,
             lineHeight = if (isCompactGrid) 14.sp else 18.sp,
+            letterSpacing = 0.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             maxLines = 1,

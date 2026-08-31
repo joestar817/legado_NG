@@ -1,56 +1,31 @@
 package io.legado.app.ui.config
 
-import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.Dialog
+import android.content.Intent
 import android.net.Uri
 import android.graphics.Color
-import android.content.res.ColorStateList
 import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.GradientDrawable
-import android.graphics.Typeface
 import android.os.Bundle
-import android.text.Editable
-import android.text.InputType
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.method.LinkMovementMethod
-import android.text.style.BackgroundColorSpan
-import android.text.style.ForegroundColorSpan
-import android.text.style.StyleSpan
-import android.util.TypedValue
-import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.Switch
-import android.widget.TextView
+import android.view.Window
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
-import androidx.core.content.ContextCompat
-import androidx.core.graphics.ColorUtils
+import androidx.activity.ComponentDialog
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.isVisible
-import androidx.core.widget.doOnTextChanged
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
-import io.legado.app.base.adapter.ItemViewHolder
-import io.legado.app.base.adapter.RecyclerAdapter
 import io.legado.app.databinding.FragmentAiConfigBinding
-import io.legado.app.databinding.ItemAiModelBinding
-import io.legado.app.databinding.ItemAiSkillFileBinding
 import io.legado.app.data.appDb
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiManager
@@ -68,42 +43,24 @@ import io.legado.app.help.ai.AiSkillDefinition
 import io.legado.app.help.ai.AiSkillExistsException
 import io.legado.app.help.ai.AiSkillRegistry
 import io.legado.app.help.ai.AiSkillScope
-import io.legado.app.help.ai.normalizeAiApiPath
 import io.legado.app.help.config.LocalConfig
-import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.theme.accentColor
-import io.legado.app.databinding.ItemAiPromptBinding
-import io.legado.app.ui.design.components.NgManagementTrailing
+import io.legado.app.ui.code.CodeEditActivity
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagStyle
 import io.legado.app.ui.design.components.NgStatusTagVariant
-import io.legado.app.ui.widget.NgActionPopup
-import io.legado.app.ui.widget.NgActionPopupItem
 import io.legado.app.ui.widget.TitleBar
-import io.legado.app.ui.design.components.view.NgFloatingTabItem
 import io.legado.app.ui.design.components.compose.NgListState
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.widget.NgMenuPopup
 import io.legado.app.ui.widget.dialog.CodeDialog
-import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.ui.widget.dialog.createNgBottomDrawerComposeHost
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.WaitDialog
-import io.legado.app.ui.widget.number.NumberPickerDialog
-import io.legado.app.utils.applyTint
 import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.hideSoftInput
-import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.share
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.viewbindingdelegate.viewBinding
-import io.noties.markwon.Markwon
-import io.noties.markwon.core.spans.EmphasisSpan
-import io.noties.markwon.ext.tables.TablePlugin
-import io.noties.markwon.html.HtmlPlugin
-import io.noties.markwon.image.glide.GlideImagesPlugin
-import com.bumptech.glide.Glide
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -126,6 +83,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         private const val MENU_ADD_PROVIDER_OPENAI = 0x4E470101
         private const val MENU_ADD_PROVIDER_CLAUDE = 0x4E470102
         private const val MENU_GROUP_PROVIDER_VISIBILITY = 0x4E470103
+        private const val MENU_ADD_SKILL = 0x4E470111
+        private const val MENU_IMPORT_SKILL_LOCAL = 0x4E470112
+        private const val MENU_IMPORT_SKILL_URL = 0x4E470113
+        private const val MENU_EXPORT_SKILL = 0x4E470114
 
         fun newMenuPageInstance(initialPage: String): AiConfigFragment {
             return AiConfigFragment().apply {
@@ -141,15 +102,28 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         MAIN,
         PROVIDERS,
         DETAIL,
-        MODEL_DETAIL,
         PROMPTS,
         PROMPT_DETAIL,
-        MODEL_SETTINGS,
         PURIFY_MODEL_SETTINGS,
         READ_ALOUD_MODEL_SETTINGS,
         ASSISTANT_MODEL_SETTINGS,
         PURIFY_SETTINGS
     }
+
+    private enum class SkillCreationSource(
+        val successMessageRes: Int,
+        val failureMessageRes: Int,
+    ) {
+        ADD(
+            successMessageRes = R.string.ai_skill_add_success,
+            failureMessageRes = R.string.ai_skill_add_failed,
+        ),
+        IMPORT(
+            successMessageRes = R.string.ai_skill_import_success,
+            failureMessageRes = R.string.ai_skill_import_failed,
+        ),
+    }
+
     private enum class ProviderDetailTab { CONFIG, MODELS }
 
     private sealed interface SkillTreeRow {
@@ -182,18 +156,28 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private val binding by viewBinding(FragmentAiConfigBinding::bind)
     private val waitDialog by lazy { WaitDialog(requireContext()) }
-    private val modelAdapter by lazy { AiModelAdapter() }
-    private val promptAdapter by lazy { AiPromptAdapter() }
-    private val skillFileAdapter by lazy { AiSkillFileAdapter() }
     private var currentPage = Page.MAIN
     private var currentProviderId: String? = null
-    private var currentModelId: String? = null
     private var currentSkill: AiSkillDefinition? = null
     private var currentPrompt: AiPromptStore.Prompt? = null
     private val expandedSkillDirectories = linkedSetOf<String>()
     private var providerSearchQuery: String = ""
     private var providerScreenState by mutableStateOf(AiProviderListScreenState())
     private var providerFormScreenState by mutableStateOf(AiProviderFormScreenState())
+    private var providerDetailScreenState by mutableStateOf(AiProviderDetailScreenState())
+    private var aiMenuScreenState by mutableStateOf(AiConfigMenuScreenState())
+    private var skillListScreenItems by mutableStateOf<List<AiSkillListItemUiModel>>(emptyList())
+    private var skillDetailScreenRows by mutableStateOf<List<AiSkillFileRowUiModel>>(emptyList())
+    private var purifyModelSettingsScreenState by mutableStateOf(
+        AiPurifyModelSettingsScreenState()
+    )
+    private var readAloudModelSettingsScreenState by mutableStateOf(
+        AiReadAloudModelSettingsScreenState()
+    )
+    private var assistantModelSettingsScreenState by mutableStateOf(
+        AiAssistantModelSettingsScreenState()
+    )
+    private var purifySettingsScreenState by mutableStateOf(AiPurifySettingsScreenState())
     private var showDisabledProviders = LocalConfig.aiProviderListShowDisabled
     private var modelSearchQuery: String = ""
     private var providerDetailTab = ProviderDetailTab.CONFIG
@@ -203,9 +187,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var skipNextResumeRefresh = false
     private var entryPage = Page.MAIN
     private var returnToMenuOnEntryBack = false
-    private var ignoreMainFormChanges = false
-    private var ignorePurifyFormChanges = false
-    private var ignoreModelDetailChanges = false
     private val balanceNumberFormat by lazy { DecimalFormat("0.####") }
     private val importSkillFileLauncher = registerForActivityResult(
         SelectFileContract()
@@ -213,15 +194,21 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         uri ?: return@registerForActivityResult
         importSkillFromUri(uri)
     }
+    private val addSkillEditorLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+        result.data?.getStringExtra("text")?.let { content ->
+            importSkillFromText(content, source = SkillCreationSource.ADD)
+        }
+    }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
-        initMain()
+        initAiMainCompose()
         initProviderList()
-        initDetail()
-        initPromptList()
-        initPromptDetail()
-        initModelSettings()
-        initPurifySettings()
+        initProviderDetailCompose()
+        initSkillCompose()
+        initFeatureSettingsCompose()
         val initialPage = arguments?.getString(ARG_INITIAL_PAGE)
             ?: activity?.intent?.getStringExtra(EXTRA_INITIAL_PAGE)
         returnToMenuOnEntryBack = arguments?.getBoolean(ARG_RETURN_TO_MENU) == true
@@ -257,6 +244,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     override fun onDestroyView() {
+        activity?.findViewById<TitleBar>(R.id.title_bar)
+            ?.setTemporarySolidSurface(false)
         clearPageActions()
         super.onDestroyView()
         requestJob?.cancel()
@@ -266,175 +255,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         waitDialog.dismiss()
     }
 
-    private fun initMain() {
-        binding.layoutProviderEntry.setOnClickListener {
-            showProviderList()
-        }
-        binding.layoutModelEntry.setOnClickListener {
-            showAssistantModelSettings()
-        }
-        binding.layoutPromptEntry.setOnClickListener {
-            showPromptList()
-        }
-        binding.layoutChatFab.setOnClickListener {
-            binding.switchChatFab.isChecked = !binding.switchChatFab.isChecked
-        }
-        binding.switchChatFab.setOnCheckedChangeListener { _, isChecked ->
-            if (!ignoreMainFormChanges) {
-                AiConfig.chatFabEnabled = isChecked
-                refreshMain()
-            }
-        }
-        binding.layoutInternalMcp.setOnClickListener {
-            binding.switchInternalMcp.isChecked = !binding.switchInternalMcp.isChecked
-        }
-        binding.switchInternalMcp.setOnCheckedChangeListener { _, isChecked ->
-            if (!ignoreMainFormChanges) {
-                AiConfig.internalMcpEnabled = isChecked
-                refreshMain()
-                refreshModelSettings()
-            }
-        }
-        binding.layoutAiOperationPermission.setOnClickListener {
-            showOperationPermissionDialog()
-        }
-        binding.layoutAiMemory.setOnClickListener {
-            showAiMemoryDialog()
-        }
-        binding.switchAiMemory.setOnCheckedChangeListener { _, isChecked ->
-            if (!ignoreMainFormChanges) {
-                AiConfig.memoryEnabled = isChecked
-                refreshMain()
-                refreshAiMemorySummary()
-                refreshModelSettings()
-            }
-        }
-        binding.layoutPurifyEntry.setOnClickListener {
-            showPurifyModelSettings()
-        }
-        binding.layoutReadAloudEntry.setOnClickListener {
-            showReadAloudModelSettings()
-        }
-        binding.layoutPurifySettingsEntry.setOnClickListener {
-            showPurifySettings()
-        }
-    }
-
-    private fun initPurifySettings() {
-        binding.layoutAiPurifyAuto.setOnClickListener {
-            binding.switchAiPurifyAuto.isChecked = !binding.switchAiPurifyAuto.isChecked
-        }
-        binding.layoutAiPurifyIntercept.setOnClickListener {
-            binding.switchAiPurifyIntercept.isChecked = !binding.switchAiPurifyIntercept.isChecked
-        }
-        binding.layoutAiPurifyChapterAuto.setOnClickListener {
-            binding.switchAiPurifyChapterAuto.isChecked =
-                !binding.switchAiPurifyChapterAuto.isChecked
-        }
-        binding.layoutAiPurifyChapterIntercept.setOnClickListener {
-            binding.switchAiPurifyChapterIntercept.isChecked =
-                !binding.switchAiPurifyChapterIntercept.isChecked
-        }
-        binding.layoutAiPurifyChapterRuleTypes.setOnClickListener {
-            showPurifyChapterRuleTypeDialog()
-        }
-        binding.switchAiPurifyAuto.setOnCheckedChangeListener { _, isChecked ->
-            if (!ignorePurifyFormChanges) {
-                AiConfig.purifyAutoApply = isChecked
-                refreshPurifyAutoSummary()
-                refreshMain()
-            }
-        }
-        binding.switchAiPurifyIntercept.setOnCheckedChangeListener { _, isChecked ->
-            if (!ignorePurifyFormChanges) {
-                AiConfig.purifyExceptionIntercept = isChecked
-                refreshMain()
-            }
-        }
-        binding.switchAiPurifyChapterAuto.setOnCheckedChangeListener { _, isChecked ->
-            if (!ignorePurifyFormChanges) {
-                AiConfig.purifyChapterAutoApply = isChecked
-                refreshPurifyAutoSummary()
-                refreshMain()
-            }
-        }
-        binding.switchAiPurifyChapterIntercept.setOnCheckedChangeListener { _, isChecked ->
-            if (!ignorePurifyFormChanges) {
-                AiConfig.purifyChapterExceptionIntercept = isChecked
-                refreshMain()
-            }
-        }
-        binding.editPurifyParagraphLimit.doOnTextChanged { text, _, _, _ ->
-            if (ignorePurifyFormChanges) {
-                return@doOnTextChanged
-            }
-            text?.toString()?.toIntOrNull()?.let {
-                AiConfig.purifyParagraphLimit = it
-                refreshMain()
-            }
-        }
-        binding.editPurifyParagraphLimit.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                refreshPurifySettings()
-            }
-        }
-        binding.editPurifyChapterSegmentLimit.doOnTextChanged { text, _, _, _ ->
-            if (ignorePurifyFormChanges) {
-                return@doOnTextChanged
-            }
-            text?.toString()?.toIntOrNull()?.let {
-                AiConfig.purifyChapterSegmentLimit = it
-                refreshMain()
-            }
-        }
-        binding.editPurifyChapterSegmentLimit.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                refreshPurifySettings()
-            }
-        }
-        binding.editPurifyChapterSampleLimit.doOnTextChanged { text, _, _, _ ->
-            if (ignorePurifyFormChanges) {
-                return@doOnTextChanged
-            }
-            text?.toString()?.toIntOrNull()?.let {
-                AiConfig.purifyChapterSampleLimit = it
-                refreshMain()
-            }
-        }
-        binding.editPurifyChapterSampleLimit.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                refreshPurifySettings()
-            }
-        }
-        binding.editPurifyChapterConcurrencyLimit.doOnTextChanged { text, _, _, _ ->
-            if (ignorePurifyFormChanges) {
-                return@doOnTextChanged
-            }
-            text?.toString()?.toIntOrNull()?.let {
-                AiConfig.purifyChapterConcurrencyLimit = it
-                refreshMain()
-            }
-        }
-        binding.editPurifyChapterConcurrencyLimit.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                refreshPurifySettings()
-            }
-        }
-        binding.editPurifyChapterRetryCount.doOnTextChanged { text, _, _, _ ->
-            if (ignorePurifyFormChanges) {
-                return@doOnTextChanged
-            }
-            text?.toString()?.toIntOrNull()?.let {
-                AiConfig.purifyChapterRetryCount = it
-                refreshMain()
-            }
-        }
-        binding.editPurifyChapterRetryCount.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                refreshPurifySettings()
-            }
-        }
-    }
 
     private fun initProviderList() {
         binding.composeProviders.apply {
@@ -448,187 +268,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                         onAction = ::handleProviderListAction
                     )
                 }
-            }
-        }
-    }
-
-    private fun bindSearchEditText(editText: EditText) {
-        val hint = editText.hint
-        val searchColor = ContextCompat.getColor(requireContext(), R.color.tv_text_summary)
-        editText.setTextColor(searchColor)
-        editText.setHintTextColor(searchColor)
-        fun updateHint() {
-            editText.hint = if (editText.hasFocus() && editText.text.isNullOrEmpty()) {
-                null
-            } else {
-                hint
-            }
-        }
-        editText.setOnFocusChangeListener { _, _ ->
-            updateHint()
-        }
-        editText.doOnTextChanged { _, _, _, _ ->
-            updateHint()
-        }
-        updateHint()
-    }
-
-    private fun initDetail() {
-        binding.composeProviderForm.apply {
-            setViewCompositionStrategy(
-                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
-            )
-            setContent {
-                NgAppTheme {
-                    AiProviderFormScreen(
-                        state = providerFormScreenState,
-                        onAction = ::handleProviderFormAction
-                    )
-                }
-            }
-        }
-        binding.recyclerModels.layoutManager = LinearLayoutManager(requireContext())
-        binding.recyclerModels.setEdgeEffectColor(accentColor)
-        modelAdapter.bindToRecyclerView(binding.recyclerModels)
-        modelAdapter.onToggleModel = { model, checked ->
-            toggleAvailableModel(model, checked)
-        }
-        modelAdapter.setOnItemClickListener { _, item ->
-            item.safeId().takeIf { it.isNotBlank() }?.let(::showModelDetail)
-        }
-        binding.buttonToggleModelSelection.isVisible = true
-        binding.buttonToggleModelSelection.setOnClickListener {
-            toggleVisibleModelSelection()
-        }
-        bindSearchEditText(binding.searchModel.editText)
-        binding.searchModel.editText.doOnTextChanged { text, _, _, _ ->
-            modelSearchQuery = text?.toString().orEmpty()
-            refreshModelList(currentProviderId?.let { AiProviderStore.provider(it) })
-        }
-        binding.providerDetailTabs.setItems(
-            items = listOf(
-                NgFloatingTabItem(
-                    iconRes = R.drawable.ic_ai_tab_config,
-                    contentDescription = getString(R.string.ai_tab_config)
-                ),
-                NgFloatingTabItem(
-                    iconRes = R.drawable.ic_ai_tab_models,
-                    contentDescription = getString(R.string.ai_tab_models)
-                )
-            ),
-            selectedIndex = ProviderDetailTab.CONFIG.ordinal
-        ) { index ->
-            showProviderDetailTab(ProviderDetailTab.entries[index])
-        }
-        binding.refreshModels.setColorSchemeColors(accentColor)
-        binding.refreshModels.setOnRefreshListener { fetchModels() }
-        setupModelDetailAutoSave()
-    }
-
-    private fun initModelSettings() {
-        binding.layoutPurifyModelSettingsEntry.setOnClickListener {
-            showPurifyModelSettings()
-        }
-        binding.layoutAssistantModelSettingsEntry.setOnClickListener {
-            showAssistantModelSettings()
-        }
-        binding.layoutPurifyModelEntry.setOnClickListener {
-            showPurifyModelSelectDialog()
-        }
-        binding.layoutPurifyReasoningEntry.setOnClickListener {
-            showPurifyReasoningDialog()
-        }
-        binding.layoutReadAloudStoryboardModelEntry.setOnClickListener {
-            showReadAloudStoryboardModelSelectDialog()
-        }
-        binding.layoutReadAloudStoryboardPreloadEntry.setOnClickListener {
-            showReadAloudStoryboardPreloadDialog()
-        }
-        binding.layoutReadAloudStoryboardReasoningEntry.setOnClickListener {
-            showReadAloudStoryboardReasoningDialog()
-        }
-        binding.layoutAssistantModelEntry.setOnClickListener {
-            showAssistantModelSelectDialog()
-        }
-        binding.layoutAssistantReasoningEntry.setOnClickListener {
-            showAssistantReasoningDialog()
-        }
-        binding.layoutContextCompactionModelEntry.setOnClickListener {
-            showContextCompactionModelSelectDialog()
-        }
-        binding.layoutAssistantContextWindowEntry.setOnClickListener {
-            showAssistantContextWindowDialog()
-        }
-        binding.layoutContextCompactionThresholdEntry.setOnClickListener {
-            showContextCompactionThresholdDialog()
-        }
-    }
-
-    private fun setupModelDetailAutoSave() {
-        binding.editModelDisplayName.doOnTextChanged { _, _, _, _ ->
-            if (!ignoreModelDetailChanges && currentPage == Page.MODEL_DETAIL) {
-                saveCurrentModel()
-            }
-        }
-        binding.segmentModelTypeChat.setOnClickListener {
-            selectModelType(AiModelType.CHAT, save = true)
-        }
-        binding.segmentModelTypeImage.setOnClickListener {
-            selectModelType(AiModelType.IMAGE, save = true)
-        }
-        binding.segmentModelTypeEmbedding.setOnClickListener {
-            selectModelType(AiModelType.EMBEDDING, save = true)
-        }
-        binding.segmentModelTypeAsr.setOnClickListener {
-            selectModelType(AiModelType.ASR, save = true)
-        }
-        binding.segmentModelTypeTts.setOnClickListener {
-            selectModelType(AiModelType.TTS, save = true)
-        }
-        binding.segmentModelTypeVideo.setOnClickListener {
-            selectModelType(AiModelType.VIDEO, save = true)
-        }
-        listOf(
-            binding.segmentModelInputText,
-            binding.segmentModelInputImage,
-            binding.segmentModelInputVideo,
-            binding.segmentModelOutputText,
-            binding.segmentModelOutputImage,
-            binding.segmentModelOutputVideo,
-            binding.segmentModelAbilityTool,
-            binding.segmentModelAbilityReasoning
-        ).forEach { segment ->
-            segment.setOnClickListener {
-                segment.isSelected = !segment.isSelected
-                refreshModelSegmentStyles()
-                if (!ignoreModelDetailChanges && currentPage == Page.MODEL_DETAIL) {
-                    saveCurrentModel()
-                }
-            }
-        }
-    }
-
-    private fun initPromptList() {
-        binding.recyclerPrompts.layoutManager = LinearLayoutManager(requireContext())
-        promptAdapter.bindToRecyclerView(binding.recyclerPrompts)
-        promptAdapter.setOnItemClickListener { _, item ->
-            showSkillDetail(item)
-        }
-        binding.buttonAddSkill.setOnClickListener {
-            showManualSkillDialog()
-        }
-        binding.buttonImportSkill.setOnClickListener {
-            showImportSkillDialog()
-        }
-    }
-
-    private fun initPromptDetail() {
-        binding.recyclerSkillFiles.layoutManager = LinearLayoutManager(requireContext())
-        skillFileAdapter.bindToRecyclerView(binding.recyclerSkillFiles)
-        skillFileAdapter.setOnItemClickListener { _, item ->
-            when (item) {
-                is SkillTreeRow.Directory -> toggleSkillDirectory(item.path)
-                is SkillTreeRow.File -> openSkillFile(item.path, edit = false)
             }
         }
     }
@@ -648,28 +287,24 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun visiblePage(): Page {
         return when {
-            binding.layoutModelDetail.isVisible -> Page.MODEL_DETAIL
-            binding.layoutProviderDetail.isVisible -> Page.DETAIL
-            binding.layoutProviderList.isVisible -> Page.PROVIDERS
-            binding.layoutPromptDetail.isVisible -> Page.PROMPT_DETAIL
-            binding.layoutPromptList.isVisible -> Page.PROMPTS
-            binding.layoutAssistantModelSettings.isVisible -> Page.ASSISTANT_MODEL_SETTINGS
-            binding.layoutReadAloudModelSettings.isVisible -> Page.READ_ALOUD_MODEL_SETTINGS
-            binding.layoutPurifyModelSettings.isVisible -> Page.PURIFY_MODEL_SETTINGS
-            binding.layoutModelSettings.isVisible -> Page.MODEL_SETTINGS
-            binding.layoutPurifySettings.isVisible -> Page.PURIFY_SETTINGS
+            binding.composeProviderDetail.isVisible -> Page.DETAIL
+            binding.composeSkillDetail.isVisible -> Page.PROMPT_DETAIL
+            binding.composeSkillList.isVisible -> Page.PROMPTS
+            binding.composeAssistantModelSettings.isVisible -> Page.ASSISTANT_MODEL_SETTINGS
+            binding.composeReadAloudModelSettings.isVisible -> Page.READ_ALOUD_MODEL_SETTINGS
+            binding.composePurifyModelSettings.isVisible -> Page.PURIFY_MODEL_SETTINGS
+            binding.composePurifySettings.isVisible -> Page.PURIFY_SETTINGS
+            binding.composeProviders.isVisible -> Page.PROVIDERS
             else -> Page.MAIN
         }
     }
 
     private fun navigateBack() {
         when (currentPage) {
-            Page.MODEL_DETAIL -> showDetail(currentProviderId ?: return, ProviderDetailTab.MODELS)
             Page.DETAIL -> showProviderList()
             Page.PROMPT_DETAIL -> showPromptList()
             Page.PROVIDERS -> showMain()
             Page.PROMPTS -> showMain()
-            Page.MODEL_SETTINGS -> showMain()
             Page.PURIFY_MODEL_SETTINGS -> showMain()
             Page.READ_ALOUD_MODEL_SETTINGS -> showMain()
             Page.ASSISTANT_MODEL_SETTINGS -> showMain()
@@ -739,6 +374,65 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
+    private fun configureSkillPageActions() {
+        val titleBar = activity?.findViewById<TitleBar>(R.id.title_bar) ?: return
+        val skillMenu = titleBar.menu.addSubMenu(getString(R.string.menu))
+        skillMenu.item.apply {
+            setIcon(R.drawable.ic_more_vert)
+            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        }
+        skillMenu.add(
+            Menu.NONE,
+            MENU_ADD_SKILL,
+            0,
+            getString(R.string.ai_skill_add),
+        ).setIcon(R.drawable.ic_add)
+        skillMenu.add(
+            Menu.NONE,
+            MENU_IMPORT_SKILL_LOCAL,
+            1,
+            getString(R.string.ai_skill_import_file),
+        ).setIcon(R.drawable.ic_import)
+        skillMenu.add(
+            Menu.NONE,
+            MENU_IMPORT_SKILL_URL,
+            2,
+            getString(R.string.ai_skill_import_github),
+        ).setIcon(R.drawable.ic_add_online)
+        NgMenuPopup.bindToolbarMenu(
+            context = requireContext(),
+            toolbar = titleBar.toolbar,
+            menu = titleBar.menu,
+        ) { item ->
+            when (item.itemId) {
+                MENU_ADD_SKILL -> showManualSkillEditor()
+                MENU_IMPORT_SKILL_LOCAL -> importSkillFileLauncher.launch(
+                    arrayOf("text/*", "text/markdown", "application/octet-stream")
+                )
+                MENU_IMPORT_SKILL_URL -> showImportSkillUrlDialog()
+            }
+        }
+    }
+
+    private fun configureSkillDetailPageActions(skill: AiSkillDefinition) {
+        if (skill.builtIn) return
+        val titleBar = activity?.findViewById<TitleBar>(R.id.title_bar) ?: return
+        titleBar.menu.add(
+            Menu.NONE,
+            MENU_EXPORT_SKILL,
+            0,
+            getString(R.string.ai_skill_export),
+        ).apply {
+            setIcon(R.drawable.ic_export)
+            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            setOnMenuItemClickListener {
+                exportCurrentSkill()
+                true
+            }
+        }
+        titleBar.setTemporarySolidSurface(true)
+    }
+
     private fun toggleShowDisabledProviders() {
         showDisabledProviders = !showDisabledProviders
         LocalConfig.aiProviderListShowDisabled = showDisabledProviders
@@ -754,45 +448,22 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun showMain() {
         currentPage = Page.MAIN
+        setFeatureComposePage(Page.MAIN)
         currentProviderId = null
-        currentModelId = null
         currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_setting)
-        binding.layoutMainMenu.isVisible = true
-        binding.layoutProviderList.isVisible = false
-        binding.layoutProviderDetail.isVisible = false
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = false
-        binding.layoutPromptDetail.isVisible = false
-        binding.layoutModelSettings.isVisible = false
-        binding.layoutPurifyModelSettings.isVisible = false
-        binding.layoutReadAloudModelSettings.isVisible = false
-        binding.layoutAssistantModelSettings.isVisible = false
-        binding.layoutPurifySettings.isVisible = false
         refreshMain()
     }
 
     private fun showProviderList() {
         currentPage = Page.PROVIDERS
+        setFeatureComposePage(Page.PROVIDERS)
         currentProviderId = null
-        currentModelId = null
         currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_provider_menu)
         configureProviderPageActions()
-        binding.layoutMainMenu.isVisible = false
-        binding.layoutProviderList.isVisible = true
-        binding.layoutProviderDetail.isVisible = false
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = false
-        binding.layoutPromptDetail.isVisible = false
-        binding.layoutModelSettings.isVisible = false
-        binding.layoutPurifyModelSettings.isVisible = false
-        binding.layoutReadAloudModelSettings.isVisible = false
-        binding.layoutAssistantModelSettings.isVisible = false
-        binding.layoutPurifySettings.isVisible = false
-        refreshAccentControls()
         refreshProviders()
     }
 
@@ -801,23 +472,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         tab: ProviderDetailTab = ProviderDetailTab.CONFIG
     ) {
         currentPage = Page.DETAIL
+        setFeatureComposePage(Page.DETAIL)
         currentProviderId = providerId
-        currentModelId = null
         currentSkill = null
         currentPrompt = null
         providerDetailTab = tab
-        binding.layoutMainMenu.isVisible = false
-        binding.layoutProviderList.isVisible = false
-        binding.layoutProviderDetail.isVisible = true
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = false
-        binding.layoutPromptDetail.isVisible = false
-        binding.layoutModelSettings.isVisible = false
-        binding.layoutPurifyModelSettings.isVisible = false
-        binding.layoutReadAloudModelSettings.isVisible = false
-        binding.layoutAssistantModelSettings.isVisible = false
-        binding.layoutPurifySettings.isVisible = false
-        refreshAccentControls()
         refreshCurrentDetail()
     }
 
@@ -829,162 +488,88 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun showPromptList() {
         currentPage = Page.PROMPTS
+        setFeatureComposePage(Page.PROMPTS)
         currentProviderId = null
-        currentModelId = null
         currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_prompt_menu)
-        binding.layoutMainMenu.isVisible = false
-        binding.layoutProviderList.isVisible = false
-        binding.layoutProviderDetail.isVisible = false
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = true
-        binding.layoutPromptDetail.isVisible = false
-        binding.layoutModelSettings.isVisible = false
-        binding.layoutPurifyModelSettings.isVisible = false
-        binding.layoutReadAloudModelSettings.isVisible = false
-        binding.layoutAssistantModelSettings.isVisible = false
-        binding.layoutPurifySettings.isVisible = false
+        configureSkillPageActions()
         refreshPrompts()
     }
 
     private fun showSkillDetail(skill: AiSkillDefinition) {
         currentPage = Page.PROMPT_DETAIL
+        setFeatureComposePage(Page.PROMPT_DETAIL)
         currentProviderId = null
-        currentModelId = null
         currentSkill = skill
         currentPrompt = skill.editablePrompt
         expandedSkillDirectories.clear()
         setPageTitle(skill.name)
-        binding.layoutMainMenu.isVisible = false
-        binding.layoutProviderList.isVisible = false
-        binding.layoutProviderDetail.isVisible = false
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = false
-        binding.layoutPromptDetail.isVisible = true
-        binding.layoutModelSettings.isVisible = false
-        binding.layoutPurifyModelSettings.isVisible = false
-        binding.layoutReadAloudModelSettings.isVisible = false
-        binding.layoutAssistantModelSettings.isVisible = false
-        binding.layoutPurifySettings.isVisible = false
+        configureSkillDetailPageActions(skill)
         refreshPromptDetail()
-    }
-
-    private fun showModelSettings() {
-        currentPage = Page.MODEL_SETTINGS
-        currentProviderId = null
-        currentModelId = null
-        currentSkill = null
-        currentPrompt = null
-        setPageTitle(R.string.ai_model_settings)
-        binding.layoutMainMenu.isVisible = false
-        binding.layoutProviderList.isVisible = false
-        binding.layoutProviderDetail.isVisible = false
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = false
-        binding.layoutPromptDetail.isVisible = false
-        binding.layoutModelSettings.isVisible = true
-        binding.layoutPurifyModelSettings.isVisible = false
-        binding.layoutReadAloudModelSettings.isVisible = false
-        binding.layoutAssistantModelSettings.isVisible = false
-        binding.layoutPurifySettings.isVisible = false
-        refreshModelSettings()
     }
 
     private fun showPurifyModelSettings() {
         currentPage = Page.PURIFY_MODEL_SETTINGS
+        setFeatureComposePage(Page.PURIFY_MODEL_SETTINGS)
         currentProviderId = null
-        currentModelId = null
         currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_purify)
-        binding.layoutMainMenu.isVisible = false
-        binding.layoutProviderList.isVisible = false
-        binding.layoutProviderDetail.isVisible = false
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = false
-        binding.layoutPromptDetail.isVisible = false
-        binding.layoutModelSettings.isVisible = false
-        binding.layoutPurifyModelSettings.isVisible = true
-        binding.layoutReadAloudModelSettings.isVisible = false
-        binding.layoutAssistantModelSettings.isVisible = false
-        binding.layoutPurifySettings.isVisible = false
         refreshModelSettings()
     }
 
     private fun showReadAloudModelSettings() {
         currentPage = Page.READ_ALOUD_MODEL_SETTINGS
+        setFeatureComposePage(Page.READ_ALOUD_MODEL_SETTINGS)
         currentProviderId = null
-        currentModelId = null
         currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_read_aloud)
-        binding.layoutMainMenu.isVisible = false
-        binding.layoutProviderList.isVisible = false
-        binding.layoutProviderDetail.isVisible = false
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = false
-        binding.layoutPromptDetail.isVisible = false
-        binding.layoutModelSettings.isVisible = false
-        binding.layoutPurifyModelSettings.isVisible = false
-        binding.layoutReadAloudModelSettings.isVisible = true
-        binding.layoutAssistantModelSettings.isVisible = false
-        binding.layoutPurifySettings.isVisible = false
         refreshModelSettings()
     }
 
     private fun showAssistantModelSettings() {
         currentPage = Page.ASSISTANT_MODEL_SETTINGS
+        setFeatureComposePage(Page.ASSISTANT_MODEL_SETTINGS)
         currentProviderId = null
-        currentModelId = null
         currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_assistant)
-        binding.layoutMainMenu.isVisible = false
-        binding.layoutProviderList.isVisible = false
-        binding.layoutProviderDetail.isVisible = false
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = false
-        binding.layoutPromptDetail.isVisible = false
-        binding.layoutModelSettings.isVisible = false
-        binding.layoutPurifyModelSettings.isVisible = false
-        binding.layoutReadAloudModelSettings.isVisible = false
-        binding.layoutAssistantModelSettings.isVisible = true
-        binding.layoutPurifySettings.isVisible = false
         refreshModelSettings()
     }
 
     private fun showPurifySettings() {
         currentPage = Page.PURIFY_SETTINGS
+        setFeatureComposePage(Page.PURIFY_SETTINGS)
         currentProviderId = null
-        currentModelId = null
         currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_purify_settings)
-        binding.layoutMainMenu.isVisible = false
-        binding.layoutProviderList.isVisible = false
-        binding.layoutProviderDetail.isVisible = false
-        binding.layoutModelDetail.isVisible = false
-        binding.layoutPromptList.isVisible = false
-        binding.layoutPromptDetail.isVisible = false
-        binding.layoutModelSettings.isVisible = false
-        binding.layoutPurifyModelSettings.isVisible = false
-        binding.layoutReadAloudModelSettings.isVisible = false
-        binding.layoutAssistantModelSettings.isVisible = false
-        binding.layoutPurifySettings.isVisible = true
         refreshPurifySettings()
     }
 
+    private fun setFeatureComposePage(page: Page?) {
+        binding.composeAiMain.isVisible = page == Page.MAIN
+        binding.composeProviders.isVisible = page == Page.PROVIDERS
+        binding.composeProviderDetail.isVisible = page == Page.DETAIL
+        binding.composeSkillList.isVisible = page == Page.PROMPTS
+        binding.composeSkillDetail.isVisible = page == Page.PROMPT_DETAIL
+        binding.composePurifyModelSettings.isVisible = page == Page.PURIFY_MODEL_SETTINGS
+        binding.composeReadAloudModelSettings.isVisible = page == Page.READ_ALOUD_MODEL_SETTINGS
+        binding.composeAssistantModelSettings.isVisible = page == Page.ASSISTANT_MODEL_SETTINGS
+        binding.composePurifySettings.isVisible = page == Page.PURIFY_SETTINGS
+        activity?.findViewById<TitleBar>(R.id.title_bar)
+            ?.setTemporarySolidSurface(page == Page.PROMPT_DETAIL)
+    }
+
     private fun refreshCurrentPage() {
-        refreshAccentControls()
         when (currentPage) {
             Page.MAIN -> refreshMain()
             Page.PROVIDERS -> refreshProviders()
             Page.DETAIL -> refreshCurrentDetail()
-            Page.MODEL_DETAIL -> refreshCurrentModelDetail()
             Page.PROMPTS -> refreshPrompts()
             Page.PROMPT_DETAIL -> refreshPromptDetail()
-            Page.MODEL_SETTINGS -> refreshModelSettings()
             Page.PURIFY_MODEL_SETTINGS -> refreshModelSettings()
             Page.READ_ALOUD_MODEL_SETTINGS -> refreshModelSettings()
             Page.ASSISTANT_MODEL_SETTINGS -> refreshModelSettings()
@@ -992,117 +577,37 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
-    private fun refreshAccentControls() {
-        val snapshot = NgThemeResolver.resolve(requireContext())
-        binding.buttonToggleModelSelection.background = null
-        binding.buttonToggleModelSelection.setTextColor(
-            if (snapshot.isDark) {
-                snapshot.colors.onSurface
-            } else {
-                snapshot.colors.primary
-            }
-        )
-    }
-
-    private fun createNgChoiceDialogRoot(
-        title: String,
-        description: String?
-    ): LinearLayout {
-        return LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            background = ContextCompat.getDrawable(requireContext(), R.drawable.ng_bg_dialog)
-            clipToOutline = true
-            addView(LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(24.dpToPx(), 24.dpToPx(), 24.dpToPx(), 10.dpToPx())
-                addView(TextView(requireContext()).apply {
-                    text = title
-                    setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
-                    typeface = Typeface.DEFAULT_BOLD
-                    textSize = 24f
-                })
-                if (!description.isNullOrBlank()) {
-                    addView(TextView(requireContext()).apply {
-                        text = description
-                        setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant))
-                        textSize = 14f
-                        setPadding(0, 8.dpToPx(), 0, 0)
-                    })
-                }
-            })
-            addView(LinearLayout(requireContext()).apply {
-                tag = "body"
-                orientation = LinearLayout.VERTICAL
-                setPadding(20.dpToPx(), 0, 24.dpToPx(), 22.dpToPx())
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-        }
-    }
-
-    private fun selectableItemBackground(): android.graphics.drawable.Drawable? {
-        val value = TypedValue()
-        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)
-        return ContextCompat.getDrawable(requireContext(), value.resourceId)
-    }
-
     private fun showOperationPermissionDialog() {
         val modes = AiOperationPermissionMode.entries.toTypedArray()
-        val dialog = Dialog(requireContext())
-        val root = createNgChoiceDialogRoot(
-            title = getString(R.string.ai_operation_permission),
-            description = null
-        )
-        val body = root.findViewWithTag<LinearLayout>("body")
-        modes.forEach { mode ->
-            body.addView(createOperationPermissionRow(mode, dialog))
+        val dialog = ComponentDialog(requireContext())
+        val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    AiOperationPermissionDialogContent(
+                        title = getString(R.string.ai_operation_permission),
+                        options = modes.map { mode ->
+                            AiOperationPermissionOptionUiModel(
+                                title = operationPermissionModeTitle(mode),
+                                summary = operationPermissionModeSummary(mode),
+                                selected = AiConfig.operationPermissionMode == mode,
+                            )
+                        },
+                        onSelect = { index ->
+                            modes.getOrNull(index)?.let { mode ->
+                                AiConfig.operationPermissionMode = mode
+                                dialog.dismiss()
+                                refreshMain()
+                                refreshModelSettings()
+                            }
+                        },
+                    )
+                }
+            }
         }
-        dialog.setContentView(root)
+        dialog.setContentView(composeView)
         dialog.show()
         dialog.applyNgWindow()
-    }
-
-    private fun createOperationPermissionRow(
-        mode: AiOperationPermissionMode,
-        dialog: Dialog
-    ): View {
-        val selected = AiConfig.operationPermissionMode == mode
-        return LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = selectableItemBackground()
-            isClickable = true
-            isFocusable = true
-            setPadding(0, 8.dpToPx(), 0, 8.dpToPx())
-            setOnClickListener {
-                AiConfig.operationPermissionMode = mode
-                dialog.dismiss()
-                refreshMain()
-                refreshModelSettings()
-            }
-            addView(RadioButton(requireContext()).apply {
-                isChecked = selected
-                buttonTintList = ColorStateList.valueOf(accentColor)
-                isClickable = false
-            }, LinearLayout.LayoutParams(48.dpToPx(), 48.dpToPx()))
-            addView(LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(TextView(requireContext()).apply {
-                    text = operationPermissionModeTitle(mode)
-                    setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
-                    textSize = 17f
-                })
-                addView(TextView(requireContext()).apply {
-                    text = operationPermissionModeSummary(mode)
-                    setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant))
-                    textSize = 13f
-                    setPadding(0, 4.dpToPx(), 0, 0)
-                })
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                weight = 1f
-            })
-        }
     }
 
     private fun operationPermissionModeTitle(mode: AiOperationPermissionMode): String {
@@ -1129,66 +634,37 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun refreshMain() {
         val providers = AiProviderStore.providers()
-        val color = accentColor
-        val entryIconTint = ColorStateList.valueOf(color)
-        binding.textMainSectionLabel.setTextColor(color)
-        binding.imageProviderEntryIcon.imageTintList = entryIconTint
-        binding.imageModelEntryIcon.imageTintList = entryIconTint
-        binding.imagePromptEntryIcon.imageTintList = entryIconTint
-        binding.imageChatFabIcon.imageTintList = entryIconTint
-        binding.imagePurifyEntryIcon.imageTintList = entryIconTint
-        binding.imageReadAloudEntryIcon.imageTintList = entryIconTint
-        ignoreMainFormChanges = true
-        try {
-            binding.switchChatFab.isChecked = AiConfig.chatFabEnabled
-            binding.switchInternalMcp.isChecked = AiConfig.internalMcpEnabled
-            binding.switchAiMemory.isChecked = AiConfig.memoryEnabled
-        } finally {
-            ignoreMainFormChanges = false
-        }
-        binding.textProviderEntrySummary.text = getString(
-            R.string.ai_provider_menu_summary,
-            providers.size.toString()
-        )
-        binding.textModelEntrySummary.text = getString(
-            R.string.ai_model_function_summary,
-            assistantModelSummaryText(providers),
-            assistantReasoningSummaryText(providers)
-        )
         refreshSkillSummary()
-        binding.textChatFabSummary.text = getString(
-            if (AiConfig.chatFabEnabled) {
-                R.string.ai_chat_fab_summary_on
-            } else {
-                R.string.ai_chat_fab_summary_off
-            }
-        )
-        binding.textInternalMcpSummary.text = getString(
-            if (AiConfig.internalMcpEnabled) {
-                R.string.ai_internal_mcp_summary_on
-            } else {
-                R.string.ai_internal_mcp_summary_off
-            }
-        )
-        binding.textAiOperationPermissionSummary.text =
-            operationPermissionModeSummary(AiConfig.operationPermissionMode)
-        binding.textAiMemorySummary.text = getString(
-            if (AiConfig.memoryEnabled) {
-                R.string.ai_memory_summary_on
-            } else {
-                R.string.ai_memory_summary_off
-            }
-        )
         refreshAiMemorySummary()
-        binding.textPurifyEntrySummary.text = getString(
-            R.string.ai_model_function_summary,
-            purifyModelSummaryText(providers),
-            purifyReasoningSummaryText(providers)
-        )
-        binding.textReadAloudEntrySummary.text = getString(
-            R.string.ai_model_function_summary,
-            readAloudStoryboardModelSummaryText(providers),
-            readAloudStoryboardReasoningSummaryText(providers)
+        aiMenuScreenState = AiConfigMenuScreenState(
+            providerSummary = getString(
+                R.string.ai_provider_menu_summary,
+                providers.size.toString(),
+            ),
+            skillSummary = aiMenuScreenState.skillSummary,
+            chatFabEnabled = AiConfig.chatFabEnabled,
+            chatFabSummary = getString(
+                if (AiConfig.chatFabEnabled) {
+                    R.string.ai_chat_fab_summary_on
+                } else {
+                    R.string.ai_chat_fab_summary_off
+                }
+            ),
+            purifySummary = getString(
+                R.string.ai_model_function_summary,
+                purifyModelSummaryText(providers),
+                purifyReasoningSummaryText(providers),
+            ),
+            assistantSummary = getString(
+                R.string.ai_model_function_summary,
+                assistantModelSummaryText(providers),
+                assistantReasoningSummaryText(providers),
+            ),
+            readAloudSummary = getString(
+                R.string.ai_model_function_summary,
+                readAloudStoryboardModelSummaryText(providers),
+                readAloudStoryboardReasoningSummaryText(providers),
+            ),
         )
     }
 
@@ -1199,9 +675,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 visibleAiSkills().size
             }
             if (view == null) return@launch
-            binding.textPromptEntrySummary.text = getString(
-                R.string.ai_prompt_menu_summary,
-                count.toString()
+            aiMenuScreenState = aiMenuScreenState.copy(
+                skillSummary = getString(
+                    R.string.ai_prompt_menu_summary,
+                    count.toString(),
+                )
             )
         }
     }
@@ -1212,7 +690,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 loadAiMemoryStats()
             }
             if (!isAdded) return@launch
-            binding.textAiMemorySummary.text = if (AiConfig.memoryEnabled) {
+            val summary = if (AiConfig.memoryEnabled) {
                 getString(
                     R.string.ai_memory_summary_on_with_stats,
                     stats.count,
@@ -1225,6 +703,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     formatMemorySize(stats.estimatedSize)
                 )
             }
+            assistantModelSettingsScreenState = assistantModelSettingsScreenState.copy(
+                memoryEnabled = AiConfig.memoryEnabled,
+                memorySummary = summary,
+            )
         }
     }
 
@@ -1234,92 +716,45 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 loadAiMemoryStats()
             }
             if (!isAdded) return@launch
-            val context = requireContext()
-            val dialog = Dialog(context)
-            val root = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                background = ContextCompat.getDrawable(context, R.drawable.ng_bg_dialog)
-                clipToOutline = true
-                setPadding(24.dpToPx(), 24.dpToPx(), 24.dpToPx(), 18.dpToPx())
-            }
-            root.addView(TextView(context).apply {
-                text = getString(R.string.ai_memory)
-                setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
-                textSize = 24f
-                typeface = Typeface.DEFAULT_BOLD
-            })
-            root.addView(TextView(context).apply {
-                text = if (AiConfig.memoryEnabled) {
-                    getString(R.string.ai_memory_summary_on)
-                } else {
-                    getString(R.string.ai_memory_summary_off)
+            val dialog = ComponentDialog(requireContext())
+            val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                setContent {
+                    NgAppTheme(updateSystemBars = false) {
+                        AiMemoryDialogContent(
+                            title = getString(R.string.ai_memory),
+                            summary = getString(
+                                if (AiConfig.memoryEnabled) {
+                                    R.string.ai_memory_summary_on
+                                } else {
+                                    R.string.ai_memory_summary_off
+                                }
+                            ),
+                            countLabel = getString(R.string.ai_memory_count),
+                            countValue = stats.count.toString(),
+                            sizeLabel = getString(R.string.ai_memory_size),
+                            sizeValue = formatMemorySize(stats.estimatedSize),
+                            clearEnabled = stats.count > 0,
+                            cancelText = getString(R.string.dialog_cancel),
+                            clearText = getString(R.string.ai_memory_clear),
+                            onCancel = dialog::dismiss,
+                            onClear = { confirmClearAiMemory(dialog) },
+                        )
+                    }
                 }
-                setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
-                textSize = 14f
-                setPadding(0, 8.dpToPx(), 0, 18.dpToPx())
-            })
-            root.addView(createMemoryStatRow(context, getString(R.string.ai_memory_count), stats.count.toString()))
-            root.addView(createMemoryStatRow(context, getString(R.string.ai_memory_size), formatMemorySize(stats.estimatedSize)))
-            root.addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                setPadding(0, 22.dpToPx(), 0, 0)
-                addView(TextView(context).apply {
-                    text = getString(R.string.dialog_cancel)
-                    gravity = Gravity.CENTER
-                    setTextColor(ContextCompat.getColor(context, R.color.ng_primary))
-                    textSize = 14f
-                    includeFontPadding = false
-                    background = ContextCompat.getDrawable(context, R.drawable.ng_bg_button_secondary)
-                    setOnClickListener {
-                        dialog.dismiss()
-                    }
-                }, LinearLayout.LayoutParams(76.dpToPx(), 36.dpToPx()).apply {
-                    rightMargin = 8.dpToPx()
-                })
-                addView(TextView(context).apply {
-                    text = getString(R.string.ai_memory_clear)
-                    gravity = Gravity.CENTER
-                    setTextColor(ContextCompat.getColor(context, R.color.ng_on_primary))
-                    textSize = 14f
-                    includeFontPadding = false
-                    alpha = if (stats.count > 0) 1f else 0.45f
-                    isEnabled = stats.count > 0
-                    background = ContextCompat.getDrawable(context, R.drawable.ng_bg_button_primary)
-                    setOnClickListener {
-                        confirmClearAiMemory(dialog)
-                    }
-                }, LinearLayout.LayoutParams(90.dpToPx(), 36.dpToPx()))
-            })
-            dialog.setContentView(root)
+            }
+            dialog.setContentView(composeView)
             dialog.show()
             dialog.applyNgWindow()
         }
     }
 
-    private fun createMemoryStatRow(context: android.content.Context, label: String, value: String): View {
-        return LinearLayout(context).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 8.dpToPx(), 0, 8.dpToPx())
-            addView(TextView(context).apply {
-                text = label
-                setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
-                textSize = 15f
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                weight = 1f
-            })
-            addView(TextView(context).apply {
-                text = value
-                setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
-                textSize = 15f
-                typeface = Typeface.DEFAULT_BOLD
-            })
-        }
-    }
-
     private fun confirmClearAiMemory(parentDialog: Dialog) {
-        alert(R.string.ai_memory_clear) {
-            setMessage(R.string.ai_memory_clear_confirm)
-            okButton {
+        showAiClassicDialog(
+            title = getString(R.string.ai_memory_clear),
+            message = getString(R.string.ai_memory_clear_confirm),
+            cancelText = getString(R.string.no),
+            onConfirm = {
                 viewLifecycleOwner.lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
                         appDb.agentMemoryDao.clearAll()
@@ -1328,9 +763,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     refreshAiMemorySummary()
                     Toast.makeText(requireContext(), R.string.ai_memory_cleared, Toast.LENGTH_SHORT).show()
                 }
-            }
-            noButton()
-        }
+            },
+        )
     }
 
     private fun loadAiMemoryStats(): AiMemoryStats {
@@ -1477,10 +911,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun refreshCurrentDetail() {
         val provider = currentProviderId?.let { AiProviderStore.provider(it) } ?: return
         setPageTitle(provider.name)
-        binding.textDetailTitle.text = provider.name
-        binding.imageDetailIcon.setImageResource(provider.iconRes())
         providerFormScreenState = provider.toProviderFormScreenState(
             provider.type.localizedDisplayName()
+        )
+        providerDetailScreenState = providerDetailScreenState.copy(
+            providerName = provider.name,
+            providerIconRes = provider.iconRes(),
+            selectedTab = providerDetailTab.ordinal,
         )
         refreshModelList(provider)
         showProviderDetailTab(providerDetailTab)
@@ -1488,22 +925,12 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     private fun showProviderDetailTab(tab: ProviderDetailTab) {
         providerDetailTab = tab
-        binding.scrollDetail.isVisible = tab == ProviderDetailTab.CONFIG
-        binding.layoutDetailHeader.isVisible = tab == ProviderDetailTab.CONFIG
-        binding.composeProviderForm.isVisible = tab == ProviderDetailTab.CONFIG
-        binding.layoutModelTab.isVisible = tab == ProviderDetailTab.MODELS
-        binding.providerDetailTabs.select(tab.ordinal)
+        providerDetailScreenState = providerDetailScreenState.copy(selectedTab = tab.ordinal)
         if (tab == ProviderDetailTab.MODELS) {
-            binding.composeProviderForm.clearFocus()
-            binding.composeProviderForm.hideSoftInput()
+            binding.composeProviderDetail.clearFocus()
+            binding.composeProviderDetail.hideSoftInput()
             maybeAutoFetchModels()
         }
-    }
-
-    private fun refreshCurrentModelDetail() {
-        val provider = currentProviderId?.let { AiProviderStore.provider(it) } ?: return
-        val model = provider.displayModels().firstOrNull { it.safeId() == currentModelId } ?: return
-        refreshModelDetail(provider, model)
     }
 
     private fun showModelEditDialog(provider: AiProviderSetting, model: AiModel) {
@@ -1523,6 +950,318 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         )
         configureModelEditSheet(dialog)
         dialog.show()
+    }
+
+    private fun initFeatureSettingsCompose() {
+        binding.composePurifyModelSettings.apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent {
+                NgAppTheme {
+                    AiPurifyModelSettingsScreen(
+                        state = purifyModelSettingsScreenState,
+                        onAction = ::handlePurifyModelSettingsAction,
+                    )
+                }
+            }
+        }
+        binding.composeReadAloudModelSettings.apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent {
+                NgAppTheme {
+                    AiReadAloudModelSettingsScreen(
+                        state = readAloudModelSettingsScreenState,
+                        onAction = ::handleReadAloudModelSettingsAction,
+                    )
+                }
+            }
+        }
+        binding.composeAssistantModelSettings.apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent {
+                NgAppTheme {
+                    AiAssistantModelSettingsScreen(
+                        state = assistantModelSettingsScreenState,
+                        onAction = ::handleAssistantModelSettingsAction,
+                    )
+                }
+            }
+        }
+        binding.composePurifySettings.apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent {
+                NgAppTheme {
+                    AiPurifySettingsScreen(
+                        state = purifySettingsScreenState,
+                        onAction = ::handlePurifySettingsAction,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun initProviderDetailCompose() {
+        binding.composeProviderDetail.apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent {
+                NgAppTheme {
+                    AiProviderDetailScreen(
+                        state = providerDetailScreenState,
+                        formState = providerFormScreenState,
+                        onFormAction = ::handleProviderFormAction,
+                        onAction = ::handleProviderDetailAction,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun initSkillCompose() {
+        binding.composeSkillList.apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent {
+                NgAppTheme {
+                    AiSkillListScreen(
+                        items = skillListScreenItems,
+                        onAction = ::handleSkillListAction,
+                    )
+                }
+            }
+        }
+        binding.composeSkillDetail.apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent {
+                NgAppTheme {
+                    AiSkillDetailScreen(
+                        rows = skillDetailScreenRows,
+                        onAction = ::handleSkillDetailAction,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun initAiMainCompose() {
+        binding.composeAiMain.apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            setContent {
+                NgAppTheme {
+                    AiConfigMenuScreen(
+                        state = aiMenuScreenState,
+                        onOpenPage = ::handleAiMainOpenPage,
+                        onChatFabChanged = { enabled ->
+                            AiConfig.chatFabEnabled = enabled
+                            refreshMain()
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    private fun handleAiMainOpenPage(page: String) {
+        when (page) {
+            PAGE_PROVIDERS -> showProviderList()
+            PAGE_PROMPTS -> showPromptList()
+            PAGE_PURIFY -> showPurifyModelSettings()
+            PAGE_READ_ALOUD -> showReadAloudModelSettings()
+            PAGE_ASSISTANT -> showAssistantModelSettings()
+        }
+    }
+
+    private fun handleSkillListAction(action: AiSkillListAction) {
+        when (action) {
+            is AiSkillListAction.OpenSkill -> {
+                showSkillDetail(action.skill)
+            }
+            is AiSkillListAction.DeleteSkill -> {
+                selectSkillForAction(action.skill)
+                confirmDeleteCurrentSkill()
+            }
+        }
+    }
+
+    private fun selectSkillForAction(skill: AiSkillDefinition) {
+        currentSkill = skill
+        currentPrompt = skill.editablePrompt
+    }
+
+    private fun handleSkillDetailAction(action: AiSkillDetailAction) {
+        when (action) {
+            is AiSkillDetailAction.ToggleDirectory -> toggleSkillDirectory(action.path)
+            is AiSkillDetailAction.OpenFile -> openSkillFile(action.path, edit = false)
+            is AiSkillDetailAction.EditFile -> openSkillFile(action.path, edit = true)
+        }
+    }
+
+    private fun handleProviderDetailAction(action: AiProviderDetailAction) {
+        when (action) {
+            is AiProviderDetailAction.TabSelected -> {
+                val tab = ProviderDetailTab.entries[action.index]
+                showProviderDetailTab(tab)
+            }
+            is AiProviderDetailAction.ModelQueryChanged -> {
+                modelSearchQuery = action.query
+                refreshModelList(currentProviderId?.let { AiProviderStore.provider(it) })
+            }
+            AiProviderDetailAction.RefreshModels -> fetchModels()
+            AiProviderDetailAction.ToggleVisibleModelSelection -> toggleVisibleModelSelection()
+            is AiProviderDetailAction.EditModel -> showModelDetail(action.modelId)
+            is AiProviderDetailAction.ToggleModel -> {
+                val provider = currentProviderId?.let(AiProviderStore::provider) ?: return
+                val model = provider.displayModels().firstOrNull {
+                    it.safeId() == action.modelId
+                } ?: return
+                toggleAvailableModel(model, action.selected)
+            }
+        }
+    }
+
+    private fun handlePurifyModelSettingsAction(action: AiPurifyModelSettingsAction) {
+        when (action) {
+            AiPurifyModelSettingsAction.SelectModel -> showPurifyModelSelectDialog()
+            AiPurifyModelSettingsAction.SelectReasoning -> showPurifyReasoningDialog()
+            AiPurifyModelSettingsAction.OpenSettings -> showPurifySettings()
+        }
+    }
+
+    private fun handleReadAloudModelSettingsAction(action: AiReadAloudModelSettingsAction) {
+        when (action) {
+            AiReadAloudModelSettingsAction.SelectModel -> {
+                showReadAloudStoryboardModelSelectDialog()
+            }
+            AiReadAloudModelSettingsAction.SelectReasoning -> {
+                showReadAloudStoryboardReasoningDialog()
+            }
+            AiReadAloudModelSettingsAction.SelectPreloadCount -> {
+                showReadAloudStoryboardPreloadDialog()
+            }
+        }
+    }
+
+    private fun handleAssistantModelSettingsAction(action: AiAssistantModelSettingsAction) {
+        when (action) {
+            AiAssistantModelSettingsAction.SelectModel -> showAssistantModelSelectDialog()
+            AiAssistantModelSettingsAction.SelectReasoning -> showAssistantReasoningDialog()
+            AiAssistantModelSettingsAction.SelectCompactionModel -> {
+                showContextCompactionModelSelectDialog()
+            }
+            AiAssistantModelSettingsAction.SelectContextWindow -> {
+                showAssistantContextWindowDialog()
+            }
+            AiAssistantModelSettingsAction.SelectCompactionThreshold -> {
+                showContextCompactionThresholdDialog()
+            }
+            is AiAssistantModelSettingsAction.InternalMcpChanged -> {
+                AiConfig.internalMcpEnabled = action.enabled
+                refreshMain()
+                refreshModelSettings()
+            }
+            is AiAssistantModelSettingsAction.MemoryChanged -> {
+                AiConfig.memoryEnabled = action.enabled
+                refreshMain()
+                refreshModelSettings()
+                refreshAiMemorySummary()
+            }
+            AiAssistantModelSettingsAction.OpenMemory -> showAiMemoryDialog()
+            AiAssistantModelSettingsAction.OpenOperationPermission -> {
+                showOperationPermissionDialog()
+            }
+        }
+    }
+
+    private fun handlePurifySettingsAction(action: AiPurifySettingsAction) {
+        when (action) {
+            is AiPurifySettingsAction.ParagraphAutoApplyChanged -> {
+                AiConfig.purifyAutoApply = action.enabled
+                refreshPurifySettings()
+                refreshMain()
+                refreshModelSettings()
+            }
+            is AiPurifySettingsAction.ParagraphInterceptChanged -> {
+                AiConfig.purifyExceptionIntercept = action.enabled
+                refreshPurifySettings()
+                refreshMain()
+            }
+            is AiPurifySettingsAction.ChapterAutoApplyChanged -> {
+                AiConfig.purifyChapterAutoApply = action.enabled
+                refreshPurifySettings()
+                refreshMain()
+                refreshModelSettings()
+            }
+            is AiPurifySettingsAction.ChapterInterceptChanged -> {
+                AiConfig.purifyChapterExceptionIntercept = action.enabled
+                refreshPurifySettings()
+                refreshMain()
+            }
+            is AiPurifySettingsAction.ChapterRuleTypeChanged -> {
+                when (action.type) {
+                    AiPurifyRuleType.TYPO -> AiConfig.purifyChapterRuleTypo = action.enabled
+                    AiPurifyRuleType.NOISE -> AiConfig.purifyChapterRuleNoise = action.enabled
+                    AiPurifyRuleType.AD -> AiConfig.purifyChapterRuleAd = action.enabled
+                }
+                refreshPurifySettings()
+                refreshMain()
+            }
+            is AiPurifySettingsAction.NumberChanged -> {
+                updatePurifyNumberDraft(action.field, action.value)
+            }
+            is AiPurifySettingsAction.NumberFocusLost -> refreshPurifySettings()
+        }
+    }
+
+    private fun updatePurifyNumberDraft(field: AiPurifyNumberField, value: String) {
+        purifySettingsScreenState = when (field) {
+            AiPurifyNumberField.PARAGRAPH_LIMIT -> {
+                purifySettingsScreenState.copy(paragraphLimit = value)
+            }
+            AiPurifyNumberField.CHAPTER_CONCURRENCY -> {
+                purifySettingsScreenState.copy(chapterConcurrency = value)
+            }
+            AiPurifyNumberField.CHAPTER_RETRY_COUNT -> {
+                purifySettingsScreenState.copy(chapterRetryCount = value)
+            }
+            AiPurifyNumberField.CHAPTER_SEGMENT_LIMIT -> {
+                purifySettingsScreenState.copy(chapterSegmentLimit = value)
+            }
+            AiPurifyNumberField.CHAPTER_SAMPLE_LIMIT -> {
+                purifySettingsScreenState.copy(chapterSampleLimit = value)
+            }
+        }
+        value.toIntOrNull()?.let { parsed ->
+            when (field) {
+                AiPurifyNumberField.PARAGRAPH_LIMIT -> AiConfig.purifyParagraphLimit = parsed
+                AiPurifyNumberField.CHAPTER_CONCURRENCY -> {
+                    AiConfig.purifyChapterConcurrencyLimit = parsed
+                }
+                AiPurifyNumberField.CHAPTER_RETRY_COUNT -> {
+                    AiConfig.purifyChapterRetryCount = parsed
+                }
+                AiPurifyNumberField.CHAPTER_SEGMENT_LIMIT -> {
+                    AiConfig.purifyChapterSegmentLimit = parsed
+                }
+                AiPurifyNumberField.CHAPTER_SAMPLE_LIMIT -> {
+                    AiConfig.purifyChapterSampleLimit = parsed
+                }
+            }
+            refreshMain()
+            refreshModelSettings()
+        }
     }
 
     private fun configureModelEditSheet(dialog: BottomSheetDialog) {
@@ -1562,107 +1301,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         refreshMain()
     }
 
-    private fun refreshModelDetail(provider: AiProviderSetting, model: AiModel) {
-        setPageTitle(model.displayName())
-        ignoreModelDetailChanges = true
-        try {
-            binding.editModelId.setText(model.safeId())
-            binding.editModelDisplayName.setText(model.displayName())
-            selectModelType(model.safeType(), save = false)
-            binding.segmentModelInputText.isSelected =
-                AiModelModality.TEXT in model.safeInputModalities()
-            binding.segmentModelInputImage.isSelected =
-                AiModelModality.IMAGE in model.safeInputModalities()
-            binding.segmentModelOutputText.isSelected =
-                AiModelModality.TEXT in model.safeOutputModalities()
-            binding.segmentModelOutputImage.isSelected =
-                AiModelModality.IMAGE in model.safeOutputModalities()
-            binding.segmentModelInputVideo.isSelected =
-                AiModelModality.VIDEO in model.safeInputModalities()
-            binding.segmentModelOutputVideo.isSelected =
-                AiModelModality.VIDEO in model.safeOutputModalities()
-            binding.segmentModelAbilityTool.isSelected = AiModelAbility.TOOL in model.safeAbilities()
-            binding.segmentModelAbilityReasoning.isSelected =
-                AiModelAbility.REASONING in model.safeAbilities()
-            refreshModelSegmentStyles()
-        } finally {
-            ignoreModelDetailChanges = false
-        }
-        modelAdapter.availableModelIds = provider.effectiveAvailableModelIds().toSet()
-    }
-
-    private fun selectModelType(type: AiModelType, save: Boolean) {
-        binding.segmentModelTypeChat.isSelected = type == AiModelType.CHAT
-        binding.segmentModelTypeImage.isSelected = type == AiModelType.IMAGE
-        binding.segmentModelTypeEmbedding.isSelected = type == AiModelType.EMBEDDING
-        binding.segmentModelTypeAsr.isSelected = type == AiModelType.ASR
-        binding.segmentModelTypeTts.isSelected = type == AiModelType.TTS
-        binding.segmentModelTypeVideo.isSelected = type == AiModelType.VIDEO
-        val showModalities = type == AiModelType.CHAT || type == AiModelType.VIDEO
-        val showChatAbilities = type == AiModelType.CHAT
-        binding.textModelInputModalitiesLabel.isVisible = showModalities
-        binding.layoutModelInputModalities.isVisible = showModalities
-        binding.textModelOutputModalitiesLabel.isVisible = showModalities
-        binding.layoutModelOutputModalities.isVisible = showModalities
-        binding.textModelAbilitiesLabel.isVisible = showChatAbilities
-        binding.layoutModelAbilities.isVisible = showChatAbilities
-        refreshModelSegmentStyles()
-        if (save && !ignoreModelDetailChanges && currentPage == Page.MODEL_DETAIL) {
-            saveCurrentModel()
-        }
-    }
-
-    private fun refreshModelSegmentStyles() {
-        applySegmentStyles(
-            binding.segmentModelTypeChat,
-            binding.segmentModelTypeImage,
-            binding.segmentModelTypeEmbedding,
-            binding.segmentModelTypeAsr,
-            binding.segmentModelTypeTts,
-            binding.segmentModelTypeVideo
-        )
-        applySegmentStyles(
-            binding.segmentModelInputText,
-            binding.segmentModelInputImage,
-            binding.segmentModelInputVideo
-        )
-        applySegmentStyles(
-            binding.segmentModelOutputText,
-            binding.segmentModelOutputImage,
-            binding.segmentModelOutputVideo
-        )
-        applySegmentStyles(binding.segmentModelAbilityTool, binding.segmentModelAbilityReasoning)
-    }
-
-    private fun applySegmentStyles(vararg segments: TextView) {
-        val activeColor = accentColor
-        val activeTextColor = accentColor
-        val inactiveColor = ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant)
-        val selectedBackground = ContextCompat.getColor(requireContext(), R.color.ng_success_container)
-        val unselectedBackground = ContextCompat.getColor(requireContext(), R.color.ng_neutral_container)
-        segments.forEach { segment ->
-            val selected = segment.isSelected
-            segment.setTextColor(if (selected) activeTextColor else inactiveColor)
-            segment.typeface = Typeface.defaultFromStyle(if (selected) Typeface.BOLD else Typeface.NORMAL)
-            segment.background = GradientDrawable().apply {
-                cornerRadius = 18.dpToPx().toFloat()
-                setColor(if (selected) selectedBackground else unselectedBackground)
-                setStroke(1.dpToPx(), if (selected) activeColor else inactiveColor)
-            }
-        }
-    }
-
-    private fun currentModelTypeFromSegments(): AiModelType {
-        return when {
-            binding.segmentModelTypeImage.isSelected -> AiModelType.IMAGE
-            binding.segmentModelTypeEmbedding.isSelected -> AiModelType.EMBEDDING
-            binding.segmentModelTypeAsr.isSelected -> AiModelType.ASR
-            binding.segmentModelTypeTts.isSelected -> AiModelType.TTS
-            binding.segmentModelTypeVideo.isSelected -> AiModelType.VIDEO
-            else -> AiModelType.CHAT
-        }
-    }
-
     private fun addProvider(type: AiProviderType) {
         val provider = AiProviderStore.createCustomProvider(type)
         if (providerSearchQuery.isNotBlank()) {
@@ -1673,7 +1311,36 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun refreshPrompts() {
-        promptAdapter.setItems(visibleAiSkills())
+        val skills = visibleAiSkills()
+        skillListScreenItems = skills.map { skill ->
+            AiSkillListItemUiModel(
+                skill = skill,
+                name = skill.name,
+                summary = skill.summary,
+                iconText = skill.iconText(),
+                headerTags = buildList {
+                    add(
+                        NgStatusTagSpec(
+                            text = skill.scope.displayName(),
+                            variant = when (skill.scope) {
+                                AiSkillScope.APP -> NgStatusTagVariant.NEUTRAL
+                                AiSkillScope.AGENT -> NgStatusTagVariant.INFO
+                            },
+                            style = NgStatusTagStyle.COMPACT,
+                        )
+                    )
+                    if (!skill.builtIn) {
+                        add(
+                            NgStatusTagSpec(
+                                text = getString(R.string.ai_prompt_custom),
+                                variant = NgStatusTagVariant.SUCCESS,
+                                style = NgStatusTagStyle.COMPACT,
+                            )
+                        )
+                    }
+                },
+            )
+        }
     }
 
     private fun visibleAiSkills(): List<AiSkillDefinition> {
@@ -1681,15 +1348,30 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun refreshPromptDetail() {
-        val skill = currentSkill ?: return
-        binding.textPromptDetailTitle.text = skill.name
-        binding.textPromptDetailSummary.text = skill.summary
+        currentSkill ?: return
         refreshSkillFileTree()
     }
 
     private fun refreshSkillFileTree() {
         val skill = currentSkill ?: return
-        skillFileAdapter.setItems(buildSkillTreeRows(skill.id))
+        val rows = buildSkillTreeRows(skill.id)
+        skillDetailScreenRows = rows.map { row ->
+            when (row) {
+                is SkillTreeRow.Directory -> AiSkillFileRowUiModel.Directory(
+                    path = row.path,
+                    name = row.name,
+                    depth = row.depth,
+                    expanded = row.expanded,
+                )
+                is SkillTreeRow.File -> AiSkillFileRowUiModel.File(
+                    path = row.path,
+                    name = row.name,
+                    depth = row.depth,
+                    sizeText = formatMemorySize(row.size.toLong()),
+                    editable = !skill.builtIn && row.path == "SKILL.md",
+                )
+            }
+        }
     }
 
     private fun buildSkillTreeRows(skillId: String): List<SkillTreeRow> {
@@ -1780,59 +1462,78 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         Toast.makeText(requireContext(), R.string.ai_prompt_saved, Toast.LENGTH_SHORT).show()
     }
 
-    private fun showManualSkillDialog() {
-        val editText = EditText(requireContext()).apply {
-            minLines = 10
-            maxLines = 18
-            typeface = Typeface.MONOSPACE
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            setSingleLine(false)
-            hint = getString(R.string.ai_skill_content_hint)
-        }
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.ai_skill_add)
-            .setView(editText)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                importSkillFromText(editText.text?.toString().orEmpty())
+    private fun showManualSkillEditor() {
+        val template = getString(R.string.ai_skill_content_template)
+        addSkillEditorLauncher.launch(
+            Intent(requireContext(), CodeEditActivity::class.java).apply {
+                putExtra("text", template)
+                putExtra("title", getString(R.string.ai_skill_add))
+                putExtra("languageName", "text.html.markdown")
+                putExtra("cursorPosition", template.indexOf("my-skill").coerceAtLeast(0))
+                putExtra("returnUnchangedText", true)
+                putExtra(CodeEditActivity.EXTRA_CONFIRM_SAVE_ON_EXIT, true)
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-            .applyTint()
-    }
-
-    private fun showImportSkillDialog() {
-        val labels = arrayOf(
-            getString(R.string.ai_skill_import_file),
-            getString(R.string.ai_skill_import_github)
         )
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.ai_skill_import)
-            .setItems(labels) { _, which ->
-                when (which) {
-                    0 -> importSkillFileLauncher.launch(arrayOf("text/*", "text/markdown", "application/octet-stream"))
-                    1 -> showImportSkillUrlDialog()
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-            .applyTint()
     }
 
     private fun showImportSkillUrlDialog() {
-        val editText = EditText(requireContext()).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            hint = getString(R.string.ai_skill_github_url_hint)
-            setSingleLine(true)
-        }
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.ai_skill_import_github)
-            .setView(editText)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                importSkillFromUrl(editText.text?.toString().orEmpty())
+        val dialog = ComponentDialog(requireContext())
+        val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    AiSkillLinkImportDialogContent(
+                        onCancel = dialog::dismiss,
+                        onConfirm = { url ->
+                            dialog.dismiss()
+                            importSkillFromUrl(url)
+                        },
+                    )
+                }
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-            .applyTint()
+        }
+        dialog.setContentView(composeView)
+        dialog.show()
+        dialog.applyNgWindow()
+    }
+
+    private fun showAiClassicDialog(
+        title: String,
+        message: String,
+        cancelText: String? = null,
+        confirmText: String = getString(android.R.string.ok),
+        dismissBeforeConfirm: Boolean = false,
+        onCancel: () -> Unit = {},
+        onConfirm: () -> Unit = {},
+    ) {
+        val dialog = ComponentDialog(requireContext())
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    AiClassicDialogContent(
+                        title = title,
+                        message = message,
+                        cancelText = cancelText,
+                        confirmText = confirmText,
+                        onCancel = {
+                            onCancel()
+                            dialog.dismiss()
+                        },
+                        onConfirm = {
+                            if (dismissBeforeConfirm) dialog.dismiss()
+                            onConfirm()
+                            if (!dismissBeforeConfirm) dialog.dismiss()
+                        },
+                    )
+                }
+            }
+        }
+        dialog.setContentView(composeView)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.show()
+        dialog.applyNgWindow()
     }
 
     private fun importSkillFromUri(uri: Uri) {
@@ -1864,38 +1565,47 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
-    private fun importSkillFromText(content: String, overwriteExisting: Boolean = false) {
+    private fun importSkillFromText(
+        content: String,
+        overwriteExisting: Boolean = false,
+        source: SkillCreationSource = SkillCreationSource.IMPORT,
+    ) {
         val result = runCatching { AiSkillRegistry.importFromText(content, overwriteExisting) }
-        handleSkillImportResult(result) {
-            importSkillFromText(content, overwriteExisting = true)
+        handleSkillImportResult(result, source) {
+            importSkillFromText(
+                content = content,
+                overwriteExisting = true,
+                source = source,
+            )
         }
     }
 
     private fun handleSkillImportResult(
         result: Result<io.legado.app.data.entities.AiSkill>,
+        source: SkillCreationSource = SkillCreationSource.IMPORT,
         overwriteAction: (() -> Unit)? = null
     ) {
         result.onSuccess { skill ->
             Toast.makeText(
                 requireContext(),
-                getString(R.string.ai_skill_import_success, skill.name),
+                getString(source.successMessageRes, skill.name),
                 Toast.LENGTH_SHORT
             ).show()
             refreshPrompts()
         }.onFailure { error ->
             if (error is AiSkillExistsException && overwriteAction != null) {
-                AlertDialog.Builder(requireContext())
-                    .setTitle(R.string.ai_skill_overwrite_title)
-                    .setMessage(getString(R.string.ai_skill_overwrite_message, error.skillId))
-                    .setPositiveButton(android.R.string.ok) { _, _ -> overwriteAction() }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
-                    .applyTint()
+                showAiClassicDialog(
+                    title = getString(R.string.ai_skill_overwrite_title),
+                    message = getString(R.string.ai_skill_overwrite_message, error.skillId),
+                    cancelText = getString(android.R.string.cancel),
+                    confirmText = getString(android.R.string.ok),
+                    onConfirm = overwriteAction,
+                )
                 return@onFailure
             }
             Toast.makeText(
                 requireContext(),
-                getString(R.string.ai_skill_import_failed, error.message.orEmpty()),
+                getString(source.failureMessageRes, error.message.orEmpty()),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -1922,234 +1632,55 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 .show()
             return
         }
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.ai_skill_delete_title)
-            .setMessage(getString(R.string.ai_skill_delete_message, skill.name))
-            .setPositiveButton(android.R.string.ok) { _, _ ->
+        showAiClassicDialog(
+            title = getString(R.string.ai_skill_delete_title),
+            message = getString(R.string.ai_skill_delete_message, skill.name),
+            cancelText = getString(android.R.string.cancel),
+            confirmText = getString(android.R.string.ok),
+            onConfirm = {
                 if (AiSkillRegistry.deleteSkill(skill.id)) {
                     Toast.makeText(requireContext(), R.string.ai_skill_delete_done, Toast.LENGTH_SHORT)
                         .show()
                     showPromptList()
                 }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-            .applyTint()
+            },
+        )
     }
 
     private fun refreshPurifySettings() {
-        ignorePurifyFormChanges = true
-        try {
-            val color = accentColor
-            val entryIconTint = ColorStateList.valueOf(color)
-            binding.textPurifySectionLabel.setTextColor(color)
-            binding.textPurifyChapterSectionLabel.setTextColor(color)
-            binding.imagePurifyAutoIcon.imageTintList = entryIconTint
-            binding.imagePurifyInterceptIcon.imageTintList = entryIconTint
-            binding.imagePurifyLimitIcon.imageTintList = entryIconTint
-            binding.imagePurifyChapterAutoIcon.imageTintList = entryIconTint
-            binding.imagePurifyChapterInterceptIcon.imageTintList = entryIconTint
-            binding.imagePurifyChapterLimitIcon.imageTintList = entryIconTint
-            binding.imagePurifyChapterSampleLimitIcon.imageTintList = entryIconTint
-            binding.imagePurifyChapterConcurrencyIcon.imageTintList = entryIconTint
-            binding.imagePurifyChapterRetryIcon.imageTintList = entryIconTint
-            binding.imagePurifyChapterRuleTypesIcon.imageTintList = entryIconTint
-            binding.switchAiPurifyAuto.isChecked = AiConfig.purifyAutoApply
-            binding.switchAiPurifyIntercept.isChecked = AiConfig.purifyExceptionIntercept
-            binding.switchAiPurifyChapterAuto.isChecked = AiConfig.purifyChapterAutoApply
-            binding.switchAiPurifyChapterIntercept.isChecked =
-                AiConfig.purifyChapterExceptionIntercept
-            val limit = AiConfig.purifyParagraphLimit.toString()
-            if (binding.editPurifyParagraphLimit.text?.toString() != limit) {
-                binding.editPurifyParagraphLimit.setText(limit)
-                binding.editPurifyParagraphLimit.setSelection(limit.length)
-            }
-            val chapterLimit = AiConfig.purifyChapterSegmentLimit.toString()
-            if (binding.editPurifyChapterSegmentLimit.text?.toString() != chapterLimit) {
-                binding.editPurifyChapterSegmentLimit.setText(chapterLimit)
-                binding.editPurifyChapterSegmentLimit.setSelection(chapterLimit.length)
-            }
-            val chapterSampleLimit = AiConfig.purifyChapterSampleLimit.toString()
-            if (binding.editPurifyChapterSampleLimit.text?.toString() != chapterSampleLimit) {
-                binding.editPurifyChapterSampleLimit.setText(chapterSampleLimit)
-                binding.editPurifyChapterSampleLimit.setSelection(chapterSampleLimit.length)
-            }
-            val chapterConcurrencyLimit = AiConfig.purifyChapterConcurrencyLimit.toString()
-            if (binding.editPurifyChapterConcurrencyLimit.text?.toString() != chapterConcurrencyLimit) {
-                binding.editPurifyChapterConcurrencyLimit.setText(chapterConcurrencyLimit)
-                binding.editPurifyChapterConcurrencyLimit.setSelection(chapterConcurrencyLimit.length)
-            }
-            val chapterRetryCount = AiConfig.purifyChapterRetryCount.toString()
-            if (binding.editPurifyChapterRetryCount.text?.toString() != chapterRetryCount) {
-                binding.editPurifyChapterRetryCount.setText(chapterRetryCount)
-                binding.editPurifyChapterRetryCount.setSelection(chapterRetryCount.length)
-            }
-        } finally {
-            ignorePurifyFormChanges = false
-        }
-        refreshPurifyAutoSummary()
-        refreshPurifyChapterRuleTypeSummary()
+        purifySettingsScreenState = AiPurifySettingsScreenState(
+            paragraphAutoApply = AiConfig.purifyAutoApply,
+            paragraphAutoApplySummary = purifyAutoApplySummary(AiConfig.purifyAutoApply),
+            paragraphIntercept = AiConfig.purifyExceptionIntercept,
+            paragraphLimit = AiConfig.purifyParagraphLimit.toString(),
+            chapterAutoApply = AiConfig.purifyChapterAutoApply,
+            chapterAutoApplySummary = purifyAutoApplySummary(AiConfig.purifyChapterAutoApply),
+            chapterIntercept = AiConfig.purifyChapterExceptionIntercept,
+            chapterRuleTypo = AiConfig.purifyChapterRuleTypo,
+            chapterRuleNoise = AiConfig.purifyChapterRuleNoise,
+            chapterRuleAd = AiConfig.purifyChapterRuleAd,
+            chapterConcurrency = AiConfig.purifyChapterConcurrencyLimit.toString(),
+            chapterRetryCount = AiConfig.purifyChapterRetryCount.toString(),
+            chapterSegmentLimit = AiConfig.purifyChapterSegmentLimit.toString(),
+            chapterSampleLimit = AiConfig.purifyChapterSampleLimit.toString(),
+        )
     }
-
-    private fun refreshPurifyAutoSummary() {
-        binding.textAiPurifyAutoSummary.text = getString(
-            if (AiConfig.purifyAutoApply) {
+    private fun purifyAutoApplySummary(enabled: Boolean): String {
+        return getString(
+            if (enabled) {
                 R.string.ai_purify_auto_apply_summary_on
             } else {
                 R.string.ai_purify_auto_apply_summary_off
             }
         )
-        binding.textAiPurifyChapterAutoSummary.text = getString(
-            if (AiConfig.purifyChapterAutoApply) {
-                R.string.ai_purify_auto_apply_summary_on
-            } else {
-                R.string.ai_purify_auto_apply_summary_off
-            }
-        )
-    }
-
-    private fun showPurifyChapterRuleTypeDialog() {
-        val paddingHorizontal = 24.dpToPx()
-        val paddingVertical = 8.dpToPx()
-        val switches = arrayListOf<Switch>()
-        val content = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(paddingHorizontal, paddingVertical, paddingHorizontal, paddingVertical)
-        }
-        switches += content.addPurifyChapterRuleTypeSwitch(
-            text = getString(R.string.ai_purify_rule_type_typo_full),
-            checked = AiConfig.purifyChapterRuleTypo
-        )
-        switches += content.addPurifyChapterRuleTypeSwitch(
-            text = getString(R.string.ai_purify_rule_type_noise_full),
-            checked = AiConfig.purifyChapterRuleNoise
-        )
-        switches += content.addPurifyChapterRuleTypeSwitch(
-            text = getString(R.string.ai_purify_rule_type_ad_full),
-            checked = AiConfig.purifyChapterRuleAd
-        )
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.ai_purify_chapter_rule_types)
-            .setView(content)
-            .setPositiveButton(R.string.sure, null)
-            .show()
-            .applyTint()
-        switches.forEach { switchView ->
-            switchView.setOnCheckedChangeListener { _, isChecked ->
-                when (switches.indexOf(switchView)) {
-                    0 -> AiConfig.purifyChapterRuleTypo = isChecked
-                    1 -> AiConfig.purifyChapterRuleNoise = isChecked
-                    2 -> AiConfig.purifyChapterRuleAd = isChecked
-                }
-                refreshPurifyChapterRuleTypeSummary()
-                refreshMain()
-            }
-        }
-    }
-
-    private fun LinearLayout.addPurifyChapterRuleTypeSwitch(
-        text: String,
-        checked: Boolean
-    ): Switch {
-        val switchView = Switch(requireContext()).apply {
-            isChecked = checked
-            applyTint(accentColor)
-        }
-        val row = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 8.dpToPx(), 0, 8.dpToPx())
-            isClickable = true
-            setOnClickListener {
-                switchView.isChecked = !switchView.isChecked
-            }
-        }
-        row.addView(TextView(requireContext()).apply {
-            this.text = text
-            textSize = 16f
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f
-            )
-        })
-        row.addView(switchView)
-        addView(row, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        return switchView
-    }
-
-    private fun refreshPurifyChapterRuleTypeSummary() {
-        val enabledLabels = listOfNotNull(
-            getString(R.string.ai_purify_rule_type_typo_full)
-                .takeIf { AiConfig.purifyChapterRuleTypo },
-            getString(R.string.ai_purify_rule_type_noise_full)
-                .takeIf { AiConfig.purifyChapterRuleNoise },
-            getString(R.string.ai_purify_rule_type_ad_full)
-                .takeIf { AiConfig.purifyChapterRuleAd }
-        )
-        binding.textAiPurifyChapterRuleTypesSummary.text = when (enabledLabels.size) {
-            0 -> getString(R.string.ai_purify_chapter_rule_types_none)
-            3 -> getString(R.string.ai_purify_chapter_rule_types_all)
-            else -> getString(
-                R.string.ai_purify_chapter_rule_types_summary,
-                enabledLabels.joinToString(getString(R.string.ai_purify_chapter_rule_types_separator))
-            )
-        }
     }
 
     private fun refreshModelSettings() {
-        val color = accentColor
-        val entryIconTint = ColorStateList.valueOf(color)
-        binding.textModelSettingsSectionLabel.setTextColor(color)
-        binding.textPurifyModelSettingsSectionLabel.setTextColor(color)
-        binding.textReadAloudModelSettingsSectionLabel.setTextColor(color)
-        binding.textAssistantModelSettingsSectionLabel.setTextColor(color)
-        binding.imagePurifyModelSettingsIcon.imageTintList = entryIconTint
-        binding.imageAssistantModelSettingsIcon.imageTintList = entryIconTint
-        binding.imagePurifyModelIcon.imageTintList = entryIconTint
-        binding.imagePurifyReasoningIcon.imageTintList = entryIconTint
-        binding.imagePurifySettingsEntryIcon.imageTintList = entryIconTint
-        binding.imageReadAloudStoryboardModelIcon.imageTintList = entryIconTint
-        binding.imageReadAloudStoryboardPreloadIcon.imageTintList = entryIconTint
-        binding.imageReadAloudStoryboardReasoningIcon.imageTintList = entryIconTint
-        binding.imageAssistantModelIcon.imageTintList = entryIconTint
-        binding.imageAssistantReasoningIcon.imageTintList = entryIconTint
-        binding.imageContextCompactionModelIcon.imageTintList = entryIconTint
-        binding.imageAssistantContextWindowIcon.imageTintList = entryIconTint
-        binding.imageContextCompactionThresholdIcon.imageTintList = entryIconTint
-        binding.imageInternalMcpIcon.imageTintList = entryIconTint
-        binding.imageAiMemoryIcon.imageTintList = entryIconTint
-        binding.imageAiOperationPermissionIcon.imageTintList = entryIconTint
-        ignoreMainFormChanges = true
-        try {
-            binding.switchInternalMcp.isChecked = AiConfig.internalMcpEnabled
-            binding.switchAiMemory.isChecked = AiConfig.memoryEnabled
-        } finally {
-            ignoreMainFormChanges = false
-        }
-        binding.textPurifyModelSettingsSummary.text = getString(
-            R.string.ai_model_function_summary,
-            purifyModelSummaryText(),
-            purifyReasoningSummaryText()
-        )
-        binding.textAssistantModelSettingsSummary.text = getString(
-            R.string.ai_model_function_summary,
-            assistantModelSummaryText(),
-            assistantReasoningSummaryText()
-        )
-        binding.textPurifyModelSummary.text = purifyModelSummaryText()
-        binding.textPurifyReasoningSummary.text = purifyReasoningSummaryText()
-        binding.textReadAloudStoryboardModelSummary.text = readAloudStoryboardModelSummaryText()
-        binding.textReadAloudStoryboardPreloadSummary.text = getString(
-            R.string.ai_read_aloud_storyboard_preload_summary,
-            AiConfig.readAloudStoryboardPreloadCount
-        )
-        binding.textReadAloudStoryboardReasoningSummary.text =
-            readAloudStoryboardReasoningSummaryText()
-        binding.textPurifySettingsEntrySummary.text = getString(
+        val reasoningEnabled = selectedPurifyModel()?.model?.supportsReasoning() == true
+        val readAloudReasoningEnabled =
+            selectedReadAloudStoryboardModel()?.model?.supportsReasoning() == true
+        val assistantReasoningEnabled = selectedAssistantModel()?.model?.supportsReasoning() == true
+        val purifySettingsSummary = getString(
             R.string.ai_purify_settings_summary,
             getString(if (AiConfig.purifyAutoApply) R.string.enabled else R.string.disabled),
             getString(if (AiConfig.purifyChapterAutoApply) R.string.enabled else R.string.disabled),
@@ -2157,50 +1688,64 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiConfig.purifyChapterSegmentLimit.toString(),
             AiConfig.purifyChapterSampleLimit.toString(),
             AiConfig.purifyChapterConcurrencyLimit.toString(),
-            AiConfig.purifyChapterRetryCount.toString()
+            AiConfig.purifyChapterRetryCount.toString(),
         )
-        binding.textAssistantModelSummary.text = assistantModelSummaryText()
-        binding.textAssistantReasoningSummary.text = assistantReasoningSummaryText()
-        binding.textContextCompactionModelSummary.text = contextCompactionModelSummaryText()
-        binding.textAssistantContextWindowSummary.text = getString(
-            R.string.ai_assistant_context_window_summary,
-            contextWindowLabel(AiConfig.assistantContextWindowTokens)
+        purifyModelSettingsScreenState = AiPurifyModelSettingsScreenState(
+            modelSummary = purifyModelSummaryText(),
+            reasoningSummary = purifyReasoningSummaryText(),
+            settingsSummary = purifySettingsSummary,
+            reasoningAvailable = reasoningEnabled,
         )
-        binding.textContextCompactionThresholdSummary.text =
-            if (AiConfig.contextCompactionThresholdPercent == 0) {
+        readAloudModelSettingsScreenState = AiReadAloudModelSettingsScreenState(
+            modelSummary = readAloudStoryboardModelSummaryText(),
+            reasoningSummary = readAloudStoryboardReasoningSummaryText(),
+            preloadSummary = getString(
+                R.string.ai_read_aloud_storyboard_preload_summary,
+                AiConfig.readAloudStoryboardPreloadCount,
+            ),
+            reasoningAvailable = readAloudReasoningEnabled,
+        )
+        assistantModelSettingsScreenState = AiAssistantModelSettingsScreenState(
+            modelSummary = assistantModelSummaryText(),
+            reasoningSummary = assistantReasoningSummaryText(),
+            compactionModelSummary = contextCompactionModelSummaryText(),
+            contextWindowSummary = getString(
+                R.string.ai_assistant_context_window_summary,
+                contextWindowLabel(AiConfig.assistantContextWindowTokens),
+            ),
+            compactionThresholdSummary = if (AiConfig.contextCompactionThresholdPercent == 0) {
                 getString(R.string.ai_context_compaction_threshold_off)
             } else {
                 getString(
                     R.string.ai_context_compaction_threshold_summary,
                     AiConfig.contextCompactionThresholdPercent,
                     AiConfig.assistantContextWindowTokens *
-                        AiConfig.contextCompactionThresholdPercent / 100 / 1000
+                        AiConfig.contextCompactionThresholdPercent / 100 / 1000,
                 )
-            }
-        binding.textInternalMcpSummary.text = getString(
-            if (AiConfig.internalMcpEnabled) {
-                R.string.ai_internal_mcp_summary_on
-            } else {
-                R.string.ai_internal_mcp_summary_off
-            }
+            },
+            internalMcpEnabled = AiConfig.internalMcpEnabled,
+            internalMcpSummary = getString(
+                if (AiConfig.internalMcpEnabled) {
+                    R.string.ai_internal_mcp_summary_on
+                } else {
+                    R.string.ai_internal_mcp_summary_off
+                }
+            ),
+            memoryEnabled = AiConfig.memoryEnabled,
+            memorySummary = assistantModelSettingsScreenState.memorySummary.ifBlank {
+                getString(
+                    if (AiConfig.memoryEnabled) {
+                        R.string.ai_memory_summary_on
+                    } else {
+                        R.string.ai_memory_summary_off
+                    }
+                )
+            },
+            operationPermissionSummary = operationPermissionModeSummary(
+                AiConfig.operationPermissionMode
+            ),
+            reasoningAvailable = assistantReasoningEnabled,
         )
-        binding.textAiMemorySummary.text = getString(
-            if (AiConfig.memoryEnabled) {
-                R.string.ai_memory_summary_on
-            } else {
-                R.string.ai_memory_summary_off
-            }
-        )
-        binding.textAiOperationPermissionSummary.text =
-            operationPermissionModeSummary(AiConfig.operationPermissionMode)
-        val reasoningEnabled = selectedPurifyModel()?.model?.supportsReasoning() == true
-        binding.layoutPurifyReasoningEntry.alpha = if (reasoningEnabled) 1f else 0.55f
-        val readAloudReasoningEnabled =
-            selectedReadAloudStoryboardModel()?.model?.supportsReasoning() == true
-        binding.layoutReadAloudStoryboardReasoningEntry.alpha =
-            if (readAloudReasoningEnabled) 1f else 0.55f
-        val assistantReasoningEnabled = selectedAssistantModel()?.model?.supportsReasoning() == true
-        binding.layoutAssistantReasoningEntry.alpha = if (assistantReasoningEnabled) 1f else 0.55f
     }
 
     private fun purifyModelSummaryText(
@@ -2370,94 +1915,126 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return AiAssistantConfigUi.AssistantModelOption(provider, model)
     }
 
-    private fun showPurifyModelSelectDialog() {
-        val sheet = NgLongListBottomSheet(
-            context = requireContext(),
-            searchHint = getString(R.string.ai_search_model),
-            title = getString(R.string.ai_model_select),
-            showSearch = false,
-            compact = true
-        )
-        val filters = AiModelSelectionFilters(requireContext(), sheet, purifyModelProviders())
-        sheet.setScrollableContent { container, query, dialog ->
-            renderPurifyModelOptions(container, query, dialog, filters)
+    private enum class AiModelSelectionTarget {
+        PURIFY,
+        READ_ALOUD,
+        ASSISTANT,
+        CONTEXT_COMPACTION,
+    }
+
+    private fun showComposeModelSelectionSheet(target: AiModelSelectionTarget) {
+        val sourceProviders = when (target) {
+            AiModelSelectionTarget.ASSISTANT -> AiProviderStore.providers().filter { provider ->
+                provider.enabled && provider.assistantEligibleModels().isNotEmpty()
+            }
+            else -> purifyModelProviders()
         }
-        sheet.show()
+        val providers = sourceProviders.map { provider ->
+            val models = when (target) {
+                AiModelSelectionTarget.ASSISTANT -> provider.assistantEligibleModels()
+                else -> provider.purifyEligibleModels()
+            }
+            AiModelSelectionProviderUiModel(
+                id = provider.id,
+                name = provider.name,
+                iconRes = provider.iconRes(),
+                models = models.map { model ->
+                    AiModelSelectionItemUiModel(
+                        id = model.safeId(),
+                        name = model.displayName(),
+                        searchAliases = listOf(model.safeName()),
+                        iconRes = model.iconRes(provider.iconRes()),
+                        capabilities = model.capabilityTags(),
+                    )
+                },
+            )
+        }
+        val selectedProviderId = when (target) {
+            AiModelSelectionTarget.PURIFY -> AiConfig.purifyProviderId
+            AiModelSelectionTarget.READ_ALOUD -> AiConfig.readAloudStoryboardProviderId
+            AiModelSelectionTarget.ASSISTANT -> AiConfig.assistantProviderId
+            AiModelSelectionTarget.CONTEXT_COMPACTION -> AiConfig.contextCompactionProviderId
+        }
+        val selectedModelId = when (target) {
+            AiModelSelectionTarget.PURIFY -> AiConfig.purifyModelId
+            AiModelSelectionTarget.READ_ALOUD -> AiConfig.readAloudStoryboardModelId
+            AiModelSelectionTarget.ASSISTANT -> AiConfig.assistantModelId
+            AiModelSelectionTarget.CONTEXT_COMPACTION -> AiConfig.contextCompactionModelId
+        }
+        val dialog = BottomSheetDialog(requireContext())
+        val sheetState = AiModelSelectionSheetState(
+            title = getString(R.string.ai_model_select),
+            emptyText = when (target) {
+                AiModelSelectionTarget.ASSISTANT ->
+                    getString(R.string.ai_assistant_model_empty)
+                AiModelSelectionTarget.CONTEXT_COMPACTION -> null
+                else -> getString(R.string.ai_purify_model_empty)
+            },
+            providers = providers,
+            selectedProviderId = selectedProviderId,
+            selectedModelId = selectedModelId,
+            followAssistantLabel = getString(R.string.ai_context_compaction_model_follow)
+                .takeIf { target == AiModelSelectionTarget.CONTEXT_COMPACTION },
+            followAssistantSelected = target == AiModelSelectionTarget.CONTEXT_COMPACTION &&
+                (selectedProviderId.isBlank() || selectedModelId.isBlank()),
+        )
+        dialog.setContentView(
+            requireContext().createNgBottomDrawerComposeHost(fillMaxHeight = true) {
+                AiModelSelectionSheet(
+                    state = sheetState,
+                    onSelect = { providerId, modelId ->
+                        when (target) {
+                            AiModelSelectionTarget.PURIFY -> {
+                                AiConfig.savePurifyModel(providerId, modelId)
+                            }
+                            AiModelSelectionTarget.READ_ALOUD -> {
+                                AiConfig.saveReadAloudStoryboardModel(providerId, modelId)
+                            }
+                            AiModelSelectionTarget.ASSISTANT -> {
+                                AiConfig.saveAssistantModel(providerId, modelId)
+                            }
+                            AiModelSelectionTarget.CONTEXT_COMPACTION -> {
+                                AiConfig.saveContextCompactionModel(providerId, modelId)
+                            }
+                        }
+                        refreshModelSettings()
+                        refreshMain()
+                        dialog.dismiss()
+                    },
+                    onFollowAssistant = if (target == AiModelSelectionTarget.CONTEXT_COMPACTION) {
+                        {
+                            AiConfig.followAssistantForContextCompaction()
+                            refreshModelSettings()
+                            dialog.dismiss()
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
+        )
+        dialog.setOnShowListener {
+            val sheet = dialog.findViewById<View>(
+                com.google.android.material.R.id.design_bottom_sheet
+            ) ?: return@setOnShowListener
+            sheet.setBackgroundColor(Color.TRANSPARENT)
+            sheet.layoutParams = sheet.layoutParams.apply {
+                height = (resources.displayMetrics.heightPixels * 0.88f).toInt()
+            }
+            BottomSheetBehavior.from(sheet).apply {
+                skipCollapsed = true
+                state = BottomSheetBehavior.STATE_EXPANDED
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showPurifyModelSelectDialog() {
+        showComposeModelSelectionSheet(AiModelSelectionTarget.PURIFY)
     }
 
     private fun showReadAloudStoryboardModelSelectDialog() {
-        val sheet = NgLongListBottomSheet(
-            context = requireContext(),
-            searchHint = getString(R.string.ai_search_model),
-            title = getString(R.string.ai_model_select),
-            showSearch = false,
-            compact = true
-        )
-        val filters = AiModelSelectionFilters(requireContext(), sheet, purifyModelProviders())
-        sheet.setScrollableContent { container, query, dialog ->
-            renderReadAloudStoryboardModelOptions(container, query, dialog, filters)
-        }
-        sheet.show()
-    }
-
-    private fun renderPurifyModelOptions(
-        container: LinearLayout,
-        query: String,
-        dialog: BottomSheetDialog,
-        filters: AiModelSelectionFilters
-    ) {
-        container.removeAllViews()
-        val normalizedQuery = query.trim()
-        val groupedOptions = purifyModelOptions(normalizedQuery, filters)
-        if (groupedOptions.isEmpty()) {
-            container.addView(TextView(requireContext()).apply {
-                text = getString(R.string.ai_purify_model_empty)
-                setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant))
-                textSize = 15f
-                gravity = Gravity.CENTER
-                setPadding(0, 44.dpToPx(), 0, 44.dpToPx())
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-            return
-        }
-        groupedOptions.forEach { (provider, models) ->
-            container.addView(createPurifyProviderHeader(provider))
-            models.forEach { model ->
-                container.addView(createPurifyModelCard(provider, model, dialog))
-            }
-        }
-    }
-
-    private fun renderReadAloudStoryboardModelOptions(
-        container: LinearLayout,
-        query: String,
-        dialog: BottomSheetDialog,
-        filters: AiModelSelectionFilters
-    ) {
-        container.removeAllViews()
-        val normalizedQuery = query.trim()
-        val groupedOptions = purifyModelOptions(normalizedQuery, filters)
-        if (groupedOptions.isEmpty()) {
-            container.addView(TextView(requireContext()).apply {
-                text = getString(R.string.ai_read_aloud_storyboard_model_empty)
-                setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant))
-                textSize = 15f
-                gravity = Gravity.CENTER
-                setPadding(0, 44.dpToPx(), 0, 44.dpToPx())
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-            return
-        }
-        groupedOptions.forEach { (provider, models) ->
-            container.addView(createPurifyProviderHeader(provider))
-            models.forEach { model ->
-                container.addView(createReadAloudStoryboardModelCard(provider, model, dialog))
-            }
-        }
+        showComposeModelSelectionSheet(AiModelSelectionTarget.READ_ALOUD)
     }
 
     private fun purifyModelProviders(): List<AiProviderSetting> {
@@ -2466,133 +2043,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
-    private fun purifyModelOptions(
-        query: String,
-        filters: AiModelSelectionFilters
-    ): List<Pair<AiProviderSetting, List<AiModel>>> {
-        return purifyModelProviders()
-            .filter { filters.accepts(it.id) }
-            .mapNotNull { provider ->
-                val models = provider.purifyEligibleModels()
-                    .filter { model ->
-                        query.isBlank()
-                            || provider.name.contains(query, ignoreCase = true)
-                            || model.safeId().contains(query, ignoreCase = true)
-                            || model.safeName().contains(query, ignoreCase = true)
-                            || model.displayName().contains(query, ignoreCase = true)
-                    }
-                models.takeIf { it.isNotEmpty() }?.let { provider to it }
-            }
-    }
-
-    private fun createPurifyProviderHeader(provider: AiProviderSetting): TextView {
-        return TextView(requireContext()).apply {
-            text = provider.name
-            setTextColor(accentColor)
-            typeface = Typeface.DEFAULT_BOLD
-            textSize = 15f
-            setPadding(2.dpToPx(), 12.dpToPx(), 2.dpToPx(), 8.dpToPx())
-        }
-    }
-
-    private fun createPurifyModelCard(
-        provider: AiProviderSetting,
-        model: AiModel,
-        dialog: BottomSheetDialog
-    ): LinearLayout {
-        val selected = AiConfig.purifyProviderId == provider.id && AiConfig.purifyModelId == model.safeId()
-        return createTextTaskModelCard(provider, model, selected, dialog) {
-            AiConfig.savePurifyModel(provider.id, model.safeId())
-        }
-    }
-
-    private fun createReadAloudStoryboardModelCard(
-        provider: AiProviderSetting,
-        model: AiModel,
-        dialog: BottomSheetDialog
-    ): LinearLayout {
-        val selected = AiConfig.readAloudStoryboardProviderId == provider.id &&
-            AiConfig.readAloudStoryboardModelId == model.safeId()
-        return createTextTaskModelCard(provider, model, selected, dialog) {
-            AiConfig.saveReadAloudStoryboardModel(provider.id, model.safeId())
-        }
-    }
-
-    private fun createTextTaskModelCard(
-        provider: AiProviderSetting,
-        model: AiModel,
-        selected: Boolean,
-        dialog: BottomSheetDialog,
-        onSelect: () -> Unit
-    ): LinearLayout {
-        return LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            isClickable = true
-            isFocusable = true
-            background = GradientDrawable().apply {
-                cornerRadius = 18.dpToPx().toFloat()
-                setColor(ContextCompat.getColor(requireContext(), R.color.ng_surface_card))
-            }
-            setPadding(14.dpToPx(), 12.dpToPx(), 14.dpToPx(), 12.dpToPx())
-            setOnClickListener {
-                onSelect()
-                refreshModelSettings()
-                refreshMain()
-                dialog.dismiss()
-            }
-            addView(ImageView(requireContext()).apply {
-                setImageResource(model.iconRes(provider.iconRes()))
-                background = ContextCompat.getDrawable(requireContext(), R.drawable.ng_bg_icon_circle)
-                setPadding(7.dpToPx(), 7.dpToPx(), 7.dpToPx(), 7.dpToPx())
-            }, LinearLayout.LayoutParams(46.dpToPx(), 46.dpToPx()).apply {
-                marginEnd = 12.dpToPx()
-            })
-            val info = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(TextView(requireContext()).apply {
-                    text = model.displayName()
-                    setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
-                    typeface = Typeface.DEFAULT_BOLD
-                    textSize = 16f
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                })
-                addView(LinearLayout(requireContext()).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    setPadding(0, 6.dpToPx(), 0, 0)
-                    model.capabilityTags().forEach {
-                        addView(createModelCapabilityTag(requireContext(), it))
-                    }
-                })
-            }
-            addView(info, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                weight = 1f
-            })
-            addView(ImageView(requireContext()).apply {
-                if (selected) {
-                    setImageResource(R.drawable.ic_check)
-                    imageTintList = ColorStateList.valueOf(accentColor)
-                } else {
-                    imageTintList = null
-                }
-            }, LinearLayout.LayoutParams(32.dpToPx(), 32.dpToPx()).apply {
-                marginStart = 10.dpToPx()
-            })
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = 12.dpToPx()
-            }
-        }
-    }
-
     private fun showAssistantModelSelectDialog() {
-        AiAssistantConfigUi.showModelSelectSheet(requireContext()) {
-            refreshModelSettings()
-            refreshMain()
-        }
+        showComposeModelSelectionSheet(AiModelSelectionTarget.ASSISTANT)
     }
 
     private fun showPurifyReasoningDialog() {
@@ -2625,72 +2077,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun showContextCompactionModelSelectDialog() {
-        val sheet = NgLongListBottomSheet(
-            context = requireContext(),
-            searchHint = getString(R.string.ai_search_model),
-            title = getString(R.string.ai_model_select),
-            showSearch = false,
-            compact = true
-        )
-        val filters = AiModelSelectionFilters(requireContext(), sheet, purifyModelProviders())
-        sheet.setScrollableContent { container, query, dialog ->
-            container.removeAllViews()
-            if (query.isBlank() || getString(R.string.ai_context_compaction_model_follow)
-                    .contains(query, ignoreCase = true)
-            ) {
-                container.addView(createFollowAssistantCompactionModelCard(dialog))
-            }
-            purifyModelOptions(query.trim(), filters).forEach { (provider, models) ->
-                container.addView(createPurifyProviderHeader(provider))
-                models.forEach { model ->
-                    val selected = AiConfig.contextCompactionProviderId == provider.id &&
-                        AiConfig.contextCompactionModelId == model.safeId()
-                    container.addView(
-                        createTextTaskModelCard(provider, model, selected, dialog) {
-                            AiConfig.saveContextCompactionModel(provider.id, model.safeId())
-                        }
-                    )
-                }
-            }
-        }
-        sheet.show()
-    }
-
-    private fun createFollowAssistantCompactionModelCard(
-        dialog: BottomSheetDialog
-    ): LinearLayout {
-        val selected = AiConfig.contextCompactionProviderId.isBlank() ||
-            AiConfig.contextCompactionModelId.isBlank()
-        return LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            isClickable = true
-            isFocusable = true
-            background = GradientDrawable().apply {
-                cornerRadius = 18.dpToPx().toFloat()
-                setColor(ContextCompat.getColor(requireContext(), R.color.ng_surface_card))
-            }
-            setPadding(14.dpToPx(), 14.dpToPx(), 14.dpToPx(), 14.dpToPx())
-            setOnClickListener {
-                AiConfig.followAssistantForContextCompaction()
-                refreshModelSettings()
-                dialog.dismiss()
-            }
-            addView(TextView(requireContext()).apply {
-                text = getString(R.string.ai_context_compaction_model_follow)
-                setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
-                typeface = Typeface.DEFAULT_BOLD
-                textSize = 16f
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                weight = 1f
-            })
-            addView(ImageView(requireContext()).apply {
-                if (selected) {
-                    setImageResource(R.drawable.ic_check)
-                    imageTintList = ColorStateList.valueOf(accentColor)
-                }
-            }, LinearLayout.LayoutParams(32.dpToPx(), 32.dpToPx()))
-        }
+        showComposeModelSelectionSheet(AiModelSelectionTarget.CONTEXT_COMPACTION)
     }
 
     private fun showAssistantContextWindowDialog() {
@@ -2763,16 +2150,34 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun showReadAloudStoryboardPreloadDialog() {
-        NumberPickerDialog(requireContext())
-            .setTitle(getString(R.string.ai_read_aloud_storyboard_preload_count))
-            .setMinValue(AiConfig.MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT)
-            .setMaxValue(AiConfig.MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT)
-            .setValue(AiConfig.readAloudStoryboardPreloadCount)
-            .show { value ->
-                AiConfig.readAloudStoryboardPreloadCount = value
-                refreshModelSettings()
-                refreshMain()
+        val dialog = ComponentDialog(requireContext())
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    AiNumberPickerDialogContent(
+                        title = getString(R.string.ai_read_aloud_storyboard_preload_count),
+                        minValue = AiConfig.MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT,
+                        maxValue = AiConfig.MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT,
+                        initialValue = AiConfig.readAloudStoryboardPreloadCount,
+                        cancelText = getString(android.R.string.cancel),
+                        confirmText = getString(android.R.string.ok),
+                        onCancel = dialog::dismiss,
+                        onConfirm = { value ->
+                            AiConfig.readAloudStoryboardPreloadCount = value
+                            refreshModelSettings()
+                            refreshMain()
+                            dialog.dismiss()
+                        },
+                    )
+                }
             }
+        }
+        dialog.setContentView(composeView)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.show()
+        dialog.applyNgWindow()
     }
 
     private fun showAssistantReasoningDialog() {
@@ -2836,103 +2241,55 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         onSelectedIndexChanged: (Int) -> Unit
     ) {
         if (labels.isEmpty()) return
-        val initialIndex = selectedIndex.coerceIn(0, labels.lastIndex)
-        val root = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(24.dpToPx(), 26.dpToPx(), 24.dpToPx(), 24.dpToPx())
-            background = GradientDrawable().apply {
-                cornerRadius = 24.dpToPx().toFloat()
-                setColor(ContextCompat.getColor(requireContext(), R.color.ng_surface_card))
-            }
-        }
-        root.addView(TextView(requireContext()).apply {
-            text = title
-            setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
-            typeface = Typeface.DEFAULT_BOLD
-            textSize = 20f
-            gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            if (description.isNullOrBlank()) {
-                bottomMargin = 22.dpToPx()
-            }
-        })
-        description?.takeIf { it.isNotBlank() }?.let { helperText ->
-            root.addView(TextView(requireContext()).apply {
-                text = helperText
-                setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant))
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setPadding(0, 8.dpToPx(), 0, 22.dpToPx())
-            })
-        }
-        val currentLabel = TextView(requireContext()).apply {
-            text = currentLabels.getOrElse(initialIndex) { labels[initialIndex] }
-            setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface))
-            textSize = 18f
-            gravity = Gravity.CENTER
-        }
-        val currentIcon = ImageView(requireContext()).apply {
-            setImageResource(iconRes)
-            imageTintList = if (tintIcon(initialIndex)) {
-                ColorStateList.valueOf(accentColor)
-            } else {
-                null
-            }
-        }
-        root.addView(currentIcon, LinearLayout.LayoutParams(42.dpToPx(), 42.dpToPx()))
-        root.addView(currentLabel, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            topMargin = 8.dpToPx()
-            bottomMargin = 22.dpToPx()
-        })
-        val stepBar = ReasoningStepBar(requireContext()).apply {
-            stepCount = labels.size
-            this.selectedIndex = initialIndex
-            stepColor = accentColor
-            this.onSelectedIndexChanged = { index ->
-                onSelectedIndexChanged(index)
-                currentLabel.text = currentLabels.getOrElse(index) { labels[index] }
-                currentIcon.imageTintList = if (tintIcon(index)) {
-                    ColorStateList.valueOf(accentColor)
-                } else {
-                    null
+        showComposeDiscreteScaleDialog(
+            title = title,
+            description = description,
+            iconRes = iconRes,
+            labels = labels,
+            currentLabels = currentLabels,
+            selectedIndex = selectedIndex,
+            tintIcon = tintIcon,
+            onSelectedIndexChanged = onSelectedIndexChanged,
+        )
+    }
+    private fun showComposeDiscreteScaleDialog(
+        title: String,
+        description: String?,
+        iconRes: Int,
+        labels: List<String>,
+        currentLabels: List<String>,
+        selectedIndex: Int,
+        tintIcon: (Int) -> Boolean,
+        onSelectedIndexChanged: (Int) -> Unit,
+    ) {
+        val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnDetachedFromWindow
+            )
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    AiDiscreteScaleDialogContent(
+                        title = title,
+                        description = description,
+                        iconRes = iconRes,
+                        labels = labels,
+                        currentLabels = currentLabels,
+                        initialSelectedIndex = selectedIndex,
+                        tintIcon = tintIcon,
+                        onSelectedIndexChanged = onSelectedIndexChanged,
+                    )
                 }
             }
         }
-        root.addReasoningStepBar(stepBar)
-        root.addView(LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            labels.forEach { label ->
-                addView(TextView(requireContext()).apply {
-                    text = label
-                    gravity = Gravity.CENTER
-                    setTextColor(ContextCompat.getColor(requireContext(), R.color.ng_on_surface_variant))
-                    textSize = if (labels.size >= 10) 11f else 13f
-                    maxLines = 1
-                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    weight = 1f
-                })
-            }
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            topMargin = 12.dpToPx()
-        })
-        val dialog = AlertDialog.Builder(requireContext())
-            .setView(root)
-            .create()
+        val dialog = ComponentDialog(requireContext())
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(composeView)
+        dialog.setCanceledOnTouchOutside(true)
         dialog.setOnShowListener {
             dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             dialog.window?.setLayout(
                 (resources.displayMetrics.widthPixels * 0.9f).toInt(),
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                ViewGroup.LayoutParams.WRAP_CONTENT,
             )
         }
         dialog.show()
@@ -2967,13 +2324,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
-    private fun LinearLayout.addReasoningStepBar(stepBar: ReasoningStepBar) {
-        addView(stepBar, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            42.dpToPx()
-        ))
-    }
-
     private data class PurifyModelOption(
         val provider: AiProviderSetting,
         val model: AiModel
@@ -2996,7 +2346,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         AiProviderStore.saveProvider(provider)
         if (updateHeader) {
             setPageTitle(provider.name)
-            binding.textDetailTitle.text = provider.name
+            providerDetailScreenState = providerDetailScreenState.copy(
+                providerName = provider.name,
+            )
         }
         if (showToast) {
             Toast.makeText(requireContext(), R.string.ai_provider_saved, Toast.LENGTH_SHORT).show()
@@ -3019,20 +2371,21 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun fetchModels() {
+        if (providerDetailScreenState.isRefreshingModels) return
+        providerDetailScreenState = providerDetailScreenState.copy(isRefreshingModels = true)
         val provider = saveCurrentProvider()
         if (provider == null) {
-            binding.refreshModels.isRefreshing = false
+            providerDetailScreenState = providerDetailScreenState.copy(isRefreshingModels = false)
             return
         }
         if (provider.apiKey.isBlank()) {
-            binding.refreshModels.isRefreshing = false
-            alert(getString(R.string.ai_fetch_models)) {
-                setMessage(getString(R.string.ai_api_key_required))
-                okButton()
-            }
+            providerDetailScreenState = providerDetailScreenState.copy(isRefreshingModels = false)
+            showAiClassicDialog(
+                title = getString(R.string.ai_fetch_models),
+                message = getString(R.string.ai_api_key_required),
+            )
             return
         }
-        binding.refreshModels.isRefreshing = true
         requestJob?.cancel()
         requestJob = lifecycleScope.launch {
             try {
@@ -3049,12 +2402,17 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     Toast.LENGTH_SHORT
                 ).show()
             } catch (e: Throwable) {
-                alert(getString(R.string.ai_fetch_models)) {
-                    setMessage(getString(R.string.ai_test_failed, e.localizedMessage ?: e.toString()))
-                    okButton()
-                }
+                showAiClassicDialog(
+                    title = getString(R.string.ai_fetch_models),
+                    message = getString(
+                        R.string.ai_test_failed,
+                        e.localizedMessage ?: e.toString(),
+                    ),
+                )
             } finally {
-                binding.refreshModels.isRefreshing = false
+                providerDetailScreenState = providerDetailScreenState.copy(
+                    isRefreshingModels = false,
+                )
             }
         }
     }
@@ -3062,10 +2420,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun testConnection() {
         val provider = saveCurrentProvider() ?: return
         if (provider.apiKey.isBlank()) {
-            alert(getString(R.string.ai_test_connection)) {
-                setMessage(getString(R.string.ai_api_key_required))
-                okButton()
-            }
+            showAiClassicDialog(
+                title = getString(R.string.ai_test_connection),
+                message = getString(R.string.ai_api_key_required),
+            )
             return
         }
         waitDialog.setText(R.string.ai_test_connection)
@@ -3075,15 +2433,18 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         requestJob = lifecycleScope.launch {
             try {
                 val modelCount = AiManager.testConnectivity(provider.id)
-                alert(getString(R.string.ai_test_connection)) {
-                    setMessage(getString(R.string.ai_connectivity_success, modelCount.toString()))
-                    okButton()
-                }
+                showAiClassicDialog(
+                    title = getString(R.string.ai_test_connection),
+                    message = getString(R.string.ai_connectivity_success, modelCount.toString()),
+                )
             } catch (e: Throwable) {
-                alert(getString(R.string.ai_test_connection)) {
-                    setMessage(getString(R.string.ai_test_failed, e.localizedMessage ?: e.toString()))
-                    okButton()
-                }
+                showAiClassicDialog(
+                    title = getString(R.string.ai_test_connection),
+                    message = getString(
+                        R.string.ai_test_failed,
+                        e.localizedMessage ?: e.toString(),
+                    ),
+                )
             } finally {
                 waitDialog.dismiss()
             }
@@ -3093,10 +2454,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun queryBalance() {
         val provider = saveCurrentProvider() ?: return
         if (provider.apiKey.isBlank()) {
-            alert(getString(R.string.ai_query_balance)) {
-                setMessage(getString(R.string.ai_api_key_required))
-                okButton()
-            }
+            showAiClassicDialog(
+                title = getString(R.string.ai_query_balance),
+                message = getString(R.string.ai_api_key_required),
+            )
             return
         }
         waitDialog.setText(R.string.ai_query_balance)
@@ -3106,15 +2467,18 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         requestJob = lifecycleScope.launch {
             try {
                 val result = AiManager.queryBalance(provider.id)
-                alert(getString(R.string.ai_query_balance)) {
-                    setMessage(formatBalanceResult(result))
-                    okButton()
-                }
+                showAiClassicDialog(
+                    title = getString(R.string.ai_query_balance),
+                    message = formatBalanceResult(result),
+                )
             } catch (e: Throwable) {
-                alert(getString(R.string.ai_query_balance)) {
-                    setMessage(getString(R.string.ai_test_failed, e.localizedMessage ?: e.toString()))
-                    okButton()
-                }
+                showAiClassicDialog(
+                    title = getString(R.string.ai_query_balance),
+                    message = getString(
+                        R.string.ai_test_failed,
+                        e.localizedMessage ?: e.toString(),
+                    ),
+                )
             } finally {
                 waitDialog.dismiss()
             }
@@ -3137,10 +2501,13 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             onCancel()
             return
         }
-        alert(getString(R.string.ai_delete_provider)) {
-            setMessage(getString(R.string.sure_del_any, provider.name))
-            okButton { dialog ->
-                dialog.dismiss()
+        showAiClassicDialog(
+            title = getString(R.string.ai_delete_provider),
+            message = getString(R.string.sure_del_any, provider.name),
+            cancelText = getString(android.R.string.cancel),
+            dismissBeforeConfirm = true,
+            onCancel = onCancel,
+            onConfirm = {
                 if (AiProviderStore.deleteCustomProvider(provider.id)) {
                     Toast.makeText(
                         requireContext(),
@@ -3150,11 +2517,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     onDeleted()
                     refreshMain()
                 }
-            }
-            cancelButton {
-                onCancel()
-            }
-        }
+            },
+        )
     }
 
     private fun formatBalanceResult(result: io.legado.app.help.ai.AiBalanceResult): String {
@@ -3203,9 +2567,19 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     || model.safeOwnedBy().contains(modelSearchQuery, ignoreCase = true)
             }
             .sortSelectedModelsFirst(selectedIds)
-        modelAdapter.providerIconRes = provider?.iconRes() ?: R.drawable.ic_cfg_web
-        modelAdapter.availableModelIds = selectedIds
-        modelAdapter.setItems(models)
+        val providerIconRes = provider?.iconRes() ?: R.drawable.ic_cfg_web
+        providerDetailScreenState = providerDetailScreenState.copy(
+            modelQuery = modelSearchQuery,
+            models = models.map { model ->
+                AiProviderModelItemUiModel(
+                    id = model.safeId(),
+                    name = model.displayName(),
+                    iconRes = model.iconRes(providerIconRes),
+                    capabilities = model.capabilityTags(),
+                    selected = model.safeId() in selectedIds,
+                )
+            },
+        )
         updateModelSelectionAction(provider, models)
     }
 
@@ -3223,17 +2597,19 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         val visibleIds = visibleModels.map { it.safeId() }.filter { it.isNotBlank() }.toSet()
         val selectedIds = provider?.effectiveAvailableModelIds().orEmpty().toSet()
         val selectedVisibleCount = visibleIds.count { it in selectedIds }
-        binding.buttonToggleModelSelection.isEnabled = visibleIds.isNotEmpty()
-        binding.buttonToggleModelSelection.alpha = if (visibleIds.isEmpty()) 0.45f else 1f
-        binding.buttonToggleModelSelection.text = when {
+        val actionText = when {
             selectedVisibleCount == visibleIds.size -> getString(R.string.ai_disable_all_models)
             else -> getString(R.string.ai_enable_all_models)
         }
+        providerDetailScreenState = providerDetailScreenState.copy(
+            modelSelectionActionText = actionText,
+            modelSelectionActionEnabled = visibleIds.isNotEmpty(),
+        )
     }
 
     private fun toggleVisibleModelSelection() {
         val provider = currentProviderId?.let { AiProviderStore.provider(it) } ?: return
-        val visibleIds = modelAdapter.getItems().map { it.safeId() }
+        val visibleIds = providerDetailScreenState.models.map { it.id }
             .filter { it.isNotBlank() }
             .toSet()
         if (visibleIds.isEmpty()) {
@@ -3276,84 +2652,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         )
         refreshModelList(AiProviderStore.provider(provider.id))
         refreshMain()
-    }
-
-    private fun saveCurrentModel() {
-        val provider = currentProviderId?.let { AiProviderStore.provider(it) } ?: return
-        val modelId = currentModelId ?: return
-        val current = provider.displayModels().firstOrNull { it.safeId() == modelId } ?: return
-        val type = currentModelTypeFromSegments()
-        val updated = current.copy(
-            displayName = binding.editModelDisplayName.text?.toString()?.trim().orEmpty(),
-            type = type,
-            inputModalities = modelInputModalitiesFor(type),
-            outputModalities = modelOutputModalitiesFor(type),
-            abilities = mergeModelAbilitiesForEdit(
-                original = current,
-                exposedAbilities = modelAbilitiesFor(type)
-            )
-        )
-        AiProviderStore.saveProvider(
-            provider.copy(models = provider.models.updatedWithModel(updated))
-        )
-        setPageTitle(updated.displayName())
-        refreshModelList(AiProviderStore.provider(provider.id))
-    }
-
-    private fun modelInputModalitiesFor(type: AiModelType): List<AiModelModality> {
-        return when (type) {
-            AiModelType.CHAT -> normalizeModalities(
-                textChecked = binding.segmentModelInputText.isSelected,
-                imageChecked = binding.segmentModelInputImage.isSelected,
-                videoChecked = binding.segmentModelInputVideo.isSelected
-            )
-            AiModelType.VIDEO -> normalizeModalities(
-                textChecked = binding.segmentModelInputText.isSelected,
-                imageChecked = binding.segmentModelInputImage.isSelected,
-                videoChecked = binding.segmentModelInputVideo.isSelected
-            )
-
-            AiModelType.IMAGE,
-            AiModelType.EMBEDDING -> listOf(AiModelModality.TEXT)
-            AiModelType.ASR -> listOf(AiModelModality.AUDIO)
-            AiModelType.TTS -> listOf(AiModelModality.TEXT)
-        }
-    }
-
-    private fun modelOutputModalitiesFor(type: AiModelType): List<AiModelModality> {
-        return when (type) {
-            AiModelType.CHAT -> normalizeModalities(
-                textChecked = binding.segmentModelOutputText.isSelected,
-                imageChecked = binding.segmentModelOutputImage.isSelected,
-                videoChecked = binding.segmentModelOutputVideo.isSelected
-            )
-            AiModelType.VIDEO -> normalizeModalities(
-                textChecked = binding.segmentModelOutputText.isSelected,
-                imageChecked = binding.segmentModelOutputImage.isSelected,
-                videoChecked = binding.segmentModelOutputVideo.isSelected,
-                defaultModality = AiModelModality.VIDEO
-            )
-
-            AiModelType.IMAGE -> listOf(AiModelModality.IMAGE)
-            AiModelType.EMBEDDING -> listOf(AiModelModality.TEXT)
-            AiModelType.ASR -> listOf(AiModelModality.TEXT)
-            AiModelType.TTS -> listOf(AiModelModality.AUDIO)
-        }
-    }
-
-    private fun modelAbilitiesFor(type: AiModelType): List<AiModelAbility> {
-        return when (type) {
-            AiModelType.CHAT -> buildList {
-                if (binding.segmentModelAbilityTool.isSelected) add(AiModelAbility.TOOL)
-                if (binding.segmentModelAbilityReasoning.isSelected) add(AiModelAbility.REASONING)
-            }
-
-            AiModelType.IMAGE,
-            AiModelType.EMBEDDING,
-            AiModelType.VIDEO -> emptyList()
-            AiModelType.ASR -> listOf(AiModelAbility.ASR)
-            AiModelType.TTS -> listOf(AiModelAbility.TTS)
-        }
     }
 
     private fun modelInputModalitiesForDraft(
@@ -3473,29 +2771,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
-    private fun AiPromptStore.Prompt.displayName(): String {
-        return when (this) {
-            AiPromptStore.Prompt.PARAGRAPH_PURIFY -> getString(R.string.ai_prompt_paragraph_purify)
-            AiPromptStore.Prompt.RULE_GENERATE -> getString(R.string.ai_prompt_rule_generate)
-        }
-    }
-
-    private fun AiPromptStore.Prompt.summary(): String {
-        return when (this) {
-            AiPromptStore.Prompt.PARAGRAPH_PURIFY ->
-                getString(R.string.ai_prompt_paragraph_purify_summary)
-            AiPromptStore.Prompt.RULE_GENERATE ->
-                getString(R.string.ai_prompt_rule_generate_summary)
-        }
-    }
-
-    private fun AiPromptStore.Prompt.iconText(): String {
-        return when (this) {
-            AiPromptStore.Prompt.PARAGRAPH_PURIFY -> "段"
-            AiPromptStore.Prompt.RULE_GENERATE -> "规"
-        }
-    }
-
     private fun AiSkillDefinition.iconText(): String {
         return when (id) {
             "paragraph_purify" -> "段"
@@ -3516,182 +2791,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         return when (this) {
             AiSkillScope.APP -> "APP"
             AiSkillScope.AGENT -> "Agent"
-        }
-    }
-
-    private inner class AiModelAdapter :
-        RecyclerAdapter<AiModel, ItemAiModelBinding>(requireContext()) {
-
-        var availableModelIds: Set<String> = emptySet()
-        var providerIconRes: Int = R.drawable.ic_cfg_web
-        var onToggleModel: ((AiModel, Boolean) -> Unit)? = null
-
-        override fun getViewBinding(parent: ViewGroup): ItemAiModelBinding {
-            return ItemAiModelBinding.inflate(inflater, parent, false)
-        }
-
-        override fun convert(
-            holder: ItemViewHolder,
-            binding: ItemAiModelBinding,
-            item: AiModel,
-            payloads: MutableList<Any>
-        ) {
-            binding.imageIcon.setImageResource(item.iconRes(providerIconRes))
-            binding.textName.text = item.displayName()
-            binding.checkSelected.setOnCheckedChangeListener(null)
-            binding.checkSelected.isVisible = true
-            binding.checkSelected.isChecked = item.safeId() in availableModelIds
-            binding.checkSelected.setOnCheckedChangeListener { _, isChecked ->
-                onToggleModel?.invoke(item, isChecked)
-            }
-            binding.layoutTags.removeAllViews()
-            item.capabilityTags().forEach { capability ->
-                binding.layoutTags.addView(
-                    createModelCapabilityTag(requireContext(), capability)
-                )
-            }
-        }
-
-        override fun registerListener(holder: ItemViewHolder, binding: ItemAiModelBinding) {
-            binding.root.setOnClickListener {
-                getItemByLayoutPosition(holder.layoutPosition)?.let { item ->
-                    item.safeId().takeIf { it.isNotBlank() }?.let(::showModelDetail)
-                }
-            }
-        }
-    }
-
-    private inner class AiSkillFileAdapter :
-        RecyclerAdapter<SkillTreeRow, ItemAiSkillFileBinding>(requireContext()) {
-
-        override fun getViewBinding(parent: ViewGroup): ItemAiSkillFileBinding {
-            return ItemAiSkillFileBinding.inflate(inflater, parent, false)
-        }
-
-        override fun convert(
-            holder: ItemViewHolder,
-            binding: ItemAiSkillFileBinding,
-            item: SkillTreeRow,
-            payloads: MutableList<Any>
-        ) {
-            binding.textPath.text = item.name
-            binding.root.setPadding(
-                (16 + item.depth * 20).dpToPx(),
-                binding.root.paddingTop,
-                4.dpToPx(),
-                binding.root.paddingBottom
-            )
-            binding.root.setBackgroundColor(Color.TRANSPARENT)
-            when (item) {
-                is SkillTreeRow.Directory -> {
-                    binding.imageExpand.isVisible = true
-                    binding.imageExpand.rotation = if (item.expanded) 90f else 0f
-                    binding.imageType.setImageResource(
-                        if (item.expanded) R.drawable.ic_folder_open else R.drawable.ic_folder_outline
-                    )
-                    binding.textSize.isVisible = false
-                    binding.buttonEdit.isVisible = false
-                }
-
-                is SkillTreeRow.File -> {
-                    binding.imageExpand.isVisible = false
-                    binding.imageExpand.rotation = 0f
-                    binding.imageType.setImageResource(R.drawable.ic_code)
-                    binding.textSize.isVisible = true
-                    binding.textSize.text = formatMemorySize(item.size.toLong())
-                    binding.buttonEdit.isVisible =
-                        currentSkill?.builtIn == false && item.path == "SKILL.md"
-                }
-            }
-        }
-
-        override fun registerListener(holder: ItemViewHolder, binding: ItemAiSkillFileBinding) {
-            binding.buttonEdit.setOnClickListener {
-                (getItemByLayoutPosition(holder.layoutPosition) as? SkillTreeRow.File)
-                    ?.let { item -> openSkillFile(item.path, edit = true) }
-            }
-        }
-    }
-
-    private inner class AiPromptAdapter :
-        RecyclerAdapter<AiSkillDefinition, ItemAiPromptBinding>(requireContext()) {
-
-        override fun getViewBinding(parent: ViewGroup): ItemAiPromptBinding {
-            return ItemAiPromptBinding.inflate(inflater, parent, false)
-        }
-
-        override fun convert(
-            holder: ItemViewHolder,
-            binding: ItemAiPromptBinding,
-            item: AiSkillDefinition,
-            payloads: MutableList<Any>
-        ) {
-            binding.root.apply {
-                setLeadingText(item.iconText(), item.name)
-                setTitle(item.name)
-                setSummary(item.summary)
-                setHeaderTags(
-                    buildList {
-                        add(
-                            NgStatusTagSpec(
-                                text = item.scope.displayName(),
-                                variant = when (item.scope) {
-                                    AiSkillScope.APP -> NgStatusTagVariant.NEUTRAL
-                                    AiSkillScope.AGENT -> NgStatusTagVariant.INFO
-                                },
-                                style = NgStatusTagStyle.COMPACT
-                            )
-                        )
-                        if (!item.builtIn) {
-                            add(
-                                NgStatusTagSpec(
-                                    text = getString(R.string.ai_prompt_custom),
-                                    variant = NgStatusTagVariant.SUCCESS,
-                                    style = NgStatusTagStyle.COMPACT
-                                )
-                            )
-                        }
-                    }
-                )
-                setDetailTags(emptyList())
-                setSelectionIndicatorVisible(false)
-                setTrailing(
-                    trailing = if (item.builtIn) {
-                        NgManagementTrailing.NONE
-                    } else {
-                        NgManagementTrailing.MORE
-                    },
-                    contentDescription = getString(R.string.more)
-                )
-            }
-        }
-
-        override fun registerListener(holder: ItemViewHolder, binding: ItemAiPromptBinding) {
-            binding.root.trailingActionView.setOnClickListener {
-                val skill = getItemByLayoutPosition(holder.layoutPosition) ?: return@setOnClickListener
-                NgActionPopup(
-                    context = requireContext(),
-                    items = listOf(
-                        NgActionPopupItem(
-                            itemId = 1,
-                            titleRes = R.string.ai_skill_export,
-                            iconRes = R.drawable.ic_export
-                        ),
-                        NgActionPopupItem(
-                            itemId = 2,
-                            titleRes = R.string.delete,
-                            iconRes = R.drawable.ic_outline_delete
-                        )
-                    )
-                ) { menuItem ->
-                    currentSkill = skill
-                    currentPrompt = skill.editablePrompt
-                    when (menuItem.itemId) {
-                        1 -> exportCurrentSkill()
-                        2 -> confirmDeleteCurrentSkill()
-                    }
-                }.show(binding.root.trailingActionView)
-            }
         }
     }
 

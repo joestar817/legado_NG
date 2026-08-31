@@ -13,18 +13,22 @@
 | 能力 | 公共实现 | 已验证场景 | 冻结结论 |
 | --- | --- | --- | --- |
 | 页面／抽屉搜索 | `NgSearchBar` | Provider、模型列表、模型选择 BottomSheet | 44dp 胶囊搜索框，15sp 输入，统一搜索、清除和键盘行为 |
-| 次要按钮 | `NgSecondaryButtonView`／`NgFormActionButton(SURFACE_CARD)` | Provider 详情／表单、Skill 操作 | 高不透明亮白底、1dp 主题强调色描边、强调色文字；不得使用发灰的通用 surface，主操作仍使用强调色实底 |
+| 次要按钮 | `NgSecondaryButtonView`／`NgFormActionButton(SURFACE_CARD / SURFACE_CARD_BORDERLESS)` | Provider 详情／表单、Skill 操作 | 高不透明亮白底和强调色文字；`SURFACE_CARD` 保留 1dp 主题强调色描边，Provider 配置操作使用 `SURFACE_CARD_BORDERLESS` 去除描边；不得使用发灰的通用 surface，主操作仍使用强调色实底 |
 | 高饱和实底按钮 | `NgButton`／`NgFormActionButton`／`NgActionBarButton` | 主操作、确认操作、危险确认 | 标准外形对齐书架底部操作栏：稳定矩形、12dp 中圆角，不使用默认胶囊；Primary／Danger 等强调色或错误色实底一律使用白色文字、图标和进度指示，禁止动态 `onPrimary`／`onError` 产生彩底黑字 |
+| 连续开关分组（Trial） | `NgFormSwitchGroup` + `NgFormSwitchRow(GROUPED)` | Provider 配置 | 相关开关与其展开字段共用一张12dp中性承载面；分组行40dp、16sp，行间使用单层12dp内缩细分隔线。透明玻璃使用高不透明语义底保证复杂壁纸上的可读性，液态玻璃由公共视觉路由切换为`CONTROL`材质；不拆成多张小卡，分组外上下间距保持一致 |
 | 详情页底部切换 | `NgFloatingTabBar` | Provider 配置／模型、TTS 引擎配置／发音人 | 48dp 悬浮栏、等宽项、纯图标居中；文字保留为无障碍描述 |
-| 标题栏菜单 | `NgMenuPopup` + `NgActionPopup` | Provider、TTS 引擎列表菜单 | 标题栏只保留一个操作入口；新增类型与列表查看选项用 18dp 圆角菜单承载 |
-| 选择型长列表抽屉 | `NgLongListBottomSheet` + `NgLongDrawerHeader` | AI 模型、发音人、TTS 引擎、书架批量换源 | 透明筛选承载层、无描边搜索／过滤卡片；Compose 长列表使用 12dp 紧凑提示线、42dp 标题栏和 17sp Medium 标题，标题栏按需展开搜索或“搜索 + 业务过滤项”面板 |
+| 标题栏菜单 | `NgMenuPopup` + `NgActionPopup` | Provider、Skill、TTS 引擎列表菜单 | 标题栏只保留一个操作入口；新增类型与列表查看选项用 18dp 圆角菜单承载。Skill 的添加、本地导入、链接导入直接平铺，不再增加二次选择弹窗；自定义 Skill 的导出只在详情标题栏显示，不放回列表卡片菜单 |
+| 选择型长列表抽屉 | `NgLongListBottomSheet` + `NgLongDrawerHeader` | AI 模型、发音人、TTS 引擎、书架批量换源 | 透明筛选承载层、无描边搜索／过滤卡片；Provider、Skill、Provider模型和AI模型选择项等管理列表继续使用无边框、无 elevation 的固定 `ng_surface_card` 白卡，不接设置项液态材质；只有图标＋标题／摘要＋箭头／开关这类设置项卡片接 `SETTINGS` 液态材质；Compose 长列表使用 12dp 紧凑提示线、42dp 标题栏和 17sp Medium 标题，标题栏按需展开搜索或“搜索 + 业务过滤项”面板 |
 | 侧边导航抽屉（Trial） | `NgSideDrawerSurface` | AI 聊天导航 | 完整复用全局 NG 抽屉的材质、基础颜色、主色浓度和透明度，并作为唯一背景层；不得再传主题图 `backdrop` 后叠第二层 NG 容器。固定右侧 16dp 圆角、65% 宽度、默认页面遮罩及交互保持侧栏原实现，公共侧栏不消费全局水平边距或圆角参数。AI 导航前景统一白色，打开期间系统栏图标同步为白色，关闭后恢复当前主题 |
 | 强调色规则 | 当前主题 `accentColor` | 小节标题、按钮、选中 Tab | 直接保留主题原始强调色，不额外派生暗色文字替代视觉性格 |
 | 图标选择规则 | 现有资源 + Iconify + 必要时单独设计 | AI 设置入口、Provider、Tab、菜单 | 不绑定单一 Material 图标库；统一的是尺寸、视口、线宽和语义，不是来源 |
 | 页面标题栏 | `TitleBar` | AI 设置及同源二级页面 | 返回按钮保留完整触控区域，导航内容 inset 与额外标题前距统一为 0dp，不在单页增加位移补丁 |
 | 一级设置项 | `NgSettingsItemView`／Compose `NgSettingsItem` | AI 设置、朗读设置 | View 与 Compose 共用相同几何、颜色和尾部语义；整页迁移只使用一个页面级 `ComposeView` |
 | 管理列表卡片 | `NgManagementListCardView` | Provider、TTS 引擎、Prompt／Skill | 白色无边框卡片统一图标、标题、元数据、状态、摘要、尾部操作和选中指示；业务排序与点击仍由页面负责 |
+| 多行摘要管理卡（Trial） | `NgManagementListCard(MULTILINE_SUMMARY)` + `NgSwipeToDelete` | Skill 列表 | 保持固定 `ng_surface_card` 白卡和原图标／Tag，只将摘要放宽为最多两行并按内容增高；卡片不显示行尾更多，自定义 Skill 使用 Provider 同款向右侧滑删除，内置与 System Workflow 不可滑删；默认管理卡仍为单行摘要 |
+| 连续文件工作区（Trial） | `TitleBar.setTemporarySolidSurface` + `AiSkillDetailScreen` | Skill 详情 | 详情顶栏使用不透壁纸的运行时 `surface/onSurface` 语义色，并通过原主题 elevation 与底部分隔建立第一层；正文整屏保持迁移前固定 `ng_surface_card` 底色，不使用偏灰的 `surfaceContainer*`，48dp 文件树保持平面行，只用缩进、目录字重和内缩细分隔表达层级，不增加圆角或悬浮容器。返回其它 AI 页面及 Fragment 销毁时恢复原透明顶栏 |
 | 紧凑管理矩阵（Trial） | `NgManagementListCard(COMPACT_GRID)` | 书架批量换源书源选择 | 双列 54dp 紧凑卡片，8dp 圆角、30dp 首字徽标、11sp Medium 单行标题和 10sp 单行分组；列／行间距由列表容器统一为 4dp。业务页只选择命名 Variant 并传数据与点击事件，默认管理卡不受影响 |
+| 弹窗下划线输入（Trial） | `NgFormField(DIALOG_UNDERLINE)` | Skill 网络导入 | 44dp 单行输入、16sp 正文、2dp 内容边距和焦点主题色下划线；只承载一个短输入，不叠加字段标签、说明段和支持文字，其它表单 Variant 不受影响 |
 | 书架管理卡片 | `NgBookshelfManageCard(FLAT_ROW)` | 书架批量管理 | 68dp 双行列表项，使用左侧选择圆、行间分隔和右侧拖动手柄；章节进度位于右上固定槽，分组 Tag 限制最大宽度，更新状态使用 NG 语义红／绿点。旧独立圆角卡保留为 `CONTAINED_CARD`，业务页只选择命名 Variant |
 | 书架管理顶部栏 | `NgGlassSurface` + `NgSearchBar(TOOLBAR)` | 书架批量管理 | 顶栏使用 NG `smallDp` 8dp 小圆角与现有高对比玻璃材质；页面只组织返回、搜索和分组入口，不改公共搜索栏内部几何 |
 | 右侧滑入可展开菜单（Trial） | `NgExpandableActionMenu(SIDE_SLIDE)` | 书架批量管理分组菜单 | 参考阅读菜单使用 156dp 宽、12dp 圆角、44dp 行高和 8dp 右边距；水平方向按整扇窗口贴右，纵向从顶栏菜单按钮底边下移 16dp，使面板覆盖下层容器右上角，展开过长时再向上收口。进入与退出均移动完整 Popup 窗口，使用 `mediumDuration` 的单向减速／加速滑动，禁止固定窗口内裁切式显现、弹簧、缩放和抖动。可通过 `defaultExpandedItemIds` 声明每次打开的默认展开项；书架分组不超过 10 个时默认展开，超过 10 个才收起。保留原位展开、选中反馈、返回与外部点击关闭。书架管理使用不透明暖白 `ng_surface_soft`，不得复用阅读玻璃透明度；默认 `DROPDOWN` Variant 不受影响 |
@@ -681,6 +685,7 @@ AI 相关页面必须遵守：
 - AI 功能 UI 参考 MD3 结构，但颜色使用 Reading NG token。
 - 不要让单个功能把 AI 设置页变成孤立表单。
 - Provider／模型等长列表统一使用 `NgSearchBar`；新增 Provider 的不同兼容类型统一放在标题栏圆角菜单。
+- Skill 添加使用既有全屏 `CodeEditActivity` Markdown 编辑器，并预填可直接修改的合法 SKILL.md 模板；链接导入只使用“网络导入”标题、单条 URL 下划线输入和取消／确认。
 - Provider 详情的配置／模型使用 48dp `NgFloatingTabBar`，不再使用过高的文字 Tab。
 - 模型选择统一使用 `NgLongListBottomSheet` 紧凑外壳；点击标题栏筛选图标后同时显示搜索框和厂商过滤 Chip。单厂商时隐藏厂商行，多厂商使用 Flexbox 换行；模型卡片保留 Provider、能力标签等业务语义。
 - 用户不需要了解 `use_skill`、内部目录暴露方式或协议实现等信息；这类实现细节不作为页面说明。
@@ -735,6 +740,7 @@ AI 相关页面必须遵守：
 - 手机竖屏下文字是否溢出或挤压。
 - 弹窗底部按钮是否遮挡内容。
 - Primary／Danger 等彩色高饱和实底按钮是否统一使用白色文字、图标和进度指示，没有被动态 `onPrimary`／`onError` 改成黑色。
+- 迁移前若旧按钮由 `NgSecondaryButtonView`、`Ng.SmallButton.Secondary`、`ng_bg_button_secondary` 或明确白色 Drawable 承载，Compose 是否显式使用 `NgFormActionButton(SURFACE_CARD)` 等白底语义，而不是会随壁纸取色变灰／染色的默认 `surface`；必须同时在强壁纸取色主题和普通浅色主题下核对。
 - 普通 NG 按钮是否使用与书架底部操作栏一致的 12dp 圆角矩形；只有明确胶囊语义才允许显式使用 `PILL`。
 - 状态信息是否一眼可懂。
 - 如果是 AI 功能，是否区分 Provider、Prompt、Skill、Runtime。

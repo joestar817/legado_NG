@@ -11,6 +11,23 @@ import org.junit.Test
 class AiSystemWorkflowPackageInstrumentedTest {
 
     @Test
+    fun managementLookupKeepsMultiFileBookScanReachable() {
+        val skill = AiSkillRegistry.managementSkills()
+            .single { it.id == AiSkillRegistry.SKILL_BOOK_SCAN }
+        val paths = AiSkillRegistry.skillFilePaths(skill.id)
+
+        assertEquals(AiSkillRegistry.SKILL_BOOK_SCAN, skill.id)
+        assertTrue(skill.builtIn)
+        assertEquals("SKILL.md", paths.first())
+        assertTrue(paths.size > 1)
+        assertTrue(paths.contains("interaction-policy.json"))
+        assertTrue(paths.contains("references/reader-tags/index.md"))
+        paths.forEach { path ->
+            assertTrue(AiSkillRegistry.readSkillFile(skill.id, path).isNotBlank())
+        }
+    }
+
+    @Test
     fun bookScanModePinsTwoStageSkillSet() {
         val mode = AgentModeRegistry.bookScan
         val workflow = requireNotNull(AiSkillRegistry.systemWorkflow(AiSkillRegistry.SKILL_BOOK_SCAN))

@@ -1,6 +1,7 @@
 package io.legado.app.ui.design.components.compose
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -44,6 +45,8 @@ import io.legado.app.ui.design.theme.NgTheme
 
 enum class NgSearchBarVariant {
     STANDARD,
+    COMPACT,
+    COMPACT_FILTER,
     TOOLBAR
 }
 
@@ -128,18 +131,32 @@ fun NgSearchBar(
     searchIcon: Painter = painterResource(R.drawable.ic_search),
     variant: NgSearchBarVariant = NgSearchBarVariant.STANDARD,
     containerColor: Color? = null,
+    allowLiquidGlass: Boolean = true,
     hideHintOnFocus: Boolean = true,
     onFocusChanged: (Boolean) -> Unit = {},
     onSearch: (String) -> Unit = {}
 ) {
     val isToolbar = variant == NgSearchBarVariant.TOOLBAR
-    val fieldHeight = if (isToolbar) 36.dp else 44.dp
-    val shape = RoundedCornerShape(if (isToolbar) 18.dp else 22.dp)
+    val isLegacyCompact = variant == NgSearchBarVariant.COMPACT ||
+        variant == NgSearchBarVariant.COMPACT_FILTER
+    val fieldHeight = when (variant) {
+        NgSearchBarVariant.STANDARD -> 44.dp
+        NgSearchBarVariant.COMPACT,
+        NgSearchBarVariant.COMPACT_FILTER -> 40.dp
+        NgSearchBarVariant.TOOLBAR -> 36.dp
+    }
+    val cornerRadius = when (variant) {
+        NgSearchBarVariant.STANDARD,
+        NgSearchBarVariant.COMPACT -> 22.dp
+        NgSearchBarVariant.COMPACT_FILTER -> 14.dp
+        NgSearchBarVariant.TOOLBAR -> 18.dp
+    }
+    val shape = RoundedCornerShape(cornerRadius)
     val contentColor = colorResource(R.color.ng_search_content)
     val iconColor = colorResource(R.color.ng_search_icon)
     val secondaryColor = colorResource(R.color.ng_search_hint)
     val resolvedContainerColor = containerColor ?: colorResource(R.color.ng_search_surface)
-    val strokeColor = if (isToolbar) {
+    val strokeColor = if (isToolbar || variant == NgSearchBarVariant.COMPACT_FILTER) {
         Color.Transparent
     } else {
         colorResource(R.color.ng_card_stroke)
@@ -151,6 +168,7 @@ fun NgSearchBar(
         isToolbar = isToolbar,
     )
     var focused by remember { mutableStateOf(false) }
+    val clearInteractionSource = remember { MutableInteractionSource() }
     NgVisualSurface(
         modifier = modifier
             .fillMaxWidth()
@@ -160,13 +178,13 @@ fun NgSearchBar(
         } else {
             NgMaterialRole.CONTROL
         },
-        cornerRadius = if (isToolbar) 18.dp else 22.dp,
+        cornerRadius = cornerRadius,
         shape = shape,
         style = surfaceStyle,
-        visualSystemOverride = if (resolvedContainerColor.alpha == 0f) {
-            NgVisualSystem.TRANSPARENT_GLASS
-        } else {
-            null
+        visualSystemOverride = when {
+            !allowLiquidGlass -> NgVisualSystem.TRANSPARENT_GLASS
+            resolvedContainerColor.alpha == 0f -> NgVisualSystem.TRANSPARENT_GLASS
+            else -> null
         },
     ) {
         BasicTextField(
@@ -183,7 +201,8 @@ fun NgSearchBar(
             textStyle = TextStyle(
                 color = contentColor,
                 fontSize = 15.sp,
-                lineHeight = 18.sp
+                lineHeight = 18.sp,
+                letterSpacing = 0.sp,
             ),
             cursorBrush = SolidColor(Color(NgTheme.colors.primary)),
             keyboardOptions = KeyboardOptions(
@@ -214,6 +233,7 @@ fun NgSearchBar(
                                 color = secondaryColor,
                                 fontSize = 15.sp,
                                 lineHeight = 18.sp,
+                                letterSpacing = 0.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -221,17 +241,42 @@ fun NgSearchBar(
                         innerTextField()
                     }
                     if (query.isNotEmpty()) {
-                        IconButton(
-                            onClick = { onQueryChange("") },
-                            modifier = Modifier.size(if (isToolbar) 30.dp else 38.dp),
-                            enabled = enabled
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_baseline_close),
-                                contentDescription = stringResource(R.string.clear),
-                                modifier = Modifier.size(if (isToolbar) 18.dp else 20.dp),
-                                tint = secondaryColor
-                            )
+                        if (isLegacyCompact) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clickable(
+                                        interactionSource = clearInteractionSource,
+                                        indication = null,
+                                        enabled = enabled,
+                                        role = Role.Button,
+                                    ) {
+                                        onQueryChange("")
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_baseline_close),
+                                    contentDescription = stringResource(R.string.clear),
+                                    modifier = Modifier.size(20.dp),
+                                    tint = secondaryColor
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = { onQueryChange("") },
+                                modifier = Modifier.size(
+                                    if (variant == NgSearchBarVariant.TOOLBAR) 30.dp else 38.dp
+                                ),
+                                enabled = enabled
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_baseline_close),
+                                    contentDescription = stringResource(R.string.clear),
+                                    modifier = Modifier.size(if (isToolbar) 18.dp else 20.dp),
+                                    tint = secondaryColor
+                                )
+                            }
                         }
                     }
                 }

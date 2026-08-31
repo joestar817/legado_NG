@@ -65,7 +65,8 @@ enum class NgManagementTrailing {
 
 enum class NgManagementListCardVariant {
     DEFAULT,
-    COMPACT_GRID
+    COMPACT_GRID,
+    MULTILINE_SUMMARY,
 }
 
 enum class NgFilterChipGroupVariant {

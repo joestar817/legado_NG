@@ -21,7 +21,10 @@ import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgFormActionGroup
 import io.legado.app.ui.design.components.compose.NgFormActionRow
 import io.legado.app.ui.design.components.compose.NgFormField
+import io.legado.app.ui.design.components.compose.NgFormGroupDivider
+import io.legado.app.ui.design.components.compose.NgFormSwitchGroup
 import io.legado.app.ui.design.components.compose.NgFormSwitchRow
+import io.legado.app.ui.design.components.compose.NgFormSwitchRowVariant
 import io.legado.app.ui.design.components.compose.NgPasswordField
 
 data class AiProviderFormScreenState(
@@ -177,85 +180,101 @@ fun AiProviderFormScreen(
             focusManager = focusManager,
             keyboardType = KeyboardType.Number
         )
-        NgFormSwitchRow(
-            title = stringResource(R.string.ai_enabled),
-            checked = state.enabled,
-            onCheckedChange = {
-                onAction(
-                    AiProviderFormScreenAction.ToggleChanged(
-                        AiProviderFormToggle.ENABLED,
-                        it
-                    )
-                )
-            }
-        )
-        if (state.openAiCompatible) {
+        NgFormSwitchGroup(modifier = Modifier.padding(top = 6.dp)) {
             NgFormSwitchRow(
-                title = stringResource(R.string.ai_stream_response),
-                checked = state.streamResponseEnabled,
+                title = stringResource(R.string.ai_enabled),
+                checked = state.enabled,
                 onCheckedChange = {
                     onAction(
                         AiProviderFormScreenAction.ToggleChanged(
-                            AiProviderFormToggle.STREAM_RESPONSE,
+                            AiProviderFormToggle.ENABLED,
                             it
                         )
                     )
+                },
+                variant = NgFormSwitchRowVariant.GROUPED,
+            )
+            NgFormGroupDivider(horizontalPadding = 0.dp)
+            if (state.openAiCompatible) {
+                NgFormSwitchRow(
+                    title = stringResource(R.string.ai_stream_response),
+                    checked = state.streamResponseEnabled,
+                    onCheckedChange = {
+                        onAction(
+                            AiProviderFormScreenAction.ToggleChanged(
+                                AiProviderFormToggle.STREAM_RESPONSE,
+                                it
+                            )
+                        )
+                    },
+                    variant = NgFormSwitchRowVariant.GROUPED,
+                )
+                NgFormGroupDivider(horizontalPadding = 0.dp)
+            }
+            NgFormSwitchRow(
+                title = stringResource(R.string.ai_custom_balance_url),
+                checked = state.useCustomBalanceUrl,
+                onCheckedChange = {
+                    onAction(
+                        AiProviderFormScreenAction.ToggleChanged(
+                            AiProviderFormToggle.CUSTOM_BALANCE_URL,
+                            it
+                        )
+                    )
+                },
+                variant = NgFormSwitchRowVariant.GROUPED,
+            )
+            if (state.useCustomBalanceUrl) {
+                Column(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ProviderTextField(
+                        label = stringResource(R.string.ai_balance_url),
+                        value = state.balanceUrl,
+                        field = AiProviderFormField.BALANCE_URL,
+                        onAction = onAction,
+                        focusManager = focusManager,
+                        keyboardType = KeyboardType.Uri,
+                        placeholder = stringResource(R.string.ai_balance_url_summary)
+                    )
+                    ProviderTextField(
+                        label = stringResource(R.string.ai_balance_json_path),
+                        value = state.balanceJsonPath,
+                        field = AiProviderFormField.BALANCE_JSON_PATH,
+                        onAction = onAction,
+                        focusManager = focusManager,
+                        placeholder = stringResource(R.string.ai_balance_json_path_summary)
+                    )
                 }
-            )
-        }
-        NgFormSwitchRow(
-            title = stringResource(R.string.ai_custom_balance_url),
-            checked = state.useCustomBalanceUrl,
-            onCheckedChange = {
-                onAction(
-                    AiProviderFormScreenAction.ToggleChanged(
-                        AiProviderFormToggle.CUSTOM_BALANCE_URL,
-                        it
-                    )
-                )
             }
-        )
-        if (state.useCustomBalanceUrl) {
-            ProviderTextField(
-                label = stringResource(R.string.ai_balance_url),
-                value = state.balanceUrl,
-                field = AiProviderFormField.BALANCE_URL,
-                onAction = onAction,
-                focusManager = focusManager,
-                keyboardType = KeyboardType.Uri,
-                placeholder = stringResource(R.string.ai_balance_url_summary)
-            )
-            ProviderTextField(
-                label = stringResource(R.string.ai_balance_json_path),
-                value = state.balanceJsonPath,
-                field = AiProviderFormField.BALANCE_JSON_PATH,
-                onAction = onAction,
-                focusManager = focusManager,
-                placeholder = stringResource(R.string.ai_balance_json_path_summary)
-            )
-        }
-        NgFormSwitchRow(
-            title = stringResource(R.string.ai_custom_models_url),
-            checked = state.useCustomModelsUrl,
-            onCheckedChange = {
-                onAction(
-                    AiProviderFormScreenAction.ToggleChanged(
-                        AiProviderFormToggle.CUSTOM_MODELS_URL,
-                        it
+            NgFormGroupDivider(horizontalPadding = 0.dp)
+            NgFormSwitchRow(
+                title = stringResource(R.string.ai_custom_models_url),
+                checked = state.useCustomModelsUrl,
+                onCheckedChange = {
+                    onAction(
+                        AiProviderFormScreenAction.ToggleChanged(
+                            AiProviderFormToggle.CUSTOM_MODELS_URL,
+                            it
+                        )
                     )
-                )
-            }
-        )
-        if (state.useCustomModelsUrl) {
-            ProviderTextField(
-                label = stringResource(R.string.ai_models_url),
-                value = state.modelsUrl,
-                field = AiProviderFormField.MODELS_URL,
-                onAction = onAction,
-                focusManager = focusManager,
-                keyboardType = KeyboardType.Uri,
-                placeholder = stringResource(R.string.ai_models_url_summary)
+                },
+                variant = NgFormSwitchRowVariant.GROUPED,
             )
+            if (state.useCustomModelsUrl) {
+                Column(modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
+                    ProviderTextField(
+                        label = stringResource(R.string.ai_models_url),
+                        value = state.modelsUrl,
+                        field = AiProviderFormField.MODELS_URL,
+                        onAction = onAction,
+                        focusManager = focusManager,
+                        keyboardType = KeyboardType.Uri,
+                        placeholder = stringResource(R.string.ai_models_url_summary)
+                    )
+                }
+            }
         }
         NgFormActionGroup {
             NgFormActionRow {
@@ -266,7 +285,7 @@ fun AiProviderFormScreen(
                         onAction(AiProviderFormScreenAction.TestConnectionRequested)
                     },
                     modifier = Modifier.weight(1f),
-                    appearance = NgFormActionButtonAppearance.SURFACE_CARD,
+                    appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
                 )
                 NgFormActionButton(
                     text = stringResource(R.string.ai_query_balance),
@@ -275,7 +294,7 @@ fun AiProviderFormScreen(
                         onAction(AiProviderFormScreenAction.QueryBalanceRequested)
                     },
                     modifier = Modifier.weight(1f),
-                    appearance = NgFormActionButtonAppearance.SURFACE_CARD,
+                    appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
                 )
             }
             if (!state.builtIn) {
@@ -285,7 +304,8 @@ fun AiProviderFormScreen(
                         focusManager.clearFocus()
                         onAction(AiProviderFormScreenAction.DeleteRequested)
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
                 )
             }
         }
