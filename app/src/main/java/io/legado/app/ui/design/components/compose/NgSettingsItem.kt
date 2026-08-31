@@ -2,8 +2,11 @@ package io.legado.app.ui.design.components.compose
 
 import android.os.Build
 import androidx.appcompat.widget.SwitchCompat
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -171,6 +174,7 @@ fun NgSettingsIcon(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NgSettingsItem(
     title: String,
@@ -182,6 +186,7 @@ fun NgSettingsItem(
     value: String? = null,
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
     customTrailing: (@Composable RowScope.() -> Unit)? = null,
     summaryMaxLines: Int = 1,
@@ -190,6 +195,7 @@ fun NgSettingsItem(
 ) {
     val itemShape = RoundedCornerShape(18.dp)
     val interactionSource = remember { MutableInteractionSource() }
+    val clickIndication = if (showClickIndication) LocalIndication.current else null
     NgSettingsCardSurface(
         modifier = modifier
             .fillMaxWidth(),
@@ -200,7 +206,15 @@ fun NgSettingsItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(
-                    if (onClick != null) {
+                    if (onLongClick != null) {
+                        Modifier.combinedClickable(
+                            interactionSource = interactionSource,
+                            indication = clickIndication,
+                            enabled = enabled,
+                            onClick = onClick ?: {},
+                            onLongClick = onLongClick,
+                        )
+                    } else if (onClick != null) {
                         if (showClickIndication) {
                             Modifier.clickable(enabled = enabled, onClick = onClick)
                         } else {
