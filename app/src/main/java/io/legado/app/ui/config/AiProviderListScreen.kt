@@ -2,6 +2,7 @@ package io.legado.app.ui.config
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -21,23 +22,34 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgManagementTrailing
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagVariant
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
+import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
 import io.legado.app.ui.design.components.compose.NgListState
 import io.legado.app.ui.design.components.compose.NgListStateContent
 import io.legado.app.ui.design.components.compose.NgManagementLeadingIcon
 import io.legado.app.ui.design.components.compose.NgManagementListCard
 import io.legado.app.ui.design.components.compose.NgManagementTrailingIcon
-import io.legado.app.ui.design.components.compose.NgSearchBar
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.components.compose.ngDraggedItem
 import io.legado.app.ui.design.components.compose.ngReorderHandle
 import io.legado.app.ui.design.components.compose.rememberNgLazyReorderState
 import io.legado.app.ui.design.theme.NgTheme
+
+private const val PROVIDER_MENU_ADD_OPENAI = 0x4E470101
+private const val PROVIDER_MENU_ADD_CLAUDE = 0x4E470102
+private const val PROVIDER_MENU_SHOW_DISABLED = 0x4E470103
 
 /**
  * AI Provider 管理页的纯 UI 状态。
@@ -50,7 +62,8 @@ internal data class AiProviderListScreenState(
     val query: String = "",
     val listState: NgListState<AiProviderListItemUiModel> = NgListState.Loading,
     val isRefreshing: Boolean = false,
-    val searchEnabled: Boolean = true
+    val searchEnabled: Boolean = true,
+    val showDisabled: Boolean = false,
 )
 
 @Immutable
@@ -72,9 +85,10 @@ internal sealed interface AiProviderListScreenAction {
     data class QueryChanged(val query: String) : AiProviderListScreenAction
     data class SearchSubmitted(val query: String) : AiProviderListScreenAction
     data class ProviderClicked(val providerId: String) : AiProviderListScreenAction
-
-    /** 标题栏更多按钮由宿主转发此事件，Screen 本身不持有 Toolbar。 */
-    data object MoreMenuRequested : AiProviderListScreenAction
+    data object Back : AiProviderListScreenAction
+    data object AddOpenAiProvider : AiProviderListScreenAction
+    data object AddClaudeProvider : AiProviderListScreenAction
+    data object ToggleShowDisabled : AiProviderListScreenAction
 
     data object RetryRequested : AiProviderListScreenAction
     data object RefreshRequested : AiProviderListScreenAction
@@ -94,19 +108,11 @@ internal fun AiProviderListScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 16.dp)
     ) {
-        NgSearchBar(
-            query = state.query,
-            onQueryChange = {
-                onAction(AiProviderListScreenAction.QueryChanged(it))
-            },
-            hint = stringResource(R.string.ai_search_provider),
+        AiProviderFloatingTopBar(
+            state = state,
+            onAction = onAction,
             modifier = Modifier.padding(horizontal = 16.dp),
-            enabled = state.searchEnabled,
-            onSearch = {
-                onAction(AiProviderListScreenAction.SearchSubmitted(it))
-            }
         )
         if (state.isRefreshing) {
             Spacer(Modifier.height(8.dp))
@@ -227,6 +233,75 @@ internal fun AiProviderListScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AiProviderFloatingTopBar(
+    state: AiProviderListScreenState,
+    onAction: (AiProviderListScreenAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val menuState = remember { NgPopupToggleState() }
+    val menuItems = remember(state.showDisabled) {
+        listOf(
+            NgExpandableActionMenuItem(
+                itemId = PROVIDER_MENU_ADD_OPENAI,
+                titleRes = R.string.ai_add_provider_openai,
+                iconRes = R.drawable.ic_provider_openai,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = PROVIDER_MENU_ADD_CLAUDE,
+                titleRes = R.string.ai_add_provider_anthropic,
+                iconRes = R.drawable.ic_model_anthropic,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = PROVIDER_MENU_SHOW_DISABLED,
+                titleRes = R.string.show_disabled_items,
+                iconRes = R.drawable.ic_visibility,
+                checked = state.showDisabled,
+                dividerBefore = true,
+            ),
+        )
+    }
+    NgFloatingSearchToolbar(
+        query = state.query,
+        onQueryChange = { onAction(AiProviderListScreenAction.QueryChanged(it)) },
+        hint = stringResource(R.string.ai_search_provider),
+        onBack = { onAction(AiProviderListScreenAction.Back) },
+        modifier = modifier,
+        enabled = state.searchEnabled,
+        onSearch = { onAction(AiProviderListScreenAction.SearchSubmitted(it)) },
+    ) {
+        Box {
+            NgFloatingToolbarActionButton(
+                iconRes = R.drawable.ic_grid_menu,
+                contentDescription = stringResource(R.string.menu),
+                onClick = menuState::onAnchorClick,
+            )
+            NgExpandableActionMenu(
+                expanded = menuState.expanded,
+                onDismissRequest = menuState::onDismissRequest,
+                items = menuItems,
+                variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+                menuContainerColor = colorResource(R.color.ng_surface_card),
+                properties = PopupProperties(focusable = true, clippingEnabled = false),
+                onItemClick = { item ->
+                    menuState.close()
+                    when (item.itemId) {
+                        PROVIDER_MENU_ADD_OPENAI -> {
+                            onAction(AiProviderListScreenAction.AddOpenAiProvider)
+                        }
+                        PROVIDER_MENU_ADD_CLAUDE -> {
+                            onAction(AiProviderListScreenAction.AddClaudeProvider)
+                        }
+                        PROVIDER_MENU_SHOW_DISABLED -> {
+                            onAction(AiProviderListScreenAction.ToggleShowDisabled)
+                        }
+                    }
+                },
+            )
         }
     }
 }

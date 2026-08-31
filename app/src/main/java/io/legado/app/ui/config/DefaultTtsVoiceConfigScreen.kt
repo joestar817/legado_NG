@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -53,7 +54,7 @@ internal enum class DefaultTtsVoiceSlot {
 /**
  * 字标颜色只表达发音人角色，不携带引擎或发音人业务状态。
  *
- * Screen 根据该语义复刻现有 View 卡片的灰／蓝／粉字标，宿主无需传视觉颜色。
+ * Screen 根据该语义复刻角色页的紫／蓝／粉字标，宿主无需传视觉颜色。
  */
 internal enum class DefaultTtsVoiceAvatarRole {
     NARRATOR,
@@ -268,9 +269,10 @@ private fun DefaultTtsVoiceAvatar(
     }
 }
 
+@Composable
 private fun DefaultTtsVoiceAvatarRole.containerColor(): Color {
     return when (this) {
-        DefaultTtsVoiceAvatarRole.NARRATOR -> Color(0xFFE8E8E8)
+        DefaultTtsVoiceAvatarRole.NARRATOR -> colorResource(R.color.character_avatar_narrator)
         DefaultTtsVoiceAvatarRole.MALE -> Color(0xFF9EB8FF)
         DefaultTtsVoiceAvatarRole.FEMALE -> Color(0xFFFFA1B5)
     }

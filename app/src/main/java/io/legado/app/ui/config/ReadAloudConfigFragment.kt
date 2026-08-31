@@ -33,6 +33,8 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
     private var screenState by mutableStateOf(ReadAloudConfigScreenState())
     private val cardClickDebouncer = TtsSheetLaunchDebouncer()
     private var summaryJob: Job? = null
+    private var multiRoleSheetJob: Job? = null
+    private var multiRoleSheet: TtsEngineSelectionSheet? = null
     private var skipNextResumeRefresh = false
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
@@ -86,6 +88,10 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
     override fun onDestroyView() {
         summaryJob?.cancel()
         summaryJob = null
+        multiRoleSheetJob?.cancel()
+        multiRoleSheetJob = null
+        multiRoleSheet?.dismiss()
+        multiRoleSheet = null
         skipNextResumeRefresh = false
         super.onDestroyView()
     }
@@ -149,20 +155,33 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
 
     private fun showMultiRoleEngineSheet() {
         val selectedId = AppConfig.multiRoleTtsEngineId
-        TtsEngineSelectionSheet(
+        multiRoleSheetJob?.cancel()
+        multiRoleSheet?.dismiss()
+        val sheet = TtsEngineSelectionSheet(
             context = requireContext(),
             title = getString(R.string.multi_role_tts_engine),
             searchHint = getString(R.string.multi_role_tts_engine_search),
             emptyText = getString(R.string.multi_role_tts_engine_empty),
-            engines = TtsEngineStore.engines().filter {
-                it.enabled && it.type == TtsEngineType.SCRIPT
-            },
+            engines = emptyList(),
             selectedEngineId = selectedId,
             onSelect = { engine -> selectMultiRoleEngine(engine.id) },
             onClear = selectedId?.takeIf { it.isNotBlank() }?.let {
                 { selectMultiRoleEngine(null) }
             },
-        ).show()
+            loading = true,
+        )
+        multiRoleSheet = sheet
+        sheet.show()
+        multiRoleSheetJob = viewLifecycleOwner.lifecycleScope.launch {
+            val engines = withContext(Dispatchers.IO) {
+                TtsEngineStore.engines().filter {
+                    it.enabled && it.type == TtsEngineType.SCRIPT
+                }
+            }
+            if (view != null && multiRoleSheet === sheet) {
+                sheet.updateEngines(engines)
+            }
+        }
     }
 
     private fun selectMultiRoleEngine(engineId: String?) {
@@ -364,7 +383,8 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
                     refreshRunningMultiRoleReadAloud(requireContext())
                     bindCards(engineSnapshot)
                 }
-            }
+            },
+            titleActionIconRes = R.drawable.ic_clear,
         ).show()
     }
 
@@ -399,7 +419,8 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
                     refreshRunningMultiRoleReadAloud(requireContext())
                     bindCards(engineSnapshot)
                 }
-            }
+            },
+            titleActionIconRes = R.drawable.ic_clear,
         ).show()
     }
 

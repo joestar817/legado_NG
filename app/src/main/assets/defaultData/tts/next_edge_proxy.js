@@ -1,6 +1,6 @@
 // @name Next Edge TTS
 // @schema 1
-// @version 1.0.8
+// @version 1.0.9
 // @uuid next_edge_proxy
 // @author Legado
 // @url http://5.45.99.149:8075/tts
@@ -14,7 +14,13 @@
 // @capabilities style_tags,emotion
 // @description 第三方 Edge TTS 中转调试模板，发音人画像和 styles 参考 Edge VoiceTag 与 Azure Speech 文档。
 
-var STYLE_NAMES = {
+var STYLE_NAMES;
+
+function styleNames() {
+    if (STYLE_NAMES) {
+        return STYLE_NAMES;
+    }
+    STYLE_NAMES = {
     "advertisement-upbeat": "广告活力",
     "affectionate": "深情",
     "angry": "愤怒",
@@ -75,9 +81,17 @@ var STYLE_NAMES = {
     "tired": "疲惫",
     "voice-assistant": "语音助手",
     "whispering": "耳语"
-};
+    };
+    return STYLE_NAMES;
+}
 
-var EXPRESSIVE_STYLE_ALIASES = [
+var EXPRESSIVE_STYLE_ALIASES;
+
+function expressiveStyleAliases() {
+    if (EXPRESSIVE_STYLE_ALIASES) {
+        return EXPRESSIVE_STYLE_ALIASES;
+    }
+    EXPRESSIVE_STYLE_ALIASES = [
     { style: "angry", terms: ["angry", "愤怒", "生气", "恼怒", "暴怒"] },
     { style: "anxious", terms: ["anxious", "焦虑", "紧张", "不安"] },
     { style: "calm", terms: ["calm", "平静", "克制", "冷静", "沉着"] },
@@ -101,14 +115,22 @@ var EXPRESSIVE_STYLE_ALIASES = [
     { style: "poetry-reading", terms: ["poetry-reading", "诗歌朗诵", "朗诵"] },
     { style: "story", terms: ["story", "故事", "讲故事", "叙事"] },
     { style: "story-telling", terms: ["story-telling", "故事", "讲故事", "叙事"] }
-];
+    ];
+    return EXPRESSIVE_STYLE_ALIASES;
+}
 
 var API_OPTIONS = [
     { label: "5.45.99.149", value: "http://5.45.99.149:8075/tts" },
     { label: "146.56.188.115", value: "http://146.56.188.115:8080/tts" }
 ];
 
-var VOICES = [
+var VOICES;
+
+function voiceCatalog() {
+    if (VOICES) {
+        return VOICES;
+    }
+    VOICES = [
     {
         name: "晓晓",
         id: "zh-CN-XiaoxiaoNeural",
@@ -228,7 +250,9 @@ var VOICES = [
     { name: "晓宸_繁", id: "zh-TW-HsiaoChenNeural", gender: "female", profile: "台配女青年-自然亲和", categories: ["General"], personalities: ["Friendly", "Positive"], styles: [], roles: [], roleHints: ["繁中女声", "女青年", "旁白"] },
     { name: "晓语_繁", id: "zh-TW-HsiaoYuNeural", gender: "female", profile: "台配成熟女声-明亮", categories: ["General"], personalities: ["Friendly", "Positive"], styles: [], roles: [], roleHints: ["繁中女声", "成熟女性", "旁白"] },
     { name: "云喆_繁", id: "zh-TW-YunJheNeural", gender: "male", profile: "台配男声-温和低沉", categories: ["General"], personalities: ["Friendly", "Positive"], styles: [], roles: [], roleHints: ["繁中男声", "成熟男性", "旁白"] }
-];
+    ];
+    return VOICES;
+}
 
 function options() {
     return [
@@ -245,8 +269,9 @@ function options() {
 
 function voices(options, ctx) {
     var result = [];
-    for (var i = 0; i < VOICES.length; i++) {
-        var item = VOICES[i];
+    var catalog = voiceCatalog();
+    for (var i = 0; i < catalog.length; i++) {
+        var item = catalog[i];
         var tags = ["Edge", item.profile];
         appendAll(tags, item.categories);
         appendAll(tags, item.personalities);
@@ -277,11 +302,12 @@ function voices(options, ctx) {
 
 function styleOptions(styles) {
     var result = [];
+    var names = styleNames();
     for (var i = 0; i < styles.length; i++) {
         var id = String(styles[i]);
         result.push({
             id: id,
-            name: STYLE_NAMES[id] || id,
+            name: names[id] || id,
             value: id
         });
     }
@@ -366,8 +392,9 @@ function styleForConcept(concept, supported) {
     if (containsStyle(supported, normalized)) {
         return normalized;
     }
-    for (var i = 0; i < EXPRESSIVE_STYLE_ALIASES.length; i++) {
-        var item = EXPRESSIVE_STYLE_ALIASES[i];
+    var aliases = expressiveStyleAliases();
+    for (var i = 0; i < aliases.length; i++) {
+        var item = aliases[i];
         if (!containsStyle(supported, item.style)) {
             continue;
         }

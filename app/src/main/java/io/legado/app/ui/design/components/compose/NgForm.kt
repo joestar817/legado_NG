@@ -1300,6 +1300,10 @@ fun NgFormActionButton(
     enabled: Boolean = true,
     variant: NgButtonVariant = NgButtonVariant.OUTLINE,
     appearance: NgFormActionButtonAppearance = NgFormActionButtonAppearance.DEFAULT,
+    buttonHeight: Dp = 36.dp,
+    minimumWidth: Dp = 76.dp,
+    textSize: TextUnit = 14.sp,
+    textLineHeight: TextUnit = 17.sp,
 ) {
     val colors = NgTheme.colors
     val primary = Color(colors.primary)
@@ -1336,8 +1340,8 @@ fun NgFormActionButton(
     Button(
         onClick = onClick,
         modifier = modifier
-            .height(36.dp)
-            .widthIn(min = 76.dp),
+            .height(buttonHeight)
+            .widthIn(min = minimumWidth),
         enabled = enabled,
         shape = shape,
         colors = ButtonDefaults.buttonColors(
@@ -1362,8 +1366,8 @@ fun NgFormActionButton(
     ) {
         Text(
             text = text,
-            fontSize = 14.sp,
-            lineHeight = 17.sp,
+            fontSize = textSize,
+            lineHeight = textLineHeight,
             fontWeight = FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

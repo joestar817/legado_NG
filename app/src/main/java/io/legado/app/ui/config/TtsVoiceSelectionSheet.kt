@@ -5,6 +5,7 @@ import android.graphics.Color as AndroidColor
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import androidx.annotation.DrawableRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -56,6 +57,7 @@ class TtsVoiceSelectionSheet(
     private val beforePreview: () -> Unit = {},
     private val dismissOnSelect: Boolean = true,
     private val titleAction: Pair<CharSequence, () -> Unit>? = null,
+    @param:DrawableRes private val titleActionIconRes: Int? = null,
 ) {
     private var state by mutableStateOf(TtsVoiceDrawerState())
     private var dialog: BottomSheetDialog? = null
@@ -63,6 +65,18 @@ class TtsVoiceSelectionSheet(
     private var previewController: TtsVoicePreviewController? = null
 
     fun show() {
+        if (dialog != null || loadJob?.isActive == true) return
+        loadJob = lifecycleScope.launch {
+            val snapshot = withContext(IO) {
+                buildVoiceSnapshot()
+            }
+            state = snapshot.copy(preview = state.preview)
+            loadJob = null
+            showPreparedDialog()
+        }
+    }
+
+    private fun showPreparedDialog() {
         val bottomSheet = BottomSheetDialog(context)
         dialog = bottomSheet
         previewController = TtsVoicePreviewController(
@@ -82,7 +96,10 @@ class TtsVoiceSelectionSheet(
                         emptyText = emptyText.toString(),
                         state = state,
                         titleAction = titleAction?.let { (text, action) ->
-                            TtsVoiceDrawerTitleAction(text.toString()) {
+                            TtsVoiceDrawerTitleAction(
+                                text = text.toString(),
+                                iconRes = titleActionIconRes,
+                            ) {
                                 action()
                                 dismiss()
                             }
@@ -133,41 +150,35 @@ class TtsVoiceSelectionSheet(
             dialog = null
         }
         bottomSheet.show()
-        loadVoiceSnapshot()
     }
 
     fun dismiss() {
+        loadJob?.cancel()
+        loadJob = null
         dialog?.dismiss()
     }
 
-    private fun loadVoiceSnapshot() {
-        loadJob?.cancel()
-        state = state.copy(loading = true)
-        loadJob = lifecycleScope.launch {
-            val snapshot = withContext(IO) {
-                val groups = engines().map { engine ->
-                    TtsVoiceDrawerGroup(
-                        engineId = engine.id,
-                        engineName = engine.name,
-                        cards = voiceChoices(engine).map { option ->
-                            option.toDrawerCard(selected = isSelected(option))
-                        },
-                    )
-                }.filter { it.cards.isNotEmpty() }
-                val cards = groups.flatMap { it.cards }
-                TtsVoiceDrawerState(
-                    loading = false,
-                    groups = groups,
-                    languageOptions = TtsVoiceFilterSupport.availableLanguageLabels(
-                        cards.map { it.option.voice }
-                    ),
-                    genderOptions = listOf("男", "女").filter { label ->
-                        cards.any { it.genderLabel == label }
-                    },
-                )
-            }
-            state = snapshot.copy(preview = state.preview)
-        }
+    private fun buildVoiceSnapshot(): TtsVoiceDrawerState {
+        val groups = engines().map { engine ->
+            TtsVoiceDrawerGroup(
+                engineId = engine.id,
+                engineName = engine.name,
+                cards = voiceChoices(engine).map { option ->
+                    option.toDrawerCard(selected = isSelected(option))
+                },
+            )
+        }.filter { it.cards.isNotEmpty() }
+        val cards = groups.flatMap { it.cards }
+        return TtsVoiceDrawerState(
+            loading = false,
+            groups = groups,
+            languageOptions = TtsVoiceFilterSupport.availableLanguageLabels(
+                cards.map { it.option.voice }
+            ),
+            genderOptions = listOf("男", "女").filter { label ->
+                cards.any { it.genderLabel == label }
+            },
+        )
     }
 
     private fun voiceChoices(engine: TtsEngineSetting): List<TtsVoiceOption> {

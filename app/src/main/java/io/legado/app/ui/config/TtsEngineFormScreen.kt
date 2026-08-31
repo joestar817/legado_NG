@@ -25,9 +25,15 @@ import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.help.tts.DEFAULT_TTS_RANDOM_NUMBER_DIGITS
 import io.legado.app.ui.design.components.compose.NgFormField
+import io.legado.app.ui.design.components.compose.NgFormActionButton
+import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
+import io.legado.app.ui.design.components.compose.NgFormActionRow
+import io.legado.app.ui.design.components.compose.NgFormGroupDivider
 import io.legado.app.ui.design.components.compose.NgFormSelectField
 import io.legado.app.ui.design.components.compose.NgFormSelectOption
+import io.legado.app.ui.design.components.compose.NgFormSwitchGroup
 import io.legado.app.ui.design.components.compose.NgFormSwitchRow
+import io.legado.app.ui.design.components.compose.NgFormSwitchRowVariant
 import io.legado.app.ui.design.components.compose.NgPasswordField
 import io.legado.app.ui.design.theme.NgTheme
 
@@ -35,6 +41,7 @@ data class TtsEngineFormScreenState(
     val engineId: String = "",
     val engineEnabled: Boolean = true,
     val formEnabled: Boolean = true,
+    val loading: Boolean = false,
     val fields: List<TtsEngineFormFieldState> = emptyList()
 )
 
@@ -110,29 +117,99 @@ fun TtsEngineFormScreen(
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
+    val regularFields = state.fields.filterNot {
+        it.type == TtsEngineFormFieldType.BOOLEAN
+    }
+    val switchFields = state.fields.filter {
+        it.type == TtsEngineFormFieldType.BOOLEAN
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        state.fields.forEach { field ->
-            key(field.key) {
-                TtsEngineFormField(
-                    engineId = state.engineId,
-                    field = field,
-                    enabled = state.formEnabled,
-                    focusManager = focusManager,
-                    onAction = onAction
+        if (!state.loading) {
+            regularFields.forEach { field ->
+                key(field.key) {
+                    TtsEngineFormField(
+                        engineId = state.engineId,
+                        field = field,
+                        enabled = state.formEnabled,
+                        focusManager = focusManager,
+                        onAction = onAction
+                    )
+                }
+            }
+            NgFormSwitchGroup(modifier = Modifier.padding(top = 6.dp)) {
+                switchFields.forEach { field ->
+                    key(field.key) {
+                        NgFormSwitchRow(
+                            title = field.label,
+                            checked = field.value.toTtsBooleanOption(),
+                            onCheckedChange = {
+                                onAction(
+                                    TtsEngineFormScreenAction.FieldChanged(
+                                        state.engineId,
+                                        field.key,
+                                        it.toString()
+                                    )
+                                )
+                            },
+                            enabled = state.formEnabled,
+                            variant = NgFormSwitchRowVariant.GROUPED,
+                        )
+                        NgFormGroupDivider(horizontalPadding = 0.dp)
+                    }
+                }
+                NgFormSwitchRow(
+                    title = stringResource(R.string.enabled),
+                    checked = state.engineEnabled,
+                    onCheckedChange = {
+                        focusManager.clearFocus()
+                        onAction(
+                            TtsEngineFormScreenAction.EngineEnabledChanged(
+                                state.engineId,
+                                it
+                            )
+                        )
+                    },
+                    variant = NgFormSwitchRowVariant.GROUPED,
                 )
             }
         }
-        NgFormSwitchRow(
-            title = stringResource(R.string.enabled),
-            checked = state.engineEnabled,
-            onCheckedChange = {
-                focusManager.clearFocus()
-                onAction(TtsEngineFormScreenAction.EngineEnabledChanged(state.engineId, it))
-            }
+    }
+}
+
+@Composable
+fun TtsEngineFormActions(
+    sourceMode: Boolean,
+    onToggleSourceMode: () -> Unit,
+    onMeasureLatency: () -> Unit,
+    onSaveSource: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    NgFormActionRow(modifier = modifier.padding(vertical = 4.dp)) {
+        NgFormActionButton(
+            text = stringResource(
+                if (sourceMode) R.string.tts_form_mode else R.string.tts_source_mode
+            ),
+            onClick = onToggleSourceMode,
+            modifier = Modifier.weight(1f),
+            appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
         )
+        NgFormActionButton(
+            text = "测速",
+            onClick = onMeasureLatency,
+            modifier = Modifier.weight(1f),
+            appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
+        )
+        if (sourceMode) {
+            NgFormActionButton(
+                text = stringResource(R.string.save),
+                onClick = onSaveSource,
+                modifier = Modifier.weight(1f),
+                appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
+            )
+        }
     }
 }
 

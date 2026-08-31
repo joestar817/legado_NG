@@ -2,6 +2,7 @@ package io.legado.app.ui.config
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,16 +22,22 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgManagementTrailing
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagVariant
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
+import io.legado.app.ui.design.components.compose.NgFloatingTitleToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
 import io.legado.app.ui.design.components.compose.NgListState
 import io.legado.app.ui.design.components.compose.NgListStateContent
 import io.legado.app.ui.design.components.compose.NgManagementLeadingIcon
 import io.legado.app.ui.design.components.compose.NgManagementListCard
 import io.legado.app.ui.design.components.compose.NgManagementTrailingIcon
-import io.legado.app.ui.design.components.compose.NgSearchBar
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.components.compose.NgLazyReorderState
 import io.legado.app.ui.design.components.compose.ngDraggedItem
@@ -57,7 +64,6 @@ data class TtsEngineListScreenState(
     val query: String = "",
     val listState: NgListState<TtsEngineListItemUiModel> = NgListState.Loading,
     val showDisabled: Boolean = false,
-    val showSearch: Boolean = false
 )
 
 internal class TtsEngineSnapshotGate {
@@ -84,7 +90,7 @@ sealed interface TtsEngineListAction {
     data class OpenEngine(val engineId: String) : TtsEngineListAction
     data class ReorderCommitted(val orderedEngineIds: List<String>) : TtsEngineListAction
     data class DeleteRequested(val engineId: String) : TtsEngineListAction
-    data object OpenListMenu : TtsEngineListAction
+    data object Back : TtsEngineListAction
     data object CreateEngine : TtsEngineListAction
     data object ImportLocal : TtsEngineListAction
     data object ImportOnline : TtsEngineListAction
@@ -96,20 +102,15 @@ fun TtsEngineListScreen(
     state: TtsEngineListScreenState,
     onAction: (TtsEngineListAction) -> Unit,
     modifier: Modifier = Modifier,
-    searchHint: String = stringResource(R.string.multi_role_tts_engine_search)
 ) {
     Column(
         modifier = modifier.fillMaxSize()
     ) {
-        if (state.showSearch) {
-            NgSearchBar(
-                query = state.query,
-                onQueryChange = { onAction(TtsEngineListAction.QueryChanged(it)) },
-                hint = searchHint,
-                onSearch = { onAction(TtsEngineListAction.SearchSubmitted(it)) },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-            )
-        }
+        TtsEngineListFloatingTopBar(
+            state = state,
+            onAction = onAction,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
         NgListStateContent(
             state = state.listState,
             modifier = Modifier
@@ -162,6 +163,77 @@ fun TtsEngineListScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TtsEngineListFloatingTopBar(
+    state: TtsEngineListScreenState,
+    onAction: (TtsEngineListAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val menuState = remember { NgPopupToggleState() }
+    val menuItems = remember(state.showDisabled) {
+        listOf(
+            NgExpandableActionMenuItem(
+                itemId = R.id.menu_tts_engine_add,
+                titleRes = R.string.add_tts_engine,
+                iconRes = R.drawable.ic_add,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = R.id.menu_tts_engine_import_local,
+                titleRes = R.string.import_local,
+                iconRes = R.drawable.ic_import,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = R.id.menu_tts_engine_import_online,
+                titleRes = R.string.import_on_line,
+                iconRes = R.drawable.ic_add_online,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = R.id.menu_show_disabled,
+                titleRes = R.string.show_disabled_items,
+                iconRes = R.drawable.ic_visibility,
+                checked = state.showDisabled,
+                dividerBefore = true,
+            ),
+        )
+    }
+    NgFloatingTitleToolbar(
+        title = stringResource(R.string.tts_engine_settings),
+        onBack = { onAction(TtsEngineListAction.Back) },
+        modifier = modifier,
+    ) {
+        Box {
+            NgFloatingToolbarActionButton(
+                iconRes = R.drawable.ic_grid_menu,
+                contentDescription = stringResource(R.string.menu),
+                onClick = menuState::onAnchorClick,
+            )
+            NgExpandableActionMenu(
+                expanded = menuState.expanded,
+                onDismissRequest = menuState::onDismissRequest,
+                items = menuItems,
+                variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+                menuContainerColor = colorResource(R.color.ng_surface_card),
+                properties = PopupProperties(focusable = true, clippingEnabled = false),
+                onItemClick = { item ->
+                    menuState.close()
+                    when (item.itemId) {
+                        R.id.menu_tts_engine_add -> onAction(TtsEngineListAction.CreateEngine)
+                        R.id.menu_tts_engine_import_local -> {
+                            onAction(TtsEngineListAction.ImportLocal)
+                        }
+                        R.id.menu_tts_engine_import_online -> {
+                            onAction(TtsEngineListAction.ImportOnline)
+                        }
+                        R.id.menu_show_disabled -> {
+                            onAction(TtsEngineListAction.ToggleShowDisabled)
+                        }
+                    }
+                },
+            )
         }
     }
 }

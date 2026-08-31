@@ -5,14 +5,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,10 +32,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
@@ -50,10 +46,10 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgFloatingTabBar
 import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
+import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
 import io.legado.app.ui.design.components.compose.NgPullRefreshIndicatorVariant
-import io.legado.app.ui.design.components.compose.NgSearchBar
-import io.legado.app.ui.design.components.compose.NgSearchBarVariant
 import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.theme.NgTheme
 
@@ -75,6 +71,7 @@ internal data class AiProviderDetailScreenState(
     val models: List<AiProviderModelItemUiModel> = emptyList(),
     val modelSelectionActionText: String = "",
     val modelSelectionActionEnabled: Boolean = false,
+    val allVisibleModelsSelected: Boolean = false,
     val isRefreshingModels: Boolean = false,
 )
 
@@ -83,6 +80,7 @@ internal sealed interface AiProviderDetailAction {
     data class ModelQueryChanged(val query: String) : AiProviderDetailAction
     data object RefreshModels : AiProviderDetailAction
     data object ToggleVisibleModelSelection : AiProviderDetailAction
+    data object Back : AiProviderDetailAction
     data class EditModel(val modelId: String) : AiProviderDetailAction
     data class ToggleModel(val modelId: String, val selected: Boolean) : AiProviderDetailAction
 }
@@ -194,64 +192,29 @@ private fun AiProviderModelsTab(
     listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
-    val selectionActionInteractionSource = remember { MutableInteractionSource() }
     Column(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(top = 16.dp),
+            .fillMaxWidth(),
     ) {
-        NgSearchBar(
+        NgFloatingSearchToolbar(
             query = state.modelQuery,
             onQueryChange = { onAction(AiProviderDetailAction.ModelQueryChanged(it)) },
             hint = stringResource(R.string.ai_search_model),
-            variant = NgSearchBarVariant.COMPACT,
-            allowLiquidGlass = false,
-            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp)
-                .height(36.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            onBack = { onAction(AiProviderDetailAction.Back) },
+            modifier = Modifier.padding(horizontal = 16.dp),
         ) {
-            Text(
-                text = stringResource(R.string.ai_available_models),
-                modifier = Modifier.weight(1f),
-                color = colorResource(R.color.ng_on_surface),
-                fontSize = 17.sp,
-                lineHeight = 21.sp,
-                letterSpacing = 0.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            NgFloatingToolbarActionButton(
+                iconRes = if (state.allVisibleModelsSelected) {
+                    R.drawable.ic_block_outline
+                } else {
+                    R.drawable.ic_check_circle_outline
+                },
+                contentDescription = state.modelSelectionActionText,
+                enabled = state.modelSelectionActionEnabled,
+                onClick = {
+                    onAction(AiProviderDetailAction.ToggleVisibleModelSelection)
+                },
             )
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .widthIn(min = 66.dp)
-                    .alpha(if (state.modelSelectionActionEnabled) 1f else 0.45f)
-                    .clickable(
-                        interactionSource = selectionActionInteractionSource,
-                        indication = null,
-                        enabled = state.modelSelectionActionEnabled,
-                        onClick = {
-                            onAction(AiProviderDetailAction.ToggleVisibleModelSelection)
-                        },
-                    )
-                    .padding(horizontal = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = state.modelSelectionActionText,
-                    color = Color(NgTheme.colors.primary),
-                    fontSize = 15.sp,
-                    lineHeight = 18.sp,
-                    letterSpacing = 0.sp,
-                    maxLines = 1,
-                )
-            }
         }
         NgPullRefreshBox(
             isRefreshing = state.isRefreshingModels,
@@ -259,6 +222,7 @@ private fun AiProviderModelsTab(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .padding(horizontal = 16.dp)
                 .padding(top = 6.dp),
             // 与朗读引擎一致：下拉到请求完成始终使用同一个刷新圆环。
             indicatorVariant = NgPullRefreshIndicatorVariant.SINGLE_SPINNER,

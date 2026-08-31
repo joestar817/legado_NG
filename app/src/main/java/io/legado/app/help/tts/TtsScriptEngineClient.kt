@@ -17,6 +17,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.ByteString.Companion.decodeBase64
 import splitties.init.appCtx
 import java.io.InputStream
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
@@ -33,6 +34,7 @@ object TtsScriptEngineClient {
             eldest: MutableMap.MutableEntry<String, List<TtsScriptOption>>?
         ): Boolean = size > MAX_OPTIONS_CACHE_SIZE
     }
+    private val optionsLoadLocks = ConcurrentHashMap<String, Any>()
 
     fun sampleText(voice: TtsVoice?): String {
         return voice?.previewText() ?: DEFAULT_TTS_PREVIEW_TEXT
@@ -45,16 +47,34 @@ object TtsScriptEngineClient {
     }
 
     fun loadOptions(engine: TtsEngineSetting): List<TtsScriptOption> {
-        val cacheKey = "${engine.id}:${MD5Utils.md5Encode(engine.script)}"
-        synchronized(optionsCache) {
-            optionsCache[cacheKey]
-        }?.let { return it }
-        val result = callOptionsFunction(engine)
-        val options = parseOptionsResult(result)
-        synchronized(optionsCache) {
-            optionsCache[cacheKey] = options
+        val cacheKey = optionsCacheKey(engine)
+        cachedOptions(cacheKey)?.let { return it }
+        val loadLock = optionsLoadLocks.getOrPut(cacheKey) { Any() }
+        return try {
+            synchronized(loadLock) {
+                cachedOptions(cacheKey)?.let { return@synchronized it }
+                val result = callOptionsFunction(engine)
+                val options = parseOptionsResult(result)
+                synchronized(optionsCache) {
+                    optionsCache[cacheKey] = options
+                }
+                options
+            }
+        } finally {
+            optionsLoadLocks.remove(cacheKey, loadLock)
         }
-        return options
+    }
+
+    fun cachedOptions(engine: TtsEngineSetting): List<TtsScriptOption>? {
+        return cachedOptions(optionsCacheKey(engine))
+    }
+
+    private fun cachedOptions(cacheKey: String): List<TtsScriptOption>? {
+        return synchronized(optionsCache) { optionsCache[cacheKey] }
+    }
+
+    private fun optionsCacheKey(engine: TtsEngineSetting): String {
+        return "${engine.id}:${MD5Utils.md5Encode(engine.script)}"
     }
 
     internal fun parseOptionsResult(result: String?): List<TtsScriptOption> {

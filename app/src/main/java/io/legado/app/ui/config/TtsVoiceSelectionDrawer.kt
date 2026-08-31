@@ -1,6 +1,7 @@
 package io.legado.app.ui.config
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -97,6 +98,7 @@ internal data class TtsVoiceDrawerState(
 
 internal data class TtsVoiceDrawerTitleAction(
     val text: String,
+    @param:DrawableRes val iconRes: Int? = null,
     val onClick: () -> Unit,
 )
 
@@ -151,17 +153,27 @@ internal fun TtsVoiceSelectionDrawerContent(
     val voiceListState = rememberLazyListState()
     val filtersActive = query.isNotBlank() ||
         selectedLanguages.isNotEmpty() || selectedGenders.isNotEmpty()
-    val filteredGroups = state.groups.mapNotNull { group ->
-        val cards = group.cards.filter { card ->
-            val languageMatch = selectedLanguages.isEmpty() ||
-                card.languageLabels.any { it in selectedLanguages }
-            val genderMatch = selectedGenders.isEmpty() ||
-                card.genderLabel?.let { it in selectedGenders } == true
-            card.option.matchesName(query) && languageMatch && genderMatch
+    val filteredGroups = remember(
+        state.groups,
+        query,
+        selectedLanguages,
+        selectedGenders,
+    ) {
+        state.groups.mapNotNull { group ->
+            val cards = group.cards.filter { card ->
+                val languageMatch = selectedLanguages.isEmpty() ||
+                    card.languageLabels.any { it in selectedLanguages }
+                val genderMatch = selectedGenders.isEmpty() ||
+                    card.genderLabel?.let { it in selectedGenders } == true
+                card.option.matchesName(query) && languageMatch && genderMatch
+            }
+            group.takeIf { cards.isNotEmpty() }?.copy(cards = cards)
         }
-        group.takeIf { cards.isNotEmpty() }?.copy(cards = cards)
     }
     val filteredItemCount = filteredGroups.sumOf { group -> group.cards.size + 1 }
+    val hasIconTitleAction = titleAction?.iconRes != null
+    val voiceCardShape = remember { RoundedCornerShape(18.dp) }
+    val selectionColor = Color(LocalContext.current.accentColor)
 
     NgBottomDrawerSurface(
         modifier = Modifier
@@ -179,12 +191,30 @@ internal fun TtsVoiceSelectionDrawerContent(
             }
             NgLongDrawerHeader(
                 title = title,
-                actionIconRes = R.drawable.ic_tts_params_grid,
-                actionContentDescription = "筛选发音人",
-                actionActive = filtersExpanded || filtersActive,
-                onActionClick = { filtersExpanded = !filtersExpanded },
-                trailingActionText = titleAction?.text,
-                onTrailingActionClick = titleAction?.onClick,
+                actionIconRes = titleAction?.iconRes ?: R.drawable.ic_tts_params_grid,
+                actionContentDescription = if (hasIconTitleAction) {
+                    titleAction.text
+                } else {
+                    "筛选发音人"
+                },
+                actionActive = !hasIconTitleAction && (filtersExpanded || filtersActive),
+                onActionClick = if (hasIconTitleAction) {
+                    titleAction.onClick
+                } else {
+                    { filtersExpanded = !filtersExpanded }
+                },
+                trailingActionText = titleAction?.text.takeUnless { hasIconTitleAction },
+                onTrailingActionClick = titleAction?.onClick.takeUnless { hasIconTitleAction },
+                secondaryActionIconRes = R.drawable.ic_tts_params_grid.takeIf {
+                    hasIconTitleAction
+                },
+                secondaryActionContentDescription = "筛选发音人",
+                secondaryActionActive = hasIconTitleAction && (filtersExpanded || filtersActive),
+                onSecondaryActionClick = if (hasIconTitleAction) {
+                    { filtersExpanded = !filtersExpanded }
+                } else {
+                    null
+                },
             )
             if (filtersExpanded) {
                 TtsVoiceFilterPanel(
@@ -240,12 +270,18 @@ internal fun TtsVoiceSelectionDrawerContent(
                                     ),
                                 )
                             }
-                            items(group.cards, key = { it.key }) { card ->
+                            items(
+                                items = group.cards,
+                                key = { it.key },
+                                contentType = { "voice" },
+                            ) { card ->
                                 TtsVoiceSelectionCard(
                                     card = card,
                                     previewState = state.preview.takeIf {
                                         it.key == card.key
                                     }?.state ?: TtsVoicePreviewState.IDLE,
+                                    shape = voiceCardShape,
+                                    selectionColor = selectionColor,
                                     enableLongPressPreview = enableLongPressPreview,
                                     onSelect = { onSelect(card.option) },
                                     onPreview = { onPreview(card.option) },
@@ -373,18 +409,17 @@ private fun TtsVoiceFilterPanel(
 private fun TtsVoiceSelectionCard(
     card: TtsVoiceDrawerCard,
     previewState: TtsVoicePreviewState,
+    shape: RoundedCornerShape,
+    selectionColor: Color,
     enableLongPressPreview: Boolean,
     onSelect: () -> Unit,
     onPreview: () -> Unit,
 ) {
-    val option = card.option
-    val shape = RoundedCornerShape(18.dp)
     val cardClickModifier = if (enableLongPressPreview) {
         Modifier.combinedClickable(onClick = onSelect, onLongClick = onPreview)
     } else {
         Modifier.clickable(onClick = onSelect)
     }
-    val legacySelectionColor = Color(LocalContext.current.accentColor)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -406,93 +441,10 @@ private fun TtsVoiceSelectionCard(
                     .padding(end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(28.dp)
-                        .horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = option.voice.name,
-                        color = Color(NgTheme.colors.onSurface),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                    )
-                    when (card.genderLabel) {
-                        "男" -> TtsVoiceGenderIcon(
-                            iconRes = R.drawable.ic_tts_gender_male,
-                            colorRes = R.color.ng_tts_gender_male,
-                        )
-                        "女" -> TtsVoiceGenderIcon(
-                            iconRes = R.drawable.ic_tts_gender_female,
-                            colorRes = R.color.ng_tts_gender_female,
-                        )
-                    }
-                    card.languageLabels.forEach { label ->
-                        TtsVoiceTagChip(
-                            text = label,
-                            contentColorRes = R.color.ng_tts_language,
-                            containerColorRes = R.color.ng_tts_language_container,
-                            modifier = Modifier.padding(start = 6.dp),
-                        )
-                    }
-                    card.style?.let {
-                        TtsVoiceTagChip(
-                            text = it,
-                            contentColorRes = R.color.ng_tts_tag_blue,
-                            containerColorRes = R.color.ng_tts_tag_blue_container,
-                            modifier = Modifier.padding(start = 6.dp),
-                        )
-                    }
-                }
-                if (card.tags.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(24.dp)
-                            .padding(top = 1.dp)
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        card.tags.forEachIndexed { index, tag ->
-                            val colors = ttsVoiceTagPalette(index)
-                            TtsVoiceTagChip(
-                                text = tag,
-                                contentColorRes = colors.first,
-                                containerColorRes = colors.second,
-                            )
-                        }
-                    }
-                }
+                TtsVoiceCardHeader(card)
+                TtsVoiceCardTags(card.tags)
             }
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .clickable(onClick = onPreview),
-                contentAlignment = Alignment.Center,
-            ) {
-                when (previewState) {
-                    TtsVoicePreviewState.LOADING -> CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color(NgTheme.colors.primary),
-                        strokeWidth = 2.dp,
-                    )
-                    TtsVoicePreviewState.PLAYING -> Icon(
-                        imageVector = Icons.Rounded.StopCircle,
-                        contentDescription = "停止试听",
-                        tint = Color(NgTheme.colors.primary),
-                    )
-                    TtsVoicePreviewState.IDLE -> Icon(
-                        imageVector = Icons.Rounded.Headphones,
-                        contentDescription = "试听",
-                        tint = Color(NgTheme.colors.onSurfaceVariant),
-                    )
-                }
-            }
+            TtsVoiceCardPreview(previewState, onPreview)
         }
         if (card.selected) {
             Box(
@@ -502,9 +454,109 @@ private fun TtsVoiceSelectionCard(
                     modifier = Modifier
                         .width(6.dp)
                         .fillMaxHeight()
-                        .background(legacySelectionColor),
+                        .background(selectionColor),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TtsVoiceCardHeader(card: TtsVoiceDrawerCard) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = card.option.voice.name,
+            color = Color(NgTheme.colors.onSurface),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+        when (card.genderLabel) {
+            "男" -> TtsVoiceGenderIcon(
+                iconRes = R.drawable.ic_tts_gender_male,
+                colorRes = R.color.ng_tts_gender_male,
+            )
+            "女" -> TtsVoiceGenderIcon(
+                iconRes = R.drawable.ic_tts_gender_female,
+                colorRes = R.color.ng_tts_gender_female,
+            )
+        }
+        card.languageLabels.forEach { label ->
+            TtsVoiceTagChip(
+                text = label,
+                contentColorRes = R.color.ng_tts_language,
+                containerColorRes = R.color.ng_tts_language_container,
+                modifier = Modifier.padding(start = 6.dp),
+            )
+        }
+        card.style?.let {
+            TtsVoiceTagChip(
+                text = it,
+                contentColorRes = R.color.ng_tts_tag_blue,
+                containerColorRes = R.color.ng_tts_tag_blue_container,
+                modifier = Modifier.padding(start = 6.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TtsVoiceCardTags(tags: List<String>) {
+    if (tags.isEmpty()) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .padding(top = 1.dp)
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        tags.forEachIndexed { index, tag ->
+            val colors = ttsVoiceTagPalette(index)
+            TtsVoiceTagChip(
+                text = tag,
+                contentColorRes = colors.first,
+                containerColorRes = colors.second,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TtsVoiceCardPreview(
+    previewState: TtsVoicePreviewState,
+    onPreview: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onPreview),
+        contentAlignment = Alignment.Center,
+    ) {
+        when (previewState) {
+            TtsVoicePreviewState.LOADING -> CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                color = Color(NgTheme.colors.primary),
+                strokeWidth = 2.dp,
+            )
+            TtsVoicePreviewState.PLAYING -> Icon(
+                imageVector = Icons.Rounded.StopCircle,
+                contentDescription = "停止试听",
+                tint = Color(NgTheme.colors.primary),
+            )
+            TtsVoicePreviewState.IDLE -> Icon(
+                imageVector = Icons.Rounded.Headphones,
+                contentDescription = "试听",
+                tint = Color(NgTheme.colors.onSurfaceVariant),
+            )
         }
     }
 }

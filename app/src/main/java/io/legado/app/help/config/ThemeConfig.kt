@@ -1,6 +1,7 @@
 package io.legado.app.help.config
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.util.DisplayMetrics
@@ -132,6 +133,21 @@ object ThemeConfig {
     }
 
     private var needClearImg = true
+    private data class BackgroundBitmapCacheKey(
+        val path: String,
+        val lastModified: Long,
+        val width: Int,
+        val height: Int,
+        val blur: Int,
+    )
+
+    private data class BackgroundBitmapCache(
+        val key: BackgroundBitmapCacheKey,
+        val bitmap: Bitmap,
+    )
+
+    @Volatile
+    private var backgroundBitmapCache: BackgroundBitmapCache? = null
 
     private fun resolveTheme(isNightTheme: Boolean) = when {
         AppConfig.isEInkMode -> Theme.EInk
@@ -306,6 +322,7 @@ object ThemeConfig {
             }
     }
 
+    @Synchronized
     fun getBgImage(context: Context, metrics: DisplayMetrics): Drawable? {
         val themeMode = getTheme(context)
         val preferenceKey = when (themeMode) {
@@ -337,12 +354,25 @@ object ThemeConfig {
             Theme.Dark -> context.getPrefInt(PreferKey.bgImageNBlurring, 0)
             Theme.EInk -> 0
         }
-        val bgImage = BitmapUtils
-            .decodeBitmap(path, metrics.widthPixels, metrics.heightPixels)
-        if (bgImgBlu == 0) {
-            return bgImage?.toDrawable(context.resources)
-        }
-        return bgImage?.stackBlur(bgImgBlu)?.toDrawable(context.resources)
+        val cacheKey = BackgroundBitmapCacheKey(
+            path = path,
+            lastModified = File(path).lastModified(),
+            width = metrics.widthPixels,
+            height = metrics.heightPixels,
+            blur = bgImgBlu,
+        )
+        backgroundBitmapCache
+            ?.takeIf { it.key == cacheKey && !it.bitmap.isRecycled }
+            ?.let { return it.bitmap.toDrawable(context.resources) }
+
+        val decoded = BitmapUtils.decodeBitmap(
+            path,
+            metrics.widthPixels,
+            metrics.heightPixels,
+        ) ?: return null
+        val rendered = if (bgImgBlu == 0) decoded else decoded.stackBlur(bgImgBlu)
+        backgroundBitmapCache = BackgroundBitmapCache(cacheKey, rendered)
+        return rendered.toDrawable(context.resources)
     }
 
     fun upConfig() {

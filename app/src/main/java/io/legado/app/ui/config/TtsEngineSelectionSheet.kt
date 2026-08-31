@@ -166,12 +166,20 @@ class TtsEngineSelectionSheet(
     private val title: CharSequence,
     private val searchHint: CharSequence,
     private val emptyText: CharSequence,
-    private val engines: List<TtsEngineSetting>,
+    engines: List<TtsEngineSetting>,
     private val selectedEngineId: String?,
     private val onSelect: (TtsEngineSetting) -> Unit,
     private val onClear: (() -> Unit)? = null,
+    loading: Boolean = false,
 ) {
     private var dialog: BottomSheetDialog? = null
+    private var drawerEngines by mutableStateOf(engines)
+    private var drawerLoading by mutableStateOf(loading)
+
+    fun updateEngines(engines: List<TtsEngineSetting>) {
+        drawerEngines = engines
+        drawerLoading = false
+    }
 
     fun show() {
         val bottomSheet = BottomSheetDialog(context)
@@ -185,8 +193,9 @@ class TtsEngineSelectionSheet(
                         title = title.toString(),
                         searchHint = searchHint.toString(),
                         emptyText = emptyText.toString(),
-                        engines = engines,
+                        engines = drawerEngines,
                         selectedEngineId = selectedEngineId,
+                        loading = drawerLoading,
                         onSelect = { engine ->
                             onSelect(engine)
                             dismiss()

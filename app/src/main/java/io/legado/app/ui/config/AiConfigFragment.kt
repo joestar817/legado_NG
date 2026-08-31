@@ -80,9 +80,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         const val PAGE_ASSISTANT = "assistant"
         private const val ARG_INITIAL_PAGE = "initialPage"
         private const val ARG_RETURN_TO_MENU = "returnToMenu"
-        private const val MENU_ADD_PROVIDER_OPENAI = 0x4E470101
-        private const val MENU_ADD_PROVIDER_CLAUDE = 0x4E470102
-        private const val MENU_GROUP_PROVIDER_VISIBILITY = 0x4E470103
         private const val MENU_ADD_SKILL = 0x4E470111
         private const val MENU_IMPORT_SKILL_LOCAL = 0x4E470112
         private const val MENU_IMPORT_SKILL_URL = 0x4E470113
@@ -244,8 +241,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     override fun onDestroyView() {
-        activity?.findViewById<TitleBar>(R.id.title_bar)
-            ?.setTemporarySolidSurface(false)
+        activity?.findViewById<TitleBar>(R.id.title_bar)?.let { titleBar ->
+            titleBar.isVisible = true
+            titleBar.setTemporarySolidSurface(false)
+        }
         clearPageActions()
         super.onDestroyView()
         requestJob?.cancel()
@@ -316,62 +315,18 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun setPageTitle(title: CharSequence) {
         clearPageActions()
         activity?.title = title
-        requireActivity().findViewById<TitleBar>(R.id.title_bar)?.title = title
+        requireActivity().findViewById<TitleBar>(R.id.title_bar)?.let { titleBar ->
+            titleBar.isVisible = true
+            titleBar.title = title
+        }
     }
 
     private fun setPageTitle(resId: Int) {
         setPageTitle(getString(resId))
     }
 
-    private fun configureProviderPageActions() {
-        val titleBar = activity?.findViewById<TitleBar>(R.id.title_bar) ?: return
-        val providerMenu = titleBar.menu.addSubMenu(getString(R.string.menu))
-        providerMenu.item.apply {
-            setIcon(R.drawable.ic_more_vert)
-            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-        }
-        providerMenu.add(
-            Menu.NONE,
-            MENU_ADD_PROVIDER_OPENAI,
-            0,
-            getString(R.string.ai_add_provider_openai)
-        ).setIcon(R.drawable.ic_provider_openai)
-        providerMenu.add(
-            Menu.NONE,
-            MENU_ADD_PROVIDER_CLAUDE,
-            1,
-            getString(R.string.ai_add_provider_anthropic)
-        ).setIcon(R.drawable.ic_model_anthropic)
-        providerMenu.add(
-            MENU_GROUP_PROVIDER_VISIBILITY,
-            R.id.menu_show_disabled,
-            2,
-            getString(R.string.show_disabled_items)
-        ).apply {
-            setIcon(R.drawable.ic_visibility)
-            isCheckable = true
-            isChecked = showDisabledProviders
-        }
-        NgMenuPopup.bindToolbarMenu(
-            context = requireContext(),
-            toolbar = titleBar.toolbar,
-            menu = titleBar.menu,
-            prepareMenu = {
-                providerMenu.findItem(R.id.menu_show_disabled)?.isChecked = showDisabledProviders
-            }
-        ) { item ->
-            when (item.itemId) {
-                MENU_ADD_PROVIDER_OPENAI -> {
-                    addProvider(AiProviderType.OPENAI)
-                }
-                MENU_ADD_PROVIDER_CLAUDE -> {
-                    addProvider(AiProviderType.CLAUDE)
-                }
-                R.id.menu_show_disabled -> {
-                    toggleShowDisabledProviders()
-                }
-            }
-        }
+    private fun setProviderFloatingChrome(enabled: Boolean) {
+        activity?.findViewById<TitleBar>(R.id.title_bar)?.isVisible = !enabled
     }
 
     private fun configureSkillPageActions() {
@@ -463,7 +418,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_provider_menu)
-        configureProviderPageActions()
+        setProviderFloatingChrome(true)
         refreshProviders()
     }
 
@@ -814,7 +769,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     )
                 }
             ),
-            isRefreshing = false
+            isRefreshing = false,
+            showDisabled = showDisabledProviders,
         )
     }
 
@@ -827,6 +783,18 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
             is AiProviderListScreenAction.SearchSubmitted -> Unit
             is AiProviderListScreenAction.ProviderClicked -> showDetail(action.providerId)
+            AiProviderListScreenAction.Back -> {
+                requireActivity().onBackPressedDispatcher.onBackPressed()
+            }
+            AiProviderListScreenAction.AddOpenAiProvider -> {
+                addProvider(AiProviderType.OPENAI)
+            }
+            AiProviderListScreenAction.AddClaudeProvider -> {
+                addProvider(AiProviderType.CLAUDE)
+            }
+            AiProviderListScreenAction.ToggleShowDisabled -> {
+                toggleShowDisabledProviders()
+            }
             is AiProviderListScreenAction.ReorderCommitted -> {
                 commitProviderOrder(action.orderedProviderIds)
             }
@@ -841,7 +809,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 }
             }
 
-            AiProviderListScreenAction.MoreMenuRequested -> configureProviderPageActions()
             AiProviderListScreenAction.RetryRequested,
             AiProviderListScreenAction.RefreshRequested -> refreshProviders()
         }
@@ -926,6 +893,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun showProviderDetailTab(tab: ProviderDetailTab) {
         providerDetailTab = tab
         providerDetailScreenState = providerDetailScreenState.copy(selectedTab = tab.ordinal)
+        setProviderFloatingChrome(tab == ProviderDetailTab.MODELS)
         if (tab == ProviderDetailTab.MODELS) {
             binding.composeProviderDetail.clearFocus()
             binding.composeProviderDetail.hideSoftInput()
@@ -1121,6 +1089,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             }
             AiProviderDetailAction.RefreshModels -> fetchModels()
             AiProviderDetailAction.ToggleVisibleModelSelection -> toggleVisibleModelSelection()
+            AiProviderDetailAction.Back -> {
+                requireActivity().onBackPressedDispatcher.onBackPressed()
+            }
             is AiProviderDetailAction.EditModel -> showModelDetail(action.modelId)
             is AiProviderDetailAction.ToggleModel -> {
                 val provider = currentProviderId?.let(AiProviderStore::provider) ?: return
@@ -2604,6 +2575,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         providerDetailScreenState = providerDetailScreenState.copy(
             modelSelectionActionText = actionText,
             modelSelectionActionEnabled = visibleIds.isNotEmpty(),
+            allVisibleModelsSelected = visibleIds.isNotEmpty() &&
+                selectedVisibleCount == visibleIds.size,
         )
     }
 

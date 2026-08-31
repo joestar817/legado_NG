@@ -1,15 +1,19 @@
 package io.legado.app.ui.design.components.compose
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -25,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -35,6 +40,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -74,6 +80,151 @@ fun NgFloatingToolbarBackButton(
             contentDescription = stringResource(R.string.back),
             tint = colorResource(R.color.ng_search_icon),
             modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+/**
+ * 管理列表共用的悬浮搜索顶栏：状态栏避让、玻璃承载、返回与搜索几何保持一致，
+ * 业务页只提供尾部动作。
+ */
+@Composable
+fun NgFloatingSearchToolbar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    hint: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onSearch: (String) -> Unit = {},
+    trailingContent: (@Composable RowScope.() -> Unit)? = null,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding(),
+    ) {
+        NgGlassSurface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 4.dp),
+            role = NgMaterialRole.CONTROL,
+            shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
+            style = NgGlassDefaults.bookDetailStyle(
+                containerColor = colorResource(R.color.ng_bookshelf_manage_header_surface),
+            ),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .padding(end = 8.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NgFloatingToolbarBackButton(
+                    onClick = onBack,
+                    width = 32.dp,
+                )
+                Spacer(Modifier.width(12.dp))
+                NgSearchBar(
+                    query = query,
+                    onQueryChange = onQueryChange,
+                    hint = hint,
+                    modifier = Modifier.weight(1f),
+                    enabled = enabled,
+                    variant = NgSearchBarVariant.TOOLBAR,
+                    containerColor = Color.Transparent,
+                    hideHintOnFocus = true,
+                    onSearch = onSearch,
+                )
+                trailingContent?.let { content ->
+                    Spacer(Modifier.width(6.dp))
+                    content()
+                }
+            }
+        }
+    }
+}
+
+/** 不带搜索框的悬浮标题顶栏，供原页面没有搜索能力的管理列表使用。 */
+@Composable
+fun NgFloatingTitleToolbar(
+    title: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    trailingContent: (@Composable RowScope.() -> Unit)? = null,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding(),
+    ) {
+        NgGlassSurface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 4.dp),
+            role = NgMaterialRole.CONTROL,
+            shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
+            style = NgGlassDefaults.bookDetailStyle(
+                containerColor = colorResource(R.color.ng_bookshelf_manage_header_surface),
+            ),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .padding(end = 8.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NgFloatingToolbarBackButton(
+                    onClick = onBack,
+                    width = 32.dp,
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                    color = colorResource(R.color.ng_search_content),
+                    fontSize = 17.sp,
+                    lineHeight = 21.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                trailingContent?.let { content ->
+                    Spacer(Modifier.width(6.dp))
+                    content()
+                }
+            }
+        }
+    }
+}
+
+/** 悬浮搜索顶栏内的36dp动作槽。 */
+@Composable
+fun NgFloatingToolbarActionButton(
+    @DrawableRes iconRes: Int,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconSize: Dp = 20.dp,
+    tint: Color? = null,
+    enabled: Boolean = true,
+) {
+    val resolvedTint = tint ?: colorResource(R.color.ng_search_icon)
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .alpha(if (enabled) 1f else 0.38f)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            modifier = Modifier.size(iconSize),
+            tint = resolvedTint,
         )
     }
 }
