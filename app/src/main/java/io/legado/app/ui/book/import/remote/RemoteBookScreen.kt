@@ -222,7 +222,7 @@ private fun RemoteBookTopBar(
                             modifier = Modifier.size(40.dp),
                         ) {
                             Icon(
-                                painter = painterResource(R.drawable.ic_more_vert),
+                                painter = painterResource(R.drawable.ic_grid_menu),
                                 contentDescription = stringResource(R.string.menu),
                                 tint = contentColor,
                                 modifier = Modifier.size(22.dp),

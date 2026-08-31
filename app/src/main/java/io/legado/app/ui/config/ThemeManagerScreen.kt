@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
 import io.legado.app.help.config.NgManagedTheme
 import io.legado.app.help.config.isBuiltIn
@@ -58,8 +59,13 @@ import io.legado.app.help.config.md3.Md3ThemePackageFormat
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgActionBarButton
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
+import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
-import io.legado.app.ui.design.components.compose.NgSearchBar
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSettingsCardSurface
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.theme.NgTheme
@@ -70,6 +76,9 @@ internal fun ThemeManagerScreen(
     builtInThemes: List<NgManagedTheme>,
     savedThemes: List<NgManagedTheme>,
     activeThemeId: String?,
+    onBack: () -> Unit,
+    onSaveCurrent: () -> Unit,
+    onImportPackage: () -> Unit,
     onThemeSelected: (NgManagedTheme) -> Unit,
     onThemeEdit: (NgManagedTheme) -> Unit,
     editingTheme: NgManagedTheme?,
@@ -94,60 +103,70 @@ internal fun ThemeManagerScreen(
         savedThemes.filter { it.name.contains(normalizedQuery, ignoreCase = true) }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item(key = "search") {
-            NgSearchBar(
-                query = query,
-                onQueryChange = { query = it },
-                hint = stringResource(R.string.search)
-            )
-        }
-        if (visibleBuiltIns.isNotEmpty()) {
-            item(key = "built-in-title") {
-                ThemeSectionTitle(stringResource(R.string.ng_theme_built_in))
-            }
-            items(visibleBuiltIns, key = { it.id }) { theme ->
-                NgThemeManagementCard(
-                    theme = theme,
-                    selected = activeThemeId == theme.id,
-                    onClick = { onThemeSelected(theme) },
-                    onMoreClick = { onThemeEdit(theme) }
-                )
-            }
-        }
-        if (visibleSaved.isNotEmpty()) {
-            item(key = "saved-title") {
-                ThemeSectionTitle(stringResource(R.string.ng_theme_saved))
-            }
-            items(visibleSaved, key = { it.id }) { theme ->
-                NgSwipeToDelete(
-                    deletable = true,
-                    reordering = false,
-                    onDeleteRequested = { onThemeDelete(theme) }
-                ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        ThemeManagerTopBar(
+            query = query,
+            onQueryChange = { query = it },
+            onBack = onBack,
+            onSaveCurrent = onSaveCurrent,
+            onImportPackage = onImportPackage,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .navigationBarsPadding(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = 24.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (visibleBuiltIns.isNotEmpty()) {
+                item(key = "built-in-title") {
+                    ThemeSectionTitle(stringResource(R.string.ng_theme_built_in))
+                }
+                items(visibleBuiltIns, key = { it.id }) { theme ->
                     NgThemeManagementCard(
                         theme = theme,
                         selected = activeThemeId == theme.id,
                         onClick = { onThemeSelected(theme) },
-                        onMoreClick = { onThemeEdit(theme) }
+                        onMoreClick = { onThemeEdit(theme) },
                     )
                 }
             }
-        }
-        if (visibleBuiltIns.isEmpty() && visibleSaved.isEmpty()) {
-            item(key = "empty") {
-                Text(
-                    text = stringResource(R.string.ng_theme_no_results),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 48.dp),
-                    color = colorResource(R.color.ng_on_surface_variant),
-                    fontSize = 15.sp
-                )
+            if (visibleSaved.isNotEmpty()) {
+                item(key = "saved-title") {
+                    ThemeSectionTitle(stringResource(R.string.ng_theme_saved))
+                }
+                items(visibleSaved, key = { it.id }) { theme ->
+                    NgSwipeToDelete(
+                        deletable = true,
+                        reordering = false,
+                        onDeleteRequested = { onThemeDelete(theme) },
+                    ) {
+                        NgThemeManagementCard(
+                            theme = theme,
+                            selected = activeThemeId == theme.id,
+                            onClick = { onThemeSelected(theme) },
+                            onMoreClick = { onThemeEdit(theme) },
+                        )
+                    }
+                }
+            }
+            if (visibleBuiltIns.isEmpty() && visibleSaved.isEmpty()) {
+                item(key = "empty") {
+                    Text(
+                        text = stringResource(R.string.ng_theme_no_results),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 48.dp),
+                        color = colorResource(R.color.ng_on_surface_variant),
+                        fontSize = 15.sp,
+                    )
+                }
             }
         }
     }
@@ -279,6 +298,65 @@ private fun NgThemeManagementCard(
         }
     }
 }
+
+@Composable
+private fun ThemeManagerTopBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onBack: () -> Unit,
+    onSaveCurrent: () -> Unit,
+    onImportPackage: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val menuState = remember { NgPopupToggleState() }
+    val menuItems = remember {
+        listOf(
+            NgExpandableActionMenuItem(
+                itemId = THEME_ACTION_SAVE_CURRENT,
+                titleRes = R.string.ng_theme_save_current,
+                iconRes = R.drawable.ic_save,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = THEME_ACTION_IMPORT_PACKAGE,
+                titleRes = R.string.ng_theme_import_package,
+                iconRes = R.drawable.ic_import,
+            ),
+        )
+    }
+    NgFloatingSearchToolbar(
+        query = query,
+        onQueryChange = onQueryChange,
+        hint = stringResource(R.string.search_theme),
+        onBack = onBack,
+        modifier = modifier,
+    ) {
+        Box {
+            NgFloatingToolbarActionButton(
+                iconRes = R.drawable.ic_grid_menu,
+                contentDescription = stringResource(R.string.menu),
+                onClick = menuState::onAnchorClick,
+            )
+            NgExpandableActionMenu(
+                expanded = menuState.expanded,
+                onDismissRequest = menuState::onDismissRequest,
+                items = menuItems,
+                variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+                menuContainerColor = colorResource(R.color.ng_surface_card),
+                properties = PopupProperties(focusable = true, clippingEnabled = false),
+                onItemClick = { item ->
+                    menuState.close()
+                    when (item.itemId) {
+                        THEME_ACTION_SAVE_CURRENT -> onSaveCurrent()
+                        THEME_ACTION_IMPORT_PACKAGE -> onImportPackage()
+                    }
+                },
+            )
+        }
+    }
+}
+
+private const val THEME_ACTION_SAVE_CURRENT = 0x6E7401
+private const val THEME_ACTION_IMPORT_PACKAGE = 0x6E7402
 
 @Composable
 private fun ThemeColorPreview(lightColors: IntArray, darkColors: IntArray) {

@@ -254,7 +254,7 @@ private fun ReadRecordMoreMenu(
     var expanded by remember { mutableStateOf(false) }
     Box {
         NgFloatingToolbarActionButton(
-            iconRes = R.drawable.ic_more_vert,
+            iconRes = R.drawable.ic_grid_menu,
             contentDescription = stringResource(R.string.menu),
             onClick = { expanded = true },
         )

@@ -3,9 +3,6 @@ package io.legado.app.ui.config
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import android.view.View
 import android.view.Window
 import androidx.activity.ComponentDialog
@@ -15,7 +12,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.core.view.MenuProvider
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
@@ -44,7 +40,6 @@ import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.utils.FileDoc
 import io.legado.app.utils.SelectDirectoryContract
 import io.legado.app.utils.SelectFileContract
-import io.legado.app.utils.applyTint
 import io.legado.app.utils.checkWrite
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.isContentScheme
@@ -64,8 +59,7 @@ import kotlinx.coroutines.withContext
 import splitties.init.appCtx
 
 class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
-    SharedPreferences.OnSharedPreferenceChangeListener,
-    MenuProvider {
+    SharedPreferences.OnSharedPreferenceChangeListener {
 
     private val viewModel by activityViewModels<ConfigViewModel>()
     private val waitDialog by lazy { WaitDialog(requireContext()) }
@@ -119,6 +113,7 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         activity?.setTitle(R.string.backup_restore)
+        setSharedTitleBarVisible(false)
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
         sharedPreferences.registerOnSharedPreferenceChangeListener(this)
         refreshContent()
@@ -130,6 +125,8 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
                 NgAppTheme {
                     BackupConfigScreen(
                         state = screenState,
+                        onBack = { requireActivity().onBackPressedDispatcher.onBackPressed() },
+                        onMenuAction = ::onToolbarMenuAction,
                         onWebDavUrlClick = ::showWebDavUrlDialog,
                         onWebDavAccountClick = ::showWebDavAccountDialog,
                         onWebDavPasswordClick = ::showWebDavPasswordDialog,
@@ -158,7 +155,6 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
                 }
             }
         }
-        activity?.addMenuProvider(this, viewLifecycleOwner)
         if (!LocalConfig.backupHelpVersionIsLast) {
             showHelp("webDavHelp")
         }
@@ -167,25 +163,27 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
     override fun onResume() {
         super.onResume()
         activity?.setTitle(R.string.backup_restore)
+        setSharedTitleBarVisible(false)
         if (view != null) refreshContent()
     }
 
-    override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
-        menuInflater.inflate(R.menu.backup_restore, menu)
-        menu.applyTint(requireContext())
-    }
-
-    override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
-        when (menuItem.itemId) {
+    private fun onToolbarMenuAction(itemId: Int) {
+        when (itemId) {
             R.id.menu_help -> {
                 showHelp("webDavHelp")
-                return true
             }
 
             R.id.menu_log -> showDialogFragment<AppLogDialog>()
             R.id.menu_network_log -> showDialogFragment<NetworkLogDialog>()
         }
-        return false
+    }
+
+    private fun setSharedTitleBarVisible(visible: Boolean) {
+        activity?.findViewById<View>(R.id.title_bar)?.visibility = if (visible) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
@@ -469,6 +467,7 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
         inputDialog?.dismiss()
         inputDialog = null
         waitDialog.dismiss()
+        setSharedTitleBarVisible(true)
         super.onDestroyView()
     }
 }

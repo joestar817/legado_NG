@@ -38,12 +38,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
 import io.legado.app.help.ai.AiSkillDefinition
 import io.legado.app.ui.design.components.NgManagementListCardVariant
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.compose.NgManagementLeadingText
 import io.legado.app.ui.design.components.compose.NgManagementListCard
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
+import io.legado.app.ui.design.components.compose.NgFloatingTitleToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
+import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.theme.NgTheme
 
@@ -64,18 +71,26 @@ internal sealed interface AiSkillListAction {
 @Composable
 internal fun AiSkillListScreen(
     items: List<AiSkillListItemUiModel>,
+    onBack: () -> Unit,
+    onAddSkill: () -> Unit,
+    onImportLocal: () -> Unit,
+    onImportUrl: () -> Unit,
     onAction: (AiSkillListAction) -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .padding(top = 8.dp),
-    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        AiSkillListTopBar(
+            onBack = onBack,
+            onAddSkill = onAddSkill,
+            onImportLocal = onImportLocal,
+            onImportUrl = onImportUrl,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .padding(horizontal = 16.dp)
+                .padding(top = 8.dp),
             contentPadding = PaddingValues(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -105,6 +120,69 @@ internal fun AiSkillListScreen(
         }
     }
 }
+
+@Composable
+private fun AiSkillListTopBar(
+    onBack: () -> Unit,
+    onAddSkill: () -> Unit,
+    onImportLocal: () -> Unit,
+    onImportUrl: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val menuState = remember { NgPopupToggleState() }
+    val menuItems = remember {
+        listOf(
+            NgExpandableActionMenuItem(
+                itemId = SKILL_ACTION_ADD,
+                titleRes = R.string.ai_skill_add,
+                iconRes = R.drawable.ic_add,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = SKILL_ACTION_IMPORT_LOCAL,
+                titleRes = R.string.ai_skill_import_file,
+                iconRes = R.drawable.ic_import,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = SKILL_ACTION_IMPORT_URL,
+                titleRes = R.string.ai_skill_import_github,
+                iconRes = R.drawable.ic_add_online,
+            ),
+        )
+    }
+    NgFloatingTitleToolbar(
+        title = stringResource(R.string.ai_prompt_menu),
+        onBack = onBack,
+        modifier = modifier,
+    ) {
+        Box {
+            NgFloatingToolbarActionButton(
+                iconRes = R.drawable.ic_grid_menu,
+                contentDescription = stringResource(R.string.menu),
+                onClick = menuState::onAnchorClick,
+            )
+            NgExpandableActionMenu(
+                expanded = menuState.expanded,
+                onDismissRequest = menuState::onDismissRequest,
+                items = menuItems,
+                variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+                menuContainerColor = colorResource(R.color.ng_surface_card),
+                properties = PopupProperties(focusable = true, clippingEnabled = false),
+                onItemClick = { item ->
+                    menuState.close()
+                    when (item.itemId) {
+                        SKILL_ACTION_ADD -> onAddSkill()
+                        SKILL_ACTION_IMPORT_LOCAL -> onImportLocal()
+                        SKILL_ACTION_IMPORT_URL -> onImportUrl()
+                    }
+                },
+            )
+        }
+    }
+}
+
+private const val SKILL_ACTION_ADD = 0x4E470111
+private const val SKILL_ACTION_IMPORT_LOCAL = 0x4E470112
+private const val SKILL_ACTION_IMPORT_URL = 0x4E470113
 
 internal sealed interface AiSkillFileRowUiModel {
     val path: String

@@ -51,7 +51,6 @@ import io.legado.app.ui.design.components.NgStatusTagVariant
 import io.legado.app.ui.widget.TitleBar
 import io.legado.app.ui.design.components.compose.NgListState
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.widget.NgMenuPopup
 import io.legado.app.ui.widget.dialog.CodeDialog
 import io.legado.app.ui.widget.dialog.createNgBottomDrawerComposeHost
 import io.legado.app.ui.widget.dialog.applyNgWindow
@@ -80,9 +79,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         const val PAGE_ASSISTANT = "assistant"
         private const val ARG_INITIAL_PAGE = "initialPage"
         private const val ARG_RETURN_TO_MENU = "returnToMenu"
-        private const val MENU_ADD_SKILL = 0x4E470111
-        private const val MENU_IMPORT_SKILL_LOCAL = 0x4E470112
-        private const val MENU_IMPORT_SKILL_URL = 0x4E470113
         private const val MENU_EXPORT_SKILL = 0x4E470114
 
         fun newMenuPageInstance(initialPage: String): AiConfigFragment {
@@ -326,47 +322,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     }
 
     private fun setProviderFloatingChrome(enabled: Boolean) {
-        activity?.findViewById<TitleBar>(R.id.title_bar)?.isVisible = !enabled
+        setSharedTitleBarVisible(!enabled)
     }
 
-    private fun configureSkillPageActions() {
-        val titleBar = activity?.findViewById<TitleBar>(R.id.title_bar) ?: return
-        val skillMenu = titleBar.menu.addSubMenu(getString(R.string.menu))
-        skillMenu.item.apply {
-            setIcon(R.drawable.ic_more_vert)
-            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-        }
-        skillMenu.add(
-            Menu.NONE,
-            MENU_ADD_SKILL,
-            0,
-            getString(R.string.ai_skill_add),
-        ).setIcon(R.drawable.ic_add)
-        skillMenu.add(
-            Menu.NONE,
-            MENU_IMPORT_SKILL_LOCAL,
-            1,
-            getString(R.string.ai_skill_import_file),
-        ).setIcon(R.drawable.ic_import)
-        skillMenu.add(
-            Menu.NONE,
-            MENU_IMPORT_SKILL_URL,
-            2,
-            getString(R.string.ai_skill_import_github),
-        ).setIcon(R.drawable.ic_add_online)
-        NgMenuPopup.bindToolbarMenu(
-            context = requireContext(),
-            toolbar = titleBar.toolbar,
-            menu = titleBar.menu,
-        ) { item ->
-            when (item.itemId) {
-                MENU_ADD_SKILL -> showManualSkillEditor()
-                MENU_IMPORT_SKILL_LOCAL -> importSkillFileLauncher.launch(
-                    arrayOf("text/*", "text/markdown", "application/octet-stream")
-                )
-                MENU_IMPORT_SKILL_URL -> showImportSkillUrlDialog()
-            }
-        }
+    private fun setSharedTitleBarVisible(visible: Boolean) {
+        activity?.findViewById<TitleBar>(R.id.title_bar)?.isVisible = visible
     }
 
     private fun configureSkillDetailPageActions(skill: AiSkillDefinition) {
@@ -448,7 +408,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         currentSkill = null
         currentPrompt = null
         setPageTitle(R.string.ai_prompt_menu)
-        configureSkillPageActions()
+        setSharedTitleBarVisible(false)
         refreshPrompts()
     }
 
@@ -1002,6 +962,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 NgAppTheme {
                     AiSkillListScreen(
                         items = skillListScreenItems,
+                        onBack = { requireActivity().onBackPressedDispatcher.onBackPressed() },
+                        onAddSkill = ::showManualSkillEditor,
+                        onImportLocal = {
+                            importSkillFileLauncher.launch(
+                                arrayOf("text/*", "text/markdown", "application/octet-stream")
+                            )
+                        },
+                        onImportUrl = ::showImportSkillUrlDialog,
                         onAction = ::handleSkillListAction,
                     )
                 }

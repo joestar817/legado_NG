@@ -2,7 +2,6 @@ package io.legado.app.ui.config
 
 import android.net.Uri
 import android.os.Bundle
-import android.view.MenuItem
 import android.view.View
 import android.widget.SeekBar
 import androidx.compose.runtime.collectAsState
@@ -11,8 +10,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.core.view.MenuProvider
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
@@ -27,8 +24,6 @@ import io.legado.app.help.config.md3.Md3ThemePackageNotRecognizedException
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.dialogs.selector
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.widget.NgMenuPopup
-import io.legado.app.ui.widget.TitleBar
 import io.legado.app.ui.widget.seekbar.SeekBarChangeListener
 import io.legado.app.utils.normalizeFileName
 import io.legado.app.utils.CreateDocumentContract
@@ -100,42 +95,7 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         activity?.setTitle(R.string.ng_theme_management)
-        requireActivity().addMenuProvider(
-            object : MenuProvider {
-                override fun onCreateMenu(menu: android.view.Menu, menuInflater: android.view.MenuInflater) {
-                    val moreMenu = menu.addSubMenu(R.string.menu)
-                    moreMenu.item.apply {
-                        setIcon(R.drawable.ic_more_vert)
-                        setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-                    }
-                    moreMenu.add(
-                        android.view.Menu.NONE,
-                        MENU_SAVE_CURRENT,
-                        0,
-                        R.string.ng_theme_save_current,
-                    ).setIcon(R.drawable.ic_save)
-                    moreMenu.add(
-                        android.view.Menu.NONE,
-                        MENU_IMPORT_PACKAGE,
-                        1,
-                        R.string.ng_theme_import_package,
-                    ).setIcon(R.drawable.ic_import)
-                    val titleBar = requireActivity().findViewById<TitleBar>(R.id.title_bar)
-                    NgMenuPopup.bindToolbarMenu(
-                        context = requireContext(),
-                        toolbar = titleBar?.toolbar,
-                        menu = menu,
-                        onItemClick = ::handleMenuItem,
-                    )
-                }
-
-                override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
-                    return handleMenuItem(menuItem)
-                }
-            },
-            viewLifecycleOwner,
-            Lifecycle.State.RESUMED
-        )
+        setSharedTitleBarVisible(false)
         (view as ComposeView).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
@@ -145,6 +105,9 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                         builtInThemes = NgThemeLibraryStore.builtInThemes(requireContext()),
                         savedThemes = state.savedThemes,
                         activeThemeId = state.activeThemeId,
+                        onBack = { requireActivity().onBackPressedDispatcher.onBackPressed() },
+                        onSaveCurrent = ::saveCurrentTheme,
+                        onImportPackage = ::importThemePackage,
                         onThemeSelected = { NgThemeLibraryStore.apply(requireContext(), it) },
                         onThemeEdit = ::editTheme,
                         editingTheme = originalEditTheme,
@@ -165,13 +128,18 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
         }
     }
 
-    private fun handleMenuItem(item: MenuItem): Boolean {
-        when (item.itemId) {
-            MENU_SAVE_CURRENT -> saveCurrentTheme()
-            MENU_IMPORT_PACKAGE -> importThemePackage()
-            else -> return false
+    override fun onResume() {
+        super.onResume()
+        activity?.setTitle(R.string.ng_theme_management)
+        setSharedTitleBarVisible(false)
+    }
+
+    private fun setSharedTitleBarVisible(visible: Boolean) {
+        activity?.findViewById<View>(R.id.title_bar)?.visibility = if (visible) {
+            View.VISIBLE
+        } else {
+            View.GONE
         }
-        return true
     }
 
     private fun saveCurrentTheme() {
@@ -385,9 +353,12 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
         }
     }
 
+    override fun onDestroyView() {
+        setSharedTitleBarVisible(true)
+        super.onDestroyView()
+    }
+
     private companion object {
-        const val MENU_SAVE_CURRENT = 0x6E7401
-        const val MENU_IMPORT_PACKAGE = 0x6E7402
         const val BACKGROUND_DIR = "ng_theme_backgrounds"
         const val MAX_BACKGROUND_BYTES = 32L * 1024 * 1024
     }
