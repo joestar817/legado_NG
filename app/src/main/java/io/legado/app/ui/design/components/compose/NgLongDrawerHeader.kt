@@ -45,6 +45,8 @@ fun NgLongDrawerHeader(
     onActionClick: (() -> Unit)? = null,
     trailingActionText: String? = null,
     onTrailingActionClick: (() -> Unit)? = null,
+    secondaryTrailingActionText: String? = null,
+    onSecondaryTrailingActionClick: (() -> Unit)? = null,
     @DrawableRes secondaryActionIconRes: Int? = null,
     secondaryActionContentDescription: String? = null,
     secondaryActionActive: Boolean = false,
@@ -133,23 +135,37 @@ fun NgLongDrawerHeader(
                     onClick = onActionClick,
                 )
             }
-            if (!trailingActionText.isNullOrBlank() && onTrailingActionClick != null) {
-                TextButton(
-                    onClick = onTrailingActionClick,
-                    modifier = Modifier.height(40.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
-                    Text(
-                        text = trailingActionText,
-                        color = Color(colors.primary),
-                        fontSize = 14.sp,
-                        lineHeight = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                    )
-                }
-            }
+            DrawerHeaderTextAction(
+                text = secondaryTrailingActionText,
+                onClick = onSecondaryTrailingActionClick,
+            )
+            DrawerHeaderTextAction(
+                text = trailingActionText,
+                onClick = onTrailingActionClick,
+            )
         }
+    }
+}
+
+@Composable
+private fun DrawerHeaderTextAction(
+    text: String?,
+    onClick: (() -> Unit)?,
+) {
+    if (text.isNullOrBlank() || onClick == null) return
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.height(40.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp),
+    ) {
+        Text(
+            text = text,
+            color = Color(NgTheme.colors.primary),
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+        )
     }
 }
 

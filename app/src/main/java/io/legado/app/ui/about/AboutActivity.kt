@@ -15,7 +15,7 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.update.AppUpdate
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.widget.dialog.TextDialog
+import io.legado.app.ui.widget.dialog.MarkdownTextDrawer
 import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.utils.FileDoc
 import io.legado.app.utils.compress.ZipUtils
@@ -77,7 +77,7 @@ class AboutActivity : BaseActivity<ActivityAboutBinding>() {
 
     private fun showMdFile(title: String, fileName: String) {
         val mdText = String(assets.open(fileName).readBytes())
-        showDialogFragment(TextDialog(title, mdText, TextDialog.Mode.MD))
+        showDialogFragment(MarkdownTextDrawer(title, mdText))
     }
 
     private fun checkUpdate() {

@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgLauncherIcon
 import io.legado.app.ui.design.components.compose.NgMaterialRole
@@ -128,8 +129,9 @@ private fun AboutAppCard(
     NgGlassSurface(
         modifier = Modifier.fillMaxWidth(),
         role = NgMaterialRole.OVERLAY,
-        shape = RoundedCornerShape(24.dp),
-        liquidCornerRadius = 24.dp,
+        shape = RoundedCornerShape(18.dp),
+        style = NgGlassDefaults.style().copy(shadowElevation = 0.dp),
+        liquidCornerRadius = 18.dp,
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 20.dp),
     ) {
         Column(
@@ -228,6 +230,7 @@ private fun AboutToolList(tools: List<AboutToolAction>) {
         modifier = Modifier.fillMaxWidth(),
         role = NgMaterialRole.CONTENT,
         shape = RoundedCornerShape(18.dp),
+        style = NgGlassDefaults.style().copy(shadowElevation = 0.dp),
         liquidCornerRadius = 18.dp,
     ) {
         tools.forEachIndexed { index, tool ->

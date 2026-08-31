@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,12 +84,42 @@ fun NgLazyListFastScroller(
             }
         }
     }
+    val scope = rememberCoroutineScope()
+    var scrollJob by remember { mutableStateOf<Job?>(null) }
+    NgScrollFastScroller(
+        scrollFraction = scrollFraction,
+        canScroll = canScroll,
+        isScrollInProgress = state.isScrollInProgress,
+        onScrollFractionChange = { fraction ->
+            val index = (fraction * (itemCount - 1)).roundToInt()
+            scrollJob?.cancel()
+            scrollJob = scope.launch { state.scrollToItem(index) }
+        },
+        modifier = modifier,
+        variant = variant,
+        trackColor = trackColor,
+        handleColor = handleColor,
+    )
+}
+
+/** 与目录抽屉共用外观和显隐节奏的通用快速滚动条。 */
+@Composable
+fun NgScrollFastScroller(
+    scrollFraction: Float,
+    canScroll: Boolean,
+    isScrollInProgress: Boolean,
+    onScrollFractionChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    variant: NgLazyListFastScrollerVariant = NgLazyListFastScrollerVariant.TRACK,
+    trackColor: Color? = null,
+    handleColor: Color? = null,
+) {
     var dragging by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(canScroll, state.isScrollInProgress, dragging) {
+    LaunchedEffect(canScroll, isScrollInProgress, dragging) {
         when {
             !canScroll -> visible = false
-            state.isScrollInProgress || dragging -> visible = true
+            isScrollInProgress || dragging -> visible = true
             else -> {
                 delay(1_000)
                 visible = false
@@ -97,12 +128,10 @@ fun NgLazyListFastScroller(
     }
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
-        label = "NgLazyListFastScrollerAlpha",
+        label = "NgScrollFastScrollerAlpha",
     )
-
+    val currentOnScrollFractionChange by rememberUpdatedState(onScrollFractionChange)
     val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
-    var scrollJob by remember { mutableStateOf<Job?>(null) }
     val verticalPadding = 8.dp
     val thumbHeight = when (variant) {
         NgLazyListFastScrollerVariant.TRACK -> 40.dp
@@ -123,13 +152,11 @@ fun NgLazyListFastScroller(
         val thumbHeightPx = with(density) { thumbHeight.toPx() }
         val travelPx = (heightPx - paddingPx * 2f - thumbHeightPx).coerceAtLeast(1f)
         val dragModifier = if (visible && canScroll) {
-            Modifier.pointerInput(itemCount, heightPx, variant) {
+            Modifier.pointerInput(canScroll, heightPx, variant) {
                 fun scrollTo(positionY: Float) {
                     val fraction = ((positionY - paddingPx - thumbHeightPx / 2f) / travelPx)
                         .coerceIn(0f, 1f)
-                    val index = (fraction * (itemCount - 1)).roundToInt()
-                    scrollJob?.cancel()
-                    scrollJob = scope.launch { state.scrollToItem(index) }
+                    currentOnScrollFractionChange(fraction)
                 }
                 detectDragGestures(
                     onDragStart = {
@@ -172,7 +199,8 @@ fun NgLazyListFastScroller(
                             .offset {
                                 IntOffset(
                                     x = 0,
-                                    y = (paddingPx + travelPx * scrollFraction).roundToInt(),
+                                    y = (paddingPx + travelPx * scrollFraction.coerceIn(0f, 1f))
+                                        .roundToInt(),
                                 )
                             }
                             .width(8.dp)
@@ -209,7 +237,8 @@ fun NgLazyListFastScroller(
                             .offset {
                                 IntOffset(
                                     x = 0,
-                                    y = (paddingPx + travelPx * scrollFraction).roundToInt(),
+                                    y = (paddingPx + travelPx * scrollFraction.coerceIn(0f, 1f))
+                                        .roundToInt(),
                                 )
                             }
                             .width(24.dp)

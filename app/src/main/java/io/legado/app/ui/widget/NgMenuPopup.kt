@@ -425,7 +425,6 @@ object NgMenuPopup {
             R.id.menu_copy_url,
             R.id.menu_copy_source,
             R.id.menu_copy_rule,
-            R.id.menu_copy_content,
             R.id.menu_copy_all -> R.drawable.ic_copy
             R.id.menu_share_it,
             R.id.menu_share_qr,
