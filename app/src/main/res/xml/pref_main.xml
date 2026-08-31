@@ -4,49 +4,41 @@
     android:divider="@color/transparent"
     app:allowDividerBelow="false">
 
-    <io.legado.app.lib.prefs.PreferenceCategory
-        android:title="@string/my_settings_section_features"
-        app:allowDividerAbove="false"
+    <io.legado.app.lib.prefs.Preference
+        android:icon="@drawable/ic_cfg_source"
+        android:key="bookSourceManage"
+        android:summary="@string/book_source_manage_desc"
+        android:title="@string/book_source_manage"
+        app:iconSpaceReserved="false" />
+
+    <io.legado.app.lib.prefs.Preference
+        android:icon="@drawable/ic_toc"
+        android:key="ruleManage"
+        android:summary="@string/rule_management_summary"
+        android:title="@string/rule_management"
+        app:iconSpaceReserved="false" />
+
+    <io.legado.app.lib.prefs.Preference
+        android:icon="@drawable/ic_ai_setting"
+        android:key="aiConfig"
+        android:summary="@string/ai_setting_summary"
+        android:title="@string/ai_setting"
+        app:iconSpaceReserved="false" />
+
+    <io.legado.app.lib.prefs.Preference
+        android:icon="@drawable/ic_ai_capability_tts"
+        android:key="readAloudConfig"
+        android:summary="@string/read_aloud_settings_summary"
+        android:title="@string/read_aloud_settings"
+        app:iconSpaceReserved="false" />
+
+    <io.legado.app.lib.prefs.Preference
+        android:icon="@drawable/ic_cfg_web"
+        android:key="serviceManage"
+        android:summary="@string/service_manage_desc"
+        android:title="@string/service_manage"
         app:allowDividerBelow="false"
-        app:iconSpaceReserved="false">
-
-        <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_cfg_source"
-            android:key="bookSourceManage"
-            android:summary="@string/book_source_manage_desc"
-            android:title="@string/book_source_manage"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_toc"
-            android:key="ruleManage"
-            android:summary="@string/rule_management_summary"
-            android:title="@string/rule_management"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_ai_setting"
-            android:key="aiConfig"
-            android:summary="@string/ai_setting_summary"
-            android:title="@string/ai_setting"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_ai_capability_tts"
-            android:key="readAloudConfig"
-            android:summary="@string/read_aloud_settings_summary"
-            android:title="@string/read_aloud_settings"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.Preference
-            android:icon="@drawable/ic_cfg_web"
-            android:key="serviceManage"
-            android:summary="@string/service_manage_desc"
-            android:title="@string/service_manage"
-            app:allowDividerBelow="false"
-            app:iconSpaceReserved="false" />
-
-    </io.legado.app.lib.prefs.PreferenceCategory>
+        app:iconSpaceReserved="false" />
 
     <io.legado.app.lib.prefs.PreferenceCategory
         android:title="@string/setting"
