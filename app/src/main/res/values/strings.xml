@@ -1967,6 +1967,7 @@
     <string name="refuse">Refuse</string>
     <string name="file_manage">File management</string>
     <string name="file_manage_summary">Managing files in the application\'s private folder</string>
+    <string name="file_manage_root">Back to root</string>
     <string name="create_folder">Create Folder</string>
     <string name="allow_drop_down_refresh">Allow drop-down refresh</string>
     <string name="only_update_read">仅更新已读完</string>

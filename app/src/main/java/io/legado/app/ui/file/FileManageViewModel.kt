@@ -6,35 +6,46 @@ import io.legado.app.base.BaseViewModel
 import io.legado.app.utils.toastOnUi
 import java.io.File
 
+internal data class FileManageEntry(
+    val file: File,
+    val name: String,
+    val isDirectory: Boolean,
+    val size: Long,
+    val lastModified: Long,
+    val extension: String,
+)
+
 class FileManageViewModel(application: Application) : BaseViewModel(application) {
 
     val rootDoc = context.getExternalFilesDir(null)?.parentFile
     var subDocs = mutableListOf<File>()
-    val filesLiveData = MutableLiveData<List<File>>()
+    internal val filesLiveData = MutableLiveData<List<FileManageEntry>>()
+    val loadingLiveData = MutableLiveData(false)
 
     val lastDir: File? get() = subDocs.lastOrNull() ?: rootDoc
 
     fun upFiles(parentFile: File?) {
         execute {
             parentFile ?: return@execute emptyList()
-            if (parentFile == rootDoc) {
-                parentFile.listFiles()?.sortedWith(
-                    compareBy({ it.isFile }, { it.name })
+            parentFile.listFiles()?.map { file ->
+                val isDirectory = file.isDirectory
+                FileManageEntry(
+                    file = file,
+                    name = file.name,
+                    isDirectory = isDirectory,
+                    size = if (isDirectory) 0L else file.length(),
+                    lastModified = file.lastModified(),
+                    extension = if (isDirectory) "" else file.extension,
                 )
-            } else {
-                val list = arrayListOf(parentFile)
-                parentFile.listFiles()?.sortedWith(
-                    compareBy({ it.isFile }, { it.name })
-                )?.let {
-                    list.addAll(it)
-                }
-                list
-            }
+            } ?: emptyList()
         }.onStart {
+            loadingLiveData.postValue(true)
             filesLiveData.postValue(emptyList())
         }.onSuccess {
-            filesLiveData.postValue(it ?: emptyList())
+            loadingLiveData.postValue(false)
+            filesLiveData.postValue(it)
         }.onError {
+            loadingLiveData.postValue(false)
             context.toastOnUi(it.localizedMessage)
         }
     }

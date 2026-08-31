@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderZip
 import androidx.compose.material.icons.rounded.LibraryAddCheck
@@ -27,6 +28,7 @@ import io.legado.app.ui.design.theme.NgTheme
 /** 文件浏览列表中的固定语义图标，业务页面只传文件类型。 */
 enum class NgFileEntryIconKind {
     DIRECTORY,
+    FILE,
     ARCHIVE,
     ON_BOOKSHELF,
 }
@@ -50,16 +52,19 @@ fun NgFileEntryIcon(
     val colors = NgTheme.colors
     val containerColor = when (kind) {
         NgFileEntryIconKind.DIRECTORY -> Color(colors.primaryContainer)
+        NgFileEntryIconKind.FILE -> Color(colors.surfaceContainerLow)
         NgFileEntryIconKind.ARCHIVE -> colorResource(R.color.ng_warning_container)
         NgFileEntryIconKind.ON_BOOKSHELF -> colorResource(R.color.ng_success_container)
     }
     val iconColor = when (kind) {
         NgFileEntryIconKind.DIRECTORY -> Color(colors.primary)
+        NgFileEntryIconKind.FILE -> Color(colors.onSurfaceVariant)
         NgFileEntryIconKind.ARCHIVE -> colorResource(R.color.ng_warning)
         NgFileEntryIconKind.ON_BOOKSHELF -> colorResource(R.color.ng_success)
     }
     val icon = when (kind) {
         NgFileEntryIconKind.DIRECTORY -> Icons.Rounded.Folder
+        NgFileEntryIconKind.FILE -> Icons.AutoMirrored.Rounded.InsertDriveFile
         NgFileEntryIconKind.ARCHIVE -> Icons.Rounded.FolderZip
         NgFileEntryIconKind.ON_BOOKSHELF -> Icons.Rounded.LibraryAddCheck
     }
