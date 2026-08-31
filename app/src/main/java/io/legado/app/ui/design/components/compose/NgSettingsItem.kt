@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,6 +77,119 @@ fun NgSettingsGroup(
             .padding(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         content = content
+    )
+}
+
+/** 多项设置共用一张玻璃承载面的连续紧凑列表。 */
+@Composable
+fun NgCompactSettingsGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    NgSettingsCardSurface(
+        modifier = modifier.fillMaxWidth(),
+        cornerRadius = 18.dp,
+        content = content,
+    )
+}
+
+/** 连续设置列表中的紧凑行；保留整行点击、长按、摘要与开关语义。 */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun NgCompactSettingsItem(
+    title: String,
+    modifier: Modifier = Modifier,
+    summary: String? = null,
+    enabled: Boolean = true,
+    trailing: NgSettingsTrailing = NgSettingsTrailing.CHEVRON,
+    checked: Boolean = false,
+    onCheckedChange: ((Boolean) -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    summaryMaxLines: Int = 2,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = LocalIndication.current,
+                        enabled = enabled,
+                        onClick = onClick ?: {},
+                        onLongClick = onLongClick,
+                    )
+                } else if (onClick != null) {
+                    Modifier.clickable(enabled = enabled, onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
+            .heightIn(min = 54.dp)
+            .padding(start = 14.dp, top = 8.dp, end = 12.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                color = Color(NgTheme.colors.onSurface).copy(
+                    alpha = if (enabled) 1f else 0.45f
+                ),
+                fontSize = 15.sp,
+                lineHeight = 19.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!summary.isNullOrBlank()) {
+                Text(
+                    text = summary,
+                    color = Color(NgTheme.colors.onSurfaceVariant).copy(
+                        alpha = if (enabled) 1f else 0.45f
+                    ),
+                    fontSize = 12.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = summaryMaxLines,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        when (trailing) {
+            NgSettingsTrailing.NONE -> Unit
+            NgSettingsTrailing.CHEVRON -> Text(
+                text = "›",
+                color = Color(NgTheme.colors.onSurfaceVariant).copy(
+                    alpha = if (enabled) 1f else 0.45f
+                ),
+                fontSize = 26.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1,
+            )
+            NgSettingsTrailing.SWITCH -> NgSettingsSwitch(
+                checked = checked,
+                enabled = enabled,
+                onCheckedChange = onCheckedChange,
+            )
+            NgSettingsTrailing.VALUE,
+            NgSettingsTrailing.CUSTOM -> Unit
+        }
+    }
+}
+
+@Composable
+fun NgCompactSettingsDivider(modifier: Modifier = Modifier) {
+    HorizontalDivider(
+        modifier = modifier.padding(horizontal = 14.dp),
+        thickness = 0.6.dp,
+        color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.24f),
     )
 }
 
