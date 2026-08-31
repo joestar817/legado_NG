@@ -1832,6 +1832,9 @@
     <string name="sys_tts_config_summary">打开系统语音设置</string>
     <string name="cannot_timed_non_playback">非播放状态无法定时</string>
     <string name="all_bookmark">所有书签</string>
+    <string name="all_bookmark_position">第 %1$d 章 · 位置 %2$d</string>
+    <string name="all_bookmark_search_hint">搜索书名、作者或书签内容</string>
+    <string name="all_bookmark_search_empty">没有匹配的书签</string>
     <string name="change_source_batch">批量换源</string>
     <string name="book_type_different">书籍类型不一样</string>
     <string name="soure_change_source">是否确认换源</string>

@@ -1,18 +1,19 @@
 package io.legado.app.ui.book.bookmark
 
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
 import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
-import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.AppLog
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Bookmark
 import io.legado.app.databinding.ActivityAllBookmarkBinding
+import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.SelectDirectoryContract
-import io.legado.app.utils.applyNavigationBarPadding
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivityForBook
 import io.legado.app.utils.viewbindingdelegate.viewBinding
@@ -25,14 +26,11 @@ import kotlinx.coroutines.withContext
 /**
  * 所有书签
  */
-class AllBookmarkActivity : VMBaseActivity<ActivityAllBookmarkBinding, AllBookmarkViewModel>(),
-    BookmarkAdapter.Callback {
+class AllBookmarkActivity : VMBaseActivity<ActivityAllBookmarkBinding, AllBookmarkViewModel>() {
 
     override val viewModel by viewModels<AllBookmarkViewModel>()
     override val binding by viewBinding(ActivityAllBookmarkBinding::inflate)
-    private val adapter by lazy {
-        BookmarkAdapter(this, this)
-    }
+    private var bookmarks by mutableStateOf<List<Bookmark>>(emptyList())
     private val exportDir = registerForActivityResult(SelectDirectoryContract()) {
         it.uri?.let { uri ->
             when (it.requestCode) {
@@ -43,41 +41,50 @@ class AllBookmarkActivity : VMBaseActivity<ActivityAllBookmarkBinding, AllBookma
     }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
-        initView()
+        binding.root.setViewCompositionStrategy(
+            ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+        )
+        binding.root.setContent {
+            NgAppTheme {
+                AllBookmarkScreen(
+                    bookmarks = bookmarks,
+                    query = viewModel.searchQuery,
+                    onAction = ::handleScreenAction,
+                )
+            }
+        }
         lifecycleScope.launch {
             appDb.bookmarkDao.flowAll().catch {
                 AppLog.put("所有书签界面获取数据失败\n${it.localizedMessage}", it)
             }.flowOn(IO).collect {
-                adapter.setItems(it)
+                bookmarks = it
             }
         }
     }
 
-    private fun initView() {
-        binding.recyclerView.addItemDecoration(BookmarkDecoration(adapter))
-        binding.recyclerView.adapter = adapter
-        binding.recyclerView.applyNavigationBarPadding()
-    }
-
-    override fun onCompatCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.bookmark, menu)
-        return super.onCompatCreateOptionsMenu(menu)
-    }
-
-    override fun onCompatOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
-            R.id.menu_export -> exportDir.launch(
+    private fun handleScreenAction(action: AllBookmarkScreenAction) {
+        when (action) {
+            AllBookmarkScreenAction.Back -> finish()
+            AllBookmarkScreenAction.ExportJson -> exportDir.launch(
                 SelectDirectoryContract.Request(requestCode = 1)
             )
-
-            R.id.menu_export_md -> exportDir.launch(
+            AllBookmarkScreenAction.ExportMarkdown -> exportDir.launch(
                 SelectDirectoryContract.Request(requestCode = 2)
             )
+            is AllBookmarkScreenAction.QueryChanged -> {
+                viewModel.updateSearchQuery(action.query)
+            }
+            is AllBookmarkScreenAction.Open -> openBookmark(
+                bookmark = action.bookmark,
+                position = action.position,
+            )
+            is AllBookmarkScreenAction.Edit -> showDialogFragment(
+                BookmarkDialog(action.bookmark, action.position)
+            )
         }
-        return super.onCompatOptionsItemSelected(item)
     }
 
-    override fun onItemClick(bookmark: Bookmark, position: Int) {
+    private fun openBookmark(bookmark: Bookmark, position: Int) {
         lifecycleScope.launch {
             val book = withContext(IO) {
                 appDb.bookDao.getBook(bookmark.bookName, bookmark.bookAuthor)
@@ -91,11 +98,6 @@ class AllBookmarkActivity : VMBaseActivity<ActivityAllBookmarkBinding, AllBookma
                 }
             }
         }
-    }
-
-    override fun onItemLongClick(bookmark: Bookmark, position: Int): Boolean {
-        showDialogFragment(BookmarkDialog(bookmark, position))
-        return true
     }
 
 }

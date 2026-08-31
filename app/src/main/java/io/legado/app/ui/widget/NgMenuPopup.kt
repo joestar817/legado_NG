@@ -394,7 +394,6 @@ object NgMenuPopup {
             R.id.menu_export_selection,
             R.id.menu_export_all,
             R.id.menu_export_bookmark,
-            R.id.menu_export_md,
             R.id.menu_export -> R.drawable.ic_export
             R.id.menu_share_source -> R.drawable.ic_share
             R.id.menu_check_source,

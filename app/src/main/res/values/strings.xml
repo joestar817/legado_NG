@@ -1835,6 +1835,9 @@
     <string name="sys_tts_config_summary">Open system voice settings</string>
     <string name="cannot_timed_non_playback">When the non-playback state is not legal</string>
     <string name="all_bookmark">All bookmarks</string>
+    <string name="all_bookmark_position">Chapter %1$d · Position %2$d</string>
+    <string name="all_bookmark_search_hint">Search books, authors, or bookmarks</string>
+    <string name="all_bookmark_search_empty">No matching bookmarks</string>
     <string name="change_source_batch">Batch source switching</string>
     <string name="book_type_different">Different types of books</string>
     <string name="soure_change_source">Whether to confirm the source change</string>

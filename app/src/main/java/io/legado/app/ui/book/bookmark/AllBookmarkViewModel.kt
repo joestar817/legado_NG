@@ -2,6 +2,9 @@ package io.legado.app.ui.book.bookmark
 
 import android.app.Application
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.AppLog
 import io.legado.app.data.appDb
@@ -17,6 +20,12 @@ import java.util.Locale
 
 class AllBookmarkViewModel(application: Application) : BaseViewModel(application) {
 
+    var searchQuery by mutableStateOf("")
+        private set
+
+    fun updateSearchQuery(query: String) {
+        searchQuery = query
+    }
 
     /**
      * 导出书签
