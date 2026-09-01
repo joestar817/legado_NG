@@ -28,6 +28,13 @@ internal fun normalizeReadAloudWorkerCount(value: String?): Int {
     return value?.toIntOrNull()?.coerceIn(1, 5) ?: 3
 }
 
+internal const val THREAD_COUNT_MIN = 1
+internal const val THREAD_COUNT_MAX = 128
+internal const val THREAD_COUNT_DEFAULT = 32
+
+internal fun normalizeThreadCount(value: Int): Int =
+    value.coerceIn(THREAD_COUNT_MIN, THREAD_COUNT_MAX)
+
 internal fun normalizeThemeMode(value: String?): String {
     return when (value) {
         "0", "1", "2", "3" -> value
@@ -621,9 +628,11 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         }
 
     var threadCount: Int
-        get() = appCtx.getPrefInt(PreferKey.threadCount, 32)
+        get() = normalizeThreadCount(
+            appCtx.getPrefInt(PreferKey.threadCount, THREAD_COUNT_DEFAULT)
+        )
         set(value) {
-            appCtx.putPrefInt(PreferKey.threadCount, value)
+            appCtx.putPrefInt(PreferKey.threadCount, normalizeThreadCount(value))
         }
 
     var remoteServerId: Long
@@ -1021,18 +1030,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         get() = appCtx.getPrefBoolean(PreferKey.readBarStyleFollowPage, false)
         set(value) {
             appCtx.putPrefBoolean(PreferKey.readBarStyleFollowPage, value)
-        }
-
-    var sourceEditMaxLine: Int
-        get() {
-            val maxLine = appCtx.getPrefInt(PreferKey.sourceEditMaxLine, Int.MAX_VALUE)
-            if (maxLine < 10) {
-                return Int.MAX_VALUE
-            }
-            return maxLine
-        }
-        set(value) {
-            appCtx.putPrefInt(PreferKey.sourceEditMaxLine, value)
         }
 
     var audioPlayUseWakeLock: Boolean

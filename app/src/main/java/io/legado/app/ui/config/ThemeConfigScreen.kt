@@ -32,7 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.help.config.BookshelfFloatingDockConfig
@@ -660,29 +662,30 @@ private fun DefaultHomePageSettingItem(
     )
     val selectedLabel = options.firstOrNull { it.first == selectedValue }?.second
         ?: stringResource(R.string.bookshelf)
-    Box {
-        NgSettingsItem(
-            title = stringResource(R.string.default_home_page),
-            value = selectedLabel,
-            trailing = NgSettingsTrailing.VALUE,
-            onClick = { expanded = true }
-        )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            containerColor = Color(NgTheme.colors.dialogContainer)
-        ) {
-            options.forEach { (value, label) ->
-                DropdownMenuItem(
-                    text = { Text(label, color = Color(NgTheme.colors.onSurface)) },
-                    onClick = {
-                        expanded = false
-                        onValueSelected(value)
-                    }
-                )
+    NgSettingsItem(
+        title = stringResource(R.string.default_home_page),
+        value = selectedLabel,
+        trailing = NgSettingsTrailing.VALUE,
+        onClick = { expanded = true },
+        valueOverlay = {
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                offset = DpOffset(x = 0.dp, y = (-20).dp),
+                containerColor = colorResource(R.color.ng_surface_card),
+            ) {
+                options.forEach { (value, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label, color = Color(NgTheme.colors.onSurface)) },
+                        onClick = {
+                            expanded = false
+                            onValueSelected(value)
+                        }
+                    )
+                }
             }
-        }
-    }
+        },
+    )
 }
 
 @Composable

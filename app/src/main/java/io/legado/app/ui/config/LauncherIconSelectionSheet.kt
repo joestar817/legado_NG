@@ -1,196 +1,175 @@
 package io.legado.app.ui.config
 
-import android.content.Context
-import android.content.res.ColorStateList
-import android.graphics.drawable.Drawable
-import android.graphics.drawable.GradientDrawable
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import androidx.core.content.ContextCompat
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import io.legado.app.R
-import io.legado.app.lib.theme.accentColor
-import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
-import io.legado.app.utils.dpToPx
-import io.legado.app.utils.getCompatDrawable
+import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgLauncherIcon
+import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
+import io.legado.app.ui.design.theme.NgTheme
 
-internal object LauncherIconSelectionSheet {
-
-    fun show(
-        context: Context,
-        currentValue: String,
-        onSelected: (String) -> Unit
-    ) {
-        val values = context.resources.getStringArray(R.array.icons)
-        val drawables = values.map { iconName ->
-            val resId = context.resources.getIdentifier(
-                iconName,
-                "mipmap",
-                context.packageName
-            )
-            runCatching { context.getCompatDrawable(resId) }.getOrNull()
+/** 外观设置中的启动图标选择；完整使用 NG Compose 标准抽屉与固定四列网格。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun LauncherIconSelectionSheet(
+    currentValue: String,
+    onDismissRequest: () -> Unit,
+    onSelected: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val values = remember(context) { context.resources.getStringArray(R.array.icons).toList() }
+    val iconResources = remember(context, values) {
+        values.map { iconName ->
+            context.resources.getIdentifier(iconName, "mipmap", context.packageName)
         }
-        val sheet = NgLongListBottomSheet(
-            context = context,
-            searchHint = "",
-            title = context.getString(R.string.change_icon),
-            showSearch = false,
-            heightRatio = 0.48f
-        )
-        sheet.setContent(
-            createIconGrid(
-                context = context,
-                values = values,
-                drawables = drawables,
-                currentValue = currentValue,
-                sheet = sheet,
-                onSelected = onSelected
-            )
-        ) {}
-        sheet.show()
     }
-
-    private fun createIconGrid(
-        context: Context,
-        values: Array<String>,
-        drawables: List<Drawable?>,
-        currentValue: String,
-        sheet: NgLongListBottomSheet,
-        onSelected: (String) -> Unit
-    ): View {
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            clipToPadding = false
-            setPadding(0, 4.dpToPx(), 0, 10.dpToPx())
-
-            values.indices.chunked(ICONS_PER_ROW).forEach { rowIndices ->
-                addView(
-                    LinearLayout(context).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = Gravity.CENTER
-
-                        rowIndices.forEach { index ->
-                            addView(
-                                createIconCell(
-                                    context = context,
-                                    index = index,
-                                    value = values[index],
-                                    drawable = drawables.getOrNull(index),
-                                    selected = values[index] == currentValue,
-                                    sheet = sheet,
-                                    onSelected = onSelected
-                                ),
-                                LinearLayout.LayoutParams(
-                                    0,
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    1f
-                                )
-                            )
-                        }
-                        repeat(ICONS_PER_ROW - rowIndices.size) {
-                            addView(
-                                View(context),
-                                LinearLayout.LayoutParams(
-                                    0,
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    1f
-                                )
-                            )
-                        }
-                    },
-                    LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        0,
-                        1f
-                    )
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        dragHandle = null,
+        containerColor = Color.Transparent,
+        contentColor = Color(NgTheme.colors.onSurface),
+        shape = RectangleShape,
+    ) {
+        NgBottomDrawerSurface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.48f),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+            ) {
+                NgLongDrawerHeader(
+                    title = stringResource(R.string.change_icon),
+                    centerTitle = true,
                 )
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(ICONS_PER_ROW),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 10.dp),
+                ) {
+                    itemsIndexed(
+                        items = values,
+                        key = { _, value -> value },
+                    ) { index, value ->
+                        LauncherIconOption(
+                            iconRes = iconResources[index],
+                            index = index,
+                            selected = value == currentValue,
+                            onClick = {
+                                if (value != currentValue) onSelected(value)
+                                onDismissRequest()
+                            },
+                        )
+                    }
+                }
             }
         }
     }
+}
 
-    private fun createIconCell(
-        context: Context,
-        index: Int,
-        value: String,
-        drawable: Drawable?,
-        selected: Boolean,
-        sheet: NgLongListBottomSheet,
-        onSelected: (String) -> Unit
-    ): View {
-        return FrameLayout(context).apply {
-            isClickable = true
-            isFocusable = true
-            isSelected = selected
-            contentDescription = "${context.getString(R.string.change_icon)} ${index + 1}"
-
-            val iconCard = FrameLayout(context).apply {
-                background = createIconCardBackground(context, selected)
-                setPadding(8.dpToPx(), 8.dpToPx(), 8.dpToPx(), 8.dpToPx())
-                addView(
-                    ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                        setImageDrawable(drawable)
-                    },
-                    FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
+@Composable
+private fun LauncherIconOption(
+    iconRes: Int,
+    index: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val description = "${stringResource(R.string.change_icon)} ${index + 1}"
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 9.dp)
+            .semantics {
+                this.selected = selected
+                role = Role.RadioButton
+            }
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(modifier = Modifier.size(78.dp)) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(18.dp),
+                color = colorResource(R.color.ng_surface_card),
+                border = BorderStroke(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = Color(
+                        if (selected) NgTheme.colors.primary else NgTheme.colors.outlineVariant
+                    ),
+                ),
+                shadowElevation = 0.dp,
+            ) {
+                NgLauncherIcon(
+                    iconRes = iconRes,
+                    contentDescription = description,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
                 )
-                if (selected) {
-                    addView(
-                        createSelectedIndicator(context),
-                        FrameLayout.LayoutParams(
-                            24.dpToPx(),
-                            24.dpToPx(),
-                            Gravity.END or Gravity.BOTTOM
-                        )
+            }
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 1.dp, bottom = 1.dp)
+                        .size(24.dp)
+                        .align(Alignment.BottomEnd),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = CircleShape,
+                        color = Color(NgTheme.colors.primary),
+                    ) {}
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(17.dp),
+                        tint = Color(NgTheme.colors.onPrimary),
                     )
                 }
             }
-            addView(
-                iconCard,
-                FrameLayout.LayoutParams(
-                    78.dpToPx(),
-                    78.dpToPx(),
-                    Gravity.CENTER
-                )
-            )
-            setOnClickListener {
-                if (!selected) onSelected(value)
-                sheet.dismiss()
-            }
         }
     }
-
-    private fun createIconCardBackground(context: Context, selected: Boolean): Drawable {
-        return GradientDrawable().apply {
-            cornerRadius = 18.dpToPx().toFloat()
-            setColor(ContextCompat.getColor(context, R.color.ng_surface_card))
-            setStroke(
-                (if (selected) 2 else 1).dpToPx(),
-                if (selected) context.accentColor
-                else ContextCompat.getColor(context, R.color.ng_card_stroke)
-            )
-        }
-    }
-
-    private fun createSelectedIndicator(context: Context): View {
-        return ImageView(context).apply {
-            setImageResource(R.drawable.ic_check)
-            imageTintList = ColorStateList.valueOf(
-                ContextCompat.getColor(context, R.color.ng_on_primary)
-            )
-            setPadding(4.dpToPx(), 4.dpToPx(), 4.dpToPx(), 4.dpToPx())
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(context.accentColor)
-            }
-        }
-    }
-
-    private const val ICONS_PER_ROW = 4
 }
+
+private const val ICONS_PER_ROW = 4

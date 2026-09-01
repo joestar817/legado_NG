@@ -892,7 +892,17 @@ fun NgFormField(
     }
 }
 
-/** NG 多行编辑字段，供简介、说明等正文型表单复用。 */
+enum class NgFormMultilineFieldVariant {
+    OUTLINED,
+    DIALOG_UNDERLINE,
+}
+
+/**
+ * NG 多行编辑字段，供简介、说明等正文型表单复用。
+ *
+ * DIALOG_UNDERLINE 保留旧规则弹窗的浮动标签与底部输入线，不将脚本正文改成
+ * 大圆角输入框。
+ */
 @Composable
 fun NgFormMultilineField(
     value: String,
@@ -906,6 +916,8 @@ fun NgFormMultilineField(
     minLines: Int = 4,
     maxLines: Int = 12,
     containerColor: Color? = null,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    variant: NgFormMultilineFieldVariant = NgFormMultilineFieldVariant.OUTLINED,
 ) {
     val colors = NgTheme.colors
     val shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp)
@@ -913,12 +925,15 @@ fun NgFormMultilineField(
     val focused by interactionSource.collectIsFocusedAsState()
     val borderColor = Color(if (focused) colors.primary else colors.outline)
     val contentAlpha = if (enabled) 1f else 0.45f
+    val underlined = variant == NgFormMultilineFieldVariant.DIALOG_UNDERLINE
     Column(modifier = modifier.fillMaxWidth()) {
         label?.takeIf { it.isNotBlank() }?.let {
             Text(
                 text = it,
                 modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
-                color = Color(colors.onSurfaceVariant).copy(alpha = contentAlpha),
+                color = Color(
+                    if (underlined) colors.primary else colors.onSurfaceVariant
+                ).copy(alpha = contentAlpha),
                 fontSize = 13.sp,
                 lineHeight = 16.sp,
                 maxLines = 1,
@@ -941,9 +956,25 @@ fun NgFormMultilineField(
             interactionSource = interactionSource,
             minLines = minLines,
             maxLines = maxLines,
+            visualTransformation = visualTransformation,
             decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier
+                val decorationModifier = if (underlined) {
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = minHeight, max = maxHeight)
+                        .drawBehind {
+                            val strokeWidth = (if (focused) 1.5.dp else 1.dp).toPx()
+                            val y = size.height - strokeWidth / 2f
+                            drawLine(
+                                color = borderColor.copy(alpha = contentAlpha),
+                                start = Offset(0f, y),
+                                end = Offset(size.width, y),
+                                strokeWidth = strokeWidth,
+                            )
+                        }
+                        .padding(horizontal = 2.dp, vertical = 8.dp)
+                } else {
+                    Modifier
                         .fillMaxWidth()
                         .heightIn(min = minHeight, max = maxHeight)
                         .clip(shape)
@@ -958,7 +989,10 @@ fun NgFormMultilineField(
                             color = borderColor.copy(alpha = contentAlpha),
                             shape = shape,
                         )
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                }
+                Box(
+                    modifier = decorationModifier,
                 ) {
                     if (value.isEmpty() && !placeholder.isNullOrBlank()) {
                         Text(

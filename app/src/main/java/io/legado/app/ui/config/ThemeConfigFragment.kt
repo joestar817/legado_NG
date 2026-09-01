@@ -60,6 +60,7 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
     private val requestCodeBgLight = 121
     private val requestCodeBgDark = 122
     private var screenState by mutableStateOf(ThemeConfigScreenState())
+    private var launcherIconSelection by mutableStateOf<String?>(null)
     private var backgroundEditorState by mutableStateOf<ThemeBackgroundEditorState?>(null)
     private var fontScaleEditorState by mutableStateOf<ThemeFontScaleEditorState?>(null)
 
@@ -142,6 +143,13 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                         onOpenDayBackground = { openBackgroundEditor(false) },
                         onOpenNightBackground = { openBackgroundEditor(true) }
                     )
+                    launcherIconSelection?.let { currentValue ->
+                        LauncherIconSelectionSheet(
+                            currentValue = currentValue,
+                            onDismissRequest = { launcherIconSelection = null },
+                            onSelected = ::selectLauncherIcon,
+                        )
+                    }
                     backgroundEditorState?.let { editorState ->
                         ThemeBackgroundEditorSheet(
                             state = editorState,
@@ -290,15 +298,16 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
     }
 
     private fun showLauncherIconSelection() {
-        LauncherIconSelectionSheet.show(
-            context = requireContext(),
-            currentValue = getPrefString(PreferKey.launcherIcon, DEFAULT_LAUNCHER_ICON)
-                ?: DEFAULT_LAUNCHER_ICON
-        ) { value ->
-            putPrefString(PreferKey.launcherIcon, value)
-            LauncherIconHelp.changeIcon(value)
-            screenState = screenState.copy(launcherIconRes = launcherIconResource(value))
-        }
+        launcherIconSelection = getPrefString(
+            PreferKey.launcherIcon,
+            DEFAULT_LAUNCHER_ICON,
+        ) ?: DEFAULT_LAUNCHER_ICON
+    }
+
+    private fun selectLauncherIcon(value: String) {
+        putPrefString(PreferKey.launcherIcon, value)
+        LauncherIconHelp.changeIcon(value)
+        screenState = screenState.copy(launcherIconRes = launcherIconResource(value))
     }
 
     private fun setFloatingBottomBar(enabled: Boolean) {

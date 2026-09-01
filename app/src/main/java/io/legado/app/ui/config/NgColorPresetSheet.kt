@@ -1,237 +1,231 @@
 package io.legado.app.ui.config
 
-import android.content.Context
-import android.content.res.ColorStateList
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.drawable.Drawable
-import android.graphics.drawable.GradientDrawable
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.core.content.ContextCompat
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.theme.NgBuiltInColorPresets
 import io.legado.app.ui.design.theme.NgColorPreset
 import io.legado.app.ui.design.theme.NgColorSystem
-import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
-import io.legado.app.utils.dpToPx
-import kotlin.math.min
+import io.legado.app.ui.design.theme.NgTheme
 
-internal fun showNgColorPresetSheet(
-    context: Context,
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun NgColorPresetSheet(
+    show: Boolean,
     current: NgColorSystem,
-    accentColor: Int,
-    onAccentColor: Int,
-    onSurfaceColor: Int,
-    onSelected: (NgColorSystem) -> Unit
+    onDismissRequest: () -> Unit,
+    onSelected: (NgColorSystem) -> Unit,
 ) {
-    val sheet = NgLongListBottomSheet(
-        context = context,
-        searchHint = "",
-        title = context.getString(R.string.ng_color_presets),
-        showSearch = false,
-        heightRatio = 0.62f
-    )
-    sheet.setContent(
-        createPresetGrid(
-            context = context,
-            current = current,
-            sheet = sheet,
-            accentColor = accentColor,
-            onAccentColor = onAccentColor,
-            onSurfaceColor = onSurfaceColor,
-            onSelected = onSelected
-        )
-    ) {}
-    sheet.show()
-}
-
-private fun createPresetGrid(
-    context: Context,
-    current: NgColorSystem,
-    sheet: NgLongListBottomSheet,
-    accentColor: Int,
-    onAccentColor: Int,
-    onSurfaceColor: Int,
-    onSelected: (NgColorSystem) -> Unit
-): View = LinearLayout(context).apply {
-    orientation = LinearLayout.VERTICAL
-    gravity = Gravity.CENTER
-    clipToPadding = false
-    setPadding(0, 4.dpToPx(), 0, 10.dpToPx())
-
-    NgBuiltInColorPresets.all.indices.chunked(PRESETS_PER_ROW).forEach { rowIndices ->
-        addView(
-            LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                rowIndices.forEach { index ->
-                    addView(
-                        createPresetCell(
-                            context = context,
-                            preset = NgBuiltInColorPresets.all[index],
-                            selected = NgBuiltInColorPresets.all[index].matches(current),
-                            accentColor = accentColor,
-                            onAccentColor = onAccentColor,
-                            onSurfaceColor = onSurfaceColor,
+    if (!show) return
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        dragHandle = null,
+        containerColor = Color.Transparent,
+        contentColor = Color(NgTheme.colors.onSurface),
+        shape = RectangleShape,
+    ) {
+        NgBottomDrawerSurface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.62f),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+            ) {
+                NgLongDrawerHeader(
+                    title = stringResource(R.string.ng_color_presets),
+                    centerTitle = true,
+                )
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(PRESETS_PER_ROW),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 8.dp),
+                ) {
+                    items(
+                        items = NgBuiltInColorPresets.all,
+                        key = { it.nameRes },
+                    ) { preset ->
+                        NgColorPresetOption(
+                            preset = preset,
+                            selected = preset.matches(current),
                             onClick = {
-                                onSelected(NgBuiltInColorPresets.all[index].applyTo(current))
-                                sheet.dismiss()
-                            }
-                        ),
-                        LinearLayout.LayoutParams(
-                            0,
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            1f
+                                onSelected(preset.applyTo(current))
+                                onDismissRequest()
+                            },
                         )
-                    )
+                    }
                 }
-                repeat(PRESETS_PER_ROW - rowIndices.size) {
-                    addView(
-                        View(context),
-                        LinearLayout.LayoutParams(
-                            0,
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            1f
-                        )
-                    )
-                }
-            },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        )
+            }
+        }
     }
 }
 
-private fun createPresetCell(
-    context: Context,
+@Composable
+private fun NgColorPresetOption(
     preset: NgColorPreset,
     selected: Boolean,
-    accentColor: Int,
-    onAccentColor: Int,
-    onSurfaceColor: Int,
-    onClick: () -> Unit
-): View = LinearLayout(context).apply {
-    orientation = LinearLayout.VERTICAL
-    gravity = Gravity.CENTER
-    isClickable = true
-    isFocusable = true
-    isSelected = selected
-    contentDescription = context.getString(preset.nameRes)
-    setPadding(3.dpToPx(), 4.dpToPx(), 3.dpToPx(), 4.dpToPx())
-
-    addView(
-        FrameLayout(context).apply {
-            background = createPresetCardBackground(context, selected, accentColor)
-            addView(
-                PresetSwatchView(context, preset.lightSeed, preset.darkSeed),
-                FrameLayout.LayoutParams(46.dpToPx(), 46.dpToPx(), Gravity.CENTER)
-            )
-            if (selected) {
-                addView(
-                    createSelectedIndicator(context, accentColor, onAccentColor),
-                    FrameLayout.LayoutParams(
-                        24.dpToPx(),
-                        24.dpToPx(),
-                        Gravity.END or Gravity.BOTTOM
-                    )
-                )
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 3.dp, vertical = 6.dp)
+            .semantics {
+                this.selected = selected
+                role = Role.RadioButton
             }
-        },
-        LinearLayout.LayoutParams(68.dpToPx(), 68.dpToPx())
-    )
-    addView(
-        TextView(context).apply {
-            text = context.getString(preset.nameRes)
-            gravity = Gravity.CENTER
-            maxLines = 1
-            textSize = 12f
-            includeFontPadding = false
-            setTextColor(
-                if (selected) {
-                    accentColor
-                } else {
-                    onSurfaceColor
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(modifier = Modifier.size(68.dp)) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(18.dp),
+                color = colorResource(R.color.ng_surface_card),
+                border = BorderStroke(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = Color(
+                        if (selected) NgTheme.colors.primary else NgTheme.colors.outlineVariant
+                    ),
+                ),
+                shadowElevation = 0.dp,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    NgPresetSwatch(
+                        lightColor = preset.lightSeed,
+                        darkColor = preset.darkSeed,
+                        modifier = Modifier.size(46.dp),
+                    )
                 }
-            )
-        },
-        LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            28.dpToPx()
-        ).apply {
-            topMargin = 7.dpToPx()
+            }
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .align(Alignment.BottomEnd)
+                        .clip(CircleShape)
+                        .clickable(onClick = onClick),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = CircleShape,
+                        color = Color(NgTheme.colors.primary),
+                    ) {}
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(17.dp),
+                        tint = Color(NgTheme.colors.onPrimary),
+                    )
+                }
+            }
         }
-    )
-    setOnClickListener { onClick() }
-}
-
-private fun createPresetCardBackground(
-    context: Context,
-    selected: Boolean,
-    accentColor: Int
-): Drawable =
-    GradientDrawable().apply {
-        cornerRadius = 18.dpToPx().toFloat()
-        setColor(ContextCompat.getColor(context, R.color.ng_surface_card))
-        setStroke(
-            (if (selected) 2 else 1).dpToPx(),
-            if (selected) accentColor
-            else ContextCompat.getColor(context, R.color.ng_card_stroke)
+        Text(
+            text = stringResource(preset.nameRes),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 7.dp),
+            color = Color(
+                if (selected) NgTheme.colors.primary else NgTheme.colors.onSurface
+            ),
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
         )
     }
-
-private fun createSelectedIndicator(
-    context: Context,
-    accentColor: Int,
-    onAccentColor: Int
-): View = ImageView(context).apply {
-    setImageResource(R.drawable.ic_check)
-    imageTintList = ColorStateList.valueOf(onAccentColor)
-    setPadding(4.dpToPx(), 4.dpToPx(), 4.dpToPx(), 4.dpToPx())
-    background = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(accentColor)
-    }
 }
 
-private class PresetSwatchView(
-    context: Context,
-    private val lightColor: Int,
-    private val darkColor: Int
-) : View(context) {
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 1.dpToPx().toFloat()
-        color = ContextCompat.getColor(context, R.color.ng_card_stroke)
-    }
-    private val clipPath = Path()
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val strokeInset = outlinePaint.strokeWidth / 2f
-        val radius = min(width, height) / 2f - strokeInset
-        val centerX = width / 2f
-        val centerY = height / 2f
-        clipPath.reset()
-        clipPath.addCircle(centerX, centerY, radius, Path.Direction.CW)
-        canvas.save()
-        canvas.clipPath(clipPath)
-        fillPaint.color = lightColor
-        canvas.drawRect(0f, 0f, centerX, height.toFloat(), fillPaint)
-        fillPaint.color = darkColor
-        canvas.drawRect(centerX, 0f, width.toFloat(), height.toFloat(), fillPaint)
-        canvas.restore()
-        canvas.drawCircle(centerX, centerY, radius, outlinePaint)
+@Composable
+private fun NgPresetSwatch(
+    lightColor: Int,
+    darkColor: Int,
+    modifier: Modifier = Modifier,
+) {
+    val outlineColor = Color(NgTheme.colors.outlineVariant)
+    Canvas(modifier = modifier) {
+        val radius = size.minDimension / 2f
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val path = Path().apply {
+            addOval(
+                androidx.compose.ui.geometry.Rect(
+                    left = center.x - radius,
+                    top = center.y - radius,
+                    right = center.x + radius,
+                    bottom = center.y + radius,
+                )
+            )
+        }
+        clipPath(path) {
+            drawRect(
+                color = Color(lightColor),
+                size = Size(size.width / 2f, size.height),
+            )
+            drawRect(
+                color = Color(darkColor),
+                topLeft = Offset(size.width / 2f, 0f),
+                size = Size(size.width / 2f, size.height),
+            )
+        }
+        drawCircle(
+            color = outlineColor,
+            radius = radius - 0.5.dp.toPx(),
+            center = center,
+            style = Stroke(width = 1.dp.toPx()),
+        )
     }
 }
 

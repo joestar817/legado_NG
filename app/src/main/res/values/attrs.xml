@@ -155,10 +155,6 @@
         <attr name="radius" />
     </declare-styleable>
 
-    <declare-styleable name="IconListPreference">
-        <attr name="icons" format="reference" />
-    </declare-styleable>
-
     <declare-styleable name="RotateLoading">
         <attr name="loading_width" format="dimension" />
         <attr name="loading_color" format="color" />

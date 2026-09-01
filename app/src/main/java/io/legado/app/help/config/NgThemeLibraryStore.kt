@@ -186,6 +186,8 @@ internal data class NgManagedTheme(
     val resourceProfile: NgThemeResourceProfile? = null,
     @SerializedName("coverProfile")
     val coverProfile: NgThemeCoverProfile? = null,
+    @SerializedName("ownedCoverAlbumIds")
+    val ownedCoverAlbumIds: List<String>? = null,
     @SerializedName("sceneProfile")
     val sceneProfile: NgThemeSceneProfile? = null,
 ) {
@@ -199,6 +201,11 @@ internal data class NgManagedTheme(
         barProfile = barProfile?.normalized(),
         resourceProfile = resourceProfile?.normalized() ?: NgThemeResourceProfile(),
         coverProfile = coverProfile?.normalized(),
+        ownedCoverAlbumIds = ownedCoverAlbumIds.orEmpty()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .takeIf { it.isNotEmpty() },
         sceneProfile = sceneProfile?.normalized()?.takeIf { it.sceneType() != null },
     )
 
@@ -317,6 +324,7 @@ internal object NgThemeLibraryStore {
             barProfile = currentBarProfile(context),
             packageRootPath = active?.packageRootPath,
             resourceProfile = active?.resourceProfile ?: NgThemeResourceProfile(),
+            ownedCoverAlbumIds = active?.ownedCoverAlbumIds,
             coverProfile = NgThemeCoverProfile(
                 applyAlbumSelection = true,
                 albumId = NgCoverAlbumStore.current(context).selectedAlbumId,
@@ -402,10 +410,47 @@ internal object NgThemeLibraryStore {
         persistThemes(context, updated)
         persistActive(context, nextActive)
         mutableState.value = NgThemeLibraryState(updated, nextActive)
+        val orphanedAlbumIds = orphanedCoverAlbumIds(removed, updated)
+        NgCoverAlbumStore.removeImported(context, orphanedAlbumIds)
         removed.packageRootPath
             ?.takeIf { root -> updated.none { it.packageRootPath == root } }
             ?.let { deleteOwnedPackageRoot(context, it) }
         removed
+    }
+
+    fun detachCoverAlbum(context: Context, albumId: String): Boolean = synchronized(lock) {
+        ensureInitialized(context)
+        if (albumId.isBlank()) return@synchronized false
+        val current = mutableState.value
+        var changed = false
+        val updated = current.savedThemes.map { theme ->
+            val nextOwnedAlbumIds = theme.ownedCoverAlbumIds.orEmpty()
+                .filterNot { it == albumId }
+                .takeIf { it.isNotEmpty() }
+            val nextCoverProfile = theme.coverProfile?.let { profile ->
+                if (profile.albumId == albumId) {
+                    profile.copy(applyAlbumSelection = false, albumId = null)
+                } else {
+                    profile
+                }
+            }
+            if (
+                nextOwnedAlbumIds != theme.ownedCoverAlbumIds ||
+                nextCoverProfile != theme.coverProfile
+            ) {
+                changed = true
+                theme.copy(
+                    coverProfile = nextCoverProfile,
+                    ownedCoverAlbumIds = nextOwnedAlbumIds,
+                )
+            } else {
+                theme
+            }
+        }
+        if (!changed) return@synchronized false
+        persistThemes(context, updated)
+        mutableState.value = current.copy(savedThemes = updated)
+        true
     }
 
     fun apply(context: Context, theme: NgManagedTheme) {
@@ -500,6 +545,19 @@ internal object NgThemeLibraryStore {
             if (root.parentFile == owned && root.isDirectory) root.deleteRecursively()
         }
     }
+}
+
+private fun NgManagedTheme.coverAlbumReferences(): Set<String> = buildSet {
+    addAll(ownedCoverAlbumIds.orEmpty())
+    coverProfile?.albumId?.let(::add)
+}
+
+internal fun orphanedCoverAlbumIds(
+    removed: NgManagedTheme,
+    remaining: List<NgManagedTheme>,
+): Set<String> {
+    val retainedAlbumIds = remaining.flatMapTo(hashSetOf()) { it.coverAlbumReferences() }
+    return removed.coverAlbumReferences() - retainedAlbumIds
 }
 
 internal object NgBuiltInThemes {

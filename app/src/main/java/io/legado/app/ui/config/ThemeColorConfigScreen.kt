@@ -30,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,11 +63,10 @@ internal fun ThemeColorConfigScreen(
     compact: Boolean = false,
     headerContent: LazyListScope.() -> Unit = {}
 ) {
-    val context = LocalContext.current
     var activePicker by remember { mutableStateOf<NgColorPickerTarget?>(null) }
+    var showPresetSheet by remember { mutableStateOf(false) }
     val generated = colors.mode == NgColorGenerationMode.PALETTE
     val selectedPreset = NgBuiltInColorPresets.matching(colors)
-    val themeColors = NgTheme.colors
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -88,16 +86,7 @@ internal fun ThemeColorConfigScreen(
                         summary = selectedPreset?.let { stringResource(it.nameRes) }
                             ?: stringResource(R.string.ng_color_preset_customized),
                         showChevron = true,
-                        onClick = {
-                            showNgColorPresetSheet(
-                                context = context,
-                                current = colors,
-                                accentColor = themeColors.primary,
-                                onAccentColor = themeColors.onPrimary,
-                                onSurfaceColor = themeColors.onSurface,
-                                onSelected = onColorsChanged
-                            )
-                        }
+                        onClick = { showPresetSheet = true }
                     )
                     NgFormGroupDivider()
                     NgFormSwitchSettingRow(
@@ -123,16 +112,7 @@ internal fun ThemeColorConfigScreen(
                         title = stringResource(R.string.ng_color_presets),
                         summary = selectedPreset?.let { stringResource(it.nameRes) }
                             ?: stringResource(R.string.ng_color_preset_customized),
-                        onClick = {
-                            showNgColorPresetSheet(
-                                context = context,
-                                current = colors,
-                                accentColor = themeColors.primary,
-                                onAccentColor = themeColors.onPrimary,
-                                onSurfaceColor = themeColors.onSurface,
-                                onSelected = onColorsChanged
-                            )
-                        }
+                        onClick = { showPresetSheet = true }
                     )
                     NgSettingsItem(
                         title = stringResource(R.string.ng_use_palette_colors),
@@ -278,6 +258,13 @@ internal fun ThemeColorConfigScreen(
             }
         }
     }
+
+    NgColorPresetSheet(
+        show = showPresetSheet,
+        current = colors,
+        onDismissRequest = { showPresetSheet = false },
+        onSelected = onColorsChanged,
+    )
 
     val picker = activePicker
     NgColorPickerSheet(

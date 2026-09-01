@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
@@ -93,9 +94,14 @@ fun NgDialogTextActionButton(
     onClick: () -> Unit,
     danger: Boolean = false,
     enabled: Boolean = true,
+    secondary: Boolean = false,
 ) {
     val contentColor = Color(
-        if (danger) NgTheme.colors.error else NgTheme.colors.primary
+        when {
+            danger -> NgTheme.colors.error
+            secondary -> NgTheme.colors.onSurfaceVariant
+            else -> NgTheme.colors.primary
+        }
     ).let { if (enabled) it else it.copy(alpha = 0.45f) }
     TextButton(
         onClick = onClick,
@@ -169,6 +175,7 @@ fun NgDialogValueRow(
     value: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -192,15 +199,21 @@ fun NgDialogValueRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = value,
-                modifier = Modifier.padding(start = 12.dp),
-                color = Color(NgTheme.colors.onSurfaceVariant),
-                fontSize = 15.sp,
-                lineHeight = 19.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (value.isNotEmpty()) {
+                Text(
+                    text = value,
+                    modifier = Modifier.padding(start = 12.dp),
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                    fontSize = 15.sp,
+                    lineHeight = 19.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            trailingContent?.let {
+                Spacer(Modifier.width(10.dp))
+                it()
+            }
         }
     }
 }

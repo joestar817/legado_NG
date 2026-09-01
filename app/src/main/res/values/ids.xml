@@ -22,6 +22,9 @@
     <item name="menu_show_disabled" type="id" />
     <item name="menu_copy_all" type="id" />
 
+    <!-- Stable shared action retained after the legacy direct-link upload menu was removed. -->
+    <item name="menu_copy_rule" type="id" />
+
     <!-- Stable actions retained after the legacy replacement-rule menus were removed. -->
     <item name="menu_enable" type="id" />
     <item name="menu_add_replace_rule" type="id" />
