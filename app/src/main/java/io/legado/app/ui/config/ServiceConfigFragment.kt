@@ -14,11 +14,9 @@ import io.legado.app.base.BaseFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.AppConfig
-import io.legado.app.lib.dialogs.selector
 import io.legado.app.service.McpService
 import io.legado.app.service.WebService
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.widget.number.NumberPickerDialog
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.observeEventSticky
 import io.legado.app.utils.openUrl
@@ -29,6 +27,7 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
     SharedPreferences.OnSharedPreferenceChangeListener {
 
     private var screenState by mutableStateOf(ServiceConfigScreenState())
+    private var activeDialog by mutableStateOf<ServiceConfigDialog?>(null)
     private lateinit var sharedPreferences: SharedPreferences
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
@@ -47,12 +46,40 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
                     ServiceConfigScreen(
                         state = screenState,
                         onWebServiceChanged = ::setWebService,
-                        onWebServiceLongClick = ::showWebAddressMenu,
-                        onWebPortClick = { showPortPicker(PreferKey.webPort) },
+                        onWebServiceLongClick = {
+                            if (WebService.isRun) {
+                                activeDialog = ServiceConfigDialog.WEB_ADDRESS
+                            }
+                        },
+                        onWebPortChanged = ::setWebPortDraft,
+                        onWebPortChangeFinished = ::saveWebPort,
                         onWebServiceWakeLockChanged = ::setWebServiceWakeLock,
                         onMcpServiceChanged = ::setMcpService,
-                        onMcpServiceLongClick = ::showMcpAddressMenu,
-                        onMcpPortClick = { showPortPicker(PreferKey.mcpPort) },
+                        onMcpServiceLongClick = {
+                            if (McpService.isRun) {
+                                activeDialog = ServiceConfigDialog.MCP_ADDRESS
+                            }
+                        },
+                        onMcpPortChanged = ::setMcpPortDraft,
+                        onMcpPortChangeFinished = ::saveMcpPort,
+                    )
+                    ServiceConfigDialogHost(
+                        dialog = activeDialog,
+                        webAddress = WebService.hostAddress,
+                        mcpAddress = McpService.hostAddress,
+                        onDismiss = { activeDialog = null },
+                        onAddressAction = { address, action ->
+                            activeDialog = null
+                            when (action) {
+                                ServiceAddressAction.COPY -> {
+                                    requireContext().sendToClip(address)
+                                }
+
+                                ServiceAddressAction.OPEN -> {
+                                    requireContext().openUrl(address)
+                                }
+                            }
+                        },
                     )
                 }
             }
@@ -75,6 +102,7 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
         if (::sharedPreferences.isInitialized) {
             sharedPreferences.unregisterOnSharedPreferenceChangeListener(this)
         }
+        activeDialog = null
         super.onDestroyView()
     }
 
@@ -128,6 +156,7 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
             } else {
                 getString(R.string.web_service_desc)
             },
+            webPort = AppConfig.webPort,
             webPortSummary = getString(
                 R.string.web_port_summary,
                 AppConfig.webPort.toString(),
@@ -139,6 +168,7 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
             } else {
                 getString(R.string.mcp_service_desc)
             },
+            mcpPort = AppConfig.mcpPort,
             mcpPortSummary = getString(
                 R.string.mcp_port_summary,
                 AppConfig.mcpPort.toString(),
@@ -148,10 +178,12 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
 
     private fun updatePortSummaries() {
         screenState = screenState.copy(
+            webPort = AppConfig.webPort,
             webPortSummary = getString(
                 R.string.web_port_summary,
                 AppConfig.webPort.toString(),
             ),
+            mcpPort = AppConfig.mcpPort,
             mcpPortSummary = getString(
                 R.string.mcp_port_summary,
                 AppConfig.mcpPort.toString(),
@@ -174,38 +206,26 @@ class ServiceConfigFragment : BaseFragment(R.layout.fragment_service_config),
         putPrefBoolean(PreferKey.webServiceWakeLock, enabled)
     }
 
-    private fun showPortPicker(key: String) {
-        val isMcp = key == PreferKey.mcpPort
-        NumberPickerDialog(requireContext())
-            .setTitle(
-                getString(if (isMcp) R.string.mcp_port_title else R.string.web_port_title),
-            )
-            .setMaxValue(60000)
-            .setMinValue(1024)
-            .setValue(if (isMcp) AppConfig.mcpPort else AppConfig.webPort)
-            .show { value ->
-                if (isMcp) {
-                    AppConfig.mcpPort = value
-                } else {
-                    AppConfig.webPort = value
-                }
-            }
+    private fun setWebPortDraft(value: Int) {
+        screenState = screenState.copy(
+            webPort = value,
+            webPortSummary = getString(R.string.web_port_summary, value.toString()),
+        )
     }
 
-    private fun showWebAddressMenu() {
-        if (WebService.isRun) showAddressMenu(WebService.hostAddress)
+    private fun saveWebPort() {
+        AppConfig.webPort = screenState.webPort
     }
 
-    private fun showMcpAddressMenu() {
-        if (McpService.isRun) showAddressMenu(McpService.hostAddress)
+    private fun setMcpPortDraft(value: Int) {
+        screenState = screenState.copy(
+            mcpPort = value,
+            mcpPortSummary = getString(R.string.mcp_port_summary, value.toString()),
+        )
     }
 
-    private fun showAddressMenu(address: String) {
-        requireContext().selector(arrayListOf("复制地址", "浏览器打开")) { _, index ->
-            when (index) {
-                0 -> requireContext().sendToClip(address)
-                1 -> requireContext().openUrl(address)
-            }
-        }
+    private fun saveMcpPort() {
+        AppConfig.mcpPort = screenState.mcpPort
     }
+
 }

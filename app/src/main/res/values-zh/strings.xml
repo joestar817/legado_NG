@@ -337,6 +337,9 @@
     <string name="mcp_service_url_format">%s/mcp</string>
     <string name="mcp_port_title">MCP 端口</string>
     <string name="mcp_port_summary">当前端口 %s</string>
+    <string name="service_port_decrease">端口减一</string>
+    <string name="service_port_increase">端口加一</string>
+    <string name="service_port_range_step">范围 %1$d–%2$d · 点按 ±1 · 长按连续</string>
     <string name="ai_setting">AI 设置</string>
     <string name="ai_setting_summary">配置内置 AI 功能使用的模型提供商</string>
     <string name="ai_provider_menu">提供商</string>

@@ -34,7 +34,7 @@ import io.legado.app.ui.design.theme.NgTheme
 /** Compose NG 居中弹窗内容外壳；窗口尺寸与遮罩仍由 applyNgDialogWindow 统一处理。 */
 @Composable
 fun NgDialog(
-    title: String,
+    title: String?,
     modifier: Modifier = Modifier,
     variant: NgDialogVariant = NgDialogVariant.STANDARD,
     titleFontSize: TextUnit? = null,
@@ -63,18 +63,20 @@ fun NgDialog(
                 bottom = metrics.bottomPadding,
             ),
         ) {
-            Text(
-                text = title,
-                modifier = Modifier.fillMaxWidth(),
-                color = Color(NgTheme.colors.onSurface),
-                fontSize = titleFontSize ?: metrics.titleSize,
-                lineHeight = metrics.titleLineHeight,
-                fontWeight = titleFontWeight,
-                textAlign = metrics.titleAlignment,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(metrics.titleSpacing))
+            if (title != null) {
+                Text(
+                    text = title,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(NgTheme.colors.onSurface),
+                    fontSize = titleFontSize ?: metrics.titleSize,
+                    lineHeight = metrics.titleLineHeight,
+                    fontWeight = titleFontWeight,
+                    textAlign = metrics.titleAlignment,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(metrics.titleSpacing))
+            }
             content()
             Spacer(Modifier.height(metrics.actionSpacing))
             Row(

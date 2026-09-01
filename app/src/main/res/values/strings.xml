@@ -339,6 +339,9 @@
     <string name="mcp_service_url_format">%s/mcp</string>
     <string name="mcp_port_title">MCP port</string>
     <string name="mcp_port_summary">Current port %s</string>
+    <string name="service_port_decrease">Decrease port by one</string>
+    <string name="service_port_increase">Increase port by one</string>
+    <string name="service_port_range_step">Range %1$d–%2$d · Tap ±1 · Hold to repeat</string>
     <string name="ai_setting">AI settings</string>
     <string name="ai_setting_summary">Configure model providers for built-in AI features</string>
     <string name="ai_provider_menu">Providers</string>

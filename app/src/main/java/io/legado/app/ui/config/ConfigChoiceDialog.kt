@@ -59,7 +59,7 @@ internal data class ConfigChoiceOption(
 
 @Composable
 internal fun ConfigChoiceDialog(
-    title: String,
+    title: String?,
     options: List<ConfigChoiceOption>,
     selectedValue: String? = null,
     onDismissRequest: () -> Unit,
