@@ -28,8 +28,6 @@ import io.legado.app.help.storage.Backup
 import io.legado.app.help.storage.BackupConfig
 import io.legado.app.help.storage.ImportOldData
 import io.legado.app.help.storage.Restore
-import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.dialogs.selector
 import io.legado.app.lib.permission.Permissions
 import io.legado.app.lib.permission.PermissionsCompat
 import io.legado.app.ui.about.AppLogDialog
@@ -66,6 +64,7 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
     private var screenState by mutableStateOf(BackupConfigScreenState())
     private lateinit var sharedPreferences: SharedPreferences
     private var inputDialog: ComponentDialog? = null
+    private var activeBusinessDialog by mutableStateOf<BackupConfigBusinessDialog?>(null)
     private var backupJob: Job? = null
     private var restoreJob: Job? = null
 
@@ -150,6 +149,22 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
                         },
                         onAutoCheckNewBackupChange = {
                             requireContext().putPrefBoolean(PreferKey.autoCheckNewBackup, it)
+                        },
+                    )
+                    BackupConfigBusinessDialogHost(
+                        dialog = activeBusinessDialog,
+                        ignoreTitles = BackupConfig.ignoreTitle.toList(),
+                        cancelText = getString(R.string.cancel),
+                        confirmText = getString(R.string.ok),
+                        onDismiss = ::dismissBusinessDialog,
+                        onIgnoreChanged = ::updateIgnoreSelection,
+                        onRestoreFileSelected = { name ->
+                            activeBusinessDialog = null
+                            view?.post { restoreWebDav(name) }
+                        },
+                        onRestoreFromLocal = {
+                            activeBusinessDialog = null
+                            restoreFromLocal()
                         },
                     )
                 }
@@ -324,17 +339,29 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
     }
 
     private fun backupIgnore() {
-        val checkedItems = BooleanArray(BackupConfig.ignoreKeys.size) {
-            BackupConfig.ignoreConfig[BackupConfig.ignoreKeys[it]] ?: false
+        activeBusinessDialog = BackupConfigBusinessDialog.Ignore(
+            List(BackupConfig.ignoreKeys.size) { index ->
+                BackupConfig.ignoreConfig[BackupConfig.ignoreKeys[index]] ?: false
+            },
+        )
+    }
+
+    private fun updateIgnoreSelection(index: Int, checked: Boolean) {
+        val current = activeBusinessDialog as? BackupConfigBusinessDialog.Ignore ?: return
+        if (index !in current.selected.indices || index !in BackupConfig.ignoreKeys.indices) return
+        BackupConfig.ignoreConfig[BackupConfig.ignoreKeys[index]] = checked
+        activeBusinessDialog = current.copy(
+            selected = current.selected.toMutableList().apply {
+                this[index] = checked
+            },
+        )
+    }
+
+    private fun dismissBusinessDialog() {
+        if (activeBusinessDialog is BackupConfigBusinessDialog.Ignore) {
+            BackupConfig.saveIgnoreConfig()
         }
-        alert(R.string.restore_ignore) {
-            multiChoiceItems(BackupConfig.ignoreTitle, checkedItems) { _, which, isChecked ->
-                BackupConfig.ignoreConfig[BackupConfig.ignoreKeys[which]] = isChecked
-            }
-            onDismiss {
-                BackupConfig.saveIgnoreConfig()
-            }
-        }
+        activeBusinessDialog = null
     }
 
     fun backup() {
@@ -403,13 +430,10 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
         }.onError {
             AppLog.put("恢复备份出错WebDavError\n${it.localizedMessage}", it)
             if (context == null) return@onError
-            alert {
-                setTitle(R.string.restore)
-                setMessage("WebDavError\n${it.localizedMessage}\n将从本地备份恢复。")
-                okButton {
-                    restoreFromLocal()
-                }
-                cancelButton()
+            view?.post {
+                activeBusinessDialog = BackupConfigBusinessDialog.RestoreError(
+                    "WebDavError\n${it.localizedMessage}\n将从本地备份恢复。",
+                )
             }
         }.onFinally {
             waitDialog.dismiss()
@@ -424,14 +448,7 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
         if (names.isNotEmpty()) {
             currentCoroutineContext().ensureActive()
             withContext(Main) {
-                context.selector(
-                    title = context.getString(R.string.select_restore_file),
-                    items = names,
-                ) { _, index ->
-                    if (index in names.indices) {
-                        view?.post { restoreWebDav(names[index]) }
-                    }
-                }
+                activeBusinessDialog = BackupConfigBusinessDialog.RestoreFiles(names)
             }
         } else {
             throw NoStackTraceException("Web dav no back up file")
@@ -466,6 +483,10 @@ class BackupConfigFragment : BaseFragment(R.layout.fragment_backup_config),
         }
         inputDialog?.dismiss()
         inputDialog = null
+        if (activeBusinessDialog is BackupConfigBusinessDialog.Ignore) {
+            BackupConfig.saveIgnoreConfig()
+        }
+        activeBusinessDialog = null
         waitDialog.dismiss()
         setSharedTitleBarVisible(true)
         super.onDestroyView()
