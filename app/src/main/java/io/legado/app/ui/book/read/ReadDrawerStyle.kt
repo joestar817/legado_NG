@@ -94,14 +94,14 @@ object ReadDrawerStyle {
     }
 
     /**
-     * 阅读抽屉跟随阅读页自己的日夜模式，而不是应用主题的日夜模式。
+     * 阅读抽屉跟随阅读页自己的日夜与浮层配色；只有墨水屏保留全局强制黑白。
      */
     fun themeSnapshot(
         context: Context,
         primaryStrengthPercent: Int = ReadBookConfig.durConfig.curReadFloatingPrimaryStrength(),
         colorStyle: ReadFloatingColorStyle = ReadBookConfig.durConfig.curReadFloatingColorStyle(),
     ): NgThemeSnapshot = if (
-        NgThemeModeStore.current(context) != NgThemePresentationMode.STANDARD
+        NgThemeModeStore.current(context) == NgThemePresentationMode.EINK
     ) {
         NgThemeResolver.resolve(context)
     } else {

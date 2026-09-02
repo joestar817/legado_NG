@@ -167,7 +167,7 @@ object ThemeConfig {
     fun isReadingNgBackgroundTheme(context: Context): Boolean {
         if (AppConfig.isEInkMode) return false
         if (NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT) {
-            return true
+            return false
         }
         val backgroundKey = if (getTheme(context) == Theme.Dark) {
             PreferKey.bgImageN
