@@ -787,6 +787,9 @@ private fun NgSoftGradientLightFieldPreset.labelRes(): Int = when (this) {
 private fun NgSoftGradientColorPreset.labelRes(): Int = when (this) {
     NgSoftGradientColorPreset.CLEAR_BLUE -> R.string.ng_soft_gradient_clear_blue
     NgSoftGradientColorPreset.DUSK_VIOLET -> R.string.ng_soft_gradient_dusk_violet
+    NgSoftGradientColorPreset.YOUNG_BAMBOO -> R.string.ng_soft_gradient_young_bamboo
+    NgSoftGradientColorPreset.FOREST_AFTER_RAIN -> R.string.ng_soft_gradient_forest_after_rain
+    NgSoftGradientColorPreset.CHERRY_GLOW -> R.string.ng_soft_gradient_cherry_glow
 }
 
 private fun NgVisualSystem.labelRes(): Int = when (this) {

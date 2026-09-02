@@ -13,9 +13,15 @@ import io.legado.app.utils.getPrefString
 import io.legado.app.utils.putPrefString
 import kotlin.math.abs
 
-internal enum class NgSoftGradientColorPreset(val storageValue: String) {
-    CLEAR_BLUE("clear_blue"),
-    DUSK_VIOLET("dusk_violet");
+internal enum class NgSoftGradientColorPreset(
+    val storageValue: String,
+    val darkStatusBarIcons: Boolean,
+) {
+    CLEAR_BLUE("clear_blue", true),
+    DUSK_VIOLET("dusk_violet", false),
+    YOUNG_BAMBOO("young_bamboo", false),
+    FOREST_AFTER_RAIN("forest_after_rain", false),
+    CHERRY_GLOW("cherry_glow", false);
 
     companion object {
         fun fromStorage(value: String?): NgSoftGradientColorPreset =
@@ -153,6 +159,9 @@ internal object NgSoftGradientTheme {
     fun colors(context: Context): NgColorSystem = when (colorPreset(context)) {
         NgSoftGradientColorPreset.CLEAR_BLUE -> clearBlueColors
         NgSoftGradientColorPreset.DUSK_VIOLET -> duskVioletColors
+        NgSoftGradientColorPreset.YOUNG_BAMBOO -> youngBambooColors
+        NgSoftGradientColorPreset.FOREST_AFTER_RAIN -> forestAfterRainColors
+        NgSoftGradientColorPreset.CHERRY_GLOW -> cherryGlowColors
     }
 
     fun gradient(context: Context): NgThemeGradientProfile = when (colorPreset(context)) {
@@ -160,6 +169,15 @@ internal object NgSoftGradientTheme {
             lightFieldPreset(context),
         )
         NgSoftGradientColorPreset.DUSK_VIOLET -> duskVioletGradients.getValue(
+            lightFieldPreset(context),
+        )
+        NgSoftGradientColorPreset.YOUNG_BAMBOO -> youngBambooGradients.getValue(
+            lightFieldPreset(context),
+        )
+        NgSoftGradientColorPreset.FOREST_AFTER_RAIN -> forestAfterRainGradients.getValue(
+            lightFieldPreset(context),
+        )
+        NgSoftGradientColorPreset.CHERRY_GLOW -> cherryGlowGradients.getValue(
             lightFieldPreset(context),
         )
     }
@@ -213,6 +231,59 @@ internal object NgSoftGradientTheme {
         lightTopBarTextMode = NgTopBarTextMode.LIGHT,
         darkTopBarTextMode = NgTopBarTextMode.LIGHT,
     )
+
+    private val youngBambooColors = softGradientColorSystem(
+        primary = 0xFF007947,
+        primaryText = 0xFF10221B,
+        secondaryText = 0xFF48665A,
+        background = 0xFFF4FAF7,
+        labelContainer = 0xFFE4F3EB,
+    )
+
+    private val forestAfterRainColors = softGradientColorSystem(
+        primary = 0xFF2B6447,
+        primaryText = 0xFF172119,
+        secondaryText = 0xFF53675A,
+        background = 0xFFF7F9F3,
+        labelContainer = 0xFFE9F0E4,
+    )
+
+    private val cherryGlowColors = softGradientColorSystem(
+        primary = 0xFFC63F61,
+        primaryText = 0xFF24171B,
+        secondaryText = 0xFF75535D,
+        background = 0xFFFFF7F8,
+        labelContainer = 0xFFF8E6EB,
+    )
+
+    private fun softGradientColorSystem(
+        primary: Long,
+        primaryText: Long,
+        secondaryText: Long,
+        background: Long,
+        labelContainer: Long,
+    ): NgColorSystem {
+        val manualColors = NgManualColorSet(
+            primary = primary.toInt(),
+            secondary = 0xFFFFFFFF.toInt(),
+            primaryText = primaryText.toInt(),
+            secondaryText = secondaryText.toInt(),
+            background = background.toInt(),
+            labelContainer = labelContainer.toInt(),
+        )
+        return NgColorSystem(
+            mode = NgColorGenerationMode.MANUAL,
+            lightSeed = primary.toInt(),
+            darkSeed = primary.toInt(),
+            paletteStyle = NgPaletteStyle.TONAL_SPOT,
+            contrast = NgContrastLevel.DEFAULT,
+            colorSpec = NgColorSpec.MATERIAL_3_2021,
+            manualLight = manualColors,
+            manualDark = manualColors,
+            lightTopBarTextMode = NgTopBarTextMode.LIGHT,
+            darkTopBarTextMode = NgTopBarTextMode.LIGHT,
+        )
+    }
 
     private val clearBlueGradients = mapOf(
         NgSoftGradientLightFieldPreset.BALANCED to gradientProfile(
@@ -380,6 +451,208 @@ internal object NgSoftGradientTheme {
         ),
     ).withFlowShadow()
 
+    private val youngBambooGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFF007D65,
+            0xFF2FA58C,
+            0xFF65C294,
+            0xFFB9E6D2,
+            0xFF72BAA7,
+        ),
+        clear = listOf(
+            0xFF238F79,
+            0xFF51B99F,
+            0xFF87D6B7,
+            0xFFD5F2DF,
+            0xFF8CC9B6,
+        ),
+        stillSea = listOf(
+            0xFF005B4D,
+            0xFF207969,
+            0xFF4FA47E,
+            0xFFA4CDB5,
+            0xFF4A8A72,
+        ),
+        aqua = listOf(
+            0xFF08766E,
+            0xFF319C8D,
+            0xFF69C4B0,
+            0xFFC6E9D7,
+            0xFF5EAE9F,
+        ),
+    )
+
+    private val forestAfterRainGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFF2B6447,
+            0xFF4F865D,
+            0xFF84BF96,
+            0xFFD8E5AB,
+            0xFF77AC98,
+        ),
+        clear = listOf(
+            0xFF487B5E,
+            0xFF71A878,
+            0xFFA7D0A6,
+            0xFFEEF0C6,
+            0xFF9ABFAE,
+        ),
+        stillSea = listOf(
+            0xFF204A35,
+            0xFF3F694A,
+            0xFF689B73,
+            0xFFB4C58C,
+            0xFF587F6F,
+        ),
+        aqua = listOf(
+            0xFF2F6150,
+            0xFF4C8870,
+            0xFF79B697,
+            0xFFD1E2BD,
+            0xFF6FA692,
+        ),
+    )
+
+    private val cherryGlowGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFF97435E,
+            0xFFD65371,
+            0xFFF391A9,
+            0xFFFEEEED,
+            0xFFF8ABA6,
+        ),
+        clear = listOf(
+            0xFFB65E78,
+            0xFFE77990,
+            0xFFF8B4C2,
+            0xFFFFF5F4,
+            0xFFFBC7C0,
+        ),
+        stillSea = listOf(
+            0xFF733247,
+            0xFFA7465E,
+            0xFFC76F86,
+            0xFFE8B7BF,
+            0xFFD88C8C,
+        ),
+        aqua = listOf(
+            0xFF87455F,
+            0xFFB95E80,
+            0xFFDA89A7,
+            0xFFF4D4DA,
+            0xFFCB89A2,
+        ),
+    )
+
+    private fun generatedToneGradients(
+        balanced: List<Long>,
+        clear: List<Long>,
+        stillSea: List<Long>,
+        aqua: List<Long>,
+    ): Map<NgSoftGradientLightFieldPreset, NgThemeGradientProfile> = mapOf(
+        NgSoftGradientLightFieldPreset.BALANCED to generatedToneProfile(
+            NgSoftGradientLightFieldPreset.BALANCED,
+            balanced,
+        ),
+        NgSoftGradientLightFieldPreset.CLEAR to generatedToneProfile(
+            NgSoftGradientLightFieldPreset.CLEAR,
+            clear,
+        ),
+        NgSoftGradientLightFieldPreset.STILL_SEA to generatedToneProfile(
+            NgSoftGradientLightFieldPreset.STILL_SEA,
+            stillSea,
+        ),
+        NgSoftGradientLightFieldPreset.AQUA to generatedToneProfile(
+            NgSoftGradientLightFieldPreset.AQUA,
+            aqua,
+        ),
+    ).withFlowShadow()
+
+    private fun generatedToneProfile(
+        preset: NgSoftGradientLightFieldPreset,
+        baseColors: List<Long>,
+    ): NgThemeGradientProfile {
+        require(baseColors.size == 5)
+        fun toneRadial(
+            centerX: Float,
+            centerY: Float,
+            radius: Float,
+            colorIndex: Int,
+            alpha: Int,
+        ) = radial(
+            centerX,
+            centerY,
+            radius,
+            baseColors[colorIndex].withAlpha(alpha),
+            baseColors[colorIndex].withAlpha(0),
+        )
+
+        val stops: List<Float>
+        val radialLayers: List<NgThemeGradientRadialLayer>
+        when (preset) {
+            NgSoftGradientLightFieldPreset.BALANCED -> {
+                stops = listOf(0f, 0.24f, 0.50f, 0.77f, 1f)
+                radialLayers = listOf(
+                    toneRadial(0.96f, 0.08f, 0.58f, 0, 0x96),
+                    toneRadial(-0.10f, 0.30f, 0.64f, 1, 0x74),
+                    toneRadial(0.46f, 0.62f, 0.54f, 3, 0xA6),
+                    toneRadial(1.02f, 0.72f, 0.35f, 2, 0x68),
+                    toneRadial(0.16f, 0.22f, 0.17f, 3, 0x58),
+                    toneRadial(0.84f, 0.43f, 0.15f, 0, 0x50),
+                    toneRadial(0.22f, 0.77f, 0.18f, 3, 0x50),
+                    vignette(0.50f, 0.52f, 0.75f, baseColors[0].withAlpha(0x48)),
+                )
+            }
+            NgSoftGradientLightFieldPreset.CLEAR -> {
+                stops = listOf(0f, 0.24f, 0.50f, 0.78f, 1f)
+                radialLayers = listOf(
+                    toneRadial(1.00f, 0.06f, 0.60f, 0, 0x62),
+                    toneRadial(-0.08f, 0.28f, 0.68f, 1, 0x72),
+                    toneRadial(0.44f, 0.62f, 0.58f, 3, 0xB0),
+                    toneRadial(0.98f, 0.74f, 0.38f, 2, 0x62),
+                    toneRadial(0.18f, 0.21f, 0.19f, 3, 0x60),
+                    toneRadial(0.82f, 0.42f, 0.16f, 0, 0x3D),
+                    toneRadial(0.24f, 0.78f, 0.20f, 3, 0x55),
+                    vignette(0.50f, 0.54f, 0.81f, baseColors[0].withAlpha(0x2E)),
+                )
+            }
+            NgSoftGradientLightFieldPreset.STILL_SEA -> {
+                stops = listOf(0f, 0.25f, 0.51f, 0.77f, 1f)
+                radialLayers = listOf(
+                    toneRadial(0.98f, 0.08f, 0.56f, 0, 0xA0),
+                    toneRadial(-0.10f, 0.34f, 0.60f, 1, 0x58),
+                    toneRadial(0.44f, 0.62f, 0.50f, 3, 0x82),
+                    toneRadial(1.02f, 0.72f, 0.33f, 2, 0x52),
+                    toneRadial(0.16f, 0.23f, 0.15f, 3, 0x45),
+                    toneRadial(0.84f, 0.43f, 0.14f, 0, 0x56),
+                    toneRadial(0.22f, 0.77f, 0.17f, 3, 0x42),
+                    vignette(0.50f, 0.52f, 0.70f, baseColors[0].withAlpha(0x62)),
+                )
+            }
+            NgSoftGradientLightFieldPreset.AQUA -> {
+                stops = listOf(0f, 0.24f, 0.51f, 0.78f, 1f)
+                radialLayers = listOf(
+                    toneRadial(0.98f, 0.08f, 0.58f, 0, 0x74),
+                    toneRadial(-0.10f, 0.32f, 0.66f, 1, 0x70),
+                    toneRadial(0.46f, 0.64f, 0.54f, 3, 0x9F),
+                    toneRadial(1.02f, 0.70f, 0.35f, 2, 0x68),
+                    toneRadial(0.16f, 0.22f, 0.16f, 3, 0x50),
+                    toneRadial(0.84f, 0.42f, 0.15f, 0, 0x48),
+                    toneRadial(0.22f, 0.78f, 0.18f, 3, 0x4C),
+                    vignette(0.50f, 0.53f, 0.75f, baseColors[0].withAlpha(0x48)),
+                )
+            }
+            NgSoftGradientLightFieldPreset.FLOW_SHADOW -> error(
+                "Flow shadow is derived from the balanced profile",
+            )
+        }
+        return gradientProfile(
+            baseColors = baseColors,
+            stops = stops,
+            radialLayers = radialLayers,
+        )
+    }
+
     private fun Map<NgSoftGradientLightFieldPreset, NgThemeGradientProfile>
         .withFlowShadow(): Map<NgSoftGradientLightFieldPreset, NgThemeGradientProfile> =
         this + (
@@ -430,6 +703,9 @@ internal object NgSoftGradientTheme {
         colors = listOf(0x00000000, 0x00000000, edgeColor.toInt()),
         stops = listOf(0f, clearUntil, 1f),
     )
+
+    private fun Long.withAlpha(alpha: Int): Long =
+        (this and 0x00FFFFFFL) or (alpha.coerceIn(0, 255).toLong() shl 24)
 
     private const val DAY_THEME_MODE = "1"
 }

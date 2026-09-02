@@ -1177,6 +1177,9 @@
     <string name="ng_soft_gradient_color">Soft glow color</string>
     <string name="ng_soft_gradient_clear_blue">Clear blue</string>
     <string name="ng_soft_gradient_dusk_violet">Dusk violet</string>
+    <string name="ng_soft_gradient_young_bamboo">Young bamboo</string>
+    <string name="ng_soft_gradient_forest_after_rain">Forest after rain</string>
+    <string name="ng_soft_gradient_cherry_glow">Cherry glow</string>
     <string name="ng_soft_gradient_light_field">Light field</string>
     <string name="ng_soft_gradient_light_balanced">Balanced</string>
     <string name="ng_soft_gradient_light_clear">Clear</string>

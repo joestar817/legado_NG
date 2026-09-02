@@ -72,7 +72,7 @@ object NgThemeResolver {
                     topNavigationInactive = SOFT_GRADIENT_INACTIVE_TOP_NAVIGATION,
                 ),
                 systemBars = snapshot.systemBars.copy(
-                    darkStatusBarIcons = colorPreset != NgSoftGradientColorPreset.DUSK_VIOLET,
+                    darkStatusBarIcons = colorPreset.darkStatusBarIcons,
                 ),
             )
         }

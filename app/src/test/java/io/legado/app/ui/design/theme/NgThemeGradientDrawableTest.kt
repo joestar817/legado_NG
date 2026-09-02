@@ -38,25 +38,46 @@ class NgThemeGradientDrawableTest {
     }
 
     @Test
-    fun `dusk violet uses readable backdrop navigation colors`() {
+    fun `approved soft gradient colors keep stable storage values`() {
+        assertEquals(
+            listOf(
+                "clear_blue",
+                "dusk_violet",
+                "young_bamboo",
+                "forest_after_rain",
+                "cherry_glow",
+            ),
+            NgSoftGradientColorPreset.entries.map { it.storageValue },
+        )
+    }
+
+    @Test
+    fun `dark soft gradient tones use readable backdrop navigation colors`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.putPrefString(PreferKey.ngThemePresentationMode, "soft_gradient")
-        context.putPrefString(
-            PreferKey.ngSoftGradientColor,
-            NgSoftGradientColorPreset.DUSK_VIOLET.storageValue,
-        )
 
         try {
-            val snapshot = NgThemeResolver.resolve(context)
-            assertEquals(
-                0xFFFFFFFF.toInt(),
-                snapshot.backdropContent.topNavigationActive,
-            )
-            assertEquals(
-                0xB8FFFFFF.toInt(),
-                snapshot.backdropContent.topNavigationInactive,
-            )
-            assertFalse(snapshot.systemBars.darkStatusBarIcons)
+            listOf(
+                NgSoftGradientColorPreset.DUSK_VIOLET,
+                NgSoftGradientColorPreset.YOUNG_BAMBOO,
+                NgSoftGradientColorPreset.FOREST_AFTER_RAIN,
+                NgSoftGradientColorPreset.CHERRY_GLOW,
+            ).forEach { colorPreset ->
+                context.putPrefString(
+                    PreferKey.ngSoftGradientColor,
+                    colorPreset.storageValue,
+                )
+                val snapshot = NgThemeResolver.resolve(context)
+                assertEquals(
+                    0xFFFFFFFF.toInt(),
+                    snapshot.backdropContent.topNavigationActive,
+                )
+                assertEquals(
+                    0xB8FFFFFF.toInt(),
+                    snapshot.backdropContent.topNavigationInactive,
+                )
+                assertFalse(snapshot.systemBars.darkStatusBarIcons)
+            }
         } finally {
             context.putPrefString(
                 PreferKey.ngSoftGradientColor,
