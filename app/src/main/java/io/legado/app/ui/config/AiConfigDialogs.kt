@@ -1,7 +1,6 @@
 package io.legado.app.ui.config
 
 import android.content.res.ColorStateList
-import android.widget.NumberPicker
 import android.widget.RadioButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,10 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,7 +36,6 @@ import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.theme.NgTheme
-import io.legado.app.utils.hideSoftInput
 
 @Immutable
 internal data class AiOperationPermissionOptionUiModel(
@@ -83,73 +77,6 @@ internal fun AiClassicDialogContent(
             fontSize = 16.sp,
             lineHeight = 24.sp,
         )
-    }
-}
-
-@Composable
-internal fun AiNumberPickerDialogContent(
-    title: String,
-    minValue: Int,
-    maxValue: Int,
-    initialValue: Int,
-    cancelText: String,
-    confirmText: String,
-    onCancel: () -> Unit,
-    onConfirm: (Int) -> Unit,
-) {
-    var selectedValue by remember {
-        mutableIntStateOf(initialValue.coerceIn(minValue, maxValue))
-    }
-    val numberPickerRef = remember { arrayOfNulls<NumberPicker>(1) }
-
-    NgDialog(
-        title = title,
-        variant = NgDialogVariant.CLASSIC_CONFIRMATION,
-        titleFontWeight = FontWeight.Normal,
-        actions = {
-            NgDialogTextActionButton(
-                text = cancelText,
-                onClick = onCancel,
-            )
-            NgDialogTextActionButton(
-                text = confirmText,
-                onClick = {
-                    numberPickerRef[0]?.let { numberPicker ->
-                        numberPicker.clearFocus()
-                        numberPicker.hideSoftInput()
-                        onConfirm(numberPicker.value)
-                    }
-                },
-            )
-        },
-    ) {
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center,
-        ) {
-            AndroidView(
-                factory = { context ->
-                    NumberPicker(context).apply {
-                        isVerticalScrollBarEnabled = false
-                        isHorizontalScrollBarEnabled = false
-                        this.minValue = minValue
-                        this.maxValue = maxValue
-                        value = selectedValue
-                        setOnValueChangedListener { _, _, newValue ->
-                            selectedValue = newValue
-                        }
-                        numberPickerRef[0] = this
-                    }
-                },
-                update = { numberPicker ->
-                    numberPicker.minValue = minValue
-                    numberPicker.maxValue = maxValue
-                    if (numberPicker.value != selectedValue) {
-                        numberPicker.value = selectedValue
-                    }
-                },
-            )
-        }
     }
 }
 

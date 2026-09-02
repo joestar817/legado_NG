@@ -47,6 +47,7 @@ import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgFloatingTabBar
 import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
 import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingTitleToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
 import io.legado.app.ui.design.components.compose.NgPullRefreshIndicatorVariant
@@ -100,6 +101,7 @@ internal fun AiProviderDetailScreen(
                 state = state,
                 formState = formState,
                 onFormAction = onFormAction,
+                onBack = { onAction(AiProviderDetailAction.Back) },
                 scrollState = configScrollState,
                 modifier = Modifier.weight(1f),
             )
@@ -135,52 +137,54 @@ private fun AiProviderConfigTab(
     state: AiProviderDetailScreenState,
     formState: AiProviderFormScreenState,
     onFormAction: (AiProviderFormScreenAction) -> Unit,
+    onBack: () -> Unit,
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
-            .fillMaxWidth()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp)
-            .padding(top = 16.dp, bottom = 24.dp),
+            .fillMaxWidth(),
     ) {
-        Row(
+        NgFloatingTitleToolbar(
+            title = state.providerName,
+            onBack = onBack,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 16.dp),
+            titleLeadingContent = {
+                ProviderToolbarIcon(state.providerIconRes)
+            },
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp)
+                .padding(top = 6.dp, bottom = 24.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(colorResource(R.color.ng_icon_container))
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(
-                    painter = painterResource(state.providerIconRes),
-                    contentDescription = stringResource(R.string.ai_provider_menu),
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Text(
-                text = state.providerName,
-                modifier = Modifier.weight(1f),
-                color = colorResource(R.color.ng_on_surface),
-                fontSize = 22.sp,
-                lineHeight = 27.sp,
-                letterSpacing = 0.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            AiProviderFormScreen(
+                state = formState,
+                onAction = onFormAction,
             )
         }
-        AiProviderFormScreen(
-            state = formState,
-            onAction = onFormAction,
+    }
+}
+
+@Composable
+private fun ProviderToolbarIcon(@DrawableRes iconRes: Int) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(colorResource(R.color.ng_icon_container))
+            .padding(6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = stringResource(R.string.ai_provider_menu),
+            modifier = Modifier.fillMaxSize(),
         )
     }
 }

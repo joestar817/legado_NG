@@ -152,6 +152,7 @@ fun NgFloatingTitleToolbar(
     title: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    titleLeadingContent: (@Composable RowScope.() -> Unit)? = null,
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
 ) {
     Column(
@@ -181,6 +182,10 @@ fun NgFloatingTitleToolbar(
                     width = 32.dp,
                 )
                 Spacer(Modifier.width(12.dp))
+                titleLeadingContent?.let { content ->
+                    content()
+                    Spacer(Modifier.width(10.dp))
+                }
                 Text(
                     text = title,
                     modifier = Modifier.weight(1f),

@@ -447,6 +447,8 @@
     <string name="ai_assistant_model_setting">Chat model</string>
     <string name="ai_context_compaction_model">Compaction model</string>
     <string name="ai_context_compaction_model_follow">Follow chat model</string>
+    <string name="ai_context_compaction_model_follow_summary">Always use the current chat model</string>
+    <string name="ai_model_automatic_group">Automatic</string>
     <string name="ai_context_compaction_model_search_hint">Search compaction model</string>
     <string name="ai_assistant_context_window">Context window</string>
     <string name="ai_assistant_context_window_summary">%1$s tokens</string>
@@ -580,6 +582,7 @@
     <string name="ai_disable_all_models">Disable all</string>
     <string name="ai_model_select">Select model</string>
     <string name="ai_filter_models">Search and filter models</string>
+    <string name="ai_locate_selected_model">Locate selected model</string>
     <string name="ai_model_enable">Enable model</string>
     <string name="ai_edit_model">Edit model</string>
     <string name="ai_model_information">Model information</string>

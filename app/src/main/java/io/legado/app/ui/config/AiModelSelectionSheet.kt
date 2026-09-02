@@ -8,11 +8,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -76,6 +79,28 @@ internal data class AiModelSelectionSheetState(
     val followAssistantSelected: Boolean = false,
 )
 
+internal fun AiModelSelectionSheetState.selectedLazyItemIndex(
+    visibleProviders: List<AiModelSelectionProviderUiModel> = providers,
+    includeFollowAssistant: Boolean = followAssistantLabel != null,
+): Int? {
+    var index = 0
+    if (includeFollowAssistant && followAssistantLabel != null) {
+        index += 1 // “自动”分组标题
+        if (followAssistantSelected) return index
+        index += 1
+    }
+    for (provider in visibleProviders) {
+        index += 1 // 提供商标题
+        for (model in provider.models) {
+            if (provider.id == selectedProviderId && model.id == selectedModelId) {
+                return index
+            }
+            index += 1
+        }
+    }
+    return null
+}
+
 @Composable
 internal fun AiModelSelectionSheet(
     state: AiModelSelectionSheetState,
@@ -85,6 +110,9 @@ internal fun AiModelSelectionSheet(
     var query by remember { mutableStateOf("") }
     var filterExpanded by remember { mutableStateOf(false) }
     var selectedProviderIds by remember { mutableStateOf(emptySet<String>()) }
+    var locatingSelection by remember { mutableStateOf(false) }
+    var locateRequest by remember { mutableIntStateOf(0) }
+    var locateTargetIndex by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
     val normalizedQuery = query.trim()
     val filteredProviders = state.providers
@@ -108,11 +136,30 @@ internal fun AiModelSelectionSheet(
         ))
     val filterActive = query.isNotBlank() || selectedProviderIds.isNotEmpty()
     val filterInteractionSource = remember { MutableInteractionSource() }
+    val locateInteractionSource = remember { MutableInteractionSource() }
+    val includeFollowAssistant = state.followAssistantLabel != null && onFollowAssistant != null
+    val selectedVisibleIndex = state.selectedLazyItemIndex(
+        visibleProviders = filteredProviders,
+        includeFollowAssistant = showFollowAssistant && onFollowAssistant != null,
+    )
+    val selectedFullIndex = state.selectedLazyItemIndex(
+        includeFollowAssistant = includeFollowAssistant,
+    )
     LaunchedEffect(normalizedQuery, selectedProviderIds) {
-        listState.scrollToItem(0)
+        if (!locatingSelection) listState.scrollToItem(0)
     }
     LaunchedEffect(filterExpanded) {
         if (filterExpanded) listState.scrollToItem(0)
+    }
+    LaunchedEffect(locateRequest) {
+        if (locateRequest > 0) {
+            val request = locateRequest
+            try {
+                listState.animateScrollToItem(locateTargetIndex)
+            } finally {
+                if (locateRequest == request) locatingSelection = false
+            }
+        }
     }
 
     Column(
@@ -130,7 +177,7 @@ internal fun AiModelSelectionSheet(
                 text = state.title,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 4.dp, end = 80.dp),
+                    .padding(start = 4.dp),
                 color = colorResource(R.color.ng_on_surface),
                 fontSize = 17.sp,
                 lineHeight = 21.sp,
@@ -139,6 +186,37 @@ internal fun AiModelSelectionSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable(
+                        enabled = selectedFullIndex != null,
+                        interactionSource = locateInteractionSource,
+                        indication = null,
+                    ) {
+                        val target = selectedVisibleIndex ?: selectedFullIndex
+                        if (target != null) {
+                            locatingSelection = true
+                            if (selectedVisibleIndex == null) {
+                                query = ""
+                                selectedProviderIds = emptySet()
+                            }
+                            filterExpanded = false
+                            locateTargetIndex = target
+                            locateRequest += 1
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_ai_locate_selected),
+                    contentDescription = stringResource(R.string.ai_locate_selected_model),
+                    modifier = Modifier.size(22.dp),
+                    tint = colorResource(R.color.ng_on_surface).copy(
+                        alpha = if (selectedFullIndex != null) 1f else 0.35f
+                    ),
+                )
+            }
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -219,9 +297,28 @@ internal fun AiModelSelectionSheet(
             contentPadding = PaddingValues(bottom = 10.dp),
         ) {
             if (showFollowAssistant && onFollowAssistant != null) {
+                item(key = "follow-assistant-header") {
+                    Text(
+                        text = stringResource(R.string.ai_model_automatic_group),
+                        modifier = Modifier.padding(
+                            start = 2.dp,
+                            top = 12.dp,
+                            end = 2.dp,
+                            bottom = 8.dp,
+                        ),
+                        color = Color(NgTheme.colors.primary),
+                        fontSize = 15.sp,
+                        lineHeight = 18.sp,
+                        letterSpacing = 0.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
                 item(key = "follow-assistant") {
                     AiFollowAssistantModelCard(
                         label = requireNotNull(state.followAssistantLabel),
+                        summary = stringResource(
+                            R.string.ai_context_compaction_model_follow_summary
+                        ),
                         selected = state.followAssistantSelected,
                         onClick = onFollowAssistant,
                     )
@@ -384,28 +481,15 @@ private fun AiModelSelectionCard(
                     Spacer(Modifier.height(6.dp))
                 }
             }
-            Box(
-                modifier = Modifier
-                    .padding(start = 10.dp)
-                    .size(32.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (selected) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_check),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        tint = Color(NgTheme.colors.primary),
-                    )
-                }
-            }
         }
+        AiModelSelectionIndicator(selected)
     }
 }
 
 @Composable
 private fun AiFollowAssistantModelCard(
     label: String,
+    summary: String,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -413,6 +497,7 @@ private fun AiFollowAssistantModelCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(bottom = 12.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(colorResource(R.color.ng_surface_card)),
     ) {
@@ -424,29 +509,64 @@ private fun AiFollowAssistantModelCard(
                     indication = null,
                     onClick = onClick,
                 )
-                .padding(14.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = label,
-                modifier = Modifier.weight(1f),
-                color = colorResource(R.color.ng_on_surface),
-                fontSize = 16.sp,
-                lineHeight = 19.sp,
-                letterSpacing = 0.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                if (selected) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_check),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        tint = Color(NgTheme.colors.primary),
-                    )
-                }
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(colorResource(R.color.ng_icon_container))
+                    .padding(7.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_ai_chat_suggestion),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    tint = Color(NgTheme.colors.primary),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    color = colorResource(R.color.ng_on_surface),
+                    fontSize = 16.sp,
+                    lineHeight = 19.sp,
+                    letterSpacing = 0.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = summary,
+                    modifier = Modifier.padding(top = 4.dp),
+                    color = colorResource(R.color.ng_on_surface_variant),
+                    fontSize = 13.sp,
+                    lineHeight = 16.sp,
+                    letterSpacing = 0.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
+        AiModelSelectionIndicator(selected)
+    }
+}
+
+@Composable
+private fun BoxScope.AiModelSelectionIndicator(selected: Boolean) {
+    if (!selected) return
+    Box(
+        modifier = Modifier.matchParentSize(),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(6.dp)
+                .fillMaxHeight()
+                .background(Color(NgTheme.colors.primary)),
+        )
     }
 }
 

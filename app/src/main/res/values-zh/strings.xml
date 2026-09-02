@@ -445,6 +445,8 @@
     <string name="ai_assistant_model_setting">聊天模型</string>
     <string name="ai_context_compaction_model">压缩模型</string>
     <string name="ai_context_compaction_model_follow">跟随当前聊天模型</string>
+    <string name="ai_context_compaction_model_follow_summary">始终使用当前聊天模型</string>
+    <string name="ai_model_automatic_group">自动</string>
     <string name="ai_context_compaction_model_search_hint">搜索压缩模型</string>
     <string name="ai_assistant_context_window">上下文窗口</string>
     <string name="ai_assistant_context_window_summary">%1$s tokens</string>
@@ -578,6 +580,7 @@
     <string name="ai_disable_all_models">全部禁用</string>
     <string name="ai_model_select">选择模型</string>
     <string name="ai_filter_models">搜索和筛选模型</string>
+    <string name="ai_locate_selected_model">定位到已选模型</string>
     <string name="ai_model_enable">启用模型</string>
     <string name="ai_edit_model">编辑模型</string>
     <string name="ai_model_information">模型信息</string>
