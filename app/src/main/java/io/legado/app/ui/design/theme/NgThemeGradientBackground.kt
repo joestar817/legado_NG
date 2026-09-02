@@ -456,7 +456,7 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
 
     private companion object {
         const val FRAME_DELAY_MILLIS = 33L
-        const val FLOW_SHADOW_PERIOD_NANOS = 4_550_000_000L
+        const val FLOW_SHADOW_PERIOD_NANOS = 7_900_000_000L
         const val MOTION_RAMP_NANOS = 200_000_000L
         val timelineOriginNanos: Long = System.nanoTime()
     }
@@ -509,15 +509,13 @@ private class NgSoftGradientFlowShadow {
                     float2(1.0)
                 );
                 float x = uv.x * 2.0 - 1.0;
-                float bend = 0.42 * (x * x * x - 0.55 * x);
-                float alpha = flow.x + bend + 0.40;
-                float field = (
-                    sin(6.28318531 * uv.y + alpha) +
-                    0.30396355 * sin(alpha)
-                ) / 1.30396355;
+                float bend = 0.1011584 * (x * x * x - 0.55 * x);
+                float field = sin(
+                    3.6128 * uv.y + flow.x + bend + 0.40
+                );
                 float edge = 4.0 * uv.y * (1.0 - uv.y);
                 float sampleY = clamp(
-                    uv.y + field * 0.0585 * edge * flow.y,
+                    uv.y + field * 0.143 * edge * flow.y,
                     0.0,
                     1.0
                 );
@@ -540,12 +538,10 @@ private class NgSoftGradientFlowShadow {
                     float2(1.0)
                 );
                 float x = uv.x * 2.0 - 1.0;
-                float bend = 0.42 * (x * x * x - 0.55 * x);
-                float alpha = flow.x + bend + 0.40;
-                float field = (
-                    sin(6.28318531 * uv.y + alpha) +
-                    0.30396355 * sin(alpha)
-                ) / 1.30396355;
+                float bend = 0.1011584 * (x * x * x - 0.55 * x);
+                float field = sin(
+                    3.6128 * uv.y + flow.x + bend + 0.40
+                );
                 float edge = 4.0 * uv.y * (1.0 - uv.y);
                 float shade = field * edge * 0.39 * flow.y;
                 if (shade < 0.0) {
