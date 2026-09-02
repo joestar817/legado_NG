@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.annotation.StringRes
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
+import io.legado.app.BuildConfig
 import io.legado.app.R
 import io.legado.app.base.BaseActivity
 import io.legado.app.constant.AppConst.appInfo
@@ -53,6 +54,7 @@ class AboutActivity : BaseActivity<ActivityAboutBinding>() {
                     versionName = appInfo.versionName,
                     onContributorsClick = { openUrl(R.string.contributors_url) },
                     onCheckUpdateClick = ::checkUpdate,
+                    onCheckUpdateLongClick = if (BuildConfig.DEBUG) ::showLatestRelease else null,
                     onTelegramClick = { openUrl(R.string.telegram_group_url) },
                     onPrivacyPolicyClick = {
                         showMdFile(getString(R.string.privacy_policy), "privacyPolicy.md")
@@ -92,6 +94,19 @@ class AboutActivity : BaseActivity<ActivityAboutBinding>() {
                     waitDialog.dismiss()
                 }
         }
+    }
+
+    private fun showLatestRelease() {
+        if (!BuildConfig.DEBUG) return
+        waitDialog.show()
+        AppUpdate.gitHubUpdate.latest(lifecycleScope)
+            .onSuccess {
+                showDialogFragment(UpdateDialog(it))
+            }.onError {
+                appCtx.toastOnUi("${getString(R.string.check_update)}\n${it.localizedMessage}")
+            }.onFinally {
+                waitDialog.dismiss()
+            }
     }
 
     private fun saveLog() {

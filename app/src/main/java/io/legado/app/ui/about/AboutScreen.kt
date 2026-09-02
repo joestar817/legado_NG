@@ -2,7 +2,9 @@ package io.legado.app.ui.about
 
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +48,7 @@ internal fun AboutScreen(
     versionName: String,
     onContributorsClick: () -> Unit,
     onCheckUpdateClick: () -> Unit,
+    onCheckUpdateLongClick: (() -> Unit)? = null,
     onTelegramClick: () -> Unit,
     onPrivacyPolicyClick: () -> Unit,
     onLicenseClick: () -> Unit,
@@ -74,6 +77,7 @@ internal fun AboutScreen(
                     iconRes = R.drawable.ic_about_cloud_download,
                     iconSize = 28.dp,
                     onClick = onCheckUpdateClick,
+                    onLongClick = onCheckUpdateLongClick,
                 ),
                 AboutLinkAction(
                     labelRes = R.string.telegram,
@@ -187,12 +191,21 @@ private fun AboutAppCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AboutLinkButton(
     action: AboutLinkAction,
     modifier: Modifier = Modifier,
 ) {
     val label = stringResource(action.labelRes)
+    val clickModifier = if (action.onLongClick == null) {
+        Modifier.clickable(onClick = action.onClick)
+    } else {
+        Modifier.combinedClickable(
+            onClick = action.onClick,
+            onLongClick = action.onLongClick,
+        )
+    }
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -201,7 +214,7 @@ private fun AboutLinkButton(
             modifier = Modifier
                 .size(44.dp)
                 .clip(RoundedCornerShape(13.dp))
-                .clickable(onClick = action.onClick),
+                .then(clickModifier),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -285,6 +298,7 @@ private data class AboutLinkAction(
     @param:DrawableRes val iconRes: Int,
     val iconSize: Dp = 23.dp,
     val onClick: () -> Unit,
+    val onLongClick: (() -> Unit)? = null,
 )
 
 private data class AboutToolAction(

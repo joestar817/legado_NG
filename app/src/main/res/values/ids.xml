@@ -25,6 +25,9 @@
     <!-- Stable shared action retained after the legacy direct-link upload menu was removed. -->
     <item name="menu_copy_rule" type="id" />
 
+    <!-- Stable reader action retained after the legacy app-update menu was removed. -->
+    <item name="menu_download" type="id" />
+
     <!-- Stable actions retained after the legacy replacement-rule menus were removed. -->
     <item name="menu_enable" type="id" />
     <item name="menu_add_replace_rule" type="id" />

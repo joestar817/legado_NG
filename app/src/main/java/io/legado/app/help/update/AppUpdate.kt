@@ -21,6 +21,8 @@ object AppUpdate {
 
         fun check(scope: CoroutineScope): Coroutine<UpdateInfo>
 
+        fun latest(scope: CoroutineScope): Coroutine<UpdateInfo>
+
     }
 
 }
