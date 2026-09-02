@@ -14,7 +14,6 @@ import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.AppPattern
-import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.model.CheckSource
@@ -35,7 +34,6 @@ import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.cnCompare
 import io.legado.app.utils.isAbsUrl
 import io.legado.app.utils.launch
-import io.legado.app.utils.putPrefString
 import io.legado.app.utils.share
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.splitNotBlank
@@ -566,7 +564,6 @@ class BookSourceActivity :
         CheckSource.checkContent = result.checkContent
         CheckSource.blockSourceDialogs = result.blockSourceDialogs
         CheckSource.putConfig()
-        putPrefString(PreferKey.checkSource, CheckSource.summary)
         CheckSource.start(this, selection)
         startActivity<BookSourceCheckActivity>()
     }

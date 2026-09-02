@@ -3,7 +3,6 @@ package io.legado.app.ui.config
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.widget.SeekBar
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -13,19 +12,18 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
-import io.legado.app.databinding.DialogImageBlurringBinding
+import io.legado.app.constant.EventBus
 import io.legado.app.help.config.NgManagedTheme
 import io.legado.app.help.config.NgThemeLibraryStore
 import io.legado.app.help.config.NgThemePackageManager
 import io.legado.app.help.config.isBuiltIn
+import io.legado.app.model.BookCover
 import io.legado.app.help.config.md3.Md3ThemeImportDraft
 import io.legado.app.help.config.md3.Md3ThemeImportManager
 import io.legado.app.help.config.md3.Md3ThemePackageNotRecognizedException
-import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.dialogs.selector
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.widget.seekbar.SeekBarChangeListener
 import io.legado.app.utils.normalizeFileName
+import io.legado.app.utils.postEvent
 import io.legado.app.utils.CreateDocumentContract
 import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.toastOnUi
@@ -105,6 +103,7 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                         builtInThemes = NgThemeLibraryStore.builtInThemes(requireContext()),
                         savedThemes = state.savedThemes,
                         activeThemeId = state.activeThemeId,
+                        currentThemeName = NgThemeLibraryStore.currentThemeName(requireContext()),
                         onBack = { requireActivity().onBackPressedDispatcher.onBackPressed() },
                         onSaveCurrent = ::saveCurrentTheme,
                         onImportPackage = ::importThemePackage,
@@ -114,10 +113,16 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                         draftTheme = draftEditTheme,
                         onDismissThemeEditor = ::dismissThemeEditor,
                         onDraftThemeChanged = { draftEditTheme = it },
-                        onEditBackground = ::showBackgroundActions,
+                        onSelectBackground = ::selectThemeBackground,
+                        onBackgroundBlurChanged = { dark, blur ->
+                            updateBackground(dark) { it.copy(blur = blur) }
+                        },
+                        onClearBackground = { dark ->
+                            updateBackground(dark) { it.copy(path = null) }
+                        },
                         onSaveTheme = ::saveEditedTheme,
                         onThemeExport = ::requestExport,
-                        onThemeDelete = ::confirmDelete,
+                        onThemeDelete = ::deleteTheme,
                         md3ImportDraft = md3ImportDraft,
                         md3ImportInstalling = md3ImportInstalling,
                         onDismissMd3Import = ::dismissMd3Import,
@@ -142,11 +147,8 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
         }
     }
 
-    private fun saveCurrentTheme() {
-        editThemeName(
-            initialName = NgThemeLibraryStore.currentThemeName(requireContext()),
-            onConfirm = { name -> NgThemeLibraryStore.saveCurrent(requireContext(), name) }
-        )
+    private fun saveCurrentTheme(name: String) {
+        NgThemeLibraryStore.saveCurrent(requireContext(), name)
     }
 
     private fun importThemePackage() {
@@ -243,45 +245,9 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
         }
     }
 
-    private fun showBackgroundActions(dark: Boolean) {
-        val background = if (dark) draftEditTheme?.darkBackground else draftEditTheme?.lightBackground
-        val actions = arrayListOf(
-            getString(R.string.select_image),
-            getString(R.string.background_image_blurring)
-        )
-        if (!background?.path.isNullOrBlank()) actions += getString(R.string.clear)
-        requireContext().selector(items = actions) { _, index ->
-            when (index) {
-                0 -> {
-                    pendingDarkBackground = dark
-                    selectBackground.launch(arrayOf("image/*"))
-                }
-                1 -> editBackgroundBlur(dark)
-                2 -> updateBackground(dark) { it.copy(path = null) }
-            }
-        }
-    }
-
-    private fun editBackgroundBlur(dark: Boolean) {
-        val initial = if (dark) draftEditTheme?.darkBackground?.blur else draftEditTheme?.lightBackground?.blur
-        alert(R.string.background_image_blurring) {
-            val binding = DialogImageBlurringBinding.inflate(layoutInflater).apply {
-                seekBar.progress = initial ?: 0
-                textViewValue.text = seekBar.progress.toString()
-                seekBar.setOnSeekBarChangeListener(object : SeekBarChangeListener {
-                    override fun onProgressChanged(
-                        seekBar: SeekBar,
-                        progress: Int,
-                        fromUser: Boolean
-                    ) {
-                        textViewValue.text = progress.toString()
-                    }
-                })
-            }
-            customView { binding.root }
-            okButton { updateBackground(dark) { it.copy(blur = binding.seekBar.progress) } }
-            cancelButton()
-        }
+    private fun selectThemeBackground(dark: Boolean) {
+        pendingDarkBackground = dark
+        selectBackground.launch(arrayOf("image/*"))
     }
 
     private fun updateBackground(
@@ -324,33 +290,20 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
         target.absolutePath
     }
 
-    private fun editThemeName(initialName: String, onConfirm: (String) -> Unit) {
-        val dialogBinding = io.legado.app.databinding.DialogEditTextBinding.inflate(layoutInflater)
-        alert(R.string.theme_name) {
-            dialogBinding.apply {
-                editView.hint = getString(R.string.theme_name)
-                editView.setText(initialName)
-                editView.selectAll()
-            }
-            customView { dialogBinding.root }
-            okButton {
-                val name = dialogBinding.editView.text?.toString()?.trim().orEmpty()
-                if (name.isNotEmpty()) onConfirm(name)
-            }
-            cancelButton()
-        }
-    }
-
     private fun requestExport(theme: NgManagedTheme) {
         pendingExportTheme = theme
         exportTheme.launch("${theme.name.normalizeFileName()}.ngtheme")
     }
 
-    private fun confirmDelete(theme: NgManagedTheme) {
-        alert(R.string.delete, R.string.sure_del) {
-            yesButton { NgThemeLibraryStore.remove(requireContext(), theme.id) }
-            noButton()
-        }
+    private fun deleteTheme(theme: NgManagedTheme) {
+        runCatching { NgThemeLibraryStore.remove(requireContext(), theme.id) }
+            .onSuccess { removed ->
+                if (removed != null) {
+                    BookCover.upDefaultCover()
+                    postEvent(EventBus.BOOKSHELF_REFRESH, "")
+                }
+            }
+            .onFailure { toastOnUi(it.localizedMessage.orEmpty()) }
     }
 
     override fun onDestroyView() {

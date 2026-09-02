@@ -6,14 +6,22 @@ import android.os.Environment
 import androidx.lifecycle.MutableLiveData
 import io.legado.app.base.BaseViewModel
 import io.legado.app.exception.NoStackTraceException
+import io.legado.app.utils.FileUtils
 import io.legado.app.utils.toastOnUi
 import java.io.File
+
+internal data class FilePickerEntry(
+    val file: File,
+    val name: String,
+    val isDirectory: Boolean,
+    val extension: String,
+)
 
 class FilePickerViewModel(application: Application) : BaseViewModel(application) {
 
     var rootDoc: File? = Environment.getExternalStorageDirectory()
     var subDocs = mutableListOf<File>()
-    val filesLiveData = MutableLiveData<List<File>>()
+    internal val filesLiveData = MutableLiveData<List<FilePickerEntry>>()
     var mode: Int = BuiltInFilePickerActivity.FILE
     var isShowHideDir: Boolean = false
     var allowExtensions: Array<String>? = null
@@ -38,7 +46,7 @@ class FilePickerViewModel(application: Application) : BaseViewModel(application)
     fun upFiles(parentFile: File?) {
         execute {
             parentFile ?: return@execute emptyList()
-            if (parentFile == rootDoc) {
+            val files = if (parentFile == rootDoc) {
                 parentFile.listFiles()?.sortedWith(
                     compareBy({ it.isFile }, { it.name })
                 )
@@ -50,6 +58,19 @@ class FilePickerViewModel(application: Application) : BaseViewModel(application)
                     list.addAll(it)
                 }
                 list
+            }
+            files?.map { file ->
+                val isDirectory = file.isDirectory
+                FilePickerEntry(
+                    file = file,
+                    name = file.name,
+                    isDirectory = isDirectory,
+                    extension = if (isDirectory) {
+                        ""
+                    } else {
+                        FileUtils.getExtension(file.path).lowercase()
+                    },
+                )
             }
         }.onStart {
             filesLiveData.postValue(emptyList())

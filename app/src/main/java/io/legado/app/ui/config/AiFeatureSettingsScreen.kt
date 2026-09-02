@@ -14,6 +14,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalFocusManager
@@ -25,7 +29,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.help.ai.AiConfig
 import io.legado.app.ui.design.components.NgSettingsTrailing
+import io.legado.app.ui.design.components.compose.NgDockSlider
+import io.legado.app.ui.design.components.compose.NgExpandableSettingsItem
+import io.legado.app.ui.design.components.compose.NgExpandableSettingsItemVariant
 import io.legado.app.ui.design.components.compose.NgFormControlGroup
 import io.legado.app.ui.design.components.compose.NgFormGroupDivider
 import io.legado.app.ui.design.components.compose.NgFormNumberSettingRow
@@ -35,6 +43,8 @@ import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsIcon
 import io.legado.app.ui.design.components.compose.NgSettingsItem
 import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
+import io.legado.app.ui.design.components.compose.NgSliderVariant
+import kotlin.math.roundToInt
 
 @Immutable
 internal data class AiPurifyModelSettingsScreenState(
@@ -85,13 +95,15 @@ internal data class AiReadAloudModelSettingsScreenState(
     val modelSummary: String = "",
     val reasoningSummary: String = "",
     val preloadSummary: String = "",
+    val preloadCount: Int = AiConfig.DEFAULT_READ_ALOUD_STORYBOARD_PRELOAD_COUNT,
     val reasoningAvailable: Boolean = false,
 )
 
 internal sealed interface AiReadAloudModelSettingsAction {
     data object SelectModel : AiReadAloudModelSettingsAction
     data object SelectReasoning : AiReadAloudModelSettingsAction
-    data object SelectPreloadCount : AiReadAloudModelSettingsAction
+    data class PreloadCountChanged(val value: Int) : AiReadAloudModelSettingsAction
+    data object PreloadCountChangeFinished : AiReadAloudModelSettingsAction
 }
 
 @Composable
@@ -99,6 +111,7 @@ internal fun AiReadAloudModelSettingsScreen(
     state: AiReadAloudModelSettingsScreenState,
     onAction: (AiReadAloudModelSettingsAction) -> Unit,
 ) {
+    var preloadExpanded by rememberSaveable { mutableStateOf(false) }
     AiSingleGroupSettingsScreen(sectionTitle = stringResource(R.string.ai_read_aloud)) {
         AiSettingsEntry(
             title = stringResource(R.string.ai_read_aloud_storyboard_model_setting),
@@ -115,13 +128,37 @@ internal fun AiReadAloudModelSettingsScreen(
             modifier = Modifier.alpha(if (state.reasoningAvailable) 1f else 0.55f),
             onClick = { onAction(AiReadAloudModelSettingsAction.SelectReasoning) },
         )
-        AiSettingsEntry(
+        NgExpandableSettingsItem(
             title = stringResource(R.string.ai_read_aloud_storyboard_preload_count),
             summary = state.preloadSummary,
-            iconRes = R.drawable.ic_ai,
-            summaryMaxLines = 2,
-            onClick = { onAction(AiReadAloudModelSettingsAction.SelectPreloadCount) },
-        )
+            expanded = preloadExpanded,
+            onExpandedChange = { preloadExpanded = it },
+            variant = NgExpandableSettingsItemVariant.REGULAR_LEADING,
+            leadingIconRes = R.drawable.ic_ai,
+        ) {
+            NgDockSlider(
+                title = stringResource(R.string.ai_read_aloud_storyboard_preload_count),
+                valueText = state.preloadCount.toString(),
+                minimumText = AiConfig.MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT.toString(),
+                maximumText = AiConfig.MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT.toString(),
+                value = state.preloadCount.toFloat(),
+                valueRange = AiConfig.MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT.toFloat()..
+                    AiConfig.MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT.toFloat(),
+                steps = AiConfig.MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT -
+                    AiConfig.MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT - 1,
+                variant = NgSliderVariant.DISCRETE,
+                onValueChange = { value ->
+                    onAction(
+                        AiReadAloudModelSettingsAction.PreloadCountChanged(
+                            value.roundToInt()
+                        )
+                    )
+                },
+                onValueChangeFinished = {
+                    onAction(AiReadAloudModelSettingsAction.PreloadCountChangeFinished)
+                },
+            )
+        }
     }
 }
 
@@ -231,6 +268,27 @@ internal enum class AiPurifyNumberField {
     CHAPTER_SAMPLE_LIMIT,
 }
 
+internal fun AiPurifyNumberField.valueRange(): IntRange {
+    return when (this) {
+        AiPurifyNumberField.PARAGRAPH_LIMIT -> {
+            AiConfig.MIN_PURIFY_PARAGRAPH_LIMIT..AiConfig.MAX_PURIFY_PARAGRAPH_LIMIT
+        }
+        AiPurifyNumberField.CHAPTER_CONCURRENCY -> {
+            AiConfig.MIN_PURIFY_CHAPTER_CONCURRENCY_LIMIT..
+                AiConfig.MAX_PURIFY_CHAPTER_CONCURRENCY_LIMIT
+        }
+        AiPurifyNumberField.CHAPTER_RETRY_COUNT -> {
+            AiConfig.MIN_PURIFY_CHAPTER_RETRY_COUNT..AiConfig.MAX_PURIFY_CHAPTER_RETRY_COUNT
+        }
+        AiPurifyNumberField.CHAPTER_SEGMENT_LIMIT -> {
+            AiConfig.MIN_PURIFY_CHAPTER_SEGMENT_LIMIT..AiConfig.MAX_PURIFY_CHAPTER_SEGMENT_LIMIT
+        }
+        AiPurifyNumberField.CHAPTER_SAMPLE_LIMIT -> {
+            AiConfig.MIN_PURIFY_CHAPTER_SAMPLE_LIMIT..AiConfig.MAX_PURIFY_CHAPTER_SAMPLE_LIMIT
+        }
+    }
+}
+
 internal enum class AiPurifyRuleType {
     TYPO,
     NOISE,
@@ -268,6 +326,11 @@ internal sealed interface AiPurifySettingsAction {
         val field: AiPurifyNumberField,
         val value: String,
     ) : AiPurifySettingsAction
+    data class NumberStepChanged(
+        val field: AiPurifyNumberField,
+        val value: Int,
+    ) : AiPurifySettingsAction
+    data class NumberStepFinished(val field: AiPurifyNumberField) : AiPurifySettingsAction
     data class NumberFocusLost(val field: AiPurifyNumberField) : AiPurifySettingsAction
 }
 
@@ -523,6 +586,13 @@ private fun AiPurifyNumberFormRow(
             imeAction = ImeAction.Done,
         ),
         keyboardActions = keyboardActions,
+        valueRange = field.valueRange(),
+        onStepValueChange = { value ->
+            onAction(AiPurifySettingsAction.NumberStepChanged(field, value))
+        },
+        onStepValueChangeFinished = {
+            onAction(AiPurifySettingsAction.NumberStepFinished(field))
+        },
         onFocusLost = {
             onAction(AiPurifySettingsAction.NumberFocusLost(field))
         },

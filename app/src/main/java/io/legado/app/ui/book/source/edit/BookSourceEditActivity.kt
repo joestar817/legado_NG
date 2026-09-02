@@ -66,7 +66,6 @@ class BookSourceEditActivity :
     override val binding by viewBinding(ComposeActivityBinding::inflate)
     override val viewModel by viewModels<BookSourceEditViewModel>()
 
-    private val editEntityMaxLine = AppConfig.sourceEditMaxLine
     private val sourceEntities: ArrayList<EditEntity> = ArrayList()
     private val searchEntities: ArrayList<EditEntity> = ArrayList()
     private val exploreEntities: ArrayList<EditEntity> = ArrayList()
@@ -223,7 +222,7 @@ class BookSourceEditActivity :
                     editEntities = editEntitiesFor(selectedTab),
                     sourceRevision = sourceRevision,
                     fieldValueRevision = fieldValueRevision,
-                    editEntityMaxLine = editEntityMaxLine,
+                    editEntityMaxLine = Int.MAX_VALUE,
                     autoComplete = autoComplete,
                     focusedField = focusedField,
                     keyboardAssists = keyboardAssists,

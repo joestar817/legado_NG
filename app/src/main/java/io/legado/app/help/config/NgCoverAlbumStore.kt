@@ -55,7 +55,7 @@ private data class StoredNgCoverAlbumLibrary(
  * 独立于主题记录的封面图集仓库。
  *
  * 图集资产独立于主题安装目录；主题显式携带封面 Profile 时，可以在应用主题时选择对应图集。
- * 用户仍可在封面设置中独立切换，删除主题不会删除已经安装的图集。
+ * 用户仍可在封面设置中独立切换或删除；主题删除只清理由该主题拥有且没有其它主题引用的图集。
  */
 internal object NgCoverAlbumStore {
 
@@ -170,8 +170,20 @@ internal object NgCoverAlbumStore {
 
     fun removeImported(context: Context, albumIds: Collection<String>) = synchronized(lock) {
         ensureInitialized(context)
-        if (albumIds.isEmpty()) return@synchronized
+        removeAlbumsLocked(context, albumIds)
+    }
+
+    fun remove(context: Context, albumId: String): Boolean = synchronized(lock) {
+        ensureInitialized(context)
+        if (mutableState.value.albums.none { it.id == albumId }) return@synchronized false
+        removeAlbumsLocked(context, setOf(albumId))
+        true
+    }
+
+    private fun removeAlbumsLocked(context: Context, albumIds: Collection<String>) {
+        if (albumIds.isEmpty()) return
         val removed = mutableState.value.albums.filter { it.id in albumIds }
+        if (removed.isEmpty()) return
         val updated = mutableState.value.copy(
             albums = mutableState.value.albums.filterNot { it.id in albumIds },
             selectedAlbumId = mutableState.value.selectedAlbumId.takeUnless { it in albumIds },

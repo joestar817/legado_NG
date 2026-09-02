@@ -42,6 +42,7 @@ import io.legado.app.ui.design.theme.NgTheme
 
 enum class NgExpandableSettingsItemVariant {
     REGULAR,
+    REGULAR_LEADING,
     COMPACT,
     COMPACT_LEADING,
 }
@@ -58,8 +59,10 @@ fun NgExpandableSettingsItem(
     @DrawableRes leadingIconRes: Int? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val compact = variant != NgExpandableSettingsItemVariant.REGULAR
-    val withLeading = variant == NgExpandableSettingsItemVariant.COMPACT_LEADING
+    val compact = variant == NgExpandableSettingsItemVariant.COMPACT ||
+        variant == NgExpandableSettingsItemVariant.COMPACT_LEADING
+    val withLeading = variant == NgExpandableSettingsItemVariant.REGULAR_LEADING ||
+        variant == NgExpandableSettingsItemVariant.COMPACT_LEADING
     val cornerRadius = if (compact) 16.dp else 18.dp
     val shape = RoundedCornerShape(cornerRadius)
     val arrowRotation by animateFloatAsState(
@@ -87,13 +90,20 @@ fun NgExpandableSettingsItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (withLeading && leadingIconRes != null) {
-                Icon(
-                    painter = painterResource(leadingIconRes),
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                    tint = Color(NgTheme.colors.onSurfaceVariant),
-                )
-                Spacer(Modifier.width(12.dp))
+                if (compact) {
+                    Icon(
+                        painter = painterResource(leadingIconRes),
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = Color(NgTheme.colors.onSurfaceVariant),
+                    )
+                } else {
+                    NgSettingsIcon(
+                        painter = painterResource(leadingIconRes),
+                        contentDescription = null,
+                    )
+                }
+                Spacer(Modifier.width(if (compact) 12.dp else 14.dp))
             }
             if (compact) {
                 Text(

@@ -32,7 +32,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material3.CircularProgressIndicator
@@ -553,9 +552,10 @@ private fun TtsVoiceCardPreview(
                 tint = Color(NgTheme.colors.primary),
             )
             TtsVoicePreviewState.IDLE -> Icon(
-                imageVector = Icons.Rounded.Headphones,
+                painter = painterResource(R.drawable.ic_tts_headphones),
                 contentDescription = "试听",
-                tint = Color(NgTheme.colors.onSurfaceVariant),
+                tint = Color(NgTheme.colors.onSurface),
+                modifier = Modifier.size(22.dp),
             )
         }
     }

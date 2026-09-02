@@ -111,6 +111,7 @@ internal object Md3ThemeImportManager {
                             normalized.spec,
                             importedCoverAlbumIdsByRef,
                         ),
+                        ownedCoverAlbumIds = importedCoverAlbumIds,
                     )
                 )
                 libraryThemeId = installed.id

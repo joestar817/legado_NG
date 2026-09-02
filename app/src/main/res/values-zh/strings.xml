@@ -336,6 +336,9 @@
     <string name="mcp_service_url_format">%s/mcp</string>
     <string name="mcp_port_title">MCP 端口</string>
     <string name="mcp_port_summary">当前端口 %s</string>
+    <string name="service_port_decrease">端口减一</string>
+    <string name="service_port_increase">端口加一</string>
+    <string name="service_port_range_step">范围 %1$d–%2$d · 点按 ±1 · 长按连续</string>
     <string name="ai_setting">AI 设置</string>
     <string name="ai_setting_summary">配置内置 AI 功能使用的模型提供商</string>
     <string name="ai_provider_menu">提供商</string>
@@ -441,6 +444,8 @@
     <string name="ai_assistant_model_setting">聊天模型</string>
     <string name="ai_context_compaction_model">压缩模型</string>
     <string name="ai_context_compaction_model_follow">跟随当前聊天模型</string>
+    <string name="ai_context_compaction_model_follow_summary">始终使用当前聊天模型</string>
+    <string name="ai_model_automatic_group">自动</string>
     <string name="ai_context_compaction_model_search_hint">搜索压缩模型</string>
     <string name="ai_assistant_context_window">上下文窗口</string>
     <string name="ai_assistant_context_window_summary">%1$s tokens</string>
@@ -574,6 +579,7 @@
     <string name="ai_disable_all_models">全部禁用</string>
     <string name="ai_model_select">选择模型</string>
     <string name="ai_filter_models">搜索和筛选模型</string>
+    <string name="ai_locate_selected_model">定位到已选模型</string>
     <string name="ai_model_enable">启用模型</string>
     <string name="ai_edit_model">编辑模型</string>
     <string name="ai_model_information">模型信息</string>
@@ -1740,6 +1746,7 @@
     <string name="direct_link_upload_rule">直链上传规则</string>
     <string name="direct_link_upload_rule_summary">用于导出书源书单时生成直链 URL</string>
     <string name="direct_link_upload_config">直链上传配置</string>
+    <string name="direct_link_upload_test_result">测试结果</string>
     <string name="copy_play_url">拷贝播放 URL</string>
     <string name="skip_book_credits">跳过片头片尾</string>
     <string name="audio_player_timer">定时</string>
@@ -1809,13 +1816,11 @@
     <string name="bg_alpha">背景透明度</string>
 
     <!-- check source config string -->
-    <string name="check_source_config">校验设置</string>
     <string name="check_source_item">校验项目</string>
     <string name="check_source_timeout">单个书源校验超时（秒）</string>
     <string name="timeout">超时</string>
     <string name="seconds">秒</string>
     <string name="less_than">小于</string>
-    <string name="check_source_config_summary">校验超时：%1$s秒\n校验项目：%2$s</string>
     <string name="record_debug_log">记录调试日志</string>
     <string name="sub_dir">子文件夹</string>
     <string name="general">全局</string>
@@ -1917,8 +1922,6 @@
     <string name="cover_decode_js">封面解密（coverDecodeJs）</string>
     <string name="parallel_export_book">多线程导出</string>
     <string name="progress_bar_behavior">进度条行为</string>
-    <string name="source_edit_text_max_line">源编辑框最大行数</string>
-    <string name="source_edit_max_line_summary">%s,设置行数小于屏幕可显示的最大行数可以更方便的滑动到其他的字段进行编辑</string>
     <string name="restore_last_book_process">是否恢复到跳转前的阅读进度？</string>
     <string name="search_scope">搜索范围</string>
     <string name="toggle_search_scope">切换</string>
@@ -2166,8 +2169,10 @@
     <string name="ng_cover_album_none_summary">继续使用当前日夜默认封面</string>
     <string name="ng_cover_album_count">日间 %1$d 张 · 夜间 %2$d 张</string>
     <string name="ng_cover_album_selected_summary">%1$s · 日间 %2$d 张 · 夜间 %3$d 张</string>
+    <string name="ng_cover_album_delete_message">删除“%1$s”及其本地图片？关联主题将不再自动切换到这个图集。</string>
     <string name="ng_theme_name_conflict">已存在同名主题</string>
     <string name="ng_theme_no_results">没有匹配的主题</string>
+    <string name="ng_theme_delete_message">删除“%1$s”？仅由该主题持有的封面图集也会一并删除。</string>
     <string name="ng_theme_edit">编辑主题</string>
     <string name="ng_theme_details">主题内容</string>
     <string name="ng_theme_colors">主题配色</string>

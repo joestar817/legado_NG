@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.FileDownload
@@ -47,37 +50,52 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import io.legado.app.R
 import io.legado.app.help.config.NgManagedTheme
 import io.legado.app.help.config.isBuiltIn
 import io.legado.app.help.config.md3.Md3ThemeImportDraft
 import io.legado.app.help.config.md3.Md3ThemePackageFormat
 import io.legado.app.ui.design.components.NgButtonVariant
+import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgActionBarButton
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDialog
+import io.legado.app.ui.design.components.compose.NgDialogDivider
+import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
+import io.legado.app.ui.design.components.compose.NgDialogValueRow
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
+import io.legado.app.ui.design.components.compose.NgFormField
+import io.legado.app.ui.design.components.compose.NgFormFieldVariant
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSettingsCardSurface
+import io.legado.app.ui.design.components.compose.NgSlider
+import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
+import kotlin.math.roundToInt
 
 @Composable
 internal fun ThemeManagerScreen(
     builtInThemes: List<NgManagedTheme>,
     savedThemes: List<NgManagedTheme>,
     activeThemeId: String?,
+    currentThemeName: String,
     onBack: () -> Unit,
-    onSaveCurrent: () -> Unit,
+    onSaveCurrent: (String) -> Unit,
     onImportPackage: () -> Unit,
     onThemeSelected: (NgManagedTheme) -> Unit,
     onThemeEdit: (NgManagedTheme) -> Unit,
@@ -85,7 +103,9 @@ internal fun ThemeManagerScreen(
     draftTheme: NgManagedTheme?,
     onDismissThemeEditor: () -> Unit,
     onDraftThemeChanged: (NgManagedTheme) -> Unit,
-    onEditBackground: (Boolean) -> Unit,
+    onSelectBackground: (Boolean) -> Unit,
+    onBackgroundBlurChanged: (Boolean, Int) -> Unit,
+    onClearBackground: (Boolean) -> Unit,
     onSaveTheme: () -> Unit,
     onThemeExport: (NgManagedTheme) -> Unit,
     onThemeDelete: (NgManagedTheme) -> Unit,
@@ -95,6 +115,10 @@ internal fun ThemeManagerScreen(
     onConfirmMd3Import: (Boolean) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
+    var themeNameInitial by rememberSaveable { mutableStateOf<String?>(null) }
+    var backgroundActionsDark by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    var backgroundBlurDark by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    var pendingDeleteTheme by remember { mutableStateOf<NgManagedTheme?>(null) }
     val normalizedQuery = query.trim()
     val visibleBuiltIns = remember(builtInThemes, normalizedQuery) {
         builtInThemes.filter { it.name.contains(normalizedQuery, ignoreCase = true) }
@@ -108,7 +132,7 @@ internal fun ThemeManagerScreen(
             query = query,
             onQueryChange = { query = it },
             onBack = onBack,
-            onSaveCurrent = onSaveCurrent,
+            onSaveCurrent = { themeNameInitial = currentThemeName },
             onImportPackage = onImportPackage,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
@@ -145,7 +169,7 @@ internal fun ThemeManagerScreen(
                     NgSwipeToDelete(
                         deletable = true,
                         reordering = false,
-                        onDeleteRequested = { onThemeDelete(theme) },
+                        onDeleteRequested = { pendingDeleteTheme = theme },
                     ) {
                         NgThemeManagementCard(
                             theme = theme,
@@ -177,7 +201,7 @@ internal fun ThemeManagerScreen(
             copyOnSave = editingTheme.isBuiltIn,
             onDismissRequest = onDismissThemeEditor,
             onThemeChanged = onDraftThemeChanged,
-            onEditBackground = onEditBackground,
+            onEditBackground = { backgroundActionsDark = it },
             onSave = onSaveTheme,
             onExport = { onThemeExport(draftTheme) }
         )
@@ -189,6 +213,56 @@ internal fun ThemeManagerScreen(
             onDismissRequest = onDismissMd3Import,
             onSaveOnly = { onConfirmMd3Import(false) },
             onSaveAndApply = { onConfirmMd3Import(true) },
+        )
+    }
+    themeNameInitial?.let { initialName ->
+        NgThemeNameDialog(
+            initialName = initialName,
+            onDismissRequest = { themeNameInitial = null },
+            onConfirm = { name ->
+                themeNameInitial = null
+                onSaveCurrent(name)
+            },
+        )
+    }
+    backgroundActionsDark?.let { dark ->
+        val background = if (dark) draftTheme?.darkBackground else draftTheme?.lightBackground
+        NgThemeBackgroundActionsDialog(
+            hasImage = !background?.path.isNullOrBlank(),
+            onDismissRequest = { backgroundActionsDark = null },
+            onSelectImage = {
+                backgroundActionsDark = null
+                onSelectBackground(dark)
+            },
+            onEditBlur = {
+                backgroundActionsDark = null
+                backgroundBlurDark = dark
+            },
+            onClear = {
+                backgroundActionsDark = null
+                onClearBackground(dark)
+            },
+        )
+    }
+    backgroundBlurDark?.let { dark ->
+        val background = if (dark) draftTheme?.darkBackground else draftTheme?.lightBackground
+        NgThemeBackgroundBlurDialog(
+            initialValue = background?.blur ?: 0,
+            onDismissRequest = { backgroundBlurDark = null },
+            onConfirm = { blur ->
+                backgroundBlurDark = null
+                onBackgroundBlurChanged(dark, blur)
+            },
+        )
+    }
+    pendingDeleteTheme?.let { theme ->
+        NgThemeDeleteDialog(
+            themeName = theme.name,
+            onDismissRequest = { pendingDeleteTheme = null },
+            onConfirm = {
+                pendingDeleteTheme = null
+                onThemeDelete(theme)
+            },
         )
     }
 }
@@ -544,6 +618,196 @@ private fun NgMd3ThemeImportPreviewSheet(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NgThemeNameDialog(
+    initialName: String,
+    onDismissRequest: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    val confirm = {
+        val normalized = name.trim()
+        if (normalized.isNotEmpty()) {
+            onConfirm(normalized)
+        } else {
+            onDismissRequest()
+        }
+        Unit
+    }
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        NgDialog(
+            title = stringResource(R.string.theme_name),
+            modifier = Modifier
+                .padding(horizontal = 18.dp)
+                .widthIn(max = 520.dp),
+            variant = NgDialogVariant.EDITOR,
+            actions = {
+                NgDialogTextActionButton(
+                    text = stringResource(R.string.cancel),
+                    onClick = onDismissRequest,
+                    secondary = true,
+                )
+                NgDialogTextActionButton(
+                    text = stringResource(R.string.ok),
+                    onClick = confirm,
+                )
+            },
+        ) {
+            NgFormField(
+                label = stringResource(R.string.theme_name),
+                value = name,
+                onValueChange = { name = it },
+                variant = NgFormFieldVariant.DIALOG_UNDERLINE,
+                autoFocus = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { confirm() }),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NgThemeBackgroundActionsDialog(
+    hasImage: Boolean,
+    onDismissRequest: () -> Unit,
+    onSelectImage: () -> Unit,
+    onEditBlur: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        NgDialog(
+            title = stringResource(R.string.background_image),
+            modifier = Modifier
+                .padding(horizontal = 18.dp)
+                .widthIn(max = 520.dp),
+            variant = NgDialogVariant.STANDARD,
+            actions = {},
+        ) {
+            NgDialogValueRow(
+                title = stringResource(R.string.select_image),
+                value = "",
+                onClick = onSelectImage,
+            )
+            NgDialogDivider()
+            NgDialogValueRow(
+                title = stringResource(R.string.background_image_blurring),
+                value = "",
+                onClick = onEditBlur,
+            )
+            if (hasImage) {
+                NgDialogDivider()
+                NgDialogValueRow(
+                    title = stringResource(R.string.clear),
+                    value = "",
+                    onClick = onClear,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NgThemeBackgroundBlurDialog(
+    initialValue: Int,
+    onDismissRequest: () -> Unit,
+    onConfirm: (Int) -> Unit,
+) {
+    var value by remember(initialValue) { mutableStateOf(initialValue.coerceIn(0, 25)) }
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        NgDialog(
+            title = stringResource(R.string.background_image_blurring),
+            modifier = Modifier
+                .padding(horizontal = 18.dp)
+                .widthIn(max = 520.dp),
+            variant = NgDialogVariant.STANDARD,
+            actions = {
+                NgDialogTextActionButton(
+                    text = stringResource(R.string.cancel),
+                    onClick = onDismissRequest,
+                    secondary = true,
+                )
+                NgDialogTextActionButton(
+                    text = stringResource(R.string.ok),
+                    onClick = { onConfirm(value) },
+                )
+            },
+        ) {
+            Text(
+                text = value.toString(),
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(NgTheme.colors.onSurface),
+                fontSize = 17.sp,
+                lineHeight = 21.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+            )
+            NgSlider(
+                value = value.toFloat(),
+                onValueChange = { value = it.roundToInt().coerceIn(0, 25) },
+                valueRange = 0f..25f,
+                steps = 24,
+                variant = NgSliderVariant.DISCRETE,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Text(
+                text = stringResource(R.string.background_image_hint),
+                modifier = Modifier.padding(top = 6.dp),
+                color = Color(NgTheme.colors.onSurfaceVariant),
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NgThemeDeleteDialog(
+    themeName: String,
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        NgDialog(
+            title = stringResource(R.string.delete),
+            modifier = Modifier
+                .padding(horizontal = 18.dp)
+                .widthIn(max = 520.dp),
+            variant = NgDialogVariant.CLASSIC_CONFIRMATION,
+            actions = {
+                NgDialogTextActionButton(
+                    text = stringResource(R.string.no),
+                    onClick = onDismissRequest,
+                    secondary = true,
+                )
+                NgDialogTextActionButton(
+                    text = stringResource(R.string.yes),
+                    onClick = onConfirm,
+                    danger = true,
+                )
+            },
+        ) {
+            Text(
+                text = stringResource(R.string.ng_theme_delete_message, themeName),
+                color = Color(NgTheme.colors.onSurfaceVariant),
+                fontSize = 15.sp,
+                lineHeight = 21.sp,
+            )
         }
     }
 }

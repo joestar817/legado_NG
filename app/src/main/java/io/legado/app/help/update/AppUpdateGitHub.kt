@@ -54,15 +54,26 @@ object AppUpdateGitHub : AppUpdate.AppUpdateInterface {
             getLatestRelease()
                 .filter { it.appVariant == checkVariant }
                 .firstOrNull { it.versionName > AppConst.appInfo.versionName }
-                ?.let {
-                    return@async AppUpdate.UpdateInfo(
-                        it.versionName,
-                        it.note,
-                        it.downloadUrl,
-                        it.name
-                    )
-                }
+                ?.toUpdateInfo()
                 ?: throw NoStackTraceException("已是最新版本")
         }.timeout(10000)
     }
+
+    override fun latest(
+        scope: CoroutineScope,
+    ): Coroutine<AppUpdate.UpdateInfo> {
+        return Coroutine.async(scope) {
+            getLatestRelease()
+                .firstOrNull { it.appVariant == checkVariant }
+                ?.toUpdateInfo()
+                ?: throw NoStackTraceException("没有可用版本")
+        }.timeout(10000)
+    }
+
+    private fun AppReleaseInfo.toUpdateInfo() = AppUpdate.UpdateInfo(
+        tagName = versionName,
+        updateLog = note,
+        downloadUrl = downloadUrl,
+        fileName = name,
+    )
 }

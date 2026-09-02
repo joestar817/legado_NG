@@ -853,7 +853,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun showProviderDetailTab(tab: ProviderDetailTab) {
         providerDetailTab = tab
         providerDetailScreenState = providerDetailScreenState.copy(selectedTab = tab.ordinal)
-        setProviderFloatingChrome(tab == ProviderDetailTab.MODELS)
+        setProviderFloatingChrome(true)
         if (tab == ProviderDetailTab.MODELS) {
             binding.composeProviderDetail.clearFocus()
             binding.composeProviderDetail.hideSoftInput()
@@ -1087,8 +1087,24 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiReadAloudModelSettingsAction.SelectReasoning -> {
                 showReadAloudStoryboardReasoningDialog()
             }
-            AiReadAloudModelSettingsAction.SelectPreloadCount -> {
-                showReadAloudStoryboardPreloadDialog()
+            is AiReadAloudModelSettingsAction.PreloadCountChanged -> {
+                val value = action.value.coerceIn(
+                    AiConfig.MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT,
+                    AiConfig.MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT,
+                )
+                readAloudModelSettingsScreenState = readAloudModelSettingsScreenState.copy(
+                    preloadCount = value,
+                    preloadSummary = getString(
+                        R.string.ai_read_aloud_storyboard_preload_summary,
+                        value,
+                    ),
+                )
+            }
+            AiReadAloudModelSettingsAction.PreloadCountChangeFinished -> {
+                AiConfig.readAloudStoryboardPreloadCount =
+                    readAloudModelSettingsScreenState.preloadCount
+                refreshModelSettings()
+                refreshMain()
             }
         }
     }
@@ -1160,11 +1176,25 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             is AiPurifySettingsAction.NumberChanged -> {
                 updatePurifyNumberDraft(action.field, action.value)
             }
+            is AiPurifySettingsAction.NumberStepChanged -> {
+                updatePurifyNumberDraft(
+                    field = action.field,
+                    value = action.value.toString(),
+                    persist = false,
+                )
+            }
+            is AiPurifySettingsAction.NumberStepFinished -> {
+                commitPurifyNumberDraft(action.field)
+            }
             is AiPurifySettingsAction.NumberFocusLost -> refreshPurifySettings()
         }
     }
 
-    private fun updatePurifyNumberDraft(field: AiPurifyNumberField, value: String) {
+    private fun updatePurifyNumberDraft(
+        field: AiPurifyNumberField,
+        value: String,
+        persist: Boolean = true,
+    ) {
         purifySettingsScreenState = when (field) {
             AiPurifyNumberField.PARAGRAPH_LIMIT -> {
                 purifySettingsScreenState.copy(paragraphLimit = value)
@@ -1182,25 +1212,42 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 purifySettingsScreenState.copy(chapterSampleLimit = value)
             }
         }
-        value.toIntOrNull()?.let { parsed ->
-            when (field) {
-                AiPurifyNumberField.PARAGRAPH_LIMIT -> AiConfig.purifyParagraphLimit = parsed
-                AiPurifyNumberField.CHAPTER_CONCURRENCY -> {
-                    AiConfig.purifyChapterConcurrencyLimit = parsed
-                }
-                AiPurifyNumberField.CHAPTER_RETRY_COUNT -> {
-                    AiConfig.purifyChapterRetryCount = parsed
-                }
-                AiPurifyNumberField.CHAPTER_SEGMENT_LIMIT -> {
-                    AiConfig.purifyChapterSegmentLimit = parsed
-                }
-                AiPurifyNumberField.CHAPTER_SAMPLE_LIMIT -> {
-                    AiConfig.purifyChapterSampleLimit = parsed
-                }
+        if (persist) {
+            value.toIntOrNull()?.let { parsed ->
+                persistPurifyNumber(field, parsed)
             }
-            refreshMain()
-            refreshModelSettings()
         }
+    }
+
+    private fun commitPurifyNumberDraft(field: AiPurifyNumberField) {
+        val value = when (field) {
+            AiPurifyNumberField.PARAGRAPH_LIMIT -> purifySettingsScreenState.paragraphLimit
+            AiPurifyNumberField.CHAPTER_CONCURRENCY -> purifySettingsScreenState.chapterConcurrency
+            AiPurifyNumberField.CHAPTER_RETRY_COUNT -> purifySettingsScreenState.chapterRetryCount
+            AiPurifyNumberField.CHAPTER_SEGMENT_LIMIT -> purifySettingsScreenState.chapterSegmentLimit
+            AiPurifyNumberField.CHAPTER_SAMPLE_LIMIT -> purifySettingsScreenState.chapterSampleLimit
+        }.toIntOrNull() ?: return
+        persistPurifyNumber(field, value)
+    }
+
+    private fun persistPurifyNumber(field: AiPurifyNumberField, value: Int) {
+        when (field) {
+            AiPurifyNumberField.PARAGRAPH_LIMIT -> AiConfig.purifyParagraphLimit = value
+            AiPurifyNumberField.CHAPTER_CONCURRENCY -> {
+                AiConfig.purifyChapterConcurrencyLimit = value
+            }
+            AiPurifyNumberField.CHAPTER_RETRY_COUNT -> {
+                AiConfig.purifyChapterRetryCount = value
+            }
+            AiPurifyNumberField.CHAPTER_SEGMENT_LIMIT -> {
+                AiConfig.purifyChapterSegmentLimit = value
+            }
+            AiPurifyNumberField.CHAPTER_SAMPLE_LIMIT -> {
+                AiConfig.purifyChapterSampleLimit = value
+            }
+        }
+        refreshMain()
+        refreshModelSettings()
     }
 
     private fun configureModelEditSheet(dialog: BottomSheetDialog) {
@@ -1638,6 +1685,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         readAloudModelSettingsScreenState = AiReadAloudModelSettingsScreenState(
             modelSummary = readAloudStoryboardModelSummaryText(),
             reasoningSummary = readAloudStoryboardReasoningSummaryText(),
+            preloadCount = AiConfig.readAloudStoryboardPreloadCount,
             preloadSummary = getString(
                 R.string.ai_read_aloud_storyboard_preload_summary,
                 AiConfig.readAloudStoryboardPreloadCount,
@@ -2086,37 +2134,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             refreshModelSettings()
             refreshMain()
         }
-    }
-
-    private fun showReadAloudStoryboardPreloadDialog() {
-        val dialog = ComponentDialog(requireContext())
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        val composeView = androidx.compose.ui.platform.ComposeView(requireContext()).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-            setContent {
-                NgAppTheme(updateSystemBars = false) {
-                    AiNumberPickerDialogContent(
-                        title = getString(R.string.ai_read_aloud_storyboard_preload_count),
-                        minValue = AiConfig.MIN_READ_ALOUD_STORYBOARD_PRELOAD_COUNT,
-                        maxValue = AiConfig.MAX_READ_ALOUD_STORYBOARD_PRELOAD_COUNT,
-                        initialValue = AiConfig.readAloudStoryboardPreloadCount,
-                        cancelText = getString(android.R.string.cancel),
-                        confirmText = getString(android.R.string.ok),
-                        onCancel = dialog::dismiss,
-                        onConfirm = { value ->
-                            AiConfig.readAloudStoryboardPreloadCount = value
-                            refreshModelSettings()
-                            refreshMain()
-                            dialog.dismiss()
-                        },
-                    )
-                }
-            }
-        }
-        dialog.setContentView(composeView)
-        dialog.setCanceledOnTouchOutside(true)
-        dialog.show()
-        dialog.applyNgWindow()
     }
 
     private fun showAssistantReasoningDialog() {

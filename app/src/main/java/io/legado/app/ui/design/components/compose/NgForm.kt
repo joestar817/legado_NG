@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -35,8 +36,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,11 +54,17 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -76,6 +85,11 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.theme.NgTheme
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 data class NgFormSelectOption(
     val label: String,
@@ -419,12 +433,76 @@ private fun NgStepperButton(
     contentDescription: String,
     enabled: Boolean,
     onClick: () -> Unit,
+    onLongPressStep: (() -> Boolean)? = null,
+    onLongPressFinished: (() -> Unit)? = null,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val currentEnabled by rememberUpdatedState(enabled)
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnLongPressStep by rememberUpdatedState(onLongPressStep)
+    val currentOnLongPressFinished by rememberUpdatedState(onLongPressFinished)
+    val repeatEnabled = onLongPressStep != null && onLongPressFinished != null
     Box(
         modifier = Modifier
             .size(34.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .then(
+                if (repeatEnabled) {
+                    Modifier
+                        .semantics {
+                            role = Role.Button
+                            if (!enabled) disabled()
+                            onClick {
+                                if (currentEnabled) {
+                                    currentOnClick()
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                        }
+                        .pointerInput(Unit) {
+                            var longPressHandled = false
+                            detectTapGestures(
+                                onPress = press@{
+                                    if (!currentEnabled) return@press
+                                    longPressHandled = false
+                                    coroutineScope {
+                                        val repeatJob = launch {
+                                            delay(NG_FORM_NUMBER_LONG_PRESS_DELAY_MS)
+                                            if (!currentEnabled) return@launch
+                                            longPressHandled = true
+                                            hapticFeedback.performHapticFeedback(
+                                                HapticFeedbackType.LongPress
+                                            )
+                                            while (
+                                                isActive &&
+                                                currentOnLongPressStep?.invoke() == true
+                                            ) {
+                                                delay(NG_FORM_NUMBER_REPEAT_INTERVAL_MS)
+                                            }
+                                        }
+                                        tryAwaitRelease()
+                                        repeatJob.cancelAndJoin()
+                                    }
+                                    if (longPressHandled) {
+                                        currentOnLongPressFinished?.invoke()
+                                    }
+                                },
+                                onTap = {
+                                    if (currentEnabled && !longPressHandled) currentOnClick()
+                                    longPressHandled = false
+                                },
+                            )
+                        }
+                } else {
+                    Modifier.clickable(
+                        enabled = enabled,
+                        role = Role.Button,
+                        onClick = onClick,
+                    )
+                }
+            )
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
@@ -551,6 +629,9 @@ fun NgFormNumberSettingRow(
     ),
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     onFocusLost: () -> Unit = {},
+    valueRange: IntRange? = null,
+    onStepValueChange: ((Int) -> Unit)? = null,
+    onStepValueChangeFinished: (() -> Unit)? = null,
 ) {
     val colors = NgTheme.colors
     val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
@@ -567,6 +648,39 @@ fun NgFormNumberSettingRow(
     }
     val contentAlpha = if (enabled) 1f else 0.45f
     val borderColor = Color(if (focused) colors.primary else colors.outline)
+    val stepControlsVisible = valueRange != null &&
+        onStepValueChange != null &&
+        onStepValueChangeFinished != null
+    val parsedValue = value.toIntOrNull()?.takeIf { current ->
+        valueRange?.let { current in it } ?: true
+    }
+    var repeatedValue by remember { mutableIntStateOf(parsedValue ?: 0) }
+    var repeating by remember { mutableStateOf(false) }
+
+    fun stepValue(delta: Int, repeat: Boolean): Boolean {
+        val range = valueRange ?: return false
+        val base = if (repeat) {
+            if (!repeating) {
+                val current = parsedValue ?: return false
+                repeatedValue = current
+                repeating = true
+            }
+            repeatedValue
+        } else {
+            parsedValue ?: return false
+        }
+        val next = (base + delta).coerceIn(range)
+        if (next == base) return false
+        if (repeat) repeatedValue = next
+        onStepValueChange?.invoke(next)
+        return true
+    }
+
+    fun finishRepeatedValue() {
+        repeating = false
+        onStepValueChangeFinished?.invoke()
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -599,11 +713,26 @@ fun NgFormNumberSettingRow(
             }
         }
         Spacer(Modifier.width(12.dp))
+        if (stepControlsVisible) {
+            NgStepperButton(
+                text = "−",
+                contentDescription = "${stringResource(R.string.reduce)} $title",
+                enabled = enabled && parsedValue != null && parsedValue > valueRange.first,
+                onClick = {
+                    if (stepValue(delta = -1, repeat = false)) {
+                        onStepValueChangeFinished()
+                    }
+                },
+                onLongPressStep = { stepValue(delta = -1, repeat = true) },
+                onLongPressFinished = ::finishRepeatedValue,
+            )
+            Spacer(Modifier.width(4.dp))
+        }
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier
-                .width(valueWidth)
+                .width(if (stepControlsVisible && valueWidth > 80.dp) 80.dp else valueWidth)
                 .height(34.dp)
                 .semantics { contentDescription = title },
             enabled = enabled,
@@ -637,8 +766,26 @@ fun NgFormNumberSettingRow(
                 }
             },
         )
+        if (stepControlsVisible) {
+            Spacer(Modifier.width(4.dp))
+            NgStepperButton(
+                text = "+",
+                contentDescription = "${stringResource(R.string.plus)} $title",
+                enabled = enabled && parsedValue != null && parsedValue < valueRange.last,
+                onClick = {
+                    if (stepValue(delta = 1, repeat = false)) {
+                        onStepValueChangeFinished()
+                    }
+                },
+                onLongPressStep = { stepValue(delta = 1, repeat = true) },
+                onLongPressFinished = ::finishRepeatedValue,
+            )
+        }
     }
 }
+
+private const val NG_FORM_NUMBER_LONG_PRESS_DELAY_MS = 400L
+private const val NG_FORM_NUMBER_REPEAT_INTERVAL_MS = 90L
 
 enum class NgFormDensity {
     REGULAR,
@@ -892,7 +1039,17 @@ fun NgFormField(
     }
 }
 
-/** NG 多行编辑字段，供简介、说明等正文型表单复用。 */
+enum class NgFormMultilineFieldVariant {
+    OUTLINED,
+    DIALOG_UNDERLINE,
+}
+
+/**
+ * NG 多行编辑字段，供简介、说明等正文型表单复用。
+ *
+ * DIALOG_UNDERLINE 保留旧规则弹窗的浮动标签与底部输入线，不将脚本正文改成
+ * 大圆角输入框。
+ */
 @Composable
 fun NgFormMultilineField(
     value: String,
@@ -906,6 +1063,8 @@ fun NgFormMultilineField(
     minLines: Int = 4,
     maxLines: Int = 12,
     containerColor: Color? = null,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    variant: NgFormMultilineFieldVariant = NgFormMultilineFieldVariant.OUTLINED,
 ) {
     val colors = NgTheme.colors
     val shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp)
@@ -913,12 +1072,15 @@ fun NgFormMultilineField(
     val focused by interactionSource.collectIsFocusedAsState()
     val borderColor = Color(if (focused) colors.primary else colors.outline)
     val contentAlpha = if (enabled) 1f else 0.45f
+    val underlined = variant == NgFormMultilineFieldVariant.DIALOG_UNDERLINE
     Column(modifier = modifier.fillMaxWidth()) {
         label?.takeIf { it.isNotBlank() }?.let {
             Text(
                 text = it,
                 modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
-                color = Color(colors.onSurfaceVariant).copy(alpha = contentAlpha),
+                color = Color(
+                    if (underlined) colors.primary else colors.onSurfaceVariant
+                ).copy(alpha = contentAlpha),
                 fontSize = 13.sp,
                 lineHeight = 16.sp,
                 maxLines = 1,
@@ -941,9 +1103,25 @@ fun NgFormMultilineField(
             interactionSource = interactionSource,
             minLines = minLines,
             maxLines = maxLines,
+            visualTransformation = visualTransformation,
             decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier
+                val decorationModifier = if (underlined) {
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = minHeight, max = maxHeight)
+                        .drawBehind {
+                            val strokeWidth = (if (focused) 1.5.dp else 1.dp).toPx()
+                            val y = size.height - strokeWidth / 2f
+                            drawLine(
+                                color = borderColor.copy(alpha = contentAlpha),
+                                start = Offset(0f, y),
+                                end = Offset(size.width, y),
+                                strokeWidth = strokeWidth,
+                            )
+                        }
+                        .padding(horizontal = 2.dp, vertical = 8.dp)
+                } else {
+                    Modifier
                         .fillMaxWidth()
                         .heightIn(min = minHeight, max = maxHeight)
                         .clip(shape)
@@ -958,7 +1136,10 @@ fun NgFormMultilineField(
                             color = borderColor.copy(alpha = contentAlpha),
                             shape = shape,
                         )
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                }
+                Box(
+                    modifier = decorationModifier,
                 ) {
                     if (value.isEmpty() && !placeholder.isNullOrBlank()) {
                         Text(

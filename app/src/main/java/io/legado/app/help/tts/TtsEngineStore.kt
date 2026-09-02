@@ -311,6 +311,13 @@ object TtsEngineStore {
         }
     }
 
+    /** 用户主动刷新时重建系统引擎与运行时音色快照，普通页面同步继续复用缓存。 */
+    @Synchronized
+    fun reloadEngines(): List<TtsEngineSetting> {
+        engineSnapshotCache = null
+        return engines()
+    }
+
     fun activeEngineId(): String {
         return resolveActiveEngine(engines())?.id.orEmpty()
     }

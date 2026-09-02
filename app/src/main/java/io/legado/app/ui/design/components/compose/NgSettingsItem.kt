@@ -10,6 +10,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -81,6 +83,29 @@ fun NgSettingsGroup(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         content = content
     )
+}
+
+/** 列表型设置项右侧的原样圆角值标签。 */
+@Composable
+fun NgSettingsValueChip(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.padding(3.dp),
+        color = colorResource(R.color.btn_bg_press),
+        contentColor = Color(NgTheme.colors.onSurface),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 /** 多项设置共用一张玻璃承载面的连续紧凑列表。 */
@@ -196,6 +221,11 @@ fun NgCompactSettingsDivider(modifier: Modifier = Modifier) {
     )
 }
 
+enum class NgSettingsItemAppearance {
+    SETTINGS,
+    SURFACE_CARD,
+}
+
 /**
  * 设置菜单卡的统一材质边界。
  *
@@ -208,10 +238,23 @@ internal fun NgSettingsCardSurface(
     cornerRadius: Dp = 18.dp,
     shape: Shape = RoundedCornerShape(cornerRadius),
     role: NgMaterialRole = NgMaterialRole.SETTINGS,
+    appearance: NgSettingsItemAppearance = NgSettingsItemAppearance.SETTINGS,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val context = LocalContext.current
     val snapshot = NgTheme.snapshot
+    if (appearance == NgSettingsItemAppearance.SURFACE_CARD) {
+        Surface(
+            modifier = modifier,
+            color = colorResource(R.color.ng_surface_card),
+            contentColor = Color(snapshot.colors.onSurface),
+            shape = shape,
+            shadowElevation = 0.dp,
+        ) {
+            Column(content = content)
+        }
+        return
+    }
     val usesSoftGradient = NgThemeModeStore.current(context) ==
         NgThemePresentationMode.SOFT_GRADIENT
     val transparentContainer = if (usesSoftGradient) {
@@ -322,6 +365,8 @@ fun NgSettingsItem(
     summaryMaxLines: Int = 1,
     trailingSpacing: Dp = 8.dp,
     showClickIndication: Boolean = true,
+    valueOverlay: (@Composable BoxScope.() -> Unit)? = null,
+    appearance: NgSettingsItemAppearance = NgSettingsItemAppearance.SETTINGS,
 ) {
     val itemShape = RoundedCornerShape(18.dp)
     val interactionSource = remember { MutableInteractionSource() }
@@ -331,6 +376,7 @@ fun NgSettingsItem(
             .fillMaxWidth(),
         cornerRadius = 18.dp,
         shape = itemShape,
+        appearance = appearance,
     ) {
         Row(
             modifier = Modifier
@@ -416,17 +462,20 @@ fun NgSettingsItem(
                     enabled = enabled,
                     onCheckedChange = onCheckedChange
                 )
-                NgSettingsTrailing.VALUE -> Text(
-                    text = value.orEmpty(),
-                    color = Color(NgTheme.colors.onSurfaceVariant),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = NgTheme.typography.bodySp.sp,
-                        letterSpacing = 0.sp,
-                        fontWeight = FontWeight.Normal
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                NgSettingsTrailing.VALUE -> Box {
+                    Text(
+                        text = value.orEmpty(),
+                        color = Color(NgTheme.colors.onSurfaceVariant),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = NgTheme.typography.bodySp.sp,
+                            letterSpacing = 0.sp,
+                            fontWeight = FontWeight.Normal
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    valueOverlay?.invoke(this)
+                }
                 NgSettingsTrailing.CUSTOM -> customTrailing?.invoke(this)
             }
         }
