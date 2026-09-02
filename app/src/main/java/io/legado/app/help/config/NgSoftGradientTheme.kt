@@ -27,12 +27,18 @@ internal enum class NgSoftGradientLightFieldPreset(val storageValue: String) {
     BALANCED("balanced"),
     CLEAR("clear"),
     STILL_SEA("still_sea"),
-    AQUA("aqua");
+    AQUA("aqua"),
+    FLOW_SHADOW("flow_shadow");
 
     companion object {
         fun fromStorage(value: String?): NgSoftGradientLightFieldPreset =
             entries.firstOrNull { it.storageValue == value } ?: BALANCED
     }
+}
+
+internal enum class NgThemeGradientMotion {
+    NONE,
+    FLOW_SHADOW,
 }
 
 internal data class NgThemeGradientRadialLayer(
@@ -73,6 +79,7 @@ internal data class NgThemeGradientProfile(
     val colors: List<Int> = emptyList(),
     val stops: List<Float> = emptyList(),
     val radialLayers: List<NgThemeGradientRadialLayer> = emptyList(),
+    val motion: NgThemeGradientMotion = NgThemeGradientMotion.NONE,
 ) {
     fun normalized(): NgThemeGradientProfile? {
         val normalizedColors = colors.take(MAX_COLORS)
@@ -288,7 +295,7 @@ internal object NgSoftGradientTheme {
                 vignette(0.50f, 0.53f, 0.78f, 0x3D065762),
             ),
         ),
-    )
+    ).withFlowShadow()
 
     private val duskVioletGradients = mapOf(
         NgSoftGradientLightFieldPreset.BALANCED to gradientProfile(
@@ -371,7 +378,16 @@ internal object NgSoftGradientTheme {
                 vignette(0.50f, 0.53f, 0.75f, 0x55201842),
             ),
         ),
-    )
+    ).withFlowShadow()
+
+    private fun Map<NgSoftGradientLightFieldPreset, NgThemeGradientProfile>
+        .withFlowShadow(): Map<NgSoftGradientLightFieldPreset, NgThemeGradientProfile> =
+        this + (
+            NgSoftGradientLightFieldPreset.FLOW_SHADOW to
+                getValue(NgSoftGradientLightFieldPreset.BALANCED).copy(
+                    motion = NgThemeGradientMotion.FLOW_SHADOW,
+                )
+        )
 
     private fun gradientProfile(
         baseColors: List<Long>,

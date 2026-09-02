@@ -781,6 +781,7 @@ private fun NgSoftGradientLightFieldPreset.labelRes(): Int = when (this) {
     NgSoftGradientLightFieldPreset.CLEAR -> R.string.ng_soft_gradient_light_clear
     NgSoftGradientLightFieldPreset.STILL_SEA -> R.string.ng_soft_gradient_light_still_sea
     NgSoftGradientLightFieldPreset.AQUA -> R.string.ng_soft_gradient_light_aqua
+    NgSoftGradientLightFieldPreset.FLOW_SHADOW -> R.string.ng_soft_gradient_light_flow_shadow
 }
 
 private fun NgSoftGradientColorPreset.labelRes(): Int = when (this) {

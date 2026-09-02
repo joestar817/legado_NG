@@ -45,14 +45,13 @@ import androidx.lifecycle.findViewTreeLifecycleOwner
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgSoftGradientTheme
+import io.legado.app.help.config.NgThemeGradientMotion
 import io.legado.app.help.config.NgThemeGradientProfile
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.utils.printOnDebug
 import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.hypot
-import kotlin.math.sin
 
 /** Asset-free full-screen gradient shared by View and Compose theme hosts. */
 internal class NgThemeGradientDrawable(
@@ -65,35 +64,45 @@ internal class NgThemeGradientDrawable(
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         isDither = true
     }
+    private val flowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        isDither = true
+    }
     private val drawingBounds = RectF()
     private var drawableAlpha = 255
     private val shaderBounds = Rect()
     private var shaderAlpha = -1
     private var baseShader: Shader? = null
     private var radialShaders: List<Shader> = emptyList()
-    private var baseMotion: NgSoftGradientBaseMotion? = null
-    private var baseMotionActive = false
-    private var baseMotionUnavailable = false
+    private var flowShadow: NgSoftGradientFlowShadow? = null
+    private var flowShadowActive = false
+    private var flowShadowUnavailable = false
+
+    internal val supportsFlowShadow: Boolean
+        get() = profile.motion == NgThemeGradientMotion.FLOW_SHADOW
 
     override fun draw(canvas: Canvas) {
         if (bounds.isEmpty) return
         ensureShaders()
         drawingBounds.set(bounds)
-        paint.shader = if (
-            baseMotionActive &&
-            !baseMotionUnavailable &&
-            canvas.isHardwareAccelerated &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-        ) {
-            baseMotion?.shader ?: baseShader
-        } else {
-            baseShader
+        val activeFlowShadow = flowShadow.takeIf {
+            supportsFlowShadow &&
+                flowShadowActive &&
+                !flowShadowUnavailable &&
+                canvas.isHardwareAccelerated &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         }
+        paint.shader = activeFlowShadow?.warpedBaseShader ?: baseShader
         canvas.drawRect(drawingBounds, paint)
 
         radialShaders.forEach { shader ->
             paint.shader = shader
             canvas.drawRect(drawingBounds, paint)
+        }
+        if (activeFlowShadow != null) {
+            flowPaint.alpha = drawableAlpha
+            flowPaint.shader = activeFlowShadow.shadeShader
+            canvas.drawRect(drawingBounds, flowPaint)
+            flowPaint.shader = null
         }
         paint.shader = null
     }
@@ -113,37 +122,37 @@ internal class NgThemeGradientDrawable(
     @Deprecated("Deprecated in Java")
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 
-    fun setBaseMotion(phase: Float, amount: Float): Boolean {
+    fun setFlowShadowPhase(phase: Float, amount: Float): Boolean {
         if (
+            !supportsFlowShadow ||
             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            baseMotionUnavailable
+            flowShadowUnavailable
         ) {
             return false
         }
         return runCatching {
-            val motion = baseMotion ?: NgSoftGradientBaseMotion().also {
-                baseMotion = it
+            val shadow = flowShadow ?: NgSoftGradientFlowShadow().also {
+                flowShadow = it
             }
-            motion.setMotion(
-                sin(phase.toDouble()).toFloat(),
-                cos(phase.toDouble()).toFloat(),
+            shadow.setPhase(
+                phase,
                 amount.coerceIn(0f, 1f),
             )
             if (shaderBounds == bounds && shaderAlpha == drawableAlpha) {
-                baseShader?.let { motion.bindBase(it, bounds) }
+                baseShader?.let { shadow.bindBase(it, bounds) }
             }
-            baseMotionActive = amount > 0f
+            flowShadowActive = amount > 0f
             invalidateSelf()
         }.onFailure {
-            baseMotionUnavailable = true
-            baseMotionActive = false
+            flowShadowUnavailable = true
+            flowShadowActive = false
             it.printOnDebug()
         }.isSuccess
     }
 
-    fun clearBaseMotion() {
-        if (!baseMotionActive) return
-        baseMotionActive = false
+    fun clearFlowShadow() {
+        if (!flowShadowActive) return
+        flowShadowActive = false
         invalidateSelf()
     }
 
@@ -177,13 +186,14 @@ internal class NgThemeGradientDrawable(
         }
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            !baseMotionUnavailable
+            supportsFlowShadow &&
+            !flowShadowUnavailable
         ) {
             runCatching {
-                baseMotion?.bindBase(newBaseShader, bounds)
+                flowShadow?.bindBase(newBaseShader, bounds)
             }.onFailure {
-                baseMotionUnavailable = true
-                baseMotionActive = false
+                flowShadowUnavailable = true
+                flowShadowActive = false
                 it.printOnDebug()
             }
         }
@@ -228,7 +238,7 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
     private var frameScheduled = false
     private var motionRunning = false
     private var motionRampStartNanos = 0L
-    private var baseMotionUnavailable = false
+    private var flowShadowUnavailable = false
 
     private val environmentReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -250,16 +260,16 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
             updateAnimationState()
             return@FrameCallback
         }
-        val phase = phaseAt(frameTimeNanos, GLOBAL_MORPH_PERIOD_NANOS)
+        val phase = phaseAt(frameTimeNanos, FLOW_SHADOW_PERIOD_NANOS)
         val rampFraction = ((frameTimeNanos - motionRampStartNanos).toDouble() /
             MOTION_RAMP_NANOS.toDouble()).coerceIn(0.0, 1.0)
         val motionScale = rampFraction * rampFraction * (3.0 - 2.0 * rampFraction)
-        val motionApplied = gradientDrawable?.setBaseMotion(
+        val motionApplied = gradientDrawable?.setFlowShadowPhase(
             phase.toFloat(),
             motionScale.toFloat(),
         ) == true
         if (!motionApplied) {
-            baseMotionUnavailable = true
+            flowShadowUnavailable = true
             updateAnimationState()
             return@FrameCallback
         }
@@ -275,10 +285,11 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
 
     fun setGradientDrawable(drawable: NgThemeGradientDrawable?) {
         if (gradientDrawable === drawable) return
-        gradientDrawable?.clearBaseMotion()
+        gradientDrawable?.clearFlowShadow()
         gradientDrawable = drawable
-        baseMotionUnavailable = false
+        flowShadowUnavailable = false
         setImageDrawable(drawable)
+        updateEnvironmentObservers()
         updateAnimationState()
     }
 
@@ -327,7 +338,7 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
 
     private fun shouldAnimate(): Boolean {
         if (
-            gradientDrawable == null ||
+            gradientDrawable?.supportsFlowShadow != true ||
             !hostActive ||
             !isAttachedToWindow ||
             windowVisibility != View.VISIBLE ||
@@ -335,7 +346,7 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
             !isShown ||
             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             !isHardwareAccelerated ||
-            baseMotionUnavailable ||
+            flowShadowUnavailable ||
             isLowRamDevice ||
             eInkMode ||
             powerSaveMode ||
@@ -367,11 +378,12 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
             frameScheduled = false
         }
         motionRunning = false
-        if (resetToBaseline) gradientDrawable?.clearBaseMotion()
+        if (resetToBaseline) gradientDrawable?.clearFlowShadow()
     }
 
     private fun updateEnvironmentObservers() {
         val shouldObserve = hostActive &&
+            gradientDrawable?.supportsFlowShadow == true &&
             isAttachedToWindow &&
             windowVisibility == View.VISIBLE &&
             visibility == View.VISIBLE &&
@@ -444,51 +456,50 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
 
     private companion object {
         const val FRAME_DELAY_MILLIS = 33L
-        const val GLOBAL_MORPH_PERIOD_NANOS = 3_200_000_000L
+        const val FLOW_SHADOW_PERIOD_NANOS = 4_550_000_000L
         const val MOTION_RAMP_NANOS = 200_000_000L
         val timelineOriginNanos: Long = System.nanoTime()
     }
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private class NgSoftGradientBaseMotion {
+private class NgSoftGradientFlowShadow {
 
-    val shader = RuntimeShader(BASE_GRADIENT_FLOW_SHADER)
+    val warpedBaseShader = RuntimeShader(WARPED_BASE_SHADER)
+    val shadeShader = RuntimeShader(SHADE_SHADER)
     private var boundBase: Shader? = null
     private val boundRect = Rect()
 
     fun bindBase(baseShader: Shader, bounds: Rect) {
         if (boundBase === baseShader && boundRect == bounds) return
-        shader.setInputShader("base", baseShader)
-        shader.setFloatUniform(
-            "origin",
-            bounds.left.toFloat(),
-            bounds.top.toFloat(),
-        )
-        shader.setFloatUniform(
-            "size",
-            bounds.width().toFloat(),
-            bounds.height().toFloat(),
-        )
+        warpedBaseShader.setInputShader("base", baseShader)
+        listOf(warpedBaseShader, shadeShader).forEach { shader ->
+            shader.setFloatUniform(
+                "origin",
+                bounds.left.toFloat(),
+                bounds.top.toFloat(),
+            )
+            shader.setFloatUniform(
+                "size",
+                bounds.width().toFloat(),
+                bounds.height().toFloat(),
+            )
+        }
         boundBase = baseShader
         boundRect.set(bounds)
     }
 
-    fun setMotion(sinPhase: Float, cosPhase: Float, amount: Float) {
-        shader.setFloatUniform(
-            "motion",
-            sinPhase,
-            cosPhase,
-            amount,
-        )
+    fun setPhase(phase: Float, amount: Float) {
+        warpedBaseShader.setFloatUniform("flow", phase, amount)
+        shadeShader.setFloatUniform("flow", phase, amount)
     }
 
     private companion object {
-        const val BASE_GRADIENT_FLOW_SHADER = """
+        const val WARPED_BASE_SHADER = """
             uniform shader base;
             uniform float2 origin;
             uniform float2 size;
-            uniform float3 motion;
+            uniform float2 flow;
 
             half4 main(float2 coord) {
                 float2 safeSize = max(size, float2(1.0));
@@ -498,24 +509,55 @@ private class NgSoftGradientBaseMotion {
                     float2(1.0)
                 );
                 float x = uv.x * 2.0 - 1.0;
-                float broadFlow =
-                    motion.x * (0.76 - 0.12 * x * x) +
-                    motion.y * (
-                        0.62 * x + 0.10 * x * x * x
-                    );
-                float displacement = clamp(
-                    broadFlow,
-                    -0.90,
-                    0.90
-                ) * motion.z;
+                float bend = 0.42 * (x * x * x - 0.55 * x);
+                float alpha = flow.x + bend + 0.40;
+                float field = (
+                    sin(6.28318531 * uv.y + alpha) +
+                    0.30396355 * sin(alpha)
+                ) / 1.30396355;
+                float edge = 4.0 * uv.y * (1.0 - uv.y);
                 float sampleY = clamp(
-                    uv.y + displacement * uv.y * (1.0 - uv.y),
+                    uv.y + field * 0.0585 * edge * flow.y,
                     0.0,
                     1.0
                 );
                 float2 sampleCoord = origin +
                     float2(uv.x, sampleY) * safeSize;
                 return base.eval(sampleCoord);
+            }
+        """
+
+        const val SHADE_SHADER = """
+            uniform float2 origin;
+            uniform float2 size;
+            uniform float2 flow;
+
+            half4 main(float2 coord) {
+                float2 safeSize = max(size, float2(1.0));
+                float2 uv = clamp(
+                    (coord - origin) / safeSize,
+                    float2(0.0),
+                    float2(1.0)
+                );
+                float x = uv.x * 2.0 - 1.0;
+                float bend = 0.42 * (x * x * x - 0.55 * x);
+                float alpha = flow.x + bend + 0.40;
+                float field = (
+                    sin(6.28318531 * uv.y + alpha) +
+                    0.30396355 * sin(alpha)
+                ) / 1.30396355;
+                float edge = 4.0 * uv.y * (1.0 - uv.y);
+                float shade = field * edge * 0.39 * flow.y;
+                if (shade < 0.0) {
+                    return half4(0.0, 0.0, 0.0, half(-shade));
+                }
+                half highlightAlpha = half(shade * 0.55);
+                return half4(
+                    highlightAlpha,
+                    highlightAlpha,
+                    highlightAlpha,
+                    highlightAlpha
+                );
             }
         """
     }

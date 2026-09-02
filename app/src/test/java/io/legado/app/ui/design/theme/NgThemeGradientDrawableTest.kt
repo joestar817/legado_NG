@@ -9,6 +9,7 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientLightFieldPreset
 import io.legado.app.help.config.NgSoftGradientTheme
+import io.legado.app.help.config.NgThemeGradientMotion
 import io.legado.app.utils.putPrefString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,8 +81,14 @@ class NgThemeGradientDrawableTest {
                     lightField.storageValue,
                 )
                 val profile = NgSoftGradientTheme.gradient(context)
-                baseColorProfiles += profile.colors
+                if (lightField != NgSoftGradientLightFieldPreset.FLOW_SHADOW) {
+                    baseColorProfiles += profile.colors
+                }
                 val drawable = NgThemeGradientDrawable(profile)
+                assertEquals(
+                    lightField == NgSoftGradientLightFieldPreset.FLOW_SHADOW,
+                    drawable.supportsFlowShadow,
+                )
                 val bitmap = Bitmap.createBitmap(360, 800, Bitmap.Config.ARGB_8888)
 
                 drawable.setBounds(0, 0, bitmap.width, bitmap.height)
@@ -104,9 +111,35 @@ class NgThemeGradientDrawableTest {
                 assertNotEquals(center, bottom)
                 assertTrue(samples.distinct().size >= 4)
                 assertLuminanceRange(samples, minimumRange = 0.16)
-
             }
-            assertEquals(NgSoftGradientLightFieldPreset.entries.size, baseColorProfiles.size)
+            assertEquals(
+                NgSoftGradientLightFieldPreset.entries.size - 1,
+                baseColorProfiles.size,
+            )
+        }
+    }
+
+    @Test
+    fun `flow shadow reuses balanced scene with dedicated motion`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        NgSoftGradientColorPreset.entries.forEach { colorPreset ->
+            context.putPrefString(PreferKey.ngSoftGradientColor, colorPreset.storageValue)
+            context.putPrefString(
+                PreferKey.ngSoftGradientLightField,
+                NgSoftGradientLightFieldPreset.BALANCED.storageValue,
+            )
+            val balanced = NgSoftGradientTheme.gradient(context)
+            context.putPrefString(
+                PreferKey.ngSoftGradientLightField,
+                NgSoftGradientLightFieldPreset.FLOW_SHADOW.storageValue,
+            )
+            val flowShadow = NgSoftGradientTheme.gradient(context)
+
+            assertEquals(NgThemeGradientMotion.NONE, balanced.motion)
+            assertEquals(NgThemeGradientMotion.FLOW_SHADOW, flowShadow.motion)
+            assertEquals(balanced.colors, flowShadow.colors)
+            assertEquals(balanced.stops, flowShadow.stops)
+            assertEquals(balanced.radialLayers, flowShadow.radialLayers)
         }
     }
 

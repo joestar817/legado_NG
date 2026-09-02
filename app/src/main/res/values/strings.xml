@@ -1182,6 +1182,7 @@
     <string name="ng_soft_gradient_light_clear">Clear</string>
     <string name="ng_soft_gradient_light_still_sea">Still sea</string>
     <string name="ng_soft_gradient_light_aqua">Aqua</string>
+    <string name="ng_soft_gradient_light_flow_shadow">Flow shadow</string>
     <string name="bg_image_per">Set the background image requires storage permission</string>
     <string name="input_book_source_url">Input book source address</string>
     <string name="del_file">Delete file</string>

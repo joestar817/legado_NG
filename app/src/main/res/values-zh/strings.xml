@@ -1182,6 +1182,7 @@
     <string name="ng_soft_gradient_light_clear">清透</string>
     <string name="ng_soft_gradient_light_still_sea">静海</string>
     <string name="ng_soft_gradient_light_aqua">青润</string>
+    <string name="ng_soft_gradient_light_flow_shadow">流影</string>
     <string name="bg_image_per">获取背景图片需存储权限</string>
     <string name="input_book_source_url">输入书源网址</string>
     <string name="del_file">删除文件</string>
