@@ -70,6 +70,8 @@ internal fun Modifier.ngDrawLiquidGlassBackdrop(
     blurRadius: Dp,
     refractionHeight: Dp,
     refractionAmount: Dp,
+    interiorRefractionAmount: Dp,
+    convexLightingStrength: Float,
     saturation: Float,
     depthEffect: Float,
     chromaticAberration: Float,
@@ -83,6 +85,8 @@ internal fun Modifier.ngDrawLiquidGlassBackdrop(
             blurRadius = blurRadius,
             refractionHeight = refractionHeight,
             refractionAmount = refractionAmount,
+            interiorRefractionAmount = interiorRefractionAmount,
+            convexLightingStrength = convexLightingStrength,
             saturation = saturation,
             depthEffect = depthEffect,
             chromaticAberration = chromaticAberration,
@@ -171,6 +175,8 @@ private data class NgLiquidBackdropElement(
     val blurRadius: Dp,
     val refractionHeight: Dp,
     val refractionAmount: Dp,
+    val interiorRefractionAmount: Dp,
+    val convexLightingStrength: Float,
     val saturation: Float,
     val depthEffect: Float,
     val chromaticAberration: Float,
@@ -183,6 +189,8 @@ private data class NgLiquidBackdropElement(
         blurRadius,
         refractionHeight,
         refractionAmount,
+        interiorRefractionAmount,
+        convexLightingStrength,
         saturation,
         depthEffect,
         chromaticAberration,
@@ -195,6 +203,8 @@ private data class NgLiquidBackdropElement(
         node.blurRadius = blurRadius
         node.refractionHeight = refractionHeight
         node.refractionAmount = refractionAmount
+        node.interiorRefractionAmount = interiorRefractionAmount
+        node.convexLightingStrength = convexLightingStrength
         node.saturation = saturation
         node.depthEffect = depthEffect
         node.chromaticAberration = chromaticAberration
@@ -209,6 +219,8 @@ private data class NgLiquidBackdropElement(
         properties["blurRadius"] = blurRadius
         properties["refractionHeight"] = refractionHeight
         properties["refractionAmount"] = refractionAmount
+        properties["interiorRefractionAmount"] = interiorRefractionAmount
+        properties["convexLightingStrength"] = convexLightingStrength
         properties["saturation"] = saturation
         properties["depthEffect"] = depthEffect
         properties["chromaticAberration"] = chromaticAberration
@@ -222,6 +234,8 @@ private class NgLiquidBackdropNode(
     var blurRadius: Dp,
     var refractionHeight: Dp,
     var refractionAmount: Dp,
+    var interiorRefractionAmount: Dp,
+    var convexLightingStrength: Float,
     var saturation: Float,
     var depthEffect: Float,
     var chromaticAberration: Float,
@@ -261,6 +275,7 @@ private class NgLiquidBackdropNode(
         val blurPx = blurRadius.toPx().coerceAtLeast(0f)
         val refractionHeightPx = refractionHeight.toPx().coerceAtLeast(0f)
         val refractionAmountPx = refractionAmount.toPx().coerceAtLeast(0f)
+        val interiorRefractionAmountPx = interiorRefractionAmount.toPx().coerceAtLeast(0f)
         // 与上游 lens 的 padding 语义一致：折射位移不能扩大采样区域，
         // 否则会把承载面外的旧列表内容远距离拉进来，形成视觉残留。
         val padding = (blurPx - refractionHeightPx).coerceAtLeast(0f)
@@ -293,6 +308,8 @@ private class NgLiquidBackdropNode(
             blurRadiusPx = blurPx,
             refractionHeightPx = refractionHeightPx,
             refractionAmountPx = refractionAmountPx,
+            interiorRefractionAmountPx = interiorRefractionAmountPx,
+            convexLightingStrength = convexLightingStrength,
             saturation = saturation,
             depthEffect = depthEffect,
             chromaticAberration = chromaticAberration,
@@ -308,6 +325,8 @@ private class NgLiquidBackdropNode(
         blurRadiusPx: Float,
         refractionHeightPx: Float,
         refractionAmountPx: Float,
+        interiorRefractionAmountPx: Float,
+        convexLightingStrength: Float,
         saturation: Float,
         depthEffect: Float,
         chromaticAberration: Float,
@@ -357,6 +376,14 @@ private class NgLiquidBackdropNode(
             )
             shader.setFloatUniform("refractionHeight", refractionHeightPx)
             shader.setFloatUniform("refractionAmount", -refractionAmountPx)
+            shader.setFloatUniform(
+                "interiorRefractionAmount",
+                -interiorRefractionAmountPx,
+            )
+            shader.setFloatUniform(
+                "convexLightingStrength",
+                convexLightingStrength.coerceIn(0f, 1f),
+            )
             shader.setFloatUniform("depthEffect", depthEffect.coerceIn(0f, 1f))
             shader.setFloatUniform(
                 "chromaticAberration",
@@ -391,6 +418,8 @@ uniform float2 offset;
 uniform float4 cornerRadii;
 uniform float refractionHeight;
 uniform float refractionAmount;
+uniform float interiorRefractionAmount;
+uniform float convexLightingStrength;
 uniform float depthEffect;
 uniform float chromaticAberration;
 
@@ -423,12 +452,55 @@ float circleMap(float x) {
     return 1.0 - sqrt(1.0 - x * x);
 }
 
+half4 applyConvexThicknessLighting(
+    half4 color,
+    float2 normalizedCoord,
+    float strength
+) {
+    if (strength <= 0.0) return color;
+    // One cylindrical convex pane: the optical thickness has a single broad
+    // crown in the center and continuously falls to zero at the left/right
+    // sides. Lighting is derived from that same arc instead of painting two
+    // independent edge lobes.
+    float u = clamp(normalizedCoord.x, -1.0, 1.0);
+    float thickness = sqrt(max(0.0, 1.0 - u * u));
+    float slope = u / max(thickness, 0.22);
+    float3 normal = normalize(float3(-0.55 * slope, 0.0, 1.0));
+    float3 lightDirection = normalize(float3(-0.35, -0.15, 1.0));
+    float3 viewDirection = float3(0.0, 0.0, 1.0);
+    float3 halfDirection = normalize(lightDirection + viewDirection);
+    float specular = pow(max(dot(normal, halfDirection), 0.0), 24.0);
+    float fresnel = pow(1.0 - normal.z, 3.0);
+    float scatter = 1.0 - exp(-1.6 * thickness);
+    float highlight = strength * (0.035 * scatter + 0.075 * specular);
+    float depth = strength * 0.025 * fresnel;
+    color.rgb = color.rgb + (half3(1.0) - color.rgb) * highlight;
+    color.rgb *= 1.0 - depth;
+    return color;
+}
+
 half4 main(float2 coord) {
     float2 halfSize = size * 0.5;
     float2 centeredCoord = (coord + offset) - halfSize;
+    float2 normalizedCoord = centeredCoord / max(halfSize, float2(1.0));
+    float lensPosition = clamp(normalizedCoord.x, -1.0, 1.0);
+    // A single cylindrical lens. The mapping is fixed at the center and both
+    // sides, with one smooth refraction lobe per half. The negative uniform
+    // supplied by the host samples toward the center and expands its content.
+    float lensWeight = lensPosition * (1.0 - lensPosition * lensPosition);
+    float2 interiorOffset = float2(
+        lensWeight * interiorRefractionAmount,
+        0.0
+    );
     float radius = radiusAt(centeredCoord, cornerRadii);
     float sd = sdRoundedRect(centeredCoord, halfSize, radius);
-    if (-sd >= refractionHeight) return content.eval(coord);
+    if (-sd >= refractionHeight) {
+        return applyConvexThicknessLighting(
+            content.eval(coord + interiorOffset),
+            normalizedCoord,
+            convexLightingStrength
+        );
+    }
     sd = min(sd, 0.0);
     float d = circleMap(1.0 - -sd / refractionHeight) * refractionAmount;
     float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
@@ -436,7 +508,7 @@ half4 main(float2 coord) {
         gradSdRoundedRect(centeredCoord, halfSize, gradRadius) +
         depthEffect * normalize(centeredCoord)
     );
-    float2 refractedCoord = coord + d * grad;
+    float2 refractedCoord = coord + interiorOffset + d * grad;
     float dispersionIntensity = chromaticAberration *
         ((centeredCoord.x * centeredCoord.y) / (halfSize.x * halfSize.y));
     float2 dispersedCoord = d * grad * dispersionIntensity;
@@ -475,6 +547,10 @@ half4 main(float2 coord) {
     color.b += purple.b / 3.0;
     color.a += purple.a / 7.0;
 
-    return color;
+    return applyConvexThicknessLighting(
+        color,
+        normalizedCoord,
+        convexLightingStrength
+    );
 }
 """

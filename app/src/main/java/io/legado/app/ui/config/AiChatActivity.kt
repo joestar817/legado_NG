@@ -235,6 +235,7 @@ import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSideDrawerSurface
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.NgThemeGradientBackground
 import io.legado.app.ui.design.theme.NgThemeSceneBackground
 import io.legado.app.utils.GSON
 import io.legado.app.utils.dpToPx
@@ -2336,6 +2337,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
         ) {
+            NgThemeGradientBackground(modifier = Modifier.fillMaxSize())
             if (chatBackgroundDrawable != null) {
                 ChatBackgroundImage(
                     drawableProvider = { chatBackgroundDrawable },

@@ -373,11 +373,12 @@ internal fun BookshelfCompactToolbar(
     val surfaceColor = colorResource(R.color.ng_floating_dock_surface).copy(
         alpha = BookshelfFloatingDockConfig.surfaceAlpha(transparencyPercent),
     )
-    val contentColor = if (snapshot.isDark) {
-        Color(snapshot.colors.onSurface)
-    } else {
-        Color(snapshot.colors.onSurfaceVariant).copy(alpha = 184f / 255f)
-    }
+    val contentColor = snapshot.backdropContent.topNavigationInactive?.let(::Color)
+        ?: if (snapshot.isDark) {
+            Color(snapshot.colors.onSurface)
+        } else {
+            Color(snapshot.colors.onSurfaceVariant).copy(alpha = 184f / 255f)
+        }
     val dividerColor = Color(snapshot.colors.outlineVariant).copy(
         alpha = if (snapshot.isDark) 0.34f else 0.24f,
     )
@@ -750,12 +751,15 @@ private fun CompactToolbarDivider(color: Color) {
 
 @Composable
 private fun floatingDockActiveContentColor(): Color {
-    return Color(NgTheme.colors.primary)
+    val snapshot = NgTheme.snapshot
+    return snapshot.backdropContent.topNavigationActive?.let(::Color)
+        ?: Color(snapshot.colors.primary)
 }
 
 @Composable
 private fun floatingDockInactiveContentColor(): Color {
     val snapshot = NgTheme.snapshot
+    snapshot.backdropContent.topNavigationInactive?.let { return Color(it) }
     return if (snapshot.isDark) {
         Color(snapshot.colors.onSurface)
     } else {

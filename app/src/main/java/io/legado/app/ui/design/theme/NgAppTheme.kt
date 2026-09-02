@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsControllerCompat
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgColorConfigStore
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.help.config.NgVisualSystemStore
@@ -131,12 +133,20 @@ private fun rememberNgThemeSnapshot(darkModeOverride: Boolean?): NgThemeSnapshot
     val context = LocalContext.current
     val systemNightMode = LocalConfiguration.current.isNightMode
     val themeMode = AppConfig.themeMode
+    val presentationMode = NgThemeModeStore.current(context)
     val isDark = resolveNgThemeNightMode(themeMode, systemNightMode, darkModeOverride)
     val colorFlow = remember(context) { NgColorConfigStore.observe(context) }
     val observedColors by colorFlow.collectAsState()
     val colors = observedColors ?: NgColorConfigStore.current(context)
-    return remember(context, themeMode, isDark, colors, darkModeOverride) {
-        if (AppConfig.isEInkMode) {
+    return remember(
+        context,
+        themeMode,
+        presentationMode,
+        isDark,
+        colors,
+        darkModeOverride,
+    ) {
+        if (presentationMode != NgThemePresentationMode.STANDARD) {
             NgThemeResolver.resolve(context)
         } else {
             NgThemeResolver.resolve(

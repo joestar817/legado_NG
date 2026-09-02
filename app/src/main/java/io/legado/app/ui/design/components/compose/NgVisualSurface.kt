@@ -18,11 +18,14 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.legado.app.R
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.ui.design.components.view.NgViewLiquidGlassBackdropView
 import io.legado.app.ui.design.theme.NgTheme
@@ -55,6 +58,8 @@ data class NgLiquidGlassSpec(
     val accentAlphaScale: Float = 0.30f,
     val surfaceGlossAlphaScale: Float = 0.24f,
     val depthEdgeAlphaScale: Float = 0.42f,
+    val interiorRefractionAmount: Dp = 0.dp,
+    val convexLightingStrength: Float = 0f,
 )
 
 object NgLiquidGlassDefaults {
@@ -142,6 +147,65 @@ object NgLiquidGlassDefaults {
             3.dp, 12.dp, 18.dp, 0.30f, 1.22f, 0.35f, 0.12f, 0.55f, 0.45.dp
         )
     }
+
+    /**
+     * 柔光渐变缺少图片背景的局部纹理；为大面积液态承载面补全表面弱透镜，
+     * 让卡片中央也参与折射，而不是只在圆角边缘产生位移。
+     */
+    fun spec(
+        role: NgMaterialRole,
+        usesSoftGradient: Boolean,
+    ): NgLiquidGlassSpec {
+        val base = spec(role)
+        if (!usesSoftGradient) return base
+        return when (role) {
+            NgMaterialRole.BOTTOM_NAVIGATION -> base.copy(
+                refractionHeight = 6.dp,
+                refractionAmount = 6.dp,
+                depthEffect = 0.16f,
+                interiorRefractionAmount = 13.dp,
+                convexLightingStrength = 0.60f,
+            )
+            NgMaterialRole.OVERLAY -> base.copy(
+                refractionHeight = 6.dp,
+                refractionAmount = 6.dp,
+                depthEffect = 0.16f,
+                interiorRefractionAmount = 14.dp,
+                convexLightingStrength = 0.60f,
+            )
+            NgMaterialRole.CONTENT -> base.copy(
+                refractionHeight = 6.dp,
+                refractionAmount = 6.dp,
+                depthEffect = 0.16f,
+                interiorRefractionAmount = 14.dp,
+                convexLightingStrength = 0.60f,
+            )
+            NgMaterialRole.SETTINGS -> NgSoftGradientSettingsMaterial.liquidSpec
+            else -> base
+        }
+    }
+}
+
+internal object NgSoftGradientSettingsMaterial {
+    const val TRANSPARENT_SURFACE_ALPHA = 0.33f
+    const val LIQUID_SURFACE_ALPHA = 0.58f
+
+    val liquidSpec = NgLiquidGlassSpec(
+        blurRadius = 3.dp,
+        refractionHeight = 6.dp,
+        refractionAmount = 6.dp,
+        surfaceAlphaScale = 0.50f,
+        saturation = 1.22f,
+        depthEffect = 0.16f,
+        chromaticAberration = 0.06f,
+        highlightAlphaScale = 0.70f,
+        highlightWidth = 0.55.dp,
+        accentAlphaScale = 0.35f,
+        surfaceGlossAlphaScale = 0.45f,
+        depthEdgeAlphaScale = 0.55f,
+        interiorRefractionAmount = 12.dp,
+        convexLightingStrength = 0.60f,
+    )
 }
 
 private val LocalNgLiquidGlassBackdrop = staticCompositionLocalOf<NgLiquidGlassBackdrop?> {
@@ -211,12 +275,16 @@ fun NgVisualSurface(
     transparentBackdrop: (@Composable BoxScope.() -> Unit)? = null,
     materialViewport: NgGlassMaterialViewport? = null,
     visualSystemOverride: NgVisualSystem? = null,
+    liquidSpecOverride: NgLiquidGlassSpec? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val context = LocalContext.current
     val supportsBackdropEffect = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val visualSystem = visualSystemOverride ?: NgTheme.visualSystem
     val usesLiquidGlass = visualSystem == NgVisualSystem.LIQUID_GLASS &&
         !NgTheme.snapshot.isEInk
+    val usesSoftGradient = NgThemeModeStore.current(context) ==
+        NgThemePresentationMode.SOFT_GRADIENT
     val resolvedViewBackdropSource =
         viewBackdropSource ?: currentNgLiquidGlassViewBackdropSource()
     if (
@@ -236,7 +304,9 @@ fun NgVisualSurface(
         return
     }
 
-    val spec = remember(role) { NgLiquidGlassDefaults.spec(role) }
+    val spec = remember(role, liquidSpecOverride, usesSoftGradient) {
+        liquidSpecOverride ?: NgLiquidGlassDefaults.spec(role, usesSoftGradient)
+    }
     val liquidStyle = remember(style, spec) {
         style.copy(
             containerTop = style.containerTop.scaleAlpha(spec.surfaceAlphaScale),
@@ -270,6 +340,7 @@ fun NgVisualSurface(
             shape = shape,
             cornerRadius = cornerRadius,
             style = liquidStyle,
+            spec = spec,
             contentPadding = contentPadding,
             content = content,
         )
@@ -302,6 +373,8 @@ private fun NgLiquidGlassSurface(
                 blurRadius = spec.blurRadius,
                 refractionHeight = spec.refractionHeight,
                 refractionAmount = spec.refractionAmount,
+                interiorRefractionAmount = spec.interiorRefractionAmount,
+                convexLightingStrength = spec.convexLightingStrength,
                 saturation = spec.saturation,
                 depthEffect = spec.depthEffect,
                 chromaticAberration = spec.chromaticAberration,
@@ -329,6 +402,7 @@ private fun NgViewLiquidGlassSurface(
     shape: Shape,
     cornerRadius: Dp,
     style: NgGlassStyle,
+    spec: NgLiquidGlassSpec,
     contentPadding: PaddingValues,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -347,6 +421,7 @@ private fun NgViewLiquidGlassSurface(
                 update = { view ->
                     view.renderer.sourceView = sourceView
                     view.renderer.role = role
+                    view.renderer.specOverride = spec
                     view.renderer.cornerRadiusPx = with(density) { cornerRadius.toPx() }
                     view.renderer.drawsSurface = false
                     view.invalidate()

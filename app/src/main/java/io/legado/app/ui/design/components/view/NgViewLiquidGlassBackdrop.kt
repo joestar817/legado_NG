@@ -28,6 +28,7 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.help.config.NgVisualSystemStore
 import io.legado.app.ui.design.components.compose.NgLiquidGlassDefaults
+import io.legado.app.ui.design.components.compose.NgLiquidGlassSpec
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.ROUNDED_RECT_REFRACTION_SHADER
 import kotlin.math.ceil
@@ -53,6 +54,7 @@ internal class NgViewLiquidGlassRenderer(
         }
 
     var role: NgMaterialRole = NgMaterialRole.NAVIGATION
+    var specOverride: NgLiquidGlassSpec? = null
     var cornerRadiusPx: Float = 0f
     @ColorInt var surfaceColor: Int = Color.TRANSPARENT
     var surfaceAlpha: Float = 0f
@@ -102,10 +104,11 @@ internal class NgViewLiquidGlassRenderer(
     @RequiresApi(Build.VERSION_CODES.S)
     private fun drawBackdrop(canvas: Canvas, source: View) {
         val density = owner.resources.displayMetrics.density
-        val spec = NgLiquidGlassDefaults.spec(role)
+        val spec = resolvedSpec()
         val blurPx = spec.blurRadius.value * density
         val refractionHeightPx = spec.refractionHeight.value * density
         val refractionAmountPx = spec.refractionAmount.value * density
+        val interiorRefractionAmountPx = spec.interiorRefractionAmount.value * density
         // lens 不按折射位移外扩录制范围，避免把 Dock 外的列表内容折进来。
         val padding = (blurPx - refractionHeightPx).coerceAtLeast(0f)
         val paddingInt = ceil(padding).toInt()
@@ -141,6 +144,8 @@ internal class NgViewLiquidGlassRenderer(
                 blurRadius = blurPx,
                 refractionHeight = refractionHeightPx,
                 refractionAmount = refractionAmountPx,
+                interiorRefractionAmount = interiorRefractionAmountPx,
+                convexLightingStrength = spec.convexLightingStrength,
                 saturation = spec.saturation,
                 depthEffect = spec.depthEffect,
                 chromaticAberration = spec.chromaticAberration,
@@ -200,6 +205,8 @@ internal class NgViewLiquidGlassRenderer(
         blurRadius: Float,
         refractionHeight: Float,
         refractionAmount: Float,
+        interiorRefractionAmount: Float,
+        convexLightingStrength: Float,
         saturation: Float,
         depthEffect: Float,
         chromaticAberration: Float,
@@ -239,6 +246,14 @@ internal class NgViewLiquidGlassRenderer(
             )
             shader.setFloatUniform("refractionHeight", refractionHeight)
             shader.setFloatUniform("refractionAmount", -refractionAmount)
+            shader.setFloatUniform(
+                "interiorRefractionAmount",
+                -interiorRefractionAmount,
+            )
+            shader.setFloatUniform(
+                "convexLightingStrength",
+                convexLightingStrength.coerceIn(0f, 1f),
+            )
             shader.setFloatUniform("depthEffect", depthEffect.coerceIn(0f, 1f))
             shader.setFloatUniform(
                 "chromaticAberration",
@@ -251,7 +266,7 @@ internal class NgViewLiquidGlassRenderer(
     }
 
     private fun drawSurface(canvas: Canvas) {
-        val spec = NgLiquidGlassDefaults.spec(role)
+        val spec = resolvedSpec()
         val alpha = (surfaceAlpha * spec.surfaceAlphaScale).coerceIn(0f, 1f)
         surfacePaint.style = Paint.Style.FILL
         surfacePaint.shader = null
@@ -297,6 +312,9 @@ internal class NgViewLiquidGlassRenderer(
         )
         highlightPaint.shader = null
     }
+
+    private fun resolvedSpec(): NgLiquidGlassSpec =
+        specOverride ?: NgLiquidGlassDefaults.spec(role)
 
     private fun attachPreDrawListener() {
         if (!owner.isAttachedToWindow || observedTree?.isAlive == true) return

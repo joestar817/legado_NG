@@ -27,6 +27,8 @@ import androidx.lifecycle.findViewTreeLifecycleOwner
 import io.legado.app.R
 import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.NgThemeLibraryStore
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgThemeSceneProfile
 import io.legado.app.ui.book.read.aloud.ListeningCartoonTextureHost
 import io.legado.app.ui.book.read.aloud.availableCartoonTypes
@@ -203,6 +205,7 @@ internal fun NgThemeSceneBackground(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    if (NgThemeModeStore.current(context) != NgThemePresentationMode.STANDARD) return
     val view = LocalView.current
     val lifecycleOwner = remember(view) { view.findViewTreeLifecycleOwner() }
     val libraryState by remember(context) {

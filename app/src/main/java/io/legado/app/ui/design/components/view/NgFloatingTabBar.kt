@@ -23,6 +23,9 @@ import androidx.core.widget.ImageViewCompat
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.FloatingBottomBarConfig
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
+import io.legado.app.ui.design.components.compose.NgLiquidGlassDefaults
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.theme.NgThemeResolver
 import kotlin.math.roundToInt
@@ -108,6 +111,11 @@ class NgFloatingTabBar @JvmOverloads constructor(
     private fun configureLiquidBackdropSource(sourceView: View?) {
         liquidRenderer.sourceView = sourceView
         liquidRenderer.role = NgMaterialRole.BOTTOM_NAVIGATION
+        liquidRenderer.specOverride = NgLiquidGlassDefaults.spec(
+            role = NgMaterialRole.BOTTOM_NAVIGATION,
+            usesSoftGradient = NgThemeModeStore.current(context) ==
+                NgThemePresentationMode.SOFT_GRADIENT,
+        )
         liquidRenderer.cornerRadiusPx = 12.dp.toFloat()
         liquidRenderer.surfaceColor = ContextCompat.getColor(
             context,

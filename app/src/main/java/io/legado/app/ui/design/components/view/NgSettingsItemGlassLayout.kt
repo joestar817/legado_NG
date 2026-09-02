@@ -4,12 +4,18 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.View
 import android.widget.LinearLayout
+import androidx.core.content.ContextCompat
 import io.legado.app.R
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.NgSoftGradientSettingsMaterial
 import io.legado.app.ui.design.theme.NgThemeResolver
+import kotlin.math.roundToInt
 
 /**
  * View Preference 使用的视觉体系兼容卡片。
@@ -25,6 +31,7 @@ class NgSettingsItemGlassLayout @JvmOverloads constructor(
 
     private val transparentBackgroundState = background?.constantState
     private val transparentBackground = background
+    private var usesSoftGradient = false
     private val liquidRenderer = NgViewLiquidGlassRenderer(this).apply {
         role = NgMaterialRole.SETTINGS
         cornerRadiusPx = 18.dp.toFloat()
@@ -38,11 +45,17 @@ class NgSettingsItemGlassLayout @JvmOverloads constructor(
 
     fun refreshVisualMaterial() {
         val snapshot = NgThemeResolver.resolve(context)
+        usesSoftGradient = NgThemeModeStore.current(context) ==
+            NgThemePresentationMode.SOFT_GRADIENT
+        liquidRenderer.specOverride = NgSoftGradientSettingsMaterial.liquidSpec
+            .takeIf { usesSoftGradient }
         liquidRenderer.surfaceAlpha = when {
             snapshot.isEInk -> 1f
+            usesSoftGradient -> NgSoftGradientSettingsMaterial.LIQUID_SURFACE_ALPHA
             snapshot.isDark -> 0.18f
             else -> 0.68f
         }
+        if (!liquidRenderer.isEnabled()) background = newTransparentBackground()
         syncMaterialMode()
     }
 
@@ -87,8 +100,29 @@ class NgSettingsItemGlassLayout @JvmOverloads constructor(
     }
 
     private fun newTransparentBackground(): Drawable? =
-        transparentBackgroundState?.newDrawable(resources)?.mutate()
-            ?: transparentBackground
+        if (usesSoftGradient) {
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 18.dp.toFloat()
+                setColor(
+                    Color.argb(
+                        (NgSoftGradientSettingsMaterial.TRANSPARENT_SURFACE_ALPHA * 255f)
+                            .roundToInt(),
+                        255,
+                        255,
+                        255,
+                    )
+                )
+                setStroke(
+                    (0.6f * resources.displayMetrics.density).roundToInt()
+                        .coerceAtLeast(1),
+                    ContextCompat.getColor(context, R.color.ng_settings_item_stroke),
+                )
+            }
+        } else {
+            transparentBackgroundState?.newDrawable(resources)?.mutate()
+                ?: transparentBackground
+        }
 
     private val Int.dp: Int
         get() = (this * resources.displayMetrics.density + 0.5f).toInt()

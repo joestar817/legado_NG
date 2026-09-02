@@ -24,6 +24,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgColorConfigStore
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadFloatingColorStyle
 import io.legado.app.help.config.ThemeConfig
@@ -98,7 +100,9 @@ object ReadDrawerStyle {
         context: Context,
         primaryStrengthPercent: Int = ReadBookConfig.durConfig.curReadFloatingPrimaryStrength(),
         colorStyle: ReadFloatingColorStyle = ReadBookConfig.durConfig.curReadFloatingColorStyle(),
-    ): NgThemeSnapshot = if (AppConfig.isEInkMode) {
+    ): NgThemeSnapshot = if (
+        NgThemeModeStore.current(context) != NgThemePresentationMode.STANDARD
+    ) {
         NgThemeResolver.resolve(context)
     } else {
         val isDark = ReadBookConfig.isNightTheme
@@ -257,6 +261,7 @@ object ReadDrawerStyle {
     ): Drawable {
         val source = if (!AppConfig.isEInkMode && ThemeConfig.isReadingNgBackgroundTheme(context)) {
             ThemeConfig.getBgImage(context, context.windowManager.windowSize)
+                ?: ThemeConfig.getGradientBgImage(context)
         } else {
             null
         }

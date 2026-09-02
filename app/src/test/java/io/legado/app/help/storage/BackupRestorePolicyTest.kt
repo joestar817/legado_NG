@@ -11,6 +11,11 @@ class BackupRestorePolicyTest {
     fun keepsThemeAndBarAppearanceOutsideWholeBackupRestore() {
         val appearanceKeys = listOf(
             PreferKey.themeMode,
+            PreferKey.ngThemePresentationMode,
+            PreferKey.ngStandardThemeMode,
+            PreferKey.ngInternalThemeMode,
+            PreferKey.ngSoftGradientColor,
+            PreferKey.ngSoftGradientLightField,
             PreferKey.readNightTheme,
             PreferKey.cPrimary,
             PreferKey.ngColorLightPrimary,

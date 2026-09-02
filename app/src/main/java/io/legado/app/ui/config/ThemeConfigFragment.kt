@@ -22,10 +22,15 @@ import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.NgDrawerAppearanceConfig
+import io.legado.app.help.config.NgSoftGradientColorPreset
+import io.legado.app.help.config.NgSoftGradientLightFieldPreset
+import io.legado.app.help.config.NgSoftGradientTheme
+import io.legado.app.help.config.NgThemeModeGroup
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.help.config.NgVisualSystemStore
 import io.legado.app.help.config.ThemeConfig
-import io.legado.app.help.config.normalizeThemeMode
 import io.legado.app.help.http.addHeaders
 import io.legado.app.help.http.newCallResponse
 import io.legado.app.help.http.okHttpClient
@@ -89,7 +94,11 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                     ThemeConfigScreen(
                         state = screenState,
                         section = screenSection(),
-                        onThemeModeSelected = ::selectThemeMode,
+                        onThemeModeGroupSelected = ::selectThemeModeGroup,
+                        onStandardThemeModeSelected = ::selectStandardThemeMode,
+                        onInternalThemeModeSelected = ::selectInternalThemeMode,
+                        onSoftGradientColorSelected = ::selectSoftGradientColor,
+                        onSoftGradientLightFieldSelected = ::selectSoftGradientLightField,
                         onVisualSystemSelected = ::setVisualSystem,
                         onLauncherIconClick = ::showLauncherIconSelection,
                         onFloatingBottomBarChanged = ::setFloatingBottomBar,
@@ -208,7 +217,12 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
         val displayMetrics = resources.displayMetrics
         val statusBarHeightPx = requireContext().statusBarHeight
         screenState = ThemeConfigScreenState(
-            themeMode = normalizeThemeMode(AppConfig.themeMode),
+            themeModeGroup = NgThemeModeStore.currentGroup(requireContext()),
+            presentationMode = NgThemeModeStore.current(requireContext()),
+            standardThemeMode = NgThemeModeStore.standardThemeMode(requireContext()),
+            internalThemeMode = NgThemeModeStore.lastInternalMode(requireContext()),
+            softGradientColor = NgSoftGradientTheme.colorPreset(requireContext()),
+            softGradientLightField = NgSoftGradientTheme.lightFieldPreset(requireContext()),
             visualSystem = NgVisualSystemStore.current(requireContext()),
             showLauncherIcon = Build.VERSION.SDK_INT >= 26,
             launcherIconRes = launcherIconResource(launcherIcon),
@@ -249,12 +263,12 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                 AppContextWrapper.getFontScale(requireContext())
             ),
             dayBackgroundSummary = backgroundSummary(
-                PreferKey.bgImage,
-                PreferKey.bgImageBlurring
+                imageKey = PreferKey.bgImage,
+                blurKey = PreferKey.bgImageBlurring
             ),
             nightBackgroundSummary = backgroundSummary(
-                PreferKey.bgImageN,
-                PreferKey.bgImageNBlurring
+                imageKey = PreferKey.bgImageN,
+                blurKey = PreferKey.bgImageNBlurring
             )
         )
     }
@@ -276,11 +290,60 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
         )
     }
 
-    private fun selectThemeMode(mode: String) {
-        val normalized = normalizeThemeMode(mode)
-        if (normalized == screenState.themeMode) return
-        screenState = screenState.copy(themeMode = normalized)
-        ThemeConfig.applyThemeMode(requireContext(), normalized)
+    private fun selectThemeModeGroup(group: NgThemeModeGroup) {
+        if (group == screenState.themeModeGroup) return
+        val presentationMode = if (group == NgThemeModeGroup.STANDARD) {
+            NgThemePresentationMode.STANDARD
+        } else {
+            screenState.internalThemeMode
+        }
+        screenState = screenState.copy(
+            themeModeGroup = group,
+            presentationMode = presentationMode,
+        )
+        NgThemeModeStore.activateGroup(requireContext(), group)
+    }
+
+    private fun selectStandardThemeMode(mode: String) {
+        if (
+            screenState.themeModeGroup == NgThemeModeGroup.STANDARD &&
+            mode == screenState.standardThemeMode
+        ) {
+            return
+        }
+        screenState = screenState.copy(
+            themeModeGroup = NgThemeModeGroup.STANDARD,
+            presentationMode = NgThemePresentationMode.STANDARD,
+            standardThemeMode = mode,
+        )
+        NgThemeModeStore.activateStandard(requireContext(), mode)
+    }
+
+    private fun selectInternalThemeMode(mode: NgThemePresentationMode) {
+        if (
+            screenState.themeModeGroup == NgThemeModeGroup.INTERNAL &&
+            mode == screenState.presentationMode
+        ) {
+            return
+        }
+        screenState = screenState.copy(
+            themeModeGroup = NgThemeModeGroup.INTERNAL,
+            presentationMode = mode,
+            internalThemeMode = mode,
+        )
+        NgThemeModeStore.activateInternal(requireContext(), mode)
+    }
+
+    private fun selectSoftGradientColor(preset: NgSoftGradientColorPreset) {
+        if (preset == screenState.softGradientColor) return
+        screenState = screenState.copy(softGradientColor = preset)
+        NgSoftGradientTheme.selectColor(requireContext(), preset)
+    }
+
+    private fun selectSoftGradientLightField(preset: NgSoftGradientLightFieldPreset) {
+        if (preset == screenState.softGradientLightField) return
+        screenState = screenState.copy(softGradientLightField = preset)
+        NgSoftGradientTheme.selectLightField(requireContext(), preset)
     }
 
     private fun setVisualSystem(visualSystem: NgVisualSystem) {

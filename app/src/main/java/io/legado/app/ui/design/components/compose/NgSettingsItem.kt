@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.legado.app.R
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.applyTint
@@ -207,14 +210,25 @@ internal fun NgSettingsCardSurface(
     role: NgMaterialRole = NgMaterialRole.SETTINGS,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val context = LocalContext.current
     val snapshot = NgTheme.snapshot
-    val transparentContainer = colorResource(R.color.ng_settings_item)
+    val usesSoftGradient = NgThemeModeStore.current(context) ==
+        NgThemePresentationMode.SOFT_GRADIENT
+    val transparentContainer = if (usesSoftGradient) {
+        Color.White.copy(alpha = NgSoftGradientSettingsMaterial.TRANSPARENT_SURFACE_ALPHA)
+    } else {
+        colorResource(R.color.ng_settings_item)
+    }
     val strokeColor = colorResource(R.color.ng_settings_item_stroke)
     val usesLiquidSurface = NgTheme.usesLiquidGlass &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
         hasCurrentNgLiquidGlassBackdrop()
     val containerColor = if (usesLiquidSurface) {
-        Color.White.copy(alpha = if (snapshot.isDark) 0.18f else 0.68f)
+        Color.White.copy(alpha = when {
+            usesSoftGradient -> NgSoftGradientSettingsMaterial.LIQUID_SURFACE_ALPHA
+            snapshot.isDark -> 0.18f
+            else -> 0.68f
+        })
     } else {
         transparentContainer
     }
@@ -250,6 +264,8 @@ internal fun NgSettingsCardSurface(
         cornerRadius = cornerRadius,
         shape = shape,
         style = style,
+        liquidSpecOverride = NgSoftGradientSettingsMaterial.liquidSpec
+            .takeIf { usesSoftGradient },
         content = content,
     )
 }

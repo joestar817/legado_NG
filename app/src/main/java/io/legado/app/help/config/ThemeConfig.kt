@@ -16,6 +16,7 @@ import io.legado.app.constant.Theme
 import io.legado.app.help.DefaultData
 import io.legado.app.lib.theme.ThemeStore
 import io.legado.app.model.BookCover
+import io.legado.app.ui.design.theme.NgThemeGradientDrawable
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.design.theme.NgColorGenerationMode
 import io.legado.app.utils.BitmapUtils
@@ -164,12 +165,23 @@ object ThemeConfig {
     }
 
     fun isReadingNgBackgroundTheme(context: Context): Boolean {
+        if (AppConfig.isEInkMode) return false
+        if (NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT) {
+            return true
+        }
         val backgroundKey = if (getTheme(context) == Theme.Dark) {
             PreferKey.bgImageN
         } else {
             PreferKey.bgImage
         }
         return !context.getPrefString(backgroundKey).isNullOrBlank()
+    }
+
+    fun getGradientBgImage(context: Context): Drawable? {
+        if (NgThemeModeStore.current(context) != NgThemePresentationMode.SOFT_GRADIENT) {
+            return null
+        }
+        return NgThemeGradientDrawable(NgSoftGradientTheme.gradient(context))
     }
 
     fun getReadingNgImageSurfaceColor(context: Context): Int {
@@ -324,6 +336,9 @@ object ThemeConfig {
 
     @Synchronized
     fun getBgImage(context: Context, metrics: DisplayMetrics): Drawable? {
+        if (NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT) {
+            return null
+        }
         val themeMode = getTheme(context)
         val preferenceKey = when (themeMode) {
             Theme.Light -> PreferKey.bgImage
@@ -775,20 +790,28 @@ object ThemeConfig {
                     .apply()
             return@with
         }
-        val colorConfig = NgColorConfigStore.current(this)
+        val softGradient = NgThemeModeStore.current(this) ==
+            NgThemePresentationMode.SOFT_GRADIENT
+        val colorConfig = if (softGradient) {
+            NgSoftGradientTheme.colors(this)
+        } else {
+            NgColorConfigStore.current(this)
+        }
         val colors = NgThemeResolver.resolveColorScheme(
             context = this,
             colors = colorConfig,
-            isDark = isNightTheme
+            isDark = if (softGradient) false else isNightTheme
         )
         val manual = colorConfig.takeIf { it.mode == NgColorGenerationMode.MANUAL }
-            ?.manualColors(isNightTheme)
+            ?.manualColors(if (softGradient) false else isNightTheme)
         ThemeStore.editTheme(this)
             .primaryColor(manual?.secondary ?: colors.topBarContainer)
             .accentColor(colors.primary)
             .backgroundColor(colors.background)
             .bottomBackground(manual?.labelContainer ?: colors.surfaceContainerLow)
-            .transparentNavBar(getPrefBoolean(PreferKey.tNavBar, false))
+            .transparentNavBar(
+                softGradient || getPrefBoolean(PreferKey.tNavBar, false)
+            )
             .apply()
     }
 

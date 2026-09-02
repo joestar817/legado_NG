@@ -12,12 +12,18 @@ data class NgThemeSnapshot(
     val isDark: Boolean,
     val isEInk: Boolean,
     val colors: NgColorScheme,
+    val backdropContent: NgBackdropContentTokens = NgBackdropContentTokens(),
     val shapes: NgShapeTokens = NgShapeTokens(),
     val spacing: NgSpacingTokens = NgSpacingTokens(),
     val typography: NgTypographyTokens = NgTypographyTokens(),
     val effects: NgEffectTokens = NgEffectTokens(),
     val motion: NgMotionTokens = NgMotionTokens(),
     val systemBars: NgSystemBarTokens
+)
+
+data class NgBackdropContentTokens(
+    @param:ColorInt val topNavigationActive: Int? = null,
+    @param:ColorInt val topNavigationInactive: Int? = null,
 )
 
 data class NgColorScheme(

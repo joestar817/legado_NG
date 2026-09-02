@@ -23,6 +23,10 @@ import com.materialkolor.scheme.SchemeVibrant
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgColorConfigStore
+import io.legado.app.help.config.NgSoftGradientColorPreset
+import io.legado.app.help.config.NgSoftGradientTheme
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.backgroundColor
@@ -44,7 +48,7 @@ data class NgLegacyThemeInput(
 )
 
 /**
- * 现阶段只负责把旧主题状态解析为稳定的 NG 语义。
+ * 将常规主题或 NG 内置模式解析为稳定的组件语义。
  *
  * 这里不读写偏好、不修复旧状态，也不决定当前选择的是哪个主题。
  */
@@ -52,6 +56,26 @@ object NgThemeResolver {
 
     fun resolve(context: Context): NgThemeSnapshot {
         if (AppConfig.isEInkMode) return resolveEInk()
+        if (NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT) {
+            val colorPreset = NgSoftGradientTheme.colorPreset(context)
+            val snapshot = resolve(
+                context = context,
+                colors = NgSoftGradientTheme.colors(context),
+                isDark = false,
+            )
+            return snapshot.copy(
+                colors = snapshot.colors.copy(
+                    selectedContainer = NgSoftGradientTheme.selectedContainer,
+                ),
+                backdropContent = NgBackdropContentTokens(
+                    topNavigationActive = WHITE,
+                    topNavigationInactive = SOFT_GRADIENT_INACTIVE_TOP_NAVIGATION,
+                ),
+                systemBars = snapshot.systemBars.copy(
+                    darkStatusBarIcons = colorPreset != NgSoftGradientColorPreset.DUSK_VIOLET,
+                ),
+            )
+        }
         return resolve(
             context = context,
             colors = NgColorConfigStore.current(context),
@@ -399,6 +423,7 @@ object NgThemeResolver {
     private const val WHITE = 0xFFFFFFFF.toInt()
     private const val DARK_INVERSE_SURFACE = 0xFF313033.toInt()
     private const val LIGHT_INVERSE_SURFACE = 0xFFF2F0F2.toInt()
+    private val SOFT_GRADIENT_INACTIVE_TOP_NAVIGATION = 0xB8FFFFFF.toInt()
 }
 
 internal object NgColorMath {
