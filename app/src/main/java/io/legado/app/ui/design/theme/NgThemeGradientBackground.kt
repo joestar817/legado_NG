@@ -50,7 +50,6 @@ import io.legado.app.help.config.NgThemeGradientProfile
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.utils.printOnDebug
-import kotlin.math.PI
 import kotlin.math.hypot
 
 /** Asset-free full-screen gradient shared by View and Compose theme hosts. */
@@ -91,7 +90,7 @@ internal class NgThemeGradientDrawable(
                 canvas.isHardwareAccelerated &&
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         }
-        paint.shader = activeFlowShadow?.warpedBaseShader ?: baseShader
+        paint.shader = baseShader
         canvas.drawRect(drawingBounds, paint)
 
         radialShaders.forEach { shader ->
@@ -122,7 +121,7 @@ internal class NgThemeGradientDrawable(
     @Deprecated("Deprecated in Java")
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 
-    fun setFlowShadowPhase(phase: Float, amount: Float): Boolean {
+    fun setFlowShadowProgress(progress: Float, amount: Float): Boolean {
         if (
             !supportsFlowShadow ||
             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -134,12 +133,12 @@ internal class NgThemeGradientDrawable(
             val shadow = flowShadow ?: NgSoftGradientFlowShadow().also {
                 flowShadow = it
             }
-            shadow.setPhase(
-                phase,
+            shadow.setProgress(
+                progress,
                 amount.coerceIn(0f, 1f),
             )
             if (shaderBounds == bounds && shaderAlpha == drawableAlpha) {
-                baseShader?.let { shadow.bindBase(it, bounds) }
+                shadow.bindBounds(bounds)
             }
             flowShadowActive = amount > 0f
             invalidateSelf()
@@ -190,7 +189,7 @@ internal class NgThemeGradientDrawable(
             !flowShadowUnavailable
         ) {
             runCatching {
-                flowShadow?.bindBase(newBaseShader, bounds)
+                flowShadow?.bindBounds(bounds)
             }.onFailure {
                 flowShadowUnavailable = true
                 flowShadowActive = false
@@ -260,12 +259,12 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
             updateAnimationState()
             return@FrameCallback
         }
-        val phase = phaseAt(frameTimeNanos, FLOW_SHADOW_PERIOD_NANOS)
+        val progress = phaseFractionAt(frameTimeNanos, FLOW_SHADOW_PERIOD_NANOS)
         val rampFraction = ((frameTimeNanos - motionRampStartNanos).toDouble() /
             MOTION_RAMP_NANOS.toDouble()).coerceIn(0.0, 1.0)
         val motionScale = rampFraction * rampFraction * (3.0 - 2.0 * rampFraction)
-        val motionApplied = gradientDrawable?.setFlowShadowPhase(
-            phase.toFloat(),
+        val motionApplied = gradientDrawable?.setFlowShadowProgress(
+            progress.toFloat(),
             motionScale.toFloat(),
         ) == true
         if (!motionApplied) {
@@ -444,10 +443,6 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
         eInkMode = AppConfig.isEInkMode
     }
 
-    private fun phaseAt(frameTimeNanos: Long, periodNanos: Long): Double {
-        return phaseFractionAt(frameTimeNanos, periodNanos) * 2.0 * PI
-    }
-
     private fun phaseFractionAt(frameTimeNanos: Long, periodNanos: Long): Double {
         val elapsedNanos = (frameTimeNanos - timelineOriginNanos)
             .coerceAtLeast(0L) % periodNanos
@@ -465,66 +460,29 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private class NgSoftGradientFlowShadow {
 
-    val warpedBaseShader = RuntimeShader(WARPED_BASE_SHADER)
     val shadeShader = RuntimeShader(SHADE_SHADER)
-    private var boundBase: Shader? = null
     private val boundRect = Rect()
 
-    fun bindBase(baseShader: Shader, bounds: Rect) {
-        if (boundBase === baseShader && boundRect == bounds) return
-        warpedBaseShader.setInputShader("base", baseShader)
-        listOf(warpedBaseShader, shadeShader).forEach { shader ->
-            shader.setFloatUniform(
-                "origin",
-                bounds.left.toFloat(),
-                bounds.top.toFloat(),
-            )
-            shader.setFloatUniform(
-                "size",
-                bounds.width().toFloat(),
-                bounds.height().toFloat(),
-            )
-        }
-        boundBase = baseShader
+    fun bindBounds(bounds: Rect) {
+        if (boundRect == bounds) return
+        shadeShader.setFloatUniform(
+            "origin",
+            bounds.left.toFloat(),
+            bounds.top.toFloat(),
+        )
+        shadeShader.setFloatUniform(
+            "size",
+            bounds.width().toFloat(),
+            bounds.height().toFloat(),
+        )
         boundRect.set(bounds)
     }
 
-    fun setPhase(phase: Float, amount: Float) {
-        warpedBaseShader.setFloatUniform("flow", phase, amount)
-        shadeShader.setFloatUniform("flow", phase, amount)
+    fun setProgress(progress: Float, amount: Float) {
+        shadeShader.setFloatUniform("flow", progress, amount)
     }
 
     private companion object {
-        const val WARPED_BASE_SHADER = """
-            uniform shader base;
-            uniform float2 origin;
-            uniform float2 size;
-            uniform float2 flow;
-
-            half4 main(float2 coord) {
-                float2 safeSize = max(size, float2(1.0));
-                float2 uv = clamp(
-                    (coord - origin) / safeSize,
-                    float2(0.0),
-                    float2(1.0)
-                );
-                float x = uv.x * 2.0 - 1.0;
-                float bend = 0.1011584 * (x * x * x - 0.55 * x);
-                float field = sin(
-                    3.6128 * uv.y + flow.x + bend + 0.40
-                );
-                float edge = 4.0 * uv.y * (1.0 - uv.y);
-                float sampleY = clamp(
-                    uv.y + field * 0.143 * edge * flow.y,
-                    0.0,
-                    1.0
-                );
-                float2 sampleCoord = origin +
-                    float2(uv.x, sampleY) * safeSize;
-                return base.eval(sampleCoord);
-            }
-        """
-
         const val SHADE_SHADER = """
             uniform float2 origin;
             uniform float2 size;
@@ -537,23 +495,20 @@ private class NgSoftGradientFlowShadow {
                     float2(0.0),
                     float2(1.0)
                 );
-                float x = uv.x * 2.0 - 1.0;
-                float bend = 0.1011584 * (x * x * x - 0.55 * x);
-                float field = sin(
-                    3.6128 * uv.y + flow.x + bend + 0.40
+                float stage = flow.x < 0.5
+                    ? flow.x * 2.0
+                    : (flow.x - 0.5) * 2.0;
+                float front = mix(1.42, -0.42, stage);
+                float frontMask = smoothstep(
+                    front - 0.34,
+                    front + 0.34,
+                    uv.y
                 );
-                float edge = 4.0 * uv.y * (1.0 - uv.y);
-                float shade = field * edge * 0.39 * flow.y;
-                if (shade < 0.0) {
-                    return half4(0.0, 0.0, 0.0, half(-shade));
-                }
-                half highlightAlpha = half(shade * 0.55);
-                return half4(
-                    highlightAlpha,
-                    highlightAlpha,
-                    highlightAlpha,
-                    highlightAlpha
-                );
+                float coverage = flow.x < 0.5
+                    ? frontMask
+                    : 1.0 - frontMask;
+                half shadowAlpha = half(coverage * 0.34 * flow.y);
+                return half4(0.0, 0.0, 0.0, shadowAlpha);
             }
         """
     }
