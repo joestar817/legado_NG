@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -102,6 +104,7 @@ fun TtsEngineListScreen(
     state: TtsEngineListScreenState,
     onAction: (TtsEngineListAction) -> Unit,
     modifier: Modifier = Modifier,
+    listState: LazyListState = rememberLazyListState(),
 ) {
     Column(
         modifier = modifier.fillMaxSize()
@@ -120,6 +123,7 @@ fun TtsEngineListScreen(
         ) { engines ->
             var orderedEngines by remember(engines) { mutableStateOf(engines) }
             val reorderState = rememberNgLazyReorderState(
+                listState = listState,
                 onMove = { fromIndex, toIndex ->
                     if (fromIndex in orderedEngines.indices &&
                         toIndex in orderedEngines.indices &&

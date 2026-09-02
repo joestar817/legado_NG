@@ -1,14 +1,20 @@
 package io.legado.app.ui.config
 
 import android.app.Dialog
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import android.text.InputType
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.ComponentDialog
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.isVisible
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -16,7 +22,6 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
-import io.legado.app.databinding.FragmentTtsEngineConfigBinding
 import io.legado.app.constant.AppConst
 import io.legado.app.help.http.decompressed
 import io.legado.app.help.http.newCallResponse
@@ -37,10 +42,10 @@ import io.legado.app.help.tts.TtsVoice
 import io.legado.app.help.tts.TtsVoiceStyle
 import io.legado.app.help.tts.generateTtsRandomNumber
 import io.legado.app.help.tts.styleOptions
-import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.components.compose.NgListState
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.widget.TitleBar
+import io.legado.app.ui.widget.code.CodeView
 import io.legado.app.ui.widget.code.addJsPattern
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.utils.SelectFileContract
@@ -50,20 +55,21 @@ import io.legado.app.utils.isAbsUrl
 import io.legado.app.utils.putPrefString
 import io.legado.app.utils.readText
 import io.legado.app.utils.toastOnUi
-import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
-class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config),
+class TtsEngineConfigFragment : BaseFragment(0),
     ConfigBackHandler {
 
     private enum class DetailTab { CONFIG, VOICES }
 
-    private val binding by viewBinding(FragmentTtsEngineConfigBinding::bind)
     private val configEntities = arrayListOf<ConfigField>()
     private var currentEngineId: String? = null
     private var detailEngineSnapshot: TtsEngineSetting? = null
@@ -73,8 +79,9 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     private var configOptionsLoadedScript: String? = null
     private var scriptCodeLoadedEngineId: String? = null
     private var formDirty = false
-    private var detailTab by mutableStateOf(DetailTab.CONFIG)
-    private var sourceMode by mutableStateOf(false)
+    private var screenRoute by mutableStateOf(TtsEngineConfigRoute.ENGINE_LIST)
+    private val sourceMode: Boolean
+        get() = screenRoute == TtsEngineConfigRoute.SCRIPT_SOURCE
     private var allVoices: List<TtsVoice> = emptyList()
     private var voiceSearchQuery: String = ""
     private var voicePreviewController: TtsVoicePreviewController? = null
@@ -92,6 +99,13 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     private var engineConfigSaveJob: Job? = null
     private var engineConfigSaveRevision = 0L
     private var engineRefreshJob: Job? = null
+    private var voiceRefreshJob: Job? = null
+    private var voiceRefreshRevision = 0L
+    private var engineRefreshing by mutableStateOf(false)
+    private var voiceRefreshing by mutableStateOf(false)
+    private var voiceRefreshEnabled by mutableStateOf(false)
+    private var rootComposeView: ComposeView? = null
+    private var scriptEditorView: CodeView? = null
     private val engineSnapshotGate = TtsEngineSnapshotGate()
     private val autoFetchedVoiceEngineIds = hashSetOf<String>()
     private val selectedVoiceLanguageFilters = linkedSetOf<String>()
@@ -114,6 +128,17 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         var passwordVisible: Boolean = false
     ) {
         val isOption: Boolean get() = key.startsWith("option:")
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View = ComposeView(requireContext()).apply {
+        layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        )
     }
 
     private fun ConfigField.toFormScreenField(): TtsEngineFormFieldState {
@@ -140,128 +165,97 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         activity?.setTitle(R.string.tts_engine_settings)
-        setSharedTitleBarVisible(false)
-        binding.composeEngines.apply {
+        val editor = createScriptEditorView()
+        scriptEditorView = editor
+        (view as ComposeView).apply {
+            rootComposeView = this
             setViewCompositionStrategy(
                 ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
             )
             setContent {
                 NgAppTheme {
-                    TtsEngineListScreen(
-                        state = engineScreenState,
-                        onAction = ::handleEngineListAction
-                    )
-                }
-            }
-        }
-        binding.composeConfigForm.apply {
-            setViewCompositionStrategy(
-                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
-            )
-            setContent {
-                NgAppTheme {
-                    TtsEngineFormScreen(
-                        state = engineFormScreenState,
-                        onAction = ::handleEngineFormAction
-                    )
-                }
-            }
-        }
-        binding.layoutConfigActions.apply {
-            setViewCompositionStrategy(
-                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
-            )
-            setContent {
-                NgAppTheme {
-                    TtsEngineFormActions(
-                        sourceMode = sourceMode,
-                        onToggleSourceMode = { showConfigSourceMode(!sourceMode) },
-                        onMeasureLatency = ::measureCurrentEngineLatency,
-                        onSaveSource = { saveSourceEngine() },
-                    )
-                }
-            }
-        }
-        binding.composeVoiceControls.apply {
-            setViewCompositionStrategy(
-                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
-            )
-            setContent {
-                NgAppTheme {
-                    TtsEngineVoiceControlsScreen(
-                        state = voiceControlsState,
-                        paramPanelState = voiceParamPanelState,
-                        paramPanelExpanded = voiceParamPanelExpanded,
-                        onBack = { onConfigBackPressed() },
-                        onQueryChange = ::updateVoiceSearchQuery,
-                        onOpenParams = ::toggleVoiceParamPanel,
-                        onDismissParams = { voiceParamPanelExpanded = false },
-                        onParamSpeedChange = { value ->
-                            voiceParamPanelState = voiceParamPanelState.copy(speed = value)
+                    TtsEngineConfigScreen(
+                        route = screenRoute,
+                        engineRefreshing = engineRefreshing,
+                        voiceRefreshing = voiceRefreshing,
+                        voiceRefreshEnabled = voiceRefreshEnabled,
+                        scriptEditorView = editor,
+                        onRefreshEngines = ::requestEngineRefresh,
+                        onRefreshVoices = ::fetchVoices,
+                        engineListContent = { listState ->
+                            TtsEngineListScreen(
+                                state = engineScreenState,
+                                onAction = ::handleEngineListAction,
+                                listState = listState,
+                            )
                         },
-                        onParamVolumeChange = { value ->
-                            voiceParamPanelState = voiceParamPanelState.copy(volume = value)
+                        formContent = {
+                            TtsEngineFormScreen(
+                                state = engineFormScreenState,
+                                onAction = ::handleEngineFormAction,
+                            )
                         },
-                        onParamPitchChange = { value ->
-                            voiceParamPanelState = voiceParamPanelState.copy(pitch = value)
+                        formActions = { inSourceMode ->
+                            TtsEngineFormActions(
+                                sourceMode = inSourceMode,
+                                onToggleSourceMode = {
+                                    showConfigSourceMode(!inSourceMode)
+                                },
+                                onMeasureLatency = ::measureCurrentEngineLatency,
+                                onSaveSource = { saveSourceEngine() },
+                            )
                         },
-                        onParamValueChangeFinished = ::saveVoiceParamPanel,
-                        onToggleLanguage = ::toggleVoiceLanguageFilter,
-                        onToggleGender = ::toggleVoiceGenderFilter,
-                        onToggleAll = ::toggleAllVoicesEnabled,
-                        onSystemSpeedChange = { value ->
-                            voiceControlsState = voiceControlsState.copy(speed = value)
+                        voiceControlsContent = {
+                            TtsEngineVoiceControlsScreen(
+                                state = voiceControlsState,
+                                paramPanelState = voiceParamPanelState,
+                                paramPanelExpanded = voiceParamPanelExpanded,
+                                onBack = { onConfigBackPressed() },
+                                onQueryChange = ::updateVoiceSearchQuery,
+                                onOpenParams = ::toggleVoiceParamPanel,
+                                onDismissParams = { voiceParamPanelExpanded = false },
+                                onParamSpeedChange = { value ->
+                                    voiceParamPanelState = voiceParamPanelState.copy(speed = value)
+                                },
+                                onParamVolumeChange = { value ->
+                                    voiceParamPanelState = voiceParamPanelState.copy(volume = value)
+                                },
+                                onParamPitchChange = { value ->
+                                    voiceParamPanelState = voiceParamPanelState.copy(pitch = value)
+                                },
+                                onParamValueChangeFinished = ::saveVoiceParamPanel,
+                                onToggleLanguage = ::toggleVoiceLanguageFilter,
+                                onToggleGender = ::toggleVoiceGenderFilter,
+                                onToggleAll = ::toggleAllVoicesEnabled,
+                                onSystemSpeedChange = { value ->
+                                    voiceControlsState = voiceControlsState.copy(speed = value)
+                                },
+                                onSystemPitchChange = { value ->
+                                    voiceControlsState = voiceControlsState.copy(pitch = value)
+                                },
+                                onSystemValueChangeFinished = ::saveSystemVoiceParams,
+                            )
                         },
-                        onSystemPitchChange = { value ->
-                            voiceControlsState = voiceControlsState.copy(pitch = value)
+                        voiceListContent = { listState ->
+                            TtsEngineVoiceListScreen(
+                                state = voiceListScreenState,
+                                onAction = ::handleVoiceListAction,
+                                listState = listState,
+                            )
                         },
-                        onSystemValueChangeFinished = ::saveSystemVoiceParams,
-                    )
-                }
-            }
-        }
-        binding.composeVoices.apply {
-            setViewCompositionStrategy(
-                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
-            )
-            setContent {
-                NgAppTheme {
-                    TtsEngineVoiceListScreen(
-                        state = voiceListScreenState,
-                        onAction = ::handleVoiceListAction,
-                    )
-                }
-            }
-        }
-        binding.composeEngineDetailTabs.apply {
-            setViewCompositionStrategy(
-                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
-            )
-            setContent {
-                NgAppTheme {
-                    TtsEngineDetailTabBar(
-                        selectedIndex = detailTab.ordinal,
-                        onSelected = { index ->
-                            DetailTab.entries.getOrNull(index)?.let(::showDetailTab)
+                        detailTabsContent = {
+                            TtsEngineDetailTabBar(
+                                selectedIndex = screenRoute.detailTabIndex,
+                                onSelected = { index ->
+                                    DetailTab.entries.getOrNull(index)?.let(::showDetailTab)
+                                },
+                            )
                         },
                     )
                 }
             }
         }
-        binding.editScriptCode.setMaxHighlightLength(128 * 1024)
-        binding.editScriptCode.addJsPattern()
-        binding.refreshEngines.setColorSchemeColors(accentColor)
-        // ComposeView 本身不转发 LazyColumn 的纵向滚动能力，需查询其 AndroidComposeView 子节点。
-        binding.refreshEngines.setOnChildScrollUpCallback { _, _ ->
-            binding.composeEngines.getChildAt(0)?.canScrollVertically(-1) == true
-        }
-        binding.refreshEngines.setOnRefreshListener { refreshEnginesAsync() }
-
-        binding.refreshVoices.setColorSchemeColors(accentColor)
-        binding.refreshVoices.setOnChildScrollUpCallback { _, _ ->
-            binding.composeVoices.getChildAt(0)?.canScrollVertically(-1) == true
-        }
-        binding.refreshVoices.setOnRefreshListener { fetchVoices() }
+        navigateToRoute(TtsEngineConfigRoute.ENGINE_LIST)
         voicePreviewController = TtsVoicePreviewController(
             context = requireContext(),
             lifecycleScope = viewLifecycleOwner.lifecycleScope,
@@ -279,6 +273,9 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         configOptionsJob = null
         configOptionsWarmJob?.cancel()
         configOptionsWarmJob = null
+        cancelEngineRefresh()
+        cancelVoiceRefresh()
+        voiceRefreshEnabled = false
         voiceParamPanelExpanded = false
         importConflictDialog?.dismiss()
         importConflictDialog = null
@@ -286,41 +283,75 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         modalDialog = null
         voicePreviewController?.release()
         voicePreviewController = null
-        setVoiceDetailChrome(false)
+        rootComposeView = null
+        scriptEditorView = null
+        setSharedTitleBarVisible(true)
         super.onDestroyView()
     }
 
     override fun onConfigBackPressed(): Boolean {
-        if (sourceMode) {
-            showConfigSourceMode(false)
-            return true
+        return when (screenRoute.backDestination()) {
+            TtsEngineConfigRoute.SCRIPT_FORM -> {
+                showConfigSourceMode(false)
+                true
+            }
+
+            TtsEngineConfigRoute.ENGINE_LIST -> {
+                showEngineList()
+                true
+            }
+
+            else -> false
         }
-        if (binding.layoutEngineDetail.isVisible) {
-            showEngineList()
-            return true
-        }
-        return false
     }
 
     private fun refreshEngines() {
-        engineSnapshotGate.invalidate()
-        engineRefreshJob?.cancel()
-        engineRefreshJob = null
-        binding.refreshEngines.isRefreshing = false
+        cancelEngineRefresh()
         if (engineSettingsSnapshot.isNotEmpty()) {
             applyEngineSnapshot(engineSettingsSnapshot)
         }
-        refreshEnginesAsync()
+        startEngineRefresh(forceReload = false, showIndicator = false)
     }
 
-    private fun refreshEnginesAsync() {
+    private fun requestEngineRefresh() {
+        cancelEngineRefresh()
+        startEngineRefresh(forceReload = true, showIndicator = true)
+    }
+
+    private fun cancelEngineRefresh() {
+        engineSnapshotGate.invalidate()
+        engineRefreshJob?.cancel()
+        engineRefreshJob = null
+        engineRefreshing = false
+    }
+
+    private fun cancelVoiceRefresh() {
+        voiceRefreshRevision++
+        voiceRefreshJob?.cancel()
+        voiceRefreshJob = null
+        voiceRefreshing = false
+    }
+
+    private fun startEngineRefresh(
+        forceReload: Boolean,
+        showIndicator: Boolean,
+    ) {
         if (engineRefreshJob?.isActive == true) return
         val snapshotToken = engineSnapshotGate.begin()
-        engineRefreshJob = lifecycleScope.launch {
+        val refreshJob = lifecycleScope.launch(start = CoroutineStart.LAZY) {
             try {
+                if (showIndicator) {
+                    // 缓存命中可能在同一帧完成；至少跨过一帧，让 PullToRefreshBox
+                    // 观察到 refreshing=true 后再收口，否则指示器会停在触发位置。
+                    delay(24L)
+                }
                 awaitEngineOrderSaves()
                 val allEngines = withContext(Dispatchers.IO) {
-                    TtsEngineStore.engines()
+                    if (forceReload) {
+                        TtsEngineStore.reloadEngines()
+                    } else {
+                        TtsEngineStore.engines()
+                    }
                 }
                 if (engineSnapshotGate.isCurrent(snapshotToken)) {
                     applyEngineSnapshot(allEngines)
@@ -335,12 +366,15 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                     )
                 }
             } finally {
-                if (engineSnapshotGate.isCurrent(snapshotToken)) {
-                    binding.refreshEngines.isRefreshing = false
+                if (engineRefreshJob === coroutineContext[Job]) {
+                    engineRefreshing = false
                     engineRefreshJob = null
                 }
             }
         }
+        engineRefreshJob = refreshJob
+        engineRefreshing = showIndicator
+        refreshJob.start()
     }
 
     private suspend fun awaitEngineOrderSaves() {
@@ -439,7 +473,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                 }
             }
 
-            TtsEngineListAction.Retry -> refreshEngines()
+            TtsEngineListAction.Retry -> requestEngineRefresh()
             TtsEngineListAction.Back -> requireActivity().onBackPressedDispatcher.onBackPressed()
 
             TtsEngineListAction.CreateEngine -> addTtsEngine()
@@ -496,9 +530,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             showDisabled = showDisabledEngines,
             isEnabled = TtsEngineSetting::enabled
         )
-        engineSnapshotGate.invalidate()
-        engineRefreshJob?.cancel()
-        engineRefreshJob = null
+        cancelEngineRefresh()
         engineSettingsSnapshot = mergedEngines
         engineScreenState = engineScreenState.copy(
             listState = NgListState.Content(
@@ -541,8 +573,8 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     private fun showEngineList() {
         saveFormChangesIfNeeded()
         clearEngineFormFocus()
-        setVoiceDetailChrome(false)
-        setSharedTitleBarVisible(false)
+        cancelVoiceRefresh()
+        voiceRefreshEnabled = false
         voiceParamPanelExpanded = false
         configOptionsJob?.cancel()
         configOptionsJob = null
@@ -552,17 +584,18 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         draftEngine = null
         formDirty = false
         scriptCodeLoadedEngineId = null
-        binding.editScriptCode.setText("")
+        setScriptCodeText("")
         activity?.setTitle(R.string.tts_engine_settings)
-        binding.layoutEngineList.isVisible = true
-        binding.layoutEngineDetail.isVisible = false
+        navigateToRoute(TtsEngineConfigRoute.ENGINE_LIST)
         refreshEngines()
     }
 
     private fun showEngineDetail(engine: TtsEngineSetting, tab: DetailTab = DetailTab.CONFIG) {
         clearEngineFormFocus()
-        binding.layoutEngineDetail.isVisible = false
         val isSwitchingEngine = currentEngineId != engine.id
+        if (isSwitchingEngine) {
+            cancelVoiceRefresh()
+        }
         configOptionsJob?.cancel()
         configOptionsJob = null
         configOptionsLoadedScript = null
@@ -573,9 +606,8 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             draftEngine = null
         }
         if (isSwitchingEngine) {
-            sourceMode = false
             scriptCodeLoadedEngineId = null
-            binding.editScriptCode.setText("")
+            setScriptCodeText("")
         }
         activity?.setTitle(engine.name)
         if (isSwitchingEngine) {
@@ -583,8 +615,6 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         }
         if (engine.type == TtsEngineType.SYSTEM) {
             bindSystemEngineDetail(engine)
-            binding.layoutEngineList.isVisible = false
-            binding.layoutEngineDetail.isVisible = true
             return
         }
         bindEngineForm(engine)
@@ -592,8 +622,6 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         setVoiceItems(engine.effectiveVoices())
         updateVoiceMessage(engine)
         showDetailTab(tab)
-        binding.layoutEngineList.isVisible = false
-        binding.layoutEngineDetail.isVisible = true
     }
 
     private fun addTtsEngine() {
@@ -743,23 +771,17 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         dialog.applyNgWindow()
     }
 
-    private fun bindSystemEngineDetail(engine: TtsEngineSetting) = binding.run {
-        setVoiceDetailChrome(false)
-        detailTab = DetailTab.VOICES
-        sourceMode = false
+    private fun bindSystemEngineDetail(engine: TtsEngineSetting) {
+        cancelVoiceRefresh()
+        voiceRefreshEnabled = false
         voiceParamPanelExpanded = false
-        scrollConfig.isVisible = false
-        layoutConfigActions.isVisible = false
-        composeEngineDetailTabs.isVisible = false
-        layoutVoices.isVisible = true
-        refreshVoices.isRefreshing = false
-        refreshVoices.isEnabled = false
         voiceControlsState = TtsEngineVoiceControlsState(
             mode = TtsEngineVoiceControlsMode.SYSTEM,
             speed = engine.effectiveSpeed(),
             pitch = engine.effectivePitch(),
         )
         setVoiceItems(listOf(systemDefaultVoice(engine)))
+        navigateToRoute(TtsEngineConfigRoute.SYSTEM_DETAIL)
     }
 
     private fun showDetailTab(tab: DetailTab) {
@@ -770,15 +792,13 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         if (tab != DetailTab.VOICES) {
             voiceParamPanelExpanded = false
         }
-        detailTab = tab
-        setVoiceDetailChrome(tab == DetailTab.VOICES)
-        if (tab != DetailTab.CONFIG && sourceMode) {
-            sourceMode = false
-        }
-        binding.scrollConfig.isVisible = tab == DetailTab.CONFIG
-        binding.layoutConfigActions.isVisible = tab == DetailTab.CONFIG
-        binding.layoutVoices.isVisible = tab == DetailTab.VOICES
-        binding.composeEngineDetailTabs.isVisible = !sourceMode
+        navigateToRoute(
+            if (tab == DetailTab.CONFIG) {
+                TtsEngineConfigRoute.SCRIPT_FORM
+            } else {
+                TtsEngineConfigRoute.SCRIPT_VOICES
+            }
+        )
         if (tab == DetailTab.VOICES) {
             voiceControlsState = voiceControlsState.copy(
                 mode = TtsEngineVoiceControlsMode.SCRIPT,
@@ -790,21 +810,16 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         }
     }
 
-    private fun setVoiceDetailChrome(enabled: Boolean) {
-        setSharedTitleBarVisible(!enabled)
-        binding.layoutEngineDetail.setPadding(
-            binding.layoutEngineDetail.paddingLeft,
-            if (enabled) 0 else resources.getDimensionPixelSize(R.dimen.ng_space_l),
-            binding.layoutEngineDetail.paddingRight,
-            binding.layoutEngineDetail.paddingBottom,
-        )
+    private fun navigateToRoute(route: TtsEngineConfigRoute) {
+        screenRoute = route
+        setSharedTitleBarVisible(route.showsSharedTitleBar)
     }
 
     private fun setSharedTitleBarVisible(visible: Boolean) {
         activity?.findViewById<TitleBar>(R.id.title_bar)?.isVisible = visible
     }
 
-    private fun bindEngineForm(engine: TtsEngineSetting) = binding.run {
+    private fun bindEngineForm(engine: TtsEngineSetting) {
         bindConfigEntities(engine)
         if (sourceMode) {
             ensureScriptCodeLoaded(engine)
@@ -816,9 +831,8 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             engineEnabled = engine.enabled,
             formEnabled = scriptEnabled
         )
-        editScriptCode.isEnabled = scriptEnabled
-        refreshVoices.isEnabled = engine.supportsVoiceFetch()
-        showConfigSourceMode(sourceMode)
+        scriptEditorView?.isEnabled = scriptEnabled
+        voiceRefreshEnabled = engine.supportsVoiceFetch()
     }
 
     private fun handleEngineFormAction(action: TtsEngineFormScreenAction) {
@@ -912,32 +926,45 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
             activity?.setTitle(source.name)
             formDirty = false
         }
-        sourceMode = enabled
-        moveConfigActions(sourceMode = enabled)
-        binding.scrollConfigForm.isVisible = !enabled
-        binding.layoutScriptEditor.isVisible = enabled
-        binding.composeEngineDetailTabs.isVisible = !enabled
+        navigateToRoute(
+            if (enabled) {
+                TtsEngineConfigRoute.SCRIPT_SOURCE
+            } else {
+                TtsEngineConfigRoute.SCRIPT_FORM
+            }
+        )
     }
 
     private fun clearEngineFormFocus() {
-        binding.composeConfigForm.clearFocus()
-        binding.composeConfigForm.hideSoftInput()
+        rootComposeView?.clearFocus()
+        rootComposeView?.hideSoftInput()
     }
 
-    private fun moveConfigActions(sourceMode: Boolean) = binding.run {
-        val target = if (sourceMode) layoutScriptEditor else layoutConfigFormContent
-        if (layoutConfigActions.parent !== target) {
-            (layoutConfigActions.parent as? ViewGroup)?.removeView(layoutConfigActions)
-            target.addView(layoutConfigActions)
+    private fun createScriptEditorView(): CodeView {
+        val density = resources.displayMetrics.density
+        fun dp(value: Int): Int = (value * density).roundToInt()
+        return CodeView(requireContext()).apply {
+            setMaxHighlightLength(128 * 1024)
+            addJsPattern()
+            background = AppCompatResources.getDrawable(
+                context,
+                R.drawable.ng_bg_outlined_field,
+            )
+            gravity = Gravity.TOP
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minimumHeight = dp(220)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         }
     }
 
     private fun setScriptCodeText(script: String?) {
         val text = script.orEmpty()
         if (text.isBlank()) {
-            binding.editScriptCode.setText("")
+            scriptEditorView?.setText("")
         } else {
-            binding.editScriptCode.setTextHighlighted(text)
+            scriptEditorView?.setTextHighlighted(text)
         }
     }
 
@@ -1052,7 +1079,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
         val source = currentDisplayedEngine()
             ?: draftEngine?.takeIf { it.id == currentEngineId }
             ?: return null
-        val script = binding.editScriptCode.text?.toString()?.takeIf { it.isNotBlank() }
+        val script = scriptEditorView?.text?.toString()?.takeIf { it.isNotBlank() }
         if (script == null) {
             requireContext().toastOnUi("源码不能为空")
             return null
@@ -1432,20 +1459,25 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     }
 
     private fun fetchVoices() {
+        if (voiceRefreshJob?.isActive == true) return
         val source = currentDisplayedEngine() ?: return
         val engineDraft = engineFromForm(source).takeIf { it.isScriptEngine } ?: return
         if (!engineDraft.supportsVoiceFetch()) {
-            binding.refreshVoices.isRefreshing = false
+            voiceRefreshing = false
+            voiceRefreshEnabled = false
             voiceControlsState = voiceControlsState.copy(message = null)
             return
         }
-        binding.refreshVoices.isRefreshing = true
+        val requestedEngineId = engineDraft.id
+        val refreshRevision = ++voiceRefreshRevision
+        voiceRefreshing = true
+        voiceRefreshEnabled = true
         if (allVoices.isEmpty()) {
             voiceControlsState = voiceControlsState.copy(
                 message = getString(R.string.tts_voice_loading)
             )
         }
-        lifecycleScope.launch {
+        voiceRefreshJob = lifecycleScope.launch {
             try {
                 awaitEngineConfigSaves()
                 val updated = withContext(Dispatchers.IO) {
@@ -1455,25 +1487,38 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
                         restartReadAloud = false
                     )
                 }
+                if (
+                    refreshRevision != voiceRefreshRevision ||
+                    currentEngineId != requestedEngineId
+                ) {
+                    return@launch
+                }
                 detailEngineSnapshot = updated
                 draftEngine = null
                 activity?.setTitle(updated.name)
                 bindVoiceParams(updated)
                 val effectiveVoices = updated.effectiveVoices()
-                binding.refreshVoices.isRefreshing = false
                 setVoiceItems(effectiveVoices)
                 updateVoiceMessage(updated)
                 requireContext().toastOnUi("已获取 ${effectiveVoices.size} 个发音人")
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                val message = error.localizedMessage ?: error.javaClass.simpleName
-                voiceControlsState = voiceControlsState.copy(message = "获取失败：$message")
-                requireContext().toastOnUi("获取发音人失败")
+                if (
+                    refreshRevision == voiceRefreshRevision &&
+                    currentEngineId == requestedEngineId
+                ) {
+                    val message = error.localizedMessage ?: error.javaClass.simpleName
+                    voiceControlsState = voiceControlsState.copy(message = "获取失败：$message")
+                    requireContext().toastOnUi("获取发音人失败")
+                }
             } finally {
-                binding.refreshVoices.isRefreshing = false
-                binding.refreshVoices.isEnabled =
-                    currentDisplayedEngine()?.supportsVoiceFetch() == true
+                if (refreshRevision == voiceRefreshRevision) {
+                    voiceRefreshing = false
+                    voiceRefreshEnabled = currentEngineId == requestedEngineId &&
+                        currentDisplayedEngine()?.supportsVoiceFetch() == true
+                    voiceRefreshJob = null
+                }
             }
         }
     }
@@ -1576,7 +1621,7 @@ class TtsEngineConfigFragment : BaseFragment(R.layout.fragment_tts_engine_config
     private fun measureCurrentEngineLatency() {
         val source = currentDisplayedEngine() ?: return
         val engine = if (sourceMode) {
-            val script = binding.editScriptCode.text?.toString()?.takeIf { it.isNotBlank() }
+            val script = scriptEditorView?.text?.toString()?.takeIf { it.isNotBlank() }
                 ?: source.script
             engineFromState(source, script)
         } else {
