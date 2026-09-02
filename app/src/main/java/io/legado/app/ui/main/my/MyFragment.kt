@@ -1,17 +1,17 @@
 package io.legado.app.ui.main.my
 
 import android.content.SharedPreferences
-import android.graphics.Color
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.view.View
-import androidx.preference.PreferenceCategory
-import androidx.preference.PreferenceGroup
-import androidx.preference.Preference
-import io.legado.app.R
-import io.legado.app.base.BaseFragment
-import io.legado.app.databinding.FragmentMyConfigBinding
-import io.legado.app.lib.prefs.fragment.PreferenceFragment
-import io.legado.app.lib.theme.primaryColor
+import android.view.ViewGroup
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.fragment.app.Fragment
+import androidx.preference.PreferenceManager
 import io.legado.app.lib.theme.transparentNavBar
 import io.legado.app.ui.about.AboutActivity
 import io.legado.app.ui.about.ReadRecordActivity
@@ -19,151 +19,96 @@ import io.legado.app.ui.book.bookmark.AllBookmarkActivity
 import io.legado.app.ui.book.source.manage.BookSourceActivity
 import io.legado.app.ui.config.ConfigActivity
 import io.legado.app.ui.config.ConfigTag
-import io.legado.app.ui.design.theme.NgThemeResolver
+import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.file.FileManageActivity
 import io.legado.app.ui.main.MainActivity
 import io.legado.app.ui.main.MainFragmentInterface
 import io.legado.app.utils.LogUtils
-import io.legado.app.utils.putPrefBoolean
-import io.legado.app.utils.putPrefInt
-import io.legado.app.utils.removePref
-import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.startActivity
-import io.legado.app.utils.viewbindingdelegate.viewBinding
 
-class MyFragment() : BaseFragment(R.layout.fragment_my_config), MainFragmentInterface {
+/** “我的”根页使用单一 Compose 页面，导航与业务状态继续由 Fragment 持有。 */
+class MyFragment() : Fragment(), MainFragmentInterface,
+    SharedPreferences.OnSharedPreferenceChangeListener {
 
     constructor(position: Int) : this() {
-        val bundle = Bundle()
-        bundle.putInt("position", position)
-        arguments = bundle
+        arguments = Bundle().apply { putInt("position", position) }
     }
 
     override val position: Int? get() = arguments?.getInt("position")
 
-    private val binding by viewBinding(FragmentMyConfigBinding::bind)
+    private lateinit var composeView: ComposeView
+    private var bottomInsetPx by mutableIntStateOf(0)
 
-    override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
-        setSupportToolbar(binding.titleBar.toolbar)
-        applyTransparentModeUi()
-        val fragmentTag = "prefFragment"
-        var preferenceFragment = childFragmentManager.findFragmentByTag(fragmentTag)
-        if (preferenceFragment == null) preferenceFragment = MyPreferenceFragment()
-        childFragmentManager.beginTransaction()
-            .replace(R.id.pre_fragment, preferenceFragment, fragmentTag).commit()
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View {
+        composeView = ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+            )
+            setContent {
+                NgAppTheme {
+                    MyScreen(
+                        bottomInsetPx = bottomInsetPx,
+                        transparentTopBar = requireContext().transparentNavBar,
+                        onAction = ::handleAction,
+                    )
+                }
+            }
+        }
+        return composeView
     }
 
-    private fun applyTransparentModeUi() {
-        if (requireContext().transparentNavBar) {
-            binding.titleBar.setTitleTextColor(
-                NgThemeResolver.resolve(requireContext()).colors.onTopBar
-            )
+    override fun onResume() {
+        super.onResume()
+        PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .registerOnSharedPreferenceChangeListener(this)
+        (activity as? MainActivity)?.resolveFloatingBottomContentInset {
+            bottomInsetPx = it
         }
-        binding.preFragment.setBackgroundResource(R.color.transparent)
     }
 
-    /**
-     * 配置
-     */
-    class MyPreferenceFragment : PreferenceFragment(),
-        SharedPreferences.OnSharedPreferenceChangeListener {
+    override fun onPause() {
+        PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .unregisterOnSharedPreferenceChangeListener(this)
+        if (this::composeView.isInitialized) composeView.clearFocus()
+        super.onPause()
+    }
 
-        private var listBaseBottomPadding = 0
+    override fun onSharedPreferenceChanged(
+        sharedPreferences: SharedPreferences?,
+        key: String?,
+    ) {
+        if (key == "recordLog") LogUtils.upLevel()
+    }
 
-        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-            addPreferencesFromResource(R.xml.pref_main)
-            preferenceScreen?.let(::applyMyMenuLayout)
-        }
-
-        private fun applyMyMenuLayout(group: PreferenceGroup) {
-            for (index in 0 until group.preferenceCount) {
-                val preference = group.getPreference(index)
-                preference.layoutResource = if (preference is PreferenceCategory) {
-                    R.layout.view_my_preference_category
-                } else {
-                    R.layout.view_my_preference
-                }
-                if (preference is PreferenceGroup) {
-                    applyMyMenuLayout(preference)
-                }
+    private fun handleAction(action: MyMenuAction) {
+        when (action) {
+            MyMenuAction.BOOK_SOURCE -> startActivity<BookSourceActivity>()
+            MyMenuAction.RULE -> startActivity<ConfigActivity> {
+                putExtra("configTag", ConfigTag.RULE_CONFIG)
             }
-        }
-
-        override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-            super.onViewCreated(view, savedInstanceState)
-            view.setBackgroundColor(Color.TRANSPARENT)
-            listView.setBackgroundColor(Color.TRANSPARENT)
-            listBaseBottomPadding = listView.paddingBottom
-            listView.setPadding(
-                0,
-                resources.getDimensionPixelSize(R.dimen.ng_space_l),
-                0,
-                listBaseBottomPadding
-            )
-            listView.clipToPadding = false
-            listView.setEdgeEffectColor(primaryColor)
-            updateFloatingBottomInset()
-        }
-
-        override fun onResume() {
-            super.onResume()
-            updateFloatingBottomInset()
-            preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
-        }
-
-        private fun updateFloatingBottomInset() {
-            (activity as? MainActivity)?.applyFloatingBottomContentInset(
-                target = listView,
-                baseBottomPadding = listBaseBottomPadding
-            )
-        }
-
-        override fun onPause() {
-            preferenceManager.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(this)
-            super.onPause()
-        }
-
-        override fun onSharedPreferenceChanged(
-            sharedPreferences: SharedPreferences?,
-            key: String?
-        ) {
-            when (key) {
-                "recordLog" -> LogUtils.upLevel()
+            MyMenuAction.AI -> startActivity<ConfigActivity> {
+                putExtra("configTag", ConfigTag.AI_CONFIG)
             }
-        }
-
-        override fun onPreferenceTreeClick(preference: Preference): Boolean {
-            when (preference.key) {
-                "bookSourceManage" -> startActivity<BookSourceActivity>()
-                "ruleManage" -> startActivity<ConfigActivity> {
-                    putExtra("configTag", ConfigTag.RULE_CONFIG)
-                }
-                "bookmark" -> startActivity<AllBookmarkActivity>()
-                "setting" -> startActivity<ConfigActivity> {
-                    putExtra("configTag", ConfigTag.SETTINGS_CONFIG)
-                }
-
-                "web_dav_setting" -> startActivity<ConfigActivity> {
-                    putExtra("configTag", ConfigTag.BACKUP_CONFIG)
-                }
-
-                "fileManage" -> startActivity<FileManageActivity>()
-                "readRecord" -> startActivity<ReadRecordActivity>()
-                "aiConfig" -> startActivity<ConfigActivity> {
-                    putExtra("configTag", ConfigTag.AI_CONFIG)
-                }
-                "readAloudConfig" -> startActivity<ConfigActivity> {
-                    putExtra("configTag", ConfigTag.READ_ALOUD_CONFIG)
-                }
-                "serviceManage" -> startActivity<ConfigActivity> {
-                    putExtra("configTag", ConfigTag.SERVICE_CONFIG)
-                }
-                "about" -> startActivity<AboutActivity>()
-                "exit" -> activity?.finish()
+            MyMenuAction.READ_ALOUD -> startActivity<ConfigActivity> {
+                putExtra("configTag", ConfigTag.READ_ALOUD_CONFIG)
             }
-            return super.onPreferenceTreeClick(preference)
+            MyMenuAction.SERVICE -> startActivity<ConfigActivity> {
+                putExtra("configTag", ConfigTag.SERVICE_CONFIG)
+            }
+            MyMenuAction.BACKUP -> startActivity<ConfigActivity> {
+                putExtra("configTag", ConfigTag.BACKUP_CONFIG)
+            }
+            MyMenuAction.SETTINGS -> startActivity<ConfigActivity> {
+                putExtra("configTag", ConfigTag.SETTINGS_CONFIG)
+            }
+            MyMenuAction.BOOKMARK -> startActivity<AllBookmarkActivity>()
+            MyMenuAction.READ_RECORD -> startActivity<ReadRecordActivity>()
+            MyMenuAction.FILE_MANAGE -> startActivity<FileManageActivity>()
+            MyMenuAction.ABOUT -> startActivity<AboutActivity>()
         }
-
-
     }
 }
