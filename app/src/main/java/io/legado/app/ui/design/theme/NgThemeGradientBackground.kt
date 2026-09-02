@@ -63,9 +63,6 @@ internal class NgThemeGradientDrawable(
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         isDither = true
     }
-    private val flowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        isDither = true
-    }
     private val drawingBounds = RectF()
     private var drawableAlpha = 255
     private val shaderBounds = Rect()
@@ -90,18 +87,12 @@ internal class NgThemeGradientDrawable(
                 canvas.isHardwareAccelerated &&
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
         }
-        paint.shader = baseShader
+        paint.shader = activeFlowShadow?.movingBaseShader ?: baseShader
         canvas.drawRect(drawingBounds, paint)
 
         radialShaders.forEach { shader ->
             paint.shader = shader
             canvas.drawRect(drawingBounds, paint)
-        }
-        if (activeFlowShadow != null) {
-            flowPaint.alpha = drawableAlpha
-            flowPaint.shader = activeFlowShadow.shadeShader
-            canvas.drawRect(drawingBounds, flowPaint)
-            flowPaint.shader = null
         }
         paint.shader = null
     }
@@ -130,7 +121,12 @@ internal class NgThemeGradientDrawable(
             return false
         }
         return runCatching {
-            val shadow = flowShadow ?: NgSoftGradientFlowShadow().also {
+            val shadow = flowShadow ?: NgSoftGradientFlowShadow(
+                gradientStartX = profile.startX,
+                gradientStartY = profile.startY,
+                gradientEndX = profile.endX,
+                gradientEndY = profile.endY,
+            ).also {
                 flowShadow = it
             }
             shadow.setProgress(
@@ -138,7 +134,7 @@ internal class NgThemeGradientDrawable(
                 amount.coerceIn(0f, 1f),
             )
             if (shaderBounds == bounds && shaderAlpha == drawableAlpha) {
-                shadow.bindBounds(bounds)
+                baseShader?.let { shadow.bindBase(it, bounds) }
             }
             flowShadowActive = amount > 0f
             invalidateSelf()
@@ -189,7 +185,7 @@ internal class NgThemeGradientDrawable(
             !flowShadowUnavailable
         ) {
             runCatching {
-                flowShadow?.bindBounds(bounds)
+                flowShadow?.bindBase(newBaseShader, bounds)
             }.onFailure {
                 flowShadowUnavailable = true
                 flowShadowActive = false
@@ -458,35 +454,49 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private class NgSoftGradientFlowShadow {
+private class NgSoftGradientFlowShadow(
+    gradientStartX: Float,
+    gradientStartY: Float,
+    gradientEndX: Float,
+    gradientEndY: Float,
+) {
 
-    val shadeShader = RuntimeShader(SHADE_SHADER)
+    val movingBaseShader = RuntimeShader(MOVING_BASE_SHADER).apply {
+        setFloatUniform("gradientStart", gradientStartX, gradientStartY)
+        setFloatUniform("gradientEnd", gradientEndX, gradientEndY)
+    }
+    private var boundBase: Shader? = null
     private val boundRect = Rect()
 
-    fun bindBounds(bounds: Rect) {
-        if (boundRect == bounds) return
-        shadeShader.setFloatUniform(
+    fun bindBase(baseShader: Shader, bounds: Rect) {
+        if (boundBase === baseShader && boundRect == bounds) return
+        movingBaseShader.setInputShader("base", baseShader)
+        movingBaseShader.setFloatUniform(
             "origin",
             bounds.left.toFloat(),
             bounds.top.toFloat(),
         )
-        shadeShader.setFloatUniform(
+        movingBaseShader.setFloatUniform(
             "size",
             bounds.width().toFloat(),
             bounds.height().toFloat(),
         )
+        boundBase = baseShader
         boundRect.set(bounds)
     }
 
     fun setProgress(progress: Float, amount: Float) {
-        shadeShader.setFloatUniform("flow", progress, amount)
+        movingBaseShader.setFloatUniform("flow", progress, amount)
     }
 
     private companion object {
-        const val SHADE_SHADER = """
+        const val MOVING_BASE_SHADER = """
+            uniform shader base;
             uniform float2 origin;
             uniform float2 size;
             uniform float2 flow;
+            uniform float2 gradientStart;
+            uniform float2 gradientEnd;
 
             half4 main(float2 coord) {
                 float2 safeSize = max(size, float2(1.0));
@@ -498,17 +508,25 @@ private class NgSoftGradientFlowShadow {
                 float stage = flow.x < 0.5
                     ? flow.x * 2.0
                     : (flow.x - 0.5) * 2.0;
-                float front = mix(1.42, -0.42, stage);
+                float brightening = flow.x < 0.5 ? 1.0 : 0.0;
+                float front = brightening > 0.5
+                    ? mix(1.42, -0.42, stage)
+                    : mix(-0.42, 1.42, stage);
                 float frontMask = smoothstep(
                     front - 0.34,
                     front + 0.34,
                     uv.y
                 );
-                float coverage = flow.x < 0.5
+                float coverage = brightening > 0.5
                     ? frontMask
                     : 1.0 - frontMask;
-                half shadowAlpha = half(coverage * 0.34 * flow.y);
-                return half4(0.0, 0.0, 0.0, shadowAlpha);
+                float paletteT = brightening > 0.5
+                    ? mix(0.0, 0.78, coverage)
+                    : mix(0.78, 0.0, coverage);
+                float2 animatedCoord = origin +
+                    mix(gradientStart, gradientEnd, paletteT) * safeSize;
+                float2 sampleCoord = mix(coord, animatedCoord, flow.y);
+                return base.eval(sampleCoord);
             }
         """
     }
