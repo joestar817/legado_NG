@@ -1372,6 +1372,24 @@ fun NgFormControlGroup(
     )
 }
 
+/** Provider 与 TTS 编辑页的连续字段玻璃承载面。 */
+@Composable
+fun NgFormFieldGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    NgFormControlGroup(
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            content = content,
+        )
+    }
+}
+
 /** Provider 等开关区沿用原有 12×4dp 几何。 */
 @Composable
 fun NgFormSwitchGroup(

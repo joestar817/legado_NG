@@ -21,6 +21,7 @@ import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgFormActionGroup
 import io.legado.app.ui.design.components.compose.NgFormActionRow
 import io.legado.app.ui.design.components.compose.NgFormField
+import io.legado.app.ui.design.components.compose.NgFormFieldGroup
 import io.legado.app.ui.design.components.compose.NgFormGroupDivider
 import io.legado.app.ui.design.components.compose.NgFormSwitchGroup
 import io.legado.app.ui.design.components.compose.NgFormSwitchRow
@@ -122,64 +123,66 @@ fun AiProviderFormScreen(
             .padding(top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        ProviderTextField(
-            label = stringResource(R.string.ai_provider_name),
-            value = state.name,
-            field = AiProviderFormField.NAME,
-            onAction = onAction,
-            focusManager = focusManager
-        )
-        if (!state.builtIn) {
-            NgFormField(
-                label = stringResource(R.string.ai_provider_type),
-                value = state.providerType,
-                onValueChange = {},
-                readOnly = true
-            )
-        }
-        NgPasswordField(
-            label = stringResource(R.string.ai_api_key),
-            value = state.apiKey,
-            onValueChange = {
-                onAction(
-                    AiProviderFormScreenAction.FieldChanged(
-                        AiProviderFormField.API_KEY,
-                        it
-                    )
-                )
-            },
-            hiddenIcon = painterResource(R.drawable.ic_visibility_off),
-            visibleIcon = painterResource(R.drawable.ic_visibility),
-            showPasswordDescription = stringResource(R.string.ai_api_key_toggle_visibility),
-            hidePasswordDescription = stringResource(R.string.ai_api_key_toggle_visibility),
-            visibilityResetKey = state.providerId,
-            keyboardActions = doneActions
-        )
-        ProviderTextField(
-            label = stringResource(R.string.ai_base_url),
-            value = state.baseUrl,
-            field = AiProviderFormField.BASE_URL,
-            onAction = onAction,
-            focusManager = focusManager,
-            keyboardType = KeyboardType.Uri
-        )
-        if (state.openAiCompatible) {
+        NgFormFieldGroup {
             ProviderTextField(
-                label = stringResource(R.string.ai_chat_completions_path),
-                value = state.chatPath,
-                field = AiProviderFormField.CHAT_PATH,
+                label = stringResource(R.string.ai_provider_name),
+                value = state.name,
+                field = AiProviderFormField.NAME,
                 onAction = onAction,
                 focusManager = focusManager
             )
+            if (!state.builtIn) {
+                NgFormField(
+                    label = stringResource(R.string.ai_provider_type),
+                    value = state.providerType,
+                    onValueChange = {},
+                    readOnly = true
+                )
+            }
+            NgPasswordField(
+                label = stringResource(R.string.ai_api_key),
+                value = state.apiKey,
+                onValueChange = {
+                    onAction(
+                        AiProviderFormScreenAction.FieldChanged(
+                            AiProviderFormField.API_KEY,
+                            it
+                        )
+                    )
+                },
+                hiddenIcon = painterResource(R.drawable.ic_visibility_off),
+                visibleIcon = painterResource(R.drawable.ic_visibility),
+                showPasswordDescription = stringResource(R.string.ai_api_key_toggle_visibility),
+                hidePasswordDescription = stringResource(R.string.ai_api_key_toggle_visibility),
+                visibilityResetKey = state.providerId,
+                keyboardActions = doneActions
+            )
+            ProviderTextField(
+                label = stringResource(R.string.ai_base_url),
+                value = state.baseUrl,
+                field = AiProviderFormField.BASE_URL,
+                onAction = onAction,
+                focusManager = focusManager,
+                keyboardType = KeyboardType.Uri
+            )
+            if (state.openAiCompatible) {
+                ProviderTextField(
+                    label = stringResource(R.string.ai_chat_completions_path),
+                    value = state.chatPath,
+                    field = AiProviderFormField.CHAT_PATH,
+                    onAction = onAction,
+                    focusManager = focusManager
+                )
+            }
+            ProviderTextField(
+                label = stringResource(R.string.ai_timeout_seconds),
+                value = state.timeoutSeconds,
+                field = AiProviderFormField.TIMEOUT_SECONDS,
+                onAction = onAction,
+                focusManager = focusManager,
+                keyboardType = KeyboardType.Number
+            )
         }
-        ProviderTextField(
-            label = stringResource(R.string.ai_timeout_seconds),
-            value = state.timeoutSeconds,
-            field = AiProviderFormField.TIMEOUT_SECONDS,
-            onAction = onAction,
-            focusManager = focusManager,
-            keyboardType = KeyboardType.Number
-        )
         NgFormSwitchGroup(modifier = Modifier.padding(top = 6.dp)) {
             NgFormSwitchRow(
                 title = stringResource(R.string.ai_enabled),

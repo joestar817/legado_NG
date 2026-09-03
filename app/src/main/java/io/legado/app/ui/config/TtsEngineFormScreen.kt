@@ -28,6 +28,7 @@ import io.legado.app.ui.design.components.compose.NgFormField
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgFormActionRow
+import io.legado.app.ui.design.components.compose.NgFormFieldGroup
 import io.legado.app.ui.design.components.compose.NgFormGroupDivider
 import io.legado.app.ui.design.components.compose.NgFormSelectField
 import io.legado.app.ui.design.components.compose.NgFormSelectOption
@@ -128,15 +129,19 @@ fun TtsEngineFormScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (!state.loading) {
-            regularFields.forEach { field ->
-                key(field.key) {
-                    TtsEngineFormField(
-                        engineId = state.engineId,
-                        field = field,
-                        enabled = state.formEnabled,
-                        focusManager = focusManager,
-                        onAction = onAction
-                    )
+            if (regularFields.isNotEmpty()) {
+                NgFormFieldGroup {
+                    regularFields.forEach { field ->
+                        key(field.key) {
+                            TtsEngineFormField(
+                                engineId = state.engineId,
+                                field = field,
+                                enabled = state.formEnabled,
+                                focusManager = focusManager,
+                                onAction = onAction
+                            )
+                        }
+                    }
                 }
             }
             NgFormSwitchGroup(modifier = Modifier.padding(top = 6.dp)) {
