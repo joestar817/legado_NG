@@ -1,0 +1,7 @@
+{
+  "sourceUrl": "https://rss.debug-probe.invalid/shared-cache-writer",
+  "sourceName": "共享缓存测试订阅源",
+  "enabled": true,
+  "enabledCookieJar": true,
+  "header": "<js>\ncache.put('codex_probe:XHuser', '1');\ncache.put('codex_probe:client_type', '1');\ncache.put('codex_probe:xhJson', '{\\\"origin\\\":\\\"rss\\\"}');\nJSON.stringify({'X-Probe-Writer':'rss'});\n</js>"
+}

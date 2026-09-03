@@ -35,12 +35,12 @@ import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.AppConst
 import io.legado.app.constant.AppConst.imagePathKey
 import io.legado.app.constant.AppLog
-import io.legado.app.help.WebCacheManager
-import io.legado.app.help.webView.WebJsExtensions
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.http.CookieManager
 import io.legado.app.help.http.okHttpClient
 import io.legado.app.help.http.text
+import io.legado.app.help.source.webCacheObject
+import io.legado.app.help.webView.WebJsExtensions
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.lib.dialogs.selector
 import io.legado.app.ui.association.OnLineImportActivity
@@ -414,7 +414,7 @@ class ReadRssActivity : VMBaseActivity<RssComposeBinding, ReadRssViewModel>(),
                 val webJsExtensions = WebJsExtensions(it, this, currentWebView)
                 currentWebView.addJavascriptInterface(webJsExtensions, nameJava)
                 currentWebView.addJavascriptInterface(it, nameSource)
-                currentWebView.addJavascriptInterface(WebCacheManager, nameCache)
+                currentWebView.addJavascriptInterface(it.webCacheObject(), nameCache)
             }
         }
     }

@@ -29,7 +29,7 @@
 |chapter|[章节类](https://github.com/joestar817/legado_NG/blob/main/app/src/main/java/io/legado/app/data/entities/BookChapter.kt)|
 |source|[基础书源类](https://github.com/joestar817/legado_NG/blob/main/app/src/main/java/io/legado/app/data/entities/BaseSource.kt)|
 |cookie|[cookie操作类](https://github.com/joestar817/legado_NG/blob/main/app/src/main/java/io/legado/app/help/http/CookieStore.kt)|
-|cache|[缓存操作类](https://github.com/joestar817/legado_NG/blob/main/app/src/main/java/io/legado/app/help/CacheManager.kt)|
+|cache|[源共享缓存操作类](https://github.com/joestar817/legado_NG/blob/main/app/src/main/java/io/legado/app/help/source/SourceSharedCacheStore.kt)|
 |title|章节当前标题 String|
 |src| 请求返回的源码|
 |nextChapterUrl|下一章节url|
@@ -536,7 +536,7 @@ cookie.setWebCookie(url: String, cookie: String)
 
 ## cache对象的部分可用函数
 
-> 在书源规则中，缓存按完整书源 URL 独立保存；相同 key 只能访问当前书源自己的数据。
+> 书源（含发现）与订阅源共享同一源级缓存；相同 key 可以跨源读写，但不能访问 App 内部缓存键。
 > saveTime单位:秒，可省略  
 > 保存至数据库和缓存文件(50M)，保存的内容较大时请使用`getFile putFile`
 ```js

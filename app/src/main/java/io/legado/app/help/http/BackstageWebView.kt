@@ -21,7 +21,7 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.CacheManager
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
-import io.legado.app.help.source.bookSourceCacheStoreOrNull
+import io.legado.app.help.source.sourceSharedCacheStoreOrNull
 import io.legado.app.help.source.webCacheObject
 import io.legado.app.help.webView.PooledWebView
 import io.legado.app.help.webView.WebJsExtensions
@@ -138,7 +138,7 @@ class BackstageWebView(
                         }
                     }
                     result?.let {
-                        val sourceCache = ruleSource.bookSourceCacheStoreOrNull()
+                        val sourceCache = ruleSource.sourceSharedCacheStoreOrNull()
                         if (sourceCache != null) {
                             sourceCache.put("webview_result", it)
                         } else {

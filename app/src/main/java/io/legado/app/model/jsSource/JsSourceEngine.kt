@@ -32,7 +32,7 @@ import kotlin.coroutines.CoroutineContext
 /**
  * 纯 JavaScript 单文件书源执行器。
  *
- * 每次业务调用创建独立局部作用域，复用当前主线按书源隔离的 Cookie、缓存、共享 jsLib
+ * 每次业务调用创建独立局部作用域，复用当前主线按书源隔离的 Cookie、源共享缓存、共享 jsLib
  * 与 Rhino 类访问策略。仅此 java 宿主对象额外提供字符串输入输出的 QuickJS 窄门面；
  * 声明式书源继续走原有 AnalyzeRule 链，两种书源只在 WebBook 入口分流。
  */

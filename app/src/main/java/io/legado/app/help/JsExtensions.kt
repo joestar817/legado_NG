@@ -23,7 +23,7 @@ import io.legado.app.help.http.NetworkLog
 import io.legado.app.help.http.SSLHelper
 import io.legado.app.help.http.StrResponse
 import io.legado.app.help.source.BookSourceFileAccessPolicy
-import io.legado.app.help.source.bookSourceCacheStoreOrNull
+import io.legado.app.help.source.sourceSharedCacheStoreOrNull
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.source.SourceInteractionBlockedException
 import io.legado.app.help.source.SourceInteractionKind
@@ -486,7 +486,7 @@ interface JsExtensions : JsEncodeUtils {
     @JavascriptInterface
     fun cacheFile(urlStr: String, saveTime: Int): String {
         val key = md5Encode16(urlStr)
-        val sourceCache = getSource().bookSourceCacheStoreOrNull()
+        val sourceCache = getSource().sourceSharedCacheStoreOrNull()
         val cachePath = if (sourceCache != null) {
             sourceCache.get(key)
         } else {

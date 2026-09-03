@@ -1,17 +1,14 @@
 package io.legado.app.help.source
 
-import android.webkit.JavascriptInterface
 import androidx.annotation.Keep
 import io.legado.app.data.appDb
 import io.legado.app.data.dao.deleteByKeysChunked
-import io.legado.app.data.entities.BaseSource
-import io.legado.app.data.entities.BookSource
 import io.legado.app.help.CacheManager
-import io.legado.app.help.WebCacheManager
 import io.legado.app.utils.ACache
 import splitties.init.appCtx
 import java.io.File
 
+/** 仅用于清理升级前按书源 URL 隔离的旧缓存，不再注入源脚本。 */
 @Keep
 @Suppress("unused")
 class BookSourceCacheStore(
@@ -115,59 +112,4 @@ class BookSourceCacheStore(
             }
         }
     }
-}
-
-@Keep
-@Suppress("unused")
-class BookSourceWebCacheStore(sourceUrl: String) {
-
-    private val delegate = BookSourceCacheStore(sourceUrl)
-
-    @JavascriptInterface
-    fun put(key: String, value: String) = delegate.put(key, value)
-
-    @JavascriptInterface
-    fun put(key: String, value: String, saveTime: Int) = delegate.put(key, value, saveTime)
-
-    @JavascriptInterface
-    fun putMemory(key: String, value: String) = delegate.putMemory(key, value)
-
-    @JavascriptInterface
-    fun getFromMemory(key: String): String? = delegate.getFromMemory(key)?.toString()
-
-    @JavascriptInterface
-    fun deleteMemory(key: String) = delegate.deleteMemory(key)
-
-    @JavascriptInterface
-    fun get(key: String): String? = delegate.get(key)
-
-    @JavascriptInterface
-    fun get(key: String, onlyDisk: Boolean): String? = delegate.get(key, onlyDisk)
-
-    @JavascriptInterface
-    fun putFile(key: String, value: String) = delegate.putFile(key, value)
-
-    @JavascriptInterface
-    fun putFile(key: String, value: String, saveTime: Int) {
-        delegate.putFile(key, value, saveTime)
-    }
-
-    @JavascriptInterface
-    fun getFile(key: String): String? = delegate.getFile(key)
-
-    @JavascriptInterface
-    fun delete(key: String) = delegate.delete(key)
-}
-
-internal fun BaseSource?.bookSourceCacheStoreOrNull(): BookSourceCacheStore? {
-    return (this as? BookSource)?.let { BookSourceCacheStore(it.bookSourceUrl) }
-}
-
-internal fun BaseSource?.scriptCacheObject(): Any {
-    return bookSourceCacheStoreOrNull() ?: CacheManager
-}
-
-internal fun BaseSource?.webCacheObject(): Any {
-    return (this as? BookSource)?.let { BookSourceWebCacheStore(it.bookSourceUrl) }
-        ?: WebCacheManager
 }

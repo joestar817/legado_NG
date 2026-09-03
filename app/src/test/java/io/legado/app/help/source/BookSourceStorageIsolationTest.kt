@@ -35,27 +35,36 @@ class BookSourceStorageIsolationTest {
     }
 
     @Test
-    fun cacheIsSharedBySameUrlUpdateButNotAcrossSources() {
-        val key = "isolation-${UUID.randomUUID()}"
-        val sourceUrl = "https://example.com/source#stable"
-        val firstInstall = BookSourceCacheStore(sourceUrl)
-        val sameUrlUpdate = BookSourceCacheStore(sourceUrl)
-        val otherSource = BookSourceCacheStore("https://example.com/source#other")
+    fun sourceCacheIsSharedAcrossBookAndRssWithoutExposingAppKeys() {
+        val key = "shared-${UUID.randomUUID()}"
+        val bookSource = BookSource(
+            bookSourceUrl = "https://example.com/book",
+            bookSourceName = "书源"
+        )
+        val rssSource = RssSource(
+            sourceUrl = "https://different.example.com/rss",
+            sourceName = "RSS"
+        )
 
         try {
-            firstInstall.putMemory(key, "kept-after-update")
+            bookSource.evalJS("cache.putMemory('$key', 'from-book')")
 
-            assertEquals("kept-after-update", sameUrlUpdate.getFromMemory(key))
-            assertNull(otherSource.getFromMemory(key))
+            assertEquals("from-book", rssSource.evalJS("cache.getFromMemory('$key')"))
             assertNull(CacheManager.getFromMemory(key))
+
+            CacheManager.putMemory(key, "app-only")
+            rssSource.evalJS("cache.putMemory('$key', 'from-rss')")
+
+            assertEquals("from-rss", bookSource.evalJS("cache.getFromMemory('$key')"))
+            assertEquals("app-only", CacheManager.getFromMemory(key))
         } finally {
-            firstInstall.deleteMemory(key)
-            otherSource.deleteMemory(key)
+            SourceSharedCacheStore.deleteMemory(key)
+            CacheManager.deleteMemory(key)
         }
     }
 
     @Test
-    fun nonBookSourcesKeepExistingGlobalObjects() {
+    fun bookAndRssShareCacheButKeepCurrentCookieBoundary() {
         val bookSource = BookSource(
             bookSourceUrl = "https://example.com/book",
             bookSourceName = "书源"
@@ -65,15 +74,17 @@ class BookSourceStorageIsolationTest {
             sourceName = "RSS"
         )
 
-        assertTrue(bookSource.scriptCacheObject() is BookSourceCacheStore)
+        assertSame(SourceSharedCacheStore, bookSource.scriptCacheObject())
+        assertSame(SourceSharedCacheStore, rssSource.scriptCacheObject())
+        assertSame(SourceSharedWebCacheStore, bookSource.webCacheObject())
+        assertSame(SourceSharedWebCacheStore, rssSource.webCacheObject())
         assertTrue(BookSourceCookieStore.forSource(bookSource) is BookSourceCookieStore)
-        assertSame(CacheManager, rssSource.scriptCacheObject())
         assertSame(CookieStore, BookSourceCookieStore.forSource(rssSource))
     }
 
     @Test
-    fun scopedCacheKeepsExistingScriptMethodSurface() {
-        val methodNames = BookSourceCacheStore::class.java.methods.map { it.name }.toSet()
+    fun sharedCacheKeepsExistingScriptMethodSurface() {
+        val methodNames = SourceSharedCacheStore::class.java.methods.map { it.name }.toSet()
         val expectedMethods = setOf(
             "put",
             "putMemory",
@@ -128,9 +139,9 @@ class BookSourceStorageIsolationTest {
             bookSourceUrl = "https://example.com/source#a",
             bookSourceName = "A"
         )
-        val sourceB = BookSource(
-            bookSourceUrl = "https://example.com/source#b",
-            bookSourceName = "B"
+        val rssSource = RssSource(
+            sourceUrl = "https://different.example.com/rss",
+            sourceName = "RSS"
         )
         val key = "rhino-${UUID.randomUUID()}"
 
@@ -138,7 +149,7 @@ class BookSourceStorageIsolationTest {
             sourceA.evalJS("cache.putMemory('$key', 'source-a')")
 
             assertEquals("source-a", sourceA.evalJS("cache.getFromMemory('$key')"))
-            assertNull(sourceB.evalJS("cache.getFromMemory('$key')"))
+            assertEquals("source-a", rssSource.evalJS("cache.getFromMemory('$key')"))
             assertEquals(
                 "function|function|function|function|function|function|function|function",
                 sourceA.evalJS(
@@ -157,8 +168,7 @@ class BookSourceStorageIsolationTest {
                 )
             )
         } finally {
-            BookSourceCacheStore(sourceA.bookSourceUrl).deleteMemory(key)
-            BookSourceCacheStore(sourceB.bookSourceUrl).deleteMemory(key)
+            SourceSharedCacheStore.deleteMemory(key)
         }
     }
 

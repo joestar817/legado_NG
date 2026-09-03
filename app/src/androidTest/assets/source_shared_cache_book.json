@@ -1,0 +1,8 @@
+{
+  "bookSourceUrl": "https://book.debug-probe.invalid/shared-cache-reader",
+  "bookSourceName": "共享缓存测试书源",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": true,
+  "header": "<js>\nvar state = [cache.get('codex_probe:XHuser'), cache.get('codex_probe:client_type'), cache.get('codex_probe:xhJson')].join('|');\ncache.put('codex_probe:book_ack', 'book-read|' + state);\nJSON.stringify({'X-Probe-Read':state});\n</js>"
+}
