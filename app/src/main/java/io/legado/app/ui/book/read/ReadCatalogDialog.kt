@@ -43,7 +43,6 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -92,7 +91,6 @@ import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
-import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
 import io.legado.app.ui.design.components.compose.NgLazyListFastScrollerVariant
@@ -433,15 +431,18 @@ private fun ReadCatalogPanel(
     val mutedColor = Color(NgTheme.colors.onSurfaceVariant)
     val accentColor = Color(NgTheme.colors.primary)
     val selectedContentColor = Color(NgTheme.colors.onPrimary)
-    val drawerSurfaceColor = Color(
-        if (NgTheme.snapshot.isDark) NgTheme.colors.surface else NgTheme.colors.inputContainer
-    )
     val dockColor = if (NgTheme.snapshot.isDark || NgTheme.snapshot.isEInk) {
         Color(NgTheme.colors.surfaceContainerLow)
     } else {
         contentColor.copy(alpha = 0.025f)
     }
-    val listBackgroundColor = catalogListBackgroundColor(mutedColor)
+    val listBackgroundColor = if (
+        visualStyle == CatalogDrawerVisualStyle.READING_ORIGINAL
+    ) {
+        Color.Transparent
+    } else {
+        catalogListBackgroundColor(mutedColor)
+    }
     val filteredBookmarks = remember(bookmarks, query) {
         bookmarks.filter {
             query.isBlank() || it.chapterName.contains(query, ignoreCase = true) ||
@@ -594,6 +595,7 @@ private fun ReadCatalogPanel(
                             isLocalBook = isLocalBook,
                             currentChapterIndex = currentChapterIndex,
                             listState = chapterListState,
+                            listBackgroundColor = listBackgroundColor,
                             contentColor = contentColor,
                             mutedColor = mutedColor,
                             accentColor = accentColor,
@@ -608,6 +610,7 @@ private fun ReadCatalogPanel(
                             bookmarks = filteredBookmarks,
                             currentChapterIndex = currentChapterIndex,
                             listState = bookmarkListState,
+                            listBackgroundColor = listBackgroundColor,
                             contentColor = contentColor,
                             mutedColor = mutedColor,
                             accentColor = accentColor,
@@ -625,14 +628,7 @@ private fun ReadCatalogPanel(
                 .fillMaxSize()
                 .nestedScroll(nestedScrollInteropConnection),
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            style = NgGlassDefaults.style(containerAlpha = 1f).copy(
-                containerTop = drawerSurfaceColor,
-                containerBottom = drawerSurfaceColor,
-                accentGlow = Color.Transparent,
-                surfaceGloss = Color.Transparent,
-                depthEdge = Color.Transparent,
-                shadowElevation = 0.dp,
-            ),
+            style = readFloatingGlassStyle(),
         ) {
             content()
         }
@@ -690,7 +686,7 @@ private fun CatalogTopActions(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Search,
+                    painter = painterResource(R.drawable.ic_search),
                     contentDescription = stringResource(R.string.search),
                     modifier = Modifier.size(20.dp),
                     tint = contentColor,
@@ -792,7 +788,7 @@ private fun CatalogSearchField(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = Icons.Rounded.Search,
+            painter = painterResource(R.drawable.ic_search),
             contentDescription = null,
             modifier = Modifier.size(18.dp),
             tint = accentColor,
@@ -919,6 +915,7 @@ private fun CatalogChapterList(
     isLocalBook: Boolean,
     currentChapterIndex: Int,
     listState: LazyListState,
+    listBackgroundColor: Color,
     contentColor: Color,
     mutedColor: Color,
     accentColor: Color,
@@ -1003,7 +1000,7 @@ private fun CatalogChapterList(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .background(catalogListBackgroundColor(mutedColor)),
+                .background(listBackgroundColor),
             contentPadding = PaddingValues(
                 start = 12.dp,
                 top = 6.dp,
@@ -1052,6 +1049,7 @@ internal fun NgCatalogChapterRow(
     onLongClick: (() -> Unit)? = null,
 ) {
     val cardColor = catalogCardColor()
+    val cardShape = RoundedCornerShape(NgTheme.shapes.largeDp.dp)
     val currentChapterColor = Color(NgTheme.colors.secondary)
     val wordCount = if (showCacheState && cached && showWordCount) {
         chapter.wordCount?.takeIf { it.isNotBlank() }
@@ -1065,7 +1063,7 @@ internal fun NgCatalogChapterRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 58.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(cardShape)
             .background(cardColor)
             .then(
                 if (onLongClick != null) {
@@ -1145,11 +1143,12 @@ internal fun NgCatalogChapterRow(
 @Composable
 private fun CatalogChapterPlaceholder(mutedColor: Color) {
     val cardColor = catalogCardColor()
+    val cardShape = RoundedCornerShape(NgTheme.shapes.largeDp.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .height(58.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(cardShape)
             .background(cardColor)
             .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
@@ -1189,6 +1188,7 @@ private fun CatalogBookmarkList(
     bookmarks: List<Bookmark>,
     currentChapterIndex: Int,
     listState: LazyListState,
+    listBackgroundColor: Color,
     contentColor: Color,
     mutedColor: Color,
     accentColor: Color,
@@ -1215,7 +1215,7 @@ private fun CatalogBookmarkList(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .background(catalogListBackgroundColor(mutedColor)),
+                .background(listBackgroundColor),
             contentPadding = PaddingValues(
                 start = 12.dp,
                 top = 6.dp,
@@ -1266,11 +1266,12 @@ internal fun NgCatalogBookmarkCard(
     onDeleteConfirm: () -> Unit,
 ) {
     val cardColor = catalogCardColor()
+    val cardShape = RoundedCornerShape(NgTheme.shapes.largeDp.dp)
     val errorColor = Color(NgTheme.colors.error)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(cardShape)
             .background(cardColor)
             .combinedClickable(
                 onClick = onClick,
@@ -1414,9 +1415,9 @@ private fun catalogListBackgroundColor(mutedColor: Color): Color = when {
 
 @Composable
 private fun catalogCardColor(): Color = if (NgTheme.snapshot.isDark) {
-    Color(NgTheme.colors.surfaceContainerLow)
+    Color(NgTheme.colors.cardContainer).copy(alpha = 1f)
 } else {
-    Color(NgTheme.colors.inputContainer)
+    Color.White
 }
 
 @Composable
