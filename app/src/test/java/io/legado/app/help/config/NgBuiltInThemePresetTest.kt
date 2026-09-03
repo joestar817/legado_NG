@@ -87,7 +87,7 @@ class NgBuiltInThemePresetTest {
     }
 
     @Test
-    fun `managed theme library only exposes autumn`() {
+    fun `managed theme library exposes completed seasons in calendar order`() {
         val expected = NgThemeBarProfile(
             useFloatingBottomBar = true,
             floatingBottomBarBottomDistancePx = 40,
@@ -100,7 +100,10 @@ class NgBuiltInThemePresetTest {
         )
 
         assertEquals(
-            listOf("builtin.ng.autumn_mountains"),
+            listOf(
+                "builtin.ng.summer_childhood",
+                "builtin.ng.autumn_mountains",
+            ),
             NgBuiltInThemes.all.map { it.id },
         )
         assertEquals(
@@ -110,6 +113,34 @@ class NgBuiltInThemePresetTest {
                 NgBuiltInThemes.cats,
             ).map { it.barProfile },
         )
+    }
+
+    @Test
+    fun `summer preset provides paired day and night artwork`() {
+        val summer = NgBuiltInThemes.summer
+        val dark = summer.colors.manualDark
+
+        assertEquals("夏日童趣", summer.name)
+        assertTrue(summer.isBuiltIn)
+        assertEquals(0xFF008B71.toInt(), summer.colors.manualLight.primary)
+        assertEquals(0xFF5CCBFF.toInt(), dark.primary)
+        assertEquals(0xFF153A5B.toInt(), dark.secondary)
+        assertEquals(0xFFF2F7FF.toInt(), dark.primaryText)
+        assertEquals(0xFFB8D4E8.toInt(), dark.secondaryText)
+        assertEquals(0xFF06182D.toInt(), dark.background)
+        assertEquals(0xFF12314D.toInt(), dark.labelContainer)
+        assertEquals(NgTopBarTextMode.DARK, summer.colors.lightTopBarTextMode)
+        assertEquals(NgTopBarTextMode.LIGHT, summer.colors.darkTopBarTextMode)
+        assertEquals(
+            "asset://defaultData/theme/reading_ng_summer_childhood.webp",
+            summer.lightBackground.path,
+        )
+        assertEquals(
+            "asset://defaultData/theme/reading_ng_summer_childhood_dark.webp",
+            summer.darkBackground.path,
+        )
+        assertEquals(null, summer.sceneProfile)
+        assertTrue(summer in NgBuiltInThemes.all)
     }
 
     @Test

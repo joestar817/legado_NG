@@ -607,6 +607,24 @@ internal object NgBuiltInThemes {
             BookshelfFloatingDockSearchPosition.LEFT.value,
     )
 
+    val summer = theme(
+        id = "builtin.ng.summer_childhood",
+        name = "夏日童趣",
+        lightPrimary = 0xFF008B71.toInt(),
+        lightSecondary = 0xFFFFFFFF.toInt(),
+        darkPrimary = 0xFF5CCBFF.toInt(),
+        darkSecondary = 0xFF153A5B.toInt(),
+        darkPrimaryText = 0xFFF2F7FF.toInt(),
+        darkSecondaryText = 0xFFB8D4E8.toInt(),
+        darkBackgroundColor = 0xFF06182D.toInt(),
+        darkLabelContainer = 0xFF12314D.toInt(),
+        lightBackgroundPath = "${BACKGROUND_PREFIX}reading_ng_summer_childhood.webp",
+        darkBackgroundPath = "${BACKGROUND_PREFIX}reading_ng_summer_childhood_dark.webp",
+        lightTopBarTextMode = NgTopBarTextMode.DARK,
+        darkTopBarTextMode = NgTopBarTextMode.LIGHT,
+        transparentAppBars = true,
+    )
+
     val autumn = theme(
         id = "builtin.ng.autumn_mountains",
         name = "秋山书意",
@@ -651,7 +669,7 @@ internal object NgBuiltInThemes {
 
     val defaultTheme = autumn
 
-    val all = listOf(autumn)
+    val all = listOf(summer, autumn)
 
     private fun dynamicTheme(
         id: String,
