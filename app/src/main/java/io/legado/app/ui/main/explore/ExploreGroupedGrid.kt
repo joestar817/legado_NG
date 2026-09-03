@@ -44,6 +44,7 @@ import io.legado.app.constant.AppPattern
 import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.ui.design.components.compose.NgVisualOverlayDialog
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.ngBackdropPrimaryTextStyle
 import io.legado.app.utils.splitNotBlank
 
 internal data class ExploreSourceFolder(
@@ -160,7 +161,9 @@ private fun ExploreSourceFolderItem(
         Spacer(Modifier.height(10.dp))
         Text(
             text = folder.title,
-            color = Color(NgTheme.colors.onSurfaceVariant),
+            style = ngBackdropPrimaryTextStyle(
+                fallbackColor = Color(NgTheme.colors.onSurfaceVariant),
+            ),
             fontSize = 13.sp,
             lineHeight = 17.sp,
             maxLines = 2,

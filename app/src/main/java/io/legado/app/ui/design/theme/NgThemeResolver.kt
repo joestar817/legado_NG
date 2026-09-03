@@ -71,6 +71,9 @@ object NgThemeResolver {
                 backdropContent = NgBackdropContentTokens(
                     topNavigationActive = WHITE,
                     topNavigationInactive = SOFT_GRADIENT_INACTIVE_TOP_NAVIGATION,
+                    primaryContent = WHITE,
+                    secondaryContent = SOFT_GRADIENT_SECONDARY_BACKDROP_CONTENT,
+                    textShadow = SOFT_GRADIENT_BACKDROP_TEXT_SHADOW,
                 ),
                 systemBars = snapshot.systemBars.copy(
                     darkStatusBarIcons = colorPreset.darkStatusBarIcons,
@@ -432,6 +435,8 @@ object NgThemeResolver {
     private const val DARK_INVERSE_SURFACE = 0xFF313033.toInt()
     private const val LIGHT_INVERSE_SURFACE = 0xFFF2F0F2.toInt()
     private val SOFT_GRADIENT_INACTIVE_TOP_NAVIGATION = 0xB8FFFFFF.toInt()
+    private val SOFT_GRADIENT_SECONDARY_BACKDROP_CONTENT = 0xD9FFFFFF.toInt()
+    private val SOFT_GRADIENT_BACKDROP_TEXT_SHADOW = 0x52000000.toInt()
 }
 
 internal object NgColorMath {

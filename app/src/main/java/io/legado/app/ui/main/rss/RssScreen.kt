@@ -47,6 +47,7 @@ import io.legado.app.help.glide.OkHttpModelLoader
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.ngBackdropPrimaryTextStyle
 
 @Composable
 internal fun RssScreen(
@@ -159,7 +160,9 @@ private fun RssTile(
         Spacer(Modifier.height(12.dp))
         Text(
             text = name,
-            color = Color(NgTheme.colors.onSurfaceVariant),
+            style = ngBackdropPrimaryTextStyle(
+                fallbackColor = Color(NgTheme.colors.onSurfaceVariant),
+            ),
             fontSize = 13.sp,
             lineHeight = 17.sp,
             maxLines = 2,

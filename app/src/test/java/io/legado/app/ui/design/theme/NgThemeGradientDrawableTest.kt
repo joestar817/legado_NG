@@ -88,6 +88,31 @@ class NgThemeGradientDrawableTest {
     }
 
     @Test
+    fun `soft gradient tones provide readable direct backdrop content`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.putPrefString(PreferKey.ngThemePresentationMode, "soft_gradient")
+
+        try {
+            NgSoftGradientColorPreset.entries.forEach { colorPreset ->
+                context.putPrefString(
+                    PreferKey.ngSoftGradientColor,
+                    colorPreset.storageValue,
+                )
+                val content = NgThemeResolver.resolve(context).backdropContent
+                assertEquals(0xFFFFFFFF.toInt(), content.primaryContent)
+                assertEquals(0xD9FFFFFF.toInt(), content.secondaryContent)
+                assertEquals(0x52000000.toInt(), content.textShadow)
+            }
+        } finally {
+            context.putPrefString(
+                PreferKey.ngSoftGradientColor,
+                NgSoftGradientColorPreset.CLEAR_BLUE.storageValue,
+            )
+            context.putPrefString(PreferKey.ngThemePresentationMode, "standard")
+        }
+    }
+
+    @Test
     fun `all soft gradient presets draw opaque non uniform portrait backgrounds`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         NgSoftGradientColorPreset.entries.forEach { colorPreset ->

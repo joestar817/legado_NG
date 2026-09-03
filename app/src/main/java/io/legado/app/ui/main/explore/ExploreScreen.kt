@@ -76,6 +76,8 @@ import io.legado.app.ui.design.components.compose.NgGlassStyle
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.ngBackdropPrimaryTextStyle
+import io.legado.app.ui.design.theme.ngBackdropSecondaryTextStyle
 import io.legado.app.ui.login.SourceLoginJsExtensions
 import io.legado.app.utils.InfoMap
 import kotlinx.coroutines.Dispatchers.IO
@@ -134,8 +136,11 @@ internal fun ExploreScreen(
             if (sources.isEmpty()) {
                 Text(
                     text = stringResource(R.string.explore_empty),
-                    color = Color(NgTheme.colors.onSurfaceVariant),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.merge(
+                        ngBackdropSecondaryTextStyle(
+                            fallbackColor = Color(NgTheme.colors.onSurfaceVariant),
+                        ),
+                    ),
                     modifier = Modifier.align(Alignment.Center)
                 )
             } else {
@@ -271,7 +276,9 @@ internal fun ExploreGridSourceItem(
             Spacer(Modifier.height(12.dp))
             Text(
                 text = source.bookSourceName,
-                color = Color(NgTheme.colors.onSurfaceVariant),
+                style = ngBackdropPrimaryTextStyle(
+                    fallbackColor = Color(NgTheme.colors.onSurfaceVariant),
+                ),
                 fontSize = 13.sp,
                 lineHeight = 17.sp,
                 maxLines = 2,
