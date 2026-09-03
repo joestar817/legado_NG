@@ -330,7 +330,11 @@ class ReadBookActivity : BaseReadBookActivity(),
         super.onWindowFocusChanged(hasFocus)
         upSystemUiVisibility()
         if (hasFocus) {
-            binding.readMenu.upBrightnessState()
+            if (ReadBookConfig.syncFollowSystemTheme()) {
+                onReadThemeChanged()
+            } else {
+                binding.readMenu.upBrightnessState()
+            }
         } else if (!menuLayoutIsVisible) {
             ReadBook.cancelPreDownloadTask()
         }
@@ -3243,6 +3247,11 @@ class ReadBookActivity : BaseReadBookActivity(),
     override fun observeLiveBus() = binding.run {
         observeEvent<String>(EventBus.TIME_CHANGED) { readView.upTime() }
         observeEvent<Int>(EventBus.BATTERY_CHANGED) { readView.upBattery(it) }
+        observeEvent<Boolean>(EventBus.SYSTEM_UI_MODE_CHANGED) { systemNightMode ->
+            if (ReadBookConfig.syncFollowSystemTheme(systemNightMode)) {
+                onReadThemeChanged()
+            }
+        }
         observeEvent<Boolean>(EventBus.MEDIA_BUTTON) {
             if (it) {
                 toggleReadAloud()

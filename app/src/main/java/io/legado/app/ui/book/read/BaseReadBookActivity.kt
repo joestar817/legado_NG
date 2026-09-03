@@ -76,6 +76,7 @@ abstract class BaseReadBookActivity :
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ReadBook.msg = null
+        ReadBookConfig.syncFollowSystemTheme()
         setOrientation()
         upLayoutInDisplayCutoutMode()
         super.onCreate(savedInstanceState)

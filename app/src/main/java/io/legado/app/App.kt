@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.os.Build
 import com.github.liuyueyi.quick.transfer.constants.TransType
 import com.jeremyliao.liveeventbus.LiveEventBus
@@ -19,6 +20,7 @@ import io.legado.app.base.AppContextWrapper
 import io.legado.app.constant.AppConst.channelIdDownload
 import io.legado.app.constant.AppConst.channelIdReadAloud
 import io.legado.app.constant.AppConst.channelIdWeb
+import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
@@ -60,6 +62,7 @@ import io.legado.app.utils.defaultSharedPreferences
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.isDebuggable
 import io.legado.app.utils.isNightMode
+import io.legado.app.utils.postEvent
 import kotlinx.coroutines.launch
 import org.chromium.base.ThreadUtils
 import splitties.init.appCtx
@@ -150,6 +153,10 @@ class App : Application() {
         val diff = newConfig.diff(oldConfig)
         if ((diff and ActivityInfo.CONFIG_UI_MODE) != 0) {
             onSystemUiModeChanged(this, newConfig.isNightMode)
+            postEvent(
+                EventBus.SYSTEM_UI_MODE_CHANGED,
+                Resources.getSystem().configuration.isNightMode,
+            )
         }
         oldConfig = Configuration(newConfig)
     }

@@ -24,6 +24,14 @@ class ReadFloatingToolRailStateTest {
     }
 
     @Test
+    fun selectingThemeExpansionReplacesBrightnessPanel() {
+        assertEquals(
+            ReadFloatingToolExpansion.THEME,
+            ReadFloatingToolExpansion.BRIGHTNESS.toggle(ReadFloatingToolExpansion.THEME)
+        )
+    }
+
+    @Test
     fun dockSideToggleMovesBetweenLeftAndRight() {
         assertEquals(ReadFloatingToolDock.RIGHT, ReadFloatingToolDock.LEFT.toggled())
         assertEquals(ReadFloatingToolDock.LEFT, ReadFloatingToolDock.RIGHT.toggled())

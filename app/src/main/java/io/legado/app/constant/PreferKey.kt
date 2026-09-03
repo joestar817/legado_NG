@@ -182,6 +182,7 @@ object PreferKey {
     const val comicStyleSelect = "comicStyleSelect"
     const val readStyleSelect = "readStyleSelect"
     const val readNightTheme = "readNightTheme"
+    const val readThemeMode = "readThemeMode.v1"
     const val systemTypefaces = "system_typefaces"
     const val readBodyToLh = "readBodyToLh"
     const val textFullJustify = "textFullJustify"

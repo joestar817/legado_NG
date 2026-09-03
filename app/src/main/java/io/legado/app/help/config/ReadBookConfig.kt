@@ -1,5 +1,6 @@
 package io.legado.app.help.config
 
+import android.content.res.Resources
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -25,10 +26,13 @@ import io.legado.app.utils.getFile
 import io.legado.app.utils.getMeanColor
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
+import io.legado.app.utils.getPrefString
 import io.legado.app.utils.hexString
+import io.legado.app.utils.isNightMode
 import io.legado.app.utils.printOnDebug
 import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.putPrefInt
+import io.legado.app.utils.putPrefString
 import io.legado.app.utils.resizeAndRecycle
 import splitties.init.appCtx
 import java.io.File
@@ -45,6 +49,32 @@ internal fun resolveBundledReadBackgroundName(backgroundName: String): String = 
     "秋山书意-夜间.png" -> "秋山书意-夜间.webp"
     else -> backgroundName
 }
+
+enum class ReadThemeMode(val storageValue: String) {
+    FOLLOW_SYSTEM("follow"),
+    DAY("day"),
+    NIGHT("night");
+
+    companion object {
+        fun fromStorage(value: String?): ReadThemeMode? =
+            entries.firstOrNull { it.storageValue == value }
+    }
+}
+
+internal fun resolveReadThemeNightMode(
+    mode: ReadThemeMode,
+    systemNightMode: Boolean,
+): Boolean = when (mode) {
+    ReadThemeMode.FOLLOW_SYSTEM -> systemNightMode
+    ReadThemeMode.DAY -> false
+    ReadThemeMode.NIGHT -> true
+}
+
+internal fun resolveReadThemeMode(
+    storedMode: String?,
+    legacyNightTheme: Boolean,
+): ReadThemeMode = ReadThemeMode.fromStorage(storedMode)
+    ?: if (legacyNightTheme) ReadThemeMode.NIGHT else ReadThemeMode.DAY
 
 @Suppress("ConstPropertyName")
 @Keep
@@ -307,6 +337,32 @@ object ReadBookConfig {
                 appCtx.putPrefBoolean(PreferKey.readNightTheme, value)
             }
         }
+
+    fun currentThemeMode(): ReadThemeMode = resolveReadThemeMode(
+        storedMode = appCtx.getPrefString(PreferKey.readThemeMode),
+        legacyNightTheme = isNightTheme,
+    )
+
+    fun selectThemeMode(
+        mode: ReadThemeMode,
+        systemNightMode: Boolean = Resources.getSystem().configuration.isNightMode,
+    ): Boolean {
+        appCtx.putPrefString(PreferKey.readThemeMode, mode.storageValue)
+        return updateEffectiveNightTheme(resolveReadThemeNightMode(mode, systemNightMode))
+    }
+
+    fun syncFollowSystemTheme(
+        systemNightMode: Boolean = Resources.getSystem().configuration.isNightMode,
+    ): Boolean {
+        if (currentThemeMode() != ReadThemeMode.FOLLOW_SYSTEM) return false
+        return updateEffectiveNightTheme(systemNightMode)
+    }
+
+    private fun updateEffectiveNightTheme(night: Boolean): Boolean {
+        if (isNightTheme == night) return false
+        isNightTheme = night
+        return true
+    }
 
     /**
      * 两端对齐

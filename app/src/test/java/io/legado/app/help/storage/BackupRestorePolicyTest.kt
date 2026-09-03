@@ -17,6 +17,7 @@ class BackupRestorePolicyTest {
             PreferKey.ngSoftGradientColor,
             PreferKey.ngSoftGradientLightField,
             PreferKey.readNightTheme,
+            PreferKey.readThemeMode,
             PreferKey.cPrimary,
             PreferKey.ngColorLightPrimary,
             PreferKey.useFloatingBottomBar,

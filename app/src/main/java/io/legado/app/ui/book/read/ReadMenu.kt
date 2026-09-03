@@ -88,6 +88,7 @@ class ReadMenu @JvmOverloads constructor(
     private var floatingBrightness by mutableIntStateOf(AppConfig.readBrightness)
     private var floatingBrightnessAutomatic by mutableStateOf(true)
     private var floatingAutoPage by mutableStateOf(false)
+    private var floatingThemeMode by mutableStateOf(ReadBookConfig.currentThemeMode())
     private var floatingToolDock by mutableStateOf(
         ReadFloatingToolDock.fromStoredRight(AppConfig.brightnessVwPos)
     )
@@ -283,6 +284,7 @@ class ReadMenu @JvmOverloads constructor(
 
     fun reset() {
         ReadFloatingAppearanceState.refreshFromConfig()
+        floatingThemeMode = ReadBookConfig.currentThemeMode()
         readMenuThemeSnapshot = resolveReadMenuThemeSnapshot()
         upColorConfig()
         initGlassSurfaces()
@@ -384,6 +386,7 @@ class ReadMenu @JvmOverloads constructor(
                     brightnessAutomatic = floatingBrightnessAutomatic,
                     autoPage = floatingAutoPage,
                     nightMode = ReadBookConfig.isNightTheme,
+                    themeMode = floatingThemeMode,
                     onExpansionChange = { floatingToolExpansion = it },
                     onBrightnessChange = { value ->
                         floatingBrightness = value.coerceIn(0, 255)
@@ -410,10 +413,13 @@ class ReadMenu @JvmOverloads constructor(
                         floatingToolExpansion = null
                         runMenuOut { callBack.autoPage() }
                     },
-                    onNightMode = {
-                        floatingToolExpansion = null
-                        ReadBookConfig.isNightTheme = !ReadBookConfig.isNightTheme
-                        callBack.onReadThemeChanged()
+                    onThemeModeSelected = { mode ->
+                        if (mode != floatingThemeMode) {
+                            floatingThemeMode = mode
+                            if (ReadBookConfig.selectThemeMode(mode)) {
+                                callBack.onReadThemeChanged()
+                            }
+                        }
                     },
                     onAiPurify = {
                         floatingToolExpansion = null

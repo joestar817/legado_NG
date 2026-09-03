@@ -29,12 +29,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.help.config.ReadThemeMode
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
@@ -43,6 +45,7 @@ import kotlin.math.roundToInt
 
 internal enum class ReadFloatingToolExpansion {
     BRIGHTNESS,
+    THEME,
     AI
 }
 
@@ -70,6 +73,7 @@ internal fun ReadFloatingToolRail(
     brightnessAutomatic: Boolean,
     autoPage: Boolean,
     nightMode: Boolean,
+    themeMode: ReadThemeMode,
     onExpansionChange: (ReadFloatingToolExpansion?) -> Unit,
     onBrightnessChange: (Int) -> Unit,
     onBrightnessChangeFinished: () -> Unit,
@@ -77,7 +81,7 @@ internal fun ReadFloatingToolRail(
     onSearch: () -> Unit,
     onReplace: () -> Unit,
     onAutoPage: () -> Unit,
-    onNightMode: () -> Unit,
+    onThemeModeSelected: (ReadThemeMode) -> Unit,
     onAiPurify: () -> Unit,
     onAiSettings: () -> Unit,
     onToggleDockSide: () -> Unit
@@ -95,6 +99,8 @@ internal fun ReadFloatingToolRail(
                 onBrightnessChange = onBrightnessChange,
                 onBrightnessChangeFinished = onBrightnessChangeFinished,
                 onToggleBrightnessAutomatic = onToggleBrightnessAutomatic,
+                themeMode = themeMode,
+                onThemeModeSelected = onThemeModeSelected,
                 onAiPurify = onAiPurify,
                 onAiSettings = onAiSettings
             )
@@ -109,7 +115,6 @@ internal fun ReadFloatingToolRail(
             onSearch = onSearch,
             onReplace = onReplace,
             onAutoPage = onAutoPage,
-            onNightMode = onNightMode,
             onToggleDockSide = onToggleDockSide
         )
 
@@ -124,6 +129,8 @@ internal fun ReadFloatingToolRail(
                 onBrightnessChange = onBrightnessChange,
                 onBrightnessChangeFinished = onBrightnessChangeFinished,
                 onToggleBrightnessAutomatic = onToggleBrightnessAutomatic,
+                themeMode = themeMode,
+                onThemeModeSelected = onThemeModeSelected,
                 onAiPurify = onAiPurify,
                 onAiSettings = onAiSettings
             )
@@ -140,7 +147,6 @@ private fun ToolRail(
     onSearch: () -> Unit,
     onReplace: () -> Unit,
     onAutoPage: () -> Unit,
-    onNightMode: () -> Unit,
     onToggleDockSide: () -> Unit
 ) {
     NgGlassSurface(
@@ -183,8 +189,10 @@ private fun ToolRail(
         ToolButton(
             iconRes = R.drawable.ic_brightness,
             labelRes = R.string.dark_theme,
-            selected = nightMode,
-            onClick = onNightMode
+            selected = nightMode || expansion == ReadFloatingToolExpansion.THEME,
+            onClick = {
+                onExpansionChange(expansion.toggle(ReadFloatingToolExpansion.THEME))
+            }
         )
         ToolButton(
             iconRes = R.drawable.ic_ai,
@@ -259,6 +267,8 @@ private fun ToolExpansion(
     onBrightnessChange: (Int) -> Unit,
     onBrightnessChangeFinished: () -> Unit,
     onToggleBrightnessAutomatic: () -> Unit,
+    themeMode: ReadThemeMode,
+    onThemeModeSelected: (ReadThemeMode) -> Unit,
     onAiPurify: () -> Unit,
     onAiSettings: () -> Unit
 ) {
@@ -287,6 +297,12 @@ private fun ToolExpansion(
                     onToggleAutomatic = onToggleBrightnessAutomatic
                 )
 
+                ReadFloatingToolExpansion.THEME -> ThemeModePanel(
+                    selectedMode = themeMode,
+                    onModeSelected = onThemeModeSelected,
+                    modifier = Modifier.padding(top = 200.dp),
+                )
+
                 ReadFloatingToolExpansion.AI -> AiPanel(
                     onAiPurify = onAiPurify,
                     onAiSettings = onAiSettings,
@@ -294,6 +310,100 @@ private fun ToolExpansion(
                 )
 
                 null -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeModePanel(
+    selectedMode: ReadThemeMode,
+    onModeSelected: (ReadThemeMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val modes = listOf(
+        Triple(
+            ReadThemeMode.FOLLOW_SYSTEM,
+            R.string.theme_mode_follow_short,
+            R.drawable.ic_brightness_auto,
+        ),
+        Triple(
+            ReadThemeMode.DAY,
+            R.string.theme_mode_day_short,
+            R.drawable.ic_daytime,
+        ),
+        Triple(
+            ReadThemeMode.NIGHT,
+            R.string.theme_mode_night_short,
+            R.drawable.ic_brightness,
+        ),
+    )
+    NgGlassSurface(
+        modifier = modifier.width(272.dp),
+        shape = RoundedCornerShape(12.dp),
+        style = readFloatingGlassStyle(),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            modes.forEach { (mode, labelRes, iconRes) ->
+                val selected = mode == selectedMode
+                val contentColor = Color(
+                    if (selected) {
+                        NgTheme.colors.primary
+                    } else {
+                        NgTheme.colors.onSurface
+                    }
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(32.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (selected) {
+                                Color(NgTheme.colors.selectedContainer).copy(alpha = 0.88f)
+                            } else {
+                                Color.Transparent
+                            }
+                        )
+                        .clickable(
+                            role = Role.RadioButton,
+                            onClick = { onModeSelected(mode) },
+                    ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(iconRes),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = contentColor,
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = stringResource(labelRes),
+                            color = contentColor,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) {
+                                    FontWeight.Bold
+                                } else {
+                                    FontWeight.Normal
+                                },
+                            ),
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
         }
     }
