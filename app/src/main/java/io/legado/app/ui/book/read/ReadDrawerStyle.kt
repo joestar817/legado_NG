@@ -95,7 +95,8 @@ object ReadDrawerStyle {
     }
 
     /**
-     * 阅读抽屉跟随阅读页自己的日夜与浮层配色；只有墨水屏保留全局强制黑白。
+     * 阅读浮层使用背景取色时保持自己的日夜配色；跟随应用时采用当前应用配色。
+     * 柔光渐变只参与配色，不作为阅读页背景；墨水屏继续保留全局强制黑白。
      */
     fun themeSnapshot(
         context: Context,
@@ -106,15 +107,22 @@ object ReadDrawerStyle {
     ) {
         NgThemeResolver.resolve(context)
     } else {
-        val isDark = ReadBookConfig.isNightTheme
-        val base = NgThemeResolver.resolve(
-            context = context,
-            colors = NgColorConfigStore.current(context),
-            isDark = isDark,
-        )
+        val seed = ReadBookConfig.durConfig.curReadFloatingSeed()
+        val base = if (
+            ReadBookConfig.durConfig.curReadFloatingFollowsApplication() &&
+            NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT
+        ) {
+            NgThemeResolver.resolve(context)
+        } else {
+            NgThemeResolver.resolve(
+                context = context,
+                colors = NgColorConfigStore.current(context),
+                isDark = ReadBookConfig.isNightTheme,
+            )
+        }
         val seeded = ReadFloatingPalette.applySeed(
             base = base,
-            seed = ReadBookConfig.durConfig.curReadFloatingSeed(),
+            seed = seed,
         )
         ReadFloatingPalette.applySemanticRoles(
             snapshot = seeded,

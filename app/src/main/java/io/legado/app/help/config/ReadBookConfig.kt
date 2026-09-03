@@ -665,6 +665,8 @@ object ReadBookConfig {
         var bgTypeEInk: Int = 0,//EInk背景类型
         @SerializedName("readFloatingSeed") var readFloatingSeed: Int = 0,
         @SerializedName("readFloatingSeedNight") var readFloatingSeedNight: Int = 0,
+        @SerializedName("readFloatingFollowAppNight")
+        var readFloatingFollowAppNight: Boolean? = null,
         @SerializedName("readFloatingTransparency")
         var readFloatingTransparency: Int = ReadFloatingAppearanceConfig.DEFAULT_TRANSPARENCY_PERCENT,
         @SerializedName("readFloatingPrimaryStrength")
@@ -940,6 +942,7 @@ object ReadBookConfig {
             val opaqueColor = color or 0xFF000000.toInt()
             if (ReadBookConfig.isNightTheme) {
                 readFloatingSeedNight = opaqueColor
+                readFloatingFollowAppNight = false
             } else {
                 readFloatingSeed = opaqueColor
             }
@@ -948,6 +951,7 @@ object ReadBookConfig {
         fun clearCurReadFloatingSeed() {
             if (ReadBookConfig.isNightTheme) {
                 readFloatingSeedNight = 0
+                readFloatingFollowAppNight = true
             } else {
                 readFloatingSeed = 0
             }
@@ -957,6 +961,17 @@ object ReadBookConfig {
             AppConfig.isEInkMode -> 0
             ReadBookConfig.isNightTheme -> readFloatingSeedNight
             else -> readFloatingSeed
+        }
+
+        /**
+         * 旧内置预设只验收过日间种子，夜间的 0 不是用户显式选择“跟随应用”。
+         * 新选择会写入独立标记；旧数据仅在日夜种子都为空时延续跟随语义。
+         */
+        fun curReadFloatingFollowsApplication(): Boolean = when {
+            AppConfig.isEInkMode -> false
+            ReadBookConfig.isNightTheme -> readFloatingSeedNight == 0 &&
+                (readFloatingFollowAppNight ?: (readFloatingSeed == 0))
+            else -> readFloatingSeed == 0
         }
 
         fun curReadFloatingTransparency(): Int =
