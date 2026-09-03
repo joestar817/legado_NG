@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Runtime entry points reject API < 23 before QuickJS classes are loaded. -->
+    <uses-sdk tools:overrideLibrary="com.dokar.quickjs" />
+
+    <application>
+        <service
+            android:name="io.legado.app.quickjs.QuickJsSandboxService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":quickjs_sandbox" />
+    </application>
+</manifest>

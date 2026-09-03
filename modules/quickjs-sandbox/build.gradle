@@ -1,0 +1,43 @@
+plugins {
+    alias libs.plugins.android.library
+    alias libs.plugins.kotlin.android
+}
+
+android {
+    compileSdk = compile_sdk_version
+    namespace = 'io.legado.app.quickjs'
+
+    kotlin {
+        jvmToolchain {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        }
+    }
+
+    defaultConfig {
+        minSdk 21
+        targetSdk 36
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildFeatures {
+        aidl = true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkDependencies = true
+    }
+}
+
+dependencies {
+    implementation(libs.quickjs.kt)
+    implementation(libs.kotlinx.coroutines.core)
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.bundles.androidTest)
+}
