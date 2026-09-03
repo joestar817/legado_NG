@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import io.legado.app.help.config.AppConfig
@@ -130,6 +131,19 @@ object ReadDrawerStyle {
 
     fun surfaceColor(context: Context): Int = themeSnapshot(context).colors.surface
 
+    /**
+     * Material BottomSheet 的默认回调会在非 IME Insets 动画开始时也写入 translationY，
+     * 阅读页显示系统栏时会把抽屉短暂移到屏幕顶部。保留原 IME 补偿，只过滤其它类型。
+     */
+    fun installImeOnlyBottomSheetInsetsAnimation(sheet: View) {
+        sheet.doOnLayout {
+            ViewCompat.setWindowInsetsAnimationCallback(
+                sheet,
+                ImeOnlyBottomSheetInsetsAnimationCallback(sheet),
+            )
+        }
+    }
+
     /** 与 View 版浮动 Dock 对齐，但按阅读页自己的日夜快照取色。 */
     @Composable
     fun dockSurfaceColor(alpha: Float = 0.28f): ComposeColor {
@@ -187,6 +201,50 @@ object ReadDrawerStyle {
                 .toFloat()
             updateDrawerTranslation(avoidView, drawerState, drawerRetreat)
         }
+    }
+
+    private class ImeOnlyBottomSheetInsetsAnimationCallback(
+        private val view: View,
+    ) : WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_STOP) {
+
+        private val location = IntArray(2)
+        private var startY = 0
+        private var startTranslationY = 0f
+
+        override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+            if (!animation.isImeAnimation()) return
+            view.getLocationOnScreen(location)
+            startY = location[1]
+        }
+
+        override fun onStart(
+            animation: WindowInsetsAnimationCompat,
+            bounds: WindowInsetsAnimationCompat.BoundsCompat,
+        ): WindowInsetsAnimationCompat.BoundsCompat {
+            if (!animation.isImeAnimation()) return bounds
+            view.getLocationOnScreen(location)
+            startTranslationY = (startY - location[1]).toFloat()
+            view.translationY = startTranslationY
+            return bounds
+        }
+
+        override fun onProgress(
+            insets: WindowInsetsCompat,
+            runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+        ): WindowInsetsCompat {
+            val imeAnimation = runningAnimations.firstOrNull { it.isImeAnimation() }
+                ?: return insets
+            view.translationY = startTranslationY * (1f - imeAnimation.interpolatedFraction)
+            return insets
+        }
+
+        override fun onEnd(animation: WindowInsetsAnimationCompat) {
+            if (!animation.isImeAnimation()) return
+            view.translationY = 0f
+        }
+
+        private fun WindowInsetsAnimationCompat.isImeAnimation(): Boolean =
+            typeMask and WindowInsetsCompat.Type.ime() != 0
     }
 
     private fun bindDrawerRestore(

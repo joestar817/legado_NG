@@ -276,6 +276,7 @@ class ReadSearchDialog : BottomSheetDialogFragment() {
             skipCollapsed = true
             state = BottomSheetBehavior.STATE_EXPANDED
         }
+        ReadDrawerStyle.installImeOnlyBottomSheetInsetsAnimation(sheet)
     }
 
     override fun onDismiss(dialog: DialogInterface) {

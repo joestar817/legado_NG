@@ -334,6 +334,13 @@ internal class ReadCatalogDialog : CatalogDrawerDialog() {
 
     private var bottomDialogRegistered = false
 
+    override fun onStart() {
+        super.onStart()
+        dialog?.findViewById<View>(
+            com.google.android.material.R.id.design_bottom_sheet
+        )?.let(ReadDrawerStyle::installImeOnlyBottomSheetInsetsAnimation)
+    }
+
     override fun catalogBook(): Book? = ReadBook.book
 
     override fun currentChapterIndex(): Int = ReadBook.durChapterIndex
