@@ -181,6 +181,13 @@ internal fun AiProviderListScreen(
                     ) {
                         NgManagementListCard(
                             title = provider.name,
+                            containerColor = colorResource(
+                                R.color.ng_translucent_management_card_surface
+                            ),
+                            borderColor = colorResource(
+                                R.color.ng_translucent_management_card_stroke
+                            ),
+                            borderWidth = 0.6.dp,
                             detailTags = listOf(
                                 NgStatusTagSpec(
                                     text = stringResource(
@@ -226,7 +233,10 @@ internal fun AiProviderListScreen(
                                 NgManagementLeadingIcon(
                                     iconRes = provider.iconRes,
                                     contentDescription = null,
-                                    tint = Color.Unspecified
+                                    tint = Color.Unspecified,
+                                    containerColor = colorResource(
+                                        R.color.ng_translucent_management_avatar_surface
+                                    ),
                                 )
                             }
                         )

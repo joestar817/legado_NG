@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -143,17 +144,23 @@ private fun TtsEngineVoiceListCard(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val shape = RoundedCornerShape(18.dp)
+    val cardColor = colorResource(R.color.ng_translucent_management_card_surface)
+    val cardStrokeColor = colorResource(R.color.ng_translucent_management_card_stroke)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 70.dp)
             .alpha(if (item.dimmed) 0.48f else 1f)
             .clip(shape)
-            .background(
-                colorResource(
-                    if (pressed) R.color.ng_surface_pressed else R.color.ng_surface_card
-                )
+            .background(cardColor)
+            .then(
+                if (pressed) {
+                    Modifier.background(colorResource(R.color.ng_surface_pressed))
+                } else {
+                    Modifier
+                }
             )
+            .border(0.6.dp, cardStrokeColor, shape)
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,

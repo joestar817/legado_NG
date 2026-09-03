@@ -252,16 +252,10 @@ private fun TtsEngineListCard(
 ) {
     val dragDescription = item.actionContentDescription ?: stringResource(R.string.menu)
     val themeSnapshot = NgTheme.snapshot
-    val iconContainerColor = if (themeSnapshot.isDark) {
-        Color(themeSnapshot.colors.selectedContainer)
-    } else {
-        colorResource(R.color.ng_settings_icon_bg)
-    }
-    val iconContentColor = if (themeSnapshot.isDark) {
-        Color(themeSnapshot.colors.onPrimaryContainer)
-    } else {
-        Color(themeSnapshot.colors.primary)
-    }
+    val iconContainerColor = colorResource(
+        R.color.ng_translucent_management_avatar_surface
+    )
+    val iconContentColor = Color(themeSnapshot.colors.primary)
     NgSwipeToDelete(
         deletable = item.deletable,
         reordering = reorderState.isDragging,
@@ -272,6 +266,13 @@ private fun TtsEngineListCard(
     ) {
         NgManagementListCard(
             title = item.name,
+            containerColor = colorResource(
+                R.color.ng_translucent_management_card_surface
+            ),
+            borderColor = colorResource(
+                R.color.ng_translucent_management_card_stroke
+            ),
+            borderWidth = 0.6.dp,
             detailTags = item.statusTags(
                 enabledText = stringResource(R.string.enabled),
                 disabledText = stringResource(R.string.disabled)

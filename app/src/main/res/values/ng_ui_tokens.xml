@@ -4,6 +4,12 @@
     <color name="ng_background">@color/background</color>
     <color name="ng_surface">@color/white</color>
     <color name="ng_surface_card">#FFFFFFFF</color>
+    <color name="ng_bookshelf_list_card_surface">@color/ng_surface_card</color>
+    <color name="ng_bookshelf_list_card_pressed">@color/ng_surface_pressed</color>
+    <color name="ng_bookshelf_list_card_stroke">@android:color/transparent</color>
+    <color name="ng_translucent_management_card_surface">@color/ng_surface_card</color>
+    <color name="ng_translucent_management_card_stroke">@android:color/transparent</color>
+    <color name="ng_translucent_management_avatar_surface">#FFFFFFFF</color>
     <color name="ng_book_detail_card_surface">@color/ng_floating_dock_surface</color>
     <color name="ng_book_detail_card_stroke">@color/ng_settings_item_stroke</color>
     <color name="ng_bookshelf_manage_header_surface">#F2FFFFFF</color>

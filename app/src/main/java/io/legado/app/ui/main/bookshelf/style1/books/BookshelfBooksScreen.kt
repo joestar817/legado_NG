@@ -3,6 +3,7 @@ package io.legado.app.ui.main.bookshelf.style1.books
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -231,8 +232,13 @@ private fun BookshelfListBookItem(
     val isPressed by interactionSource.collectIsPressedAsState()
     val shape = RoundedCornerShape(dimensionResource(R.dimen.ng_radius_s))
     val cardColor = colorResource(
-        if (isPressed) R.color.ng_surface_pressed else R.color.ng_surface_card
+        if (isPressed) {
+            R.color.ng_bookshelf_list_card_pressed
+        } else {
+            R.color.ng_bookshelf_list_card_surface
+        }
     )
+    val cardStrokeColor = colorResource(R.color.ng_bookshelf_list_card_stroke)
     val titleColor = colorResource(R.color.primaryText)
     val summaryColor = colorResource(R.color.tv_text_summary)
     val lastUpdateText = if (showLastUpdateTime && !book.isLocal) {
@@ -250,6 +256,7 @@ private fun BookshelfListBookItem(
             .height(cardHeight)
             .clip(shape)
             .background(cardColor)
+            .border(0.6.dp, cardStrokeColor, shape)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,

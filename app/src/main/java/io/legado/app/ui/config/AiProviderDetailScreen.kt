@@ -258,12 +258,16 @@ private fun AiProviderModelRow(
     onSelectedChange: (Boolean) -> Unit,
 ) {
     val shape = RoundedCornerShape(NgTheme.shapes.largeDp.dp)
+    val cardColor = colorResource(R.color.ng_translucent_management_card_surface)
+    val cardStrokeColor = colorResource(R.color.ng_translucent_management_card_stroke)
+    val avatarColor = colorResource(R.color.ng_translucent_management_avatar_surface)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 70.dp)
             .clip(shape)
-            .background(colorResource(R.color.ng_surface_card))
+            .background(cardColor)
+            .border(0.6.dp, cardStrokeColor, shape)
             .clickable(onClick = onClick)
             .padding(end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -278,7 +282,7 @@ private fun AiProviderModelRow(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(colorResource(R.color.ng_icon_container))
+                    .background(avatarColor)
                     .padding(6.dp),
                 contentAlignment = Alignment.Center,
             ) {

@@ -2,6 +2,7 @@ package io.legado.app.ui.design.components.compose
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -71,6 +73,9 @@ fun NgManagementListCard(
     onTrailingClick: (() -> Unit)? = null,
     trailingModifier: Modifier = Modifier,
     trailingContent: (@Composable () -> Unit)? = null,
+    containerColor: Color? = null,
+    borderColor: Color? = null,
+    borderWidth: Dp = 0.dp,
     leading: @Composable () -> Unit
 ) {
     require(headerTags.size <= 2) { "Management card supports at most 2 header tags" }
@@ -80,13 +85,21 @@ fun NgManagementListCard(
     val shape = RoundedCornerShape(
         if (isCompactGrid) NgTheme.shapes.smallDp.dp else NgTheme.shapes.largeDp.dp
     )
+    val resolvedContainerColor = containerColor ?: colorResource(R.color.ng_surface_card)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
             .heightIn(min = if (isCompactGrid) 54.dp else 70.dp)
             .clip(shape)
-            .background(colorResource(R.color.ng_surface_card))
+            .background(resolvedContainerColor)
+            .then(
+                if (borderColor != null && borderWidth > 0.dp) {
+                    Modifier.border(borderWidth, borderColor, shape)
+                } else {
+                    Modifier
+                }
+            )
             .then(
                 if (selected) {
                     Modifier.semantics { this.selected = true }
