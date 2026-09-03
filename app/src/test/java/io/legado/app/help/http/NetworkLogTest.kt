@@ -3,6 +3,7 @@ package io.legado.app.help.http
 import okhttp3.Headers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -78,6 +79,41 @@ class NetworkLogTest {
             "https://example.com/api?access_token=[已脱敏]&name=reader&api_key=[已脱敏]#frag",
             redacted
         )
+    }
+
+    @Test
+    fun redactUrlForLogRedactsOpaqueKeysAndKeepsSearchKeyword() {
+        val opaqueKey = "k".repeat(64)
+        val protectedUrl = "https://example.com/api?key=$opaqueKey&lang=zh"
+        val searchUrl = "https://example.com/search?key=三体&page=1"
+
+        assertEquals(
+            "https://example.com/api?key=[已脱敏]&lang=zh",
+            NetworkLog.redactUrlForLog(protectedUrl),
+        )
+        assertEquals(searchUrl, NetworkLog.redactUrlForLog(searchUrl))
+    }
+
+    @Test
+    fun redactThrowableForLogDropsUrlKeyCookieAndOriginalCause() {
+        val opaqueKey = "k".repeat(64)
+        val cookieValue = "fixture-cookie-secret"
+        val error = IllegalStateException(
+            "request failed https://example.com/api?key=$opaqueKey " +
+                "headers={\"Cookie\":\"session=$cookieValue; lang=zh\"}"
+        ).apply {
+            stackTrace = arrayOf(StackTraceElement("Fixture", "call", "Fixture.kt", 12))
+        }
+
+        val redacted = NetworkLog.redactThrowableForLog(error)
+        val text = redacted.stackTraceToString()
+
+        assertFalse(text.contains(opaqueKey))
+        assertFalse(text.contains(cookieValue))
+        assertTrue(text.contains("key=[已脱敏]"))
+        assertTrue(text.contains("\"Cookie\":\"[已脱敏]\""))
+        assertTrue(text.contains("Fixture.call(Fixture.kt:12)"))
+        assertNull(redacted.cause)
     }
 
     @Test

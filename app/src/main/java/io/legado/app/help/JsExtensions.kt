@@ -213,7 +213,7 @@ interface JsExtensions : JsEncodeUtils {
             analyzeUrl.getStrResponse()
         }.onFailure {
             rhinoContextOrNull?.ensureActive()
-            AppLog.put("connect(${urlStr}) error\n${it.localizedMessage}", it)
+            logConnectFailure(urlStr, null, it)
         }.getOrElse {
             StrResponse(analyzeUrl.url, it.stackTraceStr)
         }
@@ -236,10 +236,26 @@ interface JsExtensions : JsEncodeUtils {
             analyzeUrl.getStrResponse()
         }.onFailure {
             rhinoContextOrNull?.ensureActive()
-            AppLog.put("connect($urlStr,$header) error\n${it.localizedMessage}", it)
+            logConnectFailure(urlStr, headerMap, it)
         }.getOrElse {
             StrResponse(analyzeUrl.url, it.stackTraceStr)
         }
+    }
+
+    private fun logConnectFailure(
+        url: String,
+        headers: Map<String, String>?,
+        error: Throwable,
+    ) {
+        val safeUrl = NetworkLog.redactUrlForLog(url)
+        val safeHeaders = headers?.let(NetworkLog::formatHeaders).orEmpty()
+        val headerSection = safeHeaders.takeIf(String::isNotEmpty)
+            ?.let { "\n$it" }
+            .orEmpty()
+        AppLog.put(
+            "connect($safeUrl)$headerSection error",
+            NetworkLog.redactThrowableForLog(error),
+        )
     }
 
     fun webView(html: String?, url: String?, js: String?): String? {
