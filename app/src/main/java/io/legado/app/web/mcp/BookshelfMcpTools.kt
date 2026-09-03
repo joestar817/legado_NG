@@ -23,8 +23,10 @@ import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isNotShelf
 import io.legado.app.help.book.isUpError
 import io.legado.app.help.book.isVideo
+import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.model.ReadBook
 import io.legado.app.model.CacheBook
+import io.legado.app.model.BookCacheManager
 import io.legado.app.utils.GSON
 import splitties.init.appCtx
 import java.security.MessageDigest
@@ -207,7 +209,7 @@ object BookshelfMcpTools {
             ),
             tool(
                 name = "bookshelf_cache_status_get",
-                description = "Return cached/local availability for a chapter range without reading full bodies.",
+                description = "Return cached/local availability for a chapter range. Audio books report complete offline audio rather than saved resource URLs.",
                 properties = mapOf(
                     "work_key" to stringSchema("Stable work identity. Prefer this when available."),
                     "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
@@ -219,7 +221,7 @@ object BookshelfMcpTools {
             ),
             tool(
                 name = "bookshelf_cache_download",
-                description = "Start offline caching for selected chapters. This may perform network requests. Use chapter_indexes or ranges; ranges use start inclusive and end exclusive. Set refresh_existing=true to delete selected cached chapter text before downloading.",
+                description = "Start offline caching for selected chapters. Audio books download complete media; other books cache chapter content. This may perform network requests. Use chapter_indexes or ranges; ranges use start inclusive and end exclusive.",
                 properties = mapOf(
                     "work_key" to stringSchema("Stable work identity. Prefer this when available."),
                     "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
@@ -229,12 +231,12 @@ object BookshelfMcpTools {
                     "ranges" to arraySchema("Array of {start,end}; start inclusive, end exclusive, using BookChapter.index"),
                     "start" to numberSchema("Optional inclusive chapter index for one range"),
                     "end" to numberSchema("Optional exclusive chapter index for one range"),
-                    "refresh_existing" to booleanSchema("Default false. When true, delete selected cached chapter text before enqueuing cache download.")
+                    "refresh_existing" to booleanSchema("Default false. When true, delete the selected content or audio cache before enqueuing the download.")
                 )
             ),
             tool(
                 name = "bookshelf_cache_clear",
-                description = "Clear cached chapter text for one book. Pass chapter_indexes/ranges/start/end to clear selected chapters, or clear_book=true to clear the whole book cache folder.",
+                description = "Clear cached chapter content and downloaded audio. Pass chapter_indexes/ranges/start/end to clear selected chapters, or clear_book=true to clear the whole book cache.",
                 properties = mapOf(
                     "work_key" to stringSchema("Stable work identity. Prefer this when available."),
                     "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
@@ -1130,11 +1132,23 @@ object BookshelfMcpTools {
         val requestedEnd = arguments.get("end").asIntOrNull() ?: min(all.size, start + MAX_CACHE_STATUS_CHAPTERS)
         val end = requestedEnd.coerceIn(start, all.size)
         val page = all.filter { it.index in start until end }.take(MAX_CACHE_STATUS_CHAPTERS)
+        val audioCacheNames = if (book.isAudio) {
+            appDb.bookSourceDao.getBookSource(book.origin)?.let {
+                AudioDownloadCache.getCachedChapterFileNames(it, book)
+            }.orEmpty()
+        } else {
+            emptySet()
+        }
         val statuses = page.map { chapter ->
+            val hasCache = if (book.isAudio) {
+                chapter.isVolume || chapter.getFileName() in audioCacheNames
+            } else {
+                BookHelp.hasContent(book, chapter)
+            }
             mapOf(
                 "index" to chapter.index,
                 "title" to chapter.title,
-                "has_content" to BookHelp.hasContent(book, chapter),
+                "has_content" to hasCache,
                 "is_volume" to chapter.isVolume
             )
         }
@@ -1174,7 +1188,11 @@ object BookshelfMcpTools {
         val refreshExisting = arguments.get("refresh_existing").asBooleanOrNull() ?: false
         if (refreshExisting) {
             selection.chapters.forEach { chapter ->
-                BookHelp.delContent(book, chapter)
+                if (book.isAudio) {
+                    BookCacheManager.clearChapter(book, chapter)
+                } else {
+                    BookHelp.delContent(book, chapter)
+                }
             }
         }
         val queuedRanges = selection.chapters
@@ -1217,10 +1235,14 @@ object BookshelfMcpTools {
             throw IllegalArgumentException("chapter_indexes/ranges/start/end is required, or pass clear_book=true to clear the whole book cache")
         }
         if (clearBook && !selection.hasExplicitSelection) {
-            BookHelp.clearCache(book)
+            BookCacheManager.clear(book)
         } else {
             selection.chapters.forEach { chapter ->
-                BookHelp.delContent(book, chapter)
+                if (book.isAudio) {
+                    BookCacheManager.clearChapter(book, chapter)
+                } else {
+                    BookHelp.delContent(book, chapter)
+                }
             }
         }
         return toolResult(
@@ -2151,7 +2173,13 @@ object BookshelfMcpTools {
             map["variable"] = variable
         }
         if (includeCacheStatus) {
-            map["has_content"] = BookHelp.hasContent(book, this)
+            map["has_content"] = if (book.isAudio) {
+                isVolume || appDb.bookSourceDao.getBookSource(book.origin)?.let {
+                    AudioDownloadCache.getCachedChapter(it, book, this) != null
+                } == true
+            } else {
+                BookHelp.hasContent(book, this)
+            }
         }
         return map
     }

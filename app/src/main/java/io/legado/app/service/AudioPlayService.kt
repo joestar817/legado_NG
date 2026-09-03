@@ -35,12 +35,11 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.MediaHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.help.exoplayer.ExoPlayerHelper
 import io.legado.app.help.glide.ImageLoader
 import io.legado.app.model.AudioPlay
 import io.legado.app.model.ListeningPlaybackCoordinator
-import io.legado.app.model.analyzeRule.AnalyzeUrl
-import io.legado.app.model.analyzeRule.AnalyzeUrl.Companion.getMediaItem
 import io.legado.app.receiver.MediaButtonReceiver
 import io.legado.app.ui.book.audio.AudioPlayActivity
 import io.legado.app.utils.activityPendingIntent
@@ -237,8 +236,16 @@ class AudioPlayService : BaseService(),
             AudioPlay.status = Status.STOP
             postEvent(EventBus.AUDIO_STATE, Status.STOP)
             upPlayProgressJob?.cancel()
+            val mediaItems = AudioDownloadCache.createMediaItems(
+                bookSource = AudioPlay.bookSource,
+                book = book,
+                chapter = AudioPlay.durChapter,
+                content = url,
+                cacheKeys = AudioPlay.durAudioCacheKeys,
+                coroutineContext = coroutineContext,
+            )
             if (url.isJsonArray()) {
-                val mediaSource = ExoPlayerHelper.getMediaSource(this@AudioPlayService, url)
+                val mediaSource = ExoPlayerHelper.getMediaSource(mediaItems)
                 if (mediaSource ==  null) {
                     NoStackTraceException("url格式错误")
                     return@execute
@@ -246,14 +253,7 @@ class AudioPlayService : BaseService(),
                 exoPlayer.setMediaSource(mediaSource)
                 position = 0
             } else {
-                val analyzeUrl = AnalyzeUrl(
-                    url,
-                    source = AudioPlay.bookSource,
-                    ruleData = book,
-                    chapter = AudioPlay.durChapter,
-                    coroutineContext = coroutineContext
-                )
-                exoPlayer.setMediaItem(analyzeUrl.getMediaItem())
+                exoPlayer.setMediaItem(mediaItems.single())
             }
             exoPlayer.playWhenReady = true
             //获取片头设定
@@ -466,7 +466,7 @@ class AudioPlayService : BaseService(),
                 val durP = exoPlayer.currentPosition
                 //更新buffer位置
                 AudioPlay.playPositionChanged(durP.toInt())
-                postEvent(EventBus.AUDIO_BUFFER_PROGRESS, exoPlayer.bufferedPosition.toInt())
+                postEvent(EventBus.AUDIO_BUFFER_PROGRESS, displayBufferedPosition().toInt())
                 postEvent(EventBus.AUDIO_PROGRESS, AudioPlay.durChapterPos)
                 postEvent(EventBus.AUDIO_SIZE, exoPlayer.duration.toInt())
                 upMediaSessionPlaybackState(PlaybackStateCompat.STATE_PLAYING)
@@ -499,7 +499,7 @@ class AudioPlayService : BaseService(),
             PlaybackStateCompat.Builder()
                 .setActions(MEDIA_SESSION_ACTIONS)
                 .setState(state, exoPlayer.currentPosition, 1f)
-                .setBufferedPosition(exoPlayer.bufferedPosition)
+                .setBufferedPosition(displayBufferedPosition())
                 .addCustomAction(
                     APP_ACTION_STOP,
                     getString(R.string.stop),
@@ -512,6 +512,15 @@ class AudioPlayService : BaseService(),
                 )
                 .build()
         )
+    }
+
+    private fun displayBufferedPosition(): Long {
+        val duration = exoPlayer.duration
+        return if (AudioPlay.durAudioCacheKeys.isNotEmpty() && duration > 0L) {
+            duration
+        } else {
+            exoPlayer.bufferedPosition
+        }
     }
 
     /**

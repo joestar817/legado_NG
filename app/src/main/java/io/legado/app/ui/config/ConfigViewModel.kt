@@ -7,7 +7,7 @@ import io.legado.app.base.BaseViewModel
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.AppWebDav
-import io.legado.app.help.book.BookHelp
+import io.legado.app.model.BookCacheManager
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.restart
 import io.legado.app.utils.toastOnUi
@@ -24,7 +24,7 @@ class ConfigViewModel(application: Application) : BaseViewModel(application) {
 
     fun clearCache() {
         execute {
-            BookHelp.clearCache()
+            BookCacheManager.clearAll()
             FileUtils.delete(context.cacheDir.absolutePath)
             clearUnlinkedCharacterProfiles()
         }.onSuccess {

@@ -65,6 +65,7 @@ import io.legado.app.help.book.removeType
 import io.legado.app.help.book.supportsReadAloud
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
+import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.help.webView.PooledWebView
 import io.legado.app.help.webView.WebJsExtensions
 import io.legado.app.help.webView.WebJsExtensions.Companion.getInjectionString
@@ -1317,8 +1318,13 @@ class BookInfoActivity :
             return
         }
         val chapters = chapterList.orEmpty()
+        val cacheableChapters = if (book.isAudio) {
+            chapters.filterNot(BookChapter::isVolume)
+        } else {
+            chapters
+        }
         val total = when {
-            chapters.isNotEmpty() -> chapters.size
+            chapters.isNotEmpty() -> cacheableChapters.size
             book.totalChapterNum > 0 -> book.totalChapterNum
             else -> 0
         }
@@ -1347,8 +1353,16 @@ class BookInfoActivity :
         }
         cacheProgressJob = lifecycleScope.launch {
             val cachedCount = withContext(IO) {
-                val cacheFileNames = BookHelp.getChapterFiles(book)
-                chapters.count { it.isVolume || cacheFileNames.contains(it.getFileName()) }
+                val cacheFileNames = if (book.isAudio) {
+                    viewModel.bookSource?.let {
+                        AudioDownloadCache.getCachedChapterFileNames(it, book)
+                    }.orEmpty()
+                } else {
+                    BookHelp.getChapterFiles(book)
+                }
+                cacheableChapters.count {
+                    (!book.isAudio && it.isVolume) || cacheFileNames.contains(it.getFileName())
+                }
             }
             if (viewModel.getBook(false)?.bookUrl == book.bookUrl) {
                 showCacheProgress(cachedCount, total)

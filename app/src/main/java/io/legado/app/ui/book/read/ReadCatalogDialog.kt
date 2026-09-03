@@ -83,6 +83,7 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import io.legado.app.R
 import io.legado.app.constant.AppLog
+import io.legado.app.constant.EventBus
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
@@ -98,6 +99,7 @@ import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
+import io.legado.app.utils.observeEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -110,6 +112,7 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
     private var chapterCount by mutableStateOf(0)
     private var bookmarks by mutableStateOf<List<Bookmark>>(emptyList())
     private var cachedChapterFiles by mutableStateOf<Set<String>>(emptySet())
+    private var cacheRunning by mutableStateOf(false)
     private var loading by mutableStateOf(true)
     private var catalogThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
     protected abstract fun catalogBook(): Book?
@@ -121,6 +124,15 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
     protected open fun showBookmarks(): Boolean = false
 
     protected open fun showCacheState(): Boolean = false
+
+    protected open fun showCacheAction(): Boolean = false
+
+    protected open fun isCacheRunning(book: Book): Boolean = false
+
+    protected open fun onCacheAction(book: Book, currentlyRunning: Boolean): Boolean = false
+
+    protected open fun cachedChapterFileNames(book: Book): Set<String> =
+        BookHelp.getChapterFiles(book)
 
     protected open fun isLocalBook(): Boolean = false
 
@@ -161,6 +173,7 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
             return
         }
         catalogThemeSnapshot = initialCatalogTheme(book)
+        cacheRunning = isCacheRunning(book)
         (view as ComposeView).setContent {
             NgAppTheme(snapshot = catalogThemeSnapshot, updateSystemBars = false) {
                 ReadCatalogPanel(
@@ -169,6 +182,8 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
                     cachedChapterFiles = cachedChapterFiles,
                     showBookmarks = showBookmarks(),
                     showCacheState = showCacheState(),
+                    showCacheAction = showCacheAction(),
+                    cacheRunning = cacheRunning,
                     isLocalBook = isLocalBook(),
                     currentChapterIndex = currentChapterIndex(),
                     visualStyle = visualStyle(),
@@ -194,12 +209,25 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
                         )
                     },
                     onChapterClick = ::onChapterSelected,
+                    onCacheClick = {
+                        cacheRunning = onCacheAction(book, cacheRunning)
+                    },
                     onBookmarkClick = ::onBookmarkSelected,
                     onBookmarkDelete = ::deleteBookmark,
                 )
             }
         }
         loadCatalogData(book)
+        observeEvent<Pair<Book, BookChapter>>(EventBus.SAVE_CONTENT) { (eventBook, chapter) ->
+            if (eventBook.bookUrl == book.bookUrl) {
+                cachedChapterFiles = cachedChapterFiles + chapter.getFileName()
+            }
+        }
+        observeEvent<String>(EventBus.UP_DOWNLOAD) { bookUrl ->
+            if (bookUrl.isEmpty() || bookUrl == book.bookUrl) {
+                cacheRunning = isCacheRunning(book)
+            }
+        }
         viewLifecycleOwner.lifecycleScope.launch {
             resolveCatalogTheme(book)?.let { catalogThemeSnapshot = it }
         }
@@ -251,7 +279,7 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
                             emptyList()
                         },
                         if (showCacheState()) {
-                            BookHelp.getChapterFiles(book).toSet()
+                            cachedChapterFileNames(book)
                         } else {
                             emptySet()
                         },
@@ -412,6 +440,8 @@ private fun ReadCatalogPanel(
     cachedChapterFiles: Set<String>,
     showBookmarks: Boolean,
     showCacheState: Boolean,
+    showCacheAction: Boolean,
+    cacheRunning: Boolean,
     isLocalBook: Boolean,
     currentChapterIndex: Int,
     visualStyle: CatalogDrawerVisualStyle,
@@ -420,6 +450,7 @@ private fun ReadCatalogPanel(
     loadChapterPosition: suspend (Boolean, Int) -> Int,
     loadChapterPage: suspend (String, Boolean, Int, Int) -> List<CatalogChapter>,
     onChapterClick: (BookChapter) -> Unit,
+    onCacheClick: () -> Unit,
     onBookmarkClick: (Bookmark) -> Unit,
     onBookmarkDelete: (Bookmark) -> Unit,
 ) {
@@ -516,6 +547,23 @@ private fun ReadCatalogPanel(
                         stringResource(R.string.search)
                     },
                     onActionClick = if (searchVisible) null else ({ searchVisible = true }),
+                    secondaryActionIconRes = if (!searchVisible && showCacheAction) {
+                        if (cacheRunning) R.drawable.ic_stop_black_24dp
+                        else R.drawable.ic_download_line
+                    } else {
+                        null
+                    },
+                    secondaryActionContentDescription = if (cacheRunning) {
+                        stringResource(R.string.cancel)
+                    } else {
+                        stringResource(R.string.book_cache)
+                    },
+                    secondaryActionActive = cacheRunning,
+                    onSecondaryActionClick = if (!searchVisible && showCacheAction) {
+                        onCacheClick
+                    } else {
+                        null
+                    },
                     centerTitle = true,
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )

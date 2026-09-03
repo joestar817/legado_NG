@@ -10,10 +10,13 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookSource
 import io.legado.app.help.book.BookHelp
+import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.removeType
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.exoplayer.AudioDownloadCache
+import io.legado.app.model.BookCacheManager
 import io.legado.app.model.localBook.LocalBook
 import io.legado.app.model.webBook.WebBook
 import io.legado.app.model.SourceCallBack
@@ -43,10 +46,18 @@ class BookshelfManageViewModel(application: Application) : BaseViewModel(applica
             books.forEach { book ->
                 if (!book.isLocal && !cacheChapters.contains(book.bookUrl)) {
                     val chapterCaches = hashSetOf<String>()
-                    val cacheNames = BookHelp.getChapterFiles(book)
+                    val cacheNames = if (book.isAudio) {
+                        appDb.bookSourceDao.getBookSource(book.origin)?.let {
+                            AudioDownloadCache.getCachedChapterFileNames(it, book)
+                        }.orEmpty()
+                    } else {
+                        BookHelp.getChapterFiles(book)
+                    }
                     if (cacheNames.isNotEmpty()) {
                         appDb.bookChapterDao.getChapterList(book.bookUrl).forEach { chapter ->
-                            if (cacheNames.contains(chapter.getFileName()) || chapter.isVolume) {
+                            if (cacheNames.contains(chapter.getFileName()) ||
+                                (!book.isAudio && chapter.isVolume)
+                            ) {
                                 chapterCaches.add(chapter.url)
                             }
                         }
@@ -171,7 +182,7 @@ class BookshelfManageViewModel(application: Application) : BaseViewModel(applica
     fun clearCache(books: List<Book>) {
         execute {
             books.forEach {
-                BookHelp.clearCache(it)
+                BookCacheManager.clear(it)
             }
         }.onSuccess {
             books.filterNot { it.isLocal }.forEach { book ->

@@ -791,9 +791,9 @@ class AnalyzeUrl(
         private val queryEncoder =
             RFC3986.UNRESERVED.orNew(PercentCodec.of("!$%&()*+,/:;=?@[\\]^`{|}"))
         val customIp by lazy { ConcurrentHashMap<String, String>() }
-        fun AnalyzeUrl.getMediaItem(): MediaItem {
+        fun AnalyzeUrl.getMediaItem(customCacheKey: String? = null): MediaItem {
             setCookie()
-            return ExoPlayerHelper.createMediaItem(url, headerMap)
+            return ExoPlayerHelper.createMediaItem(url, headerMap, customCacheKey)
         }
 
     }

@@ -25,6 +25,7 @@ import io.legado.app.help.book.simulatedTotalChapterNum
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.model.ImageProvider
+import io.legado.app.model.BookCacheManager
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.model.SourceCallBack
@@ -458,7 +459,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
 
     fun refreshContentAll(book: Book) {
         execute {
-            BookHelp.clearCache(book)
+            BookCacheManager.clear(book)
             ReadBook.loadContent(false)
         }
     }

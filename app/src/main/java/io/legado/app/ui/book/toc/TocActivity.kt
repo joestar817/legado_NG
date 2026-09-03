@@ -14,14 +14,17 @@ import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.Theme
+import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.Bookmark
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
+import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isLocalTxt
 import io.legado.app.help.book.isVideo
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
@@ -235,7 +238,15 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
     private fun loadCachedFiles(book: Book) {
         cacheJob?.cancel()
         cacheJob = lifecycleScope.launch {
-            val cacheFiles = withContext(IO) { BookHelp.getChapterFiles(book).toSet() }
+            val cacheFiles = withContext(IO) {
+                if (book.isAudio) {
+                    appDb.bookSourceDao.getBookSource(book.origin)?.let {
+                        AudioDownloadCache.getCachedChapterFileNames(it, book)
+                    }.orEmpty()
+                } else {
+                    BookHelp.getChapterFiles(book).toSet()
+                }
+            }
             if (viewModel.bookData.value?.bookUrl == book.bookUrl) {
                 uiState = uiState.copy(cachedFileNames = cacheFiles)
             }

@@ -35,6 +35,7 @@ import io.legado.app.help.book.simulatedTotalChapterNum
 import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.webdav.WebDav
 import io.legado.app.lib.webdav.WebDavException
+import io.legado.app.model.BookCacheManager
 import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.utils.ArchiveUtils
 import io.legado.app.utils.FileDoc
@@ -386,7 +387,7 @@ object LocalBook {
 
     fun deleteBook(book: Book, deleteOriginal: Boolean) {
         kotlin.runCatching {
-            BookHelp.clearCache(book)
+            BookCacheManager.clear(book)
             if (!book.coverUrl.isNullOrEmpty()) {
                 FileUtils.delete(book.coverUrl!!)
             }

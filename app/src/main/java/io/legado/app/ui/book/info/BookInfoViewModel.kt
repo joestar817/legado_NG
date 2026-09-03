@@ -37,6 +37,7 @@ import io.legado.app.help.source.SourceInteractionBlockedException
 import io.legado.app.help.source.SourceInteractionPolicy
 import io.legado.app.lib.webdav.ObjectNotFoundException
 import io.legado.app.model.AudioPlay
+import io.legado.app.model.BookCacheManager
 import io.legado.app.model.BookCover
 import io.legado.app.model.ReadBook
 import io.legado.app.model.ReadManga
@@ -769,7 +770,7 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
 
     fun clearCache(book: Book) {
         execute {
-            BookHelp.clearCache(book)
+            BookCacheManager.clear(book)
             if (ReadBook.book?.bookUrl == book.bookUrl) {
                 ReadBook.clearTextChapter()
             }

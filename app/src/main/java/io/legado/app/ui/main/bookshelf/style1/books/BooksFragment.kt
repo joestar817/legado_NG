@@ -41,6 +41,7 @@ import io.legado.app.help.config.BookshelfLayoutMode
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.model.CacheBook
+import io.legado.app.model.BookCacheManager
 import io.legado.app.model.ReadBook
 import io.legado.app.model.ReadManga
 import io.legado.app.model.SourceCallBack
@@ -488,7 +489,7 @@ class BooksFragment() : BaseFragment(0),
         viewLifecycleOwner.lifecycleScope.launch {
             val error = withContext(IO) {
                 runCatching {
-                    BookHelp.clearCache(book)
+                    BookCacheManager.clear(book)
                     if (ReadBook.book?.bookUrl == book.bookUrl) {
                         ReadBook.clearTextChapter()
                     }

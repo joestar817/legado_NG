@@ -10,10 +10,12 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
 import io.legado.app.exception.ConcurrentException
 import io.legado.app.help.book.BookHelp
+import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.CompositeCoroutine
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.model.webBook.WebBook
 import io.legado.app.service.CacheBookService
 import io.legado.app.utils.onEachParallel
@@ -105,6 +107,10 @@ object CacheBook {
         }
     }
 
+    fun cancel(bookUrl: String) {
+        cacheBookMap[bookUrl]?.stop()
+    }
+
     fun stop(context: Context) {
         if (CacheBookService.isRun) {
             context.startService<CacheBookService> {
@@ -131,7 +137,7 @@ object CacheBook {
                 var emitted = false
 
                 cacheBookMap.forEach { (_, model) ->
-                    if (!model.isLoading()) {
+                    if (!model.isLoading() && model.hasWaitingDownload()) {
                         emit(model)
                         emitted = true
                     }
@@ -219,6 +225,11 @@ object CacheBook {
         @Synchronized
         fun isLoading(): Boolean {
             return isLoading
+        }
+
+        @Synchronized
+        fun hasWaitingDownload(): Boolean {
+            return waitDownloadSet.isNotEmpty()
         }
 
         @Synchronized
@@ -325,6 +336,10 @@ object CacheBook {
                 waitDownloadSet.remove(chapterIndex)
                 return
             }
+            if (book.isAudio) {
+                downloadAudio(scope, context, chapter)
+                return
+            }
             if (BookHelp.hasImageContent(book, chapter)) {
                 waitDownloadSet.remove(chapterIndex)
                 return
@@ -376,6 +391,43 @@ object CacheBook {
             }.apply {
                 tasks.add(this)
             }.start()
+        }
+
+        private fun downloadAudio(
+            scope: CoroutineScope,
+            context: CoroutineContext,
+            chapter: BookChapter,
+        ) {
+            waitDownloadSet.remove(chapter.index)
+            AudioDownloadCache.getCachedChapter(bookSource, book, chapter)?.let {
+                onSuccess(chapter)
+                postEvent(EventBus.SAVE_CONTENT, Pair(book, chapter))
+                onFinally()
+                return
+            }
+            onDownloadSet.add(chapter.index)
+            Coroutine.async(scope, context, executeContext = context) {
+                val content = WebBook.getContentAwait(
+                    bookSource = bookSource,
+                    book = book,
+                    bookChapter = chapter,
+                    needSave = false,
+                ).trim()
+                AudioDownloadCache.cacheChapter(bookSource, book, chapter, content)
+            }.onSuccess {
+                onSuccess(chapter)
+                postEvent(EventBus.SAVE_CONTENT, Pair(book, chapter))
+            }.onError {
+                onPreError(chapter, it)
+                delay(1000)
+                onPostError(chapter, it)
+            }.onCancel {
+                onCancel(chapter.index)
+            }.onFinally {
+                onFinally()
+            }.let {
+                tasks.add(it)
+            }
         }
 
         suspend fun downloadAwait(chapter: BookChapter): String {

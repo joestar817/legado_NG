@@ -63,6 +63,7 @@ import io.legado.app.help.storage.Backup
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.model.ReadAloud
+import io.legado.app.model.BookCacheManager
 import io.legado.app.model.ReadBook
 import io.legado.app.model.analyzeRule.AnalyzeRule
 import io.legado.app.model.analyzeRule.AnalyzeRule.Companion.setChapter
@@ -537,7 +538,7 @@ class ReadBookActivity : BaseReadBookActivity(),
             R.id.menu_edit_content -> showDialogFragment(ContentEditDialog())
             R.id.menu_update_toc -> ReadBook.book?.let {
                 if (it.isEpub) {
-                    BookHelp.clearCache(it)
+                    BookCacheManager.clear(it)
                     EpubFile.clear()
                 }
                 if (it.isMobi) {
