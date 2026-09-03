@@ -19,6 +19,7 @@ import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
+import io.legado.app.ui.design.components.compose.NgDrawerDefaults
 import io.legado.app.utils.dpToPx
 
 /**
@@ -110,7 +111,7 @@ internal class AiModelSelectionFilters(
                 cornerRadius = 16.dpToPx().toFloat()
                 setColor(
                     if (selected) colors.selectedContainer
-                    else ContextCompat.getColor(context, R.color.ng_surface_card)
+                    else NgDrawerDefaults.adaptiveContentCardColor(context)
                 )
             }
             setOnClickListener {

@@ -18,6 +18,8 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
 import io.legado.app.lib.theme.accentColor
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
+import io.legado.app.ui.design.components.compose.NgDrawerDefaults
 import io.legado.app.ui.design.components.view.NgSearchBar
 import io.legado.app.utils.dpToPx
 
@@ -30,7 +32,8 @@ class NgLongListBottomSheet(
     private val heightRatio: Float = 0.88f,
     private val compact: Boolean = false,
     private val searchInitiallyVisible: Boolean = !compact,
-    private val showCompactSearchAction: Boolean = compact
+    private val showCompactSearchAction: Boolean = compact,
+    private val contentCardStyle: NgDrawerContentCardStyle = NgDrawerContentCardStyle.LEGACY,
 ) {
 
     val dialog = BottomSheetDialog(context)
@@ -54,6 +57,9 @@ class NgLongListBottomSheet(
     val searchBar = NgSearchBar(context).apply {
         hint = searchHint
         isVisible = searchInitiallyVisible
+        if (contentCardStyle == NgDrawerContentCardStyle.ADAPTIVE) {
+            setContainerColor(NgDrawerDefaults.adaptiveContentCardColor(context))
+        }
     }
     val searchEdit get() = searchBar.editText
     private val compactSearchAction = ImageButton(context).apply {
@@ -116,6 +122,7 @@ class NgLongListBottomSheet(
             context.createNgBottomDrawerViewHost(
                 contentView = root,
                 fillMaxHeight = true,
+                contentCardStyle = contentCardStyle,
             )
         )
         dialog.setOnShowListener {

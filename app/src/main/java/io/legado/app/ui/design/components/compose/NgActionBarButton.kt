@@ -72,7 +72,7 @@ fun NgActionBarButton(
         NgActionBarButtonSurfaceVariant.THEMED ->
             colorResource(R.color.background_menu).copy(alpha = 0.9f)
         NgActionBarButtonSurfaceVariant.NEUTRAL ->
-            colorResource(R.color.ng_surface_card)
+            ngDrawerContentCardColor()
     }
     val outlineAccent = if (surfaceVariant == NgActionBarButtonSurfaceVariant.NEUTRAL) {
         Color(colors.onSurface)

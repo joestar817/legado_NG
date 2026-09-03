@@ -1,12 +1,14 @@
 package io.legado.app.ui.design.components.view
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
+import androidx.annotation.ColorInt
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.appcompat.widget.AppCompatImageView
@@ -113,6 +115,10 @@ class NgSearchBar @JvmOverloads constructor(
     fun setQuery(query: CharSequence?) {
         editText.setText(query)
         editText.setSelection(editText.text?.length ?: 0)
+    }
+
+    fun setContainerColor(@ColorInt color: Int) {
+        backgroundTintList = ColorStateList.valueOf(color)
     }
 
     private fun updateHint() {

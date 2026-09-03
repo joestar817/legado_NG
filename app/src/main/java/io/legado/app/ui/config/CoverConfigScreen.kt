@@ -38,6 +38,7 @@ import io.legado.app.help.config.NgCoverAlbum
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgCompactSettingsDivider
 import io.legado.app.ui.design.components.compose.NgCompactSettingsGroup
 import io.legado.app.ui.design.components.compose.NgCompactSettingsItem
@@ -227,6 +228,7 @@ private fun NgCoverAlbumSelectionSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.52f),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             val snapshot = NgTheme.snapshot
             Column(

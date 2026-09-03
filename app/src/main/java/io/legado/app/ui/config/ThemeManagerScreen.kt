@@ -67,6 +67,7 @@ import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgActionBarButton
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDialogDivider
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
@@ -83,6 +84,7 @@ import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSettingsCardSurface
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
@@ -415,7 +417,7 @@ private fun ThemeManagerTopBar(
                 onDismissRequest = menuState::onDismissRequest,
                 items = menuItems,
                 variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
-                menuContainerColor = colorResource(R.color.ng_surface_card),
+                menuContainerColor = ngDrawerContentCardColor(),
                 properties = PopupProperties(focusable = true, clippingEnabled = false),
                 onItemClick = { item ->
                     menuState.close()
@@ -475,7 +477,8 @@ private fun NgThemeEditorSheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.90f)
+                .fillMaxHeight(0.90f),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             Column(
                 modifier = Modifier
@@ -542,7 +545,10 @@ private fun NgMd3ThemeImportPreviewSheet(
         contentColor = Color(baseSnapshot.colors.onSurface),
         shape = RectangleShape,
     ) {
-        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
+        NgBottomDrawerSurface(
+            modifier = Modifier.fillMaxWidth(),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+        ) {
             val snapshot = NgTheme.snapshot
             Column(
                 modifier = Modifier

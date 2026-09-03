@@ -61,6 +61,8 @@ import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.AppLog
 import io.legado.app.help.config.AppConfig
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.theme.NgAppTheme
@@ -271,7 +273,10 @@ private fun CrashLogsDrawerContent(
     onFileClick: (FileDoc) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    NgBottomDrawerSurface(modifier = Modifier.fillMaxSize()) {
+    NgBottomDrawerSurface(
+        modifier = Modifier.fillMaxSize(),
+        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -361,7 +366,7 @@ private fun CrashLogFileRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        color = colorResource(R.color.ng_surface_card),
+        color = ngDrawerContentCardColor(),
         contentColor = colorResource(R.color.ng_on_surface),
         shape = RoundedCornerShape(dimensionResource(R.dimen.ng_radius_m)),
         border = BorderStroke(0.8.dp, colorResource(R.color.ng_card_stroke)),

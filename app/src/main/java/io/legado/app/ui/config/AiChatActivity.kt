@@ -231,8 +231,10 @@ import io.legado.app.ui.widget.compose.toggleNgExpandedKey
 import io.legado.app.ui.widget.dialog.applyNgWindow
 import io.legado.app.ui.widget.dialog.PhotoDialog
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSideDrawerSurface
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeGradientBackground
@@ -3232,6 +3234,7 @@ private fun RikkaChatDrawer(
             .fillMaxHeight()
             .width(drawerWidth),
         shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
+        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
     ) {
         val drawerContentColor = drawerPrimaryContentColor()
         CompositionLocalProvider(LocalContentColor provides drawerContentColor) {
@@ -7435,7 +7438,10 @@ private fun AiChatContextPreviewSheet(
         contentColor = Color(baseSnapshot.colors.onSurface),
         shape = RectangleShape,
     ) {
-        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
+        NgBottomDrawerSurface(
+            modifier = Modifier.fillMaxWidth(),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -7533,7 +7539,8 @@ private fun AiChatMcpCapabilitySheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.68f)
+                .fillMaxHeight(0.68f),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             Column(
                 modifier = Modifier
@@ -7709,7 +7716,10 @@ private fun AiChatInputAttachmentSheet(
         contentColor = Color(baseSnapshot.colors.onSurface),
         shape = RectangleShape,
     ) {
-        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
+        NgBottomDrawerSurface(
+            modifier = Modifier.fillMaxWidth(),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -7761,7 +7771,7 @@ private fun AiChatAttachmentSheetSection(
                     onClick = { if (!loaded) onAdd(attachment) },
                     enabled = !loaded,
                     shape = RoundedCornerShape(18.dp),
-                    color = colorResource(R.color.ng_surface_card),
+                    color = ngDrawerContentCardColor(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(

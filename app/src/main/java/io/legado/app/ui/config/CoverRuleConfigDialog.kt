@@ -53,6 +53,8 @@ import io.legado.app.R
 import io.legado.app.constant.AppLog
 import io.legado.app.model.BookCover
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
 import io.legado.app.ui.design.components.compose.NgFormMultilineField
 import io.legado.app.ui.design.components.compose.NgFormMultilineFieldVariant
@@ -201,7 +203,10 @@ private fun CoverRuleDrawerContent(
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    NgBottomDrawerSurface(modifier = Modifier.fillMaxSize()) {
+    NgBottomDrawerSurface(
+        modifier = Modifier.fillMaxSize(),
+        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -215,7 +220,7 @@ private fun CoverRuleDrawerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                color = colorResource(R.color.ng_surface_card),
+                color = ngDrawerContentCardColor(),
                 contentColor = colorResource(R.color.ng_on_surface),
                 shape = RoundedCornerShape(18.dp),
                 border = BorderStroke(0.8.dp, colorResource(R.color.ng_card_stroke)),

@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
 import io.legado.app.ui.design.components.compose.NgLazyListFastScrollerVariant
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
@@ -140,6 +141,7 @@ internal fun TtsVoiceSelectionDrawerContent(
     state: TtsVoiceDrawerState,
     titleAction: TtsVoiceDrawerTitleAction? = null,
     enableLongPressPreview: Boolean = false,
+    contentCardStyle: NgDrawerContentCardStyle = NgDrawerContentCardStyle.LEGACY,
     onSelect: (TtsVoiceOption) -> Unit,
     onPreview: (TtsVoiceOption) -> Unit,
     onRetryFetch: (() -> Unit)? = null,
@@ -178,6 +180,7 @@ internal fun TtsVoiceSelectionDrawerContent(
         modifier = Modifier
             .fillMaxWidth()
             .height(drawerHeight),
+        contentCardStyle = contentCardStyle,
     ) {
         Column(
             modifier = Modifier

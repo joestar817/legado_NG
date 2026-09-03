@@ -56,9 +56,11 @@ import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgManagementLeadingIcon
 import io.legado.app.ui.design.components.compose.NgManagementListCard
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 
@@ -75,6 +77,7 @@ internal fun TtsEngineSelectionDrawerContent(
     engines: List<TtsEngineSetting>,
     selectedEngineId: String?,
     loading: Boolean = false,
+    contentCardStyle: NgDrawerContentCardStyle = NgDrawerContentCardStyle.LEGACY,
     onSelect: (TtsEngineSetting) -> Unit,
     onClear: (() -> Unit)? = null,
 ) {
@@ -97,6 +100,7 @@ internal fun TtsEngineSelectionDrawerContent(
         modifier = Modifier
             .fillMaxWidth()
             .height(drawerHeight),
+        contentCardStyle = contentCardStyle,
     ) {
         Column(
             modifier = Modifier
@@ -196,6 +200,7 @@ class TtsEngineSelectionSheet(
                         engines = drawerEngines,
                         selectedEngineId = selectedEngineId,
                         loading = drawerLoading,
+                        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
                         onSelect = { engine ->
                             onSelect(engine)
                             dismiss()
@@ -256,7 +261,7 @@ private fun TtsEngineSearchField(
             .fillMaxWidth()
             .height(42.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(colorResource(R.color.ng_surface_card))
+            .background(ngDrawerContentCardColor())
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

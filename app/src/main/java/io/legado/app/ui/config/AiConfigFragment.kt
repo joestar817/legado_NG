@@ -49,6 +49,7 @@ import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagStyle
 import io.legado.app.ui.design.components.NgStatusTagVariant
 import io.legado.app.ui.widget.TitleBar
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgListState
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.widget.dialog.CodeDialog
@@ -866,6 +867,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         dialog.setContentView(
             requireContext().createNgBottomDrawerComposeHost(
                 fillMaxHeight = true,
+                contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
             ) {
                 AiModelEditSheet(
                     model = model,
@@ -1966,7 +1968,10 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 (selectedProviderId.isBlank() || selectedModelId.isBlank()),
         )
         dialog.setContentView(
-            requireContext().createNgBottomDrawerComposeHost(fillMaxHeight = true) {
+            requireContext().createNgBottomDrawerComposeHost(
+                fillMaxHeight = true,
+                contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+            ) {
                 AiModelSelectionSheet(
                     state = sheetState,
                     onSelect = { providerId, modelId ->

@@ -69,6 +69,7 @@ import io.legado.app.ui.design.components.NgFilterChipGroupVariant
 import io.legado.app.ui.design.components.NgStatusTagStyle
 import io.legado.app.ui.design.components.NgStatusTagVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgFileSelectionCheckbox
 import io.legado.app.ui.design.components.compose.NgFileSelectionCheckboxVariant
 import io.legado.app.ui.design.components.compose.NgFilterChipGroup
@@ -363,7 +364,10 @@ private fun RuleImportDrawer(
     BackHandler(enabled = screen != RuleImportDrawerScreen.MAIN) {
         screen = RuleImportDrawerScreen.MAIN
     }
-    NgBottomDrawerSurface(modifier = Modifier.fillMaxSize()) {
+    NgBottomDrawerSurface(
+        modifier = Modifier.fillMaxSize(),
+        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()

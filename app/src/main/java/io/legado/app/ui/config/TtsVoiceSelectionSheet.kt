@@ -20,6 +20,7 @@ import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.help.tts.TtsVoice
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -95,6 +96,7 @@ class TtsVoiceSelectionSheet(
                         searchHint = searchHint.toString(),
                         emptyText = emptyText.toString(),
                         state = state,
+                        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
                         titleAction = titleAction?.let { (text, action) ->
                             TtsVoiceDrawerTitleAction(
                                 text = text.toString(),

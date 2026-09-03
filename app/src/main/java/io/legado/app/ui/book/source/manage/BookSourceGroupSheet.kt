@@ -45,6 +45,7 @@ import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgCompactDrawerHeader
 import io.legado.app.ui.design.components.compose.NgCompactDrawerSelectionItem
 import io.legado.app.ui.design.components.compose.NgCompactDrawerSelectionPanel
@@ -155,7 +156,10 @@ internal class BookSourceAddGroupSheet(
             )
         }
 
-        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
+        NgBottomDrawerSurface(
+            modifier = Modifier.fillMaxWidth(),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

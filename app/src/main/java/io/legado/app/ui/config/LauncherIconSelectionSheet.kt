@@ -38,6 +38,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.components.compose.NgLauncherIcon
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.theme.NgTheme
@@ -70,6 +72,7 @@ internal fun LauncherIconSelectionSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.48f),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             Column(
                 modifier = Modifier
@@ -130,7 +133,7 @@ private fun LauncherIconOption(
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 shape = RoundedCornerShape(18.dp),
-                color = colorResource(R.color.ng_surface_card),
+                color = ngDrawerContentCardColor(),
                 border = BorderStroke(
                     width = if (selected) 2.dp else 1.dp,
                     color = Color(

@@ -56,6 +56,7 @@ import io.legado.app.constant.AppLog
 import io.legado.app.data.appDb
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormActionRow
 import io.legado.app.ui.design.components.compose.NgFormField
@@ -177,6 +178,7 @@ private fun BookSourceGroupManageSheet(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = maxDrawerHeight),
+        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
     ) {
         Column(
             modifier = Modifier

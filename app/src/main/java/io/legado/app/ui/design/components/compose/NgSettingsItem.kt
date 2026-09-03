@@ -246,7 +246,7 @@ internal fun NgSettingsCardSurface(
     if (appearance == NgSettingsItemAppearance.SURFACE_CARD) {
         Surface(
             modifier = modifier,
-            color = colorResource(R.color.ng_surface_card),
+            color = ngDrawerContentCardColor(),
             contentColor = Color(snapshot.colors.onSurface),
             shape = shape,
             shadowElevation = 0.dp,

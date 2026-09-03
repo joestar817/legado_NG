@@ -32,6 +32,8 @@ import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.AiReasoningLevel
 import io.legado.app.lib.theme.accentColor
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
+import io.legado.app.ui.design.components.compose.NgDrawerDefaults
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
 import io.legado.app.ui.widget.dialog.createNgBottomDrawerViewHost
 import io.legado.app.utils.applyTint
@@ -79,7 +81,8 @@ object AiAssistantConfigUi {
             searchHint = context.getString(R.string.ai_search_model),
             title = context.getString(R.string.ai_model_select),
             showSearch = false,
-            compact = true
+            compact = true,
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         )
         val filters = AiModelSelectionFilters(context, sheet, assistantModelProviders())
         sheet.setScrollableContent { container, query, dialog ->
@@ -148,7 +151,7 @@ object AiAssistantConfigUi {
             )
             background = GradientDrawable().apply {
                 cornerRadius = 18.dpToPx(context).toFloat()
-                setColor(ContextCompat.getColor(context, R.color.ng_surface_card))
+                setColor(NgDrawerDefaults.adaptiveContentCardColor(context))
             }
         }
         val currentLabel = TextView(context).apply {
@@ -226,6 +229,7 @@ object AiAssistantConfigUi {
             context.createNgBottomDrawerViewHost(
                 contentView = root,
                 fillMaxHeight = false,
+                contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
             )
         )
         dialog.setOnShowListener {
@@ -291,7 +295,7 @@ object AiAssistantConfigUi {
             isFocusable = true
             background = GradientDrawable().apply {
                 cornerRadius = 18.dpToPx(context).toFloat()
-                setColor(ContextCompat.getColor(context, R.color.ng_surface_card))
+                setColor(NgDrawerDefaults.adaptiveContentCardColor(context))
             }
             setPadding(16.dpToPx(context), 14.dpToPx(context), 16.dpToPx(context), 14.dpToPx(context))
             addView(ImageView(context).apply {
@@ -378,6 +382,7 @@ object AiAssistantConfigUi {
             context.createNgBottomDrawerViewHost(
                 contentView = root,
                 fillMaxHeight = false,
+                contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
             )
         )
         dialog.setOnShowListener {
@@ -476,7 +481,7 @@ object AiAssistantConfigUi {
             isFocusable = true
             background = GradientDrawable().apply {
                 cornerRadius = 18.dpToPx(context).toFloat()
-                setColor(ContextCompat.getColor(context, R.color.ng_surface_card))
+                setColor(NgDrawerDefaults.adaptiveContentCardColor(context))
             }
             setPadding(14.dpToPx(context), 12.dpToPx(context), 14.dpToPx(context), 12.dpToPx(context))
             setOnClickListener {

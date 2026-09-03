@@ -231,7 +231,7 @@ fun NgExpandableActionMenu(
     } else {
         RoundedCornerShape(cornerRadius)
     }
-    val containerColor = menuContainerColor ?: colorResource(R.color.ng_surface_card)
+    val containerColor = menuContainerColor ?: ngDrawerContentCardColor()
 
     if (bottomPointerHeight > 0.dp) {
         NgBottomPointerExpandableActionMenu(
@@ -395,7 +395,7 @@ private fun NgDrillInExpandableActionMenu(
         offset = offset,
         modifier = modifier.width(width),
         shape = shape,
-        containerColor = menuContainerColor ?: colorResource(R.color.ng_surface_card),
+        containerColor = menuContainerColor ?: ngDrawerContentCardColor(),
         tonalElevation = 0.dp,
         shadowElevation = NgTheme.effects.overlayElevationDp.dp,
         properties = properties
@@ -500,7 +500,7 @@ private fun NgSideSlideExpandableActionMenu(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = shape,
-                    color = menuContainerColor ?: colorResource(R.color.ng_surface_card),
+                    color = menuContainerColor ?: ngDrawerContentCardColor(),
                     contentColor = Color(NgTheme.colors.onSurface),
                     border = BorderStroke(
                         width = if (NgTheme.snapshot.isEInk) 1.dp else 0.5.dp,
