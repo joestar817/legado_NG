@@ -24,6 +24,7 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.theme.elevation
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.transparentNavBar
+import io.legado.app.ui.design.theme.NgColorMath
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.utils.activity
 import io.legado.app.utils.setOnApplyWindowInsetsListenerCompat
@@ -185,7 +186,7 @@ class TitleBar @JvmOverloads constructor(
             }
 
             applyConfiguredBackground()
-            applyTopBarContentColor()
+            refreshContentColor()
 
             stateListAnimator = null
         }
@@ -197,7 +198,7 @@ class TitleBar @JvmOverloads constructor(
         attachToActivity()
         if (!isInEditMode) {
             // ActionBar 会在 attachToActivity() 时才创建返回图标，因此需在挂载后重新应用。
-            applyCurrentTopBarContentColor()
+            refreshContentColor()
         }
     }
 
@@ -229,11 +230,27 @@ class TitleBar @JvmOverloads constructor(
         toolbar.findViewById<TabLayout>(R.id.tab_layout)?.setTabTextColors(color, color)
     }
 
-    private fun applyCurrentTopBarContentColor() {
-        val colors = NgThemeResolver.resolve(context).colors
-        applyTopBarContentColor(
-            if (temporarySolidSurface) colors.onSurface else colors.onTopBar
-        )
+    internal val currentContentColor: Int
+        get() {
+            val colors = NgThemeResolver.resolve(context).colors
+            return when {
+                temporarySolidSurface -> NgColorMath.readableContentColor(
+                    background = colors.surface,
+                    preferred = colors.onSurface,
+                )
+
+                AppConfig.isEInkMode || opaque || !context.transparentNavBar ->
+                    NgColorMath.readableContentColor(
+                        background = context.primaryColor,
+                        preferred = colors.onTopBar,
+                    )
+
+                else -> colors.onTopBar
+            }
+        }
+
+    internal fun refreshContentColor() {
+        applyTopBarContentColor(currentContentColor)
     }
 
     /**
@@ -249,7 +266,7 @@ class TitleBar @JvmOverloads constructor(
         } else {
             applyConfiguredBackground()
         }
-        applyCurrentTopBarContentColor()
+        refreshContentColor()
     }
 
     fun setNavigationOnClickListener(clickListener: ((View) -> Unit)) {

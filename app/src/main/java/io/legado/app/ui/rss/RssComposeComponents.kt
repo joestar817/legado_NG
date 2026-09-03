@@ -45,6 +45,7 @@ import io.legado.app.help.glide.OkHttpModelLoader
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
+import io.legado.app.ui.design.theme.NgColorMath
 import io.legado.app.ui.design.theme.NgTheme
 
 class RssComposeBinding private constructor(
@@ -109,8 +110,13 @@ private fun RssPageTopBar(
     onAction: (Int) -> Unit
 ) {
     val menuState = remember { NgPopupToggleState() }
-    val contentColor = Color(NgTheme.colors.onTopBar)
     val containerColor = Color(NgTheme.colors.topBarContainer)
+    val contentColor = Color(
+        NgColorMath.readableContentColor(
+            background = NgTheme.colors.topBarContainer,
+            preferred = NgTheme.colors.onTopBar,
+        )
+    )
     val endActionSlotCount = when (actions.size) {
         0, 1 -> 1
         else -> 2
@@ -131,6 +137,7 @@ private fun RssPageTopBar(
                 iconRes = R.drawable.ic_arrow_back,
                 description = stringResource(R.string.back),
                 onClick = onBack,
+                tint = contentColor,
                 modifier = Modifier.align(Alignment.CenterStart),
             )
             Text(
@@ -153,18 +160,21 @@ private fun RssPageTopBar(
                         iconRes = actions.first().iconRes,
                         description = stringResource(actions.first().titleRes),
                         onClick = { onAction(actions.first().id) },
+                        tint = contentColor,
                     )
                     else -> {
                         RssToolbarIconButton(
                             iconRes = actions.first().iconRes,
                             description = stringResource(actions.first().titleRes),
                             onClick = { onAction(actions.first().id) },
+                            tint = contentColor,
                         )
                         Box {
                             RssToolbarIconButton(
                                 iconRes = R.drawable.ic_grid_menu,
                                 description = stringResource(R.string.menu),
                                 onClick = menuState::onAnchorClick,
+                                tint = contentColor,
                             )
                             NgExpandableActionMenu(
                                 expanded = menuState.expanded,
@@ -196,6 +206,7 @@ fun RssToolbarIconButton(
     @DrawableRes iconRes: Int,
     description: String,
     onClick: () -> Unit,
+    tint: Color,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -208,7 +219,7 @@ fun RssToolbarIconButton(
         Icon(
             painter = painterResource(iconRes),
             contentDescription = description,
-            tint = Color(NgTheme.colors.onTopBar),
+            tint = tint,
             modifier = Modifier.size(18.dp)
         )
     }

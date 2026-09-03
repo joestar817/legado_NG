@@ -206,7 +206,11 @@ abstract class BaseActivity<VB : ViewBinding>(
 
     final override fun onCreateOptionsMenu(menu: Menu): Boolean {
         val bool = onCompatCreateOptionsMenu(menu)
-        if (transparentNavBar) {
+        val titleBar = findViewById<TitleBar>(R.id.title_bar)
+        val titleBarContentColor = titleBar?.currentContentColor
+        if (titleBarContentColor != null) {
+            menu.applyTint(this, titleBarContentColor)
+        } else if (transparentNavBar) {
             menu.applyTint(this, NgThemeResolver.resolve(this).colors.onTopBar)
         } else {
             menu.applyTint(this, toolBarTheme)
@@ -223,6 +227,7 @@ abstract class BaseActivity<VB : ViewBinding>(
                 onItemClick = { onCompatOptionsItemSelected(it) }
             )
         }
+        titleBar?.refreshContentColor()
         return bool
     }
 

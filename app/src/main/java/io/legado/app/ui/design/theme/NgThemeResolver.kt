@@ -483,6 +483,16 @@ internal object NgColorMath {
         }
     }
 
+    fun readableContentColor(
+        @ColorInt background: Int,
+        @ColorInt preferred: Int,
+        minimumContrast: Double = 4.5,
+    ): Int = if (contrastRatio(preferred, background) >= minimumContrast) {
+        preferred
+    } else {
+        contentColorFor(background)
+    }
+
     fun isLight(@ColorInt color: Int): Boolean = luminance(color) >= 0.5
 
     fun contrastRatio(@ColorInt first: Int, @ColorInt second: Int): Double {

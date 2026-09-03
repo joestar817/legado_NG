@@ -116,6 +116,30 @@ class NgThemeResolverTest {
         }
     }
 
+    @Test
+    fun unreadablePreferredContentFallsBackToContrastingColor() {
+        val white = 0xFFFFFFFF.toInt()
+
+        val contentColor = NgColorMath.readableContentColor(
+            background = white,
+            preferred = white,
+        )
+
+        assertEquals(NgColorMath.contentColorFor(white), contentColor)
+        assertTrue(NgColorMath.contrastRatio(contentColor, white) >= 4.5)
+    }
+
+    @Test
+    fun readablePreferredContentIsPreserved() {
+        val containerColor = 0xFF1565C0.toInt()
+        val preferredContentColor = 0xFFFFFFFF.toInt()
+
+        assertEquals(
+            preferredContentColor,
+            NgColorMath.readableContentColor(containerColor, preferredContentColor),
+        )
+    }
+
     private fun lightInput() = NgLegacyThemeInput(
         primaryColor = 0xFF795548.toInt(),
         accentColor = 0xFFF78E66.toInt(),
