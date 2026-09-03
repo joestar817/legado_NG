@@ -480,7 +480,7 @@ private fun MultiRoleEngineCard(
             .fillMaxWidth()
             .heightIn(min = 70.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(colorResource(R.color.ng_surface_card))
+            .background(Color(NgTheme.colors.cardContainer).copy(alpha = 1f))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 9.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
