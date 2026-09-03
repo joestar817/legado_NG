@@ -114,4 +114,45 @@ class ReadFloatingAppearanceConfigTest {
             ReadBookConfig.Config().curReadFloatingColorStyle(),
         )
     }
+
+    @Test
+    fun globalFollowOverridesOnlyEffectiveColorSourceAndStyle() {
+        val effective = resolveEffectiveReadFloatingColor(
+            isEInk = false,
+            globallyFollowsApplication = true,
+            globalColorStyle = ReadFloatingColorStyle.EXPRESSIVE,
+            presetSeed = 0xFFCC8844.toInt(),
+            presetFollowsApplication = false,
+            presetColorStyle = ReadFloatingColorStyle.FRUIT_SALAD,
+        )
+
+        assertEquals(0, effective.seed)
+        assertEquals(true, effective.followsApplication)
+        assertEquals(ReadFloatingColorStyle.EXPRESSIVE, effective.colorStyle)
+    }
+
+    @Test
+    fun disablingGlobalFollowRestoresPresetColorSelection() {
+        val effective = resolveEffectiveReadFloatingColor(
+            isEInk = false,
+            globallyFollowsApplication = false,
+            globalColorStyle = ReadFloatingColorStyle.EXPRESSIVE,
+            presetSeed = 0xFFCC8844.toInt(),
+            presetFollowsApplication = false,
+            presetColorStyle = ReadFloatingColorStyle.FRUIT_SALAD,
+        )
+
+        assertEquals(0xFFCC8844.toInt(), effective.seed)
+        assertEquals(false, effective.followsApplication)
+        assertEquals(ReadFloatingColorStyle.FRUIT_SALAD, effective.colorStyle)
+    }
+
+    @Test
+    fun globalColorStyleUsesStableStorageValues() {
+        assertEquals(
+            ReadFloatingColorStyle.FRUIT_SALAD,
+            ReadFloatingColorStyle.fromStorage("fruitSalad"),
+        )
+        assertEquals(ReadFloatingColorStyle.VIBRANT, ReadFloatingColorStyle.fromStorage("unknown"))
+    }
 }

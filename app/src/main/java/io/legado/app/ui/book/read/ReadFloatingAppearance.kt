@@ -18,7 +18,7 @@ internal object ReadFloatingAppearanceState {
         ReadBookConfig.durConfig.curReadFloatingPrimaryStrength()
     )
     private val colorStyleState = mutableStateOf(
-        ReadBookConfig.durConfig.curReadFloatingColorStyle()
+        ReadBookConfig.effectiveReadFloatingColor().colorStyle
     )
 
     val transparencyPercent: Int
@@ -48,7 +48,7 @@ internal object ReadFloatingAppearanceState {
         update(
             transparencyPercent = ReadBookConfig.durConfig.curReadFloatingTransparency(),
             primaryStrengthPercent = ReadBookConfig.durConfig.curReadFloatingPrimaryStrength(),
-            colorStyle = ReadBookConfig.durConfig.curReadFloatingColorStyle(),
+            colorStyle = ReadBookConfig.effectiveReadFloatingColor().colorStyle,
         )
     }
 }

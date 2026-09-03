@@ -101,15 +101,17 @@ object ReadDrawerStyle {
     fun themeSnapshot(
         context: Context,
         primaryStrengthPercent: Int = ReadBookConfig.durConfig.curReadFloatingPrimaryStrength(),
-        colorStyle: ReadFloatingColorStyle = ReadBookConfig.durConfig.curReadFloatingColorStyle(),
+        colorStyle: ReadFloatingColorStyle =
+            ReadBookConfig.effectiveReadFloatingColor().colorStyle,
     ): NgThemeSnapshot = if (
         NgThemeModeStore.current(context) == NgThemePresentationMode.EINK
     ) {
         NgThemeResolver.resolve(context)
     } else {
-        val seed = ReadBookConfig.durConfig.curReadFloatingSeed()
+        val effectiveColor = ReadBookConfig.effectiveReadFloatingColor()
+        val seed = effectiveColor.seed
         val base = if (
-            ReadBookConfig.durConfig.curReadFloatingFollowsApplication() &&
+            effectiveColor.followsApplication &&
             NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT
         ) {
             NgThemeResolver.resolve(context)

@@ -13,6 +13,7 @@ import io.legado.app.help.DirectLinkUpload
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadHighlightRuleStore
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.model.BookCover
@@ -164,6 +165,10 @@ object Backup {
         }
         GSON.toJson(ReadBookConfig.shareConfig).let {
             FileUtils.createFileIfNotExist(backupPath + File.separator + ReadBookConfig.shareConfigFileName)
+                .writeText(it)
+        }
+        GSON.toJson(ReadHighlightRuleStore.allRules()).let {
+            FileUtils.createFileIfNotExist(backupPath + File.separator + ReadHighlightRuleStore.fileName)
                 .writeText(it)
         }
         GSON.toJson(ThemeConfig.configList).let {

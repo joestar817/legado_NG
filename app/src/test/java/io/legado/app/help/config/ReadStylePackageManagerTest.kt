@@ -183,19 +183,37 @@ class ReadStylePackageManagerTest {
     }
 
     @Test
-    fun `rejects arc package instead of partially importing it`() {
+    fun `imports arc package and maps compatible fields`() {
         val parent = temporaryFolder.newFolder("arc-packages")
         val zip = zipOf(
-            "readConfig.json" to """{"name":"arc","paperEffect":true}""".toByteArray(),
+            "readConfig.json" to """
+                {
+                  "name":"arc",
+                  "paperEffect":true,
+                  "readScrollFollowBackground":true,
+                  "titleMode":3,
+                  "underlineMode":2,
+                  "underlineStrokeWidth":0.5,
+                  "underlineDashLength":3.0
+                }
+            """.trimIndent().toByteArray(),
         )
 
-        val error = runCatching {
-            ReadStylePackageManager.import(ByteArrayInputStream(zip), "arc-hash", parent)
-        }.exceptionOrNull()
+        val result = ReadStylePackageManager.import(
+            ByteArrayInputStream(zip),
+            "arc-hash",
+            parent,
+        )
 
-        assertTrue(error is IllegalArgumentException)
-        assertTrue(error?.message.orEmpty().contains("暂不支持 ARC"))
-        assertFalse(File(parent, "arc-hash").exists())
+        assertEquals("arc-read-style", result.sourceFormat)
+        assertEquals(1, result.config.titleMode)
+        assertTrue(result.config.underline)
+        assertTrue(result.config.dottedLine)
+        assertEquals(1, result.config.underlineHeight)
+        assertEquals(3f, result.config.dottedBase, 0f)
+        assertEquals(3f, result.config.dottedRatio, 0f)
+        assertTrue(result.warnings.any { it.contains("纸张质感") })
+        assertTrue(result.warnings.any { it.contains("滚动背景跟随") })
     }
 
     @Test

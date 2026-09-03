@@ -9,6 +9,8 @@ import io.legado.app.data.entities.RssSource
 import io.legado.app.data.entities.TxtTocRule
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadHighlightRule
+import io.legado.app.help.config.ReadHighlightRuleStore
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.model.BookCover
@@ -76,6 +78,15 @@ object DefaultData {
                 .readBytes()
         )
         GSON.fromJsonArray<ReadBookConfig.Config>(json).getOrNull()
+            ?: emptyList()
+    }
+
+    val readHighlightRules: List<ReadHighlightRule> by lazy {
+        val json = String(
+            appCtx.assets.open("defaultData${File.separator}${ReadHighlightRuleStore.fileName}")
+                .readBytes()
+        )
+        GSON.fromJsonArray<ReadHighlightRule>(json).getOrNull()
             ?: emptyList()
     }
 

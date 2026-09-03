@@ -213,6 +213,8 @@ internal object BackupRestorePolicy {
 
     fun shouldRestoreReadConfigs(isMd3Backup: Boolean): Boolean = !isMd3Backup
 
+    fun shouldRestoreHighlightRules(isMd3Backup: Boolean): Boolean = !isMd3Backup
+
     fun shouldRestorePreference(key: String, isMd3Backup: Boolean): Boolean {
         if (
             key == PreferKey.themeMode ||

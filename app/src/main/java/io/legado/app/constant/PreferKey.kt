@@ -179,6 +179,8 @@ object PreferKey {
     const val ngDrawerCornerRadiusDp = "ngDrawerCornerRadiusDp"
     const val textSelectAble = "selectText"
     const val shareLayout = "shareLayout"
+    const val readFloatingFollowAppGlobally = "readFloatingFollowAppGlobally.v1"
+    const val readFloatingGlobalColorStyle = "readFloatingGlobalColorStyle.v1"
     const val comicStyleSelect = "comicStyleSelect"
     const val readStyleSelect = "readStyleSelect"
     const val readNightTheme = "readNightTheme"

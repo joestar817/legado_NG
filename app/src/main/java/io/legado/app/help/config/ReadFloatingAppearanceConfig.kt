@@ -3,18 +3,56 @@ package io.legado.app.help.config
 import com.google.gson.annotations.SerializedName
 import kotlin.math.pow
 
-enum class ReadFloatingColorStyle {
+enum class ReadFloatingColorStyle(val storageValue: String) {
     @SerializedName("vibrant")
-    VIBRANT,
+    VIBRANT("vibrant"),
 
     @SerializedName("expressive")
-    EXPRESSIVE,
+    EXPRESSIVE("expressive"),
 
     @SerializedName("rainbow")
-    RAINBOW,
+    RAINBOW("rainbow"),
 
     @SerializedName("fruitSalad")
-    FRUIT_SALAD,
+    FRUIT_SALAD("fruitSalad");
+
+    companion object {
+        fun fromStorage(value: String?): ReadFloatingColorStyle =
+            entries.firstOrNull { it.storageValue == value } ?: VIBRANT
+    }
+}
+
+internal data class EffectiveReadFloatingColor(
+    val seed: Int,
+    val followsApplication: Boolean,
+    val colorStyle: ReadFloatingColorStyle,
+)
+
+internal fun resolveEffectiveReadFloatingColor(
+    isEInk: Boolean,
+    globallyFollowsApplication: Boolean,
+    globalColorStyle: ReadFloatingColorStyle,
+    presetSeed: Int,
+    presetFollowsApplication: Boolean,
+    presetColorStyle: ReadFloatingColorStyle,
+): EffectiveReadFloatingColor = when {
+    isEInk -> EffectiveReadFloatingColor(
+        seed = 0,
+        followsApplication = false,
+        colorStyle = presetColorStyle,
+    )
+
+    globallyFollowsApplication -> EffectiveReadFloatingColor(
+        seed = 0,
+        followsApplication = true,
+        colorStyle = globalColorStyle,
+    )
+
+    else -> EffectiveReadFloatingColor(
+        seed = presetSeed,
+        followsApplication = presetFollowsApplication,
+        colorStyle = presetColorStyle,
+    )
 }
 
 object ReadFloatingAppearanceConfig {

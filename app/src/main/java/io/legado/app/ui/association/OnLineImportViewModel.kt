@@ -57,8 +57,12 @@ class OnLineImportViewModel(app: Application) : BaseAssociationViewModel(app) {
     fun importReadConfig(bytes: ByteArray, finally: (title: String, msg: String) -> Unit) {
         execute {
             val result = ReadBookConfig.importWithReport(bytes)
-            ReadBookConfig.appendImportedConfig(result.config)
-            result.warnings
+            val appendResult = ReadBookConfig.appendImportedConfigWithReport(result.config)
+            result.warnings + buildList {
+                appendResult.highlightRuleMerge?.let {
+                    add("已合并 ${it.addedCount} 条高亮规则，跳过 ${it.skippedCount} 条重复规则")
+                }
+            }
         }.onSuccess {
             val warningText = it.takeIf { warnings -> warnings.isNotEmpty() }
                 ?.joinToString(prefix = "\n", separator = "\n")

@@ -1,11 +1,12 @@
 package io.legado.app.ui.book.read.config
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -32,22 +34,23 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -76,7 +79,8 @@ import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.components.compose.ngSliderStepValue
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.config.NgInlineColorPicker
-import kotlin.math.abs
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private val StandardPageHeight = 336.dp
 private val EditorPageHeight = 500.dp
@@ -98,6 +102,12 @@ internal enum class ReadStylePage {
     HIGHLIGHT_TEXT_COLOR,
     HIGHLIGHT_BACKGROUND_COLOR,
     HIGHLIGHT_UNDERLINE_COLOR,
+}
+
+internal enum class HighlightSelectionMode {
+    NONE,
+    EXPORT,
+    DELETE,
 }
 
 internal data class FullLineUnderlineUiState(
@@ -141,12 +151,15 @@ internal data class ReadStyleUiState(
     val canRestoreCurrentDefault: Boolean,
     val highlightSummary: String,
     val shareLayout: Boolean,
+    val globalFloatingFollowApp: Boolean,
     val textSize: Int,
     val letterSpacing: Float,
     val lineSpacingExtra: Int,
     val paragraphSpacing: Int,
     val pageAnim: Int,
     val highlightRules: List<ReadHighlightRule>,
+    val highlightSelectionMode: HighlightSelectionMode,
+    val selectedHighlightIds: Set<String>,
     val editorMode: Int,
     val editorModeLabel: String,
     val editorPreviewBackground: ImageBitmap?,
@@ -184,7 +197,15 @@ internal data class ReadStyleActions(
     val onRestoreCurrentPreset: () -> Unit,
     val onRestoreAllPresets: () -> Unit,
     val onShareLayoutChanged: (Boolean) -> Unit,
-    val onOpenHighlights: () -> Unit,
+    val onGlobalFloatingFollowAppChanged: (Boolean) -> Unit,
+    val onImportHighlights: () -> Unit,
+    val onExportHighlights: () -> Unit,
+    val onRestoreBuiltInHighlights: () -> Unit,
+    val onDeleteHighlights: () -> Unit,
+    val onToggleHighlightSelection: (String) -> Unit,
+    val onToggleAllHighlightSelection: () -> Unit,
+    val onCancelHighlightSelection: () -> Unit,
+    val onConfirmHighlightSelection: () -> Unit,
     val onBack: () -> Unit,
     val onPresetNameChanged: (String) -> Unit,
     val onTextColorChanged: (Int) -> Unit,
@@ -230,7 +251,7 @@ internal data class ReadStyleActions(
     val onSaveHighlight: () -> Unit,
     val onDeleteHighlight: () -> Unit,
     val onHighlightEnabledChanged: (Int, Boolean) -> Unit,
-    val onMoveHighlight: (Int, Int) -> Unit,
+    val onReorderHighlights: (List<ReadHighlightRule>) -> Unit,
 )
 
 @Composable
@@ -243,7 +264,14 @@ internal fun ReadStyleScreen(
 ) {
     val indicatorColor = Color(NgTheme.colors.primary)
     val selectedContentColor = Color(NgTheme.colors.onPrimary)
-    BackHandler(enabled = page !in setOf(ReadStylePage.PRESET, ReadStylePage.ADJUST)) {
+    val rootPages = setOf(
+        ReadStylePage.PRESET,
+        ReadStylePage.ADJUST,
+        ReadStylePage.HIGHLIGHT,
+    )
+    BackHandler(
+        enabled = page !in rootPages || state.highlightSelectionMode != HighlightSelectionMode.NONE,
+    ) {
         actions.onBack()
     }
     NgGlassSurface(
@@ -258,19 +286,28 @@ internal fun ReadStyleScreen(
                 .fillMaxWidth()
                 .padding(top = 12.dp, bottom = 12.dp),
         ) {
-            if (page == ReadStylePage.PRESET || page == ReadStylePage.ADJUST) {
+            if (page in rootPages) {
                 ReadStyleDock(
                     labels = listOf(
                         stringResource(R.string.read_style_tab_preset),
                         stringResource(R.string.read_style_tab_adjust),
+                        stringResource(R.string.read_style_tab_highlight),
                     ),
-                    selectedIndex = if (page == ReadStylePage.PRESET) 0 else 1,
+                    selectedIndex = when (page) {
+                        ReadStylePage.PRESET -> 0
+                        ReadStylePage.ADJUST -> 1
+                        else -> 2
+                    },
                     contentColor = contentColor,
                     selectedContainerColor = indicatorColor,
                     selectedContentColor = selectedContentColor,
                     onSelected = { index ->
                         actions.onPageSelected(
-                            if (index == 0) ReadStylePage.PRESET else ReadStylePage.ADJUST
+                            when (index) {
+                                0 -> ReadStylePage.PRESET
+                                1 -> ReadStylePage.ADJUST
+                                else -> ReadStylePage.HIGHLIGHT
+                            }
                         )
                     },
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -306,12 +343,19 @@ internal fun ReadStyleScreen(
                     )
                 }
 
-                ReadStylePage.HIGHLIGHT -> HighlightPage(
-                    state = state,
-                    contentColor = contentColor,
-                    accentColor = accentColor,
-                    actions = actions,
-                )
+                ReadStylePage.HIGHLIGHT -> Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(StandardPageHeight)
+                        .padding(top = 8.dp),
+                ) {
+                    HighlightPage(
+                        state = state,
+                        contentColor = contentColor,
+                        accentColor = indicatorColor,
+                        actions = actions,
+                    )
+                }
 
                 ReadStylePage.EDIT -> EditorPage(
                     state = state,
@@ -430,12 +474,12 @@ private fun PresetPage(
         onCheckedChange = actions.onShareLayoutChanged,
     )
     ReadDivider(contentColor)
-    PresetNavigationRow(
-        title = stringResource(R.string.read_highlight_rules),
-        summary = state.highlightSummary,
-        iconRes = R.drawable.ic_edit,
+    PresetSwitchRow(
+        title = stringResource(R.string.read_style_global_follow_app_color),
+        iconRes = R.drawable.ic_cfg_theme,
+        checked = state.globalFloatingFollowApp,
         contentColor = contentColor,
-        onClick = actions.onOpenHighlights,
+        onCheckedChange = actions.onGlobalFloatingFollowAppChanged,
     )
     ReadDivider(contentColor)
     PresetRestoreAllRow(
@@ -555,12 +599,14 @@ private fun PresetAction(
     contentColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
+    val displayedColor = contentColor.copy(alpha = if (enabled) 1f else 0.38f)
     Column(
         modifier = modifier
             .fillMaxHeight()
             .clip(RoundedCornerShape(14.dp))
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -568,10 +614,10 @@ private fun PresetAction(
             painter = painterResource(iconRes),
             contentDescription = null,
             modifier = Modifier.size(22.dp),
-            tint = contentColor,
+            tint = displayedColor,
         )
         Spacer(Modifier.height(3.dp))
-        Text(text = label, color = contentColor, fontSize = 12.sp, lineHeight = 14.sp)
+        Text(text = label, color = displayedColor, fontSize = 12.sp, lineHeight = 14.sp)
     }
 }
 
@@ -607,52 +653,6 @@ private fun PresetSwitchRow(
             checked = checked,
             onCheckedChange = onCheckedChange,
             modifier = Modifier.size(width = 52.dp, height = 36.dp),
-        )
-    }
-}
-
-@Composable
-private fun PresetNavigationRow(
-    title: String,
-    summary: String,
-    iconRes: Int,
-    contentColor: Color,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            modifier = Modifier.size(25.dp),
-            tint = contentColor,
-        )
-        Text(
-            text = title,
-            modifier = Modifier.padding(start = 14.dp),
-            color = contentColor,
-            fontSize = 15.sp,
-        )
-        Text(
-            text = summary,
-            modifier = Modifier.padding(start = 10.dp).weight(1f),
-            color = contentColor.copy(alpha = 0.62f),
-            fontSize = 13.sp,
-            textAlign = TextAlign.End,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Icon(
-            painter = painterResource(R.drawable.ic_chevron_right_20),
-            contentDescription = null,
-            modifier = Modifier.padding(start = 6.dp).size(20.dp),
-            tint = contentColor,
         )
     }
 }
@@ -1031,7 +1031,8 @@ private fun EditorFloatingSection(
 ) {
     val selectedContentColor = Color(NgTheme.colors.onPrimary)
     val sourceShape = RoundedCornerShape(10.dp)
-    val fromBackground = state.editorFloatingColorFromBackground
+    val globallyFollowsApplication = state.globalFloatingFollowApp
+    val fromBackground = !globallyFollowsApplication && state.editorFloatingColorFromBackground
     val hasSample = state.editorFloatingColorSeed != 0
     val displayedColor = if (hasSample) {
         state.editorFloatingColorSeed
@@ -1060,6 +1061,7 @@ private fun EditorFloatingSection(
             selectedContentColor = selectedContentColor,
             onClick = { actions.onFloatingColorSourceChanged(false) },
             modifier = Modifier.weight(1f),
+            enabled = !globallyFollowsApplication,
         )
         FloatingSourceOption(
             label = stringResource(R.string.read_style_floating_color_background),
@@ -1069,11 +1071,24 @@ private fun EditorFloatingSection(
             selectedContentColor = selectedContentColor,
             onClick = { actions.onFloatingColorSourceChanged(true) },
             modifier = Modifier.weight(1f),
+            enabled = !globallyFollowsApplication,
+        )
+    }
+
+    if (globallyFollowsApplication) {
+        Text(
+            text = stringResource(R.string.read_style_global_follow_app_color_managed),
+            modifier = Modifier.padding(top = 6.dp),
+            color = contentColor.copy(alpha = 0.62f),
+            fontSize = 11.sp,
         )
     }
 
     Text(
-        text = stringResource(R.string.read_style_floating_color_style),
+        text = stringResource(
+            if (globallyFollowsApplication) R.string.read_style_global_color_style
+            else R.string.read_style_floating_color_style
+        ),
         modifier = Modifier.padding(top = 12.dp, bottom = 7.dp),
         color = contentColor,
         fontSize = 15.sp,
@@ -1173,6 +1188,7 @@ private fun FloatingSourceOption(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     fontSize: androidx.compose.ui.unit.TextUnit = 14.sp,
+    enabled: Boolean = true,
 ) {
     Box(
         modifier = modifier
@@ -1181,12 +1197,14 @@ private fun FloatingSourceOption(
             .then(
                 if (selected) Modifier.background(selectedContainerColor) else Modifier
             )
-            .clickable(role = Role.RadioButton, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.RadioButton, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            color = if (selected) selectedContentColor else contentColor,
+            color = (if (selected) selectedContentColor else contentColor).copy(
+                alpha = if (enabled || selected) 1f else 0.42f
+            ),
             fontSize = fontSize,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
         )
@@ -1661,176 +1679,357 @@ private fun HighlightPage(
     accentColor: Color,
     actions: ReadStyleActions,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(68.dp)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .clickable(role = Role.Button) {
-                    actions.onPageSelected(ReadStylePage.PRESET)
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_arrow_back),
-                contentDescription = stringResource(R.string.back),
-                modifier = Modifier.size(24.dp),
-                tint = contentColor,
-            )
+    val selectionMode = state.highlightSelectionMode
+    val selecting = selectionMode != HighlightSelectionMode.NONE
+    var orderedRules by remember(state.highlightRules) { mutableStateOf(state.highlightRules) }
+    val listState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        if (!selecting && from.index in orderedRules.indices && to.index in orderedRules.indices) {
+            orderedRules = orderedRules.toMutableList().apply {
+                add(to.index, removeAt(from.index))
+            }
         }
-        Column(
-            modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    }
+    val allSelected = orderedRules.isNotEmpty() &&
+        orderedRules.all { it.id in state.selectedHighlightIds }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = stringResource(R.string.read_highlight_rules),
+                text = stringResource(
+                    if (selecting) R.string.read_highlight_select_rules
+                    else R.string.read_highlight_rules
+                ),
+                modifier = Modifier.weight(1f),
                 color = contentColor,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "${state.selectedPresetName} · ${state.highlightSummary}",
+                text = if (selecting) {
+                    stringResource(
+                        R.string.read_highlight_selected_summary,
+                        state.selectedHighlightIds.size,
+                        orderedRules.size,
+                    )
+                } else {
+                    state.highlightSummary
+                },
                 color = contentColor.copy(alpha = 0.65f),
                 fontSize = 12.sp,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(
-            text = stringResource(R.string.create_style),
-            modifier = Modifier
-                .width(64.dp)
-                .height(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .clickable(role = Role.Button, onClick = actions.onCreateHighlight)
-                .padding(top = 14.dp),
-            color = accentColor,
-            fontSize = 14.sp,
-            textAlign = TextAlign.Center,
-        )
-    }
 
-    if (state.highlightRules.isEmpty()) {
-        Box(
-            modifier = Modifier.fillMaxWidth().height(120.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.empty),
-                color = contentColor.copy(alpha = 0.62f),
-                fontSize = 14.sp,
+        if (selecting) {
+            HighlightSelectionDock(
+                mode = selectionMode,
+                selectedCount = state.selectedHighlightIds.size,
+                allSelected = allSelected,
+                contentColor = contentColor,
+                accentColor = accentColor,
+                onCancel = actions.onCancelHighlightSelection,
+                onToggleAll = actions.onToggleAllHighlightSelection,
+                onConfirm = actions.onConfirmHighlightSelection,
+            )
+        } else {
+            HighlightManagementDock(
+                contentColor = contentColor,
+                hasRules = orderedRules.isNotEmpty(),
+                onCreate = actions.onCreateHighlight,
+                onImport = actions.onImportHighlights,
+                onExport = actions.onExportHighlights,
+                onRestore = actions.onRestoreBuiltInHighlights,
+                onDelete = actions.onDeleteHighlights,
             )
         }
-    } else {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 360.dp)
-                .padding(horizontal = 12.dp),
-        ) {
-            itemsIndexed(
-                items = state.highlightRules,
-                key = { _, item -> item.id },
-            ) { index, item ->
-                HighlightRuleRow(
-                    index = index,
-                    item = item,
-                    itemCount = state.highlightRules.size,
-                    contentColor = contentColor,
-                    onClick = { actions.onEditHighlight(index) },
-                    onEnabledChanged = { enabled ->
-                        actions.onHighlightEnabledChanged(index, enabled)
-                    },
-                    onMove = actions.onMoveHighlight,
+
+        if (orderedRules.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.empty),
+                    color = contentColor.copy(alpha = 0.62f),
+                    fontSize = 14.sp,
                 )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+                state = listState,
+            ) {
+                itemsIndexed(
+                    items = orderedRules,
+                    key = { _, item -> item.id },
+                ) { index, item ->
+                    ReorderableItem(
+                        state = reorderState,
+                        key = item.id,
+                    ) { isDragging ->
+                        val sortDescription = stringResource(R.string.sort)
+                        HighlightRuleRow(
+                            item = item,
+                            contentColor = contentColor,
+                            selected = item.id in state.selectedHighlightIds,
+                            selectionMode = selecting,
+                            isDragging = isDragging,
+                            dragHandleModifier = if (!selecting && orderedRules.size > 1) {
+                                Modifier.draggableHandle(
+                                    onDragStopped = {
+                                        actions.onReorderHighlights(orderedRules)
+                                    },
+                                )
+                            } else {
+                                Modifier
+                            },
+                            sortDescription = sortDescription,
+                            onClick = {
+                                if (selecting) actions.onToggleHighlightSelection(item.id)
+                                else actions.onEditHighlight(index)
+                            },
+                            onSelectedChanged = {
+                                actions.onToggleHighlightSelection(item.id)
+                            },
+                            onEnabledChanged = { enabled ->
+                                actions.onHighlightEnabledChanged(index, enabled)
+                            },
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun HighlightRuleRow(
-    index: Int,
-    item: ReadHighlightRule,
-    itemCount: Int,
+private fun HighlightManagementDock(
     contentColor: Color,
-    onClick: () -> Unit,
-    onEnabledChanged: (Boolean) -> Unit,
-    onMove: (Int, Int) -> Unit,
+    hasRules: Boolean,
+    onCreate: () -> Unit,
+    onImport: () -> Unit,
+    onExport: () -> Unit,
+    onRestore: () -> Unit,
+    onDelete: () -> Unit,
 ) {
-    val itemHeight = 60.dp
-    val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
-    var dragOffset by remember(item.id) { mutableFloatStateOf(0f) }
-    var currentIndex by remember(item.id) { mutableIntStateOf(index) }
+    val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(itemHeight)
-            .clickable(role = Role.Button, onClick = onClick),
+            .padding(horizontal = PresetVisibleHorizontalInset, vertical = 4.dp)
+            .height(56.dp)
+            .clip(shape)
+            .background(Color(NgTheme.colors.surface).copy(alpha = 0.24f))
+            .border(0.7.dp, contentColor.copy(alpha = 0.10f), shape)
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_drag_handle),
-            contentDescription = stringResource(R.string.sort),
-            modifier = Modifier
-                .size(40.dp)
-                .padding(9.dp)
-                .pointerInput(item.id, itemCount, itemHeightPx) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = {
-                            currentIndex = index
-                            dragOffset = 0f
-                        },
-                        onDragEnd = { dragOffset = 0f },
-                        onDragCancel = { dragOffset = 0f },
-                    ) { change, dragAmount ->
-                        change.consume()
-                        dragOffset += dragAmount.y
-                        while (abs(dragOffset) >= itemHeightPx) {
-                            val direction = if (dragOffset > 0f) 1 else -1
-                            val target = (currentIndex + direction)
-                                .coerceIn(0, itemCount - 1)
-                            if (target == currentIndex) {
-                                dragOffset = 0f
-                                break
-                            }
-                            onMove(currentIndex, target)
-                            currentIndex = target
-                            dragOffset -= direction * itemHeightPx
-                        }
-                    }
-                },
-            tint = contentColor,
+        PresetAction(
+            iconRes = R.drawable.ic_add,
+            label = stringResource(R.string.create),
+            contentColor = contentColor,
+            onClick = onCreate,
+            modifier = Modifier.weight(1f),
         )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.name.ifBlank { stringResource(R.string.highlight_rule_default_name) },
-                color = contentColor,
-                fontSize = 15.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = item.sampleText.ifBlank { item.pattern },
-                color = contentColor.copy(alpha = 0.65f),
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        NgSwitchControl(
-            checked = item.enabled,
-            onCheckedChange = onEnabledChanged,
-            modifier = Modifier.size(width = 52.dp, height = 36.dp),
+        PresetAction(
+            iconRes = R.drawable.ic_import,
+            label = stringResource(R.string.import_str),
+            contentColor = contentColor,
+            onClick = onImport,
+            modifier = Modifier.weight(1f),
+        )
+        PresetAction(
+            iconRes = R.drawable.ic_export,
+            label = stringResource(R.string.export_str),
+            contentColor = contentColor,
+            onClick = onExport,
+            modifier = Modifier.weight(1f),
+            enabled = hasRules,
+        )
+        PresetAction(
+            iconRes = R.drawable.ic_restore,
+            label = stringResource(R.string.menu_restore),
+            contentColor = contentColor,
+            onClick = onRestore,
+            modifier = Modifier.weight(1f),
+        )
+        PresetAction(
+            iconRes = R.drawable.ic_book_info_delete,
+            label = stringResource(R.string.delete),
+            contentColor = contentColor,
+            onClick = onDelete,
+            modifier = Modifier.weight(1f),
+            enabled = hasRules,
         )
     }
-    ReadDivider(contentColor, horizontalPadding = 0.dp)
+}
+
+@Composable
+private fun HighlightSelectionDock(
+    mode: HighlightSelectionMode,
+    selectedCount: Int,
+    allSelected: Boolean,
+    contentColor: Color,
+    accentColor: Color,
+    onCancel: () -> Unit,
+    onToggleAll: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = PresetVisibleHorizontalInset, vertical = 4.dp)
+            .height(56.dp)
+            .clip(shape)
+            .background(Color(NgTheme.colors.surface).copy(alpha = 0.24f))
+            .border(0.7.dp, contentColor.copy(alpha = 0.10f), shape)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PresetAction(
+            iconRes = R.drawable.ic_back,
+            label = stringResource(R.string.cancel),
+            contentColor = contentColor,
+            onClick = onCancel,
+            modifier = Modifier.weight(1f),
+        )
+        PresetAction(
+            iconRes = R.drawable.ic_select_all,
+            label = stringResource(
+                if (allSelected) R.string.unselect_all else R.string.select_all
+            ),
+            contentColor = contentColor,
+            onClick = onToggleAll,
+            modifier = Modifier.weight(1f),
+        )
+        PresetAction(
+            iconRes = if (mode == HighlightSelectionMode.DELETE) {
+                R.drawable.ic_book_info_delete
+            } else {
+                R.drawable.ic_export
+            },
+            label = stringResource(
+                if (mode == HighlightSelectionMode.DELETE) R.string.delete
+                else R.string.export_str
+            ),
+            contentColor = if (mode == HighlightSelectionMode.DELETE) accentColor else contentColor,
+            onClick = onConfirm,
+            modifier = Modifier.weight(1f),
+            enabled = selectedCount > 0,
+        )
+    }
+}
+
+@Composable
+private fun HighlightRuleRow(
+    item: ReadHighlightRule,
+    contentColor: Color,
+    selected: Boolean,
+    selectionMode: Boolean,
+    isDragging: Boolean,
+    dragHandleModifier: Modifier,
+    sortDescription: String,
+    onClick: () -> Unit,
+    onSelectedChanged: () -> Unit,
+    onEnabledChanged: (Boolean) -> Unit,
+) {
+    val itemHeight = 60.dp
+    val shape = RoundedCornerShape(12.dp)
+    val elevation by animateDpAsState(
+        targetValue = if (isDragging) 7.dp else 0.dp,
+        label = "highlightRuleDragElevation",
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (isDragging) 1.02f else 1f,
+        label = "highlightRuleDragScale",
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .then(
+                if (isDragging) {
+                    Modifier
+                        .shadow(elevation, shape, clip = false)
+                        .clip(shape)
+                        .background(Color(NgTheme.colors.surface).copy(alpha = 0.96f))
+                        .border(0.8.dp, contentColor.copy(alpha = 0.18f), shape)
+                } else {
+                    Modifier
+                }
+            ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(itemHeight)
+                .clickable(enabled = !isDragging, role = Role.Button, onClick = onClick),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { onSelectedChanged() },
+                    modifier = Modifier.size(40.dp),
+                )
+            } else {
+                Icon(
+                    painter = painterResource(R.drawable.ic_drag_handle),
+                    contentDescription = sortDescription,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .then(dragHandleModifier)
+                        .padding(9.dp),
+                    tint = contentColor,
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.name.ifBlank {
+                        stringResource(R.string.highlight_rule_default_name)
+                    },
+                    color = contentColor,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = item.sampleText.ifBlank { item.pattern },
+                    color = contentColor.copy(alpha = 0.65f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (!selectionMode) {
+                NgSwitchControl(
+                    checked = item.enabled,
+                    onCheckedChange = onEnabledChanged,
+                    modifier = Modifier.size(width = 52.dp, height = 36.dp),
+                )
+            }
+        }
+        if (!isDragging) {
+            ReadDivider(contentColor, horizontalPadding = 0.dp)
+        } else {
+            Spacer(Modifier.height(0.8.dp))
+        }
+    }
 }
 
 @Composable

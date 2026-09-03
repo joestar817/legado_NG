@@ -15,8 +15,9 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlin.math.roundToInt
 
-/** MD3/Legado 阅读排版 ZIP 的安全解析、资源安装和 NG 字段规范化边界。 */
+/** MD3/ARC/Legado 阅读排版 ZIP 的安全解析、资源安装和 NG 字段规范化边界。 */
 internal object ReadStylePackageManager {
 
     private const val CONFIG_NAME = "readConfig.json"
@@ -205,7 +206,6 @@ internal object ReadStylePackageManager {
             require(configFile.length() <= MAX_CONFIG_BYTES) { "排版配置文件过大" }
             val root = GSON.fromJson(configFile.readText(), JsonObject::class.java)
                 ?: error("排版配置为空")
-            require(!isArcPackage(root)) { "暂不支持 ARC 排版包，请导入 MD3 排版包" }
             val sourceFormat = detectSourceFormat(root)
             val config = GSON.fromJson(root, ReadBookConfig.Config::class.java)
                 ?: error("无法解析排版配置")
@@ -221,7 +221,7 @@ internal object ReadStylePackageManager {
                 installedByThisImport = true
             }
             normalizeResources(config, entries, installedRoot, warnings)
-            normalizeValues(config, warnings)
+            normalizeValues(config, root, sourceFormat, warnings)
             return ImportResult(config, sourceFormat, warnings.distinct(), installedRoot)
         } catch (error: Throwable) {
             stagingRoot.deleteRecursively()
@@ -286,6 +286,7 @@ internal object ReadStylePackageManager {
     }
 
     private fun detectSourceFormat(root: JsonObject): String = when {
+        isArcPackage(root) -> "arc-read-style"
         root.has("highlightRules") || root.has("titleFont") || root.has("textItalic") ||
             root.has("underline") || root.has("tipHeaderColor") -> "md3-read-style"
         else -> "legado-read-style"
@@ -378,7 +379,12 @@ internal object ReadStylePackageManager {
         if (missingRuleFonts > 0) warnings += "$missingRuleFonts 条高亮规则的字体未随包携带"
     }
 
-    private fun normalizeValues(config: ReadBookConfig.Config, warnings: MutableList<String>) {
+    private fun normalizeValues(
+        config: ReadBookConfig.Config,
+        root: JsonObject,
+        sourceFormat: String,
+        warnings: MutableList<String>,
+    ) {
         if (config.bgType == 1) {
             config.bgStr = resolveBundledReadBackgroundName(config.bgStr)
         }
@@ -402,6 +408,31 @@ internal object ReadStylePackageManager {
         config.underlinePadding = config.underlinePadding.coerceIn(-20, 100)
         config.dottedBase = config.dottedBase.coerceIn(1f, 100f)
         config.dottedRatio = config.dottedRatio.coerceIn(1f, 100f)
+        if (sourceFormat == "arc-read-style") {
+            val underlineMode = root.intOrNull("underlineMode") ?: config.underlineMode
+            config.underline = underlineMode != 0
+            config.dottedLine = underlineMode == 2
+            root.floatOrNull("underlineStrokeWidth")?.let {
+                config.underlineHeight = it.roundToInt().coerceIn(1, 20)
+            }
+            root.floatOrNull("underlineDashLength")?.coerceIn(1f, 100f)?.let {
+                config.dottedBase = it
+                config.dottedRatio = it
+            }
+            if (config.titleMode == 3) {
+                config.titleMode = 1
+                warnings += "ARC 高级标题在当前版本按居中标题显示"
+            }
+            val paperEffectEnabled = root.booleanOrNull("paperEffect") == true ||
+                (root.floatOrNull("paperInkStrength") ?: 0f) > 0f
+            if (paperEffectEnabled) warnings += "ARC 纸张质感当前不支持，已忽略"
+            val scrollFollowEnabled = listOf(
+                "readScrollFollowBackground",
+                "readScrollFollowBackgroundNight",
+                "readScrollFollowBackgroundEInk",
+            ).any { root.booleanOrNull(it) == true }
+            if (scrollFollowEnabled) warnings += "ARC 滚动背景跟随当前不支持，已忽略"
+        }
         if (config.titleMode !in 0..2) {
             warnings += "未知标题模式 ${config.titleMode} 已按左对齐显示"
             config.titleMode = 0
@@ -415,6 +446,18 @@ internal object ReadStylePackageManager {
             }
         })
     }
+
+    private fun JsonObject.booleanOrNull(name: String): Boolean? = runCatching {
+        get(name)?.takeUnless { it.isJsonNull }?.asBoolean
+    }.getOrNull()
+
+    private fun JsonObject.intOrNull(name: String): Int? = runCatching {
+        get(name)?.takeUnless { it.isJsonNull }?.asInt
+    }.getOrNull()
+
+    private fun JsonObject.floatOrNull(name: String): Float? = runCatching {
+        get(name)?.takeUnless { it.isJsonNull }?.asFloat
+    }.getOrNull()
 
     private fun normalizeFontWeight(value: Int): Int = when (value) {
         0 -> 400
@@ -470,6 +513,9 @@ internal object ReadStylePackageManager {
         "tipHeaderLeft", "tipHeaderMiddle", "tipHeaderRight", "tipFooterLeft", "tipFooterMiddle",
         "tipFooterRight", "tipColor", "tipHeaderColor", "tipHeaderColorNight", "tipFooterColor",
         "tipFooterColorNight", "tipDividerColor", "headerMode", "footerMode", "highlightRules",
+        "paperEffect", "paperInkStrength", "readScrollFollowBackground",
+        "readScrollFollowBackgroundNight", "readScrollFollowBackgroundEInk",
+        "underlineDashLength", "underlineStrokeWidth",
         "ngReadStyleSource", "ngUnknownFields",
     )
 }

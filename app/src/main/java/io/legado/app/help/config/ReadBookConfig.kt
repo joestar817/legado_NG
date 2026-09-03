@@ -109,8 +109,22 @@ object ReadBookConfig {
     var isNineBgImg = false
 
     init {
+        val hasStoredReadConfig = File(configFilePath).isFile
         initConfigs()
         initShareConfig()
+        val legacyRuleGroups = configList.map { it.highlightRules } +
+            listOf(shareConfig.highlightRules)
+        ReadHighlightRuleStore.initialize(
+            legacyRuleGroups = legacyRuleGroups,
+            preferredIndex = if (appCtx.getPrefBoolean(PreferKey.shareLayout, false)) {
+                legacyRuleGroups.lastIndex
+            } else {
+                appCtx.getPrefInt(PreferKey.readStyleSelect)
+            },
+            defaultRules = DefaultData.readHighlightRules,
+            useDefaultsWhenLegacyEmpty = !hasStoredReadConfig,
+        )
+        if (clearEmbeddedHighlightRules()) save()
     }
 
     @Synchronized
@@ -235,13 +249,15 @@ object ReadBookConfig {
     fun restoreCurrentDefault(): Boolean {
         val index = styleSelect.takeIf(configList.indices::contains) ?: return false
         val default = defaultConfig(configList[index].name) ?: return false
-        configList[index] = default.detachedCopy()
+        configList[index] = default.detachedCopy().apply { highlightRules.clear() }
         save()
         return true
     }
 
     fun restoreAllDefaults(): Boolean {
-        val defaults = DefaultData.readConfigs.map { it.detachedCopy() }
+        val defaults = DefaultData.readConfigs.map {
+            it.detachedCopy().apply { highlightRules.clear() }
+        }
         if (defaults.isEmpty()) return false
         configList.clear()
         configList.addAll(defaults)
@@ -276,6 +292,26 @@ object ReadBookConfig {
         highlightRules = ArrayList(highlightRules.map { it.copy() }),
         ngUnknownFields = ngUnknownFields.toMap(),
     )
+
+    private fun clearEmbeddedHighlightRules(): Boolean {
+        var changed = false
+        (configList + shareConfig).forEach { config ->
+            if (config.highlightRules.isNotEmpty()) {
+                config.highlightRules.clear()
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    internal fun migrateRestoredEmbeddedHighlightRules() {
+        val migrated = migrateLegacyReadHighlightRules(
+            ruleGroups = configList.map { it.highlightRules } + listOf(shareConfig.highlightRules),
+            preferredIndex = readStyleSelect,
+        )
+        ReadHighlightRuleStore.replace(migrated)
+        if (clearEmbeddedHighlightRules()) save()
+    }
 
     private fun resetAll() {
         restoreAllDefaults()
@@ -325,6 +361,37 @@ object ReadBookConfig {
                 appCtx.putPrefBoolean(PreferKey.shareLayout, value)
             }
         }
+
+    var readFloatingFollowAppGlobally = appCtx.getPrefBoolean(
+        PreferKey.readFloatingFollowAppGlobally,
+        false,
+    )
+        set(value) {
+            field = value
+            if (appCtx.getPrefBoolean(PreferKey.readFloatingFollowAppGlobally, false) != value) {
+                appCtx.putPrefBoolean(PreferKey.readFloatingFollowAppGlobally, value)
+            }
+        }
+
+    var readFloatingGlobalColorStyle = ReadFloatingColorStyle.fromStorage(
+        appCtx.getPrefString(PreferKey.readFloatingGlobalColorStyle)
+    )
+        set(value) {
+            field = value
+            if (appCtx.getPrefString(PreferKey.readFloatingGlobalColorStyle) != value.storageValue) {
+                appCtx.putPrefString(PreferKey.readFloatingGlobalColorStyle, value.storageValue)
+            }
+        }
+
+    fun reloadGlobalReadFloatingColorPreferences() {
+        readFloatingFollowAppGlobally = appCtx.getPrefBoolean(
+            PreferKey.readFloatingFollowAppGlobally,
+            false,
+        )
+        readFloatingGlobalColorStyle = ReadFloatingColorStyle.fromStorage(
+            appCtx.getPrefString(PreferKey.readFloatingGlobalColorStyle)
+        )
+    }
 
     private fun normalizeAutoReadPageMode(value: Int): Int = when (value) {
         PageAnim.coverPageAnim -> PageAnim.coverPageAnim
@@ -379,6 +446,17 @@ object ReadBookConfig {
     var useZhLayout = appCtx.getPrefBoolean(PreferKey.useZhLayout)
 
     val config get() = if (shareLayout) shareConfig else durConfig
+
+    internal fun effectiveReadFloatingColor(
+        preset: Config = durConfig,
+    ): EffectiveReadFloatingColor = resolveEffectiveReadFloatingColor(
+        isEInk = AppConfig.isEInkMode,
+        globallyFollowsApplication = readFloatingFollowAppGlobally,
+        globalColorStyle = readFloatingGlobalColorStyle,
+        presetSeed = preset.curReadFloatingSeed(),
+        presetFollowsApplication = preset.curReadFloatingFollowsApplication(),
+        presetColorStyle = preset.curReadFloatingColorStyle(),
+    )
 
     var bgAlpha: Int
         get() = config.bgAlpha
@@ -533,11 +611,7 @@ object ReadBookConfig {
             config.dottedRatio = value
         }
     val highlightRules: List<ReadHighlightRule>
-        get() = config.highlightRules
-            .asSequence()
-            .filter(ReadHighlightRule::enabled)
-            .sortedBy(ReadHighlightRule::position)
-            .toList()
+        get() = ReadHighlightRuleStore.enabledRules()
 
     var paddingBottom: Int
         get() = config.paddingBottom
@@ -624,7 +698,7 @@ object ReadBookConfig {
         }
 
     fun getExportConfig(): Config {
-        val exportConfig = durConfig.copy()
+        val exportConfig = durConfig.copy(highlightRules = arrayListOf())
         if (shareLayout) {
             exportConfig.textFont = shareConfig.textFont
             exportConfig.titleFont = shareConfig.titleFont
@@ -663,7 +737,6 @@ object ReadBookConfig {
             exportConfig.dottedLine = shareConfig.dottedLine
             exportConfig.dottedBase = shareConfig.dottedBase
             exportConfig.dottedRatio = shareConfig.dottedRatio
-            exportConfig.highlightRules = ArrayList(shareConfig.highlightRules)
             exportConfig.paddingBottom = shareConfig.paddingBottom
             exportConfig.paddingLeft = shareConfig.paddingLeft
             exportConfig.paddingRight = shareConfig.paddingRight
@@ -701,12 +774,25 @@ object ReadBookConfig {
         return ReadStylePackageManager.export(getExportConfig(), output)
     }
 
-    internal fun appendImportedConfig(config: Config): Int {
+    internal data class AppendImportedConfigResult(
+        val index: Int,
+        val highlightRuleMerge: ReadHighlightRuleMergeResult?,
+    )
+
+    internal fun appendImportedConfig(config: Config): Int =
+        appendImportedConfigWithReport(config).index
+
+    internal fun appendImportedConfigWithReport(config: Config): AppendImportedConfigResult {
+        val importedRules = config.highlightRules.toList()
+        config.highlightRules.clear()
+        val ruleMerge = importedRules.takeIf { it.isNotEmpty() }?.let {
+            ReadHighlightRuleStore.merge(it, replaceMatchingIds = false)
+        }
         configList.add(config)
         val index = configList.lastIndex
         readStyleSelect = index
         save()
-        return index
+        return AppendImportedConfigResult(index, ruleMerge)
     }
 
     @Keep
@@ -811,6 +897,7 @@ object ReadBookConfig {
         var tipDividerColor: Int = -1,
         var headerMode: Int = 2,
         var footerMode: Int = 0,
+        /** 仅用于兼容旧配置和排版包传输；运行时规则由 [ReadHighlightRuleStore] 持有。 */
         @SerializedName("highlightRules") var highlightRules: ArrayList<ReadHighlightRule> = arrayListOf(),
         @SerializedName("ngReadStyleSource") var ngReadStyleSource: String? = null,
         @SerializedName("ngUnknownFields") var ngUnknownFields: Map<String, String> = emptyMap(),

@@ -3,11 +3,7 @@ package io.legado.app.help.config
 import androidx.annotation.Keep
 import com.google.gson.annotations.SerializedName
 
-/**
- * 阅读排版包内的文本高亮规则。
- *
- * 规则随排版样式保存，不使用 MD3 的 configName 反向绑定，避免样式重命名后失效。
- */
+/** 独立于阅读预设的全局文本高亮规则。 */
 @Keep
 data class ReadHighlightRule(
     @SerializedName("id") val id: String = "",

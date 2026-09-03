@@ -40,9 +40,21 @@ class BackupRestorePolicyTest {
     }
 
     @Test
+    fun restoresGlobalReadingFloatingColorPreferencesFromSameVersionBackup() {
+        listOf(
+            PreferKey.readFloatingFollowAppGlobally,
+            PreferKey.readFloatingGlobalColorStyle,
+        ).forEach { key ->
+            assertTrue(BackupRestorePolicy.shouldRestorePreference(key, isMd3Backup = false))
+        }
+    }
+
+    @Test
     fun skipsMd3ReadStylesAndTheirDependentPreferences() {
         assertFalse(BackupRestorePolicy.shouldRestoreReadConfigs(isMd3Backup = true))
         assertTrue(BackupRestorePolicy.shouldRestoreReadConfigs(isMd3Backup = false))
+        assertFalse(BackupRestorePolicy.shouldRestoreHighlightRules(isMd3Backup = true))
+        assertTrue(BackupRestorePolicy.shouldRestoreHighlightRules(isMd3Backup = false))
 
         listOf(
             PreferKey.readStyleSelect,
