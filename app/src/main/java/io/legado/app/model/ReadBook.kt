@@ -1095,6 +1095,10 @@ object ReadBook : CoroutineScope by MainScope() {
 
         fun loadChapterList(book: Book)
 
+        fun beginReplaceRuleRenderBatch()
+
+        fun endReplaceRuleRenderBatch()
+
         fun upContent(
             relativePosition: Int = 0,
             resetPageOffset: Boolean = true,

@@ -247,6 +247,12 @@ class ReadBookActivity : BaseReadBookActivity(),
     private val timeBatteryReceiver = TimeBatteryReceiver()
     private var screenTimeOut: Long = 0
     private var loadStates: Boolean = false
+    private var replaceRuleRenderBatchDepth = 0
+    private var replaceRuleRenderPending = false
+    private var replaceRuleRenderResetPageOffset = false
+    private var replaceRuleRenderFlushScheduled = false
+    private val replaceRuleRenderSuccessActions = arrayListOf<() -> Unit>()
+    private val replaceRuleRenderFlushRunnable = Runnable { flushReplaceRuleRender() }
     override val pageFactory get() = binding.readView.pageFactory
     override val pageDelegate get() = binding.readView.pageDelegate
     override val headerHeight: Int get() = binding.readView.curPage.headerHeight
@@ -2362,6 +2368,68 @@ class ReadBookActivity : BaseReadBookActivity(),
         viewModel.loadChapterList(book)
     }
 
+    override fun beginReplaceRuleRenderBatch() {
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            if (replaceRuleRenderFlushScheduled) {
+                binding.root.removeCallbacks(replaceRuleRenderFlushRunnable)
+                replaceRuleRenderFlushScheduled = false
+            }
+            replaceRuleRenderBatchDepth++
+        }
+    }
+
+    override fun endReplaceRuleRenderBatch() {
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            if (replaceRuleRenderBatchDepth > 0) {
+                replaceRuleRenderBatchDepth--
+            }
+            scheduleReplaceRuleRenderFlush()
+        }
+    }
+
+    private fun deferReplaceRuleRender(
+        resetPageOffset: Boolean,
+        success: (() -> Unit)? = null
+    ): Boolean {
+        if (replaceRuleRenderBatchDepth == 0 && !replaceRuleRenderFlushScheduled) {
+            return false
+        }
+        replaceRuleRenderPending = true
+        replaceRuleRenderResetPageOffset =
+            replaceRuleRenderResetPageOffset || resetPageOffset
+        success?.let(replaceRuleRenderSuccessActions::add)
+        loadStates = false
+        return true
+    }
+
+    private fun scheduleReplaceRuleRenderFlush() {
+        if (replaceRuleRenderBatchDepth != 0 ||
+            !replaceRuleRenderPending ||
+            replaceRuleRenderFlushScheduled
+        ) {
+            return
+        }
+        replaceRuleRenderFlushScheduled = true
+        binding.root.postOnAnimation(replaceRuleRenderFlushRunnable)
+    }
+
+    private fun flushReplaceRuleRender() {
+        replaceRuleRenderFlushScheduled = false
+        if (replaceRuleRenderBatchDepth != 0 || !replaceRuleRenderPending) {
+            return
+        }
+        val resetPageOffset = replaceRuleRenderResetPageOffset
+        val successActions = replaceRuleRenderSuccessActions.toList()
+        replaceRuleRenderPending = false
+        replaceRuleRenderResetPageOffset = false
+        replaceRuleRenderSuccessActions.clear()
+        binding.readView.upContent(0, resetPageOffset)
+        upSeekBarProgress()
+        successActions.forEach { it.invoke() }
+    }
+
     /**
      * 内容加载完成
      */
@@ -2384,6 +2452,9 @@ class ReadBookActivity : BaseReadBookActivity(),
         success: (() -> Unit)?
     ) {
         lifecycleScope.launch {
+            if (deferReplaceRuleRender(resetPageOffset, success)) {
+                return@launch
+            }
             binding.readView.upContent(relativePosition, resetPageOffset)
             if (relativePosition == 0) {
                 upSeekBarProgress()
@@ -2398,6 +2469,9 @@ class ReadBookActivity : BaseReadBookActivity(),
         resetPageOffset: Boolean,
         success: (() -> Unit)?
     ) = withContext(Main.immediate) {
+        if (deferReplaceRuleRender(resetPageOffset)) {
+            return@withContext
+        }
         binding.readView.upContent(relativePosition, resetPageOffset)
         if (relativePosition == 0) {
             upSeekBarProgress()
@@ -3149,6 +3223,7 @@ class ReadBookActivity : BaseReadBookActivity(),
 
     override fun onDestroy() {
         super.onDestroy()
+        binding.root.removeCallbacks(replaceRuleRenderFlushRunnable)
         aiPurifyJob?.cancel()
         tts?.clearTts()
         textActionMenu.dismiss()

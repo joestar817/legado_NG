@@ -199,8 +199,8 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
                     "章节: ${ReadBook.curTextChapter?.title}\n" +
                     "触发: $reason"
         )
-        execute {
-            val curBook = ReadBook.book ?: return@execute
+        executeReplaceRuleRefresh {
+            val curBook = ReadBook.book ?: return@executeReplaceRuleRefresh
             enterReplaceRuleResetScheduled = false
             if (enterReplaceRuleResetBookUrl != curBook.bookUrl || !curBook.getUseReplaceRule()) {
                 AppLog.putDebug(
@@ -209,7 +209,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
                             "书源: ${curBook.origin}\n" +
                             "触发: $reason"
                 )
-                return@execute
+                return@executeReplaceRuleRefresh
             }
             enterReplaceRuleResetDone = true
             AppLog.putDebug(
@@ -219,7 +219,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
                         "章节: ${ReadBook.curTextChapter?.title}\n" +
                         "触发: $reason"
             )
-            replaceRuleChanged(curBook.bookUrl)
+            replaceRuleChangedAwait(curBook.bookUrl)
         }
     }
 
@@ -613,26 +613,41 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
      * 替换规则变化
      */
     fun replaceRuleChanged(expectedBookUrl: String? = null) {
+        executeReplaceRuleRefresh {
+            replaceRuleChangedAwait(expectedBookUrl)
+        }
+    }
+
+    private fun executeReplaceRuleRefresh(block: suspend () -> Unit) {
+        val callback = ReadBook.callBack
+        callback?.beginReplaceRuleRenderBatch()
         execute {
-            ReadBook.book?.let { book ->
-                val bookUrl = expectedBookUrl ?: book.bookUrl
-                if (book.bookUrl != bookUrl) return@execute
-                val useReplaceRule = book.getUseReplaceRule()
-                val contentProcessor = ContentProcessor.get(book.name, book.origin)
-                contentProcessor.upReplaceRules()
-                if (useReplaceRule) {
-                    try {
-                        book.setUseReplaceRule(false)
-                        if (ReadBook.book?.bookUrl != bookUrl) return@execute
-                        ReadBook.reloadContentForReplaceRuleChangedAwait(resetPageOffset = false)
-                    } finally {
-                        book.setUseReplaceRule(true)
-                    }
-                }
-                if (ReadBook.book?.bookUrl != bookUrl) return@execute
-                ReadBook.reloadContentForReplaceRuleChangedAwait(resetPageOffset = false)
+            try {
+                block()
+            } finally {
+                callback?.endReplaceRuleRenderBatch()
             }
         }
+    }
+
+    private suspend fun replaceRuleChangedAwait(expectedBookUrl: String? = null) {
+        val book = ReadBook.book ?: return
+        val bookUrl = expectedBookUrl ?: book.bookUrl
+        if (book.bookUrl != bookUrl) return
+        val useReplaceRule = book.getUseReplaceRule()
+        val contentProcessor = ContentProcessor.get(book.name, book.origin)
+        contentProcessor.upReplaceRules()
+        if (useReplaceRule) {
+            try {
+                book.setUseReplaceRule(false)
+                if (ReadBook.book?.bookUrl != bookUrl) return
+                ReadBook.reloadContentForReplaceRuleChangedAwait(resetPageOffset = false)
+            } finally {
+                book.setUseReplaceRule(true)
+            }
+        }
+        if (ReadBook.book?.bookUrl != bookUrl) return
+        ReadBook.reloadContentForReplaceRuleChangedAwait(resetPageOffset = false)
     }
 
     fun setSourceEnabled(enabled: Boolean) {
