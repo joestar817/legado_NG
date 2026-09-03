@@ -60,9 +60,11 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.ComposeView
@@ -71,6 +73,8 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -1107,12 +1111,22 @@ internal fun NgCatalogChapterRow(
     val chapterTag = chapter.tag
         ?.takeIf { it.isNotBlank() }
         ?.let(::formatCatalogChapterTag)
+    val currentChapterIndicatorColor = Color(NgTheme.colors.primary)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 58.dp)
             .clip(cardShape)
             .background(cardColor)
+            .drawBehind {
+                if (current) {
+                    drawRect(
+                        color = currentChapterIndicatorColor,
+                        size = Size(width = 6.dp.toPx(), height = size.height),
+                    )
+                }
+            }
+            .semantics { selected = current }
             .then(
                 if (onLongClick != null) {
                     Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
