@@ -84,6 +84,7 @@ import io.legado.app.ui.book.changecover.ChangeCoverDialog
 import io.legado.app.ui.book.character.BookCharacterActivity
 import io.legado.app.ui.book.character.BookCharacterLabels
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
+import io.legado.app.ui.book.changesource.ChangeBookSourceDrawer
 import io.legado.app.ui.book.info.edit.BookInfoEditActivity
 import io.legado.app.ui.book.manga.ReadMangaActivity
 import io.legado.app.ui.book.read.ReadBookActivity
@@ -1231,7 +1232,7 @@ class BookInfoActivity :
 
     private fun changeSource() {
         viewModel.getBook()?.let { current ->
-            showDialogFragment(ChangeBookSourceDialog(current.name, current.author))
+            showDialogFragment(ChangeBookSourceDrawer(current.name, current.author))
         }
     }
 

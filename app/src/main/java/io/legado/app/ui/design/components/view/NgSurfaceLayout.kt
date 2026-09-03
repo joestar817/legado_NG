@@ -63,26 +63,32 @@ class NgSurfaceLayout @JvmOverloads constructor(
         val colors = snapshot.colors
         val baseColor = when (surfaceVariant) {
             NgSurfaceVariant.CANVAS -> colors.background
-            NgSurfaceVariant.CARD -> colors.cardContainer
+            NgSurfaceVariant.CARD,
+            NgSurfaceVariant.BORDERLESS_CARD -> colors.cardContainer
             NgSurfaceVariant.PANEL -> colors.surfaceContainerHigh
             NgSurfaceVariant.OVERLAY -> colors.dialogContainer
         }
         val alpha = when (surfaceVariant) {
             NgSurfaceVariant.CANVAS -> 1f
             NgSurfaceVariant.CARD -> snapshot.effects.containerAlpha
+            NgSurfaceVariant.BORDERLESS_CARD -> 1f
             NgSurfaceVariant.PANEL -> (snapshot.effects.containerAlpha + 0.14f).coerceAtMost(1f)
             NgSurfaceVariant.OVERLAY -> snapshot.effects.dialogAlpha
         }.takeIf { !snapshot.isEInk } ?: 1f
         val radiusDp = when (surfaceVariant) {
             NgSurfaceVariant.CANVAS -> 0
             NgSurfaceVariant.CARD -> snapshot.shapes.mediumDp
+            NgSurfaceVariant.BORDERLESS_CARD -> snapshot.shapes.largeDp
             NgSurfaceVariant.PANEL -> snapshot.shapes.largeDp
             NgSurfaceVariant.OVERLAY -> snapshot.shapes.extraLargeDp
         }
         background = GradientDrawable().apply {
             cornerRadius = radiusDp.dp.toFloat()
             setColor(ColorUtils.setAlphaComponent(baseColor, (Color.alpha(baseColor) * alpha).toInt()))
-            if (surfaceVariant != NgSurfaceVariant.CANVAS) {
+            if (
+                surfaceVariant != NgSurfaceVariant.CANVAS &&
+                surfaceVariant != NgSurfaceVariant.BORDERLESS_CARD
+            ) {
                 val strokeColor = when {
                     snapshot.isEInk -> colors.outline
                     emphasized -> ColorUtils.setAlphaComponent(colors.primary, 150)

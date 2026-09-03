@@ -27,29 +27,36 @@ fun NgSurface(
 ) {
     val color = when (variant) {
         NgSurfaceVariant.CANVAS -> NgTheme.colors.background
-        NgSurfaceVariant.CARD -> NgTheme.colors.cardContainer
+        NgSurfaceVariant.CARD,
+        NgSurfaceVariant.BORDERLESS_CARD -> NgTheme.colors.cardContainer
         NgSurfaceVariant.PANEL -> NgTheme.colors.surfaceContainerHigh
         NgSurfaceVariant.OVERLAY -> NgTheme.colors.dialogContainer
     }
     val shape = when (variant) {
         NgSurfaceVariant.CANVAS -> NgTheme.shapes.smallDp
         NgSurfaceVariant.CARD -> NgTheme.shapes.mediumDp
+        NgSurfaceVariant.BORDERLESS_CARD -> NgTheme.shapes.largeDp
         NgSurfaceVariant.PANEL -> NgTheme.shapes.largeDp
         NgSurfaceVariant.OVERLAY -> NgTheme.shapes.extraLargeDp
     }
     val elevation = when (variant) {
         NgSurfaceVariant.CANVAS,
         NgSurfaceVariant.CARD,
+        NgSurfaceVariant.BORDERLESS_CARD,
         NgSurfaceVariant.PANEL -> NgTheme.effects.cardElevationDp
         NgSurfaceVariant.OVERLAY -> NgTheme.effects.overlayElevationDp
     }
     val alpha = when (variant) {
         NgSurfaceVariant.CANVAS -> 1f
         NgSurfaceVariant.CARD -> NgTheme.effects.containerAlpha
+        NgSurfaceVariant.BORDERLESS_CARD -> 1f
         NgSurfaceVariant.PANEL -> (NgTheme.effects.containerAlpha + 0.14f).coerceAtMost(1f)
         NgSurfaceVariant.OVERLAY -> NgTheme.effects.dialogAlpha
     }.takeIf { !NgTheme.snapshot.isEInk } ?: 1f
-    val border = if (variant == NgSurfaceVariant.CANVAS) {
+    val border = if (
+        variant == NgSurfaceVariant.CANVAS ||
+        variant == NgSurfaceVariant.BORDERLESS_CARD
+    ) {
         null
     } else {
         BorderStroke(

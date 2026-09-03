@@ -30,6 +30,7 @@ import io.legado.app.ui.book.read.config.showReadConfirmDialog
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.book.source.manage.BookSourceActivity
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.design.theme.NgThemeSnapshot
 import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.ui.widget.dialog.applyNgDialogWindow
 import io.legado.app.ui.widget.dialog.ngDialogMaxHeight
@@ -48,7 +49,7 @@ import kotlinx.coroutines.launch
 /**
  * 单本书换源界面。业务状态仍由 [ChangeBookSourceViewModel] 管理，界面统一由 Compose 渲染。
  */
-class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
+open class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
 
     constructor(name: String, author: String) : this() {
         arguments = Bundle().apply {
@@ -93,6 +94,7 @@ class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
                             settingsRevision++
                             viewModel.startSearch()
                         },
+                        themeSnapshot = themeSnapshot(),
                     )
                 }
             }
@@ -101,8 +103,22 @@ class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
 
     override fun onStart() {
         super.onStart()
+        applyPresentationWindow()
+    }
+
+    protected open fun applyPresentationWindow() {
         applyNgDialogWindow(height = ngDialogMaxHeight(0.92f))
     }
+
+    protected open fun themeSnapshot(): NgThemeSnapshot =
+        ReadDrawerStyle.themeSnapshot(requireContext())
+
+    protected open fun contentPresentation(): ChangeBookSourcePresentation =
+        if (activity is ReadBookActivity) {
+            ChangeBookSourcePresentation.READING_DIALOG
+        } else {
+            ChangeBookSourcePresentation.DIALOG
+        }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         viewModel.initData(arguments, callBack?.oldBook, activity is ReadBookActivity)
@@ -122,10 +138,11 @@ class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
                 scoreRevision
                 currentSourceRevision
                 NgAppTheme(
-                    snapshot = ReadDrawerStyle.themeSnapshot(requireContext()),
+                    snapshot = themeSnapshot(),
                     updateSystemBars = false,
                 ) {
                     ChangeBookSourceDialogContent(
+                        presentation = contentPresentation(),
                         currentBookUrl = oldBookUrl,
                         searchBooks = searchBooks,
                         searching = searching,
@@ -271,6 +288,7 @@ class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
             confirmLabel = getString(R.string.yes),
             cancelLabel = getString(R.string.no),
             onConfirm = { deleteSource(searchBook) },
+            themeSnapshot = themeSnapshot(),
         )
     }
 
@@ -292,6 +310,7 @@ class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
                         dismissAllowingStateLoss()
                     }
                 },
+                themeSnapshot = themeSnapshot(),
             )
         }
     }

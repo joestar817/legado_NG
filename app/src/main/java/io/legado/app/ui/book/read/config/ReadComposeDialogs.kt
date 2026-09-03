@@ -46,6 +46,7 @@ import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.NgThemeSnapshot
 import io.legado.app.ui.widget.dialog.applyNgWindow
 
 internal fun showReadComposeDialog(
@@ -54,6 +55,7 @@ internal fun showReadComposeDialog(
     dimAmount: Float = 0.14f,
     cancelOnTouchOutside: Boolean = true,
     onDismiss: () -> Unit = {},
+    themeSnapshot: NgThemeSnapshot = ReadDrawerStyle.themeSnapshot(context),
     content: @Composable (dismiss: () -> Unit) -> Unit,
 ): ComponentDialog {
     val dialog = ComponentDialog(context)
@@ -66,7 +68,7 @@ internal fun showReadComposeDialog(
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent {
                 NgAppTheme(
-                    snapshot = ReadDrawerStyle.themeSnapshot(context),
+                    snapshot = themeSnapshot,
                     updateSystemBars = false,
                 ) {
                     content(dialog::dismiss)
@@ -88,6 +90,7 @@ internal fun showReadConfirmDialog(
     onConfirm: () -> Unit,
     onCancel: (() -> Unit)? = null,
     onOutsideDismiss: (() -> Unit)? = null,
+    themeSnapshot: NgThemeSnapshot? = null,
 ): ComponentDialog {
     var actionTaken = false
     return showReadComposeDialog(
@@ -95,6 +98,7 @@ internal fun showReadConfirmDialog(
         onDismiss = {
             if (!actionTaken) onOutsideDismiss?.invoke()
         },
+        themeSnapshot = themeSnapshot ?: ReadDrawerStyle.themeSnapshot(context),
     ) { dismiss ->
         ReadConfirmDialogContent(
             title = title,

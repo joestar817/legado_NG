@@ -4,7 +4,8 @@ enum class NgSurfaceVariant {
     CANVAS,
     CARD,
     PANEL,
-    OVERLAY
+    OVERLAY,
+    BORDERLESS_CARD,
 }
 
 enum class NgButtonVariant {

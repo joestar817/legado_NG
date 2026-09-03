@@ -50,6 +50,7 @@ import io.legado.app.service.ExportBookService
 import io.legado.app.ui.book.character.BookCharacterActivity
 import io.legado.app.ui.book.audio.AudioPlayActivity
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
+import io.legado.app.ui.book.changesource.ChangeBookSourceDrawer
 import io.legado.app.utils.SelectDirectoryContract
 import io.legado.app.ui.book.info.BookAiAssistantLauncher
 import io.legado.app.ui.book.info.BookInfoActivity
@@ -425,7 +426,7 @@ class BooksFragment() : BaseFragment(0),
 
     override fun onChangeSource(book: Book) {
         actionBook = book
-        showDialogFragment(ChangeBookSourceDialog(book.name, book.author))
+        showDialogFragment(ChangeBookSourceDrawer(book.name, book.author))
     }
 
     override fun onSimulatedReading(book: Book) {
