@@ -1,5 +1,6 @@
 package io.legado.app.help.config
 
+import androidx.annotation.ColorInt
 import io.legado.app.constant.PreferKey
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
@@ -32,6 +33,14 @@ enum class ListeningCartoonType(val storageValue: String) {
         fun fromStorage(value: String?): ListeningCartoonType =
             fromStorageOrNull(value) ?: SAKURA
     }
+}
+
+/** 场景素材对应的默认主色；主题与听书播放器共用，避免同一场景出现两套取色。 */
+@ColorInt
+internal fun ListeningCartoonType.scenePrimaryColor(): Int = when (this) {
+    ListeningCartoonType.SAKURA -> 0xFFFF61FF.toInt()
+    ListeningCartoonType.CATS -> 0xFF4E900C.toInt()
+    ListeningCartoonType.RAIN_NIGHT -> 0xFF081818.toInt()
 }
 
 enum class ListeningFluidType(val storageValue: String) {

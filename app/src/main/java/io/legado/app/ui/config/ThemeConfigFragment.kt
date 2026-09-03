@@ -21,6 +21,8 @@ import io.legado.app.help.config.BookshelfFloatingDockConfig
 import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.help.config.FloatingBottomBarConfig
+import io.legado.app.help.config.ListeningCartoonType
+import io.legado.app.help.config.NgDynamicSceneTheme
 import io.legado.app.help.config.NgDrawerAppearanceConfig
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientLightFieldPreset
@@ -100,6 +102,7 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                         onInternalThemeModeSelected = ::selectInternalThemeMode,
                         onSoftGradientColorSelected = ::selectSoftGradientColor,
                         onSoftGradientLightFieldSelected = ::selectSoftGradientLightField,
+                        onDynamicScenePresetSelected = ::selectDynamicScenePreset,
                         onVisualSystemSelected = ::setVisualSystem,
                         onLauncherIconClick = ::showLauncherIconSelection,
                         onFloatingBottomBarChanged = ::setFloatingBottomBar,
@@ -231,6 +234,7 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
             internalThemeMode = NgThemeModeStore.lastInternalMode(requireContext()),
             softGradientColor = NgSoftGradientTheme.colorPreset(requireContext()),
             softGradientLightField = NgSoftGradientTheme.lightFieldPreset(requireContext()),
+            dynamicScenePreset = NgDynamicSceneTheme.current(requireContext()),
             visualSystem = NgVisualSystemStore.current(requireContext()),
             showLauncherIcon = Build.VERSION.SDK_INT >= 26,
             launcherIconRes = launcherIconResource(launcherIcon),
@@ -352,6 +356,12 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
         if (preset == screenState.softGradientLightField) return
         screenState = screenState.copy(softGradientLightField = preset)
         NgSoftGradientTheme.selectLightField(requireContext(), preset)
+    }
+
+    private fun selectDynamicScenePreset(preset: ListeningCartoonType) {
+        if (preset == screenState.dynamicScenePreset) return
+        screenState = screenState.copy(dynamicScenePreset = preset)
+        NgDynamicSceneTheme.select(requireContext(), preset)
     }
 
     private fun setVisualSystem(visualSystem: NgVisualSystem) {

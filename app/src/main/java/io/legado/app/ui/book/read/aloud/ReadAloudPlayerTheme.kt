@@ -6,6 +6,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.ListeningMotionEffect
 import io.legado.app.help.config.ListeningMotionSettings
+import io.legado.app.help.config.scenePrimaryColor
 import io.legado.app.ui.book.listen.ListeningCoverTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
 
@@ -93,8 +94,4 @@ internal object ReadAloudPlayerTheme {
  * 场景素材更新时应连同对应主色一起重新验收。
  */
 @ColorInt
-internal fun ListeningCartoonType.playerThemeSeed(): Int = when (this) {
-    ListeningCartoonType.SAKURA -> 0xFFFFA3D1.toInt()
-    ListeningCartoonType.CATS -> 0xFF98B848.toInt()
-    ListeningCartoonType.RAIN_NIGHT -> 0xFF081818.toInt()
-}
+internal fun ListeningCartoonType.playerThemeSeed(): Int = scenePrimaryColor()

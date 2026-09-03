@@ -119,6 +119,7 @@ internal fun resolveReinstalledThemeBackgroundPath(
 object ThemeConfig {
     const val configFileName = "themeConfig.json"
     private const val ASSET_BACKGROUND_PREFIX = "asset://"
+    private const val DYNAMIC_SCENE_BACKGROUND_CACHE_KEY = "ngDynamicSceneBackground"
     private const val THEME_MODE_FOLLOW_SYSTEM = "0"
     private const val THEME_MODE_DARK = "2"
     private const val THEME_MODE_EINK = "3"
@@ -166,7 +167,7 @@ object ThemeConfig {
 
     fun isReadingNgBackgroundTheme(context: Context): Boolean {
         if (AppConfig.isEInkMode) return false
-        if (NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT) {
+        if (NgThemeModeStore.current(context) != NgThemePresentationMode.STANDARD) {
             return false
         }
         val backgroundKey = if (getTheme(context) == Theme.Dark) {
@@ -336,7 +337,8 @@ object ThemeConfig {
 
     @Synchronized
     fun getBgImage(context: Context, metrics: DisplayMetrics): Drawable? {
-        if (NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT) {
+        val presentationMode = NgThemeModeStore.current(context)
+        if (presentationMode == NgThemePresentationMode.SOFT_GRADIENT) {
             return null
         }
         val themeMode = getTheme(context)
@@ -345,7 +347,15 @@ object ThemeConfig {
             Theme.Dark -> PreferKey.bgImageN
             else -> return  null
         }
-        var path = context.getPrefString(preferenceKey)
+        val sceneBackground = if (
+            presentationMode == NgThemePresentationMode.DYNAMIC_SCENE
+        ) {
+            val theme = NgDynamicSceneTheme.theme(context)
+            if (themeMode == Theme.Dark) theme.darkBackground else theme.lightBackground
+        } else {
+            null
+        }
+        var path = sceneBackground?.path ?: context.getPrefString(preferenceKey)
         if (path.isNullOrBlank()) return null
         if (path.startsWith("http")) {
             val name = getUrlToFile(path)
@@ -358,13 +368,21 @@ object ThemeConfig {
             path = filePath
         }
         if (path.startsWith(ASSET_BACKGROUND_PREFIX)) {
-            path = copyAssetBackgroundIfNeed(context, preferenceKey, path)
+            path = copyAssetBackgroundIfNeed(
+                context,
+                if (sceneBackground != null) {
+                    DYNAMIC_SCENE_BACKGROUND_CACHE_KEY
+                } else {
+                    preferenceKey
+                },
+                path,
+            )
         }
         if (path.endsWith(".9.png")) {
             val bgDrawable = BitmapUtils.decodeNinePatchDrawable(path)
             return bgDrawable
         }
-        val bgImgBlu = when (themeMode) {
+        val bgImgBlu = sceneBackground?.blur ?: when (themeMode) {
             Theme.Light -> context.getPrefInt(PreferKey.bgImageBlurring, 0)
             Theme.Dark -> context.getPrefInt(PreferKey.bgImageNBlurring, 0)
             Theme.EInk -> 0
@@ -790,12 +808,13 @@ object ThemeConfig {
                     .apply()
             return@with
         }
-        val softGradient = NgThemeModeStore.current(this) ==
-            NgThemePresentationMode.SOFT_GRADIENT
-        val colorConfig = if (softGradient) {
-            NgSoftGradientTheme.colors(this)
-        } else {
-            NgColorConfigStore.current(this)
+        val presentationMode = NgThemeModeStore.current(this)
+        val softGradient = presentationMode == NgThemePresentationMode.SOFT_GRADIENT
+        val dynamicScene = presentationMode == NgThemePresentationMode.DYNAMIC_SCENE
+        val colorConfig = when {
+            softGradient -> NgSoftGradientTheme.colors(this)
+            dynamicScene -> NgDynamicSceneTheme.colors(this)
+            else -> NgColorConfigStore.current(this)
         }
         val colors = NgThemeResolver.resolveColorScheme(
             context = this,
@@ -810,7 +829,7 @@ object ThemeConfig {
             .backgroundColor(colors.background)
             .bottomBackground(manual?.labelContainer ?: colors.surfaceContainerLow)
             .transparentNavBar(
-                softGradient || getPrefBoolean(PreferKey.tNavBar, false)
+                softGradient || dynamicScene || getPrefBoolean(PreferKey.tNavBar, false)
             )
             .apply()
     }

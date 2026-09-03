@@ -13,8 +13,6 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,7 +24,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import io.legado.app.R
 import io.legado.app.help.config.ListeningCartoonType
-import io.legado.app.help.config.NgThemeLibraryStore
+import io.legado.app.help.config.NgDynamicSceneTheme
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgThemeSceneProfile
@@ -205,16 +203,18 @@ internal fun NgThemeSceneBackground(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    if (NgThemeModeStore.current(context) != NgThemePresentationMode.STANDARD) return
+    if (
+        NgThemeModeStore.current(context) != NgThemePresentationMode.DYNAMIC_SCENE
+    ) {
+        return
+    }
     val view = LocalView.current
     val lifecycleOwner = remember(view) { view.findViewTreeLifecycleOwner() }
-    val libraryState by remember(context) {
-        NgThemeLibraryStore.observe(context)
-    }.collectAsState()
-    val profile = remember(context, libraryState) {
-        NgThemeLibraryStore.activeTheme(context)?.sceneProfile
-            ?.normalized()
-            ?.takeIf { it.sceneType() in context.availableCartoonTypes() }
+    val preset = NgDynamicSceneTheme.current(context)
+    val profile = remember(context, preset) {
+        NgDynamicSceneTheme.sceneProfile(context)
+            .normalized()
+            .takeIf { it.sceneType() in context.availableCartoonTypes() }
     } ?: return
     val sceneHost = remember(context) {
         NgThemeSceneHostView(context).apply {

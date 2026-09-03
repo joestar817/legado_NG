@@ -87,7 +87,7 @@ class NgBuiltInThemePresetTest {
     }
 
     @Test
-    fun `built in themes only expose autumn and two dynamic scenes`() {
+    fun `managed theme library only exposes autumn`() {
         val expected = NgThemeBarProfile(
             useFloatingBottomBar = true,
             floatingBottomBarBottomDistancePx = 40,
@@ -100,11 +100,7 @@ class NgBuiltInThemePresetTest {
         )
 
         assertEquals(
-            listOf(
-                "builtin.ng.autumn_mountains",
-                "builtin.ng.sakura",
-                "builtin.ng.cats",
-            ),
+            listOf("builtin.ng.autumn_mountains"),
             NgBuiltInThemes.all.map { it.id },
         )
         assertEquals(
@@ -117,7 +113,7 @@ class NgBuiltInThemePresetTest {
     }
 
     @Test
-    fun `cartoon scenes are exposed as two stable manual dynamic themes`() {
+    fun `cartoon scenes are exposed as two stable internal presets`() {
         val expected = listOf(
             Triple(
                 NgBuiltInThemes.sakura,
@@ -142,11 +138,24 @@ class NgBuiltInThemePresetTest {
             assertEquals(NgColorGenerationMode.MANUAL, theme.colors.mode)
         }
         assertEquals("湖畔樱花", NgBuiltInThemes.sakura.name)
-        assertEquals(0xFFFFA3D1.toInt(), NgBuiltInThemes.sakura.colors.manualLight.primary)
-        assertEquals(0xFFFFA3D1.toInt(), NgBuiltInThemes.sakura.colors.manualDark.primary)
+        assertEquals(0xFFFF61FF.toInt(), NgBuiltInThemes.sakura.colors.manualLight.primary)
+        assertEquals(0xFFFF61FF.toInt(), NgBuiltInThemes.sakura.colors.manualDark.primary)
         assertEquals("好奇猫咪", NgBuiltInThemes.cats.name)
-        assertEquals(0xFF98B848.toInt(), NgBuiltInThemes.cats.colors.manualLight.primary)
-        assertEquals(0xFF98B848.toInt(), NgBuiltInThemes.cats.colors.manualDark.primary)
+        assertEquals(0xFF4E900C.toInt(), NgBuiltInThemes.cats.colors.manualLight.primary)
+        assertEquals(0xFF4E900C.toInt(), NgBuiltInThemes.cats.colors.manualDark.primary)
+        assertEquals(
+            listOf(ListeningCartoonType.SAKURA, ListeningCartoonType.CATS),
+            NgDynamicSceneTheme.presets,
+        )
+        assertEquals(
+            ListeningCartoonType.SAKURA,
+            NgDynamicSceneTheme.fromLegacyThemeId("builtin.ng.sakura"),
+        )
+        assertEquals(
+            ListeningCartoonType.CATS,
+            NgDynamicSceneTheme.fromLegacyThemeId("builtin.ng.cats"),
+        )
+        assertEquals(null, NgDynamicSceneTheme.fromLegacyThemeId("builtin.ng.autumn_mountains"))
     }
 
     @Test

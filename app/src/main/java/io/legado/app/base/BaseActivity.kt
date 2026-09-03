@@ -23,7 +23,7 @@ import io.legado.app.constant.AppConst
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.Theme
 import io.legado.app.help.config.AppConfig
-import io.legado.app.help.config.NgThemeLibraryStore
+import io.legado.app.help.config.NgDynamicSceneTheme
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgThemeRuntimeAssets
@@ -277,10 +277,8 @@ abstract class BaseActivity<VB : ViewBinding>(
                 val drawable = ThemeConfig.getBgImage(this, windowManager.windowSize)
                 val gradientDrawable = ThemeConfig.getGradientBgImage(this)
                 val usesDynamicScene =
-                    NgThemeModeStore.current(this) == NgThemePresentationMode.STANDARD &&
-                        NgThemeLibraryStore.activeTheme(this)
-                            ?.sceneProfile
-                            ?.sceneType() != null
+                    NgThemeModeStore.current(this) ==
+                        NgThemePresentationMode.DYNAMIC_SCENE
                 val scenePoster = ngThemeScenePoster
                 ngThemeGradientBackground?.run {
                     setGradientDrawable(gradientDrawable as? NgThemeGradientDrawable)
@@ -362,12 +360,14 @@ abstract class BaseActivity<VB : ViewBinding>(
         super.onResume()
         ngThemeGradientBackground?.setHostActive(true)
         ngThemeSceneHost?.run {
-            val profile = NgThemeLibraryStore.activeTheme(this@BaseActivity)
-                ?.sceneProfile
-                ?.takeIf {
-                    NgThemeModeStore.current(this@BaseActivity) ==
-                        NgThemePresentationMode.STANDARD
-                }
+            val profile = if (
+                NgThemeModeStore.current(this@BaseActivity) ==
+                NgThemePresentationMode.DYNAMIC_SCENE
+            ) {
+                NgDynamicSceneTheme.sceneProfile(this@BaseActivity)
+            } else {
+                null
+            }
             bind(profile)
             setHostActive(profile != null)
         }

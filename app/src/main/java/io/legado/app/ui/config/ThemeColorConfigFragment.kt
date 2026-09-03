@@ -4,14 +4,22 @@ import android.os.Bundle
 import android.view.View
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
 import io.legado.app.constant.EventBus
+import io.legado.app.help.config.NgDynamicSceneTheme
 import io.legado.app.help.config.NgColorConfigStore
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemePresentationMode
+import io.legado.app.help.config.ThemeConfig
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgColorSystem
+import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.utils.postEvent
 
 class ThemeColorConfigFragment : BaseFragment(R.layout.fragment_theme_color_config),
@@ -24,14 +32,40 @@ class ThemeColorConfigFragment : BaseFragment(R.layout.fragment_theme_color_conf
         (view as ComposeView).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                val flow = NgColorConfigStore.observe(requireContext())
-                val observed by flow.collectAsState()
-                val colors = observed ?: NgColorConfigStore.current(requireContext())
-                NgAppTheme {
-                    ThemeColorConfigScreen(
-                        colors = colors,
-                        onColorsChanged = ::updateColors
-                    )
+                val context = requireContext()
+                if (
+                    NgThemeModeStore.current(context) ==
+                    NgThemePresentationMode.DYNAMIC_SCENE
+                ) {
+                    var colors by remember { mutableStateOf(NgDynamicSceneTheme.colors(context)) }
+                    NgAppTheme(
+                        snapshot = NgThemeResolver.resolve(
+                            context = context,
+                            colors = colors,
+                            isDark = ThemeConfig.isDarkTheme(context),
+                        ),
+                    ) {
+                        ThemeColorConfigScreen(
+                            colors = colors,
+                            onColorsChanged = { updated ->
+                                if (updated != colors) {
+                                    hasChanges = true
+                                    colors = updated
+                                    NgDynamicSceneTheme.updateColors(context, updated)
+                                }
+                            },
+                        )
+                    }
+                } else {
+                    val flow = NgColorConfigStore.observe(context)
+                    val observed by flow.collectAsState()
+                    val colors = observed ?: NgColorConfigStore.current(context)
+                    NgAppTheme {
+                        ThemeColorConfigScreen(
+                            colors = colors,
+                            onColorsChanged = ::updateColors
+                        )
+                    }
                 }
             }
         }

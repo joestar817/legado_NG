@@ -285,6 +285,10 @@ internal object NgThemeLibraryStore {
             ACTIVE_THEME_KEY,
             null,
         )
+        NgDynamicSceneTheme.fromLegacyThemeId(selectedThemeId)?.let { preset ->
+            migrateLegacyDynamicTheme(context, preset)
+            return
+        }
         if (selectedThemeId != null && selectedThemeId in RETIRED_BUILT_IN_THEME_IDS) {
             val defaultTheme = builtInThemes(context)
                 .firstOrNull { it.id == NgBuiltInThemes.defaultTheme.id }
@@ -302,6 +306,33 @@ internal object NgThemeLibraryStore {
             .firstOrNull { it.id == NgBuiltInThemes.defaultTheme.id }
             ?: return
         apply(context, defaultTheme)
+    }
+
+    private fun migrateLegacyDynamicTheme(
+        context: Context,
+        preset: ListeningCartoonType,
+    ) {
+        val previousMode = NgThemeModeStore.current(context)
+        if (previousMode == NgThemePresentationMode.STANDARD) {
+            NgDynamicSceneTheme.migrateLegacyColorsIfCustomized(
+                context = context,
+                preset = preset,
+                colors = NgColorConfigStore.current(context),
+            )
+        }
+        val standardFallback = builtInThemes(context)
+            .firstOrNull { it.id == NgBuiltInThemes.defaultTheme.id }
+            ?: return
+        // Scene themes used to own the global bar profile. Preserve the user's current geometry
+        // while replacing only the now-invalid regular theme colors and backgrounds.
+        if (!apply(context, standardFallback.copy(barProfile = null))) return
+        NgDynamicSceneTheme.select(context, preset)
+        if (previousMode == NgThemePresentationMode.STANDARD) {
+            NgThemeModeStore.activateInternal(
+                context,
+                NgThemePresentationMode.DYNAMIC_SCENE,
+            )
+        }
     }
 
     fun snapshotCurrent(context: Context, name: String): NgManagedTheme {
@@ -453,7 +484,7 @@ internal object NgThemeLibraryStore {
         true
     }
 
-    fun apply(context: Context, theme: NgManagedTheme) {
+    fun apply(context: Context, theme: NgManagedTheme): Boolean {
         val previousActiveId = synchronized(lock) {
             ensureInitialized(context)
             val previous = mutableState.value.activeThemeId
@@ -461,11 +492,12 @@ internal object NgThemeLibraryStore {
             mutableState.value = mutableState.value.copy(activeThemeId = theme.id)
             previous
         }
-        if (ThemeConfig.applyManagedTheme(context, theme)) return
+        if (ThemeConfig.applyManagedTheme(context, theme)) return true
         synchronized(lock) {
             persistActive(context, previousActiveId)
             mutableState.value = mutableState.value.copy(activeThemeId = previousActiveId)
         }
+        return false
     }
 
     private fun currentBarProfile(context: Context): NgThemeBarProfile = NgThemeBarProfile(
@@ -607,7 +639,6 @@ internal object NgBuiltInThemes {
         id = "builtin.ng.sakura",
         name = "湖畔樱花",
         sceneType = ListeningCartoonType.SAKURA,
-        primary = 0xFFFFA3D1.toInt(),
         backgroundPath = "${CARTOON_BACKGROUND_PREFIX}sakura/background.webp",
     )
 
@@ -615,21 +646,20 @@ internal object NgBuiltInThemes {
         id = "builtin.ng.cats",
         name = "好奇猫咪",
         sceneType = ListeningCartoonType.CATS,
-        primary = 0xFF98B848.toInt(),
         backgroundPath = "${CARTOON_BACKGROUND_PREFIX}cats/poster.webp",
     )
 
     val defaultTheme = autumn
 
-    val all = listOf(autumn, sakura, cats)
+    val all = listOf(autumn)
 
     private fun dynamicTheme(
         id: String,
         name: String,
         sceneType: ListeningCartoonType,
-        primary: Int,
         backgroundPath: String,
     ): NgManagedTheme {
+        val primary = sceneType.scenePrimaryColor()
         val base = theme(
             id = id,
             name = name,

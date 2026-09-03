@@ -42,6 +42,8 @@ import io.legado.app.help.config.BookshelfFloatingDockConfig
 import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.help.config.FloatingBottomBarConfig
+import io.legado.app.help.config.ListeningCartoonType
+import io.legado.app.help.config.NgDynamicSceneTheme
 import io.legado.app.help.config.NgDrawerAppearanceConfig
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientLightFieldPreset
@@ -69,6 +71,7 @@ internal data class ThemeConfigScreenState(
     val softGradientColor: NgSoftGradientColorPreset = NgSoftGradientColorPreset.CLEAR_BLUE,
     val softGradientLightField: NgSoftGradientLightFieldPreset =
         NgSoftGradientLightFieldPreset.BALANCED,
+    val dynamicScenePreset: ListeningCartoonType = ListeningCartoonType.SAKURA,
     val visualSystem: NgVisualSystem = NgVisualSystem.DEFAULT,
     val showLauncherIcon: Boolean = true,
     @param:DrawableRes val launcherIconRes: Int = R.mipmap.ic_launcher,
@@ -118,6 +121,7 @@ internal fun ThemeConfigScreen(
     onInternalThemeModeSelected: (NgThemePresentationMode) -> Unit,
     onSoftGradientColorSelected: (NgSoftGradientColorPreset) -> Unit,
     onSoftGradientLightFieldSelected: (NgSoftGradientLightFieldPreset) -> Unit,
+    onDynamicScenePresetSelected: (ListeningCartoonType) -> Unit,
     onVisualSystemSelected: (NgVisualSystem) -> Unit,
     onLauncherIconClick: () -> Unit,
     onFloatingBottomBarChanged: (Boolean) -> Unit,
@@ -162,6 +166,9 @@ internal fun ThemeConfigScreen(
     val selectedInternalMode = INTERNAL_THEME_MODES
         .indexOf(state.internalThemeMode)
         .coerceAtLeast(0)
+    val selectedDynamicScene = DYNAMIC_SCENE_PRESETS
+        .indexOf(state.dynamicScenePreset)
+        .coerceAtLeast(0)
     var themeModeExpanded by rememberSaveable { mutableStateOf(false) }
     var visualSystemExpanded by rememberSaveable { mutableStateOf(false) }
     var bottomBarExpanded by rememberSaveable { mutableStateOf(false) }
@@ -181,6 +188,8 @@ internal fun ThemeConfigScreen(
                 )
                 NgThemePresentationMode.SOFT_GRADIENT ->
                     stringResource(R.string.ng_theme_mode_soft_gradient)
+                NgThemePresentationMode.DYNAMIC_SCENE ->
+                    stringResource(state.dynamicScenePreset.themeSceneLabelRes())
                 NgThemePresentationMode.EINK ->
                     stringResource(R.string.theme_mode_eink_short)
             }
@@ -247,6 +256,9 @@ internal fun ThemeConfigScreen(
                                 text = stringResource(R.string.ng_theme_mode_soft_gradient),
                             ),
                             NgFloatingTabSpec(
+                                text = stringResource(R.string.ng_theme_mode_dynamic_scene),
+                            ),
+                            NgFloatingTabSpec(
                                 text = stringResource(R.string.theme_mode_eink_short),
                                 iconVector = Icons.Rounded.MonochromePhotos,
                             ),
@@ -291,6 +303,23 @@ internal fun ThemeConfigScreen(
                                 onSoftGradientLightFieldSelected(
                                     NgSoftGradientLightFieldPreset.entries[index],
                                 )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    if (state.presentationMode == NgThemePresentationMode.DYNAMIC_SCENE) {
+                        ThemeModeFieldLabel(
+                            stringResource(R.string.ng_theme_mode_dynamic_scene),
+                        )
+                        NgFloatingTabBar(
+                            items = DYNAMIC_SCENE_PRESETS.map { preset ->
+                                NgFloatingTabSpec(
+                                    text = stringResource(preset.themeSceneLabelRes()),
+                                )
+                            },
+                            selectedIndex = selectedDynamicScene,
+                            onTabSelected = { index ->
+                                onDynamicScenePresetSelected(DYNAMIC_SCENE_PRESETS[index])
                             },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -656,7 +685,10 @@ internal fun ThemeConfigScreen(
             }
             if (
                 showAppearance &&
-                state.presentationMode == NgThemePresentationMode.STANDARD
+                (
+                    state.presentationMode == NgThemePresentationMode.STANDARD ||
+                        state.presentationMode == NgThemePresentationMode.DYNAMIC_SCENE
+                )
             ) {
                 NgSettingsItem(
                     title = stringResource(R.string.ng_custom_colors),
@@ -792,6 +824,12 @@ private fun NgSoftGradientColorPreset.labelRes(): Int = when (this) {
     NgSoftGradientColorPreset.CHERRY_GLOW -> R.string.ng_soft_gradient_cherry_glow
 }
 
+private fun ListeningCartoonType.themeSceneLabelRes(): Int = when (this) {
+    ListeningCartoonType.SAKURA -> R.string.listening_motion_cartoon_sakura
+    ListeningCartoonType.CATS -> R.string.listening_motion_cartoon_cats
+    ListeningCartoonType.RAIN_NIGHT -> R.string.listening_motion_cartoon_rain_night
+}
+
 private fun NgVisualSystem.labelRes(): Int = when (this) {
     NgVisualSystem.TRANSPARENT_GLASS -> R.string.ng_visual_system_transparent_glass
     NgVisualSystem.LIQUID_GLASS -> R.string.ng_visual_system_liquid_glass
@@ -872,5 +910,8 @@ private val STANDARD_THEME_MODES = listOf("0", "1", "2")
 
 private val INTERNAL_THEME_MODES = listOf(
     NgThemePresentationMode.SOFT_GRADIENT,
+    NgThemePresentationMode.DYNAMIC_SCENE,
     NgThemePresentationMode.EINK,
 )
+
+private val DYNAMIC_SCENE_PRESETS = NgDynamicSceneTheme.presets

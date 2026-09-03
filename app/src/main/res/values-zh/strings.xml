@@ -1174,6 +1174,7 @@
     <string name="ng_theme_mode_standard">常规模式</string>
     <string name="ng_theme_mode_internal">专属模式</string>
     <string name="ng_theme_mode_soft_gradient">柔光渐变</string>
+    <string name="ng_theme_mode_dynamic_scene">动态场景</string>
     <string name="ng_soft_gradient_color">柔光色调</string>
     <string name="ng_soft_gradient_clear_blue">澄蓝</string>
     <string name="ng_soft_gradient_dusk_violet">暮紫</string>

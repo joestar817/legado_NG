@@ -1174,6 +1174,7 @@
     <string name="ng_theme_mode_standard">Standard mode</string>
     <string name="ng_theme_mode_internal">Dedicated mode</string>
     <string name="ng_theme_mode_soft_gradient">Soft gradient</string>
+    <string name="ng_theme_mode_dynamic_scene">Dynamic scene</string>
     <string name="ng_soft_gradient_color">Soft glow color</string>
     <string name="ng_soft_gradient_clear_blue">Clear blue</string>
     <string name="ng_soft_gradient_dusk_violet">Dusk violet</string>

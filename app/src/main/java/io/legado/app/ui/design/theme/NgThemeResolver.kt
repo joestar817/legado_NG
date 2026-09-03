@@ -22,6 +22,7 @@ import com.materialkolor.scheme.SchemeTonalSpot
 import com.materialkolor.scheme.SchemeVibrant
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.NgDynamicSceneTheme
 import io.legado.app.help.config.NgColorConfigStore
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientTheme
@@ -74,6 +75,13 @@ object NgThemeResolver {
                 systemBars = snapshot.systemBars.copy(
                     darkStatusBarIcons = colorPreset.darkStatusBarIcons,
                 ),
+            )
+        }
+        if (NgThemeModeStore.current(context) == NgThemePresentationMode.DYNAMIC_SCENE) {
+            return resolve(
+                context = context,
+                colors = NgDynamicSceneTheme.colors(context),
+                isDark = ThemeConfig.isDarkTheme(context),
             )
         }
         return resolve(

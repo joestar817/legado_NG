@@ -13,6 +13,7 @@ internal enum class NgThemeModeGroup {
 internal enum class NgThemePresentationMode {
     STANDARD,
     SOFT_GRADIENT,
+    DYNAMIC_SCENE,
     EINK,
 }
 
@@ -27,6 +28,7 @@ internal object NgThemeModeStore {
 
     private const val PRESENTATION_STANDARD = "standard"
     private const val PRESENTATION_SOFT_GRADIENT = "soft_gradient"
+    private const val PRESENTATION_DYNAMIC_SCENE = "dynamic_scene"
     private const val STANDARD_MODE_FOLLOW = "0"
     private const val STANDARD_MODE_DAY = "1"
     private val standardModes = setOf("0", "1", "2")
@@ -37,12 +39,17 @@ internal object NgThemeModeStore {
             PreferKey.ngThemePresentationMode,
             PRESENTATION_STANDARD,
         ) == PRESENTATION_SOFT_GRADIENT -> NgThemePresentationMode.SOFT_GRADIENT
+        context.getPrefString(
+            PreferKey.ngThemePresentationMode,
+            PRESENTATION_STANDARD,
+        ) == PRESENTATION_DYNAMIC_SCENE -> NgThemePresentationMode.DYNAMIC_SCENE
         else -> NgThemePresentationMode.STANDARD
     }
 
     fun currentGroup(context: Context): NgThemeModeGroup = when (current(context)) {
         NgThemePresentationMode.STANDARD -> NgThemeModeGroup.STANDARD
         NgThemePresentationMode.SOFT_GRADIENT,
+        NgThemePresentationMode.DYNAMIC_SCENE,
         NgThemePresentationMode.EINK -> NgThemeModeGroup.INTERNAL
     }
 
@@ -56,6 +63,7 @@ internal object NgThemeModeStore {
         return when (context.getPrefString(PreferKey.ngInternalThemeMode)) {
             INTERNAL_MODE_EINK -> NgThemePresentationMode.EINK
             INTERNAL_MODE_SOFT_GRADIENT -> NgThemePresentationMode.SOFT_GRADIENT
+            INTERNAL_MODE_DYNAMIC_SCENE -> NgThemePresentationMode.DYNAMIC_SCENE
             else -> if (AppConfig.isEInkMode) {
                 NgThemePresentationMode.EINK
             } else {
@@ -93,6 +101,18 @@ internal object NgThemeModeStore {
                 ThemeConfig.applyThemeMode(context, STANDARD_MODE_DAY)
             }
 
+            NgThemePresentationMode.DYNAMIC_SCENE -> {
+                context.putPrefString(
+                    PreferKey.ngThemePresentationMode,
+                    PRESENTATION_DYNAMIC_SCENE,
+                )
+                context.putPrefString(
+                    PreferKey.ngInternalThemeMode,
+                    INTERNAL_MODE_DYNAMIC_SCENE,
+                )
+                ThemeConfig.applyThemeMode(context, standardThemeMode(context))
+            }
+
             NgThemePresentationMode.EINK -> {
                 context.putPrefString(PreferKey.ngThemePresentationMode, PRESENTATION_STANDARD)
                 context.putPrefString(PreferKey.ngInternalThemeMode, INTERNAL_MODE_EINK)
@@ -114,6 +134,7 @@ internal object NgThemeModeStore {
     }
 
     private const val INTERNAL_MODE_SOFT_GRADIENT = "soft_gradient"
+    private const val INTERNAL_MODE_DYNAMIC_SCENE = "dynamic_scene"
     private const val INTERNAL_MODE_EINK = "eink"
     private const val EINK_THEME_MODE = "3"
 }
