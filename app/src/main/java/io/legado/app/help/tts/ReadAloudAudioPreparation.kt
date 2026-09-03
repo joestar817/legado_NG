@@ -29,6 +29,18 @@ internal fun hasReadAloudProductionGap(
 internal fun readAloudWholeChapterPageEndIndex(pageCount: Int): Int? =
     (pageCount - 1).takeIf { it >= 0 }
 
+internal fun readAloudPlaybackCompletionTarget(
+    currentParagraphIndex: Int,
+    paragraphCount: Int,
+    isSilent: (Int) -> Boolean
+): Int {
+    var target = (currentParagraphIndex + 1).coerceIn(0, paragraphCount)
+    while (target < paragraphCount && isSilent(target)) {
+        target++
+    }
+    return target
+}
+
 internal enum class ReadAloudPlaylistAppendAction {
     NONE,
     START,

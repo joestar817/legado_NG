@@ -52,6 +52,7 @@ import io.legado.app.help.tts.TtsScriptEngineClient
 import io.legado.app.help.tts.isReadAloudSynthesisTextSilent
 import io.legado.app.help.tts.prepareReadAloudAudioTasks
 import io.legado.app.help.tts.readAloudPlaylistAppendAction
+import io.legado.app.help.tts.readAloudPlaybackCompletionTarget
 import io.legado.app.help.tts.readAloudWholeChapterPageEndIndex
 import io.legado.app.help.tts.normalizeStoryboardSynthesisText
 import io.legado.app.help.tts.parseReadAloudMediaItemIdentity
@@ -343,7 +344,12 @@ class HttpReadAloudService : BaseReadAloudService(),
             }
             advanceToParagraph(nextItem.paragraphIndex)
         } else {
-            advanceToParagraph(currentItem.paragraphIndex + 1)
+            val completionTarget = readAloudPlaybackCompletionTarget(
+                currentParagraphIndex = currentItem.paragraphIndex,
+                paragraphCount = contentList.size,
+                isSilent = { index -> isReadAloudTextSilent(index) }
+            )
+            advanceToParagraph(completionTarget)
             speakItems = emptyList()
             speakItemIndex = 0
         }

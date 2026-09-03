@@ -58,6 +58,48 @@ class ReadAloudAudioPreparationTest {
     }
 
     @Test
+    fun playbackCompletion_skipsTrailingPunctuationParagraph() {
+        val paragraphs = listOf("正文", "……")
+
+        assertEquals(
+            paragraphs.size,
+            readAloudPlaybackCompletionTarget(
+                currentParagraphIndex = 0,
+                paragraphCount = paragraphs.size,
+                isSilent = { index -> isReadAloudSynthesisTextSilent(paragraphs[index]) }
+            )
+        )
+    }
+
+    @Test
+    fun playbackCompletion_skipsAllTrailingSilentParagraphs() {
+        val paragraphs = listOf("正文", "……", "......", "　")
+
+        assertEquals(
+            paragraphs.size,
+            readAloudPlaybackCompletionTarget(
+                currentParagraphIndex = 0,
+                paragraphCount = paragraphs.size,
+                isSilent = { index -> isReadAloudSynthesisTextSilent(paragraphs[index]) }
+            )
+        )
+    }
+
+    @Test
+    fun playbackCompletion_stopsBeforeAnAudibleParagraph() {
+        val paragraphs = listOf("正文", "下一段", "……")
+
+        assertEquals(
+            1,
+            readAloudPlaybackCompletionTarget(
+                currentParagraphIndex = 0,
+                paragraphCount = paragraphs.size,
+                isSilent = { index -> isReadAloudSynthesisTextSilent(paragraphs[index]) }
+            )
+        )
+    }
+
+    @Test
     fun playlistAppend_hasSinglePrepareOwnerForInitialStart() {
         assertEquals(
             ReadAloudPlaylistAppendAction.START,
