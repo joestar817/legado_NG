@@ -26,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -109,7 +108,7 @@ fun NgFlatActionRail(
                         .clip(railShape)
                         .background(
                             if (picker) {
-                                colorResource(R.color.ng_surface_card)
+                                ngDrawerContentCardColor()
                             } else {
                                 Color(NgTheme.colors.surfaceContainerHigh).copy(
                                     alpha = if (NgTheme.snapshot.isEInk) 1f else 0.38f

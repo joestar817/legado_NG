@@ -30,6 +30,8 @@ internal data class NgDrawerSemanticColors(
  */
 internal object NgDrawerPalette {
 
+    private const val OPAQUE_WHITE = -0x1
+    private const val DARK_CONTENT_CARD_LIFT = 0.12f
     private const val TEXT_MIN_CONTRAST = 4.5
     private const val CONTROL_MIN_CONTRAST = 3.0
     private const val CONTROL_MAX_CONTRAST = 4.2
@@ -110,7 +112,18 @@ internal object NgDrawerPalette {
         primaryStrengthPercent: Int,
     ): NgDrawerSemanticColors {
         val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent)
-        val backgrounds = intArrayOf(surfaces.top, surfaces.bottom)
+        return resolveSemanticColors(
+            snapshot = snapshot,
+            primaryStrengthPercent = primaryStrengthPercent,
+            backgrounds = intArrayOf(surfaces.top, surfaces.bottom),
+        )
+    }
+
+    private fun resolveSemanticColors(
+        snapshot: NgThemeSnapshot,
+        primaryStrengthPercent: Int,
+        backgrounds: IntArray,
+    ): NgDrawerSemanticColors {
         val colors = snapshot.colors
         val strength = NgDrawerAppearanceConfig.strengthFraction(primaryStrengthPercent)
         val content = findContrastingTone(
@@ -158,9 +171,55 @@ internal object NgDrawerPalette {
     fun applySemanticRoles(
         snapshot: NgThemeSnapshot,
         primaryStrengthPercent: Int,
-    ): NgThemeSnapshot {
-        val semantic = resolveSemanticColors(snapshot, primaryStrengthPercent)
+    ): NgThemeSnapshot = applySemanticRoles(
+        snapshot = snapshot,
+        primaryStrengthPercent = primaryStrengthPercent,
+        contentCardContainer = null,
+    )
+
+    /** 日间白卡在夜间抽屉中的轻量、同色相承载面。 */
+    fun applyAdaptiveContentCardRoles(
+        snapshot: NgThemeSnapshot,
+        primaryStrengthPercent: Int,
+    ): NgThemeSnapshot = applySemanticRoles(
+        snapshot = snapshot,
+        primaryStrengthPercent = primaryStrengthPercent,
+        contentCardContainer = resolveAdaptiveContentCardColor(
+            snapshot = snapshot,
+            primaryStrengthPercent = primaryStrengthPercent,
+        ),
+    )
+
+    @ColorInt
+    fun resolveAdaptiveContentCardColor(
+        snapshot: NgThemeSnapshot,
+        primaryStrengthPercent: Int,
+    ): Int {
+        if (!snapshot.isDark || snapshot.isEInk) return OPAQUE_WHITE
         val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent)
+        return NgColorMath.blend(
+            surfaces.bottom,
+            OPAQUE_WHITE,
+            DARK_CONTENT_CARD_LIFT,
+        )
+    }
+
+    private fun applySemanticRoles(
+        snapshot: NgThemeSnapshot,
+        primaryStrengthPercent: Int,
+        @ColorInt contentCardContainer: Int?,
+    ): NgThemeSnapshot {
+        val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent)
+        val backgrounds = if (contentCardContainer == null) {
+            intArrayOf(surfaces.top, surfaces.bottom)
+        } else {
+            intArrayOf(surfaces.top, surfaces.bottom, contentCardContainer)
+        }
+        val semantic = resolveSemanticColors(
+            snapshot = snapshot,
+            primaryStrengthPercent = primaryStrengthPercent,
+            backgrounds = backgrounds,
+        )
         val colors = snapshot.colors
         val indicatorContainer = NgColorMath.blend(
             surfaces.bottom,
@@ -183,6 +242,7 @@ internal object NgDrawerPalette {
                     0.48f,
                 ),
                 onTopBar = semantic.content,
+                cardContainer = contentCardContainer ?: colors.cardContainer,
                 selectedContainer = indicatorContainer,
             )
         )

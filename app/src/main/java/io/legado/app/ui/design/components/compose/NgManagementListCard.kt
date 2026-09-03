@@ -85,7 +85,7 @@ fun NgManagementListCard(
     val shape = RoundedCornerShape(
         if (isCompactGrid) NgTheme.shapes.smallDp.dp else NgTheme.shapes.largeDp.dp
     )
-    val resolvedContainerColor = containerColor ?: colorResource(R.color.ng_surface_card)
+    val resolvedContainerColor = containerColor ?: ngDrawerContentCardColor()
     Row(
         modifier = modifier
             .fillMaxWidth()

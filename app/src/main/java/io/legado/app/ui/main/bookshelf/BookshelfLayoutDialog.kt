@@ -37,6 +37,7 @@ import io.legado.app.help.config.BookshelfLayoutMode
 import io.legado.app.help.config.BookshelfLayoutProfile
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgFlatActionRail
 import io.legado.app.ui.design.components.compose.NgFlatActionRailItem
 import io.legado.app.ui.design.components.compose.NgFlatActionRailVariant
@@ -227,6 +228,7 @@ private fun BookshelfLayoutSheet(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = maxDrawerHeight),
+        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
     ) {
         Column(
             modifier = Modifier

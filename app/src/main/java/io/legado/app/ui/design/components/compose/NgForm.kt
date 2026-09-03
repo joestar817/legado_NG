@@ -135,7 +135,7 @@ fun NgFormPanel(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colorResource(R.color.ng_surface_card))
+            .background(ngDrawerContentCardColor())
             .border(
                 width = 0.6.dp,
                 color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
@@ -349,7 +349,7 @@ fun NgFormSelectRow(
             modifier = Modifier.width(menuWidth),
             offset = menuOffset,
             shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
-            containerColor = colorResource(R.color.ng_surface_card),
+            containerColor = ngDrawerContentCardColor(),
             tonalElevation = 0.dp,
             shadowElevation = 4.dp,
         ) {
@@ -1305,7 +1305,7 @@ fun NgFormSelectField(
                     with(layoutDensity) { fieldWidthPx.toDp() }
                 ),
                 shape = shape,
-                containerColor = colorResource(R.color.ng_surface_card),
+                containerColor = ngDrawerContentCardColor(),
                 tonalElevation = 0.dp,
                 shadowElevation = 4.dp
             ) {
@@ -1522,7 +1522,7 @@ fun NgFormActionButton(
         NgButtonVariant.DANGER -> Color(colors.error)
         NgButtonVariant.ON_IMAGE -> Color.Black.copy(alpha = 0.56f)
         NgButtonVariant.OUTLINE -> if (surfaceCardAppearance) {
-            colorResource(R.color.ng_surface_card)
+            ngDrawerContentCardColor()
         } else {
             Color(colors.surface)
         }

@@ -21,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -59,7 +58,7 @@ fun NgChoiceCard(
         !isFormatCard -> Color(colors.cardContainer).copy(
             alpha = NgTheme.effects.containerAlpha
         )
-        else -> colorResource(R.color.ng_surface_card)
+        else -> ngDrawerContentCardColor()
     }
     Surface(
         onClick = onClick,

@@ -19,6 +19,7 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgCompactDrawerHeader
 import io.legado.app.ui.design.components.compose.NgCompactDrawerSelectionItem
 import io.legado.app.ui.design.components.compose.NgCompactDrawerSelectionPanel
@@ -73,7 +74,10 @@ class BookSourceExportSheet(
                 title = stringResource(R.string.export_book_source_save_folder),
             ),
         )
-        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
+        NgBottomDrawerSurface(
+            modifier = Modifier.fillMaxWidth(),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

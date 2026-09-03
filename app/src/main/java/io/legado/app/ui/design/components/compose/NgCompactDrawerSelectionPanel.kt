@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -84,7 +83,7 @@ fun NgCompactDrawerPanel(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(NgTheme.shapes.largeDp.dp))
-            .background(colorResource(R.color.ng_surface_card))
+            .background(ngDrawerContentCardColor())
             .then(
                 if (scrollState != null) {
                     Modifier.verticalScroll(scrollState)

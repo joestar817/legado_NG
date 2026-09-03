@@ -64,6 +64,7 @@ class NgDrawerPaletteTest {
                     val expectedControlContrast = 3.0 + 1.2 * (strength / 100.0)
 
                     assertEquals(base.colors.surfaceTint, result.colors.surfaceTint)
+                    assertEquals(base.colors.cardContainer, result.colors.cardContainer)
                     assertTrue(
                         minContrast(result.colors.primary, surfaces) >=
                             expectedControlContrast - 0.01
@@ -73,6 +74,27 @@ class NgDrawerPaletteTest {
                     assertTrue(minContrast(result.colors.onSurfaceVariant, surfaces) >= 4.5)
                     assertTrue(minContrast(result.colors.outline, surfaces) >= 3.0)
                 }
+            }
+        }
+    }
+
+    @Test
+    fun `adaptive content cards stay white by day and become lifted tinted surfaces at night`() {
+        listOf(0xFFF78E66.toInt(), 0xFF00838F.toInt()).forEach { seed ->
+            val light = snapshot(seed = seed, isDark = false)
+            val lightResult = NgDrawerPalette.applyAdaptiveContentCardRoles(light, 100)
+            assertEquals(0xFFFFFFFF.toInt(), lightResult.colors.cardContainer)
+
+            listOf(0, 50, 100).forEach { strength ->
+                val dark = snapshot(seed = seed, isDark = true)
+                val result = NgDrawerPalette.applyAdaptiveContentCardRoles(dark, strength)
+                val surfaces = NgDrawerPalette.resolveSurfaceColors(result, strength)
+                val card = result.colors.cardContainer
+
+                assertTrue(Hct.fromInt(card).tone > Hct.fromInt(surfaces.bottom).tone)
+                assertTrue(NgColorMath.contrastRatio(result.colors.onSurface, card) >= 4.5)
+                assertTrue(NgColorMath.contrastRatio(result.colors.onSurfaceVariant, card) >= 4.5)
+                assertTrue(NgColorMath.contrastRatio(result.colors.primary, card) >= 3.0)
             }
         }
     }

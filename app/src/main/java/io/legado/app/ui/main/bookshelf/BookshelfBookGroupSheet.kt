@@ -50,6 +50,7 @@ import io.legado.app.ui.design.components.compose.NgCompactDrawerSelectionPanel
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandle
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandleVariant
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgFormField
@@ -179,7 +180,10 @@ class BookshelfBookGroupSheet private constructor(
                 ),
             )
         }
-        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
+        NgBottomDrawerSurface(
+            modifier = Modifier.fillMaxWidth(),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

@@ -35,7 +35,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -54,12 +53,14 @@ import io.legado.app.help.book.isLocal
 import io.legado.app.ui.design.components.compose.NgBookCover
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgCompactDrawerPanel
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandle
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandleVariant
 import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.components.compose.NgThemedActionIcon
 import io.legado.app.ui.design.components.compose.NgThemedActionIconKind
 import io.legado.app.ui.design.components.compose.NgThemedActionIconTone
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import kotlinx.coroutines.Dispatchers.IO
@@ -137,7 +138,10 @@ class BookshelfBookActionSheet(
     @Composable
     private fun SheetContent() {
         val maxContentHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
-        NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
+        NgBottomDrawerSurface(
+            modifier = Modifier.fillMaxWidth(),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -426,7 +430,7 @@ class BookshelfBookActionSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { dismissThen { callback.onDelete(book) } },
-            color = colorResource(R.color.ng_surface_card),
+            color = ngDrawerContentCardColor(),
             shape = RoundedCornerShape(NgTheme.shapes.largeDp.dp),
         ) {
             Row(

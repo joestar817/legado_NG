@@ -37,6 +37,7 @@ import io.legado.app.help.book.BookExportFileNameRules
 import io.legado.app.help.config.AppConfig
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgChoiceCard
 import io.legado.app.ui.design.components.compose.NgChoiceCardVariant
 import io.legado.app.ui.design.components.compose.NgExpandableSettingsItem
@@ -199,7 +200,10 @@ private fun ExportSettingsSheetContent(
         ),
     )
 
-    NgBottomDrawerSurface(modifier = Modifier.fillMaxSize()) {
+    NgBottomDrawerSurface(
+        modifier = Modifier.fillMaxSize(),
+        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()

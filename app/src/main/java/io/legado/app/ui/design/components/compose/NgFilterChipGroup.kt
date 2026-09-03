@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -205,7 +204,7 @@ private fun NgFilterChip(
     val containerColor = if (selected) {
         Color(colors.selectedContainer)
     } else {
-        colorResource(R.color.ng_surface_card)
+        ngDrawerContentCardColor()
     }
     val contentColor = if (selected) {
         Color(colors.primary)

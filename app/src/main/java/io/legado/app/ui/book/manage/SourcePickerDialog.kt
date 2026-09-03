@@ -50,6 +50,7 @@ import io.legado.app.ui.design.components.NgManagementTrailing
 import io.legado.app.ui.design.components.NgFilterChipGroupVariant
 import io.legado.app.ui.design.components.NgManagementListCardVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgFilterChipGroup
 import io.legado.app.ui.design.components.compose.NgFilterChipItem
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
@@ -213,6 +214,7 @@ private fun SourcePickerSheetContent(
 
     NgBottomDrawerSurface(
         modifier = Modifier.fillMaxSize(),
+        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
     ) {
         Column(
             modifier = Modifier

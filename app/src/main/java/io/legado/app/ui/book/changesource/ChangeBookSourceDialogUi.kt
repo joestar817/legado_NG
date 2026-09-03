@@ -75,6 +75,7 @@ import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandle
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandleVariant
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgSearchBar
@@ -288,6 +289,7 @@ internal fun ChangeBookSourceDialogContent(
 
         ChangeBookSourcePresentation.DRAWER -> NgBottomDrawerSurface(
             modifier = Modifier.fillMaxSize(),
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) { content() }
     }
 }
