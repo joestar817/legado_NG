@@ -658,6 +658,14 @@ Cookie、缓存、共享 `jsLib` 与文件访问均按完整书源 URL 隔离。
 CryptoJS.MD5("text").toString();
 ```
 
+`java.getQuickJsSandbox().evalString(script)` 用于 Rhino 语义无法兼容的少量纯 JavaScript
+计算。它会在全新的
+QuickJS 运行时中执行字符串，并只返回字符串；QuickJS 看不到 `java`、`source`、`cookie`、
+`cache`、`Packages`、网络或文件能力。该能力仅支持 Android 6.0 及以上，限制单次脚本不超过
+384000 个字符、结果不超过 65536 个字符，并受独立进程的内存、栈和执行时限保护。执行失败会
+直接抛错；单次执行最长 15 秒，超时会终止沙箱进程且不会降级到 Rhino。网络请求、Cookie 与
+缓存仍应由外层书源函数处理。
+
 每次业务调用都会建立局部作用域并重新执行主脚本。不要依赖顶层可变变量跨请求保存状态；
 持久状态请使用 `cache`、`source.put/get` 或书源变量。来自 Java 对象的方法返回值可能仍是
 Java 字符串包装对象，需要 JavaScript 字符串语义时先使用 `String(value)` 转换。

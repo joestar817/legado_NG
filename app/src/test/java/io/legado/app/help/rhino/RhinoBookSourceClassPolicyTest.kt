@@ -274,6 +274,19 @@ class RhinoBookSourceClassPolicyTest {
     }
 
     @Test
+    fun quickJsRuntimeIsOnlyReachableThroughTheIsolatedHostFacade() {
+        val className = "com.dokar.quickjs.QuickJs"
+        val source = BookSource(
+            bookSourceUrl = "https://example.com/quickjs-policy",
+            bookSourceName = "QuickJS策略测试",
+        )
+
+        assertFalse(RhinoClassShutter.visibleToScripts(className))
+        val result = source.evalJS("String(Packages.$className)").toString()
+        assertTrue(result, result.startsWith("[JavaPackage "))
+    }
+
+    @Test
     fun diagnosticSourceLabelSupportsNestingAndCleanup() {
         assertNull(RhinoClassShutter.currentBookSourceLabel())
 

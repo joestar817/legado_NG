@@ -4,6 +4,8 @@
  * loginUi 与 loginAction 成对声明即可启用动态登录界面。
  * config 保存脚本配置；source 是运行时书源实体，sourceApi 是兼容旧脚本的别名。
  * 可使用 java、source、sourceApi、cookie、cache、baseUrl 与内置 CryptoJS。
+ * Android 6.0 及以上可按需调用 java.getQuickJsSandbox().evalString(script)，
+ * 在受限 QuickJS 隔离进程中执行纯字符串脚本；失败时不会回退到 Rhino。
  */
 
 var config = {

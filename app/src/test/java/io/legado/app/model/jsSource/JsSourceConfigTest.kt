@@ -61,6 +61,27 @@ class JsSourceConfigTest {
     }
 
     @Test
+    fun quickJsSandboxIsNotAvailableWhileImportingSourceConfiguration() {
+        val script = """
+            var config = {
+                bookSourceUrl: "https://example.com/import-sandbox",
+                bookSourceName: "导入隔离测试"
+            };
+            if (typeof java !== "undefined" || typeof isolatedJs !== "undefined") {
+                throw new Error("runtime bindings must not exist while importing");
+            }
+            function search(key, page) { return []; }
+            function getChapters(book) { return []; }
+            function getContent(chapter, book) { return "正文"; }
+        """.trimIndent()
+
+        val source = JsSourceConfig.extract(script)
+
+        assertEquals("https://example.com/import-sandbox", source.bookSourceUrl)
+        assertEquals(script, source.mainJs)
+    }
+
+    @Test
     fun validatesFunctionPairsAndRequiredFunctions() {
         val missingExplore = validScript.replace(
             "function explore(url, page) { return []; }",
