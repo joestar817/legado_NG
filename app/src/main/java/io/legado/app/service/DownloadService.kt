@@ -17,14 +17,18 @@ import io.legado.app.constant.AppConst
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.IntentAction
 import io.legado.app.constant.NotificationId
+import io.legado.app.help.update.AppUpdateDownloadVerifier
+import io.legado.app.model.Download
 import io.legado.app.utils.IntentType
 import io.legado.app.utils.openFileUri
 import io.legado.app.utils.servicePendingIntent
 import io.legado.app.utils.toastOnUi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import splitties.init.appCtx
 import splitties.systemservices.downloadManager
 import splitties.systemservices.notificationManager
@@ -36,6 +40,7 @@ class DownloadService : BaseService() {
     private val groupKey = "${appCtx.packageName}.download"
     private val downloads = hashMapOf<Long, DownloadInfo>()
     private val completeDownloads = hashSetOf<Long>()
+    private val validatingDownloads = hashSetOf<Long>()
     private var upStateJob: Job? = null
     private val downloadReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -62,8 +67,11 @@ class DownloadService : BaseService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             IntentAction.start -> startDownload(
-                intent.getStringExtra("url"),
-                intent.getStringExtra("fileName")
+                intent.getStringArrayListExtra(Download.EXTRA_URLS)
+                    ?: intent.getStringExtra(Download.EXTRA_URL)?.let { url -> arrayListOf(url) },
+                intent.getStringExtra(Download.EXTRA_FILE_NAME),
+                intent.getLongExtra(Download.EXTRA_EXPECTED_SIZE, -1L),
+                intent.getStringExtra(Download.EXTRA_EXPECTED_SHA256),
             )
 
             IntentAction.play -> {
@@ -87,28 +95,33 @@ class DownloadService : BaseService() {
      * 开始下载
      */
     @Synchronized
-    private fun startDownload(url: String?, fileName: String?) {
-        if (url == null || fileName == null) {
+    private fun startDownload(
+        urls: List<String>?,
+        fileName: String?,
+        expectedSize: Long,
+        expectedSha256: String?,
+    ) {
+        val candidates = urls?.filter(String::isNotBlank)?.distinct().orEmpty()
+        if (candidates.isEmpty() || fileName == null) {
             if (downloads.isEmpty()) {
                 stopSelf()
             }
             return
         }
-        if (downloads.values.any { it.url == url }) {
+        if (downloads.values.any { it.fileName == fileName && it.urls == candidates }) {
             toastOnUi("已在下载列表")
             return
         }
         kotlin.runCatching {
-            // 指定下载地址
-            val request = DownloadManager.Request(Uri.parse(url))
-            // 设置通知
-            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN)
-            // 设置下载文件保存的路径和文件名
-            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-            // 添加一个下载任务
-            val downloadId = downloadManager.enqueue(request)
-            downloads[downloadId] =
-                DownloadInfo(url, fileName, NotificationId.Download + downloads.size)
+            enqueueDownload(
+                DownloadInfo(
+                    urls = candidates,
+                    fileName = fileName,
+                    notificationId = NotificationId.Download + downloads.size,
+                    expectedSize = expectedSize,
+                    expectedSha256 = expectedSha256,
+                )
+            )
             queryState()
             if (upStateJob == null) {
                 checkDownloadState()
@@ -124,6 +137,18 @@ class DownloadService : BaseService() {
         }
     }
 
+    private fun enqueueDownload(downloadInfo: DownloadInfo): Long {
+        val request = DownloadManager.Request(Uri.parse(downloadInfo.url))
+        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN)
+        request.setDestinationInExternalPublicDir(
+            Environment.DIRECTORY_DOWNLOADS,
+            downloadInfo.fileName
+        )
+        val downloadId = downloadManager.enqueue(request)
+        downloads[downloadId] = downloadInfo
+        return downloadId
+    }
+
     /**
      * 取消下载
      */
@@ -134,6 +159,7 @@ class DownloadService : BaseService() {
         }
         downloads.remove(downloadId)
         completeDownloads.remove(downloadId)
+        validatingDownloads.remove(downloadId)
         notificationManager.cancel(downloadId.toInt())
     }
 
@@ -142,10 +168,85 @@ class DownloadService : BaseService() {
      */
     @Synchronized
     private fun successDownload(downloadId: Long) {
-        if (!completeDownloads.contains(downloadId)) {
-            completeDownloads.add(downloadId)
-            val fileName = downloads[downloadId]?.fileName
-            openDownload(downloadId, fileName)
+        if (completeDownloads.contains(downloadId) || validatingDownloads.contains(downloadId)) {
+            return
+        }
+        val downloadInfo = downloads[downloadId] ?: return
+        if (downloadInfo.expectedSha256 == null || downloadInfo.expectedSize <= 0L) {
+            completeDownload(downloadId, downloadInfo.fileName)
+            return
+        }
+
+        validatingDownloads.add(downloadId)
+        lifecycleScope.launch {
+            val validationError = validateDownload(downloadId, downloadInfo)
+            synchronized(this@DownloadService) {
+                validatingDownloads.remove(downloadId)
+                if (downloads[downloadId] != downloadInfo) {
+                    return@synchronized
+                }
+                if (validationError == null) {
+                    completeDownload(downloadId, downloadInfo.fileName)
+                } else {
+                    AppLog.put("下载文件校验失败($validationError)")
+                    retryDownload(downloadId, validationError)
+                }
+            }
+        }
+    }
+
+    private fun completeDownload(downloadId: Long, fileName: String) {
+        completeDownloads.add(downloadId)
+        openDownload(downloadId, fileName)
+    }
+
+    private suspend fun validateDownload(
+        downloadId: Long,
+        downloadInfo: DownloadInfo,
+    ): String? = withContext(Dispatchers.IO) {
+        val uri = downloadManager.getUriForDownloadedFile(downloadId)
+            ?: return@withContext "无法读取下载文件"
+        val inputStream = contentResolver.openInputStream(uri)
+            ?: return@withContext "无法打开下载文件"
+        inputStream.use {
+            AppUpdateDownloadVerifier.verify(
+                inputStream = it,
+                expectedSize = downloadInfo.expectedSize,
+                expectedSha256 = requireNotNull(downloadInfo.expectedSha256),
+            )
+        }
+    }
+
+    @Synchronized
+    private fun retryDownload(downloadId: Long, reason: String) {
+        val failedDownload = downloads.remove(downloadId) ?: return
+        completeDownloads.remove(downloadId)
+        validatingDownloads.remove(downloadId)
+        downloadManager.remove(downloadId)
+
+        var nextDownload = failedDownload.nextSource()
+        var lastError: Throwable? = null
+        while (nextDownload != null) {
+            val result = kotlin.runCatching { enqueueDownload(nextDownload) }
+            if (result.isSuccess) {
+                return
+            }
+            lastError = result.exceptionOrNull()
+            nextDownload = nextDownload.nextSource()
+        }
+
+        AppLog.put("下载失败($reason)", lastError)
+        upDownloadNotification(
+            downloadId = downloadId,
+            notificationId = failedDownload.notificationId,
+            content = "${failedDownload.fileName} ${getString(R.string.download_error)}",
+            max = 0,
+            progress = 0,
+            startTime = failedDownload.startTime,
+        )
+        toastOnUi(R.string.download_error)
+        if (downloads.isEmpty()) {
+            stopSelf()
         }
     }
 
@@ -171,6 +272,7 @@ class DownloadService : BaseService() {
         val ids = downloads.keys
         val query = DownloadManager.Query()
         query.setFilterById(*ids.toLongArray())
+        val failedDownloads = arrayListOf<Long>()
         downloadManager.query(query).use { cursor ->
             if (cursor.moveToFirst()) {
                 val idIndex = cursor.getColumnIndex(DownloadManager.COLUMN_ID)
@@ -188,10 +290,19 @@ class DownloadService : BaseService() {
                         DownloadManager.STATUS_RUNNING -> getString(R.string.downloading)
                         DownloadManager.STATUS_SUCCESSFUL -> {
                             successDownload(id)
-                            getString(R.string.download_success)
+                            if (validatingDownloads.contains(id)) {
+                                getString(R.string.download_verifying)
+                            } else {
+                                getString(R.string.download_success)
+                            }
                         }
 
-                        DownloadManager.STATUS_FAILED -> getString(R.string.download_error)
+                        DownloadManager.STATUS_FAILED -> {
+                            if (downloads[id]?.hasNextSource == true) {
+                                failedDownloads.add(id)
+                            }
+                            getString(R.string.download_error)
+                        }
                         else -> getString(R.string.unknown_state)
                     }
                     downloads[id]?.let { downloadInfo ->
@@ -206,6 +317,9 @@ class DownloadService : BaseService() {
                     }
                 } while (cursor.moveToNext())
             }
+        }
+        failedDownloads.forEach { downloadId ->
+            retryDownload(downloadId, getString(R.string.download_error))
         }
     }
 
@@ -270,10 +384,24 @@ class DownloadService : BaseService() {
     }
 
     private data class DownloadInfo(
-        val url: String,
+        val urls: List<String>,
         val fileName: String,
         val notificationId: Int,
-        val startTime: Long = System.currentTimeMillis()
-    )
+        val sourceIndex: Int = 0,
+        val expectedSize: Long = -1L,
+        val expectedSha256: String? = null,
+        val startTime: Long = System.currentTimeMillis(),
+    ) {
+        val url: String
+            get() = urls[sourceIndex]
+
+        val hasNextSource: Boolean
+            get() = sourceIndex + 1 < urls.size
+
+        fun nextSource(): DownloadInfo? {
+            val nextIndex = sourceIndex + 1
+            return if (nextIndex < urls.size) copy(sourceIndex = nextIndex) else null
+        }
+    }
 
 }

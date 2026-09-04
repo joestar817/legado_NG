@@ -1775,6 +1775,7 @@
     <string name="wait_download">wait download</string>
     <string name="download_success">download success</string>
     <string name="download_error">download failure</string>
+    <string name="download_verifying">verifying download</string>
     <string name="downloading">downloading</string>
     <string name="unknown_state">unknown</string>
     <string name="disable_source">disable source</string>

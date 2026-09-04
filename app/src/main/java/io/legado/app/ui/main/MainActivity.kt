@@ -80,7 +80,6 @@ import androidx.core.view.get
 import io.legado.app.help.update.AppUpdate
 import io.legado.app.ui.about.UpdateDialog
 import kotlin.math.abs
-import kotlin.time.Duration.Companion.hours
 
 /**
  * 主界面
@@ -172,6 +171,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             if (!privacyPolicy()) return@launch
             //版本更新
             upVersion()
+            checkUpdateOnProcessStart()
             notifyAppCrash()
             //备份同步
             backupSync()
@@ -377,17 +377,6 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
      */
     private suspend fun upVersion() = suspendCancellableCoroutine sc@{ block ->
         if (LocalConfig.versionCode == appInfo.versionCode) {
-            if (AppConfig.autoUpdateVariant) {
-                if (LocalConfig.lastCheckUpdate + 24.hours.inWholeMilliseconds < System.currentTimeMillis()) {
-                    AppUpdate.gitHubUpdate.check(lifecycleScope)
-                        .onSuccess {
-                            showDialogFragment(
-                                UpdateDialog(it)
-                            )
-                        }
-                    LocalConfig.lastCheckUpdate = System.currentTimeMillis()
-                }
-            }
             block.resume(null)
             return@sc
         }
@@ -409,6 +398,17 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         } else {
             block.resume(null)
         }
+    }
+
+    /**
+     * 每个应用进程冷启动只自动检查一次，Activity 重建不重复触发。
+     */
+    private fun checkUpdateOnProcessStart() {
+        if (!AppConfig.autoUpdateVariant || !AppUpdate.tryStartAutoCheck()) return
+        AppUpdate.gitHubUpdate.check(lifecycleScope)
+            .onSuccess {
+                showDialogFragment(UpdateDialog(it))
+            }
     }
 
     private fun notifyAppCrash() {

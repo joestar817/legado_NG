@@ -60,7 +60,7 @@ jobs:
         run: |
           echo "开始进行 app release 构建"
           chmod +x gradlew
-          ./gradlew assembleAppRelease --build-cache --parallel --daemon --warning-mode all
+          ./gradlew assembleAppRelease -PUPDATE_CHANNEL=official --build-cache --parallel --daemon --warning-mode all
 
       - name: Organize the Files
         run: |

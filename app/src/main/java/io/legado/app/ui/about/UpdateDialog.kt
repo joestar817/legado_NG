@@ -34,8 +34,10 @@ class UpdateDialog() : BaseComposeDialogFragment() {
         arguments = Bundle().apply {
             putString(ARG_NEW_VERSION, updateInfo.tagName)
             putString(ARG_UPDATE_BODY, updateInfo.updateLog)
-            putString(ARG_URL, updateInfo.downloadUrl)
+            putStringArrayList(ARG_URLS, ArrayList(updateInfo.downloadUrls))
             putString(ARG_NAME, updateInfo.fileName)
+            putLong(ARG_FILE_SIZE, updateInfo.fileSize)
+            putString(ARG_SHA256, updateInfo.sha256)
         }
     }
 
@@ -85,10 +87,12 @@ class UpdateDialog() : BaseComposeDialogFragment() {
     }
 
     private fun download() {
-        val url = arguments?.getString(ARG_URL)
+        val urls = arguments?.getStringArrayList(ARG_URLS)
         val name = arguments?.getString(ARG_NAME)
-        if (url != null && name != null) {
-            Download.start(requireContext(), url, name)
+        val fileSize = arguments?.getLong(ARG_FILE_SIZE) ?: 0L
+        val sha256 = arguments?.getString(ARG_SHA256)
+        if (!urls.isNullOrEmpty() && name != null && sha256 != null) {
+            Download.start(requireContext(), urls, name, fileSize, sha256)
             toastOnUi(R.string.download_start)
         }
     }
@@ -96,8 +100,10 @@ class UpdateDialog() : BaseComposeDialogFragment() {
     private companion object {
         const val ARG_NEW_VERSION = "newVersion"
         const val ARG_UPDATE_BODY = "updateBody"
-        const val ARG_URL = "url"
+        const val ARG_URLS = "urls"
         const val ARG_NAME = "name"
+        const val ARG_FILE_SIZE = "fileSize"
+        const val ARG_SHA256 = "sha256"
         const val UPDATE_DIALOG_HEIGHT_RATIO = 0.82f
     }
 }

@@ -73,11 +73,6 @@ by appCtx.getSharedPreferences("local", Context.MODE_PRIVATE) {
         set(value) {
             edit { putLong(versionCodeKey, value) }
         }
-    var lastCheckUpdate: Long
-        get() = getLong("lastCheckUpdate", 0)
-        set(value) {
-            putLong("lastCheckUpdate", value)
-        }
 
     val isFirstOpenApp: Boolean
         get() {

@@ -32,6 +32,10 @@ def signingValue = { propName ->
 }
 def hasProjectReleaseSigning = project.hasProperty("RELEASE_STORE_FILE")
 def hasReleaseSigning = signingValue("RELEASE_STORE_FILE") != null
+def releaseUpdateChannel = (project.findProperty("UPDATE_CHANNEL") ?: "official").toString()
+if (!(releaseUpdateChannel in ["official", "beta"])) {
+    throw new GradleException("UPDATE_CHANNEL must be official or beta")
+}
 
 android {
     compileSdk = compile_sdk_version
@@ -85,6 +89,7 @@ android {
     }
     buildTypes {
         release {
+            buildConfigField "String", "UPDATE_CHANNEL", "\"$releaseUpdateChannel\""
             if (hasReleaseSigning) {
                 signingConfig signingConfigs.myConfig
             }
@@ -96,6 +101,7 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro', 'cronet-proguard-rules.pro'
         }
         debug {
+            buildConfigField "String", "UPDATE_CHANNEL", '"beta"'
             if (hasProjectReleaseSigning) {
                 signingConfig signingConfigs.myConfig
             }
