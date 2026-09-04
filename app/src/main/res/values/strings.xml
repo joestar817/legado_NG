@@ -2365,8 +2365,6 @@
     <string name="highlight_rule_pattern">Regular expression</string>
     <string name="highlight_rule_sample">Sample text</string>
     <string name="highlight_rule_preview">Preview</string>
-    <string name="highlight_rule_color_mode">Color mode</string>
-    <string name="highlight_rule_night_color_fallback">Night colors inherit the day settings unless overridden</string>
     <string name="highlight_rule_invalid_pattern">Invalid regular expression; the rule was saved as disabled</string>
     <string name="highlight_rule_default_name">New rule</string>
     <string name="highlight_rule_default_sample">斗之力，三段！</string>

@@ -1087,12 +1087,9 @@ class TextChapterLayout(
     private fun ReadHighlightRule.toReadCharStyle(): ReadCharStyle {
         return ReadCharStyle(
             textColor = textColor,
-            textColorNight = textColorNight,
             bgColor = bgColor,
-            bgColorNight = bgColorNight,
             underlineMode = underlineMode,
             underlineColor = underlineColor,
-            underlineColorNight = underlineColorNight,
             underlineWidth = underlineWidth,
             underlineOffset = underlineOffset,
             underlineSvgPath = underlineSvgPath.orEmpty(),

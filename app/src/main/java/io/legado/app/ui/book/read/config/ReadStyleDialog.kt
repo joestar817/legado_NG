@@ -74,7 +74,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var backgroundColorPickerDialog: ComponentDialog? = null
     private var editingHighlightIndex: Int? = null
     private var highlightDraft: ReadHighlightRule? = null
-    private var highlightColorMode = 0
     private var highlightSelectionMode = HighlightSelectionMode.NONE
     private var selectedHighlightIds: Set<String> = emptySet()
     private var pendingHighlightExportRules: List<ReadHighlightRule> = emptyList()
@@ -352,10 +351,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             highlightDraft = draft
             updateEditorState { copy(highlightDraft = draft) }
         },
-        onHighlightColorModeChanged = { mode ->
-            highlightColorMode = mode.coerceIn(0, 1)
-            updateEditorState { copy(highlightColorMode = highlightColorMode) }
-        },
         onSelectHighlightBackground = {
             selectHighlightBackground.launch(arrayOf("image/*"))
         },
@@ -471,7 +466,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             fullLineUnderline = currentFullLineUnderlineState(),
             highlightDraft = highlightDraft,
             editingHighlightIndex = editingHighlightIndex,
-            highlightColorMode = highlightColorMode,
             editorInitialColor = null,
             editorInitialColorWasUnset = false,
             editorInitialBackgroundType = null,
@@ -505,34 +499,26 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         }
         if (target.isAnyColorEditorPage()) {
             val state = screenState ?: return
-            val highlightNight = state.highlightColorMode == 1
             val initialNullableColor = when (target) {
                 ReadStylePage.EDIT_TEXT_COLOR -> state.editorTextColor
                 ReadStylePage.EDIT_BACKGROUND_COLOR -> state.editorBackgroundColor
                 ReadStylePage.EDIT_ACCENT_COLOR -> state.editorTextAccentColor
                 ReadStylePage.EDIT_UNDERLINE_COLOR -> state.fullLineUnderline.color
-                ReadStylePage.HIGHLIGHT_TEXT_COLOR -> state.highlightDraft?.let {
-                    if (highlightNight) it.textColorNight else it.textColor
-                }
-                ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> state.highlightDraft?.let {
-                    if (highlightNight) it.bgColorNight else it.bgColor
-                }
-                ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR -> state.highlightDraft?.let {
-                    if (highlightNight) it.underlineColorNight else it.underlineColor
-                }
+                ReadStylePage.HIGHLIGHT_TEXT_COLOR -> state.highlightDraft?.textColor
+                ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> state.highlightDraft?.bgColor
+                ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR -> state.highlightDraft?.underlineColor
                 else -> null
             }
             val fallbackColor = when (target) {
                 ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR ->
-                    state.highlightDraft?.resolveBackgroundColor(highlightNight)
+                    state.highlightDraft?.bgColor
                         ?: ((state.editorTextAccentColor and 0x00FFFFFF) or 0x33000000)
                 ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR ->
-                    state.highlightDraft?.resolveUnderlineColor(highlightNight)
-                        ?: state.highlightDraft?.resolveTextColor(highlightNight)
+                    state.highlightDraft?.underlineColor
+                        ?: state.highlightDraft?.textColor
                         ?: state.editorTextAccentColor
                 ReadStylePage.HIGHLIGHT_TEXT_COLOR ->
-                    state.highlightDraft?.resolveTextColor(highlightNight)
-                        ?: state.editorTextAccentColor
+                    state.highlightDraft?.textColor ?: state.editorTextAccentColor
                 else -> state.editorTextAccentColor
             }
             screenState = state.copy(
@@ -650,33 +636,13 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 refreshFullLineUnderlineState()
             }
             ReadStylePage.HIGHLIGHT_TEXT_COLOR -> updateHighlightDraft {
-                if (state.highlightColorMode == 1) {
-                    copy(textColorNight = if (state.editorInitialColorWasUnset) null else initialColor)
-                } else {
-                    copy(textColor = if (state.editorInitialColorWasUnset) null else initialColor)
-                }
+                copy(textColor = if (state.editorInitialColorWasUnset) null else initialColor)
             }
             ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> updateHighlightDraft {
-                if (state.highlightColorMode == 1) {
-                    copy(bgColorNight = if (state.editorInitialColorWasUnset) null else initialColor)
-                } else {
-                    copy(bgColor = if (state.editorInitialColorWasUnset) null else initialColor)
-                }
+                copy(bgColor = if (state.editorInitialColorWasUnset) null else initialColor)
             }
             ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR -> updateHighlightDraft {
-                if (state.highlightColorMode == 1) {
-                    copy(
-                        underlineColorNight = if (state.editorInitialColorWasUnset) {
-                            null
-                        } else {
-                            initialColor
-                        }
-                    )
-                } else {
-                    copy(
-                        underlineColor = if (state.editorInitialColorWasUnset) null else initialColor
-                    )
-                }
+                copy(underlineColor = if (state.editorInitialColorWasUnset) null else initialColor)
             }
             else -> return
         }
@@ -1116,7 +1082,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun openHighlightEditor(position: Int? = null) {
         val oldRule = position?.let(currentRules()::getOrNull)
         editingHighlightIndex = position
-        highlightColorMode = if (ReadBookConfig.isNightTheme) 1 else 0
         highlightDraft = oldRule ?: ReadHighlightRule(
             id = UUID.randomUUID().toString(),
             name = getString(R.string.highlight_rule_default_name),

@@ -1,9 +1,25 @@
 package io.legado.app.help.config
 
+import io.legado.app.utils.GSON
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class ReadHighlightRuleStoreTest {
+
+    @Test
+    fun legacyNightColorsAreIgnoredByTheSinglePaletteModel() {
+        val rule = GSON.fromJson(
+            """{"textColor":17,"textColorNight":34,"bgColorNight":51,"underlineColorNight":68}""",
+            ReadHighlightRule::class.java,
+        )
+
+        assertEquals(17, rule.textColor)
+        val serialized = GSON.toJson(rule)
+        assertFalse(serialized.contains("textColorNight"))
+        assertFalse(serialized.contains("bgColorNight"))
+        assertFalse(serialized.contains("underlineColorNight"))
+    }
 
     @Test
     fun migrationUsesSelectedPresetFirstAndDeduplicatesRules() {

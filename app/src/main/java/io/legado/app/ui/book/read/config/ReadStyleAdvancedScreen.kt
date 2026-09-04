@@ -181,14 +181,6 @@ internal fun HighlightRuleEditorPage(
     actions: ReadStyleActions,
 ) {
     val draft = state.highlightDraft ?: return
-    val isNightColors = state.highlightColorMode == 1
-    val selectedTextColor = if (isNightColors) draft.textColorNight else draft.textColor
-    val selectedBackgroundColor = if (isNightColors) draft.bgColorNight else draft.bgColor
-    val selectedUnderlineColor = if (isNightColors) {
-        draft.underlineColorNight
-    } else {
-        draft.underlineColor
-    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -247,33 +239,8 @@ internal fun HighlightRuleEditorPage(
                         actions.onHighlightDraftChanged(draft.copy(sampleText = it))
                     },
                 )
-                Text(
-                    text = stringResource(R.string.highlight_rule_color_mode),
-                    modifier = Modifier.padding(top = 12.dp, bottom = 7.dp),
-                    color = contentColor,
-                    fontSize = 14.sp,
-                )
-                AdvancedDock(
-                    labels = listOf(
-                        stringResource(R.string.read_style_mode_day),
-                        stringResource(R.string.read_style_mode_night),
-                    ),
-                    selectedIndex = state.highlightColorMode,
-                    contentColor = contentColor,
-                    accentColor = accentColor,
-                    onSelected = actions.onHighlightColorModeChanged,
-                )
-                if (isNightColors) {
-                    Text(
-                        text = stringResource(R.string.highlight_rule_night_color_fallback),
-                        modifier = Modifier.padding(top = 6.dp),
-                        color = contentColor.copy(alpha = 0.62f),
-                        fontSize = 11.sp,
-                    )
-                }
                 HighlightRulePreview(
                     rule = draft,
-                    isNight = isNightColors,
                     contentColor = contentColor,
                     accentColor = accentColor,
                 )
@@ -311,23 +278,13 @@ internal fun HighlightRuleEditorPage(
                 )
                 OptionalColorRow(
                     title = stringResource(R.string.highlight_rule_use_text_color),
-                    color = selectedTextColor,
+                    color = draft.textColor,
                     contentColor = contentColor,
                     onEnabledChanged = { enabled ->
                         actions.onHighlightDraftChanged(
-                            if (isNightColors) {
-                                draft.copy(
-                                    textColorNight = if (enabled) {
-                                        draft.textColor ?: state.editorTextAccentColor
-                                    } else {
-                                        null
-                                    }
-                                )
-                            } else {
-                                draft.copy(
-                                    textColor = if (enabled) state.editorTextAccentColor else null
-                                )
-                            }
+                            draft.copy(
+                                textColor = if (enabled) state.editorTextAccentColor else null
+                            )
                         )
                     },
                     onClick = {
@@ -336,18 +293,12 @@ internal fun HighlightRuleEditorPage(
                 )
                 OptionalColorRow(
                     title = stringResource(R.string.highlight_rule_use_background_color),
-                    color = selectedBackgroundColor,
+                    color = draft.bgColor,
                     contentColor = contentColor,
                     onEnabledChanged = { enabled ->
                         val fallback = (state.editorTextAccentColor and 0x00FFFFFF) or 0x33000000
                         actions.onHighlightDraftChanged(
-                            if (isNightColors) {
-                                draft.copy(
-                                    bgColorNight = if (enabled) draft.bgColor ?: fallback else null
-                                )
-                            } else {
-                                draft.copy(bgColor = if (enabled) fallback else null)
-                            }
+                            draft.copy(bgColor = if (enabled) fallback else null)
                         )
                     },
                     onClick = {
@@ -413,29 +364,17 @@ internal fun HighlightRuleEditorPage(
                 if (draft.underlineMode != 0) {
                     OptionalColorRow(
                         title = stringResource(R.string.highlight_rule_use_underline_color),
-                        color = selectedUnderlineColor,
+                        color = draft.underlineColor,
                         contentColor = contentColor,
                         onEnabledChanged = { enabled ->
                             actions.onHighlightDraftChanged(
-                                if (isNightColors) {
-                                    draft.copy(
-                                        underlineColorNight = if (enabled) {
-                                            draft.underlineColor
-                                                ?: draft.resolveTextColor(true)
-                                                ?: state.editorTextAccentColor
-                                        } else {
-                                            null
-                                        }
-                                    )
-                                } else {
-                                    draft.copy(
-                                        underlineColor = if (enabled) {
-                                            draft.textColor ?: state.editorTextAccentColor
-                                        } else {
-                                            null
-                                        }
-                                    )
-                                }
+                                draft.copy(
+                                    underlineColor = if (enabled) {
+                                        draft.textColor ?: state.editorTextAccentColor
+                                    } else {
+                                        null
+                                    }
+                                )
                             )
                         },
                         onClick = {
@@ -543,13 +482,12 @@ internal fun HighlightRuleEditorPage(
 @Composable
 private fun HighlightRulePreview(
     rule: ReadHighlightRule,
-    isNight: Boolean,
     contentColor: Color,
     accentColor: Color,
 ) {
     val text = rule.sampleText.ifBlank { stringResource(R.string.highlight_rule_sample) }
-    val textColor = rule.resolveTextColor(isNight)?.let(::Color) ?: contentColor
-    val underlineColor = rule.resolveUnderlineColor(isNight)?.let(::Color) ?: textColor
+    val textColor = rule.textColor?.let(::Color) ?: contentColor
+    val underlineColor = rule.underlineColor?.let(::Color) ?: textColor
     val bottomPadding = if (rule.underlineMode == 0) {
         0.dp
     } else {
@@ -575,7 +513,7 @@ private fun HighlightRulePreview(
         Box(
             modifier = Modifier
                 .wrapContentSize()
-                .background(rule.resolveBackgroundColor(isNight)?.let(::Color) ?: Color.Transparent),
+                .background(rule.bgColor?.let(::Color) ?: Color.Transparent),
         ) {
             Text(
                 text = text,
@@ -674,25 +612,24 @@ internal fun HighlightRuleColorPage(
     actions: ReadStyleActions,
 ) {
     val draft = state.highlightDraft ?: return
-    val isNightColors = state.highlightColorMode == 1
     val title: String
     val color: Int
     when (page) {
         ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> {
             title = stringResource(R.string.bg_color)
-            color = draft.resolveBackgroundColor(isNightColors) ?: state.editorTextAccentColor
+            color = draft.bgColor ?: state.editorTextAccentColor
         }
 
         ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR -> {
             title = stringResource(R.string.read_style_full_underline_color)
-            color = draft.resolveUnderlineColor(isNightColors)
-                ?: draft.resolveTextColor(isNightColors)
+            color = draft.underlineColor
+                ?: draft.textColor
                 ?: state.editorTextAccentColor
         }
 
         else -> {
             title = stringResource(R.string.text_color)
-            color = draft.resolveTextColor(isNightColors) ?: state.editorTextAccentColor
+            color = draft.textColor ?: state.editorTextAccentColor
         }
     }
     AdvancedColorPage(
@@ -702,21 +639,10 @@ internal fun HighlightRuleColorPage(
         onColorChanged = { selected ->
             actions.onHighlightDraftChanged(
                 when (page) {
-                    ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> if (isNightColors) {
-                        draft.copy(bgColorNight = selected)
-                    } else {
-                        draft.copy(bgColor = selected)
-                    }
-                    ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR -> if (isNightColors) {
-                        draft.copy(underlineColorNight = selected)
-                    } else {
+                    ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> draft.copy(bgColor = selected)
+                    ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR ->
                         draft.copy(underlineColor = selected)
-                    }
-                    else -> if (isNightColors) {
-                        draft.copy(textColorNight = selected)
-                    } else {
-                        draft.copy(textColor = selected)
-                    }
+                    else -> draft.copy(textColor = selected)
                 }
             )
         },

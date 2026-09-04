@@ -2266,8 +2266,6 @@
     <string name="highlight_rule_pattern">正则表达式</string>
     <string name="highlight_rule_sample">示例文字</string>
     <string name="highlight_rule_preview">预览效果</string>
-    <string name="highlight_rule_color_mode">配色模式</string>
-    <string name="highlight_rule_night_color_fallback">夜间未单独设置的颜色会沿用日间配置</string>
     <string name="highlight_rule_invalid_pattern">正则表达式无效，规则已保存为停用</string>
     <string name="highlight_rule_default_name">新规则</string>
     <string name="highlight_rule_default_sample">斗之力，三段！</string>
