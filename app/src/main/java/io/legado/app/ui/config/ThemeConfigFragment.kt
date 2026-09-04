@@ -24,6 +24,7 @@ import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.NgDynamicSceneTheme
 import io.legado.app.help.config.NgDrawerAppearanceConfig
+import io.legado.app.help.config.NgSoftGradientColorMode
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientLightFieldPreset
 import io.legado.app.help.config.NgSoftGradientTheme
@@ -101,6 +102,7 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                         onStandardThemeModeSelected = ::selectStandardThemeMode,
                         onInternalThemeModeSelected = ::selectInternalThemeMode,
                         onSoftGradientColorSelected = ::selectSoftGradientColor,
+                        onSoftGradientCustomColorSelected = ::selectSoftGradientCustomColor,
                         onSoftGradientLightFieldSelected = ::selectSoftGradientLightField,
                         onDynamicScenePresetSelected = ::selectDynamicScenePreset,
                         onVisualSystemSelected = ::setVisualSystem,
@@ -232,7 +234,9 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
             presentationMode = NgThemeModeStore.current(requireContext()),
             standardThemeMode = NgThemeModeStore.standardThemeMode(requireContext()),
             internalThemeMode = NgThemeModeStore.lastInternalMode(requireContext()),
+            softGradientColorMode = NgSoftGradientTheme.colorMode(requireContext()),
             softGradientColor = NgSoftGradientTheme.colorPreset(requireContext()),
+            softGradientCustomColor = NgSoftGradientTheme.customColor(requireContext()),
             softGradientLightField = NgSoftGradientTheme.lightFieldPreset(requireContext()),
             dynamicScenePreset = NgDynamicSceneTheme.current(requireContext()),
             visualSystem = NgVisualSystemStore.current(requireContext()),
@@ -347,9 +351,28 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
     }
 
     private fun selectSoftGradientColor(preset: NgSoftGradientColorPreset) {
-        if (preset == screenState.softGradientColor) return
-        screenState = screenState.copy(softGradientColor = preset)
+        if (
+            screenState.softGradientColorMode == NgSoftGradientColorMode.PRESET &&
+            preset == screenState.softGradientColor
+        ) return
+        screenState = screenState.copy(
+            softGradientColorMode = NgSoftGradientColorMode.PRESET,
+            softGradientColor = preset,
+        )
         NgSoftGradientTheme.selectColor(requireContext(), preset)
+    }
+
+    private fun selectSoftGradientCustomColor(color: Int) {
+        val normalizedColor = color or 0xFF000000.toInt()
+        if (
+            screenState.softGradientColorMode == NgSoftGradientColorMode.CUSTOM &&
+            normalizedColor == screenState.softGradientCustomColor
+        ) return
+        screenState = screenState.copy(
+            softGradientColorMode = NgSoftGradientColorMode.CUSTOM,
+            softGradientCustomColor = normalizedColor,
+        )
+        NgSoftGradientTheme.selectCustomColor(requireContext(), normalizedColor)
     }
 
     private fun selectSoftGradientLightField(preset: NgSoftGradientLightFieldPreset) {

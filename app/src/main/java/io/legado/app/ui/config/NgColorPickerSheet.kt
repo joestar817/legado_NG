@@ -442,7 +442,7 @@ private fun NgPickerActionButton(
 }
 
 @Composable
-private fun NgColorPalette(
+internal fun NgColorPalette(
     color: Int,
     onColorChanged: (Int) -> Unit
 ) {
@@ -643,7 +643,7 @@ private fun NgAlphaSlider(
     }
 }
 
-private fun normalizeHexInput(input: String): String {
+internal fun normalizeHexInput(input: String): String {
     val trimmed = input.trim().uppercase()
     return if (trimmed.startsWith("#")) {
         "#${trimmed.removePrefix("#")}"

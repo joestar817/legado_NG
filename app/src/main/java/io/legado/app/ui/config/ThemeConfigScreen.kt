@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -45,8 +46,10 @@ import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.NgDynamicSceneTheme
 import io.legado.app.help.config.NgDrawerAppearanceConfig
+import io.legado.app.help.config.NgSoftGradientColorMode
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientLightFieldPreset
+import io.legado.app.help.config.NgSoftGradientTheme
 import io.legado.app.help.config.NgThemeModeGroup
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgVisualSystem
@@ -55,6 +58,8 @@ import io.legado.app.ui.design.components.compose.NgDockSlider
 import io.legado.app.ui.design.components.compose.NgExpandableSettingsItem
 import io.legado.app.ui.design.components.compose.NgFloatingTabBar
 import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
+import io.legado.app.ui.design.components.compose.NgFormNavigationRow
+import io.legado.app.ui.design.components.compose.NgFormPanel
 import io.legado.app.ui.design.components.compose.NgLauncherIcon
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsItem
@@ -68,7 +73,9 @@ internal data class ThemeConfigScreenState(
     val standardThemeMode: String = "0",
     val internalThemeMode: NgThemePresentationMode =
         NgThemePresentationMode.SOFT_GRADIENT,
+    val softGradientColorMode: NgSoftGradientColorMode = NgSoftGradientColorMode.PRESET,
     val softGradientColor: NgSoftGradientColorPreset = NgSoftGradientColorPreset.CLEAR_BLUE,
+    val softGradientCustomColor: Int = NgSoftGradientTheme.defaultCustomColor,
     val softGradientLightField: NgSoftGradientLightFieldPreset =
         NgSoftGradientLightFieldPreset.BALANCED,
     val dynamicScenePreset: ListeningCartoonType = ListeningCartoonType.SAKURA,
@@ -120,6 +127,7 @@ internal fun ThemeConfigScreen(
     onStandardThemeModeSelected: (String) -> Unit,
     onInternalThemeModeSelected: (NgThemePresentationMode) -> Unit,
     onSoftGradientColorSelected: (NgSoftGradientColorPreset) -> Unit,
+    onSoftGradientCustomColorSelected: (Int) -> Unit,
     onSoftGradientLightFieldSelected: (NgSoftGradientLightFieldPreset) -> Unit,
     onDynamicScenePresetSelected: (ListeningCartoonType) -> Unit,
     onVisualSystemSelected: (NgVisualSystem) -> Unit,
@@ -174,6 +182,7 @@ internal fun ThemeConfigScreen(
     var bottomBarExpanded by rememberSaveable { mutableStateOf(false) }
     var drawerAppearanceExpanded by rememberSaveable { mutableStateOf(false) }
     var bookshelfTopBarExpanded by rememberSaveable { mutableStateOf(false) }
+    var showSoftGradientColorSheet by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -271,23 +280,20 @@ internal fun ThemeConfigScreen(
                     )
 
                     if (state.presentationMode == NgThemePresentationMode.SOFT_GRADIENT) {
-                        ThemeModeFieldLabel(stringResource(R.string.ng_soft_gradient_color))
-                        NgFloatingTabBar(
-                            items = NgSoftGradientColorPreset.entries.map { preset ->
-                                NgFloatingTabSpec(
-                                    text = stringResource(preset.labelRes()),
-                                )
-                            },
-                            selectedIndex = NgSoftGradientColorPreset.entries.indexOf(
-                                state.softGradientColor,
-                            ),
-                            onTabSelected = { index ->
-                                onSoftGradientColorSelected(
-                                    NgSoftGradientColorPreset.entries[index],
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        NgFormPanel {
+                            NgFormNavigationRow(
+                                title = stringResource(R.string.ng_soft_gradient_color),
+                                value = if (
+                                    state.softGradientColorMode == NgSoftGradientColorMode.CUSTOM
+                                ) {
+                                    stringResource(R.string.ng_soft_gradient_color_custom_tab)
+                                } else {
+                                    stringResource(state.softGradientColor.labelRes())
+                                },
+                                onClick = { showSoftGradientColorSheet = true },
+                                arrowIcon = painterResource(R.drawable.ic_chevron_right_20),
+                            )
+                        }
 
                         ThemeModeFieldLabel(stringResource(R.string.ng_soft_gradient_light_field))
                         NgFloatingTabBar(
@@ -787,6 +793,16 @@ internal fun ThemeConfigScreen(
             }
         }
     }
+
+    NgSoftGradientColorPresetSheet(
+        show = showSoftGradientColorSheet,
+        currentMode = state.softGradientColorMode,
+        current = state.softGradientColor,
+        customColor = state.softGradientCustomColor,
+        onDismissRequest = { showSoftGradientColorSheet = false },
+        onSelected = onSoftGradientColorSelected,
+        onCustomColorSelected = onSoftGradientCustomColorSelected,
+    )
 }
 
 @Composable
@@ -816,12 +832,19 @@ private fun NgSoftGradientLightFieldPreset.labelRes(): Int = when (this) {
     NgSoftGradientLightFieldPreset.FLOW_SHADOW -> R.string.ng_soft_gradient_light_flow_shadow
 }
 
-private fun NgSoftGradientColorPreset.labelRes(): Int = when (this) {
+internal fun NgSoftGradientColorPreset.labelRes(): Int = when (this) {
     NgSoftGradientColorPreset.CLEAR_BLUE -> R.string.ng_soft_gradient_clear_blue
     NgSoftGradientColorPreset.DUSK_VIOLET -> R.string.ng_soft_gradient_dusk_violet
     NgSoftGradientColorPreset.YOUNG_BAMBOO -> R.string.ng_soft_gradient_young_bamboo
     NgSoftGradientColorPreset.FOREST_AFTER_RAIN -> R.string.ng_soft_gradient_forest_after_rain
     NgSoftGradientColorPreset.CHERRY_GLOW -> R.string.ng_soft_gradient_cherry_glow
+    NgSoftGradientColorPreset.APRICOT -> R.string.ng_soft_gradient_apricot
+    NgSoftGradientColorPreset.AMBER -> R.string.ng_soft_gradient_amber
+    NgSoftGradientColorPreset.INDIGO_SEA -> R.string.ng_soft_gradient_indigo_sea
+    NgSoftGradientColorPreset.CELADON -> R.string.ng_soft_gradient_celadon
+    NgSoftGradientColorPreset.MOON_WHITE -> R.string.ng_soft_gradient_moon_white
+    NgSoftGradientColorPreset.COCOA -> R.string.ng_soft_gradient_cocoa
+    NgSoftGradientColorPreset.GRAPHITE -> R.string.ng_soft_gradient_graphite
 }
 
 private fun ListeningCartoonType.themeSceneLabelRes(): Int = when (this) {

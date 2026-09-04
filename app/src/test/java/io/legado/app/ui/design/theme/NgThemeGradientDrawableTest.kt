@@ -6,10 +6,12 @@ import android.graphics.Canvas
 import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import io.legado.app.constant.PreferKey
+import io.legado.app.help.config.NgSoftGradientColorMode
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientLightFieldPreset
 import io.legado.app.help.config.NgSoftGradientTheme
 import io.legado.app.help.config.NgThemeGradientMotion
+import io.legado.app.utils.putPrefInt
 import io.legado.app.utils.putPrefString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -46,9 +48,89 @@ class NgThemeGradientDrawableTest {
                 "young_bamboo",
                 "forest_after_rain",
                 "cherry_glow",
+                "apricot",
+                "amber",
+                "indigo_sea",
+                "celadon",
+                "moon_white",
+                "cocoa",
+                "graphite",
             ),
             NgSoftGradientColorPreset.entries.map { it.storageValue },
         )
+    }
+
+    @Test
+    fun `soft gradient color modes keep stable storage values`() {
+        assertEquals(
+            listOf("preset", "custom"),
+            NgSoftGradientColorMode.entries.map { it.storageValue },
+        )
+    }
+
+    @Test
+    fun `custom soft gradient normalizes arbitrary opaque seeds`() {
+        listOf(
+            0x00000000,
+            0xFFFFFFFF.toInt(),
+            0xFF777777.toInt(),
+            0xFFFFD600.toInt(),
+            0xFFFF2D8D.toInt(),
+            0xFF00A6C8.toInt(),
+        ).forEach { seed ->
+            val opaqueSeed = seed or 0xFF000000.toInt()
+            val colors = NgSoftGradientTheme.customColors(seed)
+            assertEquals(opaqueSeed, colors.lightSeed)
+            assertEquals(colors.manualLight, colors.manualDark)
+
+            val profiles = NgSoftGradientLightFieldPreset.entries.associateWith { lightField ->
+                NgSoftGradientTheme.customGradient(seed, lightField)
+            }
+            assertEquals(
+                NgSoftGradientLightFieldPreset.entries.size - 1,
+                profiles.filterKeys { it != NgSoftGradientLightFieldPreset.FLOW_SHADOW }
+                    .values
+                    .map { it.colors }
+                    .distinct()
+                    .size,
+            )
+            profiles.forEach { (lightField, profile) ->
+                assertEquals(5, profile.colors.size)
+                assertEquals(8, profile.radialLayers.size)
+                assertTrue(profile.colors.all { Color.alpha(it) == 255 })
+                assertEquals(
+                    lightField == NgSoftGradientLightFieldPreset.FLOW_SHADOW,
+                    profile.motion == NgThemeGradientMotion.FLOW_SHADOW,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `custom soft gradient selection persists opaque color and mode`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.putPrefString(PreferKey.ngThemePresentationMode, "soft_gradient")
+
+        try {
+            NgSoftGradientTheme.selectCustomColor(context, 0x3366AA55)
+            assertEquals(NgSoftGradientColorMode.CUSTOM, NgSoftGradientTheme.colorMode(context))
+            assertEquals(0xFF66AA55.toInt(), NgSoftGradientTheme.customColor(context))
+            assertEquals(
+                0xFF66AA55.toInt(),
+                NgSoftGradientTheme.colors(context).lightSeed,
+            )
+            assertFalse(NgSoftGradientTheme.darkStatusBarIcons(context))
+        } finally {
+            context.putPrefString(
+                PreferKey.ngSoftGradientColorMode,
+                NgSoftGradientColorMode.PRESET.storageValue,
+            )
+            context.putPrefInt(
+                PreferKey.ngSoftGradientCustomColor,
+                NgSoftGradientTheme.defaultCustomColor,
+            )
+            context.putPrefString(PreferKey.ngThemePresentationMode, "standard")
+        }
     }
 
     @Test
@@ -62,6 +144,13 @@ class NgThemeGradientDrawableTest {
                 NgSoftGradientColorPreset.YOUNG_BAMBOO,
                 NgSoftGradientColorPreset.FOREST_AFTER_RAIN,
                 NgSoftGradientColorPreset.CHERRY_GLOW,
+                NgSoftGradientColorPreset.APRICOT,
+                NgSoftGradientColorPreset.AMBER,
+                NgSoftGradientColorPreset.INDIGO_SEA,
+                NgSoftGradientColorPreset.CELADON,
+                NgSoftGradientColorPreset.MOON_WHITE,
+                NgSoftGradientColorPreset.COCOA,
+                NgSoftGradientColorPreset.GRAPHITE,
             ).forEach { colorPreset ->
                 context.putPrefString(
                     PreferKey.ngSoftGradientColor,

@@ -1,6 +1,8 @@
 package io.legado.app.help.config
 
 import android.content.Context
+import androidx.annotation.ColorInt
+import com.materialkolor.hct.Hct
 import io.legado.app.constant.PreferKey
 import io.legado.app.ui.design.theme.NgColorGenerationMode
 import io.legado.app.ui.design.theme.NgColorSpec
@@ -9,7 +11,10 @@ import io.legado.app.ui.design.theme.NgContrastLevel
 import io.legado.app.ui.design.theme.NgManualColorSet
 import io.legado.app.ui.design.theme.NgPaletteStyle
 import io.legado.app.ui.design.theme.NgTopBarTextMode
+import io.legado.app.ui.design.theme.NgColorMath
+import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
+import io.legado.app.utils.putPrefInt
 import io.legado.app.utils.putPrefString
 import kotlin.math.abs
 
@@ -21,11 +26,28 @@ internal enum class NgSoftGradientColorPreset(
     DUSK_VIOLET("dusk_violet", false),
     YOUNG_BAMBOO("young_bamboo", false),
     FOREST_AFTER_RAIN("forest_after_rain", false),
-    CHERRY_GLOW("cherry_glow", false);
+    CHERRY_GLOW("cherry_glow", false),
+    APRICOT("apricot", false),
+    AMBER("amber", false),
+    INDIGO_SEA("indigo_sea", false),
+    CELADON("celadon", false),
+    MOON_WHITE("moon_white", false),
+    COCOA("cocoa", false),
+    GRAPHITE("graphite", false);
 
     companion object {
         fun fromStorage(value: String?): NgSoftGradientColorPreset =
             entries.firstOrNull { it.storageValue == value } ?: CLEAR_BLUE
+    }
+}
+
+internal enum class NgSoftGradientColorMode(val storageValue: String) {
+    PRESET("preset"),
+    CUSTOM("custom");
+
+    companion object {
+        fun fromStorage(value: String?): NgSoftGradientColorMode =
+            entries.firstOrNull { it.storageValue == value } ?: PRESET
     }
 }
 
@@ -135,11 +157,22 @@ internal object NgSoftGradientTheme {
 
     /** Neutral selected surface shared by every soft-gradient color preset. */
     internal val selectedContainer = 0xF2FFFFFF.toInt()
+    internal val defaultCustomColor = 0xFFFAB27B.toInt()
+
+    fun colorMode(context: Context): NgSoftGradientColorMode =
+        NgSoftGradientColorMode.fromStorage(
+            context.getPrefString(PreferKey.ngSoftGradientColorMode),
+        )
 
     fun colorPreset(context: Context): NgSoftGradientColorPreset =
         NgSoftGradientColorPreset.fromStorage(
             context.getPrefString(PreferKey.ngSoftGradientColor),
         )
+
+    @ColorInt
+    fun customColor(context: Context): Int = NgColorMath.opaque(
+        context.getPrefInt(PreferKey.ngSoftGradientCustomColor, defaultCustomColor),
+    )
 
     fun lightFieldPreset(context: Context): NgSoftGradientLightFieldPreset =
         NgSoftGradientLightFieldPreset.fromStorage(
@@ -148,6 +181,19 @@ internal object NgSoftGradientTheme {
 
     fun selectColor(context: Context, preset: NgSoftGradientColorPreset) {
         context.putPrefString(PreferKey.ngSoftGradientColor, preset.storageValue)
+        context.putPrefString(
+            PreferKey.ngSoftGradientColorMode,
+            NgSoftGradientColorMode.PRESET.storageValue,
+        )
+        reapplyIfActive(context)
+    }
+
+    fun selectCustomColor(context: Context, @ColorInt color: Int) {
+        context.putPrefInt(PreferKey.ngSoftGradientCustomColor, NgColorMath.opaque(color))
+        context.putPrefString(
+            PreferKey.ngSoftGradientColorMode,
+            NgSoftGradientColorMode.CUSTOM.storageValue,
+        )
         reapplyIfActive(context)
     }
 
@@ -156,30 +202,66 @@ internal object NgSoftGradientTheme {
         reapplyIfActive(context)
     }
 
-    fun colors(context: Context): NgColorSystem = when (colorPreset(context)) {
+    fun colors(context: Context): NgColorSystem = when (colorMode(context)) {
+        NgSoftGradientColorMode.PRESET -> colors(colorPreset(context))
+        NgSoftGradientColorMode.CUSTOM -> customTone(customColor(context)).colors
+    }
+
+    fun colors(preset: NgSoftGradientColorPreset): NgColorSystem = when (preset) {
         NgSoftGradientColorPreset.CLEAR_BLUE -> clearBlueColors
         NgSoftGradientColorPreset.DUSK_VIOLET -> duskVioletColors
         NgSoftGradientColorPreset.YOUNG_BAMBOO -> youngBambooColors
         NgSoftGradientColorPreset.FOREST_AFTER_RAIN -> forestAfterRainColors
         NgSoftGradientColorPreset.CHERRY_GLOW -> cherryGlowColors
+        NgSoftGradientColorPreset.APRICOT -> apricotColors
+        NgSoftGradientColorPreset.AMBER -> amberColors
+        NgSoftGradientColorPreset.INDIGO_SEA -> indigoSeaColors
+        NgSoftGradientColorPreset.CELADON -> celadonColors
+        NgSoftGradientColorPreset.MOON_WHITE -> moonWhiteColors
+        NgSoftGradientColorPreset.COCOA -> cocoaColors
+        NgSoftGradientColorPreset.GRAPHITE -> graphiteColors
     }
 
-    fun gradient(context: Context): NgThemeGradientProfile = when (colorPreset(context)) {
-        NgSoftGradientColorPreset.CLEAR_BLUE -> clearBlueGradients.getValue(
+    fun gradient(context: Context): NgThemeGradientProfile = when (colorMode(context)) {
+        NgSoftGradientColorMode.PRESET -> gradient(
+            colorPreset(context),
             lightFieldPreset(context),
         )
-        NgSoftGradientColorPreset.DUSK_VIOLET -> duskVioletGradients.getValue(
+        NgSoftGradientColorMode.CUSTOM -> customGradient(
+            customColor(context),
             lightFieldPreset(context),
         )
-        NgSoftGradientColorPreset.YOUNG_BAMBOO -> youngBambooGradients.getValue(
-            lightFieldPreset(context),
-        )
-        NgSoftGradientColorPreset.FOREST_AFTER_RAIN -> forestAfterRainGradients.getValue(
-            lightFieldPreset(context),
-        )
-        NgSoftGradientColorPreset.CHERRY_GLOW -> cherryGlowGradients.getValue(
-            lightFieldPreset(context),
-        )
+    }
+
+    fun gradient(
+        preset: NgSoftGradientColorPreset,
+        lightField: NgSoftGradientLightFieldPreset,
+    ): NgThemeGradientProfile = when (preset) {
+        NgSoftGradientColorPreset.CLEAR_BLUE -> clearBlueGradients.getValue(lightField)
+        NgSoftGradientColorPreset.DUSK_VIOLET -> duskVioletGradients.getValue(lightField)
+        NgSoftGradientColorPreset.YOUNG_BAMBOO -> youngBambooGradients.getValue(lightField)
+        NgSoftGradientColorPreset.FOREST_AFTER_RAIN ->
+            forestAfterRainGradients.getValue(lightField)
+        NgSoftGradientColorPreset.CHERRY_GLOW -> cherryGlowGradients.getValue(lightField)
+        NgSoftGradientColorPreset.APRICOT -> apricotGradients.getValue(lightField)
+        NgSoftGradientColorPreset.AMBER -> amberGradients.getValue(lightField)
+        NgSoftGradientColorPreset.INDIGO_SEA -> indigoSeaGradients.getValue(lightField)
+        NgSoftGradientColorPreset.CELADON -> celadonGradients.getValue(lightField)
+        NgSoftGradientColorPreset.MOON_WHITE -> moonWhiteGradients.getValue(lightField)
+        NgSoftGradientColorPreset.COCOA -> cocoaGradients.getValue(lightField)
+        NgSoftGradientColorPreset.GRAPHITE -> graphiteGradients.getValue(lightField)
+    }
+
+    fun customGradient(
+        @ColorInt color: Int,
+        lightField: NgSoftGradientLightFieldPreset,
+    ): NgThemeGradientProfile = customTone(color).gradients.getValue(lightField)
+
+    fun customColors(@ColorInt color: Int): NgColorSystem = customTone(color).colors
+
+    fun darkStatusBarIcons(context: Context): Boolean = when (colorMode(context)) {
+        NgSoftGradientColorMode.PRESET -> colorPreset(context).darkStatusBarIcons
+        NgSoftGradientColorMode.CUSTOM -> false
     }
 
     private fun reapplyIfActive(context: Context) {
@@ -254,6 +336,62 @@ internal object NgSoftGradientTheme {
         secondaryText = 0xFF75535D,
         background = 0xFFFFF7F8,
         labelContainer = 0xFFF8E6EB,
+    )
+
+    private val apricotColors = softGradientColorSystem(
+        primary = 0xFFB75D3D,
+        primaryText = 0xFF291A15,
+        secondaryText = 0xFF76584A,
+        background = 0xFFFFF8F2,
+        labelContainer = 0xFFF9E9DE,
+    )
+
+    private val amberColors = softGradientColorSystem(
+        primary = 0xFF8A651A,
+        primaryText = 0xFF211B0F,
+        secondaryText = 0xFF6C6042,
+        background = 0xFFFFFCF3,
+        labelContainer = 0xFFF5ECD0,
+    )
+
+    private val indigoSeaColors = softGradientColorSystem(
+        primary = 0xFF345A9A,
+        primaryText = 0xFF151C2A,
+        secondaryText = 0xFF53617A,
+        background = 0xFFF6F8FD,
+        labelContainer = 0xFFE7EDF8,
+    )
+
+    private val celadonColors = softGradientColorSystem(
+        primary = 0xFF3F6F63,
+        primaryText = 0xFF15211E,
+        secondaryText = 0xFF556A63,
+        background = 0xFFF7FAF6,
+        labelContainer = 0xFFE7F0E9,
+    )
+
+    private val moonWhiteColors = softGradientColorSystem(
+        primary = 0xFF536B78,
+        primaryText = 0xFF172025,
+        secondaryText = 0xFF59696F,
+        background = 0xFFF7F9F8,
+        labelContainer = 0xFFE8EEEC,
+    )
+
+    private val cocoaColors = softGradientColorSystem(
+        primary = 0xFF7A5043,
+        primaryText = 0xFF231A17,
+        secondaryText = 0xFF6D5A54,
+        background = 0xFFFBF8F6,
+        labelContainer = 0xFFF0E7E2,
+    )
+
+    private val graphiteColors = softGradientColorSystem(
+        primary = 0xFF49545A,
+        primaryText = 0xFF171B1D,
+        secondaryText = 0xFF5C6467,
+        background = 0xFFF7F8F8,
+        labelContainer = 0xFFE9ECEC,
     )
 
     private fun softGradientColorSystem(
@@ -544,6 +682,308 @@ internal object NgSoftGradientTheme {
         ),
     )
 
+    private val apricotGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFFB76442,
+            0xFFE38A5C,
+            0xFFFAB27B,
+            0xFFFFE5CE,
+            0xFFFFC49A,
+        ),
+        clear = listOf(
+            0xFFD17A52,
+            0xFFF09C69,
+            0xFFFBC393,
+            0xFFFFF1E0,
+            0xFFFFD2AE,
+        ),
+        stillSea = listOf(
+            0xFF914B34,
+            0xFFBD6747,
+            0xFFE18E63,
+            0xFFF2C3A3,
+            0xFFE6A07C,
+        ),
+        aqua = listOf(
+            0xFFA85A42,
+            0xFFCE7756,
+            0xFFE99C78,
+            0xFFF8D5BE,
+            0xFFDFA087,
+        ),
+    )
+
+    private val amberGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFF6F4C10,
+            0xFFA97818,
+            0xFFD9AD3C,
+            0xFFF7E6A4,
+            0xFFE2C267,
+        ),
+        clear = listOf(
+            0xFF8D651E,
+            0xFFB88D31,
+            0xFFE6C85F,
+            0xFFFFF2BF,
+            0xFFEEDB8D,
+        ),
+        stillSea = listOf(
+            0xFF51380F,
+            0xFF75551A,
+            0xFFA57A2A,
+            0xFFD5BD72,
+            0xFFB18F45,
+        ),
+        aqua = listOf(
+            0xFF65521E,
+            0xFF8E7830,
+            0xFFB4A055,
+            0xFFE4DCAC,
+            0xFFC0AD70,
+        ),
+    )
+
+    private val indigoSeaGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFF263B73,
+            0xFF365CA5,
+            0xFF5D83C7,
+            0xFFC5D7F5,
+            0xFF7399D2,
+        ),
+        clear = listOf(
+            0xFF36538D,
+            0xFF4C75BB,
+            0xFF80A3DC,
+            0xFFE3ECFA,
+            0xFFA2BCE7,
+        ),
+        stillSea = listOf(
+            0xFF1C2A54,
+            0xFF293F72,
+            0xFF47659A,
+            0xFF9FB4D9,
+            0xFF5B78A9,
+        ),
+        aqua = listOf(
+            0xFF293E6B,
+            0xFF386087,
+            0xFF5F8EAE,
+            0xFFC1D9E8,
+            0xFF749CB9,
+        ),
+    )
+
+    private val celadonGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFF315F58,
+            0xFF4E8476,
+            0xFF7BA995,
+            0xFFDDE8CF,
+            0xFF9DBE9F,
+        ),
+        clear = listOf(
+            0xFF4A766D,
+            0xFF6E9D8D,
+            0xFFA4C6AE,
+            0xFFF0F3DC,
+            0xFFBAD2B5,
+        ),
+        stillSea = listOf(
+            0xFF244740,
+            0xFF385F55,
+            0xFF5E8372,
+            0xFFB9CAB0,
+            0xFF779989,
+        ),
+        aqua = listOf(
+            0xFF2F5A58,
+            0xFF4B7C77,
+            0xFF75A6A0,
+            0xFFD3E8DD,
+            0xFF91BBB2,
+        ),
+    )
+
+    private val moonWhiteGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFF536979,
+            0xFF718996,
+            0xFFA6BBC0,
+            0xFFDFE1D4,
+            0xFF829C9A,
+        ),
+        clear = listOf(
+            0xFF6B7F8D,
+            0xFF8FA3AC,
+            0xFFC1D1D1,
+            0xFFF1F0E4,
+            0xFFAEBFBA,
+        ),
+        stillSea = listOf(
+            0xFF3E505E,
+            0xFF586C78,
+            0xFF83999F,
+            0xFFC2C7BD,
+            0xFF6B817F,
+        ),
+        aqua = listOf(
+            0xFF4E6672,
+            0xFF6E8991,
+            0xFF9DB5B7,
+            0xFFDDE4DD,
+            0xFF829C98,
+        ),
+    )
+
+    private val cocoaGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFF69463B,
+            0xFF916153,
+            0xFFBF8B76,
+            0xFFEAD6C7,
+            0xFFCDA68F,
+        ),
+        clear = listOf(
+            0xFF825B4F,
+            0xFFAA7A69,
+            0xFFD0A491,
+            0xFFF5E8DE,
+            0xFFDFC2B0,
+        ),
+        stillSea = listOf(
+            0xFF4F352E,
+            0xFF704C42,
+            0xFF966B5B,
+            0xFFCDB1A1,
+            0xFFAC8370,
+        ),
+        aqua = listOf(
+            0xFF5E4741,
+            0xFF7F625A,
+            0xFFA9887D,
+            0xFFDDD0C6,
+            0xFFBA9A8F,
+        ),
+    )
+
+    private val graphiteGradients = generatedToneGradients(
+        balanced = listOf(
+            0xFF343A40,
+            0xFF505B64,
+            0xFF7C8A91,
+            0xFFD4D8D7,
+            0xFF9AA4A5,
+        ),
+        clear = listOf(
+            0xFF4A5259,
+            0xFF69757C,
+            0xFF9DA8AC,
+            0xFFECEEEC,
+            0xFFB7C0C0,
+        ),
+        stillSea = listOf(
+            0xFF262B30,
+            0xFF394149,
+            0xFF5C6870,
+            0xFFADB4B5,
+            0xFF747F82,
+        ),
+        aqua = listOf(
+            0xFF303D43,
+            0xFF4A5A60,
+            0xFF71858A,
+            0xFFC9D1CF,
+            0xFF87989A,
+        ),
+    )
+
+    private data class CustomTone(
+        val colors: NgColorSystem,
+        val gradients: Map<NgSoftGradientLightFieldPreset, NgThemeGradientProfile>,
+    )
+
+    @Volatile
+    private var customToneCache: Pair<Int, CustomTone>? = null
+
+    private fun customTone(@ColorInt color: Int): CustomTone {
+        val normalizedColor = NgColorMath.opaque(color)
+        customToneCache?.takeIf { it.first == normalizedColor }?.let { return it.second }
+
+        val source = Hct.fromInt(normalizedColor)
+        val neutral = source.chroma < CUSTOM_NEUTRAL_CHROMA_THRESHOLD
+        val baseChroma = if (neutral) {
+            source.chroma.coerceIn(0.0, CUSTOM_NEUTRAL_CHROMA_THRESHOLD)
+        } else {
+            source.chroma.coerceIn(CUSTOM_MIN_CHROMA, CUSTOM_MAX_CHROMA)
+        }
+        fun tone(tone: Double, chromaScale: Double): Long {
+            val scaledChroma = if (neutral) {
+                baseChroma * chromaScale
+            } else {
+                (baseChroma * chromaScale).coerceIn(CUSTOM_MIN_VISIBLE_CHROMA, CUSTOM_MAX_CHROMA)
+            }
+            return Hct.from(source.hue, scaledChroma, tone)
+                .toInt()
+                .toLong() and 0xFFFFFFFFL
+        }
+
+        val manualColors = NgManualColorSet(
+            primary = tone(38.0, 0.90).toInt(),
+            secondary = 0xFFFFFFFF.toInt(),
+            primaryText = tone(12.0, 0.18).toInt(),
+            secondaryText = tone(38.0, 0.24).toInt(),
+            background = tone(98.0, 0.06).toInt(),
+            labelContainer = tone(92.0, 0.12).toInt(),
+        )
+        val colors = NgColorSystem(
+            mode = NgColorGenerationMode.MANUAL,
+            lightSeed = normalizedColor,
+            darkSeed = normalizedColor,
+            paletteStyle = NgPaletteStyle.TONAL_SPOT,
+            contrast = NgContrastLevel.DEFAULT,
+            colorSpec = NgColorSpec.MATERIAL_3_2021,
+            manualLight = manualColors,
+            manualDark = manualColors,
+            lightTopBarTextMode = NgTopBarTextMode.LIGHT,
+            darkTopBarTextMode = NgTopBarTextMode.LIGHT,
+        )
+        val gradients = generatedToneGradients(
+            balanced = listOf(
+                tone(30.0, 0.95),
+                tone(49.0, 1.00),
+                tone(68.0, 0.82),
+                tone(91.0, 0.18),
+                tone(76.0, 0.58),
+            ),
+            clear = listOf(
+                tone(38.0, 0.80),
+                tone(58.0, 0.86),
+                tone(75.0, 0.65),
+                tone(95.0, 0.12),
+                tone(83.0, 0.40),
+            ),
+            stillSea = listOf(
+                tone(22.0, 0.90),
+                tone(36.0, 0.96),
+                tone(54.0, 0.76),
+                tone(76.0, 0.26),
+                tone(63.0, 0.55),
+            ),
+            aqua = listOf(
+                tone(28.0, 0.62),
+                tone(44.0, 0.70),
+                tone(63.0, 0.56),
+                tone(86.0, 0.14),
+                tone(71.0, 0.40),
+            ),
+        )
+        return CustomTone(colors = colors, gradients = gradients).also {
+            customToneCache = normalizedColor to it
+        }
+    }
+
     private fun generatedToneGradients(
         balanced: List<Long>,
         clear: List<Long>,
@@ -707,6 +1147,10 @@ internal object NgSoftGradientTheme {
     private fun Long.withAlpha(alpha: Int): Long =
         (this and 0x00FFFFFFL) or (alpha.coerceIn(0, 255).toLong() shl 24)
 
+    private const val CUSTOM_NEUTRAL_CHROMA_THRESHOLD = 8.0
+    private const val CUSTOM_MIN_CHROMA = 24.0
+    private const val CUSTOM_MIN_VISIBLE_CHROMA = 8.0
+    private const val CUSTOM_MAX_CHROMA = 64.0
     private const val DAY_THEME_MODE = "1"
 }
 

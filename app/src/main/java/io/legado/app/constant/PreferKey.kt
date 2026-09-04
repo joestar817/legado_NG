@@ -12,6 +12,8 @@ object PreferKey {
     const val ngDynamicSceneSakuraColors = "ngDynamicSceneSakuraColors.v1"
     const val ngDynamicSceneCatsColors = "ngDynamicSceneCatsColors.v1"
     const val ngSoftGradientColor = "ngSoftGradientColor.v1"
+    const val ngSoftGradientColorMode = "ngSoftGradientColorMode.v1"
+    const val ngSoftGradientCustomColor = "ngSoftGradientCustomColor.v1"
     const val ngSoftGradientLightField = "ngSoftGradientLightField.v1"
     const val ngVisualSystem = "ngVisualSystem.v1"
     const val userAgent = "userAgent"

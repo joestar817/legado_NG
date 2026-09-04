@@ -58,7 +58,6 @@ object NgThemeResolver {
     fun resolve(context: Context): NgThemeSnapshot {
         if (AppConfig.isEInkMode) return resolveEInk()
         if (NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT) {
-            val colorPreset = NgSoftGradientTheme.colorPreset(context)
             val snapshot = resolve(
                 context = context,
                 colors = NgSoftGradientTheme.colors(context),
@@ -76,7 +75,7 @@ object NgThemeResolver {
                     textShadow = SOFT_GRADIENT_BACKDROP_TEXT_SHADOW,
                 ),
                 systemBars = snapshot.systemBars.copy(
-                    darkStatusBarIcons = colorPreset.darkStatusBarIcons,
+                    darkStatusBarIcons = NgSoftGradientTheme.darkStatusBarIcons(context),
                 ),
             )
         }

@@ -269,6 +269,56 @@ fun NgFormInlineTextRow(
     }
 }
 
+/** 分组内打开独立页面或弹层的紧凑当前值行。 */
+@Composable
+fun NgFormNavigationRow(
+    title: String,
+    value: String,
+    onClick: () -> Unit,
+    arrowIcon: Painter,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val contentAlpha = if (enabled) 1f else 0.45f
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics {
+                role = Role.Button
+                contentDescription = title
+                stateDescription = value
+            }
+            .padding(start = 14.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            color = Color(NgTheme.colors.onSurface).copy(alpha = contentAlpha),
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = value,
+            color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = contentAlpha),
+            fontSize = 13.sp,
+            lineHeight = 16.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            painter = arrowIcon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = contentAlpha),
+        )
+    }
+}
+
 /** 分组内的紧凑下拉设置行。 */
 @Composable
 fun NgFormSelectRow(

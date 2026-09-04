@@ -157,6 +157,8 @@ internal object BackupRestorePolicy {
         PreferKey.ngDynamicSceneSakuraColors,
         PreferKey.ngDynamicSceneCatsColors,
         PreferKey.ngSoftGradientColor,
+        PreferKey.ngSoftGradientColorMode,
+        PreferKey.ngSoftGradientCustomColor,
         PreferKey.ngSoftGradientLightField,
         PreferKey.cPrimary,
         PreferKey.cAccent,

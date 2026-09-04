@@ -193,7 +193,7 @@ private fun NgColorPresetOption(
 }
 
 @Composable
-private fun NgPresetSwatch(
+internal fun NgPresetSwatch(
     lightColor: Int,
     darkColor: Int,
     modifier: Modifier = Modifier,
