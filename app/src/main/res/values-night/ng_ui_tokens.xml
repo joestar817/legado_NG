@@ -3,6 +3,8 @@
     <color name="ng_background">@color/background</color>
     <color name="ng_surface">@color/background_card</color>
     <color name="ng_surface_card">#FF1F1F1F</color>
+    <color name="ng_search_result_card_surface">@color/ng_book_detail_card_surface</color>
+    <color name="ng_search_result_card_stroke">@color/ng_book_detail_card_stroke</color>
     <color name="ng_bookshelf_list_card_surface">@color/ng_book_detail_card_surface</color>
     <color name="ng_bookshelf_list_card_pressed">@color/ng_bookshelf_action_pressed</color>
     <color name="ng_bookshelf_list_card_stroke">@color/ng_book_detail_card_stroke</color>

@@ -684,7 +684,9 @@ private fun SearchResultList(
                 inBookshelf = inBookshelf,
                 originCount = book.origins.size,
                 onClick = { onBookClick(book) },
-                onLongClick = { onBookLongClick(book) }
+                onLongClick = { onBookLongClick(book) },
+                cardBackgroundColorRes = R.color.ng_search_result_card_surface,
+                cardStrokeColorRes = R.color.ng_search_result_card_stroke
             )
         }
     }
