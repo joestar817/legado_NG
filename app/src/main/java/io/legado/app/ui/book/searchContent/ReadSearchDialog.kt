@@ -57,8 +57,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -272,7 +270,7 @@ class ReadSearchDialog : BottomSheetDialogFragment() {
         }
         BottomSheetBehavior.from(sheet).apply {
             isDraggable = false
-            isHideable = false
+            isHideable = true
             skipCollapsed = true
             state = BottomSheetBehavior.STATE_EXPANDED
         }
@@ -663,16 +661,9 @@ private fun SearchInputRow(
     onToggleApplyReplace: () -> Unit,
     onToggleSupportRegex: () -> Unit,
 ) {
-    val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     var inputFocused by remember { mutableStateOf(false) }
     val menuButtonShape = RoundedCornerShape(10.dp)
-    LaunchedEffect(Unit) {
-        if (query.isBlank()) {
-            focusRequester.requestFocus()
-            keyboardController?.show()
-        }
-    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -685,7 +676,6 @@ private fun SearchInputRow(
             modifier = Modifier
                 .weight(1f)
                 .height(40.dp)
-                .focusRequester(focusRequester)
                 .onFocusChanged { inputFocused = it.isFocused },
             enabled = !loading,
             singleLine = true,
