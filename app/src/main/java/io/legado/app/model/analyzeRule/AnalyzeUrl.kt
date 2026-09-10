@@ -651,11 +651,6 @@ class AnalyzeUrl(
         }
     }
 
-    private fun extractHostFromUrl(url: String): String? {
-        return AppPattern.domainRegex.find(url)?.groupValues?.getOrNull(1)
-    }
-
-
     fun getResponse(): Response {
         return runBlocking(coroutineContext) {
             getResponseAwait()

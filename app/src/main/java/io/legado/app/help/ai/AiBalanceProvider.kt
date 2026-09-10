@@ -270,10 +270,4 @@ object AiBalanceProvider {
         }
         return valueByPath(path)?.doubleOrNull()
     }
-
-    private fun JsonElement.asReadableString(): String {
-        return runCatching {
-            if (isJsonPrimitive) asJsonPrimitive.asString else toString()
-        }.getOrElse { toString() }
-    }
 }

@@ -1,5 +1,4 @@
 import sourceEditor from '../views/SourceEditor.vue'
-import { createWebHashHistory, createRouter } from 'vue-router'
 
 export const sourceRoutes = [
   {
@@ -13,11 +12,3 @@ export const sourceRoutes = [
     component: sourceEditor,
   },
 ]
-
-const router = createRouter({
-  //   history: createWebHistory(process.env.BASE_URL),
-  history: createWebHashHistory(),
-  routes: sourceRoutes,
-})
-
-export default router

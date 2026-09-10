@@ -11,7 +11,7 @@ import io.legado.app.model.VideoPlay
 import io.legado.app.ui.widget.number.NumberPickerDialog
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 
-class SettingsDialog(private val context: Context, private val callBack: CallBack? = null) :
+class SettingsDialog(private val context: Context) :
     BaseDialogFragment(R.layout.dialog_video_settings) {
     private val binding by viewBinding(DialogVideoSettingsBinding::bind)
 
@@ -63,9 +63,6 @@ class SettingsDialog(private val context: Context, private val callBack: CallBac
 
     private fun Float.toPressSpeedStr(): String {
         return context.getString(R.string.press_speed_summary, this)
-    }
-    interface CallBack {
-//        fun upUi()
     }
 
 }

@@ -1,8 +1,14 @@
 import { createApp } from 'vue'
 import App from '@/App.vue'
-import bookRouter from '@/router/bookRouter'
+import { createRouter, createWebHashHistory } from 'vue-router'
+import { bookRoutes } from '@/router/bookRouter'
 import store from '@/store'
 import 'element-plus/theme-chalk/dark/css-vars.css'
+
+const bookRouter = createRouter({
+  history: createWebHashHistory(),
+  routes: bookRoutes,
+})
 
 createApp(App).use(store).use(bookRouter).mount('#app')
 

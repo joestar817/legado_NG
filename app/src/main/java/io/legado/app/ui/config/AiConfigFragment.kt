@@ -2303,10 +2303,6 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         val model: AiModel
     )
 
-    private fun Int.dpToPx(): Int {
-        return (this * resources.displayMetrics.density + 0.5f).toInt()
-    }
-
     private fun readProviderFromForm(): AiProviderSetting? {
         val source = currentProviderId?.let { AiProviderStore.provider(it) } ?: return null
         return providerFormScreenState.applyTo(source)

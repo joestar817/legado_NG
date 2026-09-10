@@ -8160,13 +8160,6 @@ private fun renderChatExportBitmap(text: String): Bitmap {
     return bitmap
 }
 
-private fun ChatUiMessage.sheetInfoText(): String {
-    return when (role) {
-        ChatRole.USER -> "用户消息"
-        ChatRole.ASSISTANT -> currentAssistantModelLabel()
-    }
-}
-
 private fun <T> MutableList<T>.replaceWith(newItems: List<T>) {
     clear()
     addAll(newItems)

@@ -28,4 +28,3 @@ theme_store|app/src/main/java/io/legado/app/ui/widget/text/TextInputLayout.kt|2
 visual_boolean|app/src/main/java/io/legado/app/ui/widget/text/AccentStrokeTextView.kt|3
 visual_boolean|app/src/main/res/layout/fragment_ai_config.xml|2
 visual_boolean|app/src/main/res/layout/fragment_tts_engine_config.xml|3
-visual_boolean|app/src/main/res/layout/view_select_action_bar.xml|2

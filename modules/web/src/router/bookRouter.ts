@@ -1,5 +1,3 @@
-import { createWebHashHistory, createRouter } from 'vue-router'
-
 export const bookRoutes = [
   {
     path: '/',
@@ -12,11 +10,3 @@ export const bookRoutes = [
     component: () => import('../views/BookChapter.vue'),
   },
 ]
-
-const router = createRouter({
-  // mode: "history",
-  history: createWebHashHistory(),
-  routes: bookRoutes,
-})
-
-export default router

@@ -1,12 +1,10 @@
 package io.legado.app.ui.book.read.page.provider
 
 import android.graphics.Paint
-import android.graphics.Rect
 import android.os.Build
 import android.text.Layout
 import android.text.TextPaint
 import java.util.WeakHashMap
-import kotlin.math.max
 
 /**
  * 针对中文的断行排版处理-by hoodie13
@@ -205,20 +203,6 @@ class ZhLayout(
 
     private fun inCompressible(width: Float): Boolean {
         return width < cnCharWidth
-    }
-
-    private val gap = (cnCharWidth / 12.75).toFloat()
-    private fun getPostPancOffset(string: String): Float {
-        val textRect = Rect()
-        curPaint.getTextBounds(string, 0, 1, textRect)
-        return max(textRect.left.toFloat() - gap, 0f)
-    }
-
-    private fun getPrePancOffset(string: String): Float {
-        val textRect = Rect()
-        curPaint.getTextBounds(string, 0, 1, textRect)
-        val d = max(cnCharWidth - textRect.right.toFloat() - gap, 0f)
-        return cnCharWidth / 2 - d
     }
 
     fun getDesiredWidth(string: String, paint: TextPaint): Float {

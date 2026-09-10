@@ -1461,55 +1461,5 @@ internal fun ListeningActionRow(
     }
 }
 
-@Composable
-private fun ListeningChip(
-    label: String,
-    selected: Boolean,
-    onClick: (() -> Unit)? = null,
-) {
-    Text(
-        text = label,
-        color = if (selected) Color(NgTheme.colors.primary)
-        else Color(NgTheme.colors.onSurfaceVariant),
-        fontSize = 11.sp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (selected) Color(NgTheme.colors.selectedContainer)
-                else Color(NgTheme.colors.surface).copy(alpha = 0.72f)
-            )
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-    )
-}
-
-@Composable
-private fun ListeningRetryState(
-    text: String,
-    onRetry: () -> Unit,
-) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = text,
-                color = Color(NgTheme.colors.onSurfaceVariant),
-                fontSize = 14.sp,
-            )
-            Text(
-                text = "重新获取",
-                color = Color(NgTheme.colors.primary),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier
-                    .padding(top = 12.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(NgTheme.colors.selectedContainer))
-                    .clickable(onClick = onRetry)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-        }
-    }
-}
-
 private fun Set<String>.toggled(value: String): Set<String> =
     if (value in this) this - value else this + value

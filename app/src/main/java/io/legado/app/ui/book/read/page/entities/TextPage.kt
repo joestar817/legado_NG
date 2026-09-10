@@ -1,14 +1,12 @@
 package io.legado.app.ui.book.read.page.entities
 
 import android.graphics.Canvas
-import android.graphics.Paint
 import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
 import androidx.annotation.Keep
 import androidx.core.graphics.withTranslation
 import io.legado.app.R
-import io.legado.app.help.PaintPool
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.ui.book.read.page.ContentTextView
@@ -308,21 +306,6 @@ data class TextPage(
             canvas.withTranslation(0f, relativeOffset) {
                 drawPage(view, this)
             }
-        }
-    }
-
-    private fun drawDebugInfo(canvas: Canvas) {
-        ChapterProvider.run {
-            val paint = PaintPool.obtain()
-            paint.style = Paint.Style.STROKE
-            canvas.drawRect(
-                paddingLeft.toFloat(),
-                0f,
-                (paddingLeft + visibleWidth).toFloat(),
-                height - 1.dpToPx(),
-                paint
-            )
-            PaintPool.recycle(paint)
         }
     }
 

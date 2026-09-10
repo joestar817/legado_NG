@@ -203,7 +203,6 @@ export const useBookStore = defineStore('book', {
         )
       }
       // 直接关闭浏览器时 http请求可能被取消
-      // return API.saveBookProgress(this.bookProgress)
       return API.saveBookProgressWithBeacon(this.bookProgress)
     },
   },

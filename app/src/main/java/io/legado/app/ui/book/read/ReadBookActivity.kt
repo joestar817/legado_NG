@@ -1369,17 +1369,6 @@ class ReadBookActivity : BaseReadBookActivity(),
         }
     }
 
-    private fun startAiPurifyChapter() {
-        startAiPurifyChapterRange(ReadBook.durChapterIndex, ReadBook.durChapterIndex)
-    }
-
-    private fun startAiPurifyChapters(sampleCount: Int) {
-        val startIndex = ReadBook.durChapterIndex
-        val safeCount = sampleCount.coerceIn(1, AiConfig.purifyChapterSampleLimit)
-        val endIndex = (startIndex + safeCount - 1).coerceAtMost(ReadBook.chapterSize - 1)
-        startAiPurifyChapterRange(startIndex, endIndex)
-    }
-
     private fun startAiPurifyChapterRange(startIndex: Int, endIndex: Int) {
         val sampleCount = endIndex - startIndex + 1
         if (sampleCount <= 0 || startIndex < 0 || endIndex >= ReadBook.chapterSize) {
@@ -1503,13 +1492,6 @@ class ReadBookActivity : BaseReadBookActivity(),
         }
     }
 
-    private fun shouldAutoApplyAiPurifyChapterResults(results: List<AiPurifyResult>): Boolean {
-        if (!AiConfig.purifyChapterAutoApply || results.isEmpty()) {
-            return false
-        }
-        return !AiConfig.purifyChapterExceptionIntercept || results.all { it.canAutoApply }
-    }
-
     private fun showAiPurifyChapterConfirmDialog(
         candidates: List<AiPurifyRuleCandidate>,
         originalCharCount: Int,
@@ -1568,13 +1550,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                 },
             )
         }
-    }
-
-    private fun formatAiPurifyModels(results: List<AiPurifyResult>): String {
-        val models = results
-            .mapNotNull { it.model?.takeIf { model -> model.isNotBlank() } }
-            .distinct()
-        return formatAiPurifyModelNames(models)
     }
 
     private fun formatAiPurifyModelNames(models: List<String>): String {
@@ -1859,183 +1834,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                     text.replace(candidate.pattern, candidate.replacement)
                 }.length
             }
-    }
-
-    private fun buildAiPurifyRuleCandidates(
-        results: List<AiPurifyResult>
-    ): List<AiPurifyRuleCandidate> {
-        val candidateSources = arrayListOf<Pair<AiPurifyResult, List<AiPurifyRulePart>>>()
-        val generalCandidates = linkedMapOf<String, AiPurifyRuleCandidate>()
-        results.forEach { result ->
-            val diff = result.toAiPurifyRuleDiff()
-            if (diff.hasInsertion) {
-                return@forEach
-            }
-            val parts = diff.parts
-                .takeIf { it.isNotEmpty() }
-                ?: listOf(AiPurifyRulePart(result.original, result.cleaned))
-            if (!result.canBuildAiPurifyRuleCandidates(parts)) {
-                return@forEach
-            }
-            candidateSources.add(result to parts)
-            parts.forEach { part ->
-                val generalPattern = part.generalPattern ?: return@forEach
-                val generalReplacement = part.generalReplacement ?: return@forEach
-                if (
-                    generalPattern.isBlank() ||
-                    generalPattern.isNormalizedSameAs(generalReplacement)
-                ) {
-                    return@forEach
-                }
-                val key = generalPattern + "\u0000" + generalReplacement
-                val candidate = generalCandidates.getOrPut(key) {
-                    AiPurifyRuleCandidate(
-                        pattern = generalPattern,
-                        replacement = generalReplacement,
-                        evidenceLabels = arrayListOf()
-                    )
-                }
-                val label = result.aiPurifyEvidenceLabel()
-                if (!candidate.evidenceLabels.contains(label)) {
-                    candidate.evidenceLabels.add(label)
-                }
-            }
-        }
-        val keptGeneralKeys = generalCandidates
-            .filterValues { it.evidenceLabels.distinct().size > 1 }
-            .keys
-            .toSet()
-        val candidates = linkedMapOf<String, AiPurifyRuleCandidate>()
-        generalCandidates.forEach { (key, candidate) ->
-            if (key in keptGeneralKeys) {
-                candidates[key] = candidate
-            }
-        }
-        candidateSources.forEach { (result, parts) ->
-            parts.forEach { part ->
-                val generalKey = part.generalPattern
-                    ?.let { generalPattern ->
-                        part.generalReplacement?.let { generalReplacement ->
-                            generalPattern + "\u0000" + generalReplacement
-                        }
-                    }
-                val pattern: String
-                val replacement: String
-                if (generalKey != null && generalKey in keptGeneralKeys) {
-                    return@forEach
-                } else {
-                    pattern = part.pattern
-                    replacement = part.replacement
-                }
-                if (pattern.isBlank() || pattern.isNormalizedSameAs(replacement)) {
-                    return@forEach
-                }
-                val key = pattern + "\u0000" + replacement
-                val candidate = candidates.getOrPut(key) {
-                    AiPurifyRuleCandidate(
-                        pattern = pattern,
-                        replacement = replacement,
-                        evidenceLabels = arrayListOf()
-                    )
-                }
-                val label = result.aiPurifyEvidenceLabel()
-                if (!candidate.evidenceLabels.contains(label)) {
-                    candidate.evidenceLabels.add(label)
-                }
-            }
-        }
-        return candidates.values.toList()
-    }
-
-    private fun AiPurifyResult.aiPurifyEvidenceLabel(): String {
-        val paragraphLabel = getString(
-            R.string.ai_purify_rule_paragraph_value,
-            paragraphIndex ?: 0
-        )
-        return chapterIndex?.let { chapterIndex ->
-            getString(R.string.ai_purify_rule_chapter_paragraph_value, chapterIndex + 1, paragraphIndex ?: 0)
-        } ?: paragraphLabel
-    }
-
-    private fun AiPurifyResult.canBuildAiPurifyRuleCandidates(
-        parts: List<AiPurifyRulePart>
-    ): Boolean {
-        return parts.all { part ->
-            when {
-                part.hasRawDeletion && part.hasRawReplacement -> false
-                part.hasRawDeletion -> isSafeAiPurifyDeletionRule(part.deletedPattern)
-                else -> true
-            }
-        }
-    }
-
-    private fun AiPurifyResult.isSafeAiPurifyDeletionRule(pattern: String): Boolean {
-        return if (cleaned.isBlank() && pattern == original) {
-            pattern.isLikelyStandaloneAiPurifyPollution()
-        } else {
-            pattern.isLikelyInlineAiPurifyNoise()
-        }
-    }
-
-    private fun String.isLikelyStandaloneAiPurifyPollution(): Boolean {
-        val value = trim()
-        if (value.isBlank()) {
-            return false
-        }
-        val lower = value.lowercase()
-        val pollutionKeywords = listOf(
-            "http",
-            "www",
-            "com",
-            "域名",
-            "首发",
-            "无错章节",
-            "乱序章节",
-            "记住我们网",
-            "书友",
-            "读者",
-            "推荐票",
-            "月票",
-            "收藏",
-            "打赏",
-            "盟主",
-            "ps",
-            "本书",
-            "新书",
-            "活动",
-            "徽章",
-            "抽奖"
-        )
-        return pollutionKeywords.any { lower.contains(it) } || value.isLikelyInlineAiPurifyNoise()
-    }
-
-    private fun String.isLikelyInlineAiPurifyNoise(): Boolean {
-        val value = trim()
-        if (value.isBlank()) {
-            return false
-        }
-        if (value.length == 1 && value[0].isCjkIdeographForAiPurify()) {
-            return false
-        }
-        return value.any { it.isAiPurifyNoiseMarker() }
-    }
-
-    private fun Char.isAiPurifyNoiseMarker(): Boolean {
-        if (this == '\uFFFD') {
-            return true
-        }
-        if (isLetterOrDigit() && !isCjkIdeographForAiPurify()) {
-            return true
-        }
-        if (this in '①'..'⑳' || this in '⓪'..'⓿') {
-            return true
-        }
-        return when (this) {
-            '(', ')', '[', ']', '{', '}', '<', '>', '（', '）', '【', '】',
-            '?', '？', '%', '@', '#', '$', '^', '&', '*', '_', '+', '=',
-            '|', '\\', '/', '~', '`', '⊙', '∞', '�' -> true
-            else -> false
-        }
     }
 
     private fun Char.isCjkIdeographForAiPurify(): Boolean {
