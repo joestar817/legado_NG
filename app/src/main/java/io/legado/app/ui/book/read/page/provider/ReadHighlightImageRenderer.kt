@@ -60,7 +60,7 @@ internal object ReadHighlightImageRenderer {
                 canvas.drawBitmap(bitmap, null, target, paint)
                 canvas.restore()
             }
-            3 -> drawNineSlice(canvas, bitmap, destination, style, paint)
+            3 -> drawNineSliceCenter(canvas, bitmap, destination, style, paint)
             else -> {
                 val shader = BitmapShader(bitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
                 shader.setLocalMatrix(Matrix().apply {
@@ -74,40 +74,50 @@ internal object ReadHighlightImageRenderer {
         PaintPool.recycle(paint)
     }
 
-    private fun drawNineSlice(
+    private fun drawNineSliceCenter(
         canvas: Canvas,
         bitmap: Bitmap,
         destination: RectF,
         style: ReadCharStyle,
         paint: Paint,
     ) {
-        val sourceX = intArrayOf(
-            0,
-            (bitmap.width * style.npLeft).toInt().coerceIn(0, bitmap.width),
-            (bitmap.width * (1f - style.npRight)).toInt().coerceIn(0, bitmap.width),
-            bitmap.width,
-        )
-        val sourceY = intArrayOf(
-            0,
-            (bitmap.height * style.npTop).toInt().coerceIn(0, bitmap.height),
-            (bitmap.height * (1f - style.npBottom)).toInt().coerceIn(0, bitmap.height),
-            bitmap.height,
-        )
-        val left = minOf((sourceX[1] - sourceX[0]).toFloat(), destination.width() / 2)
-        val right = minOf((sourceX[3] - sourceX[2]).toFloat(), destination.width() / 2)
-        val top = minOf((sourceY[1] - sourceY[0]).toFloat(), destination.height() / 2)
-        val bottom = minOf((sourceY[3] - sourceY[2]).toFloat(), destination.height() / 2)
-        val targetX = floatArrayOf(destination.left, destination.left + left, destination.right - right, destination.right)
-        val targetY = floatArrayOf(destination.top, destination.top + top, destination.bottom - bottom, destination.bottom)
-        for (row in 0..2) for (column in 0..2) {
-            if (sourceX[column] >= sourceX[column + 1] || sourceY[row] >= sourceY[row + 1]) continue
-            canvas.drawBitmap(
-                bitmap,
-                Rect(sourceX[column], sourceY[row], sourceX[column + 1], sourceY[row + 1]),
-                RectF(targetX[column], targetY[row], targetX[column + 1], targetY[row + 1]),
-                paint,
-            )
+        val cuts = ReadNineSliceGeometry.from(bitmap.width, bitmap.height, style)
+        if (cuts.left < cuts.right && cuts.top < cuts.bottom) {
+            canvas.drawBitmap(bitmap, Rect(cuts.left, cuts.top, cuts.right, cuts.bottom), destination, paint)
         }
+    }
+
+    /** 单独画在真实画布上，避免行缓存裁掉外扩区域。 */
+    fun drawNineSliceFrame(
+        canvas: Canvas,
+        bitmap: Bitmap,
+        destination: RectF,
+        style: ReadCharStyle,
+        lineSpacing: Float,
+    ) {
+        val cuts = ReadNineSliceGeometry.from(bitmap.width, bitmap.height, style)
+            .forLine(destination.height(), lineSpacing)
+        val (top, bottom) = cuts.verticalInsets(destination.height(), lineSpacing)
+        val sourceX = intArrayOf(0, cuts.left, cuts.right, bitmap.width)
+        val sourceY = intArrayOf(0, cuts.top, cuts.bottom, bitmap.height)
+        val targetX = floatArrayOf(destination.left - cuts.leftWidth, destination.left,
+            destination.right, destination.right + cuts.rightWidth)
+        val targetY = floatArrayOf(destination.top - top, destination.top,
+            destination.bottom, destination.bottom + bottom)
+        val paint = PaintPool.obtain().apply {
+            isAntiAlias = true
+            isFilterBitmap = true
+            this.style = Paint.Style.FILL
+        }
+        for (row in 0..2) for (column in 0..2) {
+            if (row == 1 && column == 1) continue
+            if (sourceX[column] >= sourceX[column + 1] || sourceY[row] >= sourceY[row + 1] ||
+                targetX[column] >= targetX[column + 1] || targetY[row] >= targetY[row + 1]) continue
+            canvas.drawBitmap(bitmap,
+                Rect(sourceX[column], sourceY[row], sourceX[column + 1], sourceY[row + 1]),
+                RectF(targetX[column], targetY[row], targetX[column + 1], targetY[row + 1]), paint)
+        }
+        PaintPool.recycle(paint)
     }
 
     fun loadBitmap(path: String): Bitmap? {

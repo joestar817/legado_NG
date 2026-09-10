@@ -35,6 +35,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.platform.LocalDensity
+import io.legado.app.ui.book.read.page.provider.ReadNineSliceGeometry
+import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
@@ -549,6 +553,21 @@ private fun HighlightRulePreview(
     } else {
         (rule.underlineOffset.coerceAtLeast(0f) + 7f).dp
     }
+    val previewCuts = remember(backgroundImage, imageStyle) {
+        backgroundImage?.takeIf { imageStyle.bgImageFit == 3 }?.let {
+            ReadNineSliceGeometry.from(it.width, it.height, imageStyle)
+        }
+    }
+    val density = LocalDensity.current
+    val previewFrame = with(density) {
+        previewCuts?.forLine(24.sp.toPx(), ChapterProvider.lineSpacingExtra)
+    }
+    val frameLeft = with(density) { (previewFrame?.let { it.leftWidth + 3.dp.toPx() } ?: 0f).toDp() }
+    val frameRight = with(density) { (previewFrame?.let { it.rightWidth + 3.dp.toPx() } ?: 0f).toDp() }
+    val frameVertical = with(density) {
+        previewCuts?.verticalInsets(24.sp.toPx(), ChapterProvider.lineSpacingExtra)
+            ?.let { maxOf(it.first, it.second).toDp() } ?: 0.dp
+    }
     var textLayout by remember(text, rule.fontWeight, rule.isItalic) {
         mutableStateOf<TextLayoutResult?>(null)
     }
@@ -569,29 +588,43 @@ private fun HighlightRulePreview(
         Box(
             modifier = Modifier
                 .wrapContentSize()
+                .padding(start = frameLeft, end = frameRight, top = frameVertical, bottom = frameVertical)
                 .background(rule.bgColor?.let(::Color) ?: Color.Transparent),
         ) {
             Text(
                 text = text,
                 modifier = Modifier
                     .padding(bottom = bottomPadding)
-                    .drawBehind {
-                        val bitmap = backgroundImage ?: return@drawBehind
-                        val layout = textLayout ?: return@drawBehind
-                        val inset = 1.dp.toPx()
-                        repeat(layout.lineCount) { line ->
-                            val destination = RectF(
-                                layout.getLineLeft(line),
-                                layout.getLineTop(line) + inset,
-                                layout.getLineRight(line),
-                                layout.getLineBottom(line) - inset,
-                            )
-                            if (destination.width() > 0f && destination.height() > 0f) {
-                                ReadHighlightImageRenderer.draw(
-                                    drawContext.canvas.nativeCanvas, bitmap, destination, imageStyle,
+                    .drawWithContent {
+                        val bitmap = backgroundImage
+                        val layout = textLayout
+                        fun drawImages(frame: Boolean) {
+                            if (bitmap == null || layout == null) return
+                            val inset = if (imageStyle.bgImageFit == 3) 0f else 1.dp.toPx()
+                            repeat(layout.lineCount) { line ->
+                                val destination = RectF(
+                                    layout.getLineLeft(line) - (if (imageStyle.bgImageFit == 3) 3.dp.toPx() else 0f),
+                                    layout.getLineTop(line) + inset,
+                                    layout.getLineRight(line) + (if (imageStyle.bgImageFit == 3) 3.dp.toPx() else 0f),
+                                    layout.getLineBottom(line) - inset,
                                 )
+                                if (destination.width() > 0f && destination.height() > 0f) {
+                                    if (frame) {
+                                        ReadHighlightImageRenderer.drawNineSliceFrame(
+                                            drawContext.canvas.nativeCanvas, bitmap, destination,
+                                            imageStyle, ChapterProvider.lineSpacingExtra,
+                                        )
+                                    } else {
+                                        ReadHighlightImageRenderer.draw(
+                                            drawContext.canvas.nativeCanvas, bitmap, destination, imageStyle,
+                                        )
+                                    }
+                                }
                             }
                         }
+                        drawImages(false)
+                        drawContent()
+                        if (imageStyle.bgImageFit == 3) drawImages(true)
                     },
                 color = textColor,
                 fontSize = 16.sp,

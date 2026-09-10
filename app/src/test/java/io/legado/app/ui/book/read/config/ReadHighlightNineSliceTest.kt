@@ -5,6 +5,12 @@ import org.junit.Test
 
 class ReadHighlightNineSliceTest {
     @Test
+    fun wideBubbleEstimateProtectsCornersAndKeepsStretchArea() {
+        assertEquals(listOf(0.07f, 0.07f, 0.25f, 0.25f), estimateNineSliceCuts(1024, 270))
+        assertEquals(listOf(0.25f, 0.25f, 0.07f, 0.07f), estimateNineSliceCuts(270, 1024))
+    }
+
+    @Test
     fun wideImageUsesItsOwnBoundsRatherThanPreviewLetterbox() {
         val bounds = nineSliceImageBounds(1000, 100, 300f, 250f)
         assertEquals(0f, bounds.left, 0.001f)

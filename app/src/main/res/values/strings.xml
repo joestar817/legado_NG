@@ -2484,4 +2484,5 @@
     <string name="book_source_type_image">Comics</string>
     <string name="book_source_type_audio">Audio</string>
     <string name="book_source_type_video">Video</string>
+    <string name="highlight_nine_slice_estimate">Estimate cuts</string>
 </resources>

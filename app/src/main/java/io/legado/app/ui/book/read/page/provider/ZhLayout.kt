@@ -19,7 +19,8 @@ class ZhLayout(
     width: Int,
     words: List<String>,
     widths: List<Float>,
-    indentSize: Int
+    indentSize: Int,
+    decorationWidth: ((Int, Int) -> Float)? = null,
 ) : Layout(text, textPaint, width, Alignment.ALIGN_NORMAL, 0f, 0f) {
     companion object {
         private val postPanc = hashSetOf(
@@ -64,7 +65,8 @@ class ZhLayout(
             var offset = 0f
             var breakCharCnt = 0
 
-            if (lineW > width) {
+            if (lineW + (decorationWidth?.invoke(lineStart[line], length + s.length) ?: 0f) > width &&
+                (decorationWidth == null || length > lineStart[line])) {
                 /*禁止在行尾的标点处理*/
                 breakMod = if (index >= 1 && isPrePanc(words[index - 1])) {
                     if (index >= 2 && isPrePanc(words[index - 2])) BreakMod.CPS_2//如果后面还有一个禁首标点则异常
@@ -173,7 +175,7 @@ class ZhLayout(
                 }
                 /*写满断行、段落末尾、且需要下移字符，这种特殊情况下要额外多一行*/
                 else if (breakCharCnt > 0) {
-                    lineStart[line + 1] = lineStart[line] + breakCharCnt
+                    lineStart[line + 1] = if (decorationWidth != null) length + s.length else lineStart[line] + breakCharCnt
                     lineWidth[line] = lineW
                     addLineArray(++line)
                 }

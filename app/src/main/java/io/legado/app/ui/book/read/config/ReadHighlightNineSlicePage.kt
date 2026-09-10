@@ -66,6 +66,15 @@ internal fun nineSliceImageBounds(width: Int, height: Int, areaWidth: Float, are
 internal fun stepNineSliceCut(value: Float, delta: Int): Float =
     ((value * 100).roundToInt() + delta).coerceIn(0, 50) / 100f
 
+/** 宽条圆角素材的起始建议，只有用户点击时才写入草稿。 */
+internal fun estimateNineSliceCuts(width: Int, height: Int): List<Float> {
+    if (width <= 0 || height <= 0) return listOf(0.1f, 0.1f, 0.1f, 0.1f)
+    val corner = minOf(width, height) / 4f
+    val horizontal = kotlin.math.ceil(corner / width * 100f).toFloat().coerceIn(1f, 49f) / 100f
+    val vertical = kotlin.math.ceil(corner / height * 100f).toFloat().coerceIn(1f, 49f) / 100f
+    return listOf(horizontal, horizontal, vertical, vertical)
+}
+
 /** 参考 MD3 HighlightRuleEditSheet.NinePatchEditorDialog，保留独立草稿与单 Canvas 坐标。 */
 @Composable
 internal fun ReadHighlightNineSlicePage(
@@ -112,6 +121,17 @@ internal fun ReadHighlightNineSlicePage(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
         ) {
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End) {
+                    Text(
+                        text = stringResource(R.string.highlight_nine_slice_estimate),
+                        color = accentColor,
+                        modifier = Modifier.clickable(enabled = image != null) {
+                            image?.let { cuts = estimateNineSliceCuts(it.width, it.height) }
+                        }.padding(horizontal = 12.dp, vertical = 12.dp),
+                    )
+                }
+            }
             item {
                 Box(
                     Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(12.dp))

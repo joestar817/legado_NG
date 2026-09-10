@@ -113,6 +113,8 @@ class TextChapterLayout(
     private val compiledHighlightRules = ReadBookConfig.highlightRules.mapNotNull { rule ->
         runCatching { rule to Regex(rule.pattern) }.getOrNull()
     }
+    // init 会立即启动后台排版，所需缓存必须在启动任务前完成初始化。
+    private val nineSliceDimensions = mutableMapOf<String, Pair<Int, Int>?>()
 
     private var pendingTextPage = TextPage()
 
@@ -954,10 +956,21 @@ class TextChapterLayout(
         val widthsArray = allocateFloatArray(text.length)
         textPaint.getTextWidthsCompat(text, widthsArray, reviewCharWidth)
         remeasureHighlightFonts(text, charStyles, textPaint, widthsArray)
+        val nineSliceBudget = charStyles?.takeIf { styles -> styles.any { it?.bgImageFit == 3 && it.bgImage.isNotBlank() } }
+            ?.let { styles ->
+                ReadNineSliceWidthBudget(styles, { style ->
+                    highlightNineSliceGeometry(style)?.forLine(
+                        textHeight, if (isTitle) titleLineSpacingExtra else lineSpacingExtra,
+                    )
+                }, 3.dpToPx().toFloat())
+            }
         val layout = if (useZhLayout) {
             val (words, widths) = measureTextSplit(text, widthsArray)
             val indentSize = if (isFirstLine) paragraphIndent.length else 0
-            ZhLayout(text, textPaint, visibleWidth, words, widths, indentSize)
+            ZhLayout(text, textPaint, visibleWidth, words, widths, indentSize, nineSliceBudget?.let { it::width })
+        } else if (nineSliceBudget != null) {
+            val (words, widths) = measureTextSplit(text, widthsArray)
+            ReadNineSliceLayout(text, textPaint, visibleWidth, words, widths, nineSliceBudget)
         } else {
             StaticLayout(text, textPaint, visibleWidth, Layout.Alignment.ALIGN_NORMAL, 0f, 0f, true)
         }
@@ -999,18 +1012,20 @@ class TextChapterLayout(
         for (lineIndex in 0 until layout.lineCount) {
             val textLine = TextLine(isTitle = isTitle)
             prepareNextPageIfNeed(durY + textHeight)
+            // 边框预算需要本行真实高度；先设置几何再定位文字列。
+            textLine.upTopBottom(durY, textHeight, fontMetrics)
             val lineStart = layout.getLineStart(lineIndex)
             val lineEnd = layout.getLineEnd(lineIndex)
             val lineText = text.substring(lineStart, lineEnd)
             val (words, widths) = measureTextSplit(lineText, widthsArray, lineStart)
-            val desiredWidth = widths.fastSum()
+            val desiredWidth = widths.fastSum() + (nineSliceBudget?.width(lineStart, lineEnd) ?: 0f)
             textLine.text = lineText
             when (lineIndex) {
                 0 if layout.lineCount > 1 && !isTitle && isFirstLine -> {
                     //多行的第一行 非标题
                     addCharsToLineFirst(
                         book, absStartX, textLine, words, textPaint,
-                        desiredWidth, widths, srcList, clickList
+                        desiredWidth, widths, srcList, clickList, charStyles, lineStart
                     )
                 }
                 layout.lineCount - 1 -> {
@@ -1027,7 +1042,7 @@ class TextChapterLayout(
                     }
                     addCharsToLineNatural(
                         book, absStartX, textLine, words,
-                        startX, !isTitle && lineIndex == 0, widths, srcList, clickList
+                        startX, !isTitle && lineIndex == 0, widths, srcList, clickList, charStyles, lineStart
                     )
                 }
                 else -> {
@@ -1040,13 +1055,13 @@ class TextChapterLayout(
                         val startX = (visibleWidth - desiredWidth) / 2
                         addCharsToLineNatural(
                             book, absStartX, textLine, words,
-                            startX, false, widths, srcList, clickList
+                            startX, false, widths, srcList, clickList, charStyles, lineStart
                         )
                     } else {
                         //中间行
                         addCharsToLineMiddle(
                             book, absStartX, textLine, words, textPaint,
-                            desiredWidth, 0f, widths, srcList, clickList
+                            desiredWidth, 0f, widths, srcList, clickList, charStyles, lineStart
                         )
                     }
                 }
@@ -1057,7 +1072,6 @@ class TextChapterLayout(
             }
             calcTextLinePosition(textPages, textLine, stringBuilder.length)
             stringBuilder.append(lineText)
-            textLine.upTopBottom(durY, textHeight, fontMetrics)
             val textPage = pendingTextPage
             textPage.addLine(textLine)
             durY += textHeight * if (isTitle) titleLineSpacingExtra else lineSpacingExtra
@@ -1198,13 +1212,15 @@ class TextChapterLayout(
         desiredWidth: Float,
         textWidths: List<Float>,
         srcList: LinkedList<String>?,
-        clickList: LinkedList<String?>?
+        clickList: LinkedList<String?>?,
+        charStyles: Array<ReadCharStyle?>?,
+        lineStart: Int,
     ) {
         var x = 0f
         if (!textFullJustify) {
             addCharsToLineNatural(
                 book, absStartX, textLine, words,
-                x, true, textWidths, srcList, clickList
+                x, true, textWidths, srcList, clickList, charStyles, lineStart
             )
             return
         }
@@ -1227,7 +1243,8 @@ class TextChapterLayout(
             val textWidths1 = textWidths.subList(bodyIndent.length, textWidths.size)
             addCharsToLineMiddle(
                 book, absStartX, textLine, text1, textPaint,
-                desiredWidth, x, textWidths1, srcList, clickList
+                desiredWidth, x, textWidths1, srcList, clickList, charStyles,
+                lineStart + bodyIndent.length
             )
         }
     }
@@ -1247,16 +1264,19 @@ class TextChapterLayout(
         startX: Float,
         textWidths: List<Float>,
         srcList: LinkedList<String>?,
-        clickList: LinkedList<String?>?
+        clickList: LinkedList<String?>?,
+        charStyles: Array<ReadCharStyle?>?,
+        lineStart: Int,
     ) {
         if (!textFullJustify) {
             addCharsToLineNatural(
                 book, absStartX, textLine, words,
                 startX, false, textWidths, srcList,
-                clickList
+                clickList, charStyles, lineStart
             )
             return
         }
+        val insets = highlightNineSliceInsets(words, charStyles, lineStart, textLine)
         val residualWidth = visibleWidth - desiredWidth
         val spaceSize = words.count { it == " " }
         textLine.startX = absStartX + startX
@@ -1265,6 +1285,7 @@ class TextChapterLayout(
             textLine.wordSpacing = d
             var x = startX
             for (index in words.indices) {
+                x += insets.before[index]
                 val char = words[index]
                 val cw = textWidths[index]
                 val x1 = if (char == " ") {
@@ -1286,6 +1307,7 @@ class TextChapterLayout(
             textLine.extraLetterSpacing = d / textPaint.textSize
             var x = startX
             for (index in words.indices) {
+                x += insets.before[index]
                 val char = words[index]
                 val cw = textWidths[index]
                 val x1 = if (index != words.lastIndex) (x + cw + d) else (x + cw)
@@ -1297,7 +1319,7 @@ class TextChapterLayout(
                 x = x1
             }
         }
-        exceed(absStartX, textLine, words)
+        exceed(absStartX, textLine, words, insets.after)
     }
 
     /**
@@ -1312,12 +1334,16 @@ class TextChapterLayout(
         hasIndent: Boolean,
         textWidths: List<Float>,
         srcList: LinkedList<String>?,
-        clickList: LinkedList<String?>?
+        clickList: LinkedList<String?>?,
+        charStyles: Array<ReadCharStyle?>?,
+        lineStart: Int,
     ) {
+        val insets = highlightNineSliceInsets(words, charStyles, lineStart, textLine)
         val indentLength = paragraphIndent.length
         var x = startX
         textLine.startX = absStartX + startX
         for (index in words.indices) {
+            x += insets.before[index]
             val char = words[index]
             val cw = textWidths[index]
             val x1 = x + cw
@@ -1327,7 +1353,30 @@ class TextChapterLayout(
                 textLine.indentWidth = x
             }
         }
-        exceed(absStartX, textLine, words)
+        exceed(absStartX, textLine, words, insets.after)
+    }
+
+    private fun highlightNineSliceGeometry(style: ReadCharStyle): ReadNineSliceGeometry? {
+        if (!nineSliceDimensions.containsKey(style.bgImage)) {
+            nineSliceDimensions[style.bgImage] = ReadHighlightImageRenderer.loadBitmap(style.bgImage)
+                ?.let { it.width to it.height }
+        }
+        return nineSliceDimensions[style.bgImage]?.let { (width, height) ->
+            ReadNineSliceGeometry.from(width, height, style)
+        }
+    }
+
+    private fun highlightNineSliceInsets(
+        words: List<String>,
+        styles: Array<ReadCharStyle?>?,
+        lineStart: Int,
+        line: TextLine,
+    ): ReadNineSliceLineInsets = nineSliceLineInsets(
+        words, styles, lineStart, 3.dpToPx().toFloat(),
+    ) { style ->
+        highlightNineSliceGeometry(style)?.forLine(
+            line.height, if (line.isTitle) titleLineSpacingExtra else lineSpacingExtra,
+        )
     }
 
     /**
@@ -1378,7 +1427,7 @@ class TextChapterLayout(
     /**
      * 超出边界处理
      */
-    private fun exceed(absStartX: Int, textLine: TextLine, words: List<String>) {
+    private fun exceed(absStartX: Int, textLine: TextLine, words: List<String>, extraRightMargin: Float = 0f) {
         var size = words.size
         if (size < 2) return
         val visibleEnd = absStartX + visibleWidth
@@ -1391,7 +1440,7 @@ class TextChapterLayout(
         } else {
             columns.last()
         }
-        val endX = endColumn.end.roundToInt()
+        val endX = endColumn.end.roundToInt() + extraRightMargin.roundToInt()
         if (endX > visibleEnd) {
             textLine.exceed = true
             val cc = (endX - visibleEnd) / size

@@ -22,6 +22,8 @@ import io.legado.app.ui.book.read.page.entities.TextPage.Companion.emptyTextPage
 import io.legado.app.ui.book.read.page.entities.column.BaseColumn
 import io.legado.app.ui.book.read.page.entities.column.TextColumn
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
+import io.legado.app.ui.book.read.page.provider.ReadCharStyle
+import io.legado.app.ui.book.read.page.provider.sameImageAs
 import io.legado.app.ui.book.read.page.provider.ReadHighlightImageRenderer
 import io.legado.app.utils.canvasrecorder.CanvasRecorderFactory
 import io.legado.app.utils.canvasrecorder.recordIfNeededThenDraw
@@ -65,6 +67,7 @@ data class TextLine(
     val canvasRecorder = CanvasRecorderFactory.create()
     var searchResultColumnCount = 0
     var hasReadStyle = false
+    private var nineSliceFrames: List<Pair<RectF, ReadCharStyle>> = emptyList()
     var isReadAloud: Boolean = false
         set(value) {
             if (field != value) {
@@ -171,6 +174,17 @@ data class TextLine(
         } else {
             drawTextLine(view, canvas)
         }
+        if (inlineNoteSpacers.isEmpty()) drawNineSliceFrames(canvas)
+    }
+
+    private fun drawNineSliceFrames(canvas: Canvas) {
+        nineSliceFrames.forEach { (destination, style) ->
+            val bitmap = ReadHighlightImageRenderer.loadBitmap(style.bgImage) ?: return@forEach
+            ReadHighlightImageRenderer.drawNineSliceFrame(
+                canvas, bitmap, destination, style,
+                if (isTitle) ChapterProvider.titleLineSpacingExtra else ChapterProvider.lineSpacingExtra,
+            )
+        }
     }
 
     private fun drawTextLine(view: ContentTextView, canvas: Canvas) {
@@ -236,16 +250,21 @@ data class TextLine(
         inlineOffset: Float,
     ) {
         if (clipEnd <= clipStart) return
-        val underlineOverflow = 10.dpToPx().toFloat()
+        val underlineOverflow = maxOf(10.dpToPx().toFloat(),
+            ((if (isTitle) ChapterProvider.titleLineSpacingExtra else ChapterProvider.lineSpacingExtra) - 1f)
+                .coerceAtLeast(0f) * height * 0.5f)
         canvas.withSave {
             clipRect(clipStart, -underlineOverflow, clipEnd, height + underlineOverflow)
             translate(inlineOffset, 0f)
             drawTextLine(view, this)
+            drawNineSliceFrames(this)
         }
     }
 
     private fun drawHighlightBackgrounds(canvas: Canvas) {
+        nineSliceFrames = emptyList()
         if (!hasReadStyle) return
+        val frames = mutableListOf<Pair<RectF, ReadCharStyle>>()
         val columns = textColumns.filterIsInstance<TextColumn>()
         var index = 0
         while (index < columns.size) {
@@ -279,20 +298,20 @@ data class TextLine(
                 var end = column.end
                 var next = index + 1
                 while (next < columns.size && columns[next].readStyle?.let {
-                        it.bgImage == style.bgImage &&
-                            it.bgImageFit == style.bgImageFit &&
-                            it.bgImageScale == style.bgImageScale
+                        it.sameImageAs(style)
                     } == true
                 ) {
                     end = columns[next].end
                     next++
                 }
+                if (style.bgImageFit == 3) frames.add(RectF(column.start - 3.dpToPx(), 0f, end + 3.dpToPx(), height) to style)
                 drawHighlightImage(canvas, column.start, end, style)
                 index = next
             } else {
                 index++
             }
         }
+        nineSliceFrames = frames
     }
 
     private fun drawHighlightImage(
@@ -305,7 +324,8 @@ data class TextLine(
         ReadHighlightImageRenderer.draw(
             canvas,
             bitmap,
-            RectF(start, 1.dpToPx().toFloat(), end, height - 1.dpToPx()),
+            if (style.bgImageFit == 3) RectF(start - 3.dpToPx(), 0f, end + 3.dpToPx(), height)
+            else RectF(start, 1.dpToPx().toFloat(), end, height - 1.dpToPx()),
             style,
         )
     }
