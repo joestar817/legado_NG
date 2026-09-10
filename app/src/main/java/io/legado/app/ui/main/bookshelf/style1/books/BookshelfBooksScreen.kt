@@ -41,7 +41,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -580,7 +579,8 @@ private fun BookshelfGridBookItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(4.dp)
-                    .aspectRatio(3f / 4f),
+                    .aspectRatio(3f / 4f)
+                    .clip(RoundedCornerShape(coverRadius.coerceAtLeast(0).dp)),
             ) {
                 BookshelfCover(
                     book = book,
@@ -589,23 +589,20 @@ private fun BookshelfGridBookItem(
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (showBookName == 2) {
+                    val verticalBookName = remember(book.name) {
+                        book.name.codePoints().toArray()
+                            .joinToString("\n") { String(Character.toChars(it)) }
+                    }
                     Text(
-                        text = book.name,
+                        text = verticalBookName,
                         color = Color.White,
                         fontSize = 11.sp,
                         lineHeight = 14.sp,
-                        maxLines = 2,
+                        textAlign = TextAlign.Center,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .background(
-                                Brush.verticalGradient(
-                                    0f to Color.Transparent,
-                                    0.5f to Color(0x60000000),
-                                    1f to Color(0xA0000000),
-                                )
-                            )
+                            .align(Alignment.TopStart)
+                            .fillMaxHeight()
                             .padding(start = 4.dp, top = 8.dp, end = 4.dp, bottom = 4.dp),
                     )
                 }
