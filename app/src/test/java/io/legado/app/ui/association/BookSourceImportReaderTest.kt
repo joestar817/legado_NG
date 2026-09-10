@@ -13,6 +13,27 @@ import org.junit.Test
 
 class BookSourceImportReaderTest {
     @Test
+    fun emptyAddressesAreSkippedWithoutLosingSurroundingSources() = runBlocking {
+        val urls = arrayListOf<String>()
+        val skipped = readBookSourceImport(
+            """[{"bookSourceUrl":"before"},{"bookSourceUrl":"","bookSourceGroup":"已检"},{},{"bookSourceUrl":"after"}]""".reader(),
+            false, { urls.add(it.bookSourceUrl) }, { error("No links") }
+        )
+        assertEquals(2, skipped)
+        assertEquals(listOf("before", "after"), urls)
+    }
+
+    @Test
+    fun emptyAddressOnlyInputsStillFail() = runBlocking {
+        for (text in listOf("""[{"bookSourceUrl":""},{}]""", """{"bookSourceUrl":""}""")) {
+            val failure = runCatching {
+                readBookSourceImport(text.reader(), false, { error("No source expected") }, {})
+            }.exceptionOrNull()
+            assertTrue(failure?.message.orEmpty().contains("不是书源"))
+        }
+    }
+
+    @Test
     fun arrayIsDeliveredIncrementallyWithoutReadingTheNextLargeItem() = runBlocking {
         val source = """{"bookSourceUrl":"one","ruleContent":{"content":"content"}}"""
         val input = ChunkReader(sequence {

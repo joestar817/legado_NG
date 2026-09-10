@@ -37,6 +37,7 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
     var groupName: String? = null
     val errorLiveData = MutableLiveData<String>()
     val successLiveData = MutableLiveData<Int>()
+    private var skippedSourceCount = 0
 
     internal val allSources = arrayListOf<BookSourceImportItem>()
     private val sourceStore = lazy { BookSourceImportStore(app.cacheDir) }
@@ -138,6 +139,7 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
 
     fun importSource(text: String) {
         execute {
+            skippedSourceCount = 0
             importSourceText(text.trim(), allowSourceUrls = true)
         }.onError {
             allSources.clear()
@@ -157,11 +159,12 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
             allowSourceUrls && !content.startsWith("[") && !content.startsWith("{") && content.isUri() -> {
                 val uri = Uri.parse(content)
                 uri.inputStream(context).getOrThrow().bufferedReader().use {
-                    readBookSourceImport(it, false, ::appendPreviewSource, ::importSourceUrl)
+                    skippedSourceCount += readBookSourceImport(it, false, ::appendPreviewSource, ::importSourceUrl)
                 }
             }
             else -> StringReader(content).use {
-                readBookSourceImport(it, allowSourceUrls, ::appendPreviewSource, ::importSourceUrl)
+                val skipped = readBookSourceImport(it, allowSourceUrls, ::appendPreviewSource, ::importSourceUrl)
+                skippedSourceCount += skipped
             }
         }
     }
@@ -182,7 +185,7 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
                 url(url)
             }
         }.decompressed().byteStream().bufferedReader().use {
-            readBookSourceImport(it, false, ::appendPreviewSource, ::importSourceUrl)
+            skippedSourceCount += readBookSourceImport(it, false, ::appendPreviewSource, ::importSourceUrl)
         }
     }
 
@@ -201,6 +204,9 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
             }
             selectableIndices = selectable
             successLiveData.postValue(allSources.size)
+            if (skippedSourceCount > 0) {
+                context.toastOnUi("已跳过 $skippedSourceCount 条书源地址为空的记录")
+            }
         }
     }
 

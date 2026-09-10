@@ -21,7 +21,7 @@ internal suspend fun readBookSourceImport(
     allowSourceUrls: Boolean,
     onSource: (BookSource) -> Unit,
     onSourceUrl: suspend (String) -> Unit,
-) {
+): Int {
     val reader = input.buffered()
     var first: Int
     do {
@@ -40,7 +40,7 @@ internal suspend fun readBookSourceImport(
             )
         }
         onSource(withTimeout(30_000L) { JsSourceConfig.extract(script, currentCoroutineContext()) })
-        return
+        return 0
     }
     val json = JsonReader(reader).apply { strictness = Strictness.LENIENT }
     fun emit(source: BookSource?) {
@@ -49,12 +49,24 @@ internal suspend fun readBookSourceImport(
         onSource(source)
     }
     if (json.peek() == JsonToken.BEGIN_ARRAY) {
+        var accepted = 0
+        var skipped = 0
         json.beginArray()
         while (json.hasNext()) {
             currentCoroutineContext().ensureActive()
-            emit(GSON.fromJson<BookSource>(json, BookSource::class.java))
+            val source = GSON.fromJson<BookSource>(json, BookSource::class.java)
+            // 合集中的空地址记录不影响其它书源；语法、类型和 null 错误仍正常抛出。
+            if (source != null && source.bookSourceUrl.isEmpty()) {
+                skipped++
+            } else {
+                emit(source)
+                accepted++
+            }
         }
         json.endArray()
+        if (json.peek() != JsonToken.END_DOCUMENT) throw JsonSyntaxException("书源 JSON 尾部存在多余内容")
+        if (accepted == 0 && skipped > 0) throw NoStackTraceException("不是书源：所有记录的书源地址均为空")
+        return skipped
     } else if (allowSourceUrls) {
         // 此处最多一条源或一个链接包装对象，不构建整个书源数组的 JSON 树。
         val root = GSON.fromJson<JsonObject>(json, JsonObject::class.java)
@@ -71,6 +83,7 @@ internal suspend fun readBookSourceImport(
         emit(GSON.fromJson<BookSource>(json, BookSource::class.java))
     }
     if (json.peek() != JsonToken.END_DOCUMENT) throw JsonSyntaxException("书源 JSON 尾部存在多余内容")
+    return 0
 }
 
 /** 保留原先 trim 后的 JS 大小规则；超长尾部空白不占据无限缓冲。 */
