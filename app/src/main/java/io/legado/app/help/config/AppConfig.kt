@@ -257,6 +257,12 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             appCtx.putPrefBoolean(PreferKey.bookshelfShowReadingProgress, value)
         }
 
+    var bookshelfGridBackground: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.bookshelfGridBackground, false)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.bookshelfGridBackground, value)
+        }
+
     var readBrightness: Int
         get() = if (ReadBookConfig.isNightTheme) {
             appCtx.getPrefInt(PreferKey.nightBrightness, 100)

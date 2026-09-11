@@ -113,6 +113,7 @@ class BooksFragment() : BaseFragment(0),
     private val layoutMode by lazy { AppConfig.activeBookshelfLayoutMode }
     private var layoutProfile by mutableStateOf(AppConfig.getBookshelfLayoutProfile(layoutMode))
     private var showReadingProgress by mutableStateOf(AppConfig.bookshelfShowReadingProgress)
+    private var showGridBackground by mutableStateOf(AppConfig.bookshelfGridBackground)
     private var bookItems by mutableStateOf<List<Book>>(
         emptyList(),
         referentialEqualityPolicy(),
@@ -200,6 +201,7 @@ class BooksFragment() : BaseFragment(0),
                     showUnread = layoutProfile.showUnread,
                     showLastUpdateTime = layoutProfile.showLastUpdateTime,
                     showReadingProgress = showReadingProgress,
+                    showGridBackground = showGridBackground,
                     bottomInset = bottomInset,
                     scrollToTopToken = scrollToTopToken,
                     coverRevision = coverRevision,
@@ -578,6 +580,7 @@ class BooksFragment() : BaseFragment(0),
         observeEvent<String>(EventBus.BOOKSHELF_REFRESH) {
             layoutProfile = AppConfig.getBookshelfLayoutProfile(layoutMode)
             showReadingProgress = AppConfig.bookshelfShowReadingProgress
+            showGridBackground = AppConfig.bookshelfGridBackground
             updatingBookUrls = bookItems.asSequence()
                 .map(Book::bookUrl)
                 .filter(activityViewModel::isUpdate)

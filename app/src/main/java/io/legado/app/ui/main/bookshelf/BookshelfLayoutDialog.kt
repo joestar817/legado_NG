@@ -122,13 +122,15 @@ class BookshelfLayoutDialog : BottomSheetDialogFragment() {
                 oldProfile.spacing != newProfile.spacing,
             refresh = oldProfile.showUnread != newProfile.showUnread ||
                 oldProfile.showLastUpdateTime != newProfile.showLastUpdateTime ||
-                AppConfig.bookshelfShowReadingProgress != draft.showReadingProgress,
+                AppConfig.bookshelfShowReadingProgress != draft.showReadingProgress ||
+                AppConfig.bookshelfGridBackground != draft.showGridBackground,
             waitCountChanged = oldShowWaitUpCount != draft.showWaitUpCount,
             sortChanged = oldProfile.sort != newProfile.sort,
         )
         draft.profiles.forEach(AppConfig::setBookshelfLayoutProfile)
         AppConfig.showWaitUpCount = draft.showWaitUpCount
         AppConfig.bookshelfShowReadingProgress = draft.showReadingProgress
+        AppConfig.bookshelfGridBackground = draft.showGridBackground
         AppConfig.selectBookshelfLayoutMode(draft.selectedMode)
         callback?.onBookshelfLayoutConfirmed(result)
         dismissAllowingStateLoss()
@@ -163,6 +165,7 @@ private data class BookshelfLayoutDraft(
     val profiles: BookshelfLayoutProfiles,
     val showWaitUpCount: Boolean,
     val showReadingProgress: Boolean,
+    val showGridBackground: Boolean,
 )
 
 private data class BookshelfLayoutProfiles(
@@ -220,6 +223,7 @@ private fun BookshelfLayoutSheet(
         mutableStateOf(AppConfig.bookshelfShowReadingProgress)
     }
     val profile = profiles[selectedMode]
+    var showGridBackground by remember { mutableStateOf(AppConfig.bookshelfGridBackground) }
     val maxDrawerHeight = (LocalConfiguration.current.screenHeightDp * 0.86f).dp
     val mainSelection = selectedMode.value
     val isGridBooks = selectedMode == BookshelfLayoutMode.GRID ||
@@ -382,6 +386,14 @@ private fun BookshelfLayoutSheet(
                                     },
                                 )
                             }
+                            if (selectedMode == BookshelfLayoutMode.GRID) {
+                                NgFormGroupDivider()
+                                NgFormSwitchSettingRow(
+                                    title = stringResource(R.string.bookshelf_show_background),
+                                    checked = showGridBackground,
+                                    onCheckedChange = { showGridBackground = it },
+                                )
+                            }
                             if (!isGridBooks) {
                                 NgFormGroupDivider()
                                 NgFormSwitchSettingRow(
@@ -435,6 +447,7 @@ private fun BookshelfLayoutSheet(
                             profiles = profiles,
                             showWaitUpCount = showWaitUpCount,
                             showReadingProgress = showReadingProgress,
+                            showGridBackground = showGridBackground,
                         )
                     )
                 },

@@ -2389,4 +2389,5 @@
     <string name="about_action_update">更新</string>
     <string name="highlight_nine_slice_estimate">估算切线</string>
     <string name="bookshelf_show_reading_progress">显示阅读进度</string>
+    <string name="bookshelf_show_background">显示背景容器</string>
 </resources>

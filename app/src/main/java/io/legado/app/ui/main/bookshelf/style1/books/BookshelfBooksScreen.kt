@@ -67,6 +67,7 @@ import io.legado.app.ui.design.components.compose.NgBookshelfUpdateIndicator
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.main.bookshelf.bookshelfReadingProgress
+import io.legado.app.ui.main.bookshelf.BookshelfGridBackground
 import io.legado.app.ui.main.bookshelf.bookshelfAuthorText
 import io.legado.app.utils.toTimeAgo
 
@@ -84,6 +85,7 @@ internal fun BookshelfBooksScreen(
     showUnread: Boolean,
     showLastUpdateTime: Boolean,
     showReadingProgress: Boolean,
+    showGridBackground: Boolean,
     bottomInset: Dp,
     scrollToTopToken: Long,
     coverRevision: Int,
@@ -96,61 +98,67 @@ internal fun BookshelfBooksScreen(
     onOpenBookInfo: (Book) -> Unit,
     onOpenBookActions: (Book) -> Unit,
 ) {
-    NgPullRefreshBox(
-        isRefreshing = false,
-        onRefresh = onRefresh,
-        modifier = Modifier.fillMaxSize(),
-        enabled = refreshEnabled,
-        // 书架只用卡内更新圈反馈进度，避免重复显示整页刷新指示器。
-        showIndicator = false,
+    val gridBackgroundEnabled = layoutMode == BookshelfLayoutMode.GRID && showGridBackground
+    BookshelfGridBackground(
+        enabled = gridBackgroundEnabled,
+        initialBottomInset = bottomInset,
     ) {
-        if (books.isEmpty()) {
-            Text(
-                text = stringResource(R.string.bookshelf_empty),
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(16.dp),
-                color = Color(NgTheme.colors.onSurface),
-                fontSize = 14.sp,
-                textAlign = TextAlign.Center,
-            )
-        } else {
-            when (layoutMode) {
-                BookshelfLayoutMode.LIST,
-                BookshelfLayoutMode.COMPACT -> BookshelfBookList(
-                    books = books,
-                    compact = layoutMode == BookshelfLayoutMode.COMPACT,
-                    spacing = spacing,
-                    bottomInset = bottomInset,
-                    showLastUpdateTime = showLastUpdateTime,
-                    showReadingProgress = showReadingProgress,
-                    scrollToTopToken = scrollToTopToken,
-                    coverRevision = coverRevision,
-                    lastUpdateTick = lastUpdateTick,
-                    isEInk = isEInk,
-                    updatingBookUrls = updatingBookUrls,
-                    onOpenBook = onOpenBook,
-                    onOpenBookInfo = onOpenBookInfo,
-                    onOpenBookActions = onOpenBookActions,
+        NgPullRefreshBox(
+            isRefreshing = false,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize(),
+            enabled = refreshEnabled,
+            // 书架只用卡内更新圈反馈进度，避免重复显示整页刷新指示器。
+            showIndicator = false,
+        ) {
+            if (books.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.bookshelf_empty),
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(16.dp),
+                    color = Color(NgTheme.colors.onSurface),
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
                 )
+            } else {
+                when (layoutMode) {
+                    BookshelfLayoutMode.LIST,
+                    BookshelfLayoutMode.COMPACT -> BookshelfBookList(
+                        books = books,
+                        compact = layoutMode == BookshelfLayoutMode.COMPACT,
+                        spacing = spacing,
+                        bottomInset = bottomInset,
+                        showLastUpdateTime = showLastUpdateTime,
+                        showReadingProgress = showReadingProgress,
+                        scrollToTopToken = scrollToTopToken,
+                        coverRevision = coverRevision,
+                        lastUpdateTick = lastUpdateTick,
+                        isEInk = isEInk,
+                        updatingBookUrls = updatingBookUrls,
+                        onOpenBook = onOpenBook,
+                        onOpenBookInfo = onOpenBookInfo,
+                        onOpenBookActions = onOpenBookActions,
+                    )
 
-                BookshelfLayoutMode.GRID -> BookshelfBookGrid(
-                    books = books,
-                    columns = columns,
-                    spacing = spacing,
-                    showBookName = showBookName,
-                    coverRadius = coverRadius,
-                    showUnread = showUnread,
-                    bottomInset = bottomInset,
-                    scrollToTopToken = scrollToTopToken,
-                    coverRevision = coverRevision,
-                    isEInk = isEInk,
-                    updatingBookUrls = updatingBookUrls,
-                    onOpenBook = onOpenBook,
-                    onOpenBookInfo = onOpenBookInfo,
-                )
+                    BookshelfLayoutMode.GRID -> BookshelfBookGrid(
+                        books = books,
+                        columns = columns,
+                        spacing = spacing,
+                        showBookName = showBookName,
+                        coverRadius = coverRadius,
+                        showUnread = showUnread,
+                        bottomInset = if (gridBackgroundEnabled) 0.dp else bottomInset,
+                        scrollToTopToken = scrollToTopToken,
+                        coverRevision = coverRevision,
+                        isEInk = isEInk,
+                        updatingBookUrls = updatingBookUrls,
+                        onOpenBook = onOpenBook,
+                        onOpenBookInfo = onOpenBookInfo,
+                    )
 
-                BookshelfLayoutMode.GROUP_GRID -> Unit
+                    BookshelfLayoutMode.GROUP_GRID -> Unit
+                }
             }
         }
     }
