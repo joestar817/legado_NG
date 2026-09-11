@@ -22,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -141,6 +143,33 @@ internal fun bookshelfMenuItems(
             )
         )
     )
+}
+
+@Composable
+internal fun BookshelfSortMenuHost(
+    onOpen: () -> List<NgExpandableActionMenuItem>,
+    onItemClick: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    anchor: @Composable BoxScope.((() -> Unit)) -> Unit,
+) {
+    val menuState = remember { NgPopupToggleState() }
+    var items by remember { mutableStateOf(emptyList<NgExpandableActionMenuItem>()) }
+    Box(modifier = modifier) {
+        anchor {
+            items = onOpen()
+            menuState.onAnchorClick()
+        }
+        NgExpandableActionMenu(
+            expanded = menuState.expanded,
+            onDismissRequest = menuState::onDismissRequest,
+            items = items,
+            offset = DpOffset(0.dp, (-6).dp),
+            onItemClick = { item ->
+                menuState.close()
+                onItemClick(item.itemId)
+            },
+        )
+    }
 }
 
 @Composable

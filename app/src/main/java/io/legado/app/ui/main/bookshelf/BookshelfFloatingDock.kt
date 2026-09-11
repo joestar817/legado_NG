@@ -1,6 +1,5 @@
 package io.legado.app.ui.main.bookshelf
 
-import android.graphics.Rect
 import android.view.View
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -46,11 +45,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -78,7 +74,6 @@ import io.legado.app.ui.design.components.compose.NgGlassStyle
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.theme.NgTheme
-import kotlin.math.roundToInt
 
 internal data class BookshelfDockGroup(
     val groupId: Long,
@@ -358,7 +353,8 @@ internal fun BookshelfCompactToolbar(
     onGroupClick: (Int) -> Unit,
     onGroupLongClick: (Int) -> Unit,
     onManageClick: () -> Unit,
-    onSortClick: (View, Rect) -> Unit,
+    onOpenSortMenu: () -> List<NgExpandableActionMenuItem>,
+    onSortMenuItemClick: (Int) -> Unit,
     onMenuItemClick: (Int) -> Unit,
     topDistancePx: Int,
     contentTopInsetPx: Int,
@@ -368,7 +364,6 @@ internal fun BookshelfCompactToolbar(
     modifier: Modifier = Modifier,
 ) {
     val snapshot = NgTheme.snapshot
-    val rootView = LocalView.current
     val shape = RoundedCornerShape(12.dp)
     val surfaceColor = colorResource(R.color.ng_floating_dock_surface).copy(
         alpha = BookshelfFloatingDockConfig.surfaceAlpha(transparencyPercent),
@@ -391,7 +386,6 @@ internal fun BookshelfCompactToolbar(
     val dockTopSpacerHeight = with(LocalDensity.current) {
         (topDistancePx - contentTopInsetPx).coerceAtLeast(0).toDp()
     }
-    var sortAnchorBounds by remember { mutableStateOf(Rect()) }
     val searchLabel = stringResource(R.string.search)
     val manageLabel = stringResource(R.string.manage)
     val sortLabel = stringResource(R.string.sort)
@@ -408,28 +402,21 @@ internal fun BookshelfCompactToolbar(
                 .fillMaxHeight(),
         )
         CompactToolbarDivider(color = dividerColor)
-        CompactToolbarAction(
-            iconRes = R.drawable.ic_swap_vert,
-            label = sortLabel,
-            contentColor = contentColor,
-            onClick = {
-                if (!sortAnchorBounds.isEmpty) {
-                    onSortClick(rootView, Rect(sortAnchorBounds))
-                }
-            },
+        BookshelfSortMenuHost(
+            onOpen = onOpenSortMenu,
+            onItemClick = onSortMenuItemClick,
             modifier = Modifier
                 .width(44.dp)
-                .fillMaxHeight()
-                .onGloballyPositioned { coordinates ->
-                    val bounds = coordinates.boundsInRoot()
-                    sortAnchorBounds = Rect(
-                        bounds.left.roundToInt(),
-                        bounds.top.roundToInt(),
-                        bounds.right.roundToInt(),
-                        bounds.bottom.roundToInt(),
-                    )
-                },
-        )
+                .fillMaxHeight(),
+        ) { openMenu ->
+            CompactToolbarAction(
+                iconRes = R.drawable.ic_swap_vert,
+                label = sortLabel,
+                contentColor = contentColor,
+                onClick = openMenu,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         CompactToolbarDivider(color = dividerColor)
         BookshelfMenuHost(
             includeBrowseHistory = true,
@@ -552,6 +539,7 @@ private fun CompactToolbarGroupAction(
     onGroupLongClick: (Int) -> Unit,
 ) {
     val selectedGroup = groups.getOrNull(selectedIndex) ?: return
+    val groupActionWidth = 72.dp
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     var expanded by remember { mutableStateOf(false) }
@@ -594,7 +582,7 @@ private fun CompactToolbarGroupAction(
 
     Box(
         modifier = Modifier
-            .width(72.dp)
+            .width(groupActionWidth)
             .fillMaxHeight(),
     ) {
         Row(
@@ -641,7 +629,7 @@ private fun CompactToolbarGroupAction(
             onDismissRequest = { expanded = false },
             items = menuItems,
             width = menuWidth,
-            offset = DpOffset(0.dp, (-4).dp),
+            offset = DpOffset(groupActionWidth - menuWidth, (-4).dp),
             onItemClick = { item ->
                 expanded = false
                 val index = item.itemId - COMPACT_GROUP_ITEM_ID_BASE

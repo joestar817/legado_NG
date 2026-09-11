@@ -1,6 +1,5 @@
 package io.legado.app.ui.main.bookshelf.style1
 
-import android.graphics.Rect
 import android.os.Bundle
 import android.view.View
 import androidx.compose.runtime.getValue
@@ -33,8 +32,7 @@ import io.legado.app.ui.main.bookshelf.BaseBookshelfFragment
 import io.legado.app.ui.main.bookshelf.BookshelfDockGroup
 import io.legado.app.ui.main.bookshelf.style1.books.BooksFragment
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.widget.NgActionPopup
-import io.legado.app.ui.widget.NgActionPopupItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.startActivityForBook
@@ -137,7 +135,10 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
                         }
                     },
                     onManageClick = ::openBookshelfManage,
-                    onSortClick = ::showSortMenu,
+                    onOpenSortMenu = ::sortMenuItems,
+                    onSortMenuItemClick = { itemId ->
+                        updateBookSort(itemId - SORT_MENU_ID_OFFSET)
+                    },
                     onMenuItemClick = ::onBookshelfMenuItemClick,
                     onFloatingDockBoundsChanged = { bounds ->
                         binding.bookshelfScreen.setTag(R.id.bookshelf_floating_dock, bounds)
@@ -268,27 +269,16 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         }
     }
 
-    private fun showSortMenu(anchorRoot: View, anchorBoundsInRoot: Rect) {
+    private fun sortMenuItems(): List<NgExpandableActionMenuItem> {
         val currentSort = currentBookSort()
-        NgActionPopup(
-            requireContext(),
-            sortValues.map { sort ->
-                NgActionPopupItem(
-                    itemId = SORT_MENU_ID_OFFSET + sort,
-                    title = getString(sortLabelRes(sort)),
-                    iconRes = sortIconRes(sort),
-                    checked = sort == currentSort,
-                    payload = sort
-                )
-            }
-        ) { item ->
-            (item.payload as? Int)?.let(::updateBookSort)
-        }.show(
-            anchorRoot = anchorRoot,
-            anchorBoundsInRoot = anchorBoundsInRoot,
-            marginDp = 2,
-            verticalAnchorInsetDp = 8
-        )
+        return sortValues.map { sort ->
+            NgExpandableActionMenuItem(
+                itemId = SORT_MENU_ID_OFFSET + sort,
+                titleRes = sortLabelRes(sort),
+                iconRes = sortIconRes(sort),
+                checked = sort == currentSort,
+            )
+        }
     }
 
     private fun updateBookSort(sort: Int) {

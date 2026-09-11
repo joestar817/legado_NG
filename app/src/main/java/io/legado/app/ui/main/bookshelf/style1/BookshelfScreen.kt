@@ -14,10 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
@@ -25,6 +22,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.R
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
@@ -34,6 +32,7 @@ import io.legado.app.ui.main.bookshelf.BookshelfContentToolbarMenuButton
 import io.legado.app.ui.main.bookshelf.BookshelfCompactToolbar
 import io.legado.app.ui.main.bookshelf.BookshelfDockGroup
 import io.legado.app.ui.main.bookshelf.BookshelfFloatingDock
+import io.legado.app.ui.main.bookshelf.BookshelfSortMenuHost
 import kotlin.math.roundToInt
 
 @Composable
@@ -50,7 +49,8 @@ internal fun BookshelfScreen(
     onGroupClick: (Int) -> Unit,
     onGroupLongClick: (Int) -> Unit,
     onManageClick: () -> Unit,
-    onSortClick: (View, Rect) -> Unit,
+    onOpenSortMenu: () -> List<NgExpandableActionMenuItem>,
+    onSortMenuItemClick: (Int) -> Unit,
     onMenuItemClick: (Int) -> Unit,
     onFloatingDockBoundsChanged: (Rect) -> Unit,
 ) {
@@ -116,7 +116,8 @@ internal fun BookshelfScreen(
                 onGroupClick = onGroupClick,
                 onGroupLongClick = onGroupLongClick,
                 onManageClick = onManageClick,
-                onSortClick = onSortClick,
+                onOpenSortMenu = onOpenSortMenu,
+                onSortMenuItemClick = onSortMenuItemClick,
                 onMenuItemClick = onMenuItemClick,
                 topDistancePx = dockTopDistancePx,
                 contentTopInsetPx = dockContentTopInsetPx,
@@ -145,7 +146,8 @@ internal fun BookshelfScreen(
             )
             BookshelfContentToolbar(
                 onManageClick = onManageClick,
-                onSortClick = onSortClick,
+                onOpenSortMenu = onOpenSortMenu,
+                onSortMenuItemClick = onSortMenuItemClick,
                 onMenuItemClick = onMenuItemClick,
             )
         }
@@ -155,12 +157,10 @@ internal fun BookshelfScreen(
 @Composable
 private fun BookshelfContentToolbar(
     onManageClick: () -> Unit,
-    onSortClick: (View, Rect) -> Unit,
+    onOpenSortMenu: () -> List<NgExpandableActionMenuItem>,
+    onSortMenuItemClick: (Int) -> Unit,
     onMenuItemClick: (Int) -> Unit,
 ) {
-    val rootView = LocalView.current
-    var sortAnchorBounds by remember { mutableStateOf(Rect()) }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -173,24 +173,16 @@ private fun BookshelfContentToolbar(
             onClick = onManageClick,
         )
         Spacer(modifier = Modifier.weight(1f))
-        BookshelfContentToolbarActionButton(
-            iconRes = R.drawable.ic_swap_vert,
-            labelRes = R.string.sort,
-            onClick = {
-                if (!sortAnchorBounds.isEmpty) {
-                    onSortClick(rootView, Rect(sortAnchorBounds))
-                }
-            },
-            modifier = Modifier.onGloballyPositioned { coordinates ->
-                val bounds = coordinates.boundsInRoot()
-                sortAnchorBounds = Rect(
-                    bounds.left.roundToInt(),
-                    bounds.top.roundToInt(),
-                    bounds.right.roundToInt(),
-                    bounds.bottom.roundToInt(),
-                )
-            },
-        )
+        BookshelfSortMenuHost(
+            onOpen = onOpenSortMenu,
+            onItemClick = onSortMenuItemClick,
+        ) { openMenu ->
+            BookshelfContentToolbarActionButton(
+                iconRes = R.drawable.ic_swap_vert,
+                labelRes = R.string.sort,
+                onClick = openMenu,
+            )
+        }
         Spacer(modifier = Modifier.width(6.dp))
         BookshelfContentToolbarMenuButton(
             onMenuItemClick = onMenuItemClick,
