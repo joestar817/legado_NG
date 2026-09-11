@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+import io.legado.app.help.config.THREAD_COUNT_DEFAULT
 import io.legado.app.help.config.THREAD_COUNT_MAX
 import io.legado.app.help.config.THREAD_COUNT_MIN
 import io.legado.app.ui.design.components.NgSettingsTrailing
@@ -30,7 +31,7 @@ internal data class AdvancedConfigScreenState(
     val userAgent: String = "",
     val cronet: Boolean = false,
     val antiAlias: Boolean = false,
-    val threadCount: Int = 32,
+    val threadCount: Int = THREAD_COUNT_DEFAULT,
     val recordLog: Boolean = false,
     val recordNetworkLog: Boolean = false,
     val recordHeapDump: Boolean = false,

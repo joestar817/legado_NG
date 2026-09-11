@@ -30,7 +30,7 @@ internal fun normalizeReadAloudWorkerCount(value: String?): Int {
 
 internal const val THREAD_COUNT_MIN = 1
 internal const val THREAD_COUNT_MAX = 128
-internal const val THREAD_COUNT_DEFAULT = 32
+internal const val THREAD_COUNT_DEFAULT = 64
 
 internal fun normalizeThreadCount(value: Int): Int =
     value.coerceIn(THREAD_COUNT_MIN, THREAD_COUNT_MAX)

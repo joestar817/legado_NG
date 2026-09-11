@@ -56,8 +56,12 @@ import kotlin.coroutines.EmptyCoroutineContext
  */
 class JsSourceEngine(
     private val source: BookSource,
-    private val coroutineContext: CoroutineContext? = null,
+    coroutineContext: CoroutineContext? = null,
 ) : JsExtensions {
+
+    // Synchronous JS bridges must not dispatch back into the pool they are blocking.
+    // Keep the caller's Job and source interaction policy for cancellation and isolation.
+    private val coroutineContext = coroutineContext?.withoutScriptDispatcher()
 
     private val quickJsSandboxBridge by lazy { QuickJsSandboxBridge(appCtx) }
 
