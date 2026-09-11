@@ -145,7 +145,7 @@ private fun RemoteBookTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 4.dp),
+            .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 4.dp),
     ) {
         NgGlassSurface(
             modifier = Modifier.fillMaxWidth(),
