@@ -112,6 +112,7 @@ class BooksFragment() : BaseFragment(0),
     private val activityViewModel by activityViewModels<MainViewModel>()
     private val layoutMode by lazy { AppConfig.activeBookshelfLayoutMode }
     private var layoutProfile by mutableStateOf(AppConfig.getBookshelfLayoutProfile(layoutMode))
+    private var showReadingProgress by mutableStateOf(AppConfig.bookshelfShowReadingProgress)
     private var bookItems by mutableStateOf<List<Book>>(
         emptyList(),
         referentialEqualityPolicy(),
@@ -198,6 +199,7 @@ class BooksFragment() : BaseFragment(0),
                     coverRadius = layoutProfile.coverRadius,
                     showUnread = layoutProfile.showUnread,
                     showLastUpdateTime = layoutProfile.showLastUpdateTime,
+                    showReadingProgress = showReadingProgress,
                     bottomInset = bottomInset,
                     scrollToTopToken = scrollToTopToken,
                     coverRevision = coverRevision,
@@ -575,6 +577,7 @@ class BooksFragment() : BaseFragment(0),
         }
         observeEvent<String>(EventBus.BOOKSHELF_REFRESH) {
             layoutProfile = AppConfig.getBookshelfLayoutProfile(layoutMode)
+            showReadingProgress = AppConfig.bookshelfShowReadingProgress
             updatingBookUrls = bookItems.asSequence()
                 .map(Book::bookUrl)
                 .filter(activityViewModel::isUpdate)

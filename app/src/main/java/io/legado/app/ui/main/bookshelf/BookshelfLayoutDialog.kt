@@ -121,12 +121,14 @@ class BookshelfLayoutDialog : BottomSheetDialogFragment() {
                 oldProfile.coverRadius != newProfile.coverRadius ||
                 oldProfile.spacing != newProfile.spacing,
             refresh = oldProfile.showUnread != newProfile.showUnread ||
-                oldProfile.showLastUpdateTime != newProfile.showLastUpdateTime,
+                oldProfile.showLastUpdateTime != newProfile.showLastUpdateTime ||
+                AppConfig.bookshelfShowReadingProgress != draft.showReadingProgress,
             waitCountChanged = oldShowWaitUpCount != draft.showWaitUpCount,
             sortChanged = oldProfile.sort != newProfile.sort,
         )
         draft.profiles.forEach(AppConfig::setBookshelfLayoutProfile)
         AppConfig.showWaitUpCount = draft.showWaitUpCount
+        AppConfig.bookshelfShowReadingProgress = draft.showReadingProgress
         AppConfig.selectBookshelfLayoutMode(draft.selectedMode)
         callback?.onBookshelfLayoutConfirmed(result)
         dismissAllowingStateLoss()
@@ -160,6 +162,7 @@ private data class BookshelfLayoutDraft(
     val selectedMode: BookshelfLayoutMode,
     val profiles: BookshelfLayoutProfiles,
     val showWaitUpCount: Boolean,
+    val showReadingProgress: Boolean,
 )
 
 private data class BookshelfLayoutProfiles(
@@ -213,6 +216,9 @@ private fun BookshelfLayoutSheet(
     var selectedMode by remember { mutableStateOf(AppConfig.activeBookshelfLayoutMode) }
     var profiles by remember { mutableStateOf(BookshelfLayoutProfiles.fromConfig()) }
     var showWaitUpCount by remember { mutableStateOf(AppConfig.showWaitUpCount) }
+    var showReadingProgress by remember {
+        mutableStateOf(AppConfig.bookshelfShowReadingProgress)
+    }
     val profile = profiles[selectedMode]
     val maxDrawerHeight = (LocalConfiguration.current.screenHeightDp * 0.86f).dp
     val mainSelection = selectedMode.value
@@ -376,6 +382,14 @@ private fun BookshelfLayoutSheet(
                                     },
                                 )
                             }
+                            if (!isGridBooks) {
+                                NgFormGroupDivider()
+                                NgFormSwitchSettingRow(
+                                    title = stringResource(R.string.bookshelf_show_reading_progress),
+                                    checked = showReadingProgress,
+                                    onCheckedChange = { showReadingProgress = it },
+                                )
+                            }
                         }
                     }
                 }
@@ -420,6 +434,7 @@ private fun BookshelfLayoutSheet(
                             selectedMode = selectedMode,
                             profiles = profiles,
                             showWaitUpCount = showWaitUpCount,
+                            showReadingProgress = showReadingProgress,
                         )
                     )
                 },

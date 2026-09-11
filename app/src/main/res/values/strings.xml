@@ -2485,4 +2485,5 @@
     <string name="book_source_type_audio">Audio</string>
     <string name="book_source_type_video">Video</string>
     <string name="highlight_nine_slice_estimate">Estimate cuts</string>
+    <string name="bookshelf_show_reading_progress">Show reading progress</string>
 </resources>

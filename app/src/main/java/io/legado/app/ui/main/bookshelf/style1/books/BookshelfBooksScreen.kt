@@ -40,6 +40,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -63,6 +66,7 @@ import io.legado.app.ui.design.components.compose.NgBookshelfUnreadBadge
 import io.legado.app.ui.design.components.compose.NgBookshelfUpdateIndicator
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.main.bookshelf.bookshelfReadingProgress
 import io.legado.app.ui.main.bookshelf.bookshelfAuthorText
 import io.legado.app.utils.toTimeAgo
 
@@ -79,6 +83,7 @@ internal fun BookshelfBooksScreen(
     coverRadius: Int,
     showUnread: Boolean,
     showLastUpdateTime: Boolean,
+    showReadingProgress: Boolean,
     bottomInset: Dp,
     scrollToTopToken: Long,
     coverRevision: Int,
@@ -118,6 +123,7 @@ internal fun BookshelfBooksScreen(
                     spacing = spacing,
                     bottomInset = bottomInset,
                     showLastUpdateTime = showLastUpdateTime,
+                    showReadingProgress = showReadingProgress,
                     scrollToTopToken = scrollToTopToken,
                     coverRevision = coverRevision,
                     lastUpdateTick = lastUpdateTick,
@@ -158,6 +164,7 @@ private fun BookshelfBookList(
     spacing: Int,
     bottomInset: Dp,
     showLastUpdateTime: Boolean,
+    showReadingProgress: Boolean,
     scrollToTopToken: Long,
     coverRevision: Int,
     lastUpdateTick: Long,
@@ -199,6 +206,7 @@ private fun BookshelfBookList(
                     compact = compact,
                     updating = !book.isLocal && book.bookUrl in updatingBookUrls,
                     showLastUpdateTime = showLastUpdateTime && !compact,
+                    showReadingProgress = showReadingProgress,
                     coverRevision = coverRevision,
                     lastUpdateTick = lastUpdateTick,
                     onClick = { onOpenBook(book) },
@@ -217,6 +225,7 @@ private fun BookshelfListBookItem(
     compact: Boolean,
     updating: Boolean,
     showLastUpdateTime: Boolean,
+    showReadingProgress: Boolean,
     coverRevision: Int,
     lastUpdateTick: Long,
     onClick: () -> Unit,
@@ -227,6 +236,11 @@ private fun BookshelfListBookItem(
     val cardHeight = if (compact) 76.dp else 100.dp
     val coverWidth = if (compact) 46.dp else 62.dp
     val coverHeight = if (compact) 60.dp else 84.dp
+    val progress = bookshelfReadingProgress(
+        book.durChapterIndex, book.durChapterPos, book.totalChapterNum,
+    )
+    val progressColor = Color(NgTheme.colors.primary)
+    val progressTrackColor = progressColor.copy(alpha = if (NgTheme.snapshot.isEInk) 0.3f else 0.14f)
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val shape = RoundedCornerShape(dimensionResource(R.dimen.ng_radius_s))
@@ -262,6 +276,29 @@ private fun BookshelfListBookItem(
                 onClick = onClick,
                 onLongClick = onLongClick,
             )
+            .drawWithContent {
+                drawContent()
+                if (showReadingProgress) {
+                    val strokeWidth = 2.dp.toPx()
+                    // Match the title's visible edge, including its optical glyph inset.
+                    val startX = (10.dp + coverWidth + 16.dp + 1.dp).toPx() + strokeWidth / 2
+                    val endX = size.width - 14.dp.toPx() - strokeWidth / 2
+                    val y = size.height - 3.dp.toPx()
+                    if (endX > startX) {
+                        drawLine(
+                            progressTrackColor, Offset(startX, y), Offset(endX, y),
+                            strokeWidth = strokeWidth, cap = StrokeCap.Round,
+                        )
+                        if (progress > 0f) {
+                            drawLine(
+                                progressColor, Offset(startX, y),
+                                Offset(startX + (endX - startX) * progress, y),
+                                strokeWidth = strokeWidth, cap = StrokeCap.Round,
+                            )
+                        }
+                    }
+                }
+            }
             .padding(start = 10.dp, top = 7.dp, end = 14.dp, bottom = 7.dp),
     ) {
         Row(

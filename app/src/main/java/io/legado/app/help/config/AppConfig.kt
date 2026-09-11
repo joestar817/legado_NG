@@ -251,6 +251,12 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             appCtx.putPrefBoolean(PreferKey.showWaitUpCount, value)
         }
 
+    var bookshelfShowReadingProgress: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.bookshelfShowReadingProgress, false)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.bookshelfShowReadingProgress, value)
+        }
+
     var readBrightness: Int
         get() = if (ReadBookConfig.isNightTheme) {
             appCtx.getPrefInt(PreferKey.nightBrightness, 100)
