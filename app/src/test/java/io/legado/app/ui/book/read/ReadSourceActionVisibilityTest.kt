@@ -1,8 +1,8 @@
 package io.legado.app.ui.book.read
 
-import kotlin.test.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import org.junit.Test
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 
 class ReadSourceActionVisibilityTest {
 

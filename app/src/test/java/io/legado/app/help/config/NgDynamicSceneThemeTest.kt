@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import androidx.test.core.app.ApplicationProvider
 import io.legado.app.constant.PreferKey
+import io.legado.app.utils.defaultSharedPreferences
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith

@@ -3,6 +3,7 @@ package io.legado.app.help.config
 import io.legado.app.ui.design.theme.NgColorMath
 import io.legado.app.ui.design.theme.NgColorGenerationMode
 import io.legado.app.ui.design.theme.NgTopBarTextMode
+import io.legado.app.utils.GSON
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
