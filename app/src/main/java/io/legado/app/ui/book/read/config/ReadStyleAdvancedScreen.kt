@@ -871,7 +871,7 @@ private fun AdvancedTextField(
             singleLine = singleLine,
             minLines = if (singleLine) 1 else 2,
             maxLines = if (singleLine) 1 else 3,
-            textStyle = TextStyle(color = contentColor, fontSize = 14.sp),
+            textStyle = TextStyle(fontFamily = NgTheme.fontFamily, color = contentColor, fontSize = 14.sp),
             keyboardOptions = KeyboardOptions(imeAction = if (singleLine) ImeAction.Next else ImeAction.Default),
             cursorBrush = SolidColor(accentColor),
         )

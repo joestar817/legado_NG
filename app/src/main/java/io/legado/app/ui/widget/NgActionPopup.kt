@@ -24,6 +24,7 @@ import androidx.appcompat.widget.TooltipCompat
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.ContextCompat
 import io.legado.app.R
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.ui.design.components.compose.NgGlassStyle
 import io.legado.app.ui.design.components.compose.resolveNgFloatingGlassStyle
 import io.legado.app.ui.design.theme.NgThemeSnapshot
@@ -204,6 +205,7 @@ class NgActionPopup(
                 marginEnd = 10.dpToPx()
             })
             addView(TextView(context).apply {
+                NgThemeRuntimeAssets.applyAppTypeface(context, this)
                 text = item.title ?: context.getString(item.titleRes)
                 setTextColor(color)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
@@ -246,6 +248,7 @@ class NgActionPopup(
 
     private fun createHeader(context: Context, title: CharSequence): View {
         return TextView(context).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             text = title
             setTextColor(
                 themeSnapshot?.colors?.onSurfaceVariant
@@ -288,6 +291,7 @@ class NgActionPopup(
         ): Int {
             if (widthDp > 0) return widthDp.dpToPx()
             val textPaint = TextPaint().apply {
+                typeface = NgThemeRuntimeAssets.appTypeface(context)
                 textSize = TypedValue.applyDimension(
                     TypedValue.COMPLEX_UNIT_SP,
                     16f,
@@ -604,6 +608,7 @@ class NgReadingActionPopup(
             })
 
             addView(TextView(context).apply {
+                NgThemeRuntimeAssets.applyAppTypeface(context, this)
                 text = item.title ?: item.titleRes
                     .takeIf { it != 0 }
                     ?.let(context::getString)

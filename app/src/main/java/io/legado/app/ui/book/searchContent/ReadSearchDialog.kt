@@ -667,6 +667,7 @@ private fun SearchInputRow(
             enabled = !loading,
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = contentColor,
                 fontSize = 15.sp,
             ),
@@ -1038,6 +1039,7 @@ private fun SearchChapterFastNavigator(
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     val chapterTitleStyle = TextStyle(
+        fontFamily = NgTheme.fontFamily,
         fontSize = 14.sp,
         lineHeight = 18.sp,
         fontWeight = FontWeight.Medium,

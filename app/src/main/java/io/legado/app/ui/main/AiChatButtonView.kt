@@ -15,6 +15,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import androidx.core.graphics.ColorUtils
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.utils.dpToPx
 import kotlin.math.abs
@@ -44,7 +45,7 @@ class AiChatButtonView @JvmOverloads constructor(
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textAlign = Paint.Align.LEFT
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        typeface = Typeface.create(NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT, Typeface.BOLD)
     }
     private val sparkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE

@@ -21,13 +21,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.design.theme.NgTheme
 
 /** 听书播放器与紧凑书籍列表共用的无封面回退。 */
 @Composable
@@ -88,7 +88,7 @@ fun NgDefaultBookCover(
                 color = Color(0xFF2B251F),
                 fontSize = if (compact) 6.sp else 17.sp,
                 lineHeight = if (compact) 7.sp else 23.sp,
-                fontFamily = FontFamily.Serif,
+                fontFamily = NgTheme.fontFamily,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
                 maxLines = if (compact) 3 else 4,
@@ -107,7 +107,7 @@ fun NgDefaultBookCover(
                     color = Color(0xFF4A4036),
                     fontSize = 10.sp,
                     lineHeight = 14.sp,
-                    fontFamily = FontFamily.Serif,
+                    fontFamily = NgTheme.fontFamily,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

@@ -575,7 +575,7 @@ private fun ReadCatalogPanel(
     val bookmarkMenuLabel = stringResource(R.string.bookmark_auto_expand_notes)
     val bookmarkMenuTextWidth = rememberTextMeasurer().measure(
         text = bookmarkMenuLabel,
-        style = TextStyle(fontSize = 15.sp),
+        style = TextStyle(fontFamily = NgTheme.fontFamily, fontSize = 15.sp),
         softWrap = false,
         maxLines = 1,
     ).size.width
@@ -1093,7 +1093,7 @@ private fun CatalogSearchField(
                 .weight(1f)
                 .focusRequester(focusRequester),
             singleLine = true,
-            textStyle = TextStyle(color = contentColor, fontSize = 14.sp),
+            textStyle = TextStyle(fontFamily = NgTheme.fontFamily, color = contentColor, fontSize = 14.sp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
             decorationBox = { inner ->

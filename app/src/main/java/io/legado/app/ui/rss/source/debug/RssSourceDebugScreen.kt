@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -122,7 +121,7 @@ internal fun RssSourceDebugScreen(
                                 color = Color(NgTheme.colors.onSurface),
                                 fontSize = 12.sp,
                                 lineHeight = 17.sp,
-                                fontFamily = FontFamily.Monospace
+                                fontFamily = NgTheme.fontFamily
                             )
                         }
                     }
@@ -166,7 +165,7 @@ internal fun RssDebugSourceDialog(
                         color = Color(NgTheme.colors.onSurface),
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = NgTheme.fontFamily
                     )
                 }
             }

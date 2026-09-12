@@ -439,6 +439,7 @@ private fun RssSourceEditorTextField(
                 }
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(NgTheme.colors.onSurface),
                 fontSize = 14.sp,
                 lineHeight = 19.sp

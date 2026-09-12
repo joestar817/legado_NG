@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.legado.app.data.entities.DictRule
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.ui.book.read.config.ReadConfigDialogSurface
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.widget.text.ScrollTextView
@@ -60,6 +61,7 @@ internal fun DictDialogContent(
                 .padding(horizontal = 4.dp),
             color = Color(colors.onSurface),
             style = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 fontSize = 22.sp,
                 lineHeight = 27.sp,
                 fontWeight = FontWeight.Bold,
@@ -123,6 +125,7 @@ internal fun DictDialogContent(
             AndroidView(
                 factory = { context ->
                     ScrollTextView(context, null).apply {
+                        NgThemeRuntimeAssets.applyAppTypeface(context, this)
                         val density = resources.displayMetrics.density
                         setPadding(
                             (14 * density).toInt(),

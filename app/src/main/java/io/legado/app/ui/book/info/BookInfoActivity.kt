@@ -29,6 +29,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.request.RequestOptions
 import com.google.gson.JsonObject
 import io.legado.app.R
+import io.legado.app.ui.design.theme.NgInterfaceFontMarkwonPlugin
 import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.AppLog
@@ -1016,6 +1017,7 @@ class BookInfoActivity :
                 val markwon: Markwon
                 val markdown = withContext(IO) {
                     markwon = Markwon.builder(context)
+                        .usePlugin(NgInterfaceFontMarkwonPlugin(context))
                         .usePlugin(
                             GlideImagesPlugin.create(
                                 Glide.with(context)

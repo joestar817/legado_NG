@@ -138,6 +138,7 @@ internal fun ReadConfigDock(
                     modifier = Modifier.padding(horizontal = 10.dp),
                     color = if (isSelected) selectedContentColor else unselectedContentColor,
                     style = TextStyle(
+                        fontFamily = NgTheme.fontFamily,
                         fontSize = 13.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                         platformStyle = PlatformTextStyle(includeFontPadding = false),

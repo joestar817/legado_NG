@@ -16,6 +16,7 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.Target
 import io.legado.app.R
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.base.BaseDialogFragment
 import io.legado.app.databinding.DialogVerificationCodeViewBinding
 import io.legado.app.help.glide.ImageLoader
@@ -74,6 +75,7 @@ class VerificationCodeDialog() : BaseDialogFragment(R.layout.dialog_verification
         viewModel.initData(arguments)
         view.setBackgroundResource(R.drawable.ng_bg_dialog)
         toolBar.subtitle = arguments.getString("sourceName")
+        NgThemeRuntimeAssets.applyToolbarTypeface(toolBar)
         sourceOrigin = arguments.getString("sourceOrigin")
         imageUrl = arguments.getString("imageUrl")
         loadImage(imageUrl ?: return@run, sourceOrigin)

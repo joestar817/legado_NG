@@ -19,6 +19,7 @@ import androidx.core.view.isGone
 import androidx.core.view.setPadding
 import androidx.core.widget.ImageViewCompat
 import io.legado.app.R
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.design.theme.NgThemeSnapshot
@@ -31,13 +32,13 @@ class NgSettingsItemView @JvmOverloads constructor(
 ) : LinearLayout(context, attrs, defStyleAttr) {
 
     private val leadingView = AppCompatImageView(context)
-    private val titleView = AppCompatTextView(context)
-    private val summaryView = AppCompatTextView(context)
+    private val titleView = AppCompatTextView(context).also { NgThemeRuntimeAssets.applyAppTypeface(context, it) }
+    private val summaryView = AppCompatTextView(context).also { NgThemeRuntimeAssets.applyAppTypeface(context, it) }
     private val contentView = LinearLayout(context)
     private val trailingHost = FrameLayout(context)
-    private val chevronView = AppCompatTextView(context)
+    private val chevronView = AppCompatTextView(context).also { NgThemeRuntimeAssets.applyAppTypeface(context, it) }
     private val switchView = UserSwitchCompat(context)
-    private val valueView = AppCompatTextView(context)
+    private val valueView = AppCompatTextView(context).also { NgThemeRuntimeAssets.applyAppTypeface(context, it) }
     private var appliedSnapshot: NgThemeSnapshot? = null
 
     var trailing: NgSettingsTrailing = NgSettingsTrailing.CHEVRON

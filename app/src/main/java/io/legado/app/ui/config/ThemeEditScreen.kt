@@ -500,6 +500,7 @@ private fun ThemeNameInput(
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
         textStyle = TextStyle(
+            fontFamily = NgTheme.fontFamily,
             color = Color(colors.onSurface),
             fontSize = 16.sp,
             lineHeight = 20.sp

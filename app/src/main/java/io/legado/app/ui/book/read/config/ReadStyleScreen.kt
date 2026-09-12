@@ -978,6 +978,7 @@ private fun EditorNameRow(
             modifier = Modifier.width(120.dp),
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = contentColor.copy(alpha = 0.78f),
                 fontSize = 14.sp,
                 textAlign = TextAlign.End,
@@ -1597,6 +1598,7 @@ private fun ShortcutCard(
                     fontSize = iconTextSize,
                     lineHeight = 22.sp,
                     style = TextStyle(
+                        fontFamily = NgTheme.fontFamily,
                         platformStyle = PlatformTextStyle(includeFontPadding = false),
                     ),
                     maxLines = 1,

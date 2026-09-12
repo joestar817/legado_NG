@@ -220,6 +220,7 @@ private fun CharacterFormTextField(
             maxLines = if (singleLine) 1 else 5,
             keyboardOptions = keyboardOptions,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface),
                 fontSize = 16.sp,
                 lineHeight = 22.sp,

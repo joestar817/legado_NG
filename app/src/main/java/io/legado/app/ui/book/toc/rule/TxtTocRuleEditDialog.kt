@@ -397,6 +397,7 @@ private fun TxtTocRuleUnderlineField(
             singleLine = singleLine,
             maxLines = maxLines,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface),
                 fontSize = 15.sp,
                 lineHeight = 22.sp,

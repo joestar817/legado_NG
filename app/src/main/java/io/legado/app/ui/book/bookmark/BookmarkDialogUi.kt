@@ -82,6 +82,7 @@ internal fun BookmarkDialogContent(
             modifier = Modifier.fillMaxWidth(),
             color = Color(NgTheme.colors.onSurface),
             style = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 fontSize = 20.sp,
                 lineHeight = 26.sp,
                 fontWeight = FontWeight.Bold,
@@ -191,6 +192,7 @@ private fun BookmarkFlatTextField(
                 .padding(top = 4.dp)
                 .height(fieldHeight),
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface),
                 fontSize = 15.sp,
                 lineHeight = 23.sp,

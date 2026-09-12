@@ -63,6 +63,9 @@ internal fun ThemeInterfaceFontEditorSheet(onDismissRequest: () -> Unit) {
     var loadingList by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf<Pair<Typeface, File?>?>(null) }
     var previewChoice by remember { mutableStateOf<String?>(null) }
+    var loadRequest by rememberSaveable { mutableIntStateOf(0) }
+    var previewRequest by remember { mutableStateOf<Int?>(null) }
+    var refreshedTypefaces by remember { mutableStateOf<Map<String, Typeface>>(emptyMap()) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     LaunchedEffect(directory) {
@@ -88,14 +91,36 @@ internal fun ThemeInterfaceFontEditorSheet(onDismissRequest: () -> Unit) {
         entries = result.getOrElse { context.toastOnUi("字体目录读取失败：${it.localizedMessage}"); emptyList() }
         loadingList = false
     }
-    LaunchedEffect(choice) {
+    LaunchedEffect(choice, loadRequest) {
+        val requestedChoice = choice
+        val requestedSequence = loadRequest
         preview = null
         previewChoice = null
+        previewRequest = null
         error = null
-        val result = runCatching { NgInterfaceFontStore.load(context, choice) }
+        val result = runCatching {
+            NgInterfaceFontStore.load(
+                context,
+                requestedChoice,
+                reloadFromSource = requestedSequence > 0 &&
+                    requestedChoice !in NgInterfaceFontStore.systemChoices,
+            )
+        }
             .onFailure { if (it is CancellationException) throw it }
-        result.onSuccess { preview = it; previewChoice = choice }
-            .onFailure { error = "字体无法加载：${it.localizedMessage}" }
+        if (choice == requestedChoice && loadRequest == requestedSequence) {
+            result.onSuccess {
+                preview = it
+                previewChoice = requestedChoice
+                previewRequest = requestedSequence
+                if (requestedSequence > 0) {
+                    refreshedTypefaces = refreshedTypefaces.toMutableMap().apply {
+                        remove(requestedChoice)
+                        put(requestedChoice, it.first)
+                        if (size > 12) remove(keys.first())
+                    }
+                }
+            }.onFailure { error = "字体无法加载：${it.localizedMessage}" }
+        }
     }
     val directoryPicker = rememberLauncherForActivityResult(SelectDirectoryContract()) { result ->
         result.uri?.let { uri ->
@@ -130,9 +155,13 @@ internal fun ThemeInterfaceFontEditorSheet(onDismissRequest: () -> Unit) {
                     Text(stringResource(R.string.interface_font), Modifier.weight(1f), color = color,
                         fontSize = 21.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     NgThemeSheetSaveButton(
-                        enabled = !saving && preview != null && previewChoice == choice,
+                        enabled = !saving && preview != null && previewChoice == choice &&
+                            previewRequest == loadRequest,
                         contentDescription = stringResource(R.string.save),
                         onClick = {
+                            if (saving || previewChoice != choice || previewRequest != loadRequest) {
+                                return@NgThemeSheetSaveButton
+                            }
                             val selected = preview ?: return@NgThemeSheetSaveButton
                             val selectedChoice = choice
                             val label = NgInterfaceFontStore.systemChoices.indexOf(choice).takeIf { it >= 0 }?.let { names[it] }
@@ -174,17 +203,30 @@ internal fun ThemeInterfaceFontEditorSheet(onDismissRequest: () -> Unit) {
                             value = runCatching { NgInterfaceFontStore.load(context, font.uri).first }
                                 .onFailure { if (it is CancellationException) throw it }.getOrNull()
                         }
+                        val displayedTypeface = if (choice == font.uri) preview?.first
+                            else refreshedTypefaces[font.uri] ?: fontTypeface
+                        val displayedFontFamily = remember(displayedTypeface) {
+                            displayedTypeface?.let(::FontFamily)
+                        }
                         NgManagementListCard(
                             title = font.name,
                             selected = choice == font.uri,
                             containerColor = Color.White,
                             titleColor = Color(0xFF202124),
-                            titleFontFamily = fontTypeface?.let(::FontFamily),
+                            titleFontFamily = displayedFontFamily,
                             size = NgManagementListCardSize.COMPACT_SINGLE_LINE,
-                            onClick = if (saving) null else ({ choice = font.uri; chosenName = font.name }),
+                            onClick = if (saving) null else ({
+                                choice = font.uri
+                                chosenName = font.name
+                                loadRequest++
+                                preview = null
+                                previewChoice = null
+                                previewRequest = null
+                                error = null
+                            }),
                         ) {
                             Text("Aa", color = Color(0xFF202124), fontSize = 20.sp,
-                                fontFamily = fontTypeface?.let(::FontFamily))
+                                fontFamily = displayedFontFamily)
                         }
                     }
                     if (customTab && rows.isEmpty()) item {

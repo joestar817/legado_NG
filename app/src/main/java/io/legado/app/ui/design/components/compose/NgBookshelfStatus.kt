@@ -29,6 +29,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.R
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.utils.ColorUtils
@@ -157,6 +158,7 @@ fun NgBookshelfUnreadBadge(
             textAlign = TextAlign.Center,
             maxLines = 1,
             style = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 fontSize = 11.sp,
                 platformStyle = PlatformTextStyle(includeFontPadding = false),
             ),

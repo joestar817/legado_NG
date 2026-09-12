@@ -158,7 +158,6 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -220,7 +219,9 @@ import io.legado.app.help.ai.resolveAgentModeEntryLaunch
 import io.legado.app.help.ai.resolveAgentModeEntryMemoryProbeTarget
 import io.legado.app.help.ai.runtime.AgentSkillRuntimeDeclaration
 import io.legado.app.help.ai.runtime.ToolExecutionReceipt
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.help.config.ThemeConfig
+import io.legado.app.ui.design.theme.NgInterfaceFontMarkwonPlugin
 import io.legado.app.ui.widget.compose.NgExpandableChildRow
 import io.legado.app.ui.widget.compose.NgExpandableChildGroup
 import io.legado.app.ui.widget.compose.NgExpandableSectionHeader
@@ -1218,10 +1219,14 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     orientation = LinearLayout.VERTICAL
                     setPadding(24.dpToPx(), 24.dpToPx(), 24.dpToPx(), 10.dpToPx())
                     addView(TextView(activity).apply {
+                        NgThemeRuntimeAssets.applyAppTypeface(context, this)
                         text = if (containsDestructiveOperation) "确认高风险操作" else "确认写操作"
                         setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface))
                         textSize = 24f
-                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        setTypeface(
+                            NgThemeRuntimeAssets.appTypeface(context) ?: android.graphics.Typeface.DEFAULT,
+                            android.graphics.Typeface.BOLD,
+                        )
                     })
                 })
                 val scrollView = ScrollView(activity).apply {
@@ -1229,6 +1234,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     addView(LinearLayout(activity).apply {
                         orientation = LinearLayout.VERTICAL
                         addView(TextView(activity).apply {
+                            NgThemeRuntimeAssets.applyAppTypeface(context, this)
                             text = if (containsDestructiveOperation) {
                                 "AI 请求执行删除、清空或回滚操作。请确认对象和影响范围后再执行。"
                             } else {
@@ -1257,6 +1263,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     setPadding(24.dpToPx(), 10.dpToPx(), 24.dpToPx(), 20.dpToPx())
                     background = ContextCompat.getDrawable(activity, R.drawable.ng_bg_dialog_action_bar)
                     addView(TextView(activity).apply {
+                        NgThemeRuntimeAssets.applyAppTypeface(context, this)
                         text = "取消"
                         gravity = android.view.Gravity.CENTER
                         setTextColor(ContextCompat.getColor(activity, R.color.ng_primary))
@@ -1274,6 +1281,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                         rightMargin = 8.dpToPx()
                     })
                     addView(TextView(activity).apply {
+                        NgThemeRuntimeAssets.applyAppTypeface(context, this)
                         text = "执行"
                         gravity = android.view.Gravity.CENTER
                         setTextColor(ContextCompat.getColor(activity, R.color.ng_on_primary))
@@ -5038,6 +5046,7 @@ private fun MarkdownTextBlock(
     val linkColor = MaterialTheme.colorScheme.primary.toArgb()
     val markwon = remember(context) {
         Markwon.builder(context)
+            .usePlugin(NgInterfaceFontMarkwonPlugin(context))
             .usePlugin(GlideImagesPlugin.create(Glide.with(context)))
             .usePlugin(HtmlPlugin.create())
             .usePlugin(TablePlugin.create(context))
@@ -5047,6 +5056,7 @@ private fun MarkdownTextBlock(
         modifier = modifier,
         factory = { viewContext ->
             android.widget.TextView(viewContext).apply {
+                NgThemeRuntimeAssets.applyAppTypeface(context, this)
                 setTextColor(textColor)
                 setLinkTextColor(linkColor)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
@@ -5121,7 +5131,7 @@ private fun MarkdownCodeBlock(
                     text = code,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = NgTheme.fontFamily
                 )
             }
         }

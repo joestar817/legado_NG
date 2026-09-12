@@ -355,6 +355,7 @@ fun NgSearchBar(
             enabled = enabled,
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = contentColor,
                 fontSize = 15.sp,
                 lineHeight = 18.sp,

@@ -54,7 +54,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -453,7 +452,7 @@ private fun BookSourceEditField(
                 color = Color(NgTheme.colors.onSurface),
                 fontSize = 15.sp,
                 lineHeight = 20.sp,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = NgTheme.fontFamily,
             ),
             cursorBrush = SolidColor(Color(NgTheme.colors.primary)),
             visualTransformation = visualTransformation,

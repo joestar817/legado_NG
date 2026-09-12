@@ -23,6 +23,7 @@ import io.legado.app.help.GlideImageGetter
 import io.legado.app.help.TextViewTagHandler
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.design.theme.NgInterfaceFontMarkwonPlugin
 import io.legado.app.ui.widget.dialog.PhotoDialog
 import io.legado.app.ui.widget.dialog.applyNgDialogWindow
 import io.legado.app.ui.widget.text.ScrollTextView
@@ -148,6 +149,7 @@ class DictDialog() : BaseComposeDialogFragment() {
                 lateinit var markwon: Markwon
                 val markdown = withContext(IO) {
                     markwon = Markwon.builder(requireContext())
+                        .usePlugin(NgInterfaceFontMarkwonPlugin(requireContext()))
                         .usePlugin(
                             GlideImagesPlugin.create(
                                 Glide.with(requireContext())

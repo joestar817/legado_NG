@@ -13,6 +13,7 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.ReplacementSpan
 import android.util.AttributeSet
 import androidx.annotation.ColorInt
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.ui.widget.text.ScrollMultiAutoCompleteTextView
 import java.util.SortedMap
 import java.util.TreeMap
@@ -86,6 +87,9 @@ class CodeView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     }
 
     init {
+        if (!isInEditMode) {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
+        }
         if (mAutoCompleteTokenizer == null) {
             mAutoCompleteTokenizer = KeywordTokenizer()
         }

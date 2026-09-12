@@ -192,6 +192,7 @@ private fun TxtTocRuleUrlHistoryField(
                 },
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface),
                 fontSize = 16.sp,
                 lineHeight = 22.sp,

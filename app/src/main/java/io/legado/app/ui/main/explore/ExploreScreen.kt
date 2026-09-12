@@ -689,6 +689,7 @@ private fun ExploreTextKind(
         },
         singleLine = true,
         textStyle = TextStyle(
+            fontFamily = NgTheme.fontFamily,
             color = Color(NgTheme.colors.onSurface),
             fontSize = 14.sp,
             textAlign = kindTextAlign(kind)

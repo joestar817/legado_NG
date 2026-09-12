@@ -425,6 +425,7 @@ private fun SourceLoginTextField(
             enabled = enabled,
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = textColor.copy(alpha = if (enabled) 1f else 0.5f),
                 fontSize = 16.sp,
                 lineHeight = 21.sp,

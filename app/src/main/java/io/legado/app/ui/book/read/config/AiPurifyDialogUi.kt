@@ -531,6 +531,7 @@ private fun AiPurifyTextPanel(
                     .padding(top = 8.dp),
                 color = Color(NgTheme.colors.onSurface),
                 style = TextStyle(
+                    fontFamily = NgTheme.fontFamily,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
                     platformStyle = PlatformTextStyle(includeFontPadding = false),

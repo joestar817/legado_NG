@@ -626,11 +626,13 @@ private fun PlayerTextScene(
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val activeParagraphStyle = TextStyle(
+        fontFamily = NgTheme.fontFamily,
         fontSize = 23.sp,
         lineHeight = 34.sp,
         fontWeight = FontWeight.SemiBold,
     )
     val inactiveParagraphStyle = TextStyle(
+        fontFamily = NgTheme.fontFamily,
         fontSize = 17.sp,
         lineHeight = 27.sp,
         fontWeight = FontWeight.Normal,
@@ -645,6 +647,8 @@ private fun PlayerTextScene(
         textViewportSize,
         density.density,
         density.fontScale,
+        activeParagraphStyle,
+        inactiveParagraphStyle,
     ) {
         if (currentIndex == null || textViewportSize == IntSize.Zero) {
             null

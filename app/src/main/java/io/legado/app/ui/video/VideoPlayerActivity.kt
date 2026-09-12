@@ -30,6 +30,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.request.RequestOptions
 import com.shuyu.gsyvideoplayer.listener.GSYSampleCallBack
 import io.legado.app.R
+import io.legado.app.ui.design.theme.NgInterfaceFontMarkwonPlugin
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.BookType
 import io.legado.app.constant.EventBus
@@ -380,6 +381,7 @@ class VideoPlayerActivity : VMBaseActivity<ActivityVideoPlayerBinding, VideoPlay
                 val markwon: Markwon
                 val markdown = withContext(IO) {
                     markwon = Markwon.builder(context)
+                        .usePlugin(NgInterfaceFontMarkwonPlugin(context))
                         .usePlugin(
                             GlideImagesPlugin.create(
                                 Glide.with(context)

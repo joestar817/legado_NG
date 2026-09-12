@@ -16,6 +16,7 @@ import com.google.android.flexbox.FlexboxLayout
 import io.legado.app.R
 import io.legado.app.databinding.LayoutNgModelFiltersBinding
 import io.legado.app.help.ai.AiProviderSetting
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
@@ -94,6 +95,7 @@ internal class AiModelSelectionFilters(
             setBounds(0, 0, iconSize, iconSize)
         }
         val chip = TextView(context).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             text = provider.name
             gravity = android.view.Gravity.CENTER
             includeFontPadding = false

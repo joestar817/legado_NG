@@ -775,6 +775,7 @@ private fun RssSourceBadge(source: RssSource) {
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             style = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 platformStyle = PlatformTextStyle(includeFontPadding = false)
             )
         )

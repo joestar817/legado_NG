@@ -147,6 +147,7 @@ internal fun ReadConfirmDialogContent(
                     .padding(top = 16.dp, bottom = 4.dp),
                 color = Color(NgTheme.colors.onSurfaceVariant),
                 style = TextStyle(
+                    fontFamily = NgTheme.fontFamily,
                     fontSize = 15.sp,
                     lineHeight = 21.sp,
                     platformStyle = PlatformTextStyle(includeFontPadding = false),
@@ -220,6 +221,7 @@ internal fun ReadDialogTextField(
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             interactionSource = interactionSource,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface),
                 fontSize = 14.sp,
                 lineHeight = 18.sp,

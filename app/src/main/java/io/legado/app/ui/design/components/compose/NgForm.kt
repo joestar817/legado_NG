@@ -233,6 +233,7 @@ fun NgFormInlineTextRow(
             readOnly = readOnly,
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = valueColor,
                 fontSize = 15.sp,
                 lineHeight = 19.sp,
@@ -788,6 +789,7 @@ fun NgFormNumberSettingRow(
             enabled = enabled,
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface),
                 fontSize = 13.sp,
                 lineHeight = 16.sp,
@@ -941,6 +943,7 @@ fun NgFormField(
             readOnly = readOnly,
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface).copy(alpha = contentAlpha),
                 fontSize = valueFontSize,
                 lineHeight = when {
@@ -1145,6 +1148,7 @@ fun NgFormMultilineField(
                 .heightIn(min = minHeight, max = maxHeight),
             enabled = enabled,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface).copy(alpha = contentAlpha),
                 fontSize = 15.sp,
                 lineHeight = 22.sp,

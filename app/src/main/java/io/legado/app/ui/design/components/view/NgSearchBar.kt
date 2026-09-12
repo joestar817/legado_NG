@@ -15,6 +15,7 @@ import androidx.appcompat.widget.AppCompatImageView
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.core.widget.ImageViewCompat
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.R
 
 /**
@@ -27,7 +28,7 @@ class NgSearchBar @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : LinearLayout(context, attrs, defStyleAttr) {
 
-    val editText = AppCompatEditText(context)
+    val editText = AppCompatEditText(context).also { NgThemeRuntimeAssets.applyAppTypeface(context, it) }
     private val clearButton = AppCompatImageButton(context)
     private var hintText: CharSequence? = null
 

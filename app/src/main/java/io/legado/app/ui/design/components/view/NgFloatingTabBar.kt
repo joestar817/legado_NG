@@ -25,6 +25,7 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.ui.design.components.compose.NgLiquidGlassDefaults
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.theme.NgThemeResolver
@@ -177,6 +178,7 @@ class NgFloatingTabBar @JvmOverloads constructor(
         }
         val label = labelText.takeIf { it.isNotEmpty() }?.let { text ->
             AppCompatTextView(context).apply {
+                NgThemeRuntimeAssets.applyAppTypeface(context, this)
                 this.text = text
                 gravity = Gravity.CENTER
                 includeFontPadding = false
@@ -185,6 +187,7 @@ class NgFloatingTabBar @JvmOverloads constructor(
         }
         val badge = if (item.text.isNullOrEmpty() && item.count != null && icon != null) {
             AppCompatTextView(context).apply {
+                NgThemeRuntimeAssets.applyAppTypeface(context, this)
                 text = item.count.coerceAtMost(99).let { count ->
                     if (item.count > 99) "99+" else count.toString()
                 }
@@ -270,7 +273,8 @@ class NgFloatingTabBar @JvmOverloads constructor(
             }
             tab.isSelected = selected
             content.label?.setTextColor(contentColor)
-            content.label?.typeface = Typeface.defaultFromStyle(
+            content.label?.setTypeface(
+                NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT,
                 if (selected) Typeface.BOLD else Typeface.NORMAL
             )
             content.badge?.apply {

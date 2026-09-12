@@ -68,6 +68,12 @@ object NgTheme {
         @ReadOnlyComposable
         get() = snapshot.typography
 
+    /** Custom text styles inherit only the interface font, keeping their existing metrics. */
+    val fontFamily: FontFamily?
+        @Composable
+        @ReadOnlyComposable
+        get() = MaterialTheme.typography.bodyLarge.fontFamily
+
     val effects: NgEffectTokens
         @Composable
         @ReadOnlyComposable
@@ -99,7 +105,7 @@ fun NgAppTheme(
     val visualSystem = observedVisualSystem ?: NgVisualSystemStore.current(context)
     val appTypeface = NgThemeRuntimeAssets.appTypeface(context)
     val typography = remember(appTypeface) {
-        Typography().withFontFamily(appTypeface?.let(::FontFamily))
+        Typography().withFontFamily(appTypeface?.let(::interfaceFontFamily))
     }
     if (updateSystemBars) {
         SideEffect {

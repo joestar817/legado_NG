@@ -297,6 +297,7 @@ private fun ServicePortEditor(
                             if (lostFocus) finishInput(revertInvalid = true)
                         },
                     textStyle = TextStyle(
+                        fontFamily = NgTheme.fontFamily,
                         color = Color(NgTheme.colors.onSurface),
                         fontSize = 22.sp,
                         lineHeight = 26.sp,

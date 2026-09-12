@@ -73,6 +73,7 @@ internal fun PageKeyDialogContent(
                 .padding(5.dp),
             color = Color(NgTheme.colors.onSurface),
             style = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 platformStyle = PlatformTextStyle(includeFontPadding = false),
@@ -150,6 +151,7 @@ private fun PageKeyInputField(
                 .onFocusChanged { onFocusChanged(it.isFocused) },
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface),
                 fontSize = 14.sp,
                 lineHeight = 18.sp,

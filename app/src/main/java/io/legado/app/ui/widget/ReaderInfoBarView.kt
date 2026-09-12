@@ -8,6 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import androidx.annotation.AttrRes
@@ -15,6 +16,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.res.use
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.WindowInsetsCompat
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.setOnApplyWindowInsetsListenerCompat
 import java.text.SimpleDateFormat
@@ -33,7 +35,11 @@ class ReaderInfoBarView @JvmOverloads constructor(
         const val ALIGN_CENTER = 1
     }
 
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        NgThemeRuntimeAssets.appTypeface(context)?.let { font ->
+            typeface = Typeface.create(font, typeface?.style ?: Typeface.NORMAL)
+        }
+    }
     private val textBounds = Rect()
     private val timeFormat = SimpleDateFormat.getTimeInstance(SimpleDateFormat.SHORT)
     private val timeReceiver = TimeReceiver()

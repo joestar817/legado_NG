@@ -9,6 +9,7 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.net.toUri
 import androidx.fragment.app.viewModels
 import io.legado.app.R
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.base.BaseDialogFragment
 import io.legado.app.constant.AppLog
 import io.legado.app.databinding.DialogOpenUrlConfirmBinding
@@ -57,6 +58,7 @@ class OpenUrlConfirmDialog() : BaseDialogFragment(R.layout.dialog_open_url_confi
         }
         binding.toolBar.setBackgroundColor(primaryColor)
         binding.toolBar.subtitle = viewModel.sourceName
+        NgThemeRuntimeAssets.applyToolbarTypeface(binding.toolBar)
         initView()
     }
 

@@ -23,6 +23,7 @@ import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.Target
 import io.legado.app.constant.AppPattern
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.help.glide.ImageLoader
 import io.legado.app.help.glide.OkHttpModelLoader
 import io.legado.app.lib.theme.accentColor
@@ -187,7 +188,7 @@ class CoverImageView @JvmOverloads constructor(
         val backgroundColor = appCtx.backgroundColor
         val accentColor = appCtx.accentColor
         val namePaint = TextPaint().apply {
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.create(NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
             textAlign = Paint.Align.CENTER
         }
@@ -226,7 +227,7 @@ class CoverImageView @JvmOverloads constructor(
             return bitmap
         }
         val authorPaint = TextPaint(namePaint).apply {
-            typeface = Typeface.DEFAULT
+            typeface = NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT
         }
         author?.toStringArray()?.let { author ->
             authorPaint.textSize = viewWidth / 10

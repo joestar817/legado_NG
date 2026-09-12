@@ -37,6 +37,7 @@ private fun ngBackdropTextStyle(
         )
     }
     return TextStyle(
+        fontFamily = NgTheme.fontFamily,
         color = contentColor?.let(::Color) ?: fallbackColor,
         shadow = shadow,
     )

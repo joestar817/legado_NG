@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.design.theme.NgTheme
 
 @Composable
 internal fun LegacyLogDialogLayout(
@@ -131,10 +132,11 @@ internal fun LegacyLogToolbarIconAction(
     }
 }
 
+@Composable
 internal fun legacyLogTextStyle(
     color: Color,
     fontSize: TextUnit,
-    fontFamily: FontFamily? = null,
+    fontFamily: FontFamily? = NgTheme.fontFamily,
     textAlign: TextAlign = TextAlign.Unspecified,
 ): TextStyle = TextStyle(
     color = color,

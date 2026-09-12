@@ -386,6 +386,7 @@ private fun MiddleEllipsisText(
     modifier: Modifier = Modifier,
 ) {
     val style = TextStyle(
+        fontFamily = NgTheme.fontFamily,
         color = colorResource(R.color.ng_on_surface),
         fontSize = 16.sp,
         lineHeight = 22.sp,

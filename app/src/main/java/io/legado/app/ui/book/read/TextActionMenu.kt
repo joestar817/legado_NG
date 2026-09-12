@@ -42,6 +42,7 @@ import io.legado.app.R
 import io.legado.app.constant.AppLog
 import io.legado.app.data.entities.Bookmark
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.help.config.TextSelectionActionOrder
 import io.legado.app.help.config.TextSelectionBuiltInAction
 import io.legado.app.ui.design.theme.NgAppTheme
@@ -559,6 +560,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
 
     private fun textHighlightNotePreviewTextPaint(): TextPaint {
         return TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = NgThemeRuntimeAssets.appTypeface(context)
             textSize = spToPx(TEXT_HIGHLIGHT_NOTE_PREVIEW_TEXT_SIZE_SP)
         }
     }

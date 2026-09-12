@@ -654,6 +654,7 @@ private fun TtsVoiceSearchField(
                 .onFocusChanged { focused = it.isFocused },
             singleLine = true,
             textStyle = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 color = Color(NgTheme.colors.onSurface),
                 fontSize = 14.sp,
             ),

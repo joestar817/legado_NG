@@ -39,13 +39,13 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.google.gson.JsonParser
+import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.help.config.AppConfig
@@ -421,7 +421,7 @@ private fun NetworkLogItem(
             style = legacyLogTextStyle(
                 color = colorResource(R.color.ng_on_surface),
                 fontSize = 13.sp,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = NgTheme.fontFamily,
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -452,7 +452,7 @@ private fun NetworkLogItem(
                 style = legacyLogTextStyle(
                     color = colorResource(R.color.ng_on_surface_variant),
                     fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = NgTheme.fontFamily,
                     textAlign = TextAlign.End,
                 ),
                 textAlign = TextAlign.End,

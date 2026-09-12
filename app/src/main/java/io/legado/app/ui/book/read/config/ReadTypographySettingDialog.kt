@@ -78,7 +78,7 @@ internal object ReadTypographySettingDialog {
                     color = foreground,
                     style = TextStyle(
                         fontSize = currentValueTextSizeSp.sp,
-                        fontFamily = FontFamily(previewTypeface(selected) ?: Typeface.DEFAULT),
+                        fontFamily = previewTypeface(selected)?.let(::FontFamily) ?: NgTheme.fontFamily,
                         platformStyle = PlatformTextStyle(includeFontPadding = false),
                     ),
                     textAlign = TextAlign.Center,
@@ -109,6 +109,7 @@ internal object ReadTypographySettingDialog {
                             color = secondary,
                             style = TextStyle(
                                 fontSize = if (stepLabels.size >= 8) 10.sp else 13.sp,
+                                fontFamily = NgTheme.fontFamily,
                                 platformStyle = PlatformTextStyle(includeFontPadding = false),
                             ),
                             textAlign = TextAlign.Center,
@@ -157,6 +158,7 @@ internal object ReadTypographySettingDialog {
                     color = secondary,
                     style = TextStyle(
                         fontSize = 14.sp,
+                        fontFamily = NgTheme.fontFamily,
                         platformStyle = PlatformTextStyle(includeFontPadding = false),
                     ),
                     textAlign = TextAlign.Center,
@@ -212,7 +214,7 @@ internal object ReadTypographySettingDialog {
             style = TextStyle(
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily(Typeface.DEFAULT_BOLD),
+                fontFamily = NgTheme.fontFamily,
                 platformStyle = PlatformTextStyle(includeFontPadding = false),
             ),
             textAlign = TextAlign.Center,

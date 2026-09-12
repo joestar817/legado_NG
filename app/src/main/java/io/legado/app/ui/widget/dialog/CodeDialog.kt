@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
+import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.R
 import io.legado.app.help.IntentData
 import io.legado.app.lib.theme.accentColor
@@ -289,6 +290,7 @@ private fun CodeDialogContent(
                         onValueChange = onValueChange,
                         modifier = Modifier.fillMaxSize(),
                         textStyle = TextStyle(
+                            fontFamily = NgTheme.fontFamily,
                             color = colorResource(R.color.ng_on_surface),
                             fontSize = 16.sp,
                             lineHeight = 22.sp,

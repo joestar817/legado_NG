@@ -341,6 +341,7 @@ fun NgManagementLeadingText(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = TextStyle(
+                fontFamily = NgTheme.fontFamily,
                 platformStyle = PlatformTextStyle(includeFontPadding = false),
                 lineHeightStyle = LineHeightStyle(
                     alignment = LineHeightStyle.Alignment.Center,

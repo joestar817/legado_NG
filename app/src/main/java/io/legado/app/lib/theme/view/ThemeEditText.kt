@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatEditText
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.utils.applyTint
 
@@ -14,6 +15,7 @@ class ThemeEditText @JvmOverloads constructor(
 
     init {
         if (!isInEditMode) {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             applyTint(context.accentColor)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {

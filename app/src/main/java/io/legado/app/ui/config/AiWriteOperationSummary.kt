@@ -8,6 +8,7 @@ import androidx.core.content.ContextCompat
 import com.google.gson.JsonObject
 import io.legado.app.R
 import io.legado.app.help.ai.AiPendingToolCall
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.utils.dpToPx
 
 internal data class WriteOperationSummary(
@@ -25,12 +26,14 @@ internal fun createWriteOperationSummaryView(
         background = ContextCompat.getDrawable(activity, R.drawable.ng_bg_purify_panel)
         setPadding(10.dpToPx(), 8.dpToPx(), 10.dpToPx(), 8.dpToPx())
         addView(TextView(activity).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             text = "$index. ${summary.title}"
             setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface))
             textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
+            setTypeface(NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT, Typeface.BOLD)
         })
         addView(TextView(activity).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             text = summary.description
             setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface_variant))
             textSize = 13f

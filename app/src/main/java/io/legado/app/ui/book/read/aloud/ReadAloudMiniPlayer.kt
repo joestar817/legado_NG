@@ -36,6 +36,7 @@ import com.bumptech.glide.request.target.Target
 import io.legado.app.R
 import io.legado.app.constant.Status
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadFloatingAppearanceConfig
 import io.legado.app.lib.theme.accentColor
@@ -407,6 +408,7 @@ object ReadAloudMiniPlayer {
             }
         )
         val status = TextView(activity).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(activity, this)
             id = R.id.tv_read_aloud_mini_status
             alpha = 0f
             gravity = Gravity.CENTER_VERTICAL

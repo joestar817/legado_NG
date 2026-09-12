@@ -508,6 +508,7 @@ private fun TextHighlightNoteEditor(
                         .focusRequester(focusRequester)
                         .padding(horizontal = 8.dp, vertical = 7.dp),
                     textStyle = TextStyle(
+                        fontFamily = NgTheme.fontFamily,
                         color = Color(NgTheme.colors.onSurface),
                         fontSize = 14.sp,
                         lineHeight = 18.sp,

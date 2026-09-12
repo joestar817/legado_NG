@@ -15,8 +15,10 @@ import io.legado.app.base.BaseDialogFragment
 import io.legado.app.databinding.DialogTextViewBinding
 import io.legado.app.help.CacheManager
 import io.legado.app.help.IntentData
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.code.CodeEditActivity
+import io.legado.app.ui.design.theme.NgInterfaceFontMarkwonPlugin
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.setHtml
 import io.legado.app.utils.setMarkdown
@@ -75,6 +77,7 @@ class TextDialog() : BaseDialogFragment(R.layout.dialog_text_view) {
         arguments?.let {
             val title = it.getString("title")
             binding.toolBar.title = title
+            NgThemeRuntimeAssets.applyToolbarTypeface(binding.toolBar)
             val content = IntentData.get(it.getString("content")) ?: ""
             val mode = it.getString("mode")
             when (mode) {
@@ -85,6 +88,7 @@ class TextDialog() : BaseDialogFragment(R.layout.dialog_text_view) {
                     val markwon: Markwon
                     val markdown = withContext(IO) {
                         markwon = Markwon.builder(requireContext())
+                            .usePlugin(NgInterfaceFontMarkwonPlugin(requireContext()))
                             .usePlugin(GlideImagesPlugin.create(Glide.with(requireContext())))
                             .usePlugin(HtmlPlugin.create())
                             .usePlugin(TablePlugin.create(requireContext()))

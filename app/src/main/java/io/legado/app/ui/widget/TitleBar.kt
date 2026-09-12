@@ -21,6 +21,7 @@ import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.tabs.TabLayout
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.lib.theme.elevation
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.transparentNavBar
@@ -46,6 +47,7 @@ class TitleBar @JvmOverloads constructor(
         set(title) {
             if (toolbar.title != title) {
                 toolbar.title = title
+                NgThemeRuntimeAssets.applyToolbarTypeface(toolbar)
             }
         }
 
@@ -54,6 +56,7 @@ class TitleBar @JvmOverloads constructor(
         set(subtitle) {
             if (toolbar.subtitle != subtitle) {
                 toolbar.subtitle = subtitle
+                NgThemeRuntimeAssets.applyToolbarTypeface(toolbar)
             }
         }
 
@@ -163,6 +166,8 @@ class TitleBar @JvmOverloads constructor(
             }
         }
 
+        NgThemeRuntimeAssets.applyToolbarTypeface(toolbar)
+
         if (!isInEditMode) {
 //            if (fitStatusBar) {
 //                setPadding(paddingLeft, context.statusBarHeight, paddingRight, paddingBottom)
@@ -196,6 +201,8 @@ class TitleBar @JvmOverloads constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         attachToActivity()
+        NgThemeRuntimeAssets.applyToolbarTypeface(toolbar)
+
         if (!isInEditMode) {
             // ActionBar 会在 attachToActivity() 时才创建返回图标，因此需在挂载后重新应用。
             refreshContentColor()

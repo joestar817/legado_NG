@@ -54,6 +54,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import io.legado.app.R
 import io.legado.app.constant.AppLog
 import io.legado.app.help.IntentData
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
@@ -62,6 +63,7 @@ import io.legado.app.ui.design.components.compose.NgLazyListFastScrollerVariant
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgScrollFastScroller
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.design.theme.NgInterfaceFontMarkwonPlugin
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.widget.text.ScrollTextView
 import io.legado.app.utils.getCompatColor
@@ -274,6 +276,7 @@ private fun MarkdownTextContentLayout(
                 AndroidView(
                     factory = { context ->
                         ScrollTextView(context, null).apply {
+                            NgThemeRuntimeAssets.applyAppTypeface(context, this)
                             val density = resources.displayMetrics.density
                             val contentPadding = (12 * density).toInt()
                             val endPadding = (36 * density).toInt()
@@ -387,6 +390,7 @@ internal suspend fun renderMarkdownContent(
     content: String,
 ): RenderedMarkdown = withContext(IO) {
     val markwon = Markwon.builder(context)
+        .usePlugin(NgInterfaceFontMarkwonPlugin(context))
         .usePlugin(GlideImagesPlugin.create(Glide.with(context)))
         .usePlugin(HtmlPlugin.create())
         .usePlugin(TablePlugin.create(context))

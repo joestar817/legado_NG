@@ -17,6 +17,7 @@ import androidx.core.widget.doOnTextChanged
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgDrawerDefaults
@@ -49,6 +50,7 @@ class NgLongListBottomSheet(
         )
     }
     private val titleAction = TextView(context).apply {
+        NgThemeRuntimeAssets.applyAppTypeface(context, this)
         gravity = Gravity.CENTER
         setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
         textSize = if (compact) 14f else 15f
@@ -161,6 +163,7 @@ class NgLongListBottomSheet(
             }
             addView(
                 TextView(context).apply {
+                    NgThemeRuntimeAssets.applyAppTypeface(context, this)
                     text = title
                     gravity = if (compact) {
                         Gravity.START or Gravity.CENTER_VERTICAL
@@ -169,7 +172,7 @@ class NgLongListBottomSheet(
                     }
                     setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
                     textSize = if (compact) 17f else 20f
-                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setTypeface(NgThemeRuntimeAssets.appTypeface(context) ?: android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
                     includeFontPadding = false
                     if (compact) {
                         compactTitleView = this

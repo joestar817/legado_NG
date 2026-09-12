@@ -39,12 +39,12 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.AppLog
@@ -226,7 +226,7 @@ private fun AppLogItem(
             style = legacyLogTextStyle(
                 color = colorResource(R.color.ng_on_surface_variant),
                 fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = NgTheme.fontFamily,
             ),
         )
         SelectionContainer {

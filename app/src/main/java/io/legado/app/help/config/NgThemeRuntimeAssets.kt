@@ -77,11 +77,18 @@ internal object NgThemeRuntimeAssets {
     }
 
     fun applyAppTypeface(context: Context, view: TextView) {
-        // XML Style 继承的等宽字体不一定出现在 attrs 中，同样保留代码／日志语义。
         val style = view.typeface?.style ?: Typeface.NORMAL
-        if (view.typeface == Typeface.create(Typeface.MONOSPACE, style)) return
         val typeface = appTypeface(context) ?: return
         view.setTypeface(typeface, style)
+    }
+
+    /** Toolbar creates its title views internally, outside the XML inflater. */
+    fun applyToolbarTypeface(toolbar: androidx.appcompat.widget.Toolbar) {
+        for (index in 0 until toolbar.childCount) {
+            (toolbar.getChildAt(index) as? TextView)?.let {
+                applyAppTypeface(toolbar.context, it)
+            }
+        }
     }
 
     private fun loadBitmap(file: File?, targetSize: Int): Bitmap? {

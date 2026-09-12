@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -66,9 +67,12 @@ import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.textHeight
 import io.legado.app.utils.toStringArray
 
-private val LegacyTextStyle = TextStyle(
-    platformStyle = PlatformTextStyle(includeFontPadding = true)
-)
+private val LegacyTextStyle: TextStyle
+    @Composable
+    get() = TextStyle(
+        fontFamily = NgTheme.fontFamily,
+        platformStyle = PlatformTextStyle(includeFontPadding = true)
+    )
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -245,6 +249,7 @@ private fun SearchKindLabels(labels: List<String>, accent: Color, onAccent: Colo
                         fontSize = 11.sp,
                         maxLines = 1,
                         style = TextStyle(
+                            fontFamily = NgTheme.fontFamily,
                             platformStyle = PlatformTextStyle(includeFontPadding = false)
                         )
                     )
@@ -344,13 +349,17 @@ private fun CoverNameOverlay(name: String, author: String) {
     val context = LocalContext.current
     val background = remember(context) { context.backgroundColor }
     val accent = remember(context) { context.accentColor }
+    val fontFamily = NgTheme.fontFamily
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val nameTypeface by fontFamilyResolver.resolve(fontFamily, FontWeight.Bold)
+    val authorTypeface by fontFamilyResolver.resolve(fontFamily, FontWeight.Normal)
     Canvas(Modifier.fillMaxSize()) {
         drawIntoCanvas { canvas ->
             val nativeCanvas = canvas.nativeCanvas
             var startX = size.width * 0.2f
             var startY = size.height * 0.2f
             val namePaint = TextPaint().apply {
-                typeface = Typeface.DEFAULT_BOLD
+                typeface = nameTypeface as Typeface
                 isAntiAlias = true
                 textAlign = Paint.Align.CENTER
                 textSize = size.width / 7f
@@ -386,7 +395,7 @@ private fun CoverNameOverlay(name: String, author: String) {
             }
             if (BookCover.drawBookAuthor && author.isNotEmpty()) {
                 val authorPaint = TextPaint(namePaint).apply {
-                    typeface = Typeface.DEFAULT
+                    typeface = authorTypeface as Typeface
                     textSize = size.width / 10f
                     strokeWidth = textSize / 5f
                 }

@@ -20,6 +20,7 @@
 
     <!-- Base application theme. -->
     <style name="Base.AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="viewInflaterClass">io.legado.app.ui.design.theme.NgAppViewInflater</item>
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primaryDark</item>
         <item name="colorAccent">@color/accent</item>
@@ -33,6 +34,7 @@
 
     <!-- Material must decide edge-to-edge before the first BottomSheet layout. -->
     <style name="AppTheme.BottomSheetDialog" parent="Theme.Design.Light.BottomSheetDialog">
+        <item name="viewInflaterClass">io.legado.app.ui.design.theme.NgAppViewInflater</item>
         <item name="android:windowIsFloating">false</item>
         <item name="android:windowSoftInputMode">adjustResize</item>
         <item name="enableEdgeToEdge">true</item>
@@ -74,6 +76,7 @@
 
 
     <style name="Activity.Permission" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="viewInflaterClass">io.legado.app.ui.design.theme.NgAppViewInflater</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowDisablePreview">true</item>
         <item name="android:windowIsTranslucent">true</item>

@@ -31,6 +31,7 @@ import io.legado.app.help.ai.AiProviderSetting
 import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiProviderType
 import io.legado.app.help.ai.AiReasoningLevel
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgDrawerDefaults
@@ -129,9 +130,10 @@ object AiAssistantConfigUi {
             bottomMargin = 26.dpToPx(context)
         })
         root.addView(TextView(context).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             text = context.getString(R.string.ai_assistant_reasoning_title)
             setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
-            typeface = Typeface.DEFAULT_BOLD
+            setTypeface(NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT, Typeface.BOLD)
             textSize = 18f
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(
@@ -156,6 +158,7 @@ object AiAssistantConfigUi {
             }
         }
         val currentLabel = TextView(context).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             text = AiConfig.assistantReasoningLevel.displayName(context)
             setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
             textSize = 18f
@@ -204,6 +207,7 @@ object AiAssistantConfigUi {
             orientation = LinearLayout.HORIZONTAL
             levels.forEach { level ->
                 addView(TextView(context).apply {
+                    NgThemeRuntimeAssets.applyAppTypeface(context, this)
                     text = level.displayName(context)
                     gravity = Gravity.CENTER
                     setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
@@ -262,9 +266,10 @@ object AiAssistantConfigUi {
             bottomMargin = 26.dpToPx(context)
         })
         root.addView(TextView(context).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             text = context.getString(R.string.ai_internal_mcp)
             setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
-            typeface = Typeface.DEFAULT_BOLD
+            setTypeface(NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT, Typeface.BOLD)
             textSize = 22f
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(
@@ -272,6 +277,7 @@ object AiAssistantConfigUi {
             ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         root.addView(TextView(context).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             text = context.getString(
                 if (AiConfig.internalMcpEnabled) {
                     R.string.ai_internal_mcp_summary_on
@@ -313,12 +319,14 @@ object AiAssistantConfigUi {
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(context).apply {
+                    NgThemeRuntimeAssets.applyAppTypeface(context, this)
                     text = context.getString(R.string.ai_internal_mcp)
                     setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
-                    typeface = Typeface.DEFAULT_BOLD
+                    setTypeface(NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT, Typeface.BOLD)
                     textSize = 16f
                 })
                 addView(TextView(context).apply {
+                    NgThemeRuntimeAssets.applyAppTypeface(context, this)
                     text = context.getString(
                         if (AiConfig.internalMcpEnabled) {
                             R.string.ai_internal_mcp_summary_on
@@ -408,6 +416,7 @@ object AiAssistantConfigUi {
         val groupedOptions = modelOptions(query.trim(), filters)
         if (groupedOptions.isEmpty()) {
             container.addView(TextView(context).apply {
+                NgThemeRuntimeAssets.applyAppTypeface(context, this)
                 text = context.getString(R.string.ai_assistant_model_empty)
                 setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface_variant))
                 textSize = 15f
@@ -457,9 +466,10 @@ object AiAssistantConfigUi {
         provider: AiProviderSetting
     ): TextView {
         return TextView(context).apply {
+            NgThemeRuntimeAssets.applyAppTypeface(context, this)
             text = provider.name
             setTextColor(context.accentColor)
-            typeface = Typeface.DEFAULT_BOLD
+            setTypeface(NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT, Typeface.BOLD)
             textSize = 15f
             setPadding(2.dpToPx(context), 12.dpToPx(context), 2.dpToPx(context), 8.dpToPx(context))
         }
@@ -500,9 +510,10 @@ object AiAssistantConfigUi {
             val info = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(context).apply {
+                    NgThemeRuntimeAssets.applyAppTypeface(context, this)
                     text = model.displayName()
                     setTextColor(ContextCompat.getColor(context, R.color.ng_on_surface))
-                    typeface = Typeface.DEFAULT_BOLD
+                    setTypeface(NgThemeRuntimeAssets.appTypeface(context) ?: Typeface.DEFAULT, Typeface.BOLD)
                     textSize = 16f
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
