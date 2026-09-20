@@ -98,9 +98,9 @@ internal fun bookshelfMenuItems(
     )
     add(
         NgExpandableActionMenuItem(
-            R.id.menu_bookshelf_layout,
-            R.string.bookshelf_layout,
-            R.drawable.ic_view_quilt
+            R.id.menu_bookshelf_settings,
+            R.string.bookshelf_settings,
+            R.drawable.ic_settings
         )
     )
     add(

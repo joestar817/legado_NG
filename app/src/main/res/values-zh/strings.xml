@@ -2392,4 +2392,17 @@
     <string name="bookshelf_show_background">显示背景容器</string>
     <string name="rss_editor_undo">撤销</string>
     <string name="rss_editor_redo">重做</string>
+    <string name="bookshelf_settings">书架设置</string>
+    <string name="bookshelf_tab_layout">布局</string>
+    <string name="bookshelf_tab_top">顶栏</string>
+    <string name="bookshelf_tab_bottom">底栏</string>
+    <string name="bookshelf_tab_gestures">手势</string>
+    <string name="bookshelf_swipe_pages">横滑切页</string>
+    <string name="bookshelf_swipe_main">切换主页面</string>
+    <string name="bookshelf_swipe_groups">优先切换分组</string>
+    <string name="bookshelf_swipe_groups_summary">滑到末组后切换主页面</string>
+    <string name="bookshelf_shortcuts">快捷入口</string>
+    <string name="bookshelf_swipe_ai">右滑进入 AI 助理</string>
+    <string name="bookshelf_swipe_ai_summary">切换分组时，仅首组右滑进入</string>
+    <string name="bookshelf_reminders">书架提醒</string>
 </resources>

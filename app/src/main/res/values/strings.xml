@@ -2489,4 +2489,17 @@
     <string name="bookshelf_show_background">Show background container</string>
     <string name="rss_editor_undo">Undo</string>
     <string name="rss_editor_redo">Redo</string>
+    <string name="bookshelf_settings">Bookshelf settings</string>
+    <string name="bookshelf_tab_layout">Layout</string>
+    <string name="bookshelf_tab_top">Top bar</string>
+    <string name="bookshelf_tab_bottom">Bottom bar</string>
+    <string name="bookshelf_tab_gestures">Gestures</string>
+    <string name="bookshelf_swipe_pages">Horizontal paging</string>
+    <string name="bookshelf_swipe_main">Switch main pages</string>
+    <string name="bookshelf_swipe_groups">Switch groups first</string>
+    <string name="bookshelf_swipe_groups_summary">Switch main pages after the last group</string>
+    <string name="bookshelf_shortcuts">Shortcuts</string>
+    <string name="bookshelf_swipe_ai">Swipe right to open AI assistant</string>
+    <string name="bookshelf_swipe_ai_summary">When switching groups, swipe right from the first group</string>
+    <string name="bookshelf_reminders">Bookshelf reminders</string>
 </resources>

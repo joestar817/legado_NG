@@ -126,6 +126,7 @@ abstract class BaseBookshelfFragment(layoutId: Int) : VMBaseFragment<BookshelfVi
                 putExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, true)
             }
             R.id.menu_bookshelf_layout -> configBookshelf()
+            R.id.menu_bookshelf_settings -> BookshelfLayoutDialog.showSettings(childFragmentManager)
             R.id.menu_group_manage -> showDialogFragment<GroupManageDialog>()
             R.id.menu_add_local -> startActivity<ImportBookActivity>()
             R.id.menu_add_url -> showAddBookByUrlAlert()

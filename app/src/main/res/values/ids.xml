@@ -93,4 +93,5 @@
     <item name="tv_read_aloud_mini_status" type="id" />
     <item name="btn_read_aloud_mini_close" type="id" />
 
+    <item name="menu_bookshelf_settings" type="id" />
 </resources>

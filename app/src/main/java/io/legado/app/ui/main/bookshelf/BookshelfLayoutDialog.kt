@@ -9,16 +9,27 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
+import io.legado.app.ui.design.theme.NgTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -74,6 +85,7 @@ class BookshelfLayoutDialog : BottomSheetDialogFragment() {
             NgAppTheme(updateSystemBars = false) {
                 BookshelfLayoutSheet(
                     onConfirm = ::confirm,
+                    settingsMode = arguments?.getBoolean("settingsMode") == true,
                 )
             }
         }
@@ -109,12 +121,13 @@ class BookshelfLayoutDialog : BottomSheetDialogFragment() {
     }
 
     private fun confirm(draft: BookshelfLayoutDraft) {
+        val barsChanged = draft.settings?.save() == true
         val oldMode = AppConfig.activeBookshelfLayoutMode
         val oldProfile = AppConfig.getBookshelfLayoutProfile(oldMode)
         val oldShowWaitUpCount = AppConfig.showWaitUpCount
         val newProfile = draft.profiles[draft.selectedMode]
         val result = BookshelfLayoutResult(
-            recreate = oldMode != draft.selectedMode ||
+            recreate = barsChanged || oldMode != draft.selectedMode ||
                 oldProfile.columns != newProfile.columns ||
                 oldProfile.innerColumns != newProfile.innerColumns ||
                 oldProfile.showBookName != newProfile.showBookName ||
@@ -144,6 +157,14 @@ class BookshelfLayoutDialog : BottomSheetDialogFragment() {
     }
 
     companion object {
+        fun showSettings(manager: FragmentManager) {
+            val tag = "BookshelfSettings"
+            if (manager.findFragmentByTag(tag) != null) return
+            BookshelfLayoutDialog().apply {
+                arguments = Bundle().apply { putBoolean("settingsMode", true) }
+            }.show(manager, tag)
+        }
+
         fun show(manager: FragmentManager) {
             BookshelfLayoutDialog().show(
                 manager,
@@ -166,6 +187,7 @@ private data class BookshelfLayoutDraft(
     val showWaitUpCount: Boolean,
     val showReadingProgress: Boolean,
     val showGridBackground: Boolean,
+    val settings: BookshelfSettingsDraft? = null,
 )
 
 private data class BookshelfLayoutProfiles(
@@ -215,15 +237,19 @@ private data class BookshelfLayoutProfiles(
 @Composable
 private fun BookshelfLayoutSheet(
     onConfirm: (BookshelfLayoutDraft) -> Unit,
+    settingsMode: Boolean = false,
 ) {
-    var selectedMode by remember { mutableStateOf(AppConfig.activeBookshelfLayoutMode) }
-    var profiles by remember { mutableStateOf(BookshelfLayoutProfiles.fromConfig()) }
-    var showWaitUpCount by remember { mutableStateOf(AppConfig.showWaitUpCount) }
-    var showReadingProgress by remember {
+    var selectedMode by rememberSaveable { mutableStateOf(AppConfig.activeBookshelfLayoutMode) }
+    var profiles by rememberSaveable(stateSaver = layoutProfilesSaver) { mutableStateOf(BookshelfLayoutProfiles.fromConfig()) }
+    var showWaitUpCount by rememberSaveable { mutableStateOf(AppConfig.showWaitUpCount) }
+    var showReadingProgress by rememberSaveable {
         mutableStateOf(AppConfig.bookshelfShowReadingProgress)
     }
+    var tab by rememberSaveable { mutableStateOf(0) }
+    val tabScrollStates = List(4) { rememberLazyListState() }
+    var settings by rememberSaveable(stateSaver = bookshelfSettingsSaver) { mutableStateOf(BookshelfSettingsDraft()) }
     val profile = profiles[selectedMode]
-    var showGridBackground by remember { mutableStateOf(AppConfig.bookshelfGridBackground) }
+    var showGridBackground by rememberSaveable { mutableStateOf(AppConfig.bookshelfGridBackground) }
     val maxDrawerHeight = (LocalConfiguration.current.screenHeightDp * 0.86f).dp
     val mainSelection = selectedMode.value
     val isGridBooks = selectedMode == BookshelfLayoutMode.GRID ||
@@ -237,204 +263,225 @@ private fun BookshelfLayoutSheet(
     NgBottomDrawerSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = maxDrawerHeight),
+            .then(if (settingsMode) Modifier.height(maxDrawerHeight) else Modifier.heightIn(max = maxDrawerHeight)),
         contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (settingsMode) Modifier.fillMaxHeight() else Modifier)
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
             NgLongDrawerHeader(
-                title = stringResource(R.string.bookshelf_layout),
+                title = stringResource(if (settingsMode) R.string.bookshelf_settings else R.string.bookshelf_layout),
                 centerTitle = true,
             )
+            if (settingsMode) {
+                TabRow(selectedTabIndex = tab, containerColor = Color.Transparent, contentColor = Color(NgTheme.colors.primary)) {
+                    listOf(R.string.bookshelf_tab_layout, R.string.bookshelf_tab_top, R.string.bookshelf_tab_bottom, R.string.bookshelf_tab_gestures).forEachIndexed { index, title ->
+                        Tab(selected = tab == index, onClick = { tab = index }, text = {
+                            Text(stringResource(title), fontSize = 14.sp,
+                                color = Color(if (tab == index) NgTheme.colors.primary else NgTheme.colors.onSurface))
+                        })
+                    }
+                }
+            }
             LazyColumn(
+                state = tabScrollStates[if (settingsMode) tab else 0],
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f, fill = false),
+                    .weight(1f, fill = settingsMode)
+                    .padding(top = if (settingsMode) 12.dp else 0.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item {
-                    NgFlatActionRail(
-                        items = listOf(
-                            NgFlatActionRailItem(
-                                R.drawable.ic_chapter_list,
-                                stringResource(R.string.bookshelf_view_list),
-                                emphasized = mainSelection == 0,
+                if (!settingsMode || tab == 0) {
+                    item {
+                        NgFlatActionRail(
+                            items = listOf(
+                                NgFlatActionRailItem(
+                                    R.drawable.ic_chapter_list,
+                                    stringResource(R.string.bookshelf_view_list),
+                                    emphasized = mainSelection == 0,
+                                ),
+                                NgFlatActionRailItem(
+                                    R.drawable.ic_format_line_spacing,
+                                    stringResource(R.string.bookshelf_view_compact),
+                                    emphasized = mainSelection == 1,
+                                ),
+                                NgFlatActionRailItem(
+                                    R.drawable.ic_grid_menu,
+                                    stringResource(R.string.bookshelf_view_grid),
+                                    emphasized = mainSelection == 2,
+                                ),
+                                NgFlatActionRailItem(
+                                    R.drawable.ic_folder_outline,
+                                    stringResource(R.string.bookshelf_view_group_grid),
+                                    emphasized = mainSelection == 3,
+                                ),
                             ),
-                            NgFlatActionRailItem(
-                                R.drawable.ic_format_line_spacing,
-                                stringResource(R.string.bookshelf_view_compact),
-                                emphasized = mainSelection == 1,
-                            ),
-                            NgFlatActionRailItem(
-                                R.drawable.ic_grid_menu,
-                                stringResource(R.string.bookshelf_view_grid),
-                                emphasized = mainSelection == 2,
-                            ),
-                            NgFlatActionRailItem(
-                                R.drawable.ic_folder_outline,
-                                stringResource(R.string.bookshelf_view_group_grid),
-                                emphasized = mainSelection == 3,
-                            ),
-                        ),
-                        onItemClick = { index ->
-                            selectedMode = BookshelfLayoutMode.entries[index]
-                        },
-                        variant = NgFlatActionRailVariant.MODE_PICKER,
-                    )
-                }
-                item {
-                    NgFormGroup(title = stringResource(R.string.bookshelf_layout_details)) {
-                        if (isGridBooks) {
-                            NgFormStepperRow(
-                                title = stringResource(R.string.bookshelf_grid_columns),
-                                value = profile.columns,
-                                valueRange = if (
-                                    selectedMode == BookshelfLayoutMode.GROUP_GRID
-                                ) {
-                                    2..4
-                                } else {
-                                    2..6
-                                },
-                                onValueChange = { value ->
-                                    updateProfile { it.copy(columns = value) }
-                                },
-                            )
-                            NgFormGroupDivider()
-                            if (selectedMode == BookshelfLayoutMode.GROUP_GRID) {
+                            onItemClick = { index ->
+                                selectedMode = BookshelfLayoutMode.entries[index]
+                            },
+                            variant = NgFlatActionRailVariant.MODE_PICKER,
+                        )
+                    }
+                    item {
+                        NgFormGroup(title = stringResource(R.string.bookshelf_layout_details)) {
+                            if (isGridBooks) {
                                 NgFormStepperRow(
-                                    title = stringResource(R.string.bookshelf_group_inner_columns),
-                                    value = profile.innerColumns,
-                                    valueRange = 2..6,
+                                    title = stringResource(R.string.bookshelf_grid_columns),
+                                    value = profile.columns,
+                                    valueRange = if (
+                                        selectedMode == BookshelfLayoutMode.GROUP_GRID
+                                    ) {
+                                        2..4
+                                    } else {
+                                        2..6
+                                    },
                                     onValueChange = { value ->
-                                        updateProfile { it.copy(innerColumns = value) }
+                                        updateProfile { it.copy(columns = value) }
+                                    },
+                                )
+                                NgFormGroupDivider()
+                                if (selectedMode == BookshelfLayoutMode.GROUP_GRID) {
+                                    NgFormStepperRow(
+                                        title = stringResource(R.string.bookshelf_group_inner_columns),
+                                        value = profile.innerColumns,
+                                        valueRange = 2..6,
+                                        onValueChange = { value ->
+                                            updateProfile { it.copy(innerColumns = value) }
+                                        },
+                                    )
+                                    NgFormGroupDivider()
+                                }
+                                NgFormSelectRow(
+                                    title = stringResource(R.string.bookshelf_book_name_position),
+                                    selectedValue = profile.showBookName.toString(),
+                                    options = listOf(
+                                        NgFormSelectOption(
+                                            stringResource(R.string.bookshelf_book_name_below),
+                                            "0",
+                                        ),
+                                        NgFormSelectOption(
+                                            stringResource(R.string.bookshelf_book_name_hidden),
+                                            "1",
+                                        ),
+                                        NgFormSelectOption(
+                                            stringResource(R.string.bookshelf_book_name_overlay),
+                                            "2",
+                                        ),
+                                    ),
+                                    onValueChange = { value ->
+                                        updateProfile {
+                                            it.copy(showBookName = value.toIntOrNull() ?: 0)
+                                        }
+                                    },
+                                    arrowIcon = arrow,
+                                    menuVariant = NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
+                                )
+                                NgFormGroupDivider()
+                                NgFormStepperRow(
+                                    title = stringResource(R.string.bookshelf_cover_radius),
+                                    value = profile.coverRadius,
+                                    valueRange = BookshelfLayoutProfile.MIN_COVER_RADIUS..BookshelfLayoutProfile.MAX_COVER_RADIUS,
+                                    onValueChange = { value ->
+                                        updateProfile { it.copy(coverRadius = value) }
                                     },
                                 )
                                 NgFormGroupDivider()
                             }
+                            NgFormSliderRow(
+                                title = stringResource(R.string.bookshelf_book_spacing),
+                                value = profile.spacing,
+                                valueRange = 0..60,
+                                onValueChange = { value ->
+                                    updateProfile { it.copy(spacing = value) }
+                                },
+                            )
+                        }
+                    }
+                    if (selectedMode != BookshelfLayoutMode.GROUP_GRID) {
+                        item {
+                            NgFormGroup(title = stringResource(R.string.bookshelf_display_content)) {
+                                val unreadTitle = if (selectedMode == BookshelfLayoutMode.GRID) {
+                                    R.string.show_unread_badge
+                                } else {
+                                    R.string.show_unread_count
+                                }
+                                NgFormSwitchSettingRow(
+                                    title = stringResource(unreadTitle),
+                                    checked = profile.showUnread,
+                                    onCheckedChange = { checked ->
+                                        updateProfile { it.copy(showUnread = checked) }
+                                    },
+                                )
+                                if (selectedMode == BookshelfLayoutMode.LIST) {
+                                    NgFormGroupDivider()
+                                    NgFormSwitchSettingRow(
+                                        title = stringResource(R.string.show_last_update_time),
+                                        checked = profile.showLastUpdateTime,
+                                        onCheckedChange = { checked ->
+                                            updateProfile { it.copy(showLastUpdateTime = checked) }
+                                        },
+                                    )
+                                }
+                                if (selectedMode == BookshelfLayoutMode.GRID) {
+                                    NgFormGroupDivider()
+                                    NgFormSwitchSettingRow(
+                                        title = stringResource(R.string.bookshelf_show_background),
+                                        checked = showGridBackground,
+                                        onCheckedChange = { showGridBackground = it },
+                                    )
+                                }
+                                if (!isGridBooks) {
+                                    NgFormGroupDivider()
+                                    NgFormSwitchSettingRow(
+                                        title = stringResource(R.string.bookshelf_show_reading_progress),
+                                        checked = showReadingProgress,
+                                        onCheckedChange = { showReadingProgress = it },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        NgFormGroup(title = stringResource(if (settingsMode) R.string.bookshelf_reminders else R.string.bookshelf_global_settings)) {
+                            NgFormSwitchSettingRow(
+                                title = stringResource(R.string.show_wait_up_count),
+                                checked = showWaitUpCount,
+                                onCheckedChange = { checked ->
+                                    showWaitUpCount = checked
+                                },
+                            )
+                        }
+                    }
+                    item {
+                        NgFormGroup(title = stringResource(R.string.sort)) {
                             NgFormSelectRow(
-                                title = stringResource(R.string.bookshelf_book_name_position),
-                                selectedValue = profile.showBookName.toString(),
+                                title = stringResource(R.string.sort),
+                                selectedValue = profile.sort.toString(),
                                 options = listOf(
-                                    NgFormSelectOption(
-                                        stringResource(R.string.bookshelf_book_name_below),
-                                        "0",
-                                    ),
-                                    NgFormSelectOption(
-                                        stringResource(R.string.bookshelf_book_name_hidden),
-                                        "1",
-                                    ),
-                                    NgFormSelectOption(
-                                        stringResource(R.string.bookshelf_book_name_overlay),
-                                        "2",
-                                    ),
+                                    NgFormSelectOption(stringResource(R.string.bookshelf_px_0), "0"),
+                                    NgFormSelectOption(stringResource(R.string.bookshelf_px_1), "1"),
+                                    NgFormSelectOption(stringResource(R.string.bookshelf_px_2), "2"),
+                                    NgFormSelectOption(stringResource(R.string.bookshelf_px_3), "3"),
+                                    NgFormSelectOption(stringResource(R.string.bookshelf_px_4), "4"),
+                                    NgFormSelectOption(stringResource(R.string.bookshelf_px_5), "5"),
                                 ),
                                 onValueChange = { value ->
-                                    updateProfile {
-                                        it.copy(showBookName = value.toIntOrNull() ?: 0)
-                                    }
+                                    updateProfile { it.copy(sort = value.toIntOrNull() ?: 0) }
                                 },
                                 arrowIcon = arrow,
                                 menuVariant = NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
                             )
-                            NgFormGroupDivider()
-                            NgFormStepperRow(
-                                title = stringResource(R.string.bookshelf_cover_radius),
-                                value = profile.coverRadius,
-                                valueRange = BookshelfLayoutProfile.MIN_COVER_RADIUS..BookshelfLayoutProfile.MAX_COVER_RADIUS,
-                                onValueChange = { value ->
-                                    updateProfile { it.copy(coverRadius = value) }
-                                },
-                            )
-                            NgFormGroupDivider()
-                        }
-                        NgFormSliderRow(
-                            title = stringResource(R.string.bookshelf_book_spacing),
-                            value = profile.spacing,
-                            valueRange = 0..60,
-                            onValueChange = { value ->
-                                updateProfile { it.copy(spacing = value) }
-                            },
-                        )
-                    }
-                }
-                if (selectedMode != BookshelfLayoutMode.GROUP_GRID) {
-                    item {
-                        NgFormGroup(title = stringResource(R.string.bookshelf_display_content)) {
-                            val unreadTitle = if (selectedMode == BookshelfLayoutMode.GRID) {
-                                R.string.show_unread_badge
-                            } else {
-                                R.string.show_unread_count
-                            }
-                            NgFormSwitchSettingRow(
-                                title = stringResource(unreadTitle),
-                                checked = profile.showUnread,
-                                onCheckedChange = { checked ->
-                                    updateProfile { it.copy(showUnread = checked) }
-                                },
-                            )
-                            if (selectedMode == BookshelfLayoutMode.LIST) {
-                                NgFormGroupDivider()
-                                NgFormSwitchSettingRow(
-                                    title = stringResource(R.string.show_last_update_time),
-                                    checked = profile.showLastUpdateTime,
-                                    onCheckedChange = { checked ->
-                                        updateProfile { it.copy(showLastUpdateTime = checked) }
-                                    },
-                                )
-                            }
-                            if (selectedMode == BookshelfLayoutMode.GRID) {
-                                NgFormGroupDivider()
-                                NgFormSwitchSettingRow(
-                                    title = stringResource(R.string.bookshelf_show_background),
-                                    checked = showGridBackground,
-                                    onCheckedChange = { showGridBackground = it },
-                                )
-                            }
-                            if (!isGridBooks) {
-                                NgFormGroupDivider()
-                                NgFormSwitchSettingRow(
-                                    title = stringResource(R.string.bookshelf_show_reading_progress),
-                                    checked = showReadingProgress,
-                                    onCheckedChange = { showReadingProgress = it },
-                                )
-                            }
                         }
                     }
-                }
-                item {
-                    NgFormGroup(title = stringResource(R.string.bookshelf_global_settings)) {
-                        NgFormSwitchSettingRow(
-                            title = stringResource(R.string.show_wait_up_count),
-                            checked = showWaitUpCount,
-                            onCheckedChange = { checked ->
-                                showWaitUpCount = checked
-                            },
-                        )
-                    }
-                }
-                item {
-                    NgFormGroup(title = stringResource(R.string.sort)) {
-                        NgFormSelectRow(
-                            title = stringResource(R.string.sort),
-                            selectedValue = profile.sort.toString(),
-                            options = listOf(
-                                NgFormSelectOption(stringResource(R.string.bookshelf_px_0), "0"),
-                                NgFormSelectOption(stringResource(R.string.bookshelf_px_1), "1"),
-                                NgFormSelectOption(stringResource(R.string.bookshelf_px_2), "2"),
-                                NgFormSelectOption(stringResource(R.string.bookshelf_px_3), "3"),
-                                NgFormSelectOption(stringResource(R.string.bookshelf_px_4), "4"),
-                                NgFormSelectOption(stringResource(R.string.bookshelf_px_5), "5"),
-                            ),
-                            onValueChange = { value ->
-                                updateProfile { it.copy(sort = value.toIntOrNull() ?: 0) }
-                            },
-                            arrowIcon = arrow,
-                            menuVariant = NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
-                        )
+                } else {
+                    item(key = "settings:$tab") {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            BookshelfSettingsFields(tab, settings) { settings = it }
+                        }
                     }
                 }
             }
@@ -448,6 +495,7 @@ private fun BookshelfLayoutSheet(
                             showWaitUpCount = showWaitUpCount,
                             showReadingProgress = showReadingProgress,
                             showGridBackground = showGridBackground,
+                            settings = settings.takeIf { settingsMode },
                         )
                     )
                 },
@@ -459,3 +507,18 @@ private fun BookshelfLayoutSheet(
         }
     }
 }
+
+private val layoutProfilesSaver = listSaver<BookshelfLayoutProfiles, Any>(
+    save = { profiles -> BookshelfLayoutMode.entries.flatMap { mode ->
+        profiles[mode].let { listOf(it.columns, it.innerColumns, it.showBookName, it.coverRadius, it.spacing, it.showUnread, it.showLastUpdateTime, it.sort) }
+    } },
+    restore = { values ->
+        val profiles = values.chunked(8).map { BookshelfLayoutProfile(it[0] as Int, it[1] as Int, it[2] as Int, it[3] as Int, it[4] as Int, it[5] as Boolean, it[6] as Boolean, it[7] as Int) }
+        BookshelfLayoutProfiles(profiles[0], profiles[1], profiles[2], profiles[3])
+    },
+)
+
+private val bookshelfSettingsSaver = listSaver<BookshelfSettingsDraft, Any>(
+    save = { listOf(it.topStyle, it.searchPosition, it.topDistance, it.topTransparency, it.floatingBottom, it.bottomDistance, it.bottomTransparency, it.swipeMode, it.aiSwipe) },
+    restore = { BookshelfSettingsDraft(it[0] as Int, it[1] as Int, it[2] as Int, it[3] as Int, it[4] as Boolean, it[5] as Int, it[6] as Int, it[7] as Int, it[8] as Boolean) },
+)

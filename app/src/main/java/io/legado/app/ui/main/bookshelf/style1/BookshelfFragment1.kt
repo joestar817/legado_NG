@@ -347,6 +347,14 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         return index.coerceIn(0, bookGroups.lastIndex)
     }
 
+    fun canSwipeGroup(direction: Int): Boolean =
+        !showGroupGrid && !childFragmentManager.isStateSaved &&
+            direction in listOf(-1, 1) && selectedGroupIndex + direction in bookGroups.indices
+
+    fun swipeGroup(direction: Int) {
+        if (canSwipeGroup(direction)) selectGroup(selectedGroupIndex + direction)
+    }
+
     private fun selectGroup(
         index: Int,
         showReselectionFeedback: Boolean = false,
