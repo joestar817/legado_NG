@@ -219,6 +219,63 @@ private fun NgEditorGridRow(content: @Composable RowScope.() -> Unit) {
     )
 }
 
+/** 订阅源编辑专用布局：首行三个开关，次行两个选择器和预加载开关。 */
+@Composable
+fun NgRssEditorConfigPanel(
+    toggles: List<NgEditorToggleItem>,
+    typeTitle: String,
+    typeValue: String,
+    typeOptions: List<NgEditorSelectOption>,
+    styleTitle: String,
+    styleValue: String,
+    styleOptions: List<NgEditorSelectOption>,
+    onTypeSelected: (String) -> Unit,
+    onStyleSelected: (String) -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    require(toggles.size == 4)
+    NgFormPanel(modifier = modifier) {
+        NgEditorGridRow {
+            toggles.take(3).forEachIndexed { index, item ->
+                NgEditorToggleCell(
+                    item = item,
+                    onCheckedChange = { onToggle(item.key, it) },
+                    modifier = Modifier.weight(1f),
+                )
+                if (index < 2) NgEditorGridVerticalDivider()
+            }
+        }
+        HorizontalDivider(
+            thickness = 0.6.dp,
+            color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.24f),
+        )
+        NgEditorGridRow {
+            NgEditorSelectCell(
+                title = typeTitle,
+                selectedValue = typeValue,
+                options = typeOptions,
+                onSelected = onTypeSelected,
+                modifier = Modifier.weight(1f),
+            )
+            NgEditorGridVerticalDivider()
+            NgEditorSelectCell(
+                title = styleTitle,
+                selectedValue = styleValue,
+                options = styleOptions,
+                onSelected = onStyleSelected,
+                modifier = Modifier.weight(1f),
+            )
+            NgEditorGridVerticalDivider()
+            NgEditorToggleCell(
+                item = toggles.last(),
+                onCheckedChange = { onToggle(toggles.last().key, it) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
 @Composable
 private fun NgEditorGridVerticalDivider() {
     VerticalDivider(

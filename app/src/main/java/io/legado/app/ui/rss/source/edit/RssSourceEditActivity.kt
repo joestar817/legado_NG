@@ -6,14 +6,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
+import io.legado.app.constant.AppLog
+import io.legado.app.data.appDb
+import io.legado.app.data.entities.KeyboardAssist
 import io.legado.app.data.entities.RssSource
+import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
@@ -26,6 +33,7 @@ import io.legado.app.ui.rss.source.debug.RssSourceDebugActivity
 import io.legado.app.ui.source.edit.SourceEditCodeHighlighter
 import io.legado.app.ui.widget.dialog.UrlOptionDialog
 import io.legado.app.ui.widget.dialog.VariableDialog
+import io.legado.app.ui.widget.keyboard.KeyboardAssistsConfig
 import io.legado.app.utils.GSON
 import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.isContentScheme
@@ -40,12 +48,14 @@ import io.legado.app.utils.takePersistableReadPermission
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 订阅源规则编辑器。动态规则字段与工具入口完整保留，可见表单使用 Compose。 */
 class RssSourceEditActivity :
-    VMBaseActivity<RssComposeBinding, RssSourceEditViewModel>(),
+    VMBaseActivity<RssComposeBinding, RssSourceEditViewModel>(imageBg = false),
     VariableDialog.Callback {
 
     override val binding by viewBinding(RssComposeBinding::inflate)
@@ -57,23 +67,31 @@ class RssSourceEditActivity :
     )
     private var originalSource = RssSource()
     private var selectedTab by mutableIntStateOf(0)
-    private var focusedFieldKey by mutableStateOf<String?>(null)
-    private var focusedSelectionStart = 0
-    private var focusedSelectionEnd = 0
+    private var focusedField by mutableStateOf<RssEditorSelection?>(null)
+    private var sourceRevision by mutableIntStateOf(0)
+    private var fieldValueRevision by mutableIntStateOf(0)
+    private var keyboardAssists by mutableStateOf<List<KeyboardAssist>>(emptyList())
+    private var keyboardRowCount by mutableIntStateOf(AppConfig.showBoardLine)
+    private val editHistory = RssSourceEditorHistory()
+    // 保留输入中的空白；空字段转 null 仍由原 source 更新逻辑处理。
+    private val draftTextValues = mutableStateMapOf<String, String>()
+    private var pendingInsert: RssEditorSelection? = null
     private var editingFieldKey: String? = null
     private var pendingExit by mutableStateOf(false)
     private var forceFinish = false
 
     private val selectDoc = registerForActivityResult(SelectFileContract()) { uri ->
+        val target = pendingInsert
+        pendingInsert = null
         uri?.let {
             it.takePersistableReadPermission()
-            appendToFocusedField(if (it.isContentScheme()) it.toString() else it.path.orEmpty())
+            insertAt(target, if (it.isContentScheme()) it.toString() else it.path.orEmpty())
         }
     }
     private val qrCodeResult = registerForActivityResult(QrCodeResult()) {
         it?.let { text ->
             viewModel.importSource(text) { imported ->
-                runOnUiThread { source = imported.copy() }
+                runOnUiThread { replaceSource(imported) }
             }
         }
     }
@@ -83,17 +101,29 @@ class RssSourceEditActivity :
         val key = editingFieldKey
         editingFieldKey = null
         if (result.resultCode == RESULT_OK && key != null) {
-            result.data?.getStringExtra("text")?.let { updateField(key, it) }
+            result.data?.let { data ->
+                val text = data.getStringExtra("text") ?: fieldValue(key)
+                val cursor = data.getIntExtra("cursorPosition", text.length).coerceIn(0, text.length)
+                replaceFieldValue(key, RssEditorSnapshot(text, cursor, cursor))
+            }
         }
     }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
+        observeKeyboardAssists()
         binding.root.setContent {
             NgAppTheme {
                 RssSourceEditScreen(
                     source = source,
                     selectedTab = selectedTab,
                     autoComplete = viewModel.autoComplete,
+                    sourceRevision = sourceRevision,
+                    fieldValueRevision = fieldValueRevision,
+                    focusedField = focusedField,
+                    draftTextValues = draftTextValues,
+                    editEntityMaxLine = Int.MAX_VALUE,
+                    keyboardAssists = keyboardAssists,
+                    keyboardRowCount = keyboardRowCount,
                     onAction = ::handleAction
                 )
                 if (pendingExit) {
@@ -110,7 +140,7 @@ class RssSourceEditActivity :
         }
         viewModel.initData(intent) {
             originalSource = viewModel.rssSource?.copy() ?: RssSource()
-            source = originalSource.copy()
+            replaceSource(originalSource)
         }
     }
 
@@ -129,6 +159,18 @@ class RssSourceEditActivity :
 
     private fun handleAction(action: RssSourceEditAction) {
         when (action) {
+            RssSourceEditAction.Undo -> restoreHistory(redo = false)
+            RssSourceEditAction.Redo -> restoreHistory(redo = true)
+            RssSourceEditAction.KeyboardConfig -> openKeyboardConfig()
+            is RssSourceEditAction.InsertText -> insertAt(focusedField, action.text)
+            is RssSourceEditAction.EditText -> {
+                editHistory.record(action.key, currentSnapshot(action.key), action.value)
+                if (fieldValue(action.key) != action.value) {
+                    draftTextValues[action.key] = action.value
+                    updateField(action.key, action.value)
+                }
+                focusedField = RssEditorSelection(action.key, action.start, action.end)
+            }
             RssSourceEditAction.Back -> finish()
             RssSourceEditAction.Save -> saveAndFinish()
             RssSourceEditAction.Debug -> saveSource { saved ->
@@ -143,7 +185,7 @@ class RssSourceEditActivity :
             RssSourceEditAction.SetVariable -> setSourceVariable()
             RssSourceEditAction.ClearCookie -> viewModel.clearCookie(source.sourceUrl)
             RssSourceEditAction.Copy -> sendToClip(GSON.toJson(normalizedSource()))
-            RssSourceEditAction.Paste -> viewModel.pasteSource { source = it.copy() }
+            RssSourceEditAction.Paste -> viewModel.pasteSource(::replaceSource)
             RssSourceEditAction.ImportQr -> qrCodeResult.launch()
             RssSourceEditAction.ShareText -> share(GSON.toJson(normalizedSource()))
             RssSourceEditAction.ShareQr -> shareWithQr(
@@ -154,18 +196,23 @@ class RssSourceEditActivity :
             RssSourceEditAction.AppLog -> showDialogFragment<AppLogDialog>()
             RssSourceEditAction.NetworkLog -> showDialogFragment<NetworkLogDialog>()
             RssSourceEditAction.Help -> showHelp("rssRuleHelp")
-            RssSourceEditAction.InsertUrlOption -> UrlOptionDialog(this) {
-                appendToFocusedField(it)
-            }.show()
+            RssSourceEditAction.InsertUrlOption -> {
+                val target = focusedField
+                UrlOptionDialog(this) { insertAt(target, it) }.show()
+            }
             RssSourceEditAction.JsHelp -> showHelp("jsHelp")
             RssSourceEditAction.RegexHelp -> showHelp("regexHelp")
-            RssSourceEditAction.SelectFile -> selectDoc.launch(arrayOf("*/*"))
-            is RssSourceEditAction.SelectTab -> selectedTab = action.index.coerceIn(0, 3)
+            RssSourceEditAction.SelectFile -> {
+                pendingInsert = focusedField
+                selectDoc.launch(arrayOf("*/*"))
+            }
+            is RssSourceEditAction.SelectTab -> {
+                focusedField = null
+                selectedTab = action.index.coerceIn(0, 3)
+            }
             is RssSourceEditAction.UpdateField -> updateField(action.key, action.value)
             is RssSourceEditAction.FocusField -> {
-                focusedFieldKey = action.key
-                focusedSelectionStart = action.selectionStart
-                focusedSelectionEnd = action.selectionEnd
+                focusedField = RssEditorSelection(action.key, action.selectionStart, action.selectionEnd)
             }
             is RssSourceEditAction.ExpandField -> openFullEditor(action.key, action.label)
             is RssSourceEditAction.UpdateSource -> source = action.source
@@ -187,6 +234,8 @@ class RssSourceEditActivity :
     private fun saveSource(onSuccess: (RssSource) -> Unit) {
         viewModel.save(normalizedSource()) { saved ->
             source = saved.copy()
+            draftTextValues.clear()
+            fieldValueRevision += 1
             originalSource = saved.copy()
             onSuccess(saved)
         }
@@ -205,6 +254,10 @@ class RssSourceEditActivity :
     }
 
     private fun openFullEditor(key: String, label: String) {
+        if (key.isEmpty()) {
+            toastOnUi(R.string.please_focus_cursor_on_textbox)
+            return
+        }
         editingFieldKey = key
         val value = fieldValue(key)
         textEditLauncher.launch(
@@ -213,8 +266,8 @@ class RssSourceEditActivity :
                 putExtra("title", label)
                 putExtra(
                     "cursorPosition",
-                    if (focusedFieldKey == key) {
-                        focusedSelectionEnd.coerceIn(0, value.length)
+                    if (focusedField?.key == key) {
+                        focusedField!!.end.coerceIn(0, value.length)
                     } else {
                         value.length
                     }
@@ -226,19 +279,65 @@ class RssSourceEditActivity :
         )
     }
 
-    private fun appendToFocusedField(text: String) {
-        val key = focusedFieldKey ?: run {
+    private fun insertAt(target: RssEditorSelection?, text: String) {
+        val selection = target ?: run {
             toastOnUi(R.string.please_focus_cursor_on_textbox)
             return
         }
-        val current = fieldValue(key)
-        val start = focusedSelectionStart.coerceIn(0, current.length)
-        val end = focusedSelectionEnd.coerceIn(0, current.length)
-        val rangeStart = minOf(start, end)
-        val rangeEnd = maxOf(start, end)
-        updateField(key, current.replaceRange(rangeStart, rangeEnd, text))
-        focusedSelectionStart = rangeStart + text.length
-        focusedSelectionEnd = focusedSelectionStart
+        val current = RssEditorSnapshot(fieldValue(selection.key), selection.start, selection.end)
+        replaceFieldValue(selection.key, current.insert(text))
+    }
+
+    private fun currentSnapshot(key: String): RssEditorSnapshot {
+        val text = fieldValue(key)
+        val selection = focusedField?.takeIf { it.key == key }
+        return RssEditorSnapshot(text, selection?.start ?: text.length, selection?.end ?: text.length)
+    }
+
+    private fun replaceFieldValue(key: String, value: RssEditorSnapshot, recordHistory: Boolean = true) {
+        if (recordHistory) editHistory.record(key, currentSnapshot(key), value.text)
+        draftTextValues[key] = value.text
+        updateField(key, value.text)
+        focusedField = RssEditorSelection(
+            key, value.start.coerceIn(0, value.text.length), value.end.coerceIn(0, value.text.length),
+        )
+        fieldValueRevision += 1
+    }
+
+    private fun restoreHistory(redo: Boolean) {
+        val key = focusedField?.key ?: return
+        val current = currentSnapshot(key)
+        val restored = if (redo) editHistory.redo(key, current) else editHistory.undo(key, current)
+        restored?.let { replaceFieldValue(key, it, recordHistory = false) }
+    }
+
+    private fun replaceSource(updated: RssSource) {
+        source = updated.copy()
+        focusedField = null
+        editingFieldKey = null
+        pendingInsert = null
+        editHistory.clear()
+        draftTextValues.clear()
+        sourceRevision += 1
+    }
+
+    private fun observeKeyboardAssists() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                appDb.keyboardAssistsDao.flowByType(0)
+                    .catch { AppLog.put("键盘帮助浮窗获取数据失败\n${it.localizedMessage}", it) }
+                    .flowOn(IO)
+                    .collect { keyboardAssists = it }
+            }
+        }
+    }
+
+    private fun openKeyboardConfig() {
+        showDialogFragment(KeyboardAssistsConfig(object : KeyboardAssistsConfig.CallBack {
+            override fun requestLayout() {
+                keyboardRowCount = AppConfig.showBoardLine
+            }
+        }))
     }
 
     private fun setSourceVariable() {
@@ -309,7 +408,7 @@ class RssSourceEditActivity :
         }
     }
 
-    private fun fieldValue(key: String): String = when (key) {
+    private fun fieldValue(key: String): String = draftTextValues[key] ?: when (key) {
         "sourceName" -> source.sourceName
         "sourceUrl" -> source.sourceUrl
         "sourceIcon" -> source.sourceIcon

@@ -2390,4 +2390,6 @@
     <string name="highlight_nine_slice_estimate">估算切线</string>
     <string name="bookshelf_show_reading_progress">显示阅读进度</string>
     <string name="bookshelf_show_background">显示背景容器</string>
+    <string name="rss_editor_undo">撤销</string>
+    <string name="rss_editor_redo">重做</string>
 </resources>

@@ -2487,4 +2487,6 @@
     <string name="highlight_nine_slice_estimate">Estimate cuts</string>
     <string name="bookshelf_show_reading_progress">Show reading progress</string>
     <string name="bookshelf_show_background">Show background container</string>
+    <string name="rss_editor_undo">Undo</string>
+    <string name="rss_editor_redo">Redo</string>
 </resources>
