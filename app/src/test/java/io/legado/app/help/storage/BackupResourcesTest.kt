@@ -1,10 +1,13 @@
 package io.legado.app.help.storage
 
+import com.google.gson.JsonParser
+import io.legado.app.constant.PreferKey
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Rule
 import org.junit.Test
@@ -12,6 +15,48 @@ import org.junit.rules.TemporaryFolder
 
 class BackupResourcesTest {
     @get:Rule val temp = TemporaryFolder()
+
+    @Test fun builtInReadingBackgroundsKeepTheirTypesWithoutResourceFiles() {
+        val root = temp.newFolder()
+        val config = """{
+            "bgType":1,"bgStr":"秋山书意-日间.webp",
+            "bgTypeNight":1,"bgStrNight":"秋山书意-夜间.webp",
+            "bgTypeEInk":0,"bgStrEInk":"#FFFFFF"
+        }"""
+        File(root, "readConfig.json").writeText("[$config]")
+        File(root, "shareReadConfig.json").writeText(config)
+        File(root, "highlightRule.json").writeText("[]")
+
+        BackupResources.prepare(root, setOf(BackupModule.READER.id), emptyMap<String, Any>())
+
+        assertEquals(JsonParser.parseString("[$config]"), JsonParser.parseString(File(root, "readConfig.json").readText()))
+        assertEquals(JsonParser.parseString(config), JsonParser.parseString(File(root, "shareReadConfig.json").readText()))
+        assertFalse(File(root, BackupResources.ASSETS).exists())
+        File(root, "config.xml").writeText("<map />")
+        BackupResources.finishManifest(root, listOf("config.xml", "readConfig.json", "shareReadConfig.json", "highlightRule.json"))
+        assertEquals(setOf(BackupModule.READER.id), BackupResources.validate(root))
+    }
+
+    @Test fun bundledAssetReferencesStayInConfigurationWithoutBeingPackaged() {
+        val root = temp.newFolder()
+        val themes = """[{"backgroundImgPath":"asset://bg/竹影之韵.webp"}]"""
+        File(root, "themeConfig.json").writeText(themes)
+        val prefs = mapOf(
+            PreferKey.bgImage to "asset://defaultData/theme/reading_ng_summer_childhood.webp",
+            PreferKey.bgImageN to "asset://defaultData/theme/reading_ng_summer_childhood_dark.webp",
+            PreferKey.defaultCover to "assets://bg/起点读书.jpg",
+            PreferKey.defaultCoverDark to "file:///android_asset/bg/起点读书.jpg",
+            "ngManagedThemes.v1" to """[{"lightBackground":{"path":"asset://bg/暖色渐变.webp"}}]""",
+        )
+
+        val result = BackupResources.prepare(root, setOf(BackupModule.APPEARANCE.id, BackupModule.COVERS.id), prefs)
+
+        assertEquals(prefs, result)
+        assertEquals(JsonParser.parseString(themes), JsonParser.parseString(File(root, "themeConfig.json").readText()))
+        assertFalse(File(root, BackupResources.ASSETS).exists())
+        val manifest = JsonParser.parseString(File(root, BackupResources.MANIFEST).readText()).asJsonObject
+        assertEquals(0, manifest.getAsJsonObject("files").size())
+    }
 
     @Test fun rejectsTraversalAndSiblingPrefix() {
         val root = temp.newFolder("backup")

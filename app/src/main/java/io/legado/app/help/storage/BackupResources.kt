@@ -10,8 +10,6 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadHighlightRuleStore
 import io.legado.app.help.config.ThemeConfig
-import io.legado.app.help.config.resolveBundledBackgroundAssetPath
-import io.legado.app.help.config.resolveBundledReadBackgroundName
 import io.legado.app.utils.externalFiles
 import splitties.init.appCtx
 import java.io.File
@@ -20,7 +18,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.zip.ZipInputStream
 
-/** Self-contained resources for native NG backups. Legacy archives keep their existing policy. */
+/** Custom resources for native NG backups; bundled assets retain their built-in references. */
 internal object BackupResources {
     const val MANIFEST = "ngBackup.json"
     const val ASSETS = "resources"
@@ -94,12 +92,11 @@ internal object BackupResources {
                         val typeKey = "bgType$suffix"
                         val valueKey = "bgStr$suffix"
                         val type = config.get(typeKey)?.asInt ?: 0
-                        if (type == 1 || type == 2) {
+                        // Type 1 is an APK asset. Keep both its name and type for the reader.
+                        if (type == 2) {
                             val value = config.get(valueKey).asString
-                            val ref = if (type == 1) "assets://bg/${resolveBundledReadBackgroundName(value)}"
-                                else if ('/' !in value && ':' !in value) File(appCtx.externalFiles, "bg/$value").path else value
+                            val ref = if ('/' !in value && ':' !in value) File(appCtx.externalFiles, "bg/$value").path else value
                             config.addProperty(valueKey, collector.copy(ref))
-                            config.addProperty(typeKey, 2)
                         }
                     }
                     listOf("textFont", "titleFont", "headerFont", "footerFont").forEach { key ->
@@ -207,12 +204,13 @@ internal object BackupResources {
         }
 
         fun copy(reference: String): String = refs.getOrPut(reference) {
-            if (reference.startsWith(TOKEN)) return@getOrPut reference
+            // Bundled resources are supplied by the APK and remain usable after restore.
+            if (reference.startsWith(TOKEN) || reference.startsWith("assets://") ||
+                reference.startsWith("asset://") || reference.startsWith("file:///android_asset/")) {
+                return@getOrPut reference
+            }
             val uri = Uri.parse(reference)
             val input = when {
-                reference.startsWith("assets://") -> appCtx.assets.open(reference.removePrefix("assets://"))
-                reference.startsWith("asset://") -> appCtx.assets.open(resolveBundledBackgroundAssetPath(reference.removePrefix("asset://")))
-                reference.startsWith("file:///android_asset/") -> appCtx.assets.open(reference.removePrefix("file:///android_asset/"))
                 uri.scheme == "https" || uri.scheme == "http" -> java.net.URL(reference).openConnection().apply {
                     connectTimeout = 15000
                     readTimeout = 30000
