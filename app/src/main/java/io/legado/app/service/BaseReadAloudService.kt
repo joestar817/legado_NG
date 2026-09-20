@@ -37,6 +37,9 @@ import io.legado.app.constant.Status
 import io.legado.app.help.MediaHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.tts.ReadAloudBufferProgress
+import io.legado.app.help.tts.paragraphNumberAt
+import io.legado.app.help.tts.readParagraphs
+import io.legado.app.help.tts.readText
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.glide.ImageLoader
 import io.legado.app.lib.permission.Permissions
@@ -296,13 +299,14 @@ abstract class BaseReadAloudService : BaseService(),
             this@BaseReadAloudService.pageIndex = pageIndex
             textChapter = ReadBook.curTextChapter
             val textChapter = textChapter ?: return@execute
-            if (!textChapter.isCompleted) {
+            val readAloudText = textChapter.readAloudText
+            if (!readAloudText.isReady) {
                 return@execute
             }
             activeBookUrl = ReadBook.book?.bookUrl
             readAloudNumber = textChapter.getReadLength(pageIndex) + startPos
             readAloudByPage = getPrefBoolean(PreferKey.readAloudByPage)
-            contentList = textChapter.getNeedReadAloud(0, readAloudByPage, 0)
+            contentList = readAloudText.readText(readAloudByPage)
                 .split("\n")
                 .filter { it.isNotEmpty() }
             var pos = startPos
@@ -314,10 +318,10 @@ abstract class BaseReadAloudService : BaseService(),
                     pos = tmp
                 }
             }
-            nowSpeak = textChapter.getParagraphNum(readAloudNumber + 1, readAloudByPage) - 1
+            nowSpeak = readAloudText.paragraphNumberAt(readAloudNumber + 1, readAloudByPage) - 1
             if (!readAloudByPage && startPos == 0 && !toLast) {
                 pos = page.chapterPosition -
-                        textChapter.paragraphs[nowSpeak].chapterPosition
+                        readAloudText.paragraphs[nowSpeak].chapterPosition
             }
             if (toLast) {
                 toLast = false
@@ -325,7 +329,7 @@ abstract class BaseReadAloudService : BaseService(),
                 nowSpeak = contentList.lastIndex
                 if (page.paragraphs.size == 1) {
                     pos = page.chapterPosition -
-                            textChapter.paragraphs[nowSpeak].chapterPosition
+                            readAloudText.paragraphs[nowSpeak].chapterPosition
                 }
             }
             paragraphStartPos = pos
@@ -390,7 +394,7 @@ abstract class BaseReadAloudService : BaseService(),
         }
         textChapter?.let {
             if (readAloudByPage) {
-                val paragraphs = it.getParagraphs(true)
+                val paragraphs = it.readAloudText.readParagraphs(true)
                 if (paragraphs.getOrNull(nowSpeak)?.isParagraphEnd == false) {
                     readAloudNumber--
                 }
@@ -613,7 +617,7 @@ abstract class BaseReadAloudService : BaseService(),
             } while (contentList[nowSpeak].matches(AppPattern.notReadAloudRegex))
             textChapter?.let {
                 if (readAloudByPage) {
-                    val paragraphs = it.getParagraphs(true)
+                    val paragraphs = it.readAloudText.readParagraphs(true)
                     if (!paragraphs[nowSpeak].isParagraphEnd) readAloudNumber++
                 }
                 if (readAloudNumber < it.getReadLength(pageIndex)) {
@@ -637,7 +641,7 @@ abstract class BaseReadAloudService : BaseService(),
             nowSpeak++
             textChapter?.let {
                 if (readAloudByPage) {
-                    val paragraphs = it.getParagraphs(true)
+                    val paragraphs = it.readAloudText.readParagraphs(true)
                     if (!paragraphs[nowSpeak].isParagraphEnd) readAloudNumber--
                 }
                 if (pageIndex + 1 < it.pageSize

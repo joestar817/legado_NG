@@ -56,7 +56,8 @@ import io.legado.app.help.tts.isReadAloudSynthesisTextSilent
 import io.legado.app.help.tts.prepareReadAloudAudioTasks
 import io.legado.app.help.tts.readAloudPlaylistAppendAction
 import io.legado.app.help.tts.readAloudPlaybackCompletionTarget
-import io.legado.app.help.tts.readAloudWholeChapterPageEndIndex
+import io.legado.app.help.tts.readParagraphs
+import io.legado.app.help.tts.readText
 import io.legado.app.help.tts.normalizeStoryboardSynthesisText
 import io.legado.app.help.tts.parseReadAloudMediaItemIdentity
 import io.legado.app.help.tts.toTtsSynthesisContext
@@ -505,7 +506,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                 val nextStoryboardTask = startNextStoryboardPreload()
                 scheduleAdditionalStoryboardPreloads(nextStoryboardTask)
                 val currentSpeakItems = speakItems
-                val paragraphStarts = textChapter?.getParagraphs(readAloudByPage)
+                val paragraphStarts = textChapter?.readAloudText?.readParagraphs(readAloudByPage)
                     .orEmpty()
                     .map { it.chapterPosition }
                 val prefetchedPrefix = buildList {
@@ -671,9 +672,10 @@ class HttpReadAloudService : BaseReadAloudService(),
         ensurePlaybackVoiceBindings(showPreparation = false)
         // 下一章使用独立路由快照，不能在当前章仍合成时替换全局路由。
         val preloadRouter = ReadAloudTtsRouter.createForCurrentBook()
-        val pageEndIndex = readAloudWholeChapterPageEndIndex(textChapter.pageSize) ?: return
+        val readAloudText = textChapter.readAloudText
+        if (!readAloudText.hasContent) return
         // items 必须覆盖整章；只有实际音频预下载仍限制为前 10 条。
-        val contentList = textChapter.getNeedReadAloud(0, readAloudByPage, 0, pageEndIndex)
+        val contentList = readAloudText.readText(readAloudByPage)
             .splitToSequence("\n")
             .filter { it.isNotEmpty() }
             .toList()
@@ -728,14 +730,11 @@ class HttpReadAloudService : BaseReadAloudService(),
                     ?: throw NoStackTraceException("tts is null")
                 val nextTextChapter = loadStoryboardTextChapter(targetChapterIndex)
                     ?: throw NoStackTraceException("下一章正文不可用")
-                val pageEndIndex = readAloudWholeChapterPageEndIndex(nextTextChapter.pageSize)
-                    ?: throw NoStackTraceException("下一章没有可朗读页面")
-                val nextContentList = nextTextChapter.getNeedReadAloud(
-                    0,
-                    readAloudByPage,
-                    0,
-                    pageEndIndex
-                )
+                val nextReadAloudText = nextTextChapter.readAloudText
+                if (!nextReadAloudText.hasContent) {
+                    throw NoStackTraceException("下一章没有可朗读页面")
+                }
+                val nextContentList = nextReadAloudText.readText(readAloudByPage)
                     .splitToSequence("\n")
                     .filter { it.isNotEmpty() }
                     .toList()
@@ -763,7 +762,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     chapterIndex = targetChapterIndex,
                     textChapter = nextTextChapter,
                     contentList = nextContentList,
-                    paragraphStarts = nextTextChapter.getParagraphs(readAloudByPage)
+                    paragraphStarts = nextReadAloudText.readParagraphs(readAloudByPage)
                         .map { it.chapterPosition },
                     router = nextRouter,
                     items = nextItems

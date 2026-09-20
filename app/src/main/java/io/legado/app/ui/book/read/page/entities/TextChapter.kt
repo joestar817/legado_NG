@@ -6,7 +6,11 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.ReplaceRule
 import io.legado.app.help.book.BookContent
+import io.legado.app.help.tts.ReadAloudTextSource
+import io.legado.app.help.tts.paragraphNumberAt
+import io.legado.app.help.tts.readTextRange
 import io.legado.app.ui.book.read.page.provider.LayoutProgressListener
+import io.legado.app.ui.book.read.page.provider.NativeReadAloudTextSource
 import io.legado.app.ui.book.read.page.provider.TextChapterLayout
 import io.legado.app.utils.fastBinarySearchBy
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +37,9 @@ data class TextChapter(
 
     private val textPages = arrayListOf<TextPage>()
     val pages: List<TextPage> get() = textPages
+
+    @delegate:Transient
+    val readAloudText: ReadAloudTextSource by lazy { NativeReadAloudTextSource(this) }
 
     private var layout: TextChapterLayout? = null
 
@@ -184,29 +191,16 @@ data class TextChapter(
         startPos: Int,
         pageEndIndex: Int = pages.lastIndex
     ): String {
-        val stringBuilder = StringBuilder()
-        if (pages.isNotEmpty()) {
-            for (index in pageIndex..min(pageEndIndex, pages.lastIndex)) {
-                stringBuilder.append(pages[index].text.replace(Regex("[袮꧁]"), " "))
-                if (pageSplit && !stringBuilder.endsWith("\n")) {
-                    stringBuilder.append("\n")
-                }
-            }
-        }
-        return stringBuilder.substring(startPos).toString()
+        return checkNotNull(readAloudText.pageText).readTextRange(
+            pageIndex, pageSplit, startPos, pageEndIndex,
+        )
     }
 
     fun getParagraphNum(
         position: Int,
         pageSplit: Boolean,
     ): Int {
-        val paragraphs = getParagraphs(pageSplit)
-        paragraphs.forEach { paragraph ->
-            if (position in paragraph.chapterIndices) {
-                return paragraph.num
-            }
-        }
-        return -1
+        return readAloudText.paragraphNumberAt(position, pageSplit)
     }
 
     fun getParagraphs(pageSplit: Boolean): List<TextParagraph> {

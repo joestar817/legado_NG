@@ -16,6 +16,7 @@ import io.legado.app.help.tts.TtsCapabilityRegistry
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.BookTtsAutomationConfig
 import io.legado.app.help.tts.BookTtsCastingCoordinator
+import io.legado.app.help.tts.readText
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.ui.book.character.ChapterStoryboard
 import io.legado.app.ui.book.character.StoryboardScene
@@ -464,7 +465,7 @@ object AiTtsStoryboardHelper {
         chapter: TextChapter,
         pageSplit: Boolean = appCtx.getPrefBoolean(PreferKey.readAloudByPage)
     ): String {
-        return chapter.getNeedReadAloud(0, pageSplit, 0)
+        return chapter.readAloudText.readText(pageSplit)
     }
 
     fun debugSnapshot(
