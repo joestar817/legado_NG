@@ -927,7 +927,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                 else -> speak(selectedText)
             }
 
-            R.id.menu_bookmark -> binding.readView.curPage.let {
+            R.id.menu_bookmark -> binding.readView.let {
                 val bookmark = it.createBookmark()
                 if (bookmark == null) {
                     toastOnUi(R.string.create_bookmark_error)
@@ -975,37 +975,17 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
 
     private fun openSelectedContentEditor() {
-        val highlight = activeTextHighlight
-        val page = if (highlight != null) {
-            val chapter = listOfNotNull(
-                ReadBook.curTextChapter, ReadBook.prevTextChapter, ReadBook.nextTextChapter,
-            ).firstOrNull { it.chapter.index == highlight.chapterIndex } ?: return
-            chapter.getPageByReadPos(highlight.chapterPos) ?: return
-        } else {
-            val selected = binding.readView.curPage
-            selected.relativePage(selected.selectStartPos.relativePagePos)
-        }
-        val line = if (highlight != null) {
-            page.lines.lastOrNull { it.chapterPosition <= highlight.chapterPos }
-        } else {
-            page.lines.getOrNull(binding.readView.curPage.selectStartPos.lineIndex)
-        } ?: return
-        val selection = highlight ?: binding.readView.curPage.createTextHighlight() ?: return
-        val paragraphStart = page.getTextChapter().pages.asSequence()
-            .flatMap { it.lines.asSequence() }
-            .firstOrNull { it.sourceParagraphIndex == line.sourceParagraphIndex }
-            ?.chapterPosition ?: line.chapterPosition
+        val target = binding.readView.getContentEditTarget(activeTextHighlight) ?: return
         showDialogFragment(
             ContentEditDialog.atSelection(
-                page.chapterIndex, page.title, line.sourceParagraphIndex.coerceAtLeast(0),
-                (selection.chapterPos - paragraphStart).coerceAtLeast(0),
-                selection.bookText.substringBefore('\n').take(128),
+                target.chapterIndex, target.chapterTitle, target.paragraphIndex,
+                target.paragraphOffset, target.selectedTextPrefix,
             )
         )
     }
 
     override fun onTextHighlightCreate(): Bookmark? {
-        val textHighlight = binding.readView.curPage.createTextHighlight()
+        val textHighlight = binding.readView.createTextHighlight()
         if (textHighlight == null) {
             toastOnUi(R.string.create_bookmark_error)
             return null

@@ -20,6 +20,7 @@ import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.association.OpenUrlConfirmActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
+import io.legado.app.ui.book.read.page.api.ReaderSelection
 import io.legado.app.ui.book.read.page.delegate.PageDelegate
 import io.legado.app.ui.book.read.page.entities.TextLine
 import io.legado.app.ui.book.read.page.entities.TextPage
@@ -1149,23 +1150,19 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         return builder.toString()
     }
 
-    fun createBookmark(): Bookmark? {
+    fun bookmarkSelection(): ReaderSelection {
         val page = relativePage(selectStart.relativePagePos)
-        page.getTextChapter().let { chapter ->
-            ReadBook.book?.let { book ->
-                return book.createBookMark().apply {
-                    chapterIndex = page.chapterIndex
-                    chapterPos = chapter.getReadLength(page.index) +
-                            page.getPosByLineColumn(selectStart.lineIndex, selectStart.columnIndex)
-                    chapterName = chapter.title
-                    bookText = getSelectedText()
-                }
-            }
-        }
-        return null
+        val chapter = page.getTextChapter()
+        return ReaderSelection(
+            chapterIndex = page.chapterIndex,
+            chapterPosition = chapter.getReadLength(page.index) +
+                    page.getPosByLineColumn(selectStart.lineIndex, selectStart.columnIndex),
+            chapterTitle = chapter.title,
+            text = getSelectedText(),
+        )
     }
 
-    fun createTextHighlight(): Bookmark? {
+    fun highlightSelection(): ReaderSelection? {
         if (!selectStart.isSelected() || !selectEnd.isSelected()) return null
         val startPage = relativePage(selectStart.relativePagePos)
         val endPage = relativePage(selectEnd.relativePagePos)
@@ -1177,18 +1174,14 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         ) {
             return null
         }
-        val book = ReadBook.book ?: return null
-        return book.createBookMark().apply {
-            bookmarkType = Bookmark.TYPE_TEXT_HIGHLIGHT
-            chapterIndex = startPage.chapterIndex
-            chapterPos = startPosition
-            chapterName = startPage.getTextChapter().title
-            endChapterIndex = endPage.chapterIndex
-            endChapterPos = endPosition
-            highlightStyle = Bookmark.STYLE_BACKGROUND
-            highlightColor = Bookmark.DEFAULT_HIGHLIGHT_COLOR
-            bookText = getSelectedText()
-        }
+        return ReaderSelection(
+            chapterIndex = startPage.chapterIndex,
+            chapterPosition = startPosition,
+            chapterTitle = startPage.getTextChapter().title,
+            text = getSelectedText(),
+            endChapterIndex = endPage.chapterIndex,
+            endChapterPosition = endPosition,
+        )
     }
 
     private fun selectionChapterPosition(

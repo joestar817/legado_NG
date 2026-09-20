@@ -24,6 +24,7 @@ import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadTipConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.ReadBookActivity
+import io.legado.app.ui.book.read.page.api.ReaderSelection
 import io.legado.app.ui.book.read.page.entities.TextLine
 import io.legado.app.ui.book.read.page.entities.TextPage
 import io.legado.app.ui.book.read.page.entities.TextPos
@@ -560,12 +561,12 @@ class PageView(context: Context) : FrameLayout(context) {
         binding.contentTextView.cancelSelect(clearSearchResult)
     }
 
-    fun createBookmark(): Bookmark? {
-        return binding.contentTextView.createBookmark()
+    fun bookmarkSelection(): ReaderSelection {
+        return binding.contentTextView.bookmarkSelection()
     }
 
-    fun createTextHighlight(): Bookmark? {
-        return binding.contentTextView.createTextHighlight()
+    fun highlightSelection(): ReaderSelection? {
+        return binding.contentTextView.highlightSelection()
     }
 
     fun relativePage(relativePagePos: Int): TextPage {

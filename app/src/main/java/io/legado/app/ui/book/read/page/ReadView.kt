@@ -20,7 +20,12 @@ import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.book.read.ContentEditDialog
+import io.legado.app.ui.book.read.createBookmark
+import io.legado.app.ui.book.read.createTextHighlight
 import io.legado.app.ui.book.read.page.api.DataSource
+import io.legado.app.ui.book.read.page.api.ReaderContentEditTarget
+import io.legado.app.ui.book.read.page.api.ReaderSelection
+import io.legado.app.ui.book.read.page.api.ReaderSelectionSource
 import io.legado.app.ui.book.read.page.delegate.CoverPageDelegate
 import io.legado.app.ui.book.read.page.delegate.HorizontalPageDelegate
 import io.legado.app.ui.book.read.page.delegate.NoAnimPageDelegate
@@ -36,6 +41,7 @@ import io.legado.app.ui.book.read.page.entities.TextPos
 import io.legado.app.ui.book.read.page.entities.column.TextBaseColumn
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.ui.book.read.page.provider.LayoutProgressListener
+import io.legado.app.ui.book.read.page.provider.NativeReaderSelectionSource
 import io.legado.app.ui.book.read.page.provider.TextPageFactory
 import io.legado.app.utils.activity
 import io.legado.app.utils.invisible
@@ -66,6 +72,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
     val prevPage by lazy { PageView(context) }
     val curPage by lazy { PageView(context) }
     val nextPage by lazy { PageView(context) }
+    private val selectionSource: ReaderSelectionSource by lazy { NativeReaderSelectionSource(this) }
     val defaultAnimationSpeed = 300
     private var pressDown = false
     private var isMove = false
@@ -708,7 +715,31 @@ class ReadView(context: Context, attrs: AttributeSet) :
      * @return 选择的文本
      */
     fun getSelectText(): String {
-        return curPage.selectedText
+        return selectionSource.selectedText
+    }
+
+    fun createBookmark(): Bookmark? {
+        val book = ReadBook.book ?: return null
+        return selectionSource.bookmarkSelection()?.createBookmark(book)
+    }
+
+    fun createTextHighlight(): Bookmark? {
+        val book = ReadBook.book ?: return null
+        return selectionSource.highlightSelection()?.createTextHighlight(book)
+    }
+
+    fun getContentEditTarget(highlight: Bookmark?): ReaderContentEditTarget? {
+        val selection = highlight?.let {
+            ReaderSelection(
+                chapterIndex = it.chapterIndex,
+                chapterPosition = it.chapterPos,
+                chapterTitle = it.chapterName,
+                text = it.bookText,
+                endChapterIndex = it.endChapterIndex,
+                endChapterPosition = it.endChapterPos,
+            )
+        }
+        return selectionSource.contentEditTarget(selection)
     }
 
     fun getCurVisiblePage(): TextPage {
