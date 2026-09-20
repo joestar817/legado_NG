@@ -63,8 +63,6 @@ import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
-import io.legado.app.ui.design.components.compose.NgManagementDrawerPanel
-import io.legado.app.ui.design.components.compose.NgManagementDrawerPanelVariant
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSearchBarVariant
 import io.legado.app.ui.design.components.compose.NgSwitchControl
@@ -504,9 +502,14 @@ private fun RssSourceManagePanel(
                 dividerHeight * (orderedSources.size - 1).coerceAtLeast(0).toFloat()
         }
         val panelHeight = minOf(maxHeight, headerHeight + dividerHeight + bodyHeight)
-        NgManagementDrawerPanel(
-            modifier = Modifier.height(panelHeight),
-            variant = NgManagementDrawerPanelVariant.COMPACT
+        NgGlassSurface(
+            modifier = Modifier.fillMaxWidth().height(panelHeight),
+            role = NgMaterialRole.CONTENT,
+            shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
+            style = NgGlassDefaults.bookDetailStyle(
+                containerColor = colorResource(R.color.ng_surface_card)
+            ),
+            liquidCornerRadius = NgTheme.shapes.mediumDp.dp,
         ) {
             Row(
                 modifier = Modifier
@@ -712,7 +715,7 @@ private fun RssSourceManageRow(
                         NgExpandableActionMenuItem(
                             R.id.menu_del,
                             R.string.delete,
-                            R.drawable.ic_outline_delete,
+                            R.drawable.ic_book_info_delete,
                             dividerBefore = true
                         )
                     ),
