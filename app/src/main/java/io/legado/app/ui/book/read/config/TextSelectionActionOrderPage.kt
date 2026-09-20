@@ -149,4 +149,5 @@ private fun TextSelectionBuiltInAction.iconRes(): Int = when (this) {
     TextSelectionBuiltInAction.DICTIONARY -> R.drawable.ic_translate
     TextSelectionBuiltInAction.BROWSER -> R.drawable.ic_web_outline
     TextSelectionBuiltInAction.SHARE -> R.drawable.ic_share
+    TextSelectionBuiltInAction.EDIT -> R.drawable.ic_edit
 }

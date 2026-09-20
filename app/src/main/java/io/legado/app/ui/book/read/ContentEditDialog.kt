@@ -1,13 +1,13 @@
 package io.legado.app.ui.book.read
 
 import android.app.Application
+import android.content.Context
 import android.content.DialogInterface
 import android.graphics.Color.TRANSPARENT
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,7 +44,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -53,7 +54,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
-import androidx.core.widget.addTextChangedListener
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.viewModels
@@ -68,7 +70,13 @@ import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.coroutine.Coroutine
-import io.legado.app.lib.theme.view.ThemeEditText
+import io.legado.app.help.config.NgThemeRuntimeAssets
+import io.github.rosemoe.sora.event.ContentChangeEvent
+import io.github.rosemoe.sora.event.LayoutStateChangeEvent
+import io.github.rosemoe.sora.lang.EmptyLanguage
+import io.github.rosemoe.sora.widget.CodeEditor
+import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
+import io.github.rosemoe.sora.widget.schemes.SchemeDarcula
 import io.legado.app.model.ReadBook
 import io.legado.app.model.webBook.WebBook
 import io.legado.app.ui.book.read.config.ReadConfigDialogSurface
@@ -76,13 +84,9 @@ import io.legado.app.ui.book.read.config.ReadConfigDialogTitle
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormField
-import io.legado.app.ui.design.components.compose.NgGlassDefaults
-import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
-import io.legado.app.utils.applyTint
 import io.legado.app.utils.sendToClip
-import io.legado.app.utils.setLayout
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,6 +97,9 @@ import kotlinx.coroutines.withContext
 class ContentEditDialog : DialogFragment() {
 
     private val viewModel by viewModels<ContentEditViewModel>()
+    private val chapterIndex by lazy {
+        arguments?.getInt(ARG_CHAPTER_INDEX) ?: ReadBook.durChapterIndex
+    }
 
     private var chapterTitle by mutableStateOf("")
     private var isLoading by mutableStateOf(false)
@@ -102,13 +109,11 @@ class ContentEditDialog : DialogFragment() {
 
     private var editorRevision = 0
     private var applyingEditorDocument = false
-    private var editorView: ThemeEditText? = null
+    private var editorView: ContentEditorView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            setStyle(STYLE_NO_TITLE, 0)
-        }
+        setStyle(STYLE_NO_TITLE, R.style.AppTheme_ContentEditor)
     }
 
     override fun onCreateView(
@@ -126,12 +131,20 @@ class ContentEditDialog : DialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        chapterTitle = ReadBook.curTextChapter?.title.orEmpty()
+        chapterTitle = arguments?.getString(ARG_CHAPTER_TITLE)
+            ?: ReadBook.curTextChapter?.title.orEmpty()
         viewModel.loadStateLiveData.observe(viewLifecycleOwner) {
             isLoading = it
         }
-        viewModel.initContent { content ->
-            showEditorContent(content, ReadBook.durChapterPos)
+        viewModel.initContent(chapterIndex) { content ->
+            val offset = arguments?.getInt(ARG_PARAGRAPH_INDEX)?.let {
+                contentEditSelectionOffset(
+                    content, it,
+                    arguments?.getInt(ARG_PARAGRAPH_OFFSET) ?: 0,
+                    arguments?.getString(ARG_SELECTED_TEXT).orEmpty(),
+                )
+            } ?: ReadBook.durChapterPos
+            showEditorContent(content, offset)
         }
 
         ReadFloatingAppearanceState.refreshFromConfig()
@@ -144,6 +157,7 @@ class ContentEditDialog : DialogFragment() {
                     isLoading = isLoading,
                     overflowExpanded = showOverflowMenu,
                     onTitleClick = ::openTitleEditor,
+                    onBack = { dialog?.cancel() },
                     onSave = {
                         save()
                         dismiss()
@@ -179,10 +193,16 @@ class ContentEditDialog : DialogFragment() {
     override fun onStart() {
         super.onStart()
         dialog?.window?.apply {
-            setBackgroundDrawable(ColorDrawable(TRANSPARENT))
+            setBackgroundDrawable(ColorDrawable(android.graphics.Color.WHITE))
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            decorView.setPadding(0, 0, 0, 0)
+            WindowCompat.setDecorFitsSystemWindows(this, false)
+            WindowInsetsControllerCompat(this, decorView).apply {
+                isAppearanceLightStatusBars = true
+                isAppearanceLightNavigationBars = false
+            }
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
-        setLayout(1f, ViewGroup.LayoutParams.MATCH_PARENT)
     }
 
     override fun onCancel(dialog: DialogInterface) {
@@ -191,7 +211,9 @@ class ContentEditDialog : DialogFragment() {
     }
 
     override fun onDestroyView() {
-        editorView?.text?.toString()?.let { viewModel.draftContent = it }
+        editorView?.takeUnless { it.isReleased }?.text?.toString()?.let {
+            viewModel.draftContent = it
+        }
         editorView = null
         super.onDestroyView()
     }
@@ -209,7 +231,7 @@ class ContentEditDialog : DialogFragment() {
         lifecycleScope.launch {
             val book = ReadBook.book ?: return@launch
             val chapter = withContext(IO) {
-                appDb.bookChapterDao.getChapter(book.bookUrl, ReadBook.durChapterIndex)
+                appDb.bookChapterDao.getChapter(book.bookUrl, chapterIndex)
             } ?: return@launch
             titleEditorState = TitleEditorState(chapter, chapter.title)
         }
@@ -223,15 +245,15 @@ class ContentEditDialog : DialogFragment() {
                 state.chapter.update()
             }
             chapterTitle = state.chapter.getDisplayTitle()
-            ReadBook.loadContent(ReadBook.durChapterIndex, resetPageOffset = false)
+            ReadBook.loadContent(chapterIndex, resetPageOffset = false)
         }
     }
 
     private fun resetContent() {
         showOverflowMenu = false
-        viewModel.initContent(true) { content ->
+        viewModel.initContent(chapterIndex, reset = true) { content ->
             showEditorContent(content)
-            ReadBook.loadContent(ReadBook.durChapterIndex, resetPageOffset = false)
+            ReadBook.loadContent(chapterIndex, resetPageOffset = false)
         }
     }
 
@@ -259,10 +281,10 @@ class ContentEditDialog : DialogFragment() {
         Coroutine.async {
             val book = ReadBook.book ?: return@async
             val chapter = appDb.bookChapterDao
-                .getChapter(book.bookUrl, ReadBook.durChapterIndex)
+                .getChapter(book.bookUrl, chapterIndex)
                 ?: return@async
             BookHelp.saveText(book, chapter, content)
-            ReadBook.loadContent(ReadBook.durChapterIndex, resetPageOffset = false)
+            ReadBook.loadContent(chapterIndex, resetPageOffset = false)
         }
     }
 
@@ -271,11 +293,11 @@ class ContentEditDialog : DialogFragment() {
         var content: String? = null
         var draftContent: String? = null
 
-        fun initContent(reset: Boolean = false, success: (String) -> Unit) {
+        fun initContent(chapterIndex: Int, reset: Boolean = false, success: (String) -> Unit) {
             execute {
                 val book = ReadBook.book ?: return@execute null
                 val chapter = appDb.bookChapterDao
-                    .getChapter(book.bookUrl, ReadBook.durChapterIndex)
+                    .getChapter(book.bookUrl, chapterIndex)
                     ?: return@execute null
                 if (reset) {
                     content = null
@@ -302,6 +324,30 @@ class ContentEditDialog : DialogFragment() {
             }
         }
     }
+    companion object {
+        private const val ARG_CHAPTER_INDEX = "chapterIndex"
+        private const val ARG_CHAPTER_TITLE = "chapterTitle"
+        private const val ARG_PARAGRAPH_INDEX = "paragraphIndex"
+        private const val ARG_PARAGRAPH_OFFSET = "paragraphOffset"
+        private const val ARG_SELECTED_TEXT = "selectedTextPrefix"
+
+        fun atSelection(
+            chapterIndex: Int,
+            chapterTitle: String,
+            paragraphIndex: Int,
+            paragraphOffset: Int,
+            selectedTextPrefix: String,
+        ) =
+            ContentEditDialog().apply {
+                arguments = Bundle().apply {
+                    putInt(ARG_CHAPTER_INDEX, chapterIndex)
+                    putString(ARG_CHAPTER_TITLE, chapterTitle)
+                    putInt(ARG_PARAGRAPH_INDEX, paragraphIndex)
+                    putInt(ARG_PARAGRAPH_OFFSET, paragraphOffset)
+                    putString(ARG_SELECTED_TEXT, selectedTextPrefix)
+                }
+            }
+    }
 }
 
 private data class EditorDocument(
@@ -322,49 +368,47 @@ private fun ContentEditorScreen(
     isLoading: Boolean,
     overflowExpanded: Boolean,
     onTitleClick: () -> Unit,
+    onBack: () -> Unit,
     onSave: () -> Unit,
     onOverflowClick: () -> Unit,
     onOverflowDismiss: () -> Unit,
     onReset: () -> Unit,
     onCopyAll: () -> Unit,
-    onEditorCreated: (ThemeEditText) -> Unit,
+    onEditorCreated: (ContentEditorView) -> Unit,
     onEditorTextChanged: (String) -> Unit,
     onApplyingDocument: (Boolean) -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(NgTheme.colors.background))
-            .padding(8.dp),
+            .background(Color.White)
+            .statusBarsPadding()
+            .imePadding(),
     ) {
         ContentEditorTopBar(
             chapterTitle = chapterTitle,
             overflowExpanded = overflowExpanded,
             onTitleClick = onTitleClick,
+            onBack = onBack,
             onSave = onSave,
             onOverflowClick = onOverflowClick,
             onOverflowDismiss = onOverflowDismiss,
             onReset = onReset,
             onCopyAll = onCopyAll,
         )
-        Spacer(Modifier.height(8.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .background(Color(0xFF1E1E1E))
+                .navigationBarsPadding(),
         ) {
-            NgGlassSurface(
-                modifier = Modifier.fillMaxSize(),
-                shape = RoundedCornerShape(18.dp),
-                style = readFloatingGlassStyle().copy(shadowElevation = 0.dp),
-            ) {
-                ContentEditorTextArea(
-                    document = document,
-                    onEditorCreated = onEditorCreated,
-                    onEditorTextChanged = onEditorTextChanged,
-                    onApplyingDocument = onApplyingDocument,
-                )
-            }
+            ContentEditorTextArea(
+                document = document,
+                onEditorCreated = onEditorCreated,
+                onEditorTextChanged = onEditorTextChanged,
+                onApplyingDocument = onApplyingDocument,
+            )
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier
@@ -384,24 +428,31 @@ private fun ContentEditorTopBar(
     chapterTitle: String,
     overflowExpanded: Boolean,
     onTitleClick: () -> Unit,
+    onBack: () -> Unit,
     onSave: () -> Unit,
     onOverflowClick: () -> Unit,
     onOverflowDismiss: () -> Unit,
     onReset: () -> Unit,
     onCopyAll: () -> Unit,
 ) {
-    NgGlassSurface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(60.dp),
-        shape = RoundedCornerShape(18.dp),
-        style = NgGlassDefaults.style(containerAlpha = NgTheme.effects.dialogAlpha),
-        contentPadding = PaddingValues(start = 16.dp, end = 4.dp),
+            .height(56.dp)
+            .padding(end = 4.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_arrow_back),
+                    contentDescription = stringResource(R.string.back),
+                    modifier = Modifier.size(24.dp),
+                    tint = Color.Black,
+                )
+            }
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -416,7 +467,7 @@ private fun ContentEditorTopBar(
             ) {
                 Text(
                     text = chapterTitle,
-                    color = Color(NgTheme.colors.onSurface),
+                    color = Color.Black,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -428,7 +479,7 @@ private fun ContentEditorTopBar(
                     painter = painterResource(R.drawable.ic_save),
                     contentDescription = stringResource(R.string.action_save),
                     modifier = Modifier.size(24.dp),
-                    tint = Color(NgTheme.colors.onSurface),
+                    tint = Color.Black,
                 )
             }
             Box {
@@ -437,7 +488,7 @@ private fun ContentEditorTopBar(
                         painter = painterResource(R.drawable.ic_more_vert),
                         contentDescription = stringResource(R.string.more),
                         modifier = Modifier.size(24.dp),
-                        tint = Color(NgTheme.colors.onSurface),
+                        tint = Color.Black,
                     )
                 }
                 ContentEditorOverflowMenu(
@@ -497,59 +548,104 @@ private fun ContentEditorOverflowMenu(
 @Composable
 private fun ContentEditorTextArea(
     document: EditorDocument,
-    onEditorCreated: (ThemeEditText) -> Unit,
+    onEditorCreated: (ContentEditorView) -> Unit,
     onEditorTextChanged: (String) -> Unit,
     onApplyingDocument: (Boolean) -> Unit,
 ) {
-    val paddingPx = with(LocalDensity.current) { 12.dp.roundToPx() }
-    val colors = NgTheme.colors
-    val isDark = NgTheme.snapshot.isDark
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = { context ->
-            ThemeEditText(context).apply {
-                gravity = Gravity.TOP or Gravity.START
-                inputType = InputType.TYPE_CLASS_TEXT or
-                    InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                    InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-                setHorizontallyScrolling(false)
-                isVerticalScrollBarEnabled = true
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+            ContentEditorView(context).apply {
+                subscribeEvent(ContentChangeEvent::class.java) { _, _ ->
+                    onEditorTextChanged(text.toString())
                 }
-                applyTint(colors.primary, isDark)
-                background = null
-                setTextColor(colors.onSurface)
-                setHintTextColor(colors.onSurfaceVariant)
-                setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
-                addTextChangedListener(
-                    afterTextChanged = { onEditorTextChanged(it?.toString().orEmpty()) }
-                )
                 onEditorCreated(this)
             }
         },
+        onRelease = { editor ->
+            onEditorTextChanged(editor.text.toString())
+            editor.release()
+        },
         update = { editText ->
-            editText.applyTint(colors.primary, isDark)
-            editText.setTextColor(colors.onSurface)
-            editText.setHintTextColor(colors.onSurfaceVariant)
             if (editText.tag != document.revision) {
                 onApplyingDocument(true)
-                if (editText.text?.toString() != document.content) {
-                    editText.setText(document.content)
-                }
-                editText.tag = document.revision
+                editText.showDocument(document)
                 onApplyingDocument(false)
-                document.scrollOffset?.let { requestedOffset ->
-                    editText.post {
-                        val textLayout = editText.layout ?: return@post
-                        val offset = requestedOffset.coerceIn(0, editText.text?.length ?: 0)
-                        val lineIndex = textLayout.getLineForOffset(offset)
-                        editText.scrollTo(0, textLayout.getLineTop(lineIndex))
-                    }
-                }
             }
         },
     )
+}
+
+/** 复用书源编辑器内核，正文只按纯文本编辑，不启用代码语言或补全。 */
+private class ContentEditorView(context: Context) : CodeEditor(context) {
+    private var pendingOffset: Int? = null
+    private var contentLayoutBusy = false
+
+    init {
+        setEditorLanguage(EmptyLanguage())
+        colorScheme = SchemeDarcula().apply {
+            setColor(EditorColorScheme.WHOLE_BACKGROUND, 0xFF1E1E1E.toInt())
+            setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, 0xFF1E1E1E.toInt())
+            setColor(EditorColorScheme.TEXT_NORMAL, android.graphics.Color.WHITE)
+            setColor(EditorColorScheme.TEXT_SELECTED, android.graphics.Color.WHITE)
+            setColor(EditorColorScheme.LINE_NUMBER, 0xFF888888.toInt())
+            setColor(EditorColorScheme.LINE_NUMBER_CURRENT, 0xFF66E0D0.toInt())
+            setColor(EditorColorScheme.SELECTION_INSERT, 0xFF66E0D0.toInt())
+            setColor(EditorColorScheme.SELECTION_HANDLE, 0xFF66E0D0.toInt())
+            setColor(EditorColorScheme.CURRENT_LINE, 0xFF263238.toInt())
+        }
+        setCursorWidth(2f * resources.displayMetrics.density)
+        isLineNumberEnabled = true
+        setPinLineNumber(true)
+        isWordwrap = true
+        setTextSize(16f)
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+            InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        NgThemeRuntimeAssets.appTypeface(context)?.let {
+            typefaceText = it
+            typefaceLineNumber = it
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        subscribeEvent(LayoutStateChangeEvent::class.java) { event, _ ->
+            contentLayoutBusy = event.isLayoutBusy
+            if (!contentLayoutBusy) post { restorePosition() }
+        }
+    }
+
+    fun showDocument(document: EditorDocument) {
+        pendingOffset = document.scrollOffset
+        if (text.toString() != document.content) setText(document.content)
+        tag = document.revision
+        post { restorePosition() }
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        post { restorePosition() }
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) post { restorePosition() }
+    }
+
+    private fun restorePosition() {
+        if (isReleased || contentLayoutBusy || width == 0 || height == 0 ||
+            isLayoutRequested || !hasWindowFocus()) return
+        val offset = pendingOffset ?: return
+        if (!requestFocus()) return
+        pendingOffset = null
+        val position = text.indexer.getCharPosition(offset.coerceIn(0, text.length))
+        // 只在打开文档时定位；使用软换行后的实际行坐标，保留目标上下文。
+        setSelection(position.line, position.column, false)
+        val rowTop = layout.getCharLayoutOffset(position.line, position.column)[0] - rowHeight
+        val targetY = (rowTop - height / 3f).toInt().coerceIn(0, scrollMaxY)
+        scroller.startScroll(offsetX, targetY, 0, 0, 0)
+        scroller.abortAnimation()
+        invalidate()
+    }
 }
 
 @Composable

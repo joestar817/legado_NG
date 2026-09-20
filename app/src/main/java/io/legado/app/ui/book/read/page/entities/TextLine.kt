@@ -59,6 +59,9 @@ data class TextLine(
 ) {
 
     val columns: List<BaseColumn> get() = textColumns
+    /** ContentProcessor 正文段落索引；标题不占正文段落。仅用于当前排版的定位。 */
+    @Transient
+    var sourceParagraphIndex: Int = -1
     val charSize: Int get() = text.length
     val lineStart: Float get() = textColumns.firstOrNull()?.start ?: 0f
     val lineEnd: Float get() = textColumns.lastOrNull()?.end ?: 0f

@@ -16,6 +16,7 @@ enum class TextSelectionBuiltInAction(val key: String, val menuId: Int, val titl
     DICTIONARY("dictionary", R.id.menu_dict, R.string.dict),
     BROWSER("browser", R.id.menu_browser, R.string.browser),
     SHARE("share", R.id.menu_share_str, R.string.share),
+    EDIT("edit", R.id.menu_edit_content, R.string.edit),
 }
 
 object TextSelectionActionOrder {

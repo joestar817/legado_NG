@@ -781,6 +781,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
         R.id.menu_search_content -> R.drawable.ic_search
         R.id.menu_browser -> R.drawable.ic_web_outline
         R.id.menu_share_str -> R.drawable.ic_share
+        R.id.menu_edit_content -> R.drawable.ic_edit
         else -> R.drawable.ic_ai_capability_text
     }
 

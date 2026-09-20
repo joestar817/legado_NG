@@ -914,6 +914,11 @@ class ReadBookActivity : BaseReadBookActivity(),
      */
     override fun onMenuItemSelected(itemId: Int): Boolean {
         when (itemId) {
+            R.id.menu_edit_content -> {
+                openSelectedContentEditor()
+                return true
+            }
+
             R.id.menu_aloud -> when {
                 activeTextHighlight != null -> speak(selectedText)
                 AppConfig.contentSelectSpeakMod == 1 -> lifecycleScope.launch {
@@ -967,6 +972,36 @@ class ReadBookActivity : BaseReadBookActivity(),
             }
         }
         return false
+    }
+
+    private fun openSelectedContentEditor() {
+        val highlight = activeTextHighlight
+        val page = if (highlight != null) {
+            val chapter = listOfNotNull(
+                ReadBook.curTextChapter, ReadBook.prevTextChapter, ReadBook.nextTextChapter,
+            ).firstOrNull { it.chapter.index == highlight.chapterIndex } ?: return
+            chapter.getPageByReadPos(highlight.chapterPos) ?: return
+        } else {
+            val selected = binding.readView.curPage
+            selected.relativePage(selected.selectStartPos.relativePagePos)
+        }
+        val line = if (highlight != null) {
+            page.lines.lastOrNull { it.chapterPosition <= highlight.chapterPos }
+        } else {
+            page.lines.getOrNull(binding.readView.curPage.selectStartPos.lineIndex)
+        } ?: return
+        val selection = highlight ?: binding.readView.curPage.createTextHighlight() ?: return
+        val paragraphStart = page.getTextChapter().pages.asSequence()
+            .flatMap { it.lines.asSequence() }
+            .firstOrNull { it.sourceParagraphIndex == line.sourceParagraphIndex }
+            ?.chapterPosition ?: line.chapterPosition
+        showDialogFragment(
+            ContentEditDialog.atSelection(
+                page.chapterIndex, page.title, line.sourceParagraphIndex.coerceAtLeast(0),
+                (selection.chapterPos - paragraphStart).coerceAtLeast(0),
+                selection.bookText.substringBefore('\n').take(128),
+            )
+        )
     }
 
     override fun onTextHighlightCreate(): Bookmark? {

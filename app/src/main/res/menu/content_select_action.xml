@@ -40,4 +40,8 @@
         android:id="@+id/menu_share_str"
         android:title="@string/share"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/menu_edit_content"
+        android:title="@string/edit"
+        app:showAsAction="never" />
 </menu>

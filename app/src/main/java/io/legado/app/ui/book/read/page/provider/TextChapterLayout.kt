@@ -102,6 +102,7 @@ class TextChapterLayout(
     private val doublePage = ChapterProvider.doublePage
     private val indentCharWidth = ChapterProvider.indentCharWidth
     private val stringBuilder = StringBuilder()
+    private var sourceParagraphIndex = -1
 
     private val paragraphIndent = ReadBookConfig.paragraphIndent
     private val titleMode = ReadBookConfig.titleMode
@@ -368,6 +369,7 @@ class TextChapterLayout(
         var isSetTypedImage = false
         var wordCount = 0
         contents.forEach { content ->
+            sourceParagraphIndex++
             currentCoroutineContext().ensureActive()
             if (adaptSpecialStyle) {
                 val text = content.trim()
@@ -1192,6 +1194,7 @@ class TextChapterLayout(
             else -> lastLine.paragraphNum
         }
         textLine.paragraphNum = paragraphNum
+        textLine.sourceParagraphIndex = sourceParagraphIndex
         textLine.chapterPosition =
             (textPages.lastOrNull()?.lines?.lastOrNull()?.run {
                 chapterPosition + charSize + if (isParagraphEnd) 1 else 0

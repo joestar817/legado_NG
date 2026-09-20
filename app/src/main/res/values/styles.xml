@@ -32,6 +32,15 @@
         <item name="bottomSheetDialogTheme">@style/AppTheme.BottomSheetDialog</item>
     </style>
 
+    <style name="AppTheme.ContentEditor" parent="Base.AppTheme">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
     <!-- Material must decide edge-to-edge before the first BottomSheet layout. -->
     <style name="AppTheme.BottomSheetDialog" parent="Theme.Design.Light.BottomSheetDialog">
         <item name="viewInflaterClass">io.legado.app.ui.design.theme.NgAppViewInflater</item>
