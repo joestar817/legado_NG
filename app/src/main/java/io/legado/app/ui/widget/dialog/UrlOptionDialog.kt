@@ -1,9 +1,9 @@
 package io.legado.app.ui.widget.dialog
 
-import android.app.Dialog
 import android.content.Context
 import android.os.Bundle
 import android.view.ViewGroup
+import androidx.activity.ComponentDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -24,10 +24,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import io.legado.app.R
 import io.legado.app.constant.AppConst
 import io.legado.app.model.analyzeRule.AnalyzeUrl
@@ -47,7 +51,9 @@ import io.legado.app.utils.setLayout
 class UrlOptionDialog(
     context: Context,
     private val success: (String) -> Unit,
-) : Dialog(context) {
+) : ComponentDialog(context), ViewModelStoreOwner {
+
+    override val viewModelStore = ViewModelStore()
 
     override fun onStart() {
         super.onStart()
@@ -57,8 +63,10 @@ class UrlOptionDialog(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window?.decorView?.setViewTreeViewModelStoreOwner(this)
         setContentView(
             ComposeView(context).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -76,6 +84,11 @@ class UrlOptionDialog(
                 }
             }
         )
+    }
+
+    override fun onStop() {
+        super.onStop()
+        viewModelStore.clear()
     }
 }
 
