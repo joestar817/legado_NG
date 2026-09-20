@@ -1,4 +1,5 @@
 <resources>
+    <string name="bookshelf_highlight_unread">强调未读数量</string>
     <string name="interface_font">界面字体</string>
     <string name="text_selection_action_order">工具浮窗排序</string>
     <string name="text_selection_action_order_summary">前5项显示在浮窗，其余收进更多</string>

@@ -251,6 +251,12 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             appCtx.putPrefBoolean(PreferKey.showWaitUpCount, value)
         }
 
+    var bookshelfHighlightUnread: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.bookshelfHighlightUnread, false)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.bookshelfHighlightUnread, value)
+        }
+
     var bookshelfShowReadingProgress: Boolean
         get() = appCtx.getPrefBoolean(PreferKey.bookshelfShowReadingProgress, false)
         set(value) {

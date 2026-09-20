@@ -113,6 +113,8 @@ class BooksFragment() : BaseFragment(0),
     private val layoutMode by lazy { AppConfig.activeBookshelfLayoutMode }
     private var layoutProfile by mutableStateOf(AppConfig.getBookshelfLayoutProfile(layoutMode))
     private var showReadingProgress by mutableStateOf(AppConfig.bookshelfShowReadingProgress)
+    private var highlightUnread by mutableStateOf(AppConfig.bookshelfHighlightUnread)
+    private var isRefreshing by mutableStateOf(false)
     private var showGridBackground by mutableStateOf(AppConfig.bookshelfGridBackground)
     private var bookItems by mutableStateOf<List<Book>>(
         emptyList(),
@@ -182,6 +184,7 @@ class BooksFragment() : BaseFragment(0),
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
+        activityViewModel.isTocRefreshing.observe(viewLifecycleOwner) { isRefreshing = it }
         arguments?.let {
             groupId = it.getLong("groupId", -1)
             bookSort = it.getInt("bookSort", 0)
@@ -199,6 +202,7 @@ class BooksFragment() : BaseFragment(0),
                     showBookName = layoutProfile.showBookName,
                     coverRadius = layoutProfile.coverRadius,
                     showUnread = layoutProfile.showUnread,
+                    highlightUnread = highlightUnread,
                     showLastUpdateTime = layoutProfile.showLastUpdateTime,
                     showReadingProgress = showReadingProgress,
                     showGridBackground = showGridBackground,
@@ -209,8 +213,8 @@ class BooksFragment() : BaseFragment(0),
                     isEInk = AppConfig.isEInkMode,
                     updatingBookUrls = updatingBookUrls,
                     refreshEnabled = refreshAllowed && bookItems.isNotEmpty(),
+                    isRefreshing = isRefreshing,
                     onRefresh = {
-                        // 保留旧书架行为：手势完成后直接后台更新目录，不维持加载态。
                         activityViewModel.upToc(bookItems, onlyUpdateRead)
                     },
                     onOpenBook = ::open,
@@ -580,6 +584,7 @@ class BooksFragment() : BaseFragment(0),
         observeEvent<String>(EventBus.BOOKSHELF_REFRESH) {
             layoutProfile = AppConfig.getBookshelfLayoutProfile(layoutMode)
             showReadingProgress = AppConfig.bookshelfShowReadingProgress
+            highlightUnread = AppConfig.bookshelfHighlightUnread
             showGridBackground = AppConfig.bookshelfGridBackground
             updatingBookUrls = bookItems.asSequence()
                 .map(Book::bookUrl)

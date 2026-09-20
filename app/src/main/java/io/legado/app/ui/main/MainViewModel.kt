@@ -3,6 +3,7 @@ package io.legado.app.ui.main
 import android.app.Application
 import android.os.Build
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.viewModelScope
 import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.AppConst
@@ -54,6 +55,8 @@ class MainViewModel(application: Application) : BaseViewModel(application) {
     private val onUpTocBooks = ConcurrentHashMap.newKeySet<String>()
     private val eventListenerSource = ConcurrentHashMap<BookSource, Boolean>()
     val onUpBooksLiveData = MutableLiveData<Int>()
+    private val tocRefreshing = MutableLiveData(false)
+    val isTocRefreshing: LiveData<Boolean> = tocRefreshing
     private var upTocJob: Job? = null
     private var cacheBookJob: Job? = null
     var callback: CallBack? = null
@@ -133,6 +136,7 @@ class MainViewModel(application: Application) : BaseViewModel(application) {
 
     private fun startUpTocJob() {
         upPool()
+        tocRefreshing.postValue(waitUpTocBooks.isNotEmpty())
         postUpBooksLiveData()
         upTocJob = viewModelScope.launch(upTocPool) {
             flow {
@@ -151,6 +155,8 @@ class MainViewModel(application: Application) : BaseViewModel(application) {
                 upTocJob = null
                 if (waitUpTocBooks.isNotEmpty()) {
                     startUpTocJob()
+                } else {
+                    tocRefreshing.postValue(false)
                 }
                 if (it == null && cacheBookJob == null && !CacheBookService.isRun) {
                     //所有目录更新完再开始缓存章节

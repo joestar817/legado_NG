@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="bookshelf_highlight_unread">Highlight unread count</string>
     <string name="interface_font">Interface font</string>
     <string name="text_selection_action_order">Text toolbar order</string>
     <string name="text_selection_action_order_summary">First 5 actions appear in the toolbar; the rest go in More</string>

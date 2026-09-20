@@ -52,6 +52,8 @@ import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -65,6 +67,7 @@ import io.legado.app.ui.design.components.compose.NgBookCover
 import io.legado.app.ui.design.components.compose.NgBookshelfUnreadBadge
 import io.legado.app.ui.design.components.compose.NgBookshelfUpdateIndicator
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
+import io.legado.app.ui.design.components.compose.NgPullRefreshIndicatorVariant
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.main.bookshelf.bookshelfReadingProgress
 import io.legado.app.ui.main.bookshelf.BookshelfGridBackground
@@ -83,6 +86,7 @@ internal fun BookshelfBooksScreen(
     showBookName: Int,
     coverRadius: Int,
     showUnread: Boolean,
+    highlightUnread: Boolean,
     showLastUpdateTime: Boolean,
     showReadingProgress: Boolean,
     showGridBackground: Boolean,
@@ -93,6 +97,7 @@ internal fun BookshelfBooksScreen(
     isEInk: Boolean,
     updatingBookUrls: Set<String>,
     refreshEnabled: Boolean,
+    isRefreshing: Boolean,
     onRefresh: () -> Unit,
     onOpenBook: (Book) -> Unit,
     onOpenBookInfo: (Book) -> Unit,
@@ -104,12 +109,12 @@ internal fun BookshelfBooksScreen(
         initialBottomInset = bottomInset,
     ) {
         NgPullRefreshBox(
-            isRefreshing = false,
+            isRefreshing = isRefreshing && refreshEnabled,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize(),
             enabled = refreshEnabled,
-            // 书架只用卡内更新圈反馈进度，避免重复显示整页刷新指示器。
-            showIndicator = false,
+            showIndicator = refreshEnabled,
+            indicatorVariant = NgPullRefreshIndicatorVariant.SINGLE_SPINNER,
         ) {
             if (books.isEmpty()) {
                 Text(
@@ -127,6 +132,7 @@ internal fun BookshelfBooksScreen(
                     BookshelfLayoutMode.COMPACT -> BookshelfBookList(
                         books = books,
                         compact = layoutMode == BookshelfLayoutMode.COMPACT,
+                        highlightUnread = showUnread && highlightUnread,
                         spacing = spacing,
                         bottomInset = bottomInset,
                         showLastUpdateTime = showLastUpdateTime,
@@ -169,6 +175,7 @@ internal fun BookshelfBooksScreen(
 private fun BookshelfBookList(
     books: List<Book>,
     compact: Boolean,
+    highlightUnread: Boolean,
     spacing: Int,
     bottomInset: Dp,
     showLastUpdateTime: Boolean,
@@ -212,6 +219,7 @@ private fun BookshelfBookList(
                 BookshelfListBookItem(
                     book = book,
                     compact = compact,
+                    highlightUnread = highlightUnread,
                     updating = !book.isLocal && book.bookUrl in updatingBookUrls,
                     showLastUpdateTime = showLastUpdateTime && !compact,
                     showReadingProgress = showReadingProgress,
@@ -231,6 +239,7 @@ private fun BookshelfBookList(
 private fun BookshelfListBookItem(
     book: Book,
     compact: Boolean,
+    highlightUnread: Boolean,
     updating: Boolean,
     showLastUpdateTime: Boolean,
     showReadingProgress: Boolean,
@@ -262,6 +271,18 @@ private fun BookshelfListBookItem(
     val cardStrokeColor = colorResource(R.color.ng_bookshelf_list_card_stroke)
     val titleColor = colorResource(R.color.primaryText)
     val summaryColor = colorResource(R.color.tv_text_summary)
+    val authorSummary = book.bookshelfAuthorText(context)
+    val authorText = buildAnnotatedString {
+        append(authorSummary)
+        val unread = book.getUnreadChapterNum()
+        if (highlightUnread && unread > 0) {
+            val unreadText = context.getString(R.string.bookshelf_unread_chapters, unread)
+            val start = authorSummary.lastIndexOf(unreadText)
+            if (start >= 0) {
+                addStyle(SpanStyle(color = progressColor), start, start + unreadText.length)
+            }
+        }
+    }
     val lastUpdateText = if (showLastUpdateTime && !book.isLocal) {
         remember(book.latestChapterTime, lastUpdateTick) {
             book.latestChapterTime.toTimeAgo()
@@ -350,7 +371,7 @@ private fun BookshelfListBookItem(
                             contentDescription = stringResource(R.string.author),
                         )
                         Text(
-                            text = book.bookshelfAuthorText(context),
+                            text = authorText,
                             color = summaryColor,
                             fontSize = 13.sp,
                             lineHeight = 16.sp,
@@ -411,7 +432,7 @@ private fun BookshelfListBookItem(
                             contentDescription = stringResource(R.string.author),
                         )
                         Text(
-                            text = book.bookshelfAuthorText(context),
+                            text = authorText,
                             color = summaryColor,
                             fontSize = 13.sp,
                             lineHeight = 16.sp,

@@ -134,6 +134,7 @@ class BookshelfLayoutDialog : BottomSheetDialogFragment() {
                 oldProfile.coverRadius != newProfile.coverRadius ||
                 oldProfile.spacing != newProfile.spacing,
             refresh = oldProfile.showUnread != newProfile.showUnread ||
+                AppConfig.bookshelfHighlightUnread != draft.highlightUnread ||
                 oldProfile.showLastUpdateTime != newProfile.showLastUpdateTime ||
                 AppConfig.bookshelfShowReadingProgress != draft.showReadingProgress ||
                 AppConfig.bookshelfGridBackground != draft.showGridBackground,
@@ -142,6 +143,7 @@ class BookshelfLayoutDialog : BottomSheetDialogFragment() {
         )
         draft.profiles.forEach(AppConfig::setBookshelfLayoutProfile)
         AppConfig.showWaitUpCount = draft.showWaitUpCount
+        AppConfig.bookshelfHighlightUnread = draft.highlightUnread
         AppConfig.bookshelfShowReadingProgress = draft.showReadingProgress
         AppConfig.bookshelfGridBackground = draft.showGridBackground
         AppConfig.selectBookshelfLayoutMode(draft.selectedMode)
@@ -185,6 +187,7 @@ private data class BookshelfLayoutDraft(
     val selectedMode: BookshelfLayoutMode,
     val profiles: BookshelfLayoutProfiles,
     val showWaitUpCount: Boolean,
+    val highlightUnread: Boolean,
     val showReadingProgress: Boolean,
     val showGridBackground: Boolean,
     val settings: BookshelfSettingsDraft? = null,
@@ -242,6 +245,7 @@ private fun BookshelfLayoutSheet(
     var selectedMode by rememberSaveable { mutableStateOf(AppConfig.activeBookshelfLayoutMode) }
     var profiles by rememberSaveable(stateSaver = layoutProfilesSaver) { mutableStateOf(BookshelfLayoutProfiles.fromConfig()) }
     var showWaitUpCount by rememberSaveable { mutableStateOf(AppConfig.showWaitUpCount) }
+    var highlightUnread by rememberSaveable { mutableStateOf(AppConfig.bookshelfHighlightUnread) }
     var showReadingProgress by rememberSaveable {
         mutableStateOf(AppConfig.bookshelfShowReadingProgress)
     }
@@ -416,6 +420,15 @@ private fun BookshelfLayoutSheet(
                                         updateProfile { it.copy(showUnread = checked) }
                                     },
                                 )
+                                if (!isGridBooks) {
+                                    NgFormGroupDivider()
+                                    NgFormSwitchSettingRow(
+                                        title = stringResource(R.string.bookshelf_highlight_unread),
+                                        checked = highlightUnread,
+                                        enabled = profile.showUnread,
+                                        onCheckedChange = { highlightUnread = it },
+                                    )
+                                }
                                 if (selectedMode == BookshelfLayoutMode.LIST) {
                                     NgFormGroupDivider()
                                     NgFormSwitchSettingRow(
@@ -493,6 +506,7 @@ private fun BookshelfLayoutSheet(
                             selectedMode = selectedMode,
                             profiles = profiles,
                             showWaitUpCount = showWaitUpCount,
+                            highlightUnread = highlightUnread,
                             showReadingProgress = showReadingProgress,
                             showGridBackground = showGridBackground,
                             settings = settings.takeIf { settingsMode },

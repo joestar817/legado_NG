@@ -256,6 +256,7 @@ object PreferKey {
     const val showLastUpdateTime = "showLastUpdateTime"
     const val showWaitUpCount = "showWaitUpCount"
     const val bookshelfShowReadingProgress = "bookshelfShowReadingProgress"
+    const val bookshelfHighlightUnread = "bookshelfHighlightUnread"
     const val bookshelfGridBackground = "bookshelfGridBackground"
     const val clearWebViewData = "clearWebViewData"
     const val onlyLatestBackup = "onlyLatestBackup"
