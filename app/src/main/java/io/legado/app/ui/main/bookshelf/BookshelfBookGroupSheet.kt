@@ -66,6 +66,7 @@ import kotlinx.coroutines.withContext
 class BookshelfBookGroupSheet private constructor(
     private val host: Host,
     private val books: List<Book>,
+    private val onGroupSelected: ((Long) -> Unit)? = null,
 ) {
 
     private interface Host {
@@ -79,9 +80,14 @@ class BookshelfBookGroupSheet private constructor(
         books = listOf(book),
     )
 
-    constructor(activity: FragmentActivity, books: List<Book>) : this(
+    constructor(
+        activity: FragmentActivity,
+        books: List<Book>,
+        onGroupSelected: ((Long) -> Unit)? = null,
+    ) : this(
         host = ActivityHost(activity),
         books = books.toList(),
+        onGroupSelected = onGroupSelected,
     )
 
     private class FragmentHost(private val fragment: Fragment) : Host {
@@ -249,6 +255,12 @@ class BookshelfBookGroupSheet private constructor(
     }
 
     private fun moveToGroup(groupId: Long) {
+        // Detail pages own saving/adding their current book; shelf callers keep the batch path.
+        onGroupSelected?.let { select ->
+            select(groupId)
+            dialog.dismiss()
+            return
+        }
         host.launch {
             withContext(IO) {
                 appDb.bookDao.update(*books.map { it.copy(group = groupId) }.toTypedArray())

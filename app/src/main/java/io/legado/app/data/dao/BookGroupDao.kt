@@ -38,19 +38,19 @@ interface BookGroupDao {
     )
     val show: LiveData<List<BookGroup>>
 
-    @Query("SELECT * FROM book_groups where groupId >= 0 ORDER BY `order`")
+    @Query("SELECT * FROM book_groups where groupId > 0 ORDER BY `order`")
     fun flowSelect(): Flow<List<BookGroup>>
 
     @get:Query("SELECT sum(groupId) FROM book_groups where groupId >= 0")
     val idsSum: Long
 
-    @get:Query("SELECT MAX(`order`) FROM book_groups where groupId >= 0")
+    @get:Query("SELECT MAX(`order`) FROM book_groups where groupId > 0")
     val maxOrder: Int
 
     @get:Query("SELECT * FROM book_groups ORDER BY `order`")
     val all: List<BookGroup>
 
-    @get:Query("select count(*) < 64 from book_groups where groupId >= 0 or groupId == ${Long.MIN_VALUE}")
+    @get:Query("select count(*) < 64 from book_groups where groupId > 0 or groupId == ${Long.MIN_VALUE}")
     val canAddGroup: Boolean
 
     @Query("update book_groups set show = 1 where groupId = :groupId")

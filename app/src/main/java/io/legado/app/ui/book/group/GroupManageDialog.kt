@@ -563,6 +563,7 @@ private fun BookGroup.canDelete(): Boolean = groupId > 0L || groupId == Long.MIN
 
 private fun BookGroup.isBuiltIn(): Boolean = when (groupId) {
     BookGroup.IdAll,
+    BookGroup.IdNoGroup,
     BookGroup.IdLocal,
     BookGroup.IdAudio,
     BookGroup.IdVideo -> true

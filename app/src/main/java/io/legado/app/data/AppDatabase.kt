@@ -252,6 +252,24 @@ abstract class AppDatabase : RoomDatabase() {
                     where not exists (select * from book_groups where groupId = ${BookGroup.IdVideo})
                     """.trimIndent()
                 db.execSQL(insertBookGroupVideoSql)
+                // Add the unified built-in filter once, preserving subsequent visibility/order edits.
+                db.beginTransaction()
+                try {
+                    db.execSQL("""
+                        update book_groups set `order` = `order` + 1
+                        where `order` > (select `order` from book_groups where groupId = ${BookGroup.IdAll})
+                        and not exists (select 1 from book_groups where groupId = ${BookGroup.IdNoGroup})
+                    """.trimIndent())
+                    db.execSQL("""
+                        insert into book_groups(groupId, groupName, `order`, show)
+                        select ${BookGroup.IdNoGroup}, '未分组', `order` + 1, 1
+                        from book_groups where groupId = ${BookGroup.IdAll}
+                        and not exists (select 1 from book_groups where groupId = ${BookGroup.IdNoGroup})
+                    """.trimIndent())
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
                 @Language("sql")
                 val upBookSourceLoginUiSql =
                     "update book_sources set loginUi = null where loginUi = 'null'"

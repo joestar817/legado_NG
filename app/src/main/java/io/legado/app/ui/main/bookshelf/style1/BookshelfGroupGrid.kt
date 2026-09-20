@@ -50,7 +50,6 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isLocal
-import io.legado.app.help.book.isOnLineTxt
 import io.legado.app.help.book.isVideo
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.BookshelfLayoutMode
@@ -78,8 +77,8 @@ internal fun buildBookshelfGroupFolders(
         .filter { it.groupId != BookGroup.IdAll }
         .map { group ->
             val groupBooks = when (group.groupId) {
-                BookGroup.IdRoot -> books.filter { book ->
-                    book.isOnLineTxt && book.group and allCustomGroupMask == 0L
+                BookGroup.IdNoGroup -> books.filter { book ->
+                    book.group and allCustomGroupMask == 0L
                 }
                 BookGroup.IdLocal -> books.filter { it.isLocal }
                 BookGroup.IdAudio -> books.filter { it.isAudio }
@@ -89,16 +88,16 @@ internal fun buildBookshelfGroupFolders(
             BookshelfGroupFolder(group, groupBooks.sortForGroup(group))
         }
         .filterNot { folder ->
-            folder.group.groupId == BookGroup.IdRoot && folder.books.isEmpty()
+            folder.group.groupId == BookGroup.IdNoGroup && folder.books.isEmpty()
         }
-        .sortedBy { if (it.group.groupId == BookGroup.IdRoot) Int.MIN_VALUE else it.group.order }
+        .sortedBy { it.group.order }
         .toList()
 }
 
 internal fun List<BookGroup>.customGroupMask(): Long {
     return asSequence()
         .map { it.groupId }
-        .filter { it > 0L }
+        .filter { it > 0L || it == Long.MIN_VALUE }
         .fold(0L) { mask, groupId -> mask or groupId }
 }
 

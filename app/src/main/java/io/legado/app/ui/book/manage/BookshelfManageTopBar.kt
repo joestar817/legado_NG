@@ -59,7 +59,7 @@ internal fun BookshelfManageTopBar(
         containerColor = colorResource(R.color.ng_bookshelf_manage_header_surface)
     )
     val groupedEntries = remember(groups) {
-        groups.filterNot { it.groupId == BookGroup.IdAll }
+        groups.filterNot { it.groupId == BookGroup.IdAll || it.groupId == BookGroup.IdNoGroup }
     }
     val defaultExpandedItemIds = remember(groupedEntries.size) {
         if (groupedEntries.size <= 10) {

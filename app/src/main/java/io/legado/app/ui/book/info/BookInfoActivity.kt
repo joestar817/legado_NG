@@ -100,6 +100,7 @@ import io.legado.app.ui.config.AiChatActivity
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.SelectDirectoryContract
 import io.legado.app.ui.login.SourceLoginActivity
+import io.legado.app.ui.main.bookshelf.BookshelfBookGroupSheet
 import io.legado.app.ui.video.VideoPlayerActivity
 import io.legado.app.ui.widget.dialog.PhotoDialog
 import io.legado.app.ui.widget.dialog.VariableDialog
@@ -339,6 +340,7 @@ class BookInfoActivity :
             is BookInfoUiEvent.TagLongClick -> clickTag(event.tag, true)
             BookInfoUiEvent.OriginClick -> editCurrentSource()
             BookInfoUiEvent.ChangeSource -> changeSource()
+            BookInfoUiEvent.ChangeGroup -> changeGroup()
             BookInfoUiEvent.OpenToc -> openChapterListFromUi()
             BookInfoUiEvent.CacheBook -> viewModel.getBook()?.let(::startCacheBook)
             BookInfoUiEvent.CharacterAi -> viewModel.getBook()?.let(::openCharacterCardAiAssistant)
@@ -1220,6 +1222,24 @@ class BookInfoActivity :
                 viewModel.addToBookshelf(::updateInBookshelfState)
             }
         }
+    }
+
+    private fun changeGroup() {
+        val book = viewModel.getBook() ?: return
+        BookshelfBookGroupSheet(this, listOf(book)) { groupId ->
+            if (viewModel.getBook(false) === book) {
+                book.group = groupId
+                val onSaved: () -> Unit = {
+                    updateBookSnapshot(book)
+                    upGroup(book.group)
+                }
+                if (viewModel.inBookshelf) {
+                    viewModel.saveBook(book, onSaved)
+                } else if (groupId > 0) {
+                    viewModel.addToBookshelf(onSaved)
+                }
+            }
+        }.show()
     }
 
     private fun editCurrentSource() {

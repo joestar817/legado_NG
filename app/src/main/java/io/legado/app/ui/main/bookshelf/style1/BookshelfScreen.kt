@@ -24,7 +24,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.R
-import io.legado.app.data.entities.BookGroup
 import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.ui.main.bookshelf.BookshelfContentToolbarActionButton
@@ -66,15 +65,6 @@ internal fun BookshelfScreen(
         configuredStyle = configuredTopBarStyle,
         groupGridMode = groupGridMode,
     )
-    val navigationGroupIndices = remember(dockGroups) {
-        dockGroups.indices.filter { index ->
-            dockGroups[index].groupId != BookGroup.IdNoGroup
-        }
-    }
-    val navigationGroups = navigationGroupIndices.map(dockGroups::get)
-    val navigationSelectedIndex = navigationGroupIndices
-        .indexOf(selectedGroupIndex)
-        .coerceAtLeast(0)
 
     LaunchedEffect(Unit) {
         dockProgress.animateTo(
@@ -128,15 +118,11 @@ internal fun BookshelfScreen(
             )
         } else {
             BookshelfFloatingDock(
-                groups = navigationGroups,
-                selectedIndex = navigationSelectedIndex,
+                groups = dockGroups,
+                selectedIndex = selectedGroupIndex,
                 onSearchClick = onSearchClick,
-                onGroupClick = { index ->
-                    navigationGroupIndices.getOrNull(index)?.let(onGroupClick)
-                },
-                onGroupLongClick = { index ->
-                    navigationGroupIndices.getOrNull(index)?.let(onGroupLongClick)
-                },
+                onGroupClick = onGroupClick,
+                onGroupLongClick = onGroupLongClick,
                 topDistancePx = dockTopDistancePx,
                 contentTopInsetPx = dockContentTopInsetPx,
                 transparencyPercent = dockTransparency,

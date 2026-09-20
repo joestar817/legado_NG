@@ -217,6 +217,7 @@ internal sealed interface BookInfoUiEvent {
     data class TagLongClick(val tag: String) : BookInfoUiEvent
     data object OriginClick : BookInfoUiEvent
     data object ChangeSource : BookInfoUiEvent
+    data object ChangeGroup : BookInfoUiEvent
     data object OpenToc : BookInfoUiEvent
     data object CacheBook : BookInfoUiEvent
     data object CharacterAi : BookInfoUiEvent
@@ -816,7 +817,14 @@ private fun BookInfoMetaRows(
         onTrailingClick = { onEvent(BookInfoUiEvent.ChangeSource) },
     )
     BookInfoMetaRow(iconRes = R.drawable.ic_book_last, text = state.latestText)
-    BookInfoMetaRow(iconRes = R.drawable.ic_groups, text = state.groupText)
+    BookInfoMetaRow(
+        iconRes = R.drawable.ic_groups,
+        text = state.groupText,
+        onClick = { onEvent(BookInfoUiEvent.ChangeGroup) },
+        trailingIconRes = R.drawable.ic_groups,
+        trailingDescription = stringResource(R.string.bookshelf_move_to_group),
+        onTrailingClick = { onEvent(BookInfoUiEvent.ChangeGroup) },
+    )
     if (state.showToc) {
         BookInfoMetaRow(
             iconRes = R.drawable.ic_folder_open,
@@ -836,12 +844,14 @@ private fun BookInfoMetaRow(
     iconRes: Int,
     text: String,
     textModifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
     trailingIconRes: Int? = null,
     trailingDescription: String? = null,
     onTrailingClick: (() -> Unit)? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(

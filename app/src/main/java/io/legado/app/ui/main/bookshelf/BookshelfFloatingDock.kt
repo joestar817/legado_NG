@@ -759,7 +759,7 @@ private fun floatingDockInactiveContentColor(): Color {
 private fun BookshelfDockGroup.builtInIconRes(): Int? {
     return when (groupId) {
         BookGroup.IdAll -> R.drawable.ic_bookshelf_dock_all
-        BookGroup.IdNoGroup -> R.drawable.ic_groups
+        BookGroup.IdNoGroup -> R.drawable.ic_bookshelf_dock_ungrouped
         BookGroup.IdLocal -> R.drawable.ic_bookshelf_dock_local
         BookGroup.IdAudio -> R.drawable.ic_bookshelf_dock_audio
         BookGroup.IdVideo -> R.drawable.ic_bookshelf_dock_video

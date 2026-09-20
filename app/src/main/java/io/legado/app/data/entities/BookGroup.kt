@@ -40,7 +40,7 @@ data class BookGroup(
 
     fun getManageName(context: Context): String {
         return when (groupId) {
-            IdAll, IdAudio, IdLocal, IdVideo ->
+            IdAll, IdNoGroup, IdAudio, IdLocal, IdVideo ->
                 "$groupName(${context.getString(R.string.built_in_group)})"
 
             else -> groupName
