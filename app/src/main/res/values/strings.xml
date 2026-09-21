@@ -2385,6 +2385,12 @@
     <string name="read_style_tab_highlight">Highlight</string>
     <string name="read_style_global_follow_app_color">Follow app colors</string>
     <string name="read_style_global_follow_app_color_managed">Color source is controlled globally for all presets</string>
+    <string name="read_style_apply_by_language">Apply by language</string>
+    <string name="read_style_language_cjk">CJK</string>
+    <string name="read_style_language_latin">Latin</string>
+    <string name="read_style_language_other">Other</string>
+    <string name="read_style_language_not_assigned">Not assigned</string>
+    <string name="read_style_language_detected">This book: %1$s</string>
     <string name="read_style_global_color_style">Global color style</string>
     <string name="read_highlight_rules">Highlight rules</string>
     <string name="read_highlight_summary">%1$d/%2$d enabled</string>

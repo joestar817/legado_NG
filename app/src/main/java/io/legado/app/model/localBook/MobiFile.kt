@@ -312,6 +312,9 @@ class MobiFile(var book: Book) {
             if (metadata.description.isNotBlank()) {
                 book.intro = HtmlFormatter.format(metadata.description)
             }
+            if (metadata.language.isNotBlank()) {
+                book.config.languageHint = metadata.language
+            }
         }
     }
 

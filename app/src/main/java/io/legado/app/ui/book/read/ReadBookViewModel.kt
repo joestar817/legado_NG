@@ -125,6 +125,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
             ReadBook.upData(book)
         } else {
             ReadBook.resetData(book)
+            ReadBook.upReadBookConfig(book)
         }
         prepareReplaceRuleResetOnEnter(book)
         isInitFinish = true

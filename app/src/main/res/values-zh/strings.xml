@@ -2286,6 +2286,12 @@
     <string name="read_style_tab_highlight">高亮</string>
     <string name="read_style_global_follow_app_color">跟随应用颜色</string>
     <string name="read_style_global_follow_app_color_managed">取色来源已由全局设置接管</string>
+    <string name="read_style_apply_by_language">按语言应用</string>
+    <string name="read_style_language_cjk">中日韩</string>
+    <string name="read_style_language_latin">拉丁文</string>
+    <string name="read_style_language_other">其他</string>
+    <string name="read_style_language_not_assigned">不指定</string>
+    <string name="read_style_language_detected">本书：%1$s</string>
     <string name="read_style_global_color_style">全局色彩风格</string>
     <string name="read_highlight_rules">高亮规则</string>
     <string name="read_highlight_summary">%1$d/%2$d 启用</string>
