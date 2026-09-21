@@ -275,7 +275,7 @@ class EpubFile(var book: Book) {
                     out.close()
                 } ?: AppLog.putDebug("Epub: 封面获取为空. path: ${book.bookUrl}")
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             AppLog.put("加载书籍封面失败\n${e.localizedMessage}", e)
             e.printOnDebug()
         }

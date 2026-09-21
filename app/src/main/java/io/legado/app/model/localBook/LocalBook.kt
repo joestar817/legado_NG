@@ -69,6 +69,16 @@ import kotlinx.coroutines.currentCoroutineContext
  */
 object LocalBook {
 
+    class ImportResult(
+        val successCount: Int,
+        val failures: List<ImportFailure>
+    ) {
+        class ImportFailure(
+            val fileName: String,
+            val reason: String
+        )
+    }
+
     private val nameAuthorPatterns = arrayOf(
         Pattern.compile("(.*?)《([^《》]+)》.*?作者：(.*)"),
         Pattern.compile("(.*?)《([^《》]+)》(.*)"),
@@ -292,16 +302,27 @@ object LocalBook {
         if (files.isEmpty()) {
             throw NoStackTraceException(appCtx.getString(R.string.unsupport_archivefile_entry))
         }
-        return files.map {
-            saveBookFile(FileInputStream(it), saveFileName ?: it.name).let { uri ->
-                importFile(uri).apply {
-                    //附加压缩包名称 以便解压文件被删后再解压
-                    origin = "${BookType.localTag}::${archiveFileDoc.name}"
-                    addType(BookType.archive)
-                    save()
+        val books = files.mapNotNull { file ->
+            runCatching {
+                saveBookFile(FileInputStream(file), saveFileName ?: file.name).let { uri ->
+                    importFile(uri).apply {
+                        //附加压缩包名称 以便解压文件被删后再解压
+                        origin = "${BookType.localTag}::${archiveFileDoc.name}"
+                        addType(BookType.archive)
+                        save()
+                    }
                 }
-            }
+            }.onFailure {
+                AppLog.put(
+                    "ImportArchiveFile Error:\n${archiveFileDoc.name}/${file.name}\n${it.localizedMessage}",
+                    it
+                )
+            }.getOrNull()
         }
+        if (books.isEmpty()) {
+            throw NoStackTraceException(appCtx.getString(R.string.unsupport_archivefile_entry))
+        }
+        return books
     }
 
     /* 批量导入 支持自动导入压缩包的支持书籍 */
@@ -320,11 +341,15 @@ object LocalBook {
         return books
     }
 
-    fun importFiles(uris: List<Uri>) {
-        var errorCount = 0
+    suspend fun importFiles(
+        uris: List<Uri>,
+        onItemDone: (suspend (fileName: String, success: Boolean) -> Unit)? = null
+    ): ImportResult {
+        val failures = arrayListOf<ImportResult.ImportFailure>()
+        var successCount = 0
         uris.forEach { uri ->
-            val fileDoc = FileDoc.fromUri(uri, false)
-            kotlin.runCatching {
+            runCatching {
+                val fileDoc = FileDoc.fromUri(uri, false)
                 if (ArchiveUtils.isArchive(fileDoc.name)) {
                     importArchiveFile(uri) {
                         it.matches(AppPattern.bookFileRegex)
@@ -332,14 +357,23 @@ object LocalBook {
                 } else {
                     importFile(uri)
                 }
+                fileDoc.name
+            }.onSuccess { fileName ->
+                successCount++
+                onItemDone?.invoke(fileName, true)
             }.onFailure {
-                AppLog.put("ImportFile Error:\nFile $fileDoc\n${it.localizedMessage}", it)
-                errorCount += 1
+                val fileName = uri.lastPathSegment ?: uri.toString()
+                AppLog.put("ImportFile Error:\nFile $fileName\n${it.localizedMessage}", it)
+                failures.add(
+                    ImportResult.ImportFailure(
+                        fileName,
+                        it.localizedMessage ?: it.javaClass.simpleName
+                    )
+                )
+                onItemDone?.invoke(fileName, false)
             }
         }
-        if (errorCount == uris.size) {
-            throw NoStackTraceException("ImportFiles Error:\nAll input files occur error")
-        }
+        return ImportResult(successCount, failures)
     }
 
     /**

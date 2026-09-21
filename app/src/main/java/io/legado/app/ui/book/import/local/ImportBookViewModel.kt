@@ -90,17 +90,37 @@ class ImportBookViewModel(application: Application) : BaseViewModel(application)
         }.sortedWith(comparator).toList()
     }.flowOn(IO)
 
-    fun addToBookshelf(bookList: HashSet<ImportBook>, finally: () -> Unit) {
+    fun addToBookshelf(
+        bookList: HashSet<ImportBook>,
+        onItemDone: suspend (fileName: String, success: Boolean) -> Unit,
+        onComplete: (LocalBook.ImportResult) -> Unit,
+        finally: () -> Unit
+    ) {
+        val total = bookList.size
         execute {
             val fileUris = bookList.map {
                 it.file.uri
             }
-            LocalBook.importFiles(fileUris)
+            LocalBook.importFiles(fileUris) { fileName, success ->
+                withContext(Main) {
+                    onItemDone(fileName, success)
+                }
+            }
         }.onError {
             context.toastOnUi("添加书架失败，请尝试重新选择文件夹")
             AppLog.put("添加书架失败\n${it.localizedMessage}", it)
-        }.onSuccess {
-            context.toastOnUi("添加书架成功")
+        }.onSuccess { result ->
+            AppLog.put(
+                buildString {
+                    append("导入完成：选择 ").append(total).append(" 本，成功 ")
+                        .append(result.successCount).append(" 本，失败 ")
+                        .append(result.failures.size).append(" 本")
+                    result.failures.forEach {
+                        append("\n").append(it.fileName).append("：").append(it.reason)
+                    }
+                }
+            )
+            onComplete(result)
         }.onFinally {
             finally.invoke()
         }

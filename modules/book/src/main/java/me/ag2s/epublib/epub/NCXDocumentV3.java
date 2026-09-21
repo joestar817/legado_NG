@@ -255,17 +255,15 @@ public class NCXDocumentV3 {
         //Log.d(TAG, "readNavLabel:" + navpointElement.getTagName());
         String label;
         Element labelElement = DOMUtil.getFirstElementByTagNameNS(navpointElement, "", "a");
-        assert labelElement != null;
-        label = labelElement.getTextContent();
-        if (StringUtil.isNotBlank(label)) {
-            return label;
-        } else {
-            labelElement = DOMUtil.getFirstElementByTagNameNS(navpointElement, "", "span");
+        if (labelElement != null) {
+            label = labelElement.getTextContent();
+            if (StringUtil.isNotBlank(label)) {
+                return label;
+            }
         }
-        assert labelElement != null;
-        label = labelElement.getTextContent();
-        //如果通过 a 标签无法获取章节列表,则是无href章节名
-        return label;
+        labelElement = DOMUtil.getFirstElementByTagNameNS(navpointElement, "", "span");
+        //部分epub的li中既没有a也没有span(空节点或仅用于分组的节点),返回空串而不是中断整本书的解析
+        return labelElement == null ? "" : labelElement.getTextContent();
 
     }
 
