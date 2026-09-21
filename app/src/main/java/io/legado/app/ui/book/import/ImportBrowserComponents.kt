@@ -87,6 +87,7 @@ internal fun ImportSelectionDock(
     onInvertSelection: () -> Unit,
     onAddSelected: () -> Unit,
     @StringRes actionLabelRes: Int = R.string.nb_file_add_shelf,
+    selectionTextOverride: String? = null,
 ) {
     Row(
         modifier = Modifier
@@ -96,7 +97,8 @@ internal fun ImportSelectionDock(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = stringResource(R.string.bookshelf_manage_selected_count, selectedCount),
+            text = selectionTextOverride
+                ?: stringResource(R.string.bookshelf_manage_selected_count, selectedCount),
             modifier = Modifier.weight(1f),
             color = Color(NgTheme.colors.onSurface),
             fontSize = 12.sp,
@@ -126,7 +128,7 @@ internal fun ImportSelectionDock(
         Spacer(Modifier.width(6.dp))
         NgButton(
             onClick = onAddSelected,
-            enabled = selectedCount > 0,
+            enabled = selectedCount > 0 && selectionTextOverride == null,
             variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
             modifier = Modifier
                 .widthIn(min = 92.dp)

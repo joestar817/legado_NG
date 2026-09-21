@@ -104,6 +104,7 @@ internal fun ImportBookScreen(
     isAtRoot: Boolean,
     isLoading: Boolean,
     sort: Int,
+    importProgressText: String? = null,
     archivePickerState: ArchivePickerState,
     onBack: () -> Unit,
     onSearchExpandedChange: (Boolean) -> Unit,
@@ -148,6 +149,7 @@ internal fun ImportBookScreen(
             onToggleItem = onToggleItem,
             selectedCount = selectedCount,
             selectableItemCount = items.count(ImportBook::isSelectableForImport),
+            importProgressText = importProgressText,
             onSelectAll = onSelectAll,
             onInvertSelection = onInvertSelection,
             onAddSelected = onAddSelected,
@@ -325,6 +327,7 @@ private fun ImportBookDirectoryPanel(
     onInvertSelection: () -> Unit,
     onAddSelected: () -> Unit,
     modifier: Modifier = Modifier,
+    importProgressText: String? = null,
 ) {
     val cardColor = colorResource(R.color.ng_surface_card)
     Surface(
@@ -410,6 +413,7 @@ private fun ImportBookDirectoryPanel(
             ImportSelectionDock(
                 selectedCount = selectedCount,
                 itemCount = selectableItemCount,
+                selectionTextOverride = importProgressText,
                 onSelectAll = onSelectAll,
                 onInvertSelection = onInvertSelection,
                 onAddSelected = onAddSelected,

@@ -1,8 +1,8 @@
 [versions]
 
 kotlin = "2.3.10"
-ksp = "2.3.4"
-agp = "8.13.2"
+ksp = "2.3.6"
+agp = "9.4.1"
 roborazzi = "1.59.0"
 robolectric = "4.16.1"
 appcompat = "1.7.1"
@@ -76,7 +76,7 @@ reorderable = "3.1.0"
 #noinspection GradleDependency
 lifecycle = "2.9.4"
 #noinspection GradleDependency
-room = "2.7.1"
+room = "2.7.2"
 #noinspection GradleDependency
 recyclerview = "1.4.0"
 #noinspection GradleDependency

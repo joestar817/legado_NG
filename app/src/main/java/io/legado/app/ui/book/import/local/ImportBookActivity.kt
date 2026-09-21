@@ -63,6 +63,9 @@ class ImportBookActivity :
     private var isAtRoot by mutableStateOf(true)
     private var isLoading by mutableStateOf(false)
     private var currentSort by mutableIntStateOf(0)
+    private var importing by mutableStateOf(false)
+    private var importTotal by mutableIntStateOf(-1)
+    private var importDone by mutableIntStateOf(0)
     private var archivePickerState by mutableStateOf<ArchivePickerState>(
         ArchivePickerState.Hidden,
     )
@@ -119,6 +122,7 @@ class ImportBookActivity :
                     isAtRoot = isAtRoot,
                     isLoading = isLoading,
                     sort = currentSort,
+                    importProgressText = if (importTotal >= 0) "$importDone/$importTotal" else null,
                     archivePickerState = archivePickerState,
                     onBack = { onBackPressedDispatcher.onBackPressed() },
                     onSearchExpandedChange = { expanded ->
@@ -336,11 +340,60 @@ class ImportBookActivity :
 
     private fun addSelected() {
         val selected = HashSet(selectedItems)
-        if (selected.isEmpty()) return
-        viewModel.addToBookshelf(selected) {
-            selected.forEach { it.isOnBookShelf = true }
+        if (selected.isEmpty() || importing) return
+        importing = true
+        importTotal = selected.size
+        importDone = 0
+        if (importTotal > 3) {
+            toastOnUi("共选择 $importTotal 本，正在后台导入，进度及结果请查看日志")
+        }
+        isLoading = true
+        viewModel.addToBookshelf(selected,
+            onItemDone = { fileName, success ->
+                importDone++
+                if (success) {
+                    //实时更新对应行的状态为已在书架
+                    items.find { it.isSelectableForImport && it.name == fileName }
+                        ?.let { it.isOnBookShelf = true }
+                    items = items.toList()
+                }
+            },
+            onComplete = { result ->
+                when {
+                    result.failures.isEmpty() -> toastOnUi("添加书架成功")
+                    importTotal <= 3 -> showImportResultDialog(result)
+                    else -> toastOnUi(
+                        "导入完成：成功 ${result.successCount} 本，" +
+                                "失败 ${result.failures.size} 本，失败详情见日志"
+                    )
+                }
+            }
+        ) {
+            importing = false
+            importTotal = -1
+            importDone = 0
+            isLoading = false
             selectedItems = emptySet()
             viewModel.dataCallback?.upAdapter()
+        }
+    }
+
+    private fun showImportResultDialog(result: LocalBook.ImportResult) {
+        val message = buildString {
+            append("成功导入 ").append(result.successCount).append(" 本")
+            if (result.failures.isNotEmpty()) {
+                append("，失败 ").append(result.failures.size).append(" 本")
+                append("\n\n失败列表：")
+                result.failures.take(20).forEach {
+                    append("\n").append(it.fileName).append("：").append(it.reason)
+                }
+                if (result.failures.size > 20) {
+                    append("\n…等 ").append(result.failures.size).append(" 个文件，详见日志")
+                }
+            }
+        }
+        alert("导入结果", message) {
+            okButton()
         }
     }
 
