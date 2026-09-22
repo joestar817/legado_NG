@@ -477,7 +477,13 @@ data class Book(
         var openCredits: Int = 0,       //音频片头
         var closeCredits: Int = 0,       //音频片尾
         var playMode: Int = 0,           //音频播放模式
-        var playSpeed: Float = 1.0f      //音频播放速度
+        var playSpeed: Float = 1.0f,      //音频播放速度
+        @SerializedName("languageHint")
+        var languageHint: String? = null,
+        @SerializedName("scriptClass")
+        var scriptClass: String? = null,
+        @SerializedName("readStyleName")
+        var readStyleName: String? = null,
     ) : Parcelable
 
     class Converters {

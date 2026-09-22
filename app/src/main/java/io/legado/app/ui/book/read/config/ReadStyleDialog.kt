@@ -28,12 +28,16 @@ import io.legado.app.help.DefaultData
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadPresetPreferences
+import io.legado.app.help.config.ReadStyleLanguageBinder
+import io.legado.app.help.config.ReadStyleLanguageMap
+import io.legado.app.help.book.BookScriptClass
 import io.legado.app.help.config.ReadStylePackageManager
 import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.help.config.ReadHighlightRulePackageManager
 import io.legado.app.help.config.ReadHighlightRuleStore
 import io.legado.app.help.config.ReadFloatingAppearanceConfig
 import io.legado.app.model.ReadBook
+import io.legado.app.help.book.isImage
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.ReadFloatingAppearanceState
@@ -234,6 +238,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             ReadBookConfig.readFloatingFollowAppGlobally = checked
             refreshUi()
             notifyFloatingAppearanceChanged()
+        },
+        onLanguagePresetChanged = { script, name ->
+            ReadStyleLanguageMap.set(script, name)
+            refreshUi()
         },
         onImportHighlights = {
             selectHighlightImportDocument.launch(
@@ -460,6 +468,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         val rules = currentRules()
         val effectiveFloatingColor = ReadBookConfig.effectiveReadFloatingColor(config)
         selectedHighlightIds = selectedHighlightIds.intersect(rules.mapTo(hashSetOf()) { it.id })
+        val languageBindings = ReadStyleLanguageMap.current()
+        val presetNames = ReadBookConfig.configList.map { it.name }
         screenState = ReadStyleUiState(
             presets = ReadBookConfig.configList.mapIndexed { index, item ->
                 ReadStylePresetUi(
@@ -481,6 +491,19 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             ),
             shareLayout = ReadBookConfig.shareLayout,
             globalFloatingFollowApp = ReadBookConfig.readFloatingFollowAppGlobally,
+            languagePresetCjk = languageBindings.assignedName(
+                BookScriptClass.Cjk,
+                presetNames,
+            ),
+            languagePresetLatin = languageBindings.assignedName(
+                BookScriptClass.Latin,
+                presetNames,
+            ),
+            languagePresetOther = languageBindings.assignedName(
+                BookScriptClass.Other,
+                presetNames,
+            ),
+            detectedScriptClass = ReadBook.book?.takeUnless { it.isImage }?.config?.scriptClass,
             textSize = ReadBookConfig.textSize,
             letterSpacing = ReadBookConfig.letterSpacing,
             lineSpacingExtra = ReadBookConfig.lineSpacingExtra,
@@ -521,12 +544,15 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     private fun changeBgTextConfig(index: Int) {
         val oldIndex = ReadBookConfig.styleSelect
-        if (index !in ReadBookConfig.configList.indices || index == oldIndex) return
-        ReadBookConfig.styleSelect = index
-        ReadFloatingAppearanceState.refreshFromConfig()
-        refreshUi()
-        postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
-        notifyFloatingAppearanceChanged()
+        if (index !in ReadBookConfig.configList.indices) return
+        if (index != oldIndex) {
+            ReadBookConfig.styleSelect = index
+            ReadFloatingAppearanceState.refreshFromConfig()
+            refreshUi()
+            postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
+            notifyFloatingAppearanceChanged()
+        }
+        ReadBook.book?.let(ReadStyleLanguageBinder::rememberCurrentStyle)
     }
 
     private fun openEditor(index: Int, isNew: Boolean = false) {
@@ -993,6 +1019,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             onConfirm = {
                 if (ReadBookConfig.deleteDur()) {
                     editorBackgroundCache = null
+                    ReadBook.book?.let(ReadStyleLanguageBinder::rememberCurrentStyle)
                     refreshUi()
                     postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
                     notifyFloatingAppearanceChanged()
@@ -1269,6 +1296,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             val appendResult = ReadBookConfig.appendImportedConfigWithReport(result.config)
             result.readerSettings?.let(ReadPresetPreferences::apply)
             ReadBookConfig.styleSelect = appendResult.index
+            ReadBook.book?.let(ReadStyleLanguageBinder::rememberCurrentStyle)
             editorBackgroundCache = null
             refreshUi()
             postEvent(

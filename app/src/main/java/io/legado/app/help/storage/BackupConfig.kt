@@ -68,6 +68,7 @@ object BackupConfig {
     private val readPrefKeys = arrayOf(
         PreferKey.readStyleSelect,
         PreferKey.comicStyleSelect,
+        PreferKey.readStyleLanguageMap,
         PreferKey.shareLayout,
         PreferKey.hideStatusBar,
         PreferKey.hideNavigationBar,
@@ -212,6 +213,7 @@ internal object BackupRestorePolicy {
     private val md3ReadStylePreferenceKeys = setOf(
         PreferKey.readStyleSelect,
         PreferKey.comicStyleSelect,
+        PreferKey.readStyleLanguageMap,
         PreferKey.shareLayout,
         PreferKey.showBrightnessView,
         PreferKey.brightnessVwPos

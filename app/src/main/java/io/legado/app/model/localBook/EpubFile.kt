@@ -306,6 +306,10 @@ class EpubFile(var book: Book) {
                     desc
                 }
             }
+            val language = metadata.language
+            if (language.isNotBlank()) {
+                book.config.languageHint = language
+            }
         }
     }
 

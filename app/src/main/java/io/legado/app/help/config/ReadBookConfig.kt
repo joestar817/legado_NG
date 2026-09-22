@@ -135,6 +135,16 @@ object ReadBookConfig {
         return configList.getOrNull(index) ?: configList[0]
     }
 
+    fun indexOfStyleName(name: String): Int =
+        configList.indexOfFirst { it.name == name }
+
+    fun selectStyleByName(name: String): Boolean {
+        val index = indexOfStyleName(name)
+        if (index < 0 || index == styleSelect) return false
+        styleSelect = index
+        return true
+    }
+
     fun initConfigs() {
         val configFile = File(configFilePath)
         var configs: List<Config>? = null

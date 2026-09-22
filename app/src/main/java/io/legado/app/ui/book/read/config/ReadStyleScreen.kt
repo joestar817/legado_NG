@@ -22,19 +22,24 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,6 +71,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.help.book.BookScriptClass
 import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.help.config.ReadFloatingAppearanceConfig
 import io.legado.app.help.config.ReadFloatingColorStyle
@@ -155,6 +161,10 @@ internal data class ReadStyleUiState(
     val highlightSummary: String,
     val shareLayout: Boolean,
     val globalFloatingFollowApp: Boolean,
+    val languagePresetCjk: String?,
+    val languagePresetLatin: String?,
+    val languagePresetOther: String?,
+    val detectedScriptClass: String?,
     val textSize: Int,
     val letterSpacing: Float,
     val lineSpacingExtra: Int,
@@ -200,6 +210,7 @@ internal data class ReadStyleActions(
     val onRestoreAllPresets: () -> Unit,
     val onShareLayoutChanged: (Boolean) -> Unit,
     val onGlobalFloatingFollowAppChanged: (Boolean) -> Unit,
+    val onLanguagePresetChanged: (BookScriptClass, String?) -> Unit,
     val onImportHighlights: () -> Unit,
     val onExportHighlights: () -> Unit,
     val onRestoreBuiltInHighlights: () -> Unit,
@@ -320,7 +331,8 @@ internal fun ReadStyleScreen(
                 ReadStylePage.PRESET -> Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(StandardPageHeight),
+                        .height(StandardPageHeight)
+                        .verticalScroll(rememberScrollState()),
                 ) {
                     PresetPage(
                         state = state,
@@ -491,10 +503,178 @@ private fun PresetPage(
         onCheckedChange = actions.onGlobalFloatingFollowAppChanged,
     )
     ReadDivider(contentColor)
+    LanguageStyleSection(
+        state = state,
+        contentColor = contentColor,
+        accentColor = accentColor,
+        actions = actions,
+    )
+    ReadDivider(contentColor)
     PresetRestoreAllRow(
         contentColor = contentColor,
         onClick = actions.onRestoreAllPresets,
     )
+}
+
+@Composable
+private fun LanguageStyleSection(
+    state: ReadStyleUiState,
+    contentColor: Color,
+    accentColor: Color,
+    actions: ReadStyleActions,
+) {
+    val notAssigned = stringResource(R.string.read_style_language_not_assigned)
+    val options = remember(state.presets, notAssigned) {
+        listOf(null to notAssigned) + state.presets.map { preset ->
+            preset.name to preset.name.ifBlank { notAssigned }
+        }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_translate),
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+            tint = contentColor,
+        )
+        Text(
+            text = stringResource(R.string.read_style_apply_by_language),
+            modifier = Modifier.padding(start = 14.dp),
+            color = contentColor,
+            fontSize = 15.sp,
+        )
+    }
+    val detectedLabel = when (state.detectedScriptClass) {
+        BookScriptClass.Cjk.storageValue -> stringResource(R.string.read_style_language_cjk)
+        BookScriptClass.Latin.storageValue -> stringResource(R.string.read_style_language_latin)
+        BookScriptClass.Other.storageValue -> stringResource(R.string.read_style_language_other)
+        else -> null
+    }
+    if (detectedLabel != null) {
+        Text(
+            text = stringResource(R.string.read_style_language_detected, detectedLabel),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 56.dp, end = 20.dp, bottom = 4.dp),
+            color = contentColor.copy(alpha = 0.62f),
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    LanguagePresetRow(
+        title = stringResource(R.string.read_style_language_cjk),
+        selectedName = state.languagePresetCjk,
+        options = options,
+        contentColor = contentColor,
+        accentColor = accentColor,
+        onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Cjk, it) },
+    )
+    LanguagePresetRow(
+        title = stringResource(R.string.read_style_language_latin),
+        selectedName = state.languagePresetLatin,
+        options = options,
+        contentColor = contentColor,
+        accentColor = accentColor,
+        onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Latin, it) },
+    )
+    LanguagePresetRow(
+        title = stringResource(R.string.read_style_language_other),
+        selectedName = state.languagePresetOther,
+        options = options,
+        contentColor = contentColor,
+        accentColor = accentColor,
+        onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Other, it) },
+    )
+}
+
+@Composable
+private fun LanguagePresetRow(
+    title: String,
+    selectedName: String?,
+    options: List<Pair<String?, String>>,
+    contentColor: Color,
+    accentColor: Color,
+    onSelected: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selectedName }?.second
+        ?: options.first().second
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            color = contentColor,
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Box(
+            modifier = Modifier.wrapContentWidth(),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Row(
+                modifier = Modifier
+                    .height(48.dp)
+                    .clickable(role = Role.Button) { expanded = true },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = selectedLabel,
+                    color = contentColor.copy(alpha = 0.68f),
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    painter = painterResource(R.drawable.ic_chevron_right_20),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(start = 2.dp)
+                        .size(18.dp),
+                    tint = contentColor.copy(alpha = 0.72f),
+                )
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                options.forEach { (value, label) ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = label,
+                                color = if (value == selectedName) accentColor else contentColor,
+                                fontSize = 14.sp,
+                                fontWeight = if (value == selectedName) {
+                                    FontWeight.Medium
+                                } else {
+                                    FontWeight.Normal
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelected(value)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
