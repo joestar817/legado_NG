@@ -58,6 +58,7 @@ internal fun BookshelfManageScreen(
     books: List<Book>,
     selectedBookUrls: Set<String>,
     cachedChapterCounts: Map<String, Int>,
+    coverRevision: Int,
     deleteDialogVisible: Boolean,
     deleteOriginal: Boolean,
     batchChangeSourceRunning: Boolean,
@@ -144,6 +145,7 @@ internal fun BookshelfManageScreen(
                         selected = selected,
                         groupNames = bookGroupNames(groups, book.group),
                         cachedChapterCount = cachedChapterCounts[book.bookUrl],
+                        coverRevision = coverRevision,
                         dragHandleModifier = if (books.size > 1) {
                             Modifier.draggableHandle(
                                 onDragStarted = {

@@ -12,6 +12,8 @@ interface BaseLocalBookParse {
 
     fun upBookInfo(book: Book)
 
+    fun upCover(book: Book, force: Boolean = false): Boolean
+
     fun getChapterList(book: Book): ArrayList<BookChapter>
 
     fun getContent(book: Book, chapter: BookChapter): String?

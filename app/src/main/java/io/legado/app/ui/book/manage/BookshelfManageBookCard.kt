@@ -20,6 +20,7 @@ internal fun BookshelfManageBookCard(
     selected: Boolean,
     groupNames: String,
     cachedChapterCount: Int?,
+    coverRevision: Int,
     modifier: Modifier = Modifier,
     dragHandleModifier: Modifier = Modifier,
     onToggleSelected: () -> Unit,
@@ -67,6 +68,7 @@ internal fun BookshelfManageBookCard(
                 book = book,
                 modifier = Modifier.fillMaxSize(),
                 contentDescription = stringResource(R.string.img_cover),
+                revision = coverRevision,
             )
         },
         dragHandleContentDescription = stringResource(R.string.bookshelf_px_3),
