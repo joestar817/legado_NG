@@ -72,6 +72,16 @@ class EpubFile(var book: Book) {
             return getEFile(book).upBookInfo()
         }
 
+        @Synchronized
+        override fun upCover(book: Book, force: Boolean): Boolean {
+            val file = getEFile(book)
+            if (!force) {
+                //init 已按 fastCheck=true 补写缺失封面，这里仅报告结果
+                return File(book.coverUrl ?: LocalBook.getCoverPath(book)).exists()
+            }
+            return file.upCover()
+        }
+
         fun clear() {
             eFile = null
         }
@@ -257,27 +267,36 @@ class EpubFile(var book: Book) {
         return epubBook?.resources?.getByHref(abHref)?.inputStream
     }
 
-    private fun upBookCover(fastCheck: Boolean = false) {
-        try {
+    fun upCover(): Boolean {
+        return upBookCover(fastCheck = false)
+    }
+
+    private fun upBookCover(fastCheck: Boolean = false): Boolean {
+        return try {
             epubBook?.let {
                 if (book.coverUrl.isNullOrEmpty()) {
                     book.coverUrl = LocalBook.getCoverPath(book)
                 }
                 if (fastCheck && File(book.coverUrl!!).exists()) {
-                    return
+                    return true
                 }
+                var written = false
                 /*部分书籍DRM处理后，封面获取异常，待优化*/
                 it.coverImage?.inputStream?.use { input ->
                     val cover = BitmapFactory.decodeStream(input)
-                    val out = FileOutputStream(FileUtils.createFileIfNotExist(book.coverUrl!!))
-                    cover.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                    out.flush()
-                    out.close()
+                    if (cover != null) {
+                        val out = FileOutputStream(FileUtils.createFileIfNotExist(book.coverUrl!!))
+                        written = cover.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                        out.flush()
+                        out.close()
+                    }
                 } ?: AppLog.putDebug("Epub: 封面获取为空. path: ${book.bookUrl}")
-            }
-        } catch (e: Exception) {
+                written
+            } ?: false
+        } catch (e: Throwable) {
             AppLog.put("加载书籍封面失败\n${e.localizedMessage}", e)
             e.printOnDebug()
+            false
         }
     }
 

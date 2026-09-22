@@ -47,6 +47,16 @@ class UmdFile(var book: Book) {
         override fun upBookInfo(book: Book) {
             return getUFile(book).upBookInfo()
         }
+
+        @Synchronized
+        override fun upCover(book: Book, force: Boolean): Boolean {
+            val file = getUFile(book)
+            if (!force) {
+                //init 已按 fastCheck=true 补写缺失封面，这里仅报告结果
+                return File(book.coverUrl ?: LocalBook.getCoverPath(book)).exists()
+            }
+            return file.upCover()
+        }
     }
 
 
@@ -68,19 +78,24 @@ class UmdFile(var book: Book) {
         return UmdReader().read(input)
     }
 
-    private fun upBookCover(fastCheck: Boolean = false) {
-        try {
+    fun upCover(): Boolean {
+        return upBookCover(fastCheck = false)
+    }
+
+    private fun upBookCover(fastCheck: Boolean = false): Boolean {
+        return try {
             umdBook?.let {
                 if (book.coverUrl.isNullOrEmpty()) {
                     book.coverUrl = LocalBook.getCoverPath(book)
                 }
                 if (fastCheck && File(book.coverUrl!!).exists()) {
-                    return
+                    return true
                 }
                 FileUtils.writeBytes(book.coverUrl!!, it.cover.coverData)
-            }
+            } ?: false
         } catch (e: Exception) {
             e.printOnDebug()
+            false
         }
     }
 

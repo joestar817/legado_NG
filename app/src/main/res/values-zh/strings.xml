@@ -795,6 +795,7 @@
     <string name="clear_cache">清理缓存</string>
     <string name="clear_cache_success">成功清理缓存</string>
     <string name="book_cache">缓存</string>
+    <string name="restore_cover_rebuild_done">封面重建完成：成功 %1$d 本，失败 %2$d 本</string>
     <string name="book_cache_label">缓存：</string>
     <string name="book_cache_progress">%1$d/%2$d</string>
     <string name="action_save">保存</string>

@@ -797,6 +797,7 @@
     <string name="clear_cache">Clear cache</string>
     <string name="clear_cache_success">Cache cleared</string>
     <string name="book_cache">Cache</string>
+    <string name="restore_cover_rebuild_done">Cover rebuild finished: %1$d succeeded, %2$d failed</string>
     <string name="book_cache_label">Cache:</string>
     <string name="book_cache_progress">%1$d/%2$d</string>
     <string name="action_save">Save</string>
