@@ -5,6 +5,7 @@ package me.ag2s.epublib.util.zip;
 import static me.ag2s.base.PfdHelper.seek;
 
 import android.os.ParcelFileDescriptor;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 
@@ -14,6 +15,7 @@ import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -195,10 +197,13 @@ public class AndroidZipFile implements ZipConstants {
          */
         //long pos = raf.length() - ENDHDR;
         long pos = PfdHelper.length(pfd) - ENDHDR;
+        //zip注释最长65535字节,目录结束签名只会出现在文件末尾64K范围内,
+        //限定扫描范围,避免非zip文件导致的全文件逐字节扫描(卡死)
+        long minPos = Math.max(0, pos - 65535);
         byte[] ebs = new byte[CENHDR];
 
         do {
-            if (pos < 0)
+            if (pos < minPos)
                 throw new ZipException
                         ("central directory not found, probably not a zip file: " + name);
             //raf.seek(pos--);
@@ -297,7 +302,8 @@ public class AndroidZipFile implements ZipConstants {
         try {
             return new ZipEntryEnumeration(getEntries().values().iterator());
         } catch (IOException ioe) {
-            return null;
+            Log.e("AndroidZipFile", "read entries error: " + name, ioe);
+            return Collections.emptyEnumeration();
         }
     }
 
