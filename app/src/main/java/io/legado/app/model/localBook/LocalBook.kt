@@ -69,6 +69,16 @@ import kotlinx.coroutines.currentCoroutineContext
  */
 object LocalBook {
 
+    class ImportResult(
+        val successCount: Int,
+        val failures: List<ImportFailure>
+    ) {
+        class ImportFailure(
+            val fileName: String,
+            val reason: String
+        )
+    }
+
     private val nameAuthorPatterns = arrayOf(
         Pattern.compile("(.*?)《([^《》]+)》.*?作者：(.*)"),
         Pattern.compile("(.*?)《([^《》]+)》(.*)"),
@@ -285,23 +295,43 @@ object LocalBook {
     fun importArchiveFile(
         archiveFileUri: Uri,
         saveFileName: String? = null,
-        filter: ((String) -> Boolean)? = null
+        onEntryFailure: ((entryName: String, reason: String) -> Unit)? = null,
+        filter: ((String) -> Boolean)? = null,
     ): List<Book> {
         val archiveFileDoc = FileDoc.fromUri(archiveFileUri, false)
         val files = ArchiveUtils.deCompress(archiveFileDoc, filter = filter)
         if (files.isEmpty()) {
             throw NoStackTraceException(appCtx.getString(R.string.unsupport_archivefile_entry))
         }
-        return files.map {
-            saveBookFile(FileInputStream(it), saveFileName ?: it.name).let { uri ->
-                importFile(uri).apply {
-                    //附加压缩包名称 以便解压文件被删后再解压
-                    origin = "${BookType.localTag}::${archiveFileDoc.name}"
-                    addType(BookType.archive)
-                    save()
+        val failures = arrayListOf<ImportResult.ImportFailure>()
+        val books = files.mapNotNull { file ->
+            runCatching {
+                saveBookFile(FileInputStream(file), saveFileName ?: file.name).let { uri ->
+                    importFile(uri).apply {
+                        //附加压缩包名称 以便解压文件被删后再解压
+                        origin = "${BookType.localTag}::${archiveFileDoc.name}"
+                        addType(BookType.archive)
+                        save()
+                    }
                 }
-            }
+            }.onFailure {
+                val entryName = "${archiveFileDoc.name}/${file.name}"
+                val reason = it.localizedMessage ?: it.javaClass.simpleName
+                AppLog.put("ImportArchiveFile Error:\n$entryName\n$reason", it)
+                failures.add(ImportResult.ImportFailure(entryName, reason))
+                onEntryFailure?.invoke(entryName, reason)
+            }.getOrNull()
         }
+        if (books.isEmpty()) {
+            throw NoStackTraceException(
+                if (failures.isEmpty()) {
+                    appCtx.getString(R.string.unsupport_archivefile_entry)
+                } else {
+                    "压缩包内书籍全部导入失败"
+                }
+            )
+        }
+        return books
     }
 
     /* 批量导入 支持自动导入压缩包的支持书籍 */
@@ -320,26 +350,49 @@ object LocalBook {
         return books
     }
 
-    fun importFiles(uris: List<Uri>) {
-        var errorCount = 0
+    suspend fun importFiles(
+        uris: List<Uri>,
+        onItemDone: (suspend (fileKey: String, success: Boolean) -> Unit)? = null
+    ): ImportResult {
+        val failures = arrayListOf<ImportResult.ImportFailure>()
+        var successCount = 0
         uris.forEach { uri ->
-            val fileDoc = FileDoc.fromUri(uri, false)
-            kotlin.runCatching {
+            var fileKey = uri.toString()
+            val failuresBefore = failures.size
+            runCatching {
+                val fileDoc = FileDoc.fromUri(uri, false)
+                fileKey = fileDoc.toString()
                 if (ArchiveUtils.isArchive(fileDoc.name)) {
-                    importArchiveFile(uri) {
-                        it.matches(AppPattern.bookFileRegex)
-                    }
+                    val books = importArchiveFile(
+                        archiveFileUri = uri,
+                        onEntryFailure = { entryName, reason ->
+                            failures.add(ImportResult.ImportFailure(entryName, reason))
+                        },
+                        filter = { it.matches(AppPattern.bookFileRegex) },
+                    )
+                    //按实际导入成功的书籍数统计，压缩包内部分失败不视为整体成功
+                    successCount += books.size
+                    onItemDone?.invoke(fileKey, failures.size == failuresBefore)
                 } else {
                     importFile(uri)
+                    successCount++
+                    onItemDone?.invoke(fileKey, true)
                 }
             }.onFailure {
-                AppLog.put("ImportFile Error:\nFile $fileDoc\n${it.localizedMessage}", it)
-                errorCount += 1
+                AppLog.put("ImportFile Error:\nFile $fileKey\n${it.localizedMessage}", it)
+                //压缩包内条目失败已逐条记录，避免重复计入整个压缩包
+                if (failures.size == failuresBefore) {
+                    failures.add(
+                        ImportResult.ImportFailure(
+                            fileKey,
+                            it.localizedMessage ?: it.javaClass.simpleName
+                        )
+                    )
+                }
+                onItemDone?.invoke(fileKey, false)
             }
         }
-        if (errorCount == uris.size) {
-            throw NoStackTraceException("ImportFiles Error:\nAll input files occur error")
-        }
+        return ImportResult(successCount, failures)
     }
 
     /**
