@@ -92,6 +92,7 @@ import io.legado.app.ui.config.TtsVoiceDrawerState
 import io.legado.app.ui.config.TtsVoiceOption
 import io.legado.app.ui.config.TtsVoicePreviewController
 import io.legado.app.ui.config.TtsVoiceSelectionDrawerContent
+import io.legado.app.ui.config.refreshTtsVoiceCatalogs
 import io.legado.app.ui.config.showTtsVoiceParamsDialog
 import io.legado.app.ui.config.toDrawerCard
 import io.legado.app.ui.config.withUpdatedEngine
@@ -127,12 +128,14 @@ private data class ModeDrawerState(
     val engines: List<TtsEngineSetting> = emptyList(),
     val automation: BookTtsAutomationConfig.Settings = BookTtsAutomationConfig.Settings(),
     val loadingEngines: Boolean = true,
+    val refreshingEngines: Boolean = false,
 )
 
 internal class ReadAloudModeDialog : ReadAloudComposeBottomSheet() {
 
     private var screen by mutableStateOf(ModeDrawerScreen.MAIN)
     private var state by mutableStateOf(ModeDrawerState())
+    private var engineSnapshotRevision = 0
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -148,6 +151,7 @@ internal class ReadAloudModeDialog : ReadAloudComposeBottomSheet() {
                     onOpenEngines = { screen = ModeDrawerScreen.ENGINES },
                     onEngineSelect = ::selectEngine,
                     onClearEngine = { selectEngine(null) },
+                    onRefreshEngines = ::refreshEngines,
                     onAutoCreateChange = ::setAutoCreate,
                     onAutoAssignChange = ::setAutoAssign,
                     onSceneVoiceChange = ::setSceneVoice,
@@ -161,6 +165,7 @@ internal class ReadAloudModeDialog : ReadAloudComposeBottomSheet() {
     }
 
     private fun refreshState() {
+        val revision = ++engineSnapshotRevision
         val workKey = workKey()
         val automation = workKey?.let(BookTtsAutomationConfig::get)
             ?: BookTtsAutomationConfig.Settings()
@@ -174,11 +179,39 @@ internal class ReadAloudModeDialog : ReadAloudComposeBottomSheet() {
                     it.enabled && it.type == TtsEngineType.SCRIPT
                 }
             }
+            if (revision != engineSnapshotRevision) return@launch
             state = state.copy(
                 engines = engines,
                 selectedEngine = engines.firstOrNull { it.id == AppConfig.multiRoleTtsEngineId },
                 loadingEngines = false,
             )
+        }
+    }
+
+    private fun refreshEngines() {
+        if (state.refreshingEngines) return
+        val revision = ++engineSnapshotRevision
+        state = state.copy(refreshingEngines = true)
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val engines = withContext(IO) {
+                    TtsEngineStore.reloadEngines().filter {
+                        it.enabled && it.type == TtsEngineType.SCRIPT
+                    }
+                }
+                if (revision != engineSnapshotRevision) return@launch
+                state = state.copy(
+                    engines = engines,
+                    selectedEngine = engines.firstOrNull { it.id == AppConfig.multiRoleTtsEngineId },
+                    loadingEngines = false,
+                )
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                activity?.toastOnUi("刷新朗读引擎失败：${error.localizedMessage ?: error.javaClass.simpleName}")
+            } finally {
+                state = state.copy(refreshingEngines = false)
+            }
         }
     }
 
@@ -265,6 +298,7 @@ private fun ReadAloudModeSheetContent(
     onOpenEngines: () -> Unit,
     onEngineSelect: (TtsEngineSetting) -> Unit,
     onClearEngine: () -> Unit,
+    onRefreshEngines: () -> Unit,
     onAutoCreateChange: (Boolean) -> Unit,
     onAutoAssignChange: (Boolean) -> Unit,
     onSceneVoiceChange: (Boolean) -> Unit,
@@ -307,6 +341,8 @@ private fun ReadAloudModeSheetContent(
                 engines = state.engines,
                 selectedEngineId = state.selectedEngine?.id,
                 loading = state.loadingEngines,
+                refreshing = state.refreshingEngines,
+                onRefresh = onRefreshEngines,
                 onSelect = onEngineSelect,
                 onClear = onClearEngine,
             )
@@ -1155,6 +1191,8 @@ private fun WorkerCountRow(
 internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
 
     private var state by mutableStateOf(TtsVoiceDrawerState())
+    private var refreshingVoices by mutableStateOf(false)
+    private var voiceLoadJob: kotlinx.coroutines.Job? = null
     private var previewController: TtsVoicePreviewController? = null
     private var voiceParamsDialog: ComponentDialog? = null
 
@@ -1184,16 +1222,32 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
                     onSelect = ::selectVoice,
                     onPreview = { previewController?.preview(it.engine, it.voice, it.systemDefault) },
                     onEditParams = ::editVoiceParams,
-                    onRetryFetch = ::loadVoices,
+                    onRetryFetch = { loadVoices() },
+                    refreshing = refreshingVoices,
+                    onRefresh = { loadVoices(forceRefresh = true) },
                 )
             }
         }
         loadVoices()
     }
 
-    private fun loadVoices() {
-        state = state.copy(loading = true, fetchError = null)
-        viewLifecycleOwner.lifecycleScope.launch {
+    private fun loadVoices(forceRefresh: Boolean = false) {
+        if (voiceLoadJob?.isActive == true) return
+        if (forceRefresh) {
+            refreshingVoices = true
+        } else {
+            state = state.copy(loading = true, fetchError = null)
+        }
+        voiceLoadJob = viewLifecycleOwner.lifecycleScope.launch(
+            start = kotlinx.coroutines.CoroutineStart.LAZY,
+        ) {
+            try {
+            if (forceRefresh) {
+                val result = withContext(IO) {
+                    refreshTtsVoiceCatalogs(TtsEngineStore.engines().filter { it.enabled })
+                }
+                activity?.toastOnUi(result.feedback())
+            }
             val snapshot = withContext(IO) {
                 var engines = TtsEngineStore.engines().filter { it.enabled }
                 val activeEngineId = runCatching {
@@ -1261,7 +1315,17 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
             }
             state = snapshot.copy(preview = state.preview)
             (activity as? ReadAloudPlayerActivity)?.invalidateVoiceLabel()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                activity?.toastOnUi("刷新发音人失败：${error.localizedMessage ?: error.javaClass.simpleName}")
+                state = state.copy(loading = false)
+            } finally {
+                refreshingVoices = false
+                voiceLoadJob = null
+            }
         }
+        voiceLoadJob?.start()
     }
 
     private fun voiceOptions(engine: TtsEngineSetting): List<TtsVoiceOption> {

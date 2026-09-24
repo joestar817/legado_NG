@@ -159,6 +159,7 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
         multiRoleSheet?.dismiss()
         val sheet = TtsEngineSelectionSheet(
             context = requireContext(),
+            lifecycleScope = viewLifecycleOwner.lifecycleScope,
             title = getString(R.string.multi_role_tts_engine),
             searchHint = getString(R.string.multi_role_tts_engine_search),
             emptyText = getString(R.string.multi_role_tts_engine_empty),
@@ -362,6 +363,7 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
                 (engineSnapshot.takeIf { engineSnapshotLoaded } ?: TtsEngineStore.engines())
                     .filter { it.enabled }
             },
+            onCatalogRefreshed = ::refreshCards,
             isSelected = { option ->
                 selectedEngineId == option.engine.id && if (option.systemDefault) {
                     selectedVoiceId.isNullOrBlank()
@@ -407,6 +409,7 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
             searchHint = getString(R.string.default_tts_voice_search),
             emptyText = getString(R.string.default_tts_voice_empty),
             engines = { listOf(engine) },
+            onCatalogRefreshed = ::refreshCards,
             isSelected = { option -> selectedVoiceId == option.voice.id },
             onSelect = { option ->
                 setDialogueVoice(gender, option.voice.id)

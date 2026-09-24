@@ -352,16 +352,21 @@ class TtsEngineConfigFragment : BaseFragment(0),
                     delay(24L)
                 }
                 awaitEngineOrderSaves()
-                val allEngines = withContext(Dispatchers.IO) {
+                val (allEngines, voiceRefreshResult) = withContext(Dispatchers.IO) {
                     if (forceReload) {
-                        TtsEngineStore.reloadEngines()
+                        val engines = TtsEngineStore.reloadEngines()
+                        val result = refreshTtsVoiceCatalogs(engines)
+                        TtsEngineStore.engines() to result
                     } else {
-                        TtsEngineStore.engines()
+                        TtsEngineStore.engines() to null
                     }
                 }
                 if (engineSnapshotGate.isCurrent(snapshotToken)) {
                     applyEngineSnapshot(allEngines)
                     prewarmNextEdgeOptions(allEngines)
+                    voiceRefreshResult?.let { result ->
+                        context?.toastOnUi("朗读引擎已刷新；${result.feedback()}")
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -51,6 +52,14 @@ fun NgLongDrawerHeader(
     secondaryActionContentDescription: String? = null,
     secondaryActionActive: Boolean = false,
     onSecondaryActionClick: (() -> Unit)? = null,
+    @DrawableRes tertiaryActionIconRes: Int? = null,
+    tertiaryActionContentDescription: String? = null,
+    tertiaryActionLoading: Boolean = false,
+    onTertiaryActionClick: (() -> Unit)? = null,
+    @DrawableRes quaternaryActionIconRes: Int? = null,
+    quaternaryActionContentDescription: String? = null,
+    quaternaryActionEnabled: Boolean = true,
+    onQuaternaryActionClick: (() -> Unit)? = null,
     centerTitle: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -111,6 +120,33 @@ fun NgLongDrawerHeader(
                         maxLines = 1,
                     )
                 }
+            }
+            if (tertiaryActionIconRes != null && onTertiaryActionClick != null) {
+                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                    if (tertiaryActionLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = Color(colors.primary),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        DrawerHeaderIconSlot(
+                            iconRes = tertiaryActionIconRes,
+                            contentDescription = tertiaryActionContentDescription,
+                            active = false,
+                            onClick = onTertiaryActionClick,
+                        )
+                    }
+                }
+            }
+            if (quaternaryActionIconRes != null && onQuaternaryActionClick != null) {
+                DrawerHeaderIconSlot(
+                    iconRes = quaternaryActionIconRes,
+                    contentDescription = quaternaryActionContentDescription,
+                    active = false,
+                    enabled = quaternaryActionEnabled,
+                    onClick = onQuaternaryActionClick,
+                )
             }
             if (hasSecondaryAction) {
                 DrawerHeaderIconSlot(
@@ -174,6 +210,7 @@ private fun DrawerHeaderIconSlot(
     @DrawableRes iconRes: Int?,
     contentDescription: String?,
     active: Boolean,
+    enabled: Boolean = true,
     onClick: (() -> Unit)?,
 ) {
     Box(
@@ -183,17 +220,18 @@ private fun DrawerHeaderIconSlot(
         if (iconRes != null && onClick != null) {
             IconButton(
                 onClick = onClick,
+                enabled = enabled,
                 modifier = Modifier.size(40.dp),
             ) {
                 Icon(
                     painter = painterResource(iconRes),
                     contentDescription = contentDescription,
                     modifier = Modifier.size(22.dp),
-                    tint = if (active) {
+                    tint = (if (active) {
                         Color(NgTheme.colors.primary)
                     } else {
                         Color(NgTheme.colors.onSurfaceVariant)
-                    },
+                    }).copy(alpha = if (enabled) 1f else 0.35f),
                 )
             }
         }

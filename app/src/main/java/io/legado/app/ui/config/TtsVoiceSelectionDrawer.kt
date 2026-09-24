@@ -38,7 +38,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -99,6 +101,20 @@ internal data class TtsVoiceDrawerState(
     val canRetryFetch: Boolean = false,
     val preview: TtsVoicePreviewStatus = TtsVoicePreviewStatus(null, TtsVoicePreviewState.IDLE),
 )
+
+internal fun TtsVoiceDrawerState.selectedLazyItemIndex(
+    visibleGroups: List<TtsVoiceDrawerGroup> = groups,
+): Int? {
+    var index = 0
+    for (group in visibleGroups) {
+        index++ // 引擎标题
+        for (card in group.cards) {
+            if (card.selected) return index
+            index++
+        }
+    }
+    return null
+}
 
 internal data class TtsVoiceDrawerTitleAction(
     val text: String,
@@ -171,12 +187,16 @@ internal fun TtsVoiceSelectionDrawerContent(
     onPreview: (TtsVoiceOption) -> Unit,
     onEditParams: ((TtsVoiceOption) -> Unit)? = null,
     onRetryFetch: (() -> Unit)? = null,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
 ) {
     val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
     var query by remember { mutableStateOf("") }
     var selectedLanguages by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selectedGenders by remember { mutableStateOf<Set<String>>(emptySet()) }
     var filtersExpanded by remember { mutableStateOf(false) }
+    var locateRequest by remember { mutableIntStateOf(0) }
+    var locateTargetIndex by remember { mutableIntStateOf(0) }
     val voiceListState = rememberLazyListState()
     val filtersActive = query.isNotBlank() ||
         selectedLanguages.isNotEmpty() || selectedGenders.isNotEmpty()
@@ -198,9 +218,16 @@ internal fun TtsVoiceSelectionDrawerContent(
         }
     }
     val filteredItemCount = filteredGroups.sumOf { group -> group.cards.size + 1 }
+    val selectedVisibleIndex = remember(filteredGroups) {
+        state.selectedLazyItemIndex(filteredGroups)
+    }
+    val selectedFullIndex = remember(state.groups) { state.selectedLazyItemIndex() }
     val hasIconTitleAction = titleAction?.iconRes != null
     val voiceCardShape = remember { RoundedCornerShape(18.dp) }
     val selectionColor = Color(LocalContext.current.accentColor)
+    LaunchedEffect(locateRequest) {
+        if (locateRequest > 0) voiceListState.animateScrollToItem(locateTargetIndex)
+    }
 
     NgBottomDrawerSurface(
         modifier = Modifier
@@ -242,6 +269,26 @@ internal fun TtsVoiceSelectionDrawerContent(
                     { filtersExpanded = !filtersExpanded }
                 } else {
                     null
+                },
+                tertiaryActionIconRes = R.drawable.ic_refresh_black_24dp.takeIf { onRefresh != null },
+                tertiaryActionContentDescription = "刷新发音人",
+                tertiaryActionLoading = refreshing,
+                onTertiaryActionClick = onRefresh,
+                quaternaryActionIconRes = R.drawable.ic_ai_locate_selected,
+                quaternaryActionContentDescription = "定位已选发音人",
+                quaternaryActionEnabled = selectedFullIndex != null,
+                onQuaternaryActionClick = {
+                    val target = selectedVisibleIndex ?: selectedFullIndex
+                    if (target != null) {
+                        if (selectedVisibleIndex == null) {
+                            query = ""
+                            selectedLanguages = emptySet()
+                            selectedGenders = emptySet()
+                        }
+                        filtersExpanded = false
+                        locateTargetIndex = target
+                        locateRequest++
+                    }
                 },
             )
             if (filtersExpanded) {

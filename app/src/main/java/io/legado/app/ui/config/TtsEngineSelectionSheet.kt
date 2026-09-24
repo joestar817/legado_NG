@@ -48,10 +48,12 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.LifecycleCoroutineScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
 import io.legado.app.help.tts.TtsEngineSetting
+import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagVariant
@@ -64,6 +66,12 @@ import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.showWithAppNavigationBarVisibility
+import io.legado.app.utils.toastOnUi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 多角色 TTS 引擎的共用 Compose 抽屉主体。
@@ -78,6 +86,8 @@ internal fun TtsEngineSelectionDrawerContent(
     engines: List<TtsEngineSetting>,
     selectedEngineId: String?,
     loading: Boolean = false,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
     contentCardStyle: NgDrawerContentCardStyle = NgDrawerContentCardStyle.LEGACY,
     onSelect: (TtsEngineSetting) -> Unit,
     onClear: (() -> Unit)? = null,
@@ -125,6 +135,10 @@ internal fun TtsEngineSelectionDrawerContent(
                     searchExpanded = !searchExpanded
                     if (!searchExpanded) query = ""
                 },
+                tertiaryActionIconRes = R.drawable.ic_refresh_black_24dp.takeIf { onRefresh != null },
+                tertiaryActionContentDescription = "刷新朗读引擎",
+                tertiaryActionLoading = refreshing,
+                onTertiaryActionClick = onRefresh,
             )
             if (searchExpanded) {
                 TtsEngineSearchField(
@@ -168,6 +182,7 @@ internal fun TtsEngineSelectionDrawerContent(
 /** 设置页使用的 Compose 抽屉宿主；主体与听书页共用 [TtsEngineSelectionDrawerContent]。 */
 class TtsEngineSelectionSheet(
     private val context: Context,
+    private val lifecycleScope: LifecycleCoroutineScope,
     private val title: CharSequence,
     private val searchHint: CharSequence,
     private val emptyText: CharSequence,
@@ -180,8 +195,11 @@ class TtsEngineSelectionSheet(
     private var dialog: BottomSheetDialog? = null
     private var drawerEngines by mutableStateOf(engines)
     private var drawerLoading by mutableStateOf(loading)
+    private var refreshing by mutableStateOf(false)
+    private var refreshJob: Job? = null
 
     fun updateEngines(engines: List<TtsEngineSetting>) {
+        if (refreshing) return
         drawerEngines = engines
         drawerLoading = false
     }
@@ -201,6 +219,8 @@ class TtsEngineSelectionSheet(
                         engines = drawerEngines,
                         selectedEngineId = selectedEngineId,
                         loading = drawerLoading,
+                        refreshing = refreshing,
+                        onRefresh = ::refreshEngines,
                         contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
                         onSelect = { engine ->
                             onSelect(engine)
@@ -239,12 +259,43 @@ class TtsEngineSelectionSheet(
                 state = BottomSheetBehavior.STATE_EXPANDED
             }
         }
-        bottomSheet.setOnDismissListener { dialog = null }
+        bottomSheet.setOnDismissListener {
+            refreshJob?.cancel()
+            refreshJob = null
+            dialog = null
+        }
         bottomSheet.showWithAppNavigationBarVisibility()
     }
 
     fun dismiss() {
         dialog?.dismiss()
+    }
+
+    private fun refreshEngines() {
+        if (refreshJob?.isActive == true) return
+        refreshing = true
+        refreshJob = lifecycleScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            try {
+                val engines = withContext(IO) {
+                    TtsEngineStore.reloadEngines().filter {
+                        it.enabled && it.type == TtsEngineType.SCRIPT
+                    }
+                }
+                if (dialog != null) {
+                    drawerEngines = engines
+                    drawerLoading = false
+                    context.toastOnUi("已刷新 ${engines.size} 个朗读引擎")
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                context.toastOnUi("刷新朗读引擎失败：${error.localizedMessage ?: error.javaClass.simpleName}")
+            } finally {
+                refreshing = false
+                refreshJob = null
+            }
+        }
+        refreshJob?.start()
     }
 }
 

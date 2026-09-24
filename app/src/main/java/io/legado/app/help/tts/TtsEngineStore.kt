@@ -545,12 +545,6 @@ object TtsEngineStore {
         forceRefresh: Boolean = false,
         restartReadAloud: Boolean = false
     ): TtsEngineSetting {
-        if (forceRefresh && engineId == NEXT_EDGE_PROXY_ID) {
-            val localCatalog = engine(engineId) ?: error("朗读引擎不存在")
-            if (localCatalog.effectiveVoices().isNotEmpty()) {
-                return localCatalog
-            }
-        }
         if (!forceRefresh) {
             val initial = engine(engineId) ?: error("朗读引擎不存在")
             if (initial.effectiveVoices().isNotEmpty()) {

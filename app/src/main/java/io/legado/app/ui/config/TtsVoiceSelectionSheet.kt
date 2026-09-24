@@ -23,9 +23,16 @@ import io.legado.app.help.tts.TtsVoice
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.utils.showWithAppNavigationBarVisibility
+import io.legado.app.utils.toastOnUi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 data class TtsVoiceOption(
@@ -59,6 +66,7 @@ class TtsVoiceSelectionSheet(
     private val onSelect: (TtsVoiceOption) -> Unit,
     private val beforePreview: () -> Unit = {},
     private val dismissOnSelect: Boolean = true,
+    private val onCatalogRefreshed: () -> Unit = {},
     private val titleAction: Pair<CharSequence, () -> Unit>? = null,
     @param:DrawableRes private val titleActionIconRes: Int? = null,
 ) {
@@ -67,6 +75,8 @@ class TtsVoiceSelectionSheet(
     private var loadJob: Job? = null
     private var previewController: TtsVoicePreviewController? = null
     private var voiceParamsDialog: ComponentDialog? = null
+    private var refreshing by mutableStateOf(false)
+    private var refreshJob: Job? = null
 
     fun show() {
         if (dialog != null || loadJob?.isActive == true) return
@@ -121,6 +131,8 @@ class TtsVoiceSelectionSheet(
                             )
                         },
                         onEditParams = ::editVoiceParams,
+                        refreshing = refreshing,
+                        onRefresh = ::refreshVoices,
                     )
                 }
             }
@@ -150,6 +162,8 @@ class TtsVoiceSelectionSheet(
         }
         bottomSheet.setOnDismissListener {
             loadJob?.cancel()
+            refreshJob?.cancel()
+            refreshJob = null
             loadJob = null
             previewController?.release()
             previewController = null
@@ -162,8 +176,32 @@ class TtsVoiceSelectionSheet(
 
     fun dismiss() {
         loadJob?.cancel()
+        refreshJob?.cancel()
         loadJob = null
         dialog?.dismiss()
+    }
+
+    private fun refreshVoices() {
+        if (refreshJob?.isActive == true) return
+        refreshing = true
+        refreshJob = lifecycleScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            try {
+                val result = withContext(IO) { refreshTtsVoiceCatalogs(engines()) }
+                if (dialog != null) {
+                    state = withContext(IO) { buildVoiceSnapshot() }.copy(preview = state.preview)
+                    onCatalogRefreshed()
+                    context.toastOnUi(result.feedback())
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                context.toastOnUi("刷新发音人失败：${error.localizedMessage ?: error.javaClass.simpleName}")
+            } finally {
+                refreshing = false
+                refreshJob = null
+            }
+        }
+        refreshJob?.start()
     }
 
     private fun editVoiceParams(option: TtsVoiceOption) {
@@ -182,7 +220,8 @@ class TtsVoiceSelectionSheet(
     }
 
     private fun buildVoiceSnapshot(): TtsVoiceDrawerState {
-        val groups = engines().map { engine ->
+        val latest = TtsEngineStore.engines().associateBy { it.id }
+        val groups = engines().mapNotNull { latest[it.id] }.map { engine ->
             TtsVoiceDrawerGroup(
                 engineId = engine.id,
                 engineName = engine.name,
@@ -221,4 +260,41 @@ class TtsVoiceSelectionSheet(
             TtsVoiceOption(engine = engine, voice = voice, systemDefault = false)
         }
     }
+}
+
+internal data class TtsVoiceCatalogRefreshResult(val attempted: Int, val failed: Int) {
+    fun feedback(): String = when {
+        attempted == 0 -> "没有可刷新的发音人"
+        failed == 0 -> "已刷新 $attempted 个引擎的发音人"
+        else -> "已刷新 ${attempted - failed} 个引擎的发音人，$failed 个失败"
+    }
+}
+
+/** 刷新当前选择范围内可在线获取的发音人；失败的引擎保留原缓存。 */
+internal suspend fun refreshTtsVoiceCatalogs(
+    engines: List<TtsEngineSetting>,
+): TtsVoiceCatalogRefreshResult = coroutineScope {
+    val semaphore = Semaphore(4)
+    val candidates = engines.filter { it.enabled && it.supportsVoiceFetch() }
+        .distinctBy { it.id }
+    val failures = candidates
+        .map { engine ->
+            async(IO) {
+                semaphore.withPermit {
+                    try {
+                        TtsEngineStore.ensureVoiceCatalog(
+                            engineId = engine.id,
+                            forceRefresh = true,
+                            restartReadAloud = false,
+                        )
+                        false
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        true
+                    }
+                }
+            }
+        }.awaitAll().count { it }
+    TtsVoiceCatalogRefreshResult(candidates.size, failures)
 }
