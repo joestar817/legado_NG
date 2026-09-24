@@ -1729,6 +1729,7 @@ class HttpReadAloudService : BaseReadAloudService(),
     }
 
     private fun upPlayPos() {
+        if (isPreparingReadAloud) return
         playIndexJob?.cancel()
         val textChapter = textChapter ?: return
         val activeGeneration = progressGeneration
@@ -1833,7 +1834,7 @@ class HttpReadAloudService : BaseReadAloudService(),
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         super.onPlaybackStateChanged(playbackState)
-        if (!ownsPlaybackState()) return
+        if (!ownsPlaybackState() || isPreparingReadAloud || playbackState != exoPlayer.playbackState) return
         when (playbackState) {
             Player.STATE_IDLE -> {
                 // 空闲
@@ -1883,6 +1884,7 @@ class HttpReadAloudService : BaseReadAloudService(),
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         super.onIsPlayingChanged(isPlaying)
+        if (isPreparingReadAloud) return
         syncActualPlaybackState(isPlaying)
     }
 
@@ -1952,7 +1954,8 @@ class HttpReadAloudService : BaseReadAloudService(),
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        if (!ownsPlaybackState()) return
+        if (!ownsPlaybackState() || isPreparingReadAloud) return
+        if (mediaItem?.mediaId != exoPlayer.currentMediaItem?.mediaId) return
         val identity = mediaItem?.mediaId
             ?.let(::parseReadAloudMediaItemIdentity)
             ?: return

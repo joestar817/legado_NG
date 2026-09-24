@@ -64,6 +64,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import splitties.init.appCtx
 import splitties.systemservices.audioManager
 import splitties.systemservices.notificationManager
@@ -159,6 +160,8 @@ abstract class BaseReadAloudService : BaseService(),
     internal var nowSpeak: Int = 0
     internal var readAloudNumber: Int = 0
     internal var textChapter: TextChapter? = null
+    private var positionRequest: Coroutine<*>? = null
+    protected val isPreparingReadAloud: Boolean get() = positionRequest?.isActive == true
     @Volatile
     private var activeReadAloudInput: Pair<TextChapter, io.legado.app.help.tts.ReadAloudTextSource>? = null
 
@@ -315,24 +318,23 @@ abstract class BaseReadAloudService : BaseService(),
         forceRebuild: Boolean = false,
         contentPosition: Int? = null,
     ) {
+        positionRequest?.cancel()
+        val chapter = ReadBook.curTextChapter ?: return
+        val bookUrl = ReadBook.book?.bookUrl
+        val fromLast = toLast
         onNewReadAloudRequest()
-        execute(executeContext = IO) {
-            this@BaseReadAloudService.pageIndex = pageIndex
-            textChapter = ReadBook.curTextChapter
-            val textChapter = textChapter ?: return@execute
-            val readAloudText = textChapter.readAloudText
-            bindReadAloudInput(textChapter, readAloudText)
+        positionRequest = execute(executeContext = IO) {
+            val readAloudText = chapter.readAloudText
             if (!readAloudText.isReady) {
                 return@execute
             }
-            activeBookUrl = ReadBook.book?.bookUrl
-            readAloudNumber = contentPosition ?: (textChapter.getReadLength(pageIndex) + startPos)
-            readAloudByPage = getPrefBoolean(PreferKey.readAloudByPage)
-            contentList = readAloudText.readText(readAloudByPage)
+            var number = contentPosition ?: (chapter.getReadLength(pageIndex) + startPos)
+            val byPage = getPrefBoolean(PreferKey.readAloudByPage)
+            val contents = readAloudText.readText(byPage)
                 .split("\n")
                 .filter { it.isNotEmpty() }
             var pos = startPos
-            val page = textChapter.getPage(pageIndex)!!
+            val page = chapter.getPage(pageIndex)!!
             if (pos > 0) {
                 for (paragraph in page.paragraphs) {
                     val tmp = pos - paragraph.length - 1
@@ -340,30 +342,42 @@ abstract class BaseReadAloudService : BaseService(),
                     pos = tmp
                 }
             }
-            nowSpeak = readAloudText.paragraphNumberAt(readAloudNumber + 1, readAloudByPage) - 1
-            if (!readAloudByPage && startPos == 0 && !toLast) {
+            var speak = readAloudText.paragraphNumberAt(number + 1, byPage) - 1
+            if (!byPage && startPos == 0 && !fromLast) {
                 pos = page.chapterPosition -
-                        readAloudText.paragraphs[nowSpeak].chapterPosition
+                        readAloudText.paragraphs[speak].chapterPosition
             }
-            if (toLast) {
-                toLast = false
-                readAloudNumber = textChapter.getLastParagraphPosition()
-                nowSpeak = contentList.lastIndex
+            if (fromLast) {
+                number = chapter.getLastParagraphPosition()
+                speak = contents.lastIndex
                 if (page.paragraphs.size == 1) {
                     pos = page.chapterPosition -
-                            readAloudText.paragraphs[nowSpeak].chapterPosition
+                            readAloudText.paragraphs[speak].chapterPosition
                 }
             }
-            if (contentPosition != null && !toLast) {
-                val paragraph = readAloudText.readParagraphs(readAloudByPage).getOrNull(nowSpeak) ?: return@execute
-                pos = (readAloudNumber - paragraph.chapterPosition).coerceIn(0, paragraph.length)
+            if (contentPosition != null) {
+                val paragraph = readAloudText.readParagraphs(byPage).getOrNull(speak) ?: return@execute
+                pos = (number - paragraph.chapterPosition).coerceIn(0, paragraph.length)
             }
-            paragraphStartPos = pos
-            this@BaseReadAloudService.pageIndex = readAloudText.pageText?.indexAt(readAloudNumber) ?: pageIndex
-            upTtsBufferProgress(readAloudNumber + 1)
-            launch(Main) {
+            val targetPage = readAloudText.pageText?.indexAt(number) ?: pageIndex
+            // Publish the complete request and reposition the player in one UI turn.
+            // Old media callbacks must never observe partially prepared positions.
+            withContext(Main.immediate) {
+                if (!ownsPlaybackState()) return@withContext
+                positionRequest = null
+                textChapter = chapter
+                bindReadAloudInput(chapter, readAloudText)
+                activeBookUrl = bookUrl
+                readAloudNumber = number
+                readAloudByPage = byPage
+                contentList = contents
+                nowSpeak = speak
+                paragraphStartPos = pos
+                this@BaseReadAloudService.pageIndex = targetPage
+                if (fromLast) toLast = false
+                upTtsBufferProgress(number + 1)
                 if (tryReusePreparedPlayback(play, forceRebuild)) {
-                    return@launch
+                    return@withContext
                 }
                 if (play) {
                     play()
