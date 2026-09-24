@@ -73,29 +73,34 @@ internal fun BookshelfManageTopBar(
             NgExpandableActionMenuItem(
                 itemId = R.id.menu_group_manage,
                 titleRes = R.string.group_manage,
-                iconRes = R.drawable.ic_settings
+                iconRes = R.drawable.ic_bookshelf_manage_filter_settings
             ),
             NgExpandableActionMenuItem(
                 itemId = ALL_GROUP_ITEM_ID,
                 titleRes = R.string.all,
-                iconRes = R.drawable.ic_groups,
+                iconRes = R.drawable.ic_bookshelf_dock_all,
                 checked = selectedGroupId == BookGroup.IdAll
             ),
             NgExpandableActionMenuItem(
                 itemId = UNGROUPED_GROUP_ITEM_ID,
                 titleRes = R.string.no_group,
-                iconRes = R.drawable.ic_groups,
+                iconRes = R.drawable.ic_bookshelf_dock_ungrouped,
                 checked = selectedGroupId == BookGroup.IdNoGroup
             ),
             NgExpandableActionMenuItem(
                 itemId = R.id.menu_book_group,
                 titleRes = R.string.group,
-                iconRes = R.drawable.ic_groups,
+                iconRes = R.drawable.ic_bookshelf_manage_filter_group,
                 children = groupedEntries.mapIndexed { index, group ->
                     NgExpandableActionMenuItem(
                         itemId = GROUP_ITEM_ID_BASE + index,
                         titleRes = 0,
-                        iconRes = R.drawable.ic_groups,
+                        iconRes = when (group.groupId) {
+                            BookGroup.IdLocal -> R.drawable.ic_bookshelf_dock_local
+                            BookGroup.IdAudio -> R.drawable.ic_bookshelf_dock_audio
+                            BookGroup.IdVideo -> R.drawable.ic_bookshelf_dock_video
+                            else -> R.drawable.ic_bookshelf_manage_filter_group
+                        },
                         title = group.groupName,
                         checked = group.groupId == selectedGroupId
                     )

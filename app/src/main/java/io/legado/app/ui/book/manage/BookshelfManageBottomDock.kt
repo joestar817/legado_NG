@@ -29,7 +29,6 @@ import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
-import io.legado.app.ui.design.components.compose.NgThemedActionIconKind
 import io.legado.app.ui.design.theme.NgTheme
 
 private const val CACHE_ACTION_ID = 0x56200001
@@ -124,13 +123,13 @@ internal fun BookshelfManageBottomDock(
                                 menuState.close()
                                 onAction(item.toDockAction())
                             },
-                            width = 174.dp,
+                            width = 152.dp,
                             rowMinHeight = 36.dp,
                             bottomPointerHeight = 8.dp,
                             bottomPointerWidth = 18.dp,
                             bottomPointerEndOffset = 65.dp,
                             menuContainerColor = colorResource(R.color.ng_surface_card),
-                            offset = DpOffset(x = (-89).dp, y = (-12).dp),
+                            offset = DpOffset(x = (-67).dp, y = (-12).dp),
                         )
                     },
                 )
@@ -144,58 +143,57 @@ private fun dockMoreItems(): List<NgExpandableActionMenuItem> = listOf(
     NgExpandableActionMenuItem(
         itemId = CACHE_ACTION_ID,
         titleRes = R.string.book_cache,
-        iconRes = R.drawable.ic_bookshelf_action_download,
+        iconRes = R.drawable.ic_bookshelf_manage_cache,
     ),
     NgExpandableActionMenuItem(
         itemId = EXPORT_CONTENT_ACTION_ID,
         titleRes = R.string.export,
-        iconRes = R.drawable.ic_bookshelf_action_upload,
+        iconRes = R.drawable.ic_bookshelf_manage_export_content,
     ),
     NgExpandableActionMenuItem(
         itemId = GROUP_ACTION_ID,
         titleRes = R.string.group,
-        iconRes = R.drawable.ic_bookshelf_action_folder,
+        iconRes = R.drawable.ic_bookshelf_manage_group,
     ),
     NgExpandableActionMenuItem(
         itemId = R.id.menu_export_selection,
         titleRes = R.string.export_book_source,
-        iconRes = R.drawable.ic_export
+        iconRes = R.drawable.ic_bookshelf_manage_export_source,
     ),
     NgExpandableActionMenuItem(
         itemId = R.id.menu_change_source,
         titleRes = R.string.change_source_batch,
-        iconRes = R.drawable.ic_swap_horiz
+        iconRes = R.drawable.ic_bookshelf_manage_change_source,
     ),
     NgExpandableActionMenuItem(
         itemId = R.id.menu_update_enable,
         titleRes = R.string.allow_update,
-        iconRes = R.drawable.ic_check_circle_outline
+        iconRes = R.drawable.ic_bookshelf_manage_allow_update,
     ),
     NgExpandableActionMenuItem(
         itemId = R.id.menu_update_disable,
         titleRes = R.string.disable_update,
-        iconRes = R.drawable.ic_block_outline
+        iconRes = R.drawable.ic_bookshelf_manage_disable_update,
     ),
     NgExpandableActionMenuItem(
         itemId = R.id.menu_remove_to_group,
         titleRes = R.string.set_ungrouped,
-        iconRes = R.drawable.ic_folder_open
+        iconRes = R.drawable.ic_bookshelf_manage_ungroup,
     ),
     NgExpandableActionMenuItem(
         itemId = UPDATE_COVER_ACTION_ID,
         titleRes = R.string.update_book_cover,
-        iconRes = R.drawable.ic_image,
+        iconRes = R.drawable.ic_bookshelf_manage_cover,
     ),
     NgExpandableActionMenuItem(
         itemId = R.id.menu_clear_cache,
         titleRes = R.string.clear_cache,
-        iconRes = R.drawable.ic_clear_all,
-        themedIconKind = NgThemedActionIconKind.CLEAR_CACHE
+        iconRes = R.drawable.ic_bookshelf_manage_clear_cache,
     ),
     NgExpandableActionMenuItem(
         itemId = R.id.menu_del_selection,
         titleRes = R.string.delete,
-        iconRes = R.drawable.ic_book_info_delete,
+        iconRes = R.drawable.ic_bookshelf_manage_delete,
         dividerBefore = true,
         danger = true
     )
