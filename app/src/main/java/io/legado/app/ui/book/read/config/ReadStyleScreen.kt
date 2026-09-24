@@ -38,6 +38,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -154,6 +155,8 @@ internal data class ReadStyleUiState(
     val canRestoreCurrentDefault: Boolean,
     val highlightSummary: String,
     val isEpub: Boolean,
+    val onlyThisBook: Boolean,
+    val canUseBookStyle: Boolean,
     val shareLayout: Boolean,
     val globalFloatingFollowApp: Boolean,
     val textSize: Int,
@@ -200,6 +203,7 @@ internal data class ReadStyleActions(
     val onRestoreCurrentPreset: () -> Unit,
     val onRestoreAllPresets: () -> Unit,
     val onOpenEpubSettings: () -> Unit,
+    val onOnlyThisBookChanged: (Boolean) -> Unit,
     val onShareLayoutChanged: (Boolean) -> Unit,
     val onGlobalFloatingFollowAppChanged: (Boolean) -> Unit,
     val onImportHighlights: () -> Unit,
@@ -322,7 +326,9 @@ internal fun ReadStyleScreen(
                 ReadStylePage.PRESET -> Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(StandardPageHeight + if (state.isEpub) 56.8.dp else 0.dp),
+                        .height(StandardPageHeight - (if (state.onlyThisBook) 155.6.dp else 0.dp)
+                            + (if (state.canUseBookStyle) 56.8.dp else 0.dp)
+                            + (if (state.isEpub) 56.8.dp else 0.dp)),
                 ) {
                     PresetPage(
                         state = state,
@@ -425,11 +431,16 @@ private fun PresetPage(
     actions: ReadStyleActions,
 ) {
     val density = LocalDensity.current
+    val initialScrollOffset = with(density) { PresetInitialScrollOffset.roundToPx() }
     val presetListState = rememberLazyListState(
-        initialFirstVisibleItemScrollOffset = with(density) {
-            PresetInitialScrollOffset.roundToPx()
-        },
+        initialFirstVisibleItemScrollOffset = initialScrollOffset,
     )
+    val bookPresetPosition = state.presets.indexOfFirst { it.index == -1 }
+    LaunchedEffect(state.onlyThisBook, bookPresetPosition, initialScrollOffset) {
+        if (state.onlyThisBook && bookPresetPosition >= 0) {
+            presetListState.animateScrollToItem(bookPresetPosition, scrollOffset = initialScrollOffset)
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -469,6 +480,7 @@ private fun PresetPage(
     }
 
     PresetManagementDock(
+        onlyThisBook = state.onlyThisBook,
         contentColor = contentColor,
         onCreate = actions.onCreatePreset,
         onEdit = actions.onEditPreset,
@@ -477,22 +489,35 @@ private fun PresetPage(
         onDelete = actions.onDeletePreset,
     )
 
-    PresetSwitchRow(
-        title = stringResource(R.string.share_layout),
-        iconRes = R.drawable.ic_ai_capability_text,
-        checked = state.shareLayout,
-        contentColor = contentColor,
-        onCheckedChange = actions.onShareLayoutChanged,
-    )
-    ReadDivider(contentColor)
-    PresetSwitchRow(
-        title = stringResource(R.string.read_style_global_follow_app_color),
-        iconRes = R.drawable.ic_cfg_theme,
-        checked = state.globalFloatingFollowApp,
-        contentColor = contentColor,
-        onCheckedChange = actions.onGlobalFloatingFollowAppChanged,
-    )
-    ReadDivider(contentColor)
+    if (state.canUseBookStyle) {
+        PresetSwitchRow(
+            title = stringResource(R.string.read_style_only_this_book),
+            iconRes = R.drawable.ic_bookshelf_dock_all,
+            iconSize = 20.dp,
+            checked = state.onlyThisBook,
+            contentColor = contentColor,
+            onCheckedChange = actions.onOnlyThisBookChanged,
+        )
+        ReadDivider(contentColor)
+    }
+    if (!state.onlyThisBook) {
+        PresetSwitchRow(
+            title = stringResource(R.string.share_layout),
+            iconRes = R.drawable.ic_ai_capability_text,
+            checked = state.shareLayout,
+            contentColor = contentColor,
+            onCheckedChange = actions.onShareLayoutChanged,
+        )
+        ReadDivider(contentColor)
+        PresetSwitchRow(
+            title = stringResource(R.string.read_style_global_follow_app_color),
+            iconRes = R.drawable.ic_cfg_theme,
+            checked = state.globalFloatingFollowApp,
+            contentColor = contentColor,
+            onCheckedChange = actions.onGlobalFloatingFollowAppChanged,
+        )
+        ReadDivider(contentColor)
+    }
     if (state.isEpub) {
         Row(Modifier.fillMaxWidth().height(56.dp)
             .clickable(role = Role.Button, onClick = actions.onOpenEpubSettings).padding(horizontal = 20.dp),
@@ -505,7 +530,7 @@ private fun PresetPage(
         }
         ReadDivider(contentColor)
     }
-    PresetRestoreAllRow(
+    if (!state.onlyThisBook) PresetRestoreAllRow(
         contentColor = contentColor,
         onClick = actions.onRestoreAllPresets,
     )
@@ -558,6 +583,7 @@ private fun PresetCard(
 
 @Composable
 private fun PresetManagementDock(
+    onlyThisBook: Boolean,
     contentColor: Color,
     onCreate: () -> Unit,
     onEdit: () -> Unit,
@@ -606,8 +632,8 @@ private fun PresetManagementDock(
             modifier = Modifier.weight(1f),
         )
         PresetAction(
-            iconRes = R.drawable.ic_book_info_delete,
-            label = stringResource(R.string.delete),
+            iconRes = if (onlyThisBook) R.drawable.ic_restore else R.drawable.ic_book_info_delete,
+            label = stringResource(if (onlyThisBook) R.string.read_style_follow_global else R.string.delete),
             contentColor = contentColor,
             onClick = onDelete,
             modifier = Modifier.weight(1f),
@@ -651,6 +677,7 @@ private fun PresetSwitchRow(
     checked: Boolean,
     contentColor: Color,
     onCheckedChange: (Boolean) -> Unit,
+    iconSize: Dp = 25.dp,
 ) {
     Row(
         modifier = Modifier
@@ -660,12 +687,14 @@ private fun PresetSwitchRow(
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            modifier = Modifier.size(25.dp),
-            tint = contentColor,
-        )
+        Box(Modifier.size(25.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(iconSize),
+                tint = contentColor,
+            )
+        }
         Text(
             text = title,
             modifier = Modifier.padding(start = 14.dp).weight(1f),

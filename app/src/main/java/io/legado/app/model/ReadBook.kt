@@ -190,8 +190,9 @@ object ReadBook : CoroutineScope by MainScope() {
 
     fun upReadBookConfig(book: Book) {
         val oldIndex = ReadBookConfig.styleSelect
+        val bookStyleChanged = ReadBookConfig.bindBook(book)
         ReadBookConfig.isComic = book.isImage
-        if (oldIndex != ReadBookConfig.styleSelect) {
+        if (oldIndex != ReadBookConfig.styleSelect || bookStyleChanged) {
             postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
             if (AppConfig.readBarStyleFollowPage) {
                 postEvent(EventBus.UPDATE_READ_ACTION_BAR, true)
@@ -983,6 +984,7 @@ object ReadBook : CoroutineScope by MainScope() {
 
     fun saveRead(pageChanged: Boolean = false) {
         val book = book ?: return
+        if (!pageChanged) ReadBookConfig.saveBookStyle(book)
         executor.execute {
             kotlin.runCatching {
                 book.lastCheckCount = 0

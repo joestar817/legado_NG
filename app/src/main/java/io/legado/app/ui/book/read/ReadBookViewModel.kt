@@ -128,6 +128,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
         } else {
             ReadBook.resetData(book)
         }
+        ReadBook.upReadBookConfig(book)
         startup?.mark("reader-bound")
         prepareReplaceRuleResetOnEnter(book)
         isInitFinish = true

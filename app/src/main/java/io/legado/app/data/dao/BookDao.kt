@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.TypeConverters
 import androidx.room.Update
 import io.legado.app.constant.BookType
 import io.legado.app.data.entities.Book
@@ -16,6 +17,21 @@ import kotlinx.coroutines.flow.map
 
 @Dao
 interface BookDao {
+
+    @Query("UPDATE books SET readConfig = :config WHERE bookUrl = :bookUrl")
+    @TypeConverters(Book.Converters::class)
+    fun updateReadStyleConfig(bookUrl: String, config: Book.ReadConfig)
+
+    @Transaction
+    fun saveIndependentReadStyle(bookUrl: String, style: String?) {
+        val config = getBook(bookUrl)?.config ?: return
+        config.independentReadStyle = style
+        updateReadStyleConfig(bookUrl, config)
+    }
+
+    @Query("SELECT readConfig FROM books WHERE readConfig LIKE '%\"independentReadStyle\"%'")
+    @TypeConverters(Book.Converters::class)
+    fun independentReadConfigs(): List<Book.ReadConfig>
 
     fun flowByGroup(groupId: Long): Flow<List<Book>> {
         return when (groupId) {

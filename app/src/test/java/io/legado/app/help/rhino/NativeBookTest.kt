@@ -16,6 +16,32 @@ import org.junit.Test
 class NativeBookTest {
 
     @Test
+    fun independentStyleIsReadableButCannotBeReplacedByBookSource() {
+        val book = Book(name = "书籍预设验收")
+        book.config.independentReadStyle = "{\"textSize\":26}"
+        val result = RhinoScriptEngine.eval(
+            """
+                book.config.independentReadStyle = "changed";
+                book.config.setIndependentReadStyle("changed");
+                book.config["setIndependentReadStyle(java.lang.String)"]("changed");
+                book.config.independentReadStyle;
+            """.trimIndent(), ScriptBindings().apply { put("book", book) },
+        )
+        assertEquals("{\"textSize\":26}", result)
+        assertEquals("{\"textSize\":26}", book.config.independentReadStyle)
+    }
+
+    @Test
+    fun readConfigSettersRequireExplicitBookSourceReview() {
+        assertEquals(setOf(
+            "setReverseToc", "setPageAnim", "setReSegment", "setRemoveSameTitle", "setImageStyle",
+            "setUseReplaceRule", "setDelTag", "setTtsEngine", "setSplitLongChapter", "setReadSimulating",
+            "setStartDate", "setStartChapter", "setDailyChapters", "setOpenCredits", "setCloseCredits",
+            "setPlayMode", "setPlaySpeed", "setIndependentReadStyle",
+        ), Book.ReadConfig::class.java.methods.filter { it.name.startsWith("set") }.map { it.name }.toSet())
+    }
+
+    @Test
     fun scriptCannotDisablePurificationOrReplaceReadConfig() {
         val book = Book(name = "测试书籍")
         book.setUseReplaceRule(true)
@@ -295,7 +321,7 @@ class NativeBookTest {
         @BeforeClass
         fun registerWrappers() {
             RhinoWrapFactory.register(Book::class.java, NativeBook.factory)
-            RhinoWrapFactory.register(Book.ReadConfig::class.java, ReadOnlyJavaObject.factory)
+            RhinoWrapFactory.register(Book.ReadConfig::class.java, NativeBook.readConfigFactory)
             RhinoWrapFactory.register(
                 BookChapter::class.java,
                 ReadOnlyJavaObject.factory(setOf("update"))

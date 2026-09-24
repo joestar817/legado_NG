@@ -2,6 +2,7 @@ package io.legado.app.help.rhino
 
 import com.script.rhino.CatchableNativeJavaObject
 import com.script.rhino.JavaObjectWrapFactory
+import com.script.rhino.ReadOnlyJavaObject
 import io.legado.app.data.entities.Book
 import org.htmlunit.corejs.javascript.LambdaFunction
 import org.htmlunit.corejs.javascript.Scriptable
@@ -43,6 +44,8 @@ class NativeBook(scope: VarScope?, javaObject: Any, staticType: Class<*>?) :
     }
 
     companion object {
+        val readConfigFactory = ReadOnlyJavaObject.factory(setOf("setIndependentReadStyle"))
+
         private val blockedMethods = setOf(
             "setUseReplaceRule",
             "setReadConfig",

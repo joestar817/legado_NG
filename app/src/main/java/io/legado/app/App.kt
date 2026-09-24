@@ -257,7 +257,7 @@ class App : Application() {
                 BookSourceGuardLog.noOp("BookChapter", member)
             }
         )
-        RhinoWrapFactory.register(Book.ReadConfig::class.java, ReadOnlyJavaObject.factory)
+        RhinoWrapFactory.register(Book.ReadConfig::class.java, NativeBook.readConfigFactory)
     }
 
     class EventLogger : DefaultLogger() {

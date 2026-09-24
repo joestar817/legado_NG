@@ -2244,6 +2244,9 @@
     <string name="read_tip_position">%1$s · %2$s</string>
     <string name="read_tip_used_at">已用于%1$s</string>
     <string name="reading_presets">阅读预设</string>
+    <string name="read_style_only_this_book">仅用于本书</string>
+    <string name="read_style_this_book">本书</string>
+    <string name="read_style_follow_global">跟随全局</string>
     <string name="create_style">＋ 新建</string>
     <string name="read_style_edit_title">编辑预设</string>
     <string name="read_style_create_title">新建预设</string>

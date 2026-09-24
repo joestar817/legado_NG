@@ -12,7 +12,10 @@ import io.legado.app.R
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.PageAnim
 import io.legado.app.constant.PreferKey
+import io.legado.app.data.appDb
+import io.legado.app.data.entities.Book
 import io.legado.app.help.DefaultData
+import io.legado.app.help.globalExecutor
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.utils.BitmapUtils
 import io.legado.app.utils.FileUtils
@@ -87,9 +90,53 @@ object ReadBookConfig {
     val shareConfigFilePath = FileUtils.getPath(appCtx.filesDir, shareConfigFileName)
     val configList: ArrayList<Config> = arrayListOf()
     lateinit var shareConfig: Config
+    private val bookStyle = BookReadStyleSession { bookUrl, style ->
+        globalExecutor.execute {
+            runCatching { appDb.bookDao.saveIndependentReadStyle(bookUrl, style) }
+                .onFailure { AppLog.put("保存本书预设失败", it) }
+        }
+    }
+    val onlyThisBook: Boolean get() = bookStyle.config != null
+    val canUseBookStyle: Boolean get() = bookStyle.isBound
+    val floatingColorManagedGlobally: Boolean get() = !onlyThisBook && readFloatingFollowAppGlobally
+
+    fun bindBook(book: Book): Boolean = bookStyle.bind(book)
+
+    fun saveBookStyle(book: Book) = bookStyle.saveFor(book)
+
+    fun setOnlyThisBook(enabled: Boolean) {
+        if (enabled == onlyThisBook || !canUseBookStyle) return
+        if (enabled) {
+            save()
+            val copy = durConfig.copyForBook(config)
+            if (readFloatingFollowAppGlobally) {
+                copy.readFloatingSeed = 0
+                copy.readFloatingSeedNight = 0
+                copy.readFloatingFollowAppNight = true
+                copy.readFloatingColorStyle = readFloatingGlobalColorStyle
+            }
+            bookStyle.use(copy)
+        } else {
+            bookStyle.followGlobal()
+        }
+    }
+
+    fun createStyle(style: Config): Int {
+        if (onlyThisBook) {
+            bookStyle.use(style)
+            return -1
+        }
+        configList.add(style)
+        return configList.lastIndex
+    }
+
     var durConfig
-        get() = getConfig(styleSelect)
+        get() = bookStyle.config ?: getConfig(styleSelect)
         set(value) {
+            if (onlyThisBook) {
+                bookStyle.use(value)
+                return
+            }
             configList[styleSelect] = value
             if (shareLayout) {
                 shareConfig = value
@@ -183,6 +230,10 @@ object ReadBookConfig {
     }
 
     fun save() {
+        if (onlyThisBook) {
+            bookStyle.save()
+            return
+        }
         Coroutine.async {
             synchronized(this) {
                 GSON.toJson(configList).let {
@@ -199,7 +250,7 @@ object ReadBookConfig {
 
     fun getAllPicBgStr(): ArrayList<String> {
         val list = arrayListOf<String>()
-        configList.forEach {
+        (configList + listOfNotNull(bookStyle.config)).forEach {
             if (it.bgType == 2) {
                 list.add(it.bgStr)
             }
@@ -214,6 +265,10 @@ object ReadBookConfig {
     }
 
     fun deleteDur(): Boolean {
+        if (onlyThisBook) {
+            setOnlyThisBook(false)
+            return true
+        }
         if (configList.size <= 1) return false
         val removeIndex = styleSelect.takeIf(configList.indices::contains) ?: 0
         configList.removeAt(removeIndex)
@@ -224,7 +279,10 @@ object ReadBookConfig {
 
     fun clearBgAndCache() {
         val bgs = hashSetOf<String>()
-        configList.forEach { config ->
+        val independent = appDb.bookDao.independentReadConfigs().mapNotNull { readConfig ->
+            BookReadStyleSession.decode(readConfig.independentReadStyle)
+        }
+        (configList + independent + listOfNotNull(bookStyle.config)).forEach { config ->
             repeat(3) {
                 config.getBgPath(it)?.let { path ->
                     bgs.add(path)
@@ -242,11 +300,17 @@ object ReadBookConfig {
     }
 
     fun hasDefaultForCurrent(): Boolean {
+        if (onlyThisBook) return defaultConfig(durConfig.name) != null
         val index = styleSelect.takeIf(configList.indices::contains) ?: return false
         return defaultConfig(configList[index].name) != null
     }
 
     fun restoreCurrentDefault(): Boolean {
+        if (onlyThisBook) {
+            val default = defaultConfig(durConfig.name) ?: return false
+            bookStyle.use(default)
+            return true
+        }
         val index = styleSelect.takeIf(configList.indices::contains) ?: return false
         val default = defaultConfig(configList[index].name) ?: return false
         configList[index] = default.detachedCopy().apply { highlightRules.clear() }
@@ -255,6 +319,7 @@ object ReadBookConfig {
     }
 
     fun restoreAllDefaults(): Boolean {
+        if (onlyThisBook) return false
         val defaults = DefaultData.readConfigs.map {
             it.detachedCopy().apply { highlightRules.clear() }
         }
@@ -332,8 +397,12 @@ object ReadBookConfig {
             appCtx.putPrefInt(PreferKey.autoReadPageMode, field)
         }
     var styleSelect: Int
-        get() = if (isComic) comicStyleSelect else readStyleSelect
+        get() = if (onlyThisBook) -1 else if (isComic) comicStyleSelect else readStyleSelect
         set(value) {
+            if (onlyThisBook) {
+                configList.getOrNull(value)?.let(bookStyle::use)
+                return
+            }
             if (isComic) {
                 comicStyleSelect = value
             } else {
@@ -444,13 +513,13 @@ object ReadBookConfig {
     var hideStatusBar = appCtx.getPrefBoolean(PreferKey.hideStatusBar)
     var useZhLayout = appCtx.getPrefBoolean(PreferKey.useZhLayout)
 
-    val config get() = if (shareLayout) shareConfig else durConfig
+    val config get() = bookStyle.config ?: if (shareLayout) shareConfig else durConfig
 
     internal fun effectiveReadFloatingColor(
         preset: Config = durConfig,
     ): EffectiveReadFloatingColor = resolveEffectiveReadFloatingColor(
         isEInk = AppConfig.isEInkMode,
-        globallyFollowsApplication = readFloatingFollowAppGlobally,
+        globallyFollowsApplication = floatingColorManagedGlobally,
         globalColorStyle = readFloatingGlobalColorStyle,
         presetSeed = preset.curReadFloatingSeed(),
         presetFollowsApplication = preset.curReadFloatingFollowsApplication(),
@@ -698,7 +767,7 @@ object ReadBookConfig {
 
     fun getExportConfig(): Config {
         val exportConfig = durConfig.copy(highlightRules = ArrayList(ReadHighlightRuleStore.allRules()))
-        if (shareLayout) {
+        if (shareLayout && !onlyThisBook) {
             exportConfig.textFont = shareConfig.textFont
             exportConfig.titleFont = shareConfig.titleFont
             exportConfig.headerFont = shareConfig.headerFont
@@ -783,6 +852,10 @@ object ReadBookConfig {
         appendImportedConfigWithReport(config).index
 
     internal fun appendImportedConfigWithReport(config: Config): AppendImportedConfigResult {
+        if (onlyThisBook) {
+            bookStyle.use(config)
+            return AppendImportedConfigResult(-1, null)
+        }
         val importedRules = config.highlightRules.toList()
         config.highlightRules.clear()
         val ruleMerge = importedRules.takeIf { it.isNotEmpty() }?.let {
@@ -903,6 +976,34 @@ object ReadBookConfig {
         @SerializedName("ngReadStyleSource") var ngReadStyleSource: String? = null,
         @SerializedName("ngUnknownFields") var ngUnknownFields: Map<String, String> = emptyMap(),
     ) {
+
+        /** 复制当前实际布局及预设外观，不保留全局模板的可变对象引用。 */
+        internal fun copyForBook(layout: Config = this): Config = layout.copy(
+            name = name,
+            bgStr = bgStr,
+            bgStrNight = bgStrNight,
+            bgStrEInk = bgStrEInk,
+            bgType = bgType,
+            bgTypeNight = bgTypeNight,
+            bgTypeEInk = bgTypeEInk,
+            darkStatusIcon = darkStatusIcon,
+            darkStatusIconNight = darkStatusIconNight,
+            darkStatusIconEInk = darkStatusIconEInk,
+            textColor = textColor,
+            textColorNight = textColorNight,
+            textColorEInk = textColorEInk,
+            textAccentColor = textAccentColor,
+            textAccentColorNight = textAccentColorNight,
+            textAccentColorEInk = textAccentColorEInk,
+            readFloatingSeed = readFloatingSeed,
+            readFloatingSeedNight = readFloatingSeedNight,
+            readFloatingFollowAppNight = readFloatingFollowAppNight,
+            readFloatingTransparency = readFloatingTransparency,
+            readFloatingPrimaryStrength = readFloatingPrimaryStrength,
+            readFloatingColorStyle = readFloatingColorStyle,
+            highlightRules = arrayListOf(),
+            ngUnknownFields = ngUnknownFields.toMap(),
+        )
 
         @Transient
         private var textColorIntEInk = -1

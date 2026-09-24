@@ -216,13 +216,17 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun createActions() = ReadStyleActions(
         onPageSelected = ::navigateTo,
         onCreatePreset = {
-            ReadBookConfig.configList.add(
+            val index = ReadBookConfig.createStyle(
                 ReadBookConfig.Config(
                     readFloatingTransparency = 0,
                     readFloatingPrimaryStrength = 100,
                 )
             )
-            openEditor(ReadBookConfig.configList.lastIndex, isNew = true)
+            openEditor(index, isNew = true)
+            if (ReadBookConfig.onlyThisBook) {
+                ReadFloatingAppearanceState.refreshFromConfig()
+                notifyPresetRestored()
+            }
         },
         onSelectPreset = ::changeBgTextConfig,
         onImportPreset = {
@@ -238,6 +242,13 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onRestoreCurrentPreset = ::confirmRestoreCurrentPreset,
         onRestoreAllPresets = ::confirmRestoreAllPresets,
         onOpenEpubSettings = { showEpubSettings = true },
+        onOnlyThisBookChanged = { enabled ->
+            ReadBookConfig.setOnlyThisBook(enabled)
+            editorBackgroundCache = null
+            ReadFloatingAppearanceState.refreshFromConfig()
+            refreshUi()
+            notifyPresetRestored()
+        },
         onShareLayoutChanged = { checked ->
             ReadBookConfig.shareLayout = checked
             refreshUi()
@@ -312,7 +323,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         },
         onFloatingColorStyleChanged = { style ->
             val config = ReadBookConfig.durConfig
-            if (ReadBookConfig.readFloatingFollowAppGlobally) {
+            if (ReadBookConfig.floatingColorManagedGlobally) {
                 ReadBookConfig.readFloatingGlobalColorStyle = style
             } else {
                 config.readFloatingColorStyle = style
@@ -323,7 +334,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 config.curReadFloatingPrimaryStrength(),
                 ReadBookConfig.effectiveReadFloatingColor(config).colorStyle,
             )
-            if (!ReadBookConfig.readFloatingFollowAppGlobally) ReadBookConfig.save()
+            if (!ReadBookConfig.floatingColorManagedGlobally) ReadBookConfig.save()
             notifyFloatingAppearanceChanged()
         },
         onFloatingAppearanceChangeFinished = {
@@ -474,10 +485,13 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         val effectiveFloatingColor = ReadBookConfig.effectiveReadFloatingColor(config)
         selectedHighlightIds = selectedHighlightIds.intersect(rules.mapTo(hashSetOf()) { it.id })
         screenState = ReadStyleUiState(
-            presets = ReadBookConfig.configList.mapIndexed { index, item ->
+            presets = (if (ReadBookConfig.onlyThisBook) listOf(-1 to config) else emptyList())
+                .plus(ReadBookConfig.configList.mapIndexed { index, item -> index to item })
+                .map { (index, item) ->
                 ReadStylePresetUi(
                     index = index,
-                    name = item.name.ifBlank { getString(R.string.text) },
+                    name = if (index == -1) getString(R.string.read_style_this_book)
+                        else item.name.ifBlank { getString(R.string.text) },
                     textColor = item.curTextColor(),
                     background = runCatching {
                         item.curBgDrawable(176, 128).toBitmap(176, 128).asImageBitmap()
@@ -494,7 +508,9 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             ),
             shareLayout = ReadBookConfig.shareLayout,
             isEpub = ReadBook.book?.isEpub == true,
-            globalFloatingFollowApp = ReadBookConfig.readFloatingFollowAppGlobally,
+            onlyThisBook = ReadBookConfig.onlyThisBook,
+            canUseBookStyle = ReadBookConfig.canUseBookStyle,
+            globalFloatingFollowApp = ReadBookConfig.floatingColorManagedGlobally,
             textSize = ReadBookConfig.textSize,
             letterSpacing = ReadBookConfig.letterSpacing,
             lineSpacingExtra = ReadBookConfig.lineSpacingExtra,
@@ -781,7 +797,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun setFloatingColorSource(fromBackground: Boolean) {
-        if (ReadBookConfig.readFloatingFollowAppGlobally) return
+        if (ReadBookConfig.floatingColorManagedGlobally) return
         val config = ReadBookConfig.durConfig
         if (fromBackground) {
             updateEditorState { copy(editorFloatingColorFromBackground = true) }
@@ -796,7 +812,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun pickFloatingColor() {
-        if (ReadBookConfig.readFloatingFollowAppGlobally) return
+        if (ReadBookConfig.floatingColorManagedGlobally) return
         val config = ReadBookConfig.durConfig
         if (config.curBgType() == 0) {
             runCatching { config.curBgStr().toColorInt() }
@@ -825,7 +841,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun applyFloatingColor(color: Int) {
-        if (ReadBookConfig.readFloatingFollowAppGlobally) return
+        if (ReadBookConfig.floatingColorManagedGlobally) return
         ReadBookConfig.durConfig.setCurReadFloatingSeed(color)
         ReadBookConfig.save()
         refreshUi()
@@ -997,6 +1013,14 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun deleteCurrentStyle() {
+        if (ReadBookConfig.onlyThisBook) {
+            ReadBookConfig.setOnlyThisBook(false)
+            editorBackgroundCache = null
+            ReadFloatingAppearanceState.refreshFromConfig()
+            refreshUi()
+            notifyPresetRestored()
+            return
+        }
         val name = ReadBookConfig.durConfig.name.ifBlank { getString(R.string.text) }
         showReadConfirmDialog(
             context = requireContext(),
@@ -1281,7 +1305,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             ReadBookConfig.importWithReport(uri.readBytes(requireContext()))
         }.onSuccess { result ->
             val appendResult = ReadBookConfig.appendImportedConfigWithReport(result.config)
-            result.readerSettings?.let(ReadPresetPreferences::apply)
+            if (!ReadBookConfig.onlyThisBook) result.readerSettings?.let(ReadPresetPreferences::apply)
             ReadBookConfig.styleSelect = appendResult.index
             editorBackgroundCache = null
             refreshUi()
