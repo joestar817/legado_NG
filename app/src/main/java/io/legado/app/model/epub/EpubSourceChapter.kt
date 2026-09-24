@@ -1,5 +1,6 @@
 package io.legado.app.model.epub
 
+import io.legado.app.help.book.ContentEdit
 import io.legado.app.help.book.ContentPositionMap
 import io.legado.app.help.book.EpubContentEntities
 import org.jsoup.Jsoup
@@ -97,6 +98,8 @@ internal class EpubSourceCapture {
         val bodyHtml = bodies.map { it.outerHtml() }
         check(bodyHtml.joinToString("\n") == html)
         val tokens = ArrayList<EpubSourceToken>()
+        val markerEdits = ArrayList<ContentEdit>()
+        val retainedMarkers = flattening.text.contains(" $ATTRIBUTE=\"")
         var base = 0
         for (body in bodyHtml) {
             val parsed = Jsoup.parse(body, "", Parser.htmlParser().setTrackPosition(true))
@@ -106,6 +109,22 @@ internal class EpubSourceCapture {
                 val element = if (node is Element) node else node.parent() as? Element
                 val id = element?.attr(ATTRIBUTE).orEmpty()
                 val doc = id.substringBefore('-').toIntOrNull()
+                // The legacy formatter retains some tags (for example ops:switch). Remove only
+                // our attribute from a tracked opening tag, never matching attribute-like prose.
+                if (retainedMarkers && node is Element && doc != null) {
+                    val range = node.sourceRange()
+                    if (range.isTracked) {
+                        val marker = " $ATTRIBUTE=\"$id\""
+                        val start = body.indexOf(marker, range.start().pos())
+                        if (start >= range.start().pos() && start + marker.length <= range.end().pos()) {
+                            val from = flattening.outputPosition(base + start, ContentPositionMap.Affinity.BEFORE)
+                            val to = flattening.outputPosition(base + start + marker.length, ContentPositionMap.Affinity.AFTER)
+                            if (flattening.text.substring(from, to) == marker) {
+                                markerEdits.add(ContentEdit(from, to, ""))
+                            }
+                        }
+                    }
+                }
                 if (node is TextNode && doc != null) {
                     val range = node.sourceRange()
                     if (range.isTracked) {
@@ -144,6 +163,14 @@ internal class EpubSourceCapture {
             }
             visit(parsed.body())
             base += body.length + 1
+        }
+        if (markerEdits.isNotEmpty()) {
+            val edits = markerEdits.sortedBy { it.start }
+            val input = flattening.text
+            val output = StringBuilder(input).also { text ->
+                edits.asReversed().forEach { edit -> text.delete(edit.start, edit.end) }
+            }.toString()
+            flattening.record(input, output, edits, display = false)
         }
         val documents = drafts.map {
             it.document.outputSettings().prettyPrint(false)
