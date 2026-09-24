@@ -220,6 +220,8 @@ abstract class AppDatabase : RoomDatabase() {
                         ${BookGroup.IdAll},
                         ${BookGroup.IdLocal},
                         ${BookGroup.IdAudio},
+                        ${BookGroup.IdNovel},
+                        ${BookGroup.IdManga},
                         ${BookGroup.IdVideo}
                     )
                 """.trimIndent()
@@ -266,6 +268,32 @@ abstract class AppDatabase : RoomDatabase() {
                         from book_groups where groupId = ${BookGroup.IdAll}
                         and not exists (select 1 from book_groups where groupId = ${BookGroup.IdNoGroup})
                     """.trimIndent())
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+                // Keep existing user ordering while placing the new type filters beside audio/video.
+                db.beginTransaction()
+                try {
+                    fun addTypeGroup(id: Long, name: String, beforeId: Long) {
+                        val exists = db.query("select 1 from book_groups where groupId = $id").use {
+                            it.moveToFirst()
+                        }
+                        if (exists) return
+                        val beforeOrder = db.query(
+                            "select `order` from book_groups where groupId = $beforeId"
+                        ).use { if (it.moveToFirst()) it.getInt(0) else null } ?: return
+                        db.execSQL(
+                            "update book_groups set `order` = `order` + 1 where `order` >= ?",
+                            arrayOf(beforeOrder),
+                        )
+                        db.execSQL(
+                            "insert into book_groups(groupId, groupName, `order`, show) values (?, ?, ?, 1)",
+                            arrayOf<Any>(id, name, beforeOrder),
+                        )
+                    }
+                    addTypeGroup(BookGroup.IdNovel, "小说", BookGroup.IdAudio)
+                    addTypeGroup(BookGroup.IdManga, "漫画", BookGroup.IdVideo)
                     db.setTransactionSuccessful()
                 } finally {
                     db.endTransaction()

@@ -98,6 +98,8 @@ internal fun BookshelfManageTopBar(
                         iconRes = when (group.groupId) {
                             BookGroup.IdLocal -> R.drawable.ic_bookshelf_dock_local
                             BookGroup.IdAudio -> R.drawable.ic_bookshelf_dock_audio
+                            BookGroup.IdNovel -> R.drawable.ic_bookshelf_dock_novel
+                            BookGroup.IdManga -> R.drawable.ic_source_group_comic
                             BookGroup.IdVideo -> R.drawable.ic_bookshelf_dock_video
                             else -> R.drawable.ic_bookshelf_manage_filter_group
                         },

@@ -179,6 +179,8 @@ object Restore {
                     group.groupId >= 0 || group.groupId == BookGroup.IdAll ||
                             group.groupId == BookGroup.IdLocal ||
                             group.groupId == BookGroup.IdAudio ||
+                            group.groupId == BookGroup.IdNovel ||
+                            group.groupId == BookGroup.IdManga ||
                             group.groupId == BookGroup.IdVideo
                 }
             }

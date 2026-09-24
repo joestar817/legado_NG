@@ -17,7 +17,7 @@ interface BookGroupDao {
     @Query("select * from book_groups where groupId = :id")
     fun getByID(id: Long): BookGroup?
 
-    @Query("select * from book_groups where groupName = :groupName")
+    @Query("select * from book_groups where groupName = :groupName order by case when groupId > 0 or groupId = ${Long.MIN_VALUE} then 0 else 1 end limit 1")
     fun getByName(groupName: String): BookGroup?
 
     @Query("SELECT * FROM book_groups ORDER BY `order`")
@@ -32,6 +32,8 @@ interface BookGroupDao {
             or groupId = ${BookGroup.IdAll}
             or (groupId = ${BookGroup.IdLocal} and exists (select 1 from books where type & ${BookType.local} > 0))
             or (groupId = ${BookGroup.IdAudio} and exists (select 1 from books where type & ${BookType.audio} > 0))
+            or (groupId = ${BookGroup.IdNovel} and exists (select 1 from books where type & ${BookType.text} > 0))
+            or (groupId = ${BookGroup.IdManga} and exists (select 1 from books where type & ${BookType.image} > 0))
             or (groupId = ${BookGroup.IdVideo} and exists (select 1 from books where type & ${BookType.video} > 0))
         )
         ORDER BY `order`"""

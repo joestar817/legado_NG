@@ -232,7 +232,7 @@ class BookshelfBookGroupSheet private constructor(
         host.launch {
             val result = withContext(IO) {
                 val existing = appDb.bookGroupDao.getByName(groupName)
-                if (existing != null) {
+                if (existing != null && existing.groupId > 0) {
                     existing.groupId
                 } else if (!appDb.bookGroupDao.canAddGroup) {
                     null

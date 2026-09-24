@@ -1875,6 +1875,8 @@ object BookshelfMcpTools {
                         (customGroupSum == 0L || (customGroupSum and book.group) == 0L)
                 BookGroup.IdLocal -> book.isLocal
                 BookGroup.IdAudio -> book.isAudio
+                BookGroup.IdNovel -> book.type and BookType.text > 0
+                BookGroup.IdManga -> book.isImage
                 BookGroup.IdVideo -> book.isVideo
                 else -> groupId > 0 && (book.group and groupId) > 0
             }

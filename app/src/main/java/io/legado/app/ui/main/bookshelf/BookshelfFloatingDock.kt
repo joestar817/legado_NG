@@ -762,6 +762,8 @@ private fun BookshelfDockGroup.builtInIconRes(): Int? {
         BookGroup.IdNoGroup -> R.drawable.ic_bookshelf_dock_ungrouped
         BookGroup.IdLocal -> R.drawable.ic_bookshelf_dock_local
         BookGroup.IdAudio -> R.drawable.ic_bookshelf_dock_audio
+        BookGroup.IdNovel -> R.drawable.ic_bookshelf_dock_novel
+        BookGroup.IdManga -> R.drawable.ic_source_group_comic
         BookGroup.IdVideo -> R.drawable.ic_bookshelf_dock_video
         else -> null
     }

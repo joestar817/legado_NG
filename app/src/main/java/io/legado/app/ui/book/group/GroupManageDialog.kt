@@ -566,6 +566,8 @@ private fun BookGroup.isBuiltIn(): Boolean = when (groupId) {
     BookGroup.IdNoGroup,
     BookGroup.IdLocal,
     BookGroup.IdAudio,
+    BookGroup.IdNovel,
+    BookGroup.IdManga,
     BookGroup.IdVideo -> true
 
     else -> false

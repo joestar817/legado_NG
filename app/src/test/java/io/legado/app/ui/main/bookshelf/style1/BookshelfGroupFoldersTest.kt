@@ -15,6 +15,8 @@ class BookshelfGroupFoldersTest {
         val books = listOf(
             Book(bookUrl = "online", type = BookType.text),
             Book(bookUrl = "local", type = BookType.text or BookType.local),
+            Book(bookUrl = "audio", type = BookType.audio),
+            Book(bookUrl = "manga", type = BookType.image),
             Book(bookUrl = "hidden-group", group = 1),
             Book(bookUrl = "last-bit", group = Long.MIN_VALUE),
         )
@@ -24,7 +26,34 @@ class BookshelfGroupFoldersTest {
             allCustomGroupMask = listOf(ungrouped, hidden, lastBit).customGroupMask(),
         )
 
-        assertEquals(listOf("online", "local"), folders.single().books.map { it.bookUrl })
+        assertEquals(
+            listOf("online", "local", "audio", "manga"),
+            folders.single().books.map { it.bookUrl },
+        )
+    }
+
+    @Test
+    fun novelAndMangaFiltersAlsoIncludeBooksInManualGroups() {
+        val novel = BookGroup(groupId = BookGroup.IdNovel, bookSort = 3)
+        val manga = BookGroup(groupId = BookGroup.IdManga, bookSort = 3)
+        val books = listOf(
+            Book(bookUrl = "online-novel", type = BookType.text),
+            Book(bookUrl = "local-novel", type = BookType.text or BookType.local),
+            Book(bookUrl = "grouped-novel", type = BookType.text, group = 1),
+            Book(bookUrl = "manga", type = BookType.image),
+            Book(bookUrl = "grouped-manga", type = BookType.image, group = 1),
+            Book(bookUrl = "audio", type = BookType.audio),
+        )
+
+        val folders = buildBookshelfGroupFolders(listOf(novel, manga), books)
+        assertEquals(
+            listOf("online-novel", "local-novel", "grouped-novel"),
+            folders.single { it.group.groupId == BookGroup.IdNovel }.books.map { it.bookUrl },
+        )
+        assertEquals(
+            listOf("manga", "grouped-manga"),
+            folders.single { it.group.groupId == BookGroup.IdManga }.books.map { it.bookUrl },
+        )
     }
 
     @Test

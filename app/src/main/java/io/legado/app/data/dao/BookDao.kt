@@ -39,6 +39,8 @@ interface BookDao {
             BookGroup.IdAll -> flowAll()
             BookGroup.IdLocal -> flowLocal()
             BookGroup.IdAudio -> flowAudio()
+            BookGroup.IdNovel -> flowNovel()
+            BookGroup.IdManga -> flowManga()
             BookGroup.IdVideo -> flowVideo()
             BookGroup.IdNoGroup -> flowNoGroup()
             else -> flowByUserGroup(groupId)
@@ -65,6 +67,12 @@ interface BookDao {
 
     @Query("SELECT * FROM books WHERE type & ${BookType.audio} > 0")
     fun flowAudio(): Flow<List<Book>>
+
+    @Query("SELECT * FROM books WHERE type & ${BookType.text} > 0")
+    fun flowNovel(): Flow<List<Book>>
+
+    @Query("SELECT * FROM books WHERE type & ${BookType.image} > 0")
+    fun flowManga(): Flow<List<Book>>
 
     @Query("SELECT * FROM books WHERE type & ${BookType.video} > 0")
     fun flowVideo(): Flow<List<Book>>

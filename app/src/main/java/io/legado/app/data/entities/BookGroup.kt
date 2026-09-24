@@ -36,11 +36,13 @@ data class BookGroup(
         const val IdLocal = -2L
         const val IdAudio = -3L
         const val IdVideo = -6L
+        const val IdNovel = -7L
+        const val IdManga = -8L
     }
 
     fun getManageName(context: Context): String {
         return when (groupId) {
-            IdAll, IdNoGroup, IdAudio, IdLocal, IdVideo ->
+            IdAll, IdNoGroup, IdAudio, IdLocal, IdNovel, IdManga, IdVideo ->
                 "$groupName(${context.getString(R.string.built_in_group)})"
 
             else -> groupName

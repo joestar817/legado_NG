@@ -46,11 +46,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.constant.BookType
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.help.book.isAudio
+import io.legado.app.help.book.isImage
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isVideo
+import io.legado.app.help.book.isType
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.BookshelfLayoutMode
 import io.legado.app.ui.design.components.compose.NgBookCover
@@ -82,6 +85,8 @@ internal fun buildBookshelfGroupFolders(
                 }
                 BookGroup.IdLocal -> books.filter { it.isLocal }
                 BookGroup.IdAudio -> books.filter { it.isAudio }
+                BookGroup.IdNovel -> books.filter { it.isType(BookType.text) }
+                BookGroup.IdManga -> books.filter { it.isImage }
                 BookGroup.IdVideo -> books.filter { it.isVideo }
                 else -> books.filter { it.group and group.groupId > 0L }
             }
