@@ -14,22 +14,29 @@ object ContentHelp {
      * @param chapterName 标题
      * @return
      */
-    fun reSegment(content: String, chapterName: String): String {
+    @JvmOverloads
+    fun reSegment(content: String, chapterName: String, trace: ContentPositionMap? = null): String {
         var content1 = content
         val dict = makeDict(content1)
-        var p = content1
-            .replace("&quot;".toRegex(), "“")
-            .replace("[:：]['\"‘”“]+".toRegex(), "：“")
-            .replace("[\"”“]+\\s*[\"”“][\\s\"”“]*".toRegex(), "”\n“")
-            .split("\n(\\s*)".toRegex()).toTypedArray()
+        val normalized = content1
+            .replaceTracked("&quot;".toRegex(), "“", trace)
+            .replaceTracked("[:：]['\"‘”“]+".toRegex(), "：“", trace)
+            .replaceTracked("[\"”“]+\\s*[\"”“][\\s\"”“]*".toRegex(), "”\n“", trace)
+        val firstDelimiter = "\n(\\s*)".toRegex()
+        var p = normalized.split(firstDelimiter).toTypedArray()
+        var ranges = if (trace != null) splitRanges(normalized, firstDelimiter) else emptyList()
+        var assembly = trace?.let { ContentAssembly(normalized) }
 
         //初始化StringBuilder的长度,在原content的长度基础上做冗余
         var buffer = StringBuilder((content1.length * 1.15).toInt())
         //          章节的文本格式为章节标题-空行-首段，所以处理段落时需要略过第一行文本。
         buffer.append("  ")
+        assembly?.append("  ")
         if (chapterName.trim { it <= ' ' } != p[0].trim { it <= ' ' }) {
             // 去除段落内空格。unicode 3000 象形字间隔（中日韩符号和标点），不包含在\s内
-            buffer.append(p[0].replace("[\u3000\\s]+".toRegex(), ""))
+            val part = trace?.let { ContentPositionMap(p[0]) }
+            buffer.append(p[0].replaceTracked("[\u3000\\s]+".toRegex(), "", part))
+            assembly?.copy(ranges[0].first, ranges[0].second, part)
         }
 
         //如果原文存在分段错误，需要把段落重新黏合
@@ -39,37 +46,60 @@ object ContentHelp {
                         && match(MARK_SENTENCES_END, buffer[buffer.lastIndex - 1]))
             ) {
                 buffer.append("\n")
+                assembly?.append("\n")
             }
             // 段落开头以外的地方不应该有空格
             // 去除段落内空格。unicode 3000 象形字间隔（中日韩符号和标点），不包含在\s内
-            buffer.append(p[i].replace("[\u3000\\s]".toRegex(), ""))
+            val part = trace?.let { ContentPositionMap(p[i]) }
+            buffer.append(p[i].replaceTracked("[\u3000\\s]".toRegex(), "", part))
+            assembly?.copy(ranges[i].first, ranges[i].second, part)
         }
+        if (trace != null) assembly!!.record(trace, buffer.toString())
         //     预分段预处理
         //         ”“处理为”\n“。
         //         ”。“处理为”。\n“。不考虑“？”  “！”的情况。
         // ”。xxx处理为 ”。\n xxx
-        p = buffer.toString()
-            .replace("[\"”“]+\\s*[\"”“]+".toRegex(), "”\n“")
-            .replace("[\"”“]+(？。！?!~)[\"”“]+".toRegex(), "”$1\n“")
-            .replace("[\"”“]+(？。！?!~)([^\"”“])".toRegex(), "”$1\n$2")
-            .replace(
+        val separated = buffer.toString()
+            .replaceTracked("[\"”“]+\\s*[\"”“]+".toRegex(), "”\n“", trace)
+            .replaceTracked("[\"”“]+(？。！?!~)[\"”“]+".toRegex(), "”$1\n“", trace)
+            .replaceTracked("[\"”“]+(？。！?!~)([^\"”“])".toRegex(), "”$1\n$2", trace)
+            .replaceTracked(
                 "([问说喊唱叫骂道着答])[\\.。]".toRegex(),
-                "$1。\n"
+                "$1。\n", trace,
             )
-            .split("\n".toRegex()).toTypedArray()
+        p = separated.split("\n".toRegex()).toTypedArray()
+        ranges = if (trace != null) splitRanges(separated, "\n".toRegex()) else emptyList()
+        assembly = trace?.let { ContentAssembly(separated) }
         buffer = StringBuilder((content1.length * 1.15).toInt())
-        for (s in p) {
+        for ((index, s) in p.withIndex()) {
+            val part = trace?.let { ContentPositionMap(s) }
             buffer.append("\n")
-            buffer.append(findNewLines(s, dict))
+            assembly?.append("\n")
+            buffer.append(findNewLines(s, dict, part))
+            assembly?.copy(ranges[index].first, ranges[index].second, part)
         }
-        buffer = reduceLength(buffer)
+        if (trace != null) assembly!!.record(trace, buffer.toString())
+        buffer = reduceLength(buffer, trace)
         content1 = (buffer.toString() //         处理章节头部空格和换行
-            .replaceFirst("^\\s+".toRegex(), "")
-            .replace("\\s*[\"”“]+\\s*[\"”“][\\s\"”“]*".toRegex(), "”\n“")
-            .replace("[:：][”“\"\\s]+".toRegex(), "：“")
-            .replace("\n[\"“”]([^\n\"“”]+)([,:，：][\"”“])([^\n\"“”]+)".toRegex(), "\n$1：“$3")
-            .replace("\n(\\s*)".toRegex(), "\n"))
+            .replaceTracked("^\\s+".toRegex(), "", trace, firstOnly = true)
+            .replaceTracked("\\s*[\"”“]+\\s*[\"”“][\\s\"”“]*".toRegex(), "”\n“", trace)
+            .replaceTracked("[:：][”“\"\\s]+".toRegex(), "：“", trace)
+            .replaceTracked("\n[\"“”]([^\n\"“”]+)([,:，：][\"”“])([^\n\"“”]+)".toRegex(), "\n$1：“$3", trace)
+            .replaceTracked("\n(\\s*)".toRegex(), "\n", trace))
         return content1
+    }
+
+    private fun String.replaceTracked(regex: Regex, replacement: String, trace: ContentPositionMap?, firstOnly: Boolean = false): String =
+        trace?.regex(this, regex, replacement, firstOnly)
+            ?: if (firstOnly) regex.replaceFirst(this, replacement) else regex.replace(this, replacement)
+
+    private fun splitRanges(input: String, delimiter: Regex): List<Pair<Int, Int>> = buildList {
+        var start = 0
+        delimiter.findAll(input).forEach { match ->
+            add(start to match.range.first)
+            start = match.range.last + 1
+        }
+        add(start to input.length)
     }
 
     /**
@@ -81,8 +111,11 @@ object ContentHelp {
      * @param str
      * @return
      */
-    private fun reduceLength(str: StringBuilder): StringBuilder {
+    private fun reduceLength(str: StringBuilder, trace: ContentPositionMap?): StringBuilder {
         val p = str.toString().split("\n".toRegex()).toTypedArray()
+        val ranges = if (trace != null) splitRanges(str.toString(), "\n".toRegex()) else emptyList()
+        val parts = if (trace != null) p.map { ContentPositionMap(it) } else emptyList()
+        val assembly = trace?.let { ContentAssembly(str.toString()) }
         val l = p.size
         val b = BooleanArray(l)
         for (i in 0 until l) {
@@ -94,37 +127,44 @@ object ContentHelp {
                 if (dialogue < 0) dialogue = 1 else if (dialogue < 2) dialogue++
             } else {
                 if (dialogue > 1) {
-                    p[i] = splitQuote(p[i])
+                    p[i] = splitQuote(p[i], parts.getOrNull(i))
                     dialogue--
                 } else if (dialogue > 0 && i < l - 2) {
-                    if (b[i + 1]) p[i] = splitQuote(p[i])
+                    if (b[i + 1]) p[i] = splitQuote(p[i], parts.getOrNull(i))
                 }
             }
         }
         val string = StringBuilder()
         for (i in 0 until l) {
             string.append('\n')
+            assembly?.append("\n")
             string.append(p[i])
+            assembly?.copy(ranges[i].first, ranges[i].second, parts.getOrNull(i))
             //System.out.print(" "+b[i]);
         }
         //System.out.println(" " + str);
+        if (trace != null) assembly!!.record(trace, string.toString())
         return string
     }
 
     // 强制切分进入对话模式后，未构成 “xxx” 形式的段落
-    private fun splitQuote(str: String): String {
+    private fun splitQuote(str: String, trace: ContentPositionMap?): String {
         val length = str.length
         if (length < 3) return str
         if (match(MARK_QUOTATION, str[0])) {
             val i = seekIndex(str, MARK_QUOTATION, 1, length - 2, true) + 1
             if (i > 1) if (!match(MARK_QUOTATION_BEFORE, str[i - 1])) {
-                return "${str.take(i)}\n${str.substring(i)}"
+                return "${str.take(i)}\n${str.substring(i)}".also {
+                    trace?.record(str, it, listOf(ContentEdit(i, i, "\n")))
+                }
             }
         } else if (match(MARK_QUOTATION, str[length - 1])) {
             val i = length - 1 - seekIndex(str, MARK_QUOTATION, 1, length - 2, false)
             if (i > 1) {
                 if (!match(MARK_QUOTATION_BEFORE, str[i - 1])) {
-                    return "${str.take(i)}\n${str.substring(i)}"
+                    return "${str.take(i)}\n${str.substring(i)}".also {
+                        trace?.record(str, it, listOf(ContentEdit(i, i, "\n")))
+                    }
                 }
             }
         }
@@ -168,7 +208,7 @@ object ContentHelp {
     }
 
     // 对内容重新划分段落.输入参数str已经使用换行符预分割
-    private fun findNewLines(str: String, dict: List<String>): String {
+    private fun findNewLines(str: String, dict: List<String>, trace: ContentPositionMap?): String {
         val string = StringBuilder(str)
         // 标记string中每个引号的位置.特别的，用引号进行列举时视为只有一对引号。 如：“锅”、“碗”视为“锅、碗”，从而避免误断句。
         val arrayQuote: MutableList<Int> = ArrayList()
@@ -426,7 +466,17 @@ object ContentHelp {
 //     完成字符串拼接（从string复制、插入引号和换行
 //     ins_quote 在引号前插入一个引号。   ins_quote[i]!=0,则array_quote.get(i)的引号前需要前插入'”'
 //     ins_n 插入换行。数组的值表示插入换行符的位置
+        trace?.recordCharacterWrites(str, string.toString())
+        val assembly = trace?.let { ContentAssembly(string.toString()) }
         val buffer = StringBuilder((str.length * 1.15).toInt())
+        fun copy(start: Int, end: Int) {
+            buffer.append(string, start, end)
+            assembly?.copy(start, end)
+        }
+        fun append(value: String) {
+            buffer.append(value)
+            assembly?.append(value)
+        }
         var j = 0
         var progress = 0
         var nextLine = -1
@@ -440,34 +490,36 @@ object ContentHelp {
 //                如果下一个换行符在当前引号前，那么需要此次处理.如果紧挨当前引号，需要考虑插入引号的情况
                 if (nextLine >= quote) break
                 nextLine = insN[j]
-                buffer.append(string, progress, nextLine + 1)
-                buffer.append('\n')
+                copy(progress, nextLine + 1)
+                append("\n")
                 progress = nextLine + 1
                 j++
             }
             if (progress < quote) {
-                buffer.append(string, progress, quote + 1)
+                copy(progress, quote + 1)
                 progress = quote + 1
             }
             if (insQuote[i] && buffer.length > 2) {
-                if (buffer[buffer.length - 1] == '\n') buffer.append('“') else buffer.insert(
-                    buffer.length - 1,
-                    "”\n"
-                )
+                if (buffer[buffer.length - 1] == '\n') append("“") else {
+                    val at = buffer.length - 1
+                    buffer.insert(at, "”\n")
+                    assembly?.insert(at, "”\n")
+                }
             }
         }
         while (j < insN.size) {
             nextLine = insN[j]
             if (progress <= nextLine) {
-                buffer.append(string, progress, nextLine + 1)
-                buffer.append('\n')
+                copy(progress, nextLine + 1)
+                append("\n")
                 progress = nextLine + 1
             }
             j++
         }
         if (progress < string.length) {
-            buffer.append(string, progress, string.length)
+            copy(progress, string.length)
         }
+        if (trace != null) assembly!!.record(trace, buffer.toString())
         return buffer.toString()
     }
 

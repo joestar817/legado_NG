@@ -19,6 +19,14 @@ abstract class HorizontalPageDelegate(readView: ReadView) : PageDelegate(readVie
     }
 
     open fun setBitmap() {
+        readView.externalPageSnapshots?.let { (before, after) ->
+            curRecorder.beginRecording(before.width, before.height).drawBitmap(before, 0f, 0f, null)
+            curRecorder.endRecording()
+            val target = if (mDirection == PageDirection.PREV) prevRecorder else nextRecorder
+            target.beginRecording(after.width, after.height).drawBitmap(after, 0f, 0f, null)
+            target.endRecording()
+            return
+        }
         when (mDirection) {
             PageDirection.PREV -> {
                 prevPage.screenshot(prevRecorder)
@@ -41,6 +49,18 @@ abstract class HorizontalPageDelegate(readView: ReadView) : PageDelegate(readVie
         curRecorder = CanvasRecorderFactory.create()
         prevRecorder = CanvasRecorderFactory.create()
         nextRecorder = CanvasRecorderFactory.create()
+    }
+
+    internal fun startExternalAnimation(direction: PageDirection, duration: Int) {
+        isCancel = false
+        val x = if (direction == PageDirection.NEXT) viewWidth * .9f else 0f
+        val y = viewHeight * .9f
+        readView.setStartPoint(x, y, false)
+        val down = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, x, y, 0)
+        onTouch(down)
+        down.recycle()
+        setDirection(direction)
+        onAnimStart(duration)
     }
 
     override fun onTouch(event: MotionEvent) {
@@ -126,6 +146,7 @@ abstract class HorizontalPageDelegate(readView: ReadView) : PageDelegate(readVie
     }
 
     override fun nextPageByAnim(animationSpeed: Int) {
+        if (readView.turnLayoutPage(1)) return
         abortAnim()
         if (!hasNext()) return
         setDirection(PageDirection.NEXT)
@@ -138,6 +159,7 @@ abstract class HorizontalPageDelegate(readView: ReadView) : PageDelegate(readVie
     }
 
     override fun prevPageByAnim(animationSpeed: Int) {
+        if (readView.turnLayoutPage(-1)) return
         abortAnim()
         if (!hasPrev()) return
         setDirection(PageDirection.PREV)

@@ -280,6 +280,21 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
     private var justInitData: Boolean = false
     private var syncDialog: Dialog? = null
+    @Volatile
+    internal var epubOpeningPreparation: io.legado.app.ui.book.read.epub.EpubOpeningPreparation? = null
+        private set
+    internal var epubOpeningPreview: io.legado.app.ui.book.read.epub.EpubOpeningPreview? = null
+        private set
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        epubOpeningPreparation = io.legado.app.ui.book.read.epub.EpubOpeningPreparation(applicationContext, intent.getStringExtra("bookUrl"), ReadBook.curTextChapter)
+        try {
+            super.onCreate(savedInstanceState)
+        } catch (error: Exception) {
+            epubOpeningPreparation?.close()
+            throw error
+        }
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onActivityCreated(savedInstanceState: Bundle?) {
@@ -316,13 +331,27 @@ class ReadBookActivity : BaseReadBookActivity(),
         viewModel.initReadBookConfig(intent)
         binding.root.post {
             viewModel.initData(intent)
+            startEpubOpeningPreview()
         }
         justInitData = true
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        epubOpeningPreview?.close()
+        epubOpeningPreview = null
+        epubOpeningPreparation?.close()
+        epubOpeningPreparation = io.legado.app.ui.book.read.epub.EpubOpeningPreparation(applicationContext, intent.getStringExtra("bookUrl"), ReadBook.curTextChapter)
         viewModel.initData(intent)
+        startEpubOpeningPreview()
+    }
+
+    private fun startEpubOpeningPreview() {
+        if (!binding.readView.isScroll && !isFinishing && !isDestroyed) {
+            epubOpeningPreparation?.let {
+                epubOpeningPreview = io.legado.app.ui.book.read.epub.EpubOpeningPreview(this, it)
+            }
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -494,7 +523,6 @@ class ReadBookActivity : BaseReadBookActivity(),
             when (item.groupId) {
                 R.id.menu_group_local -> item.isVisible = !onLine
                 R.id.menu_group_text -> item.isVisible = book.isLocalTxt
-                R.id.menu_group_epub -> item.isVisible = book.isEpub
                 else -> when (item.itemId) {
                     R.id.menu_enable_replace -> item.isChecked = book.getUseReplaceRule()
                     R.id.menu_same_title_removed -> item.isChecked = book.getRemoveSameTitle()
@@ -505,8 +533,6 @@ class ReadBookActivity : BaseReadBookActivity(),
 //                    }
 
                     R.id.menu_reverse_content -> item.isVisible = onLine
-                    R.id.menu_del_ruby_tag -> item.isChecked = book.getDelTag(Book.rubyTag)
-                    R.id.menu_del_h_tag -> item.isChecked = book.getDelTag(Book.hTag)
                 }
             }
         }
@@ -562,26 +588,6 @@ class ReadBookActivity : BaseReadBookActivity(),
 //                item.isChecked = AppConfig.enableReview
 //                ReadBook.loadContent(false)
 //            }
-
-            R.id.menu_del_ruby_tag -> ReadBook.book?.let {
-                item.isChecked = !item.isChecked
-                if (item.isChecked) {
-                    it.addDelTag(Book.rubyTag)
-                } else {
-                    it.removeDelTag(Book.rubyTag)
-                }
-                refreshContentAll(it)
-            }
-
-            R.id.menu_del_h_tag -> ReadBook.book?.let {
-                item.isChecked = !item.isChecked
-                if (item.isChecked) {
-                    it.addDelTag(Book.hTag)
-                } else {
-                    it.removeDelTag(Book.hTag)
-                }
-                refreshContentAll(it)
-            }
 
             R.id.menu_log -> showDialogFragment<AppLogDialog>()
             R.id.menu_network_log -> showDialogFragment<NetworkLogDialog>()
@@ -813,24 +819,24 @@ class ReadBookActivity : BaseReadBookActivity(),
             MotionEvent.ACTION_MOVE -> {
                 when (v.id) {
                     R.id.cursor_left -> if (!readView.curPage.getReverseStartCursor()) {
-                        readView.curPage.selectStartMove(
+                        readView.moveSelectionHandle(true,
                             event.rawX + cursorLeft.width,
                             event.rawY - cursorLeft.height
                         )
                     } else {
-                        readView.curPage.selectEndMove(
+                        readView.moveSelectionHandle(false,
                             event.rawX - cursorRight.width,
                             event.rawY - cursorRight.height
                         )
                     }
 
                     R.id.cursor_right -> if (readView.curPage.getReverseEndCursor()) {
-                        readView.curPage.selectStartMove(
+                        readView.moveSelectionHandle(true,
                             event.rawX + cursorLeft.width,
                             event.rawY - cursorLeft.height
                         )
                     } else {
-                        readView.curPage.selectEndMove(
+                        readView.moveSelectionHandle(false,
                             event.rawX - cursorRight.width,
                             event.rawY - cursorRight.height
                         )
@@ -839,6 +845,7 @@ class ReadBookActivity : BaseReadBookActivity(),
             }
 
             MotionEvent.ACTION_UP -> {
+                readView.finishSelectionHandleDrag()
                 readView.curPage.resetReverseCursor()
                 showTextActionMenu()
             }
@@ -984,24 +991,22 @@ class ReadBookActivity : BaseReadBookActivity(),
         )
     }
 
-    override fun onTextHighlightCreate(): Bookmark? {
+    override suspend fun onTextHighlightCreate(): Bookmark? {
         val textHighlight = binding.readView.createTextHighlight()
         if (textHighlight == null) {
             toastOnUi(R.string.create_bookmark_error)
             return null
         }
-        activeTextHighlight = textHighlight
-        binding.readView.setSelectionHighlightTransparent(true)
-        lifecycleScope.launch(IO) {
+        return withContext(IO) {
             textHighlightWriteMutex.withLock {
-                appDb.bookmarkDao.insert(textHighlight)
+                appDb.bookmarkDao.getOrInsertTextHighlight(textHighlight)
             }
         }
-        return textHighlight
     }
 
     override fun onTextHighlightOpened(bookmark: Bookmark) {
         activeTextHighlight = bookmark
+        binding.readView.setSelectionHighlightTransparent(true)
     }
 
     override fun onTextHighlightUpdate(bookmark: Bookmark) {
@@ -2784,6 +2789,7 @@ class ReadBookActivity : BaseReadBookActivity(),
         when {
             !BaseReadAloudService.isRun -> {
                 ReadAloud.upReadAloudClass()
+                if (binding.readView.aloudStartVisible()) return
                 val scrollPageAnim = ReadBook.pageAnim() == 3
                 if (scrollPageAnim) {
                     val pos = binding.readView.getReadAloudPos()
@@ -2819,6 +2825,7 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
 
     private fun startReadAloudFromVisiblePosition() {
+        if (binding.readView.aloudStartVisible()) return
         val pos = binding.readView.getReadAloudPos()
         if (pos == null) {
             ReadBook.readAloud()
@@ -2949,6 +2956,10 @@ class ReadBookActivity : BaseReadBookActivity(),
         binding.readView.onLayoutPageCompleted(index, page)
     }
 
+    override fun onLayoutCompleted() {
+        binding.readView.onLayoutCompleted()
+    }
+
     /* 全文搜索跳转 */
     private fun skipToSearch(searchResult: SearchResult) {
         if (searchResult.chapterIndex != ReadBook.durChapterIndex) {
@@ -2962,28 +2973,14 @@ class ReadBookActivity : BaseReadBookActivity(),
 
     private fun jumpToPosition(searchResult: SearchResult) {
         val curTextChapter = ReadBook.curTextChapter ?: return
+        if (!isShowingSearchResult || binding.searchMenu.selectedSearchResult != searchResult ||
+            curTextChapter.chapter.index != searchResult.chapterIndex) return
         binding.searchMenu.updateSearchInfo()
         val searchResultPositions =
             viewModel.searchResultPositions(curTextChapter, searchResult)
-        val (pageIndex, lineIndex, charIndex, addLine, charIndex2) = searchResultPositions
-        ReadBook.skipToPage(pageIndex) {
-            isSelectingSearchResult = true
-            binding.readView.curPage.selectStartMoveIndex(0, lineIndex, charIndex)
-            when (addLine) {
-                0 -> binding.readView.curPage.selectEndMoveIndex(
-                    0,
-                    lineIndex,
-                    charIndex + searchResultPositions[5] - 1
-                )
-
-                1 -> binding.readView.curPage.selectEndMoveIndex(
-                    0, lineIndex + 1, charIndex2
-                )
-                //consider change page, jump to scroll position
-                -1 -> binding.readView.curPage.selectEndMoveIndex(1, 0, charIndex2)
-            }
-            binding.readView.isTextSelected = true
-            isSelectingSearchResult = false
+        if (searchResultPositions[6] < 0 || searchResultPositions[5] <= 0) return
+        binding.readView.showSearchResult(curTextChapter, searchResultPositions) { selecting ->
+            isSelectingSearchResult = selecting
         }
     }
 
@@ -3073,6 +3070,10 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
 
     override fun onDestroy() {
+        epubOpeningPreview?.close()
+        epubOpeningPreview = null
+        epubOpeningPreparation?.close()
+        epubOpeningPreparation = null
         super.onDestroy()
         binding.root.removeCallbacks(replaceRuleRenderFlushRunnable)
         aiPurifyJob?.cancel()
@@ -3120,12 +3121,17 @@ class ReadBookActivity : BaseReadBookActivity(),
                     10 -> ChapterProvider.upLayout()
                     11 -> readView.submitRenderTask()
                     12 -> readView.upPageTouchClick()
+                    13 -> if (!readView.refreshHighlightRules()) {
+                        ChapterProvider.upStyle()
+                        if (isInitFinish) ReadBook.loadContent(resetPageOffset = false)
+                    }
                 }
             }
         }
         observeEvent<Int>(EventBus.ALOUD_STATE) {
             val keepManualPosition = pageChanged
             if (it == Status.STOP || it == Status.PAUSE) {
+                readView.stopFollowingReadAloud()
                 if (!keepManualPosition) {
                     ReadBook.curTextChapter?.let { textChapter ->
                         val page = textChapter.getPageByReadPos(ReadBook.durChapterPos)
@@ -3144,14 +3150,18 @@ class ReadBookActivity : BaseReadBookActivity(),
             if (pageChanged) {
                 return@observeEventSticky
             }
-            lifecycleScope.launch(IO) {
-                if (BaseReadAloudService.isPlay()) {
+            // Keep EPUB's position, follow request and repaint in one UI turn;
+            // an IO callback queued before a page commit must not seek back afterwards.
+            val epub = ReadBook.book?.isEpub == true
+            lifecycleScope.launch(if (epub) Main.immediate else IO) {
+                if (BaseReadAloudService.isPlay() && (!epub || !pageChanged)) {
                     ReadBook.curTextChapter?.let { textChapter ->
                         ReadBook.durChapterPos = chapterStart
                         val pageIndex = ReadBook.durPageIndex
                         val aloudSpanStart = chapterStart - textChapter.getReadLength(pageIndex)
                         textChapter.getPage(pageIndex)
                             ?.upPageAloudSpan(aloudSpanStart)
+                        withContext(Main.immediate) { readView.followReadAloud(chapterStart) }
                         upContent()
                     }
                 }
@@ -3161,7 +3171,7 @@ class ReadBookActivity : BaseReadBookActivity(),
             upScreenTimeOut()
         }
         observeEvent<Boolean>(PreferKey.textSelectAble) {
-            readView.curPage.upSelectAble(it)
+            readView.upSelectAble(it)
         }
         observeEvent<String>(PreferKey.showBrightnessView) {
             readMenu.upFloatingToolVisibility()

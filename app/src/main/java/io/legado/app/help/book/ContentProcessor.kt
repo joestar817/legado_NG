@@ -128,6 +128,7 @@ class ContentProcessor private constructor(
         val contentRules: List<ReplaceRule> = emptyList()
     )
 
+    @JvmOverloads
     fun getContent(
         book: Book,
         chapter: BookChapter,
@@ -135,8 +136,10 @@ class ContentProcessor private constructor(
         includeTitle: Boolean = true,
         useReplace: Boolean = true,
         chineseConvert: Boolean = true,
-        reSegment: Boolean = true
+        reSegment: Boolean = true,
+        positionMap: ContentPositionMap? = null,
     ): BookContent {
+        val positions = positionMap ?: if (book.isEpub) ContentPositionMap(content) else null
         var mContent = content
         var sameTitleRemoved = false
         var effectiveReplaceRules: ArrayList<ReplaceRule>? = null
@@ -149,7 +152,8 @@ class ContentProcessor private constructor(
                 var matcher = Pattern.compile("^(\\s|\\p{P}|${name})*${title}(\\s)*")
                     .matcher(mContent)
                 if (matcher.find()) {
-                    mContent = mContent.substring(matcher.end())
+                    positions?.removedTitle = positions?.sourceRange(0, matcher.end())
+                    mContent = positions?.slice(mContent, matcher.end(), display = false) ?: mContent.substring(matcher.end())
                     sameTitleRemoved = true
                 } else if (useReplace && book.getUseReplaceRule()) {
                     title = Pattern.quote(
@@ -162,7 +166,8 @@ class ContentProcessor private constructor(
                     matcher = Pattern.compile("^(\\s|\\p{P}|${name})*${title}(\\s)*")
                         .matcher(mContent)
                     if (matcher.find()) {
-                        mContent = mContent.substring(matcher.end())
+                        positions?.removedTitle = positions?.sourceRange(0, matcher.end())
+                        mContent = positions?.slice(mContent, matcher.end(), display = false) ?: mContent.substring(matcher.end())
                         sameTitleRemoved = true
                     }
                 }
@@ -171,16 +176,16 @@ class ContentProcessor private constructor(
             }
             if (reSegment && book.getReSegment()) {
                 //重新分段
-                mContent = HtmlImageTags.preserveDuringTextTransform(mContent) {
-                    ContentHelp.reSegment(it, chapter.title)
+                mContent = HtmlImageTags.preserveDuringTextTransform(mContent, positions) {
+                    ContentHelp.reSegment(it, chapter.title, positions)
                 }
             }
             if (chineseConvert) {
                 //简繁转换
                 try {
                     when (AppConfig.chineseConverterType) {
-                        1 -> mContent = ChineseUtils.t2s(mContent)
-                        2 -> mContent = ChineseUtils.s2t(mContent)
+                        1 -> mContent = if (positions == null) ChineseUtils.t2s(mContent) else ChineseUtils.t2s(mContent, positions)
+                        2 -> mContent = if (positions == null) ChineseUtils.s2t(mContent) else ChineseUtils.s2t(mContent, positions)
                     }
                 } catch (_: Exception) {
                     appCtx.toastOnUi("简繁转换出错")
@@ -188,19 +193,21 @@ class ContentProcessor private constructor(
             }
             val useHtmlMap = mutableMapOf<String, String>()
             if (AppConfig.adaptSpecialStyle) { //html处理
-                mContent = AppPattern.useHtmlRegex.replace(mContent) { matchResult ->
+                val protect: (MatchResult) -> String = { matchResult ->
                     val placeholder = "特殊格式的占位不应该被看见${useHtmlMap.size}。"
                     useHtmlMap[placeholder] = "\n${matchResult.value.replace("\n","")}\n"
                     placeholder
                 }
+                mContent = positions?.regex(mContent, AppPattern.useHtmlRegex, display = false, replace = protect)
+                    ?: AppPattern.useHtmlRegex.replace(mContent, protect)
             }
             if (useReplace && book.getUseReplaceRule()) {
                 //替换
                 effectiveReplaceRules = arrayListOf()
                 val replaceRules = getContentReplaceRules()
                 if (replaceRules.any { it.pattern.isNotEmpty() }) {
-                    mContent = HtmlImageTags.preserveDuringTextTransform(mContent) {
-                        it.lines().joinToString("\n") { line -> line.trim() }
+                    mContent = HtmlImageTags.preserveDuringTextTransform(mContent, positions) {
+                        positions?.trimLines(it) ?: it.lines().joinToString("\n") { line -> line.trim() }
                     }
                 }
                 AppLog.putDebug(
@@ -223,6 +230,7 @@ class ContentProcessor private constructor(
                             val index = mContent.indexOf(item.pattern)
                             if (index >= 0) item.pattern else null
                         }
+                        var recordedEdits: List<ContentEdit>? = null
                         val tmp = if (item.isRegex) {
                             mContent.replace(
                                 item.name,
@@ -230,11 +238,14 @@ class ContentProcessor private constructor(
                                 item.replacement,
                                 item.getValidTimeoutMillisecond(),
                                 chapter,
-                                replaceBook
+                                replaceBook,
+                                onEdits = if (positions == null) null else { edits -> recordedEdits = edits },
                             )
                         } else {
-                            mContent.replace(item.pattern, item.replacement)
+                            positions?.literal(mContent, item.pattern, item.replacement)
+                                ?: mContent.replace(item.pattern, item.replacement)
                         }
+                        if (item.isRegex) recordedEdits?.let { positions?.record(mContent, tmp, it) }
                         if (mContent != tmp) {
                             effectiveReplaceRules.add(item)
                             logReplaceRule(item, chapter, beforeLength, tmp.length, sample)
@@ -245,7 +256,9 @@ class ContentProcessor private constructor(
                     } catch (e: RegexTimeoutException) {
                         item.isEnabled = false
                         appDb.replaceRuleDao.update(item)
-                        mContent = item.name + e.stackTraceStr
+                        val errorText = item.name + e.stackTraceStr
+                        positions?.record(mContent, errorText, listOf(ContentEdit(0, mContent.length, errorText)))
+                        mContent = errorText
                     } catch (_: CancellationException) {
                     } catch (e: Exception) {
                         AppLog.put("替换净化: 规则 ${item.name}替换出错.\n${mContent}", e)
@@ -254,35 +267,49 @@ class ContentProcessor private constructor(
                 }
             }
             useHtmlMap.forEach { (placeholder, originalContent) ->
-                mContent = mContent.replace(placeholder, originalContent)
+                mContent = positions?.literal(mContent, placeholder, originalContent, display = false)
+                    ?: mContent.replace(placeholder, originalContent)
             }
-            mContent = HtmlImageTags.removeEmptySources(mContent)
+            mContent = HtmlImageTags.removeEmptySources(mContent, positions)
         }
         if (includeTitle) {
             //重新添加标题
-            mContent = chapter.getDisplayTitle(
+            val prefix = chapter.getDisplayTitle(
                 getTitleReplaceRules(),
                 useReplace = useReplace && book.getUseReplaceRule(),
                 replaceBook = replaceBook
-            ) + "\n" + mContent
+            ) + "\n"
+            positions?.record(mContent, prefix + mContent, listOf(ContentEdit(0, 0, prefix)), display = false)
+            mContent = prefix + mContent
         }
         if (isAndroid8) {
-            mContent = mContent.replace('\u00A0', ' ')
+            mContent = positions?.literal(mContent, "\u00A0", " ", display = false) ?: mContent.replace('\u00A0', ' ')
         }
         val contents = arrayListOf<String>()
+        val slices = if (positions != null) ArrayList<ContentPositionMap.Slice>() else null
+        var inputOffset = 0
         mContent.split("\n").forEach { str ->
             val paragraph = str.trim {
                 it.code <= 0x20 || it == '　'
             }
             if (paragraph.isNotEmpty()) {
+                if (slices != null) {
+                    val start = str.indexOfFirst { it.code > 0x20 && it != '　' }
+                    slices.add(ContentPositionMap.Slice(inputOffset + start, inputOffset + start + paragraph.length,
+                        prefix = if (contents.isEmpty() && includeTitle) "" else ReadBookConfig.paragraphIndent))
+                }
                 if (contents.isEmpty() && includeTitle) {
                     contents.add(paragraph)
                 } else {
                     contents.add("${ReadBookConfig.paragraphIndent}$paragraph")
                 }
             }
+            inputOffset += str.length + 1
         }
-        return BookContent(sameTitleRemoved, contents, effectiveReplaceRules)
+        if (slices != null) positions?.retain(mContent,
+            slices.mapIndexed { index, slice -> slice.copy(suffix = if (index < slices.lastIndex) "\n" else "") },
+            contents.joinToString("\n"))
+        return BookContent(sameTitleRemoved, contents, effectiveReplaceRules).also { it.positionMap = positions }
     }
 
 }

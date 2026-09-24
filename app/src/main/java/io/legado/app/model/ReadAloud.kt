@@ -90,6 +90,7 @@ object ReadAloud {
         startPos: Int = 0,
         forceRebuild: Boolean = false,
         engineVerified: Boolean = false,
+        contentPosition: Int? = null,
     ) {
         if (!engineVerified && !TtsEngineStore.hasEnabledEngine()) {
             context.toastOnUi("未启用朗读引擎")
@@ -101,6 +102,7 @@ object ReadAloud {
         intent.putExtra("pageIndex", pageIndex)
         intent.putExtra("startPos", startPos)
         intent.putExtra("forceRebuild", forceRebuild)
+        contentPosition?.let { intent.putExtra("contentPosition", it) }
         LogUtils.d("ReadAloud", intent.toString())
         try {
             context.startForegroundServiceCompat(intent)

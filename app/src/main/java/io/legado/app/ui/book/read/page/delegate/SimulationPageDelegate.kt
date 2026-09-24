@@ -142,6 +142,18 @@ class SimulationPageDelegate(readView: ReadView) : HorizontalPageDelegate(readVi
     }
 
     override fun setBitmap() {
+        readView.externalPageSnapshots?.let { (before, after) ->
+            curBitmap?.recycle()
+            curBitmap = before.copy(Bitmap.Config.ARGB_8888, false)
+            if (mDirection == PageDirection.PREV) {
+                prevBitmap?.recycle()
+                prevBitmap = after.copy(Bitmap.Config.ARGB_8888, false)
+            } else {
+                nextBitmap?.recycle()
+                nextBitmap = after.copy(Bitmap.Config.ARGB_8888, false)
+            }
+            return
+        }
         when (mDirection) {
             PageDirection.PREV -> {
                 prevBitmap = prevPage.screenshot(prevBitmap, canvas)

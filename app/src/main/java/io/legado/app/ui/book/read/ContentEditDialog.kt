@@ -68,6 +68,10 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
+import io.legado.app.help.book.ContentEdit
+import io.legado.app.help.book.ContentPositionMap
+import io.legado.app.help.book.isEpub
+import io.legado.app.model.localBook.EpubFile
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.config.NgThemeRuntimeAssets
@@ -167,9 +171,9 @@ class ContentEditDialog : DialogFragment() {
                     onReset = ::resetContent,
                     onCopyAll = ::copyAll,
                     onEditorCreated = { editorView = it },
-                    onEditorTextChanged = { content ->
+                    onEditorTextChanged = { content, edit ->
                         if (!applyingEditorDocument) {
-                            viewModel.draftContent = content
+                            viewModel.updateDraft(content, edit)
                         }
                     },
                     onApplyingDocument = { applying ->
@@ -278,12 +282,13 @@ class ContentEditDialog : DialogFragment() {
 
     private fun save() {
         val content = currentEditorContent()
+        val positions = viewModel.positions?.copy()?.takeIf { it.text == content }
         Coroutine.async {
             val book = ReadBook.book ?: return@async
             val chapter = appDb.bookChapterDao
                 .getChapter(book.bookUrl, chapterIndex)
                 ?: return@async
-            BookHelp.saveText(book, chapter, content)
+            BookHelp.saveText(book, chapter, content, positions)
             ReadBook.loadContent(chapterIndex, resetPageOffset = false)
         }
     }
@@ -292,6 +297,18 @@ class ContentEditDialog : DialogFragment() {
         val loadStateLiveData = MutableLiveData<Boolean>()
         var content: String? = null
         var draftContent: String? = null
+        internal var positions: ContentPositionMap? = null
+            private set
+
+        internal fun updateDraft(value: String, edit: ContentEdit?) {
+            positions?.let { map ->
+                if (map.text != value) {
+                    checkNotNull(edit) { "正文编辑缺少修改范围" }
+                    map.record(map.text, value, listOf(edit))
+                }
+            }
+            draftContent = value
+        }
 
         fun initContent(chapterIndex: Int, reset: Boolean = false, success: (String) -> Unit) {
             execute {
@@ -302,6 +319,7 @@ class ContentEditDialog : DialogFragment() {
                 if (reset) {
                     content = null
                     draftContent = null
+                    positions = null
                     BookHelp.delContent(book, chapter)
                     if (!book.isLocal) ReadBook.bookSource?.let { bookSource ->
                         WebBook.getContentAwait(bookSource, book, chapter)
@@ -310,8 +328,13 @@ class ContentEditDialog : DialogFragment() {
                 return@execute draftContent ?: content ?: let {
                     val contentProcessor = ContentProcessor.get(book.name, book.origin)
                     val content = BookHelp.getContent(book, chapter) ?: return@let null
-                    contentProcessor.getContent(book, chapter, content, includeTitle = false)
-                        .toString()
+                    val prepared = contentProcessor.getContent(book, chapter, content, includeTitle = false)
+                    if (book.isEpub) {
+                        val source = EpubFile.getSourceChapter(book, chapter)
+                        val previous = source?.let { BookHelp.epubContentPositions(book, chapter, it.content, content) }
+                        positions = prepared.positionMap?.let { previous?.followedBy(it) }
+                    }
+                    prepared.toString()
                 }
             }.onStart {
                 loadStateLiveData.postValue(true)
@@ -375,7 +398,7 @@ private fun ContentEditorScreen(
     onReset: () -> Unit,
     onCopyAll: () -> Unit,
     onEditorCreated: (ContentEditorView) -> Unit,
-    onEditorTextChanged: (String) -> Unit,
+    onEditorTextChanged: (String, ContentEdit?) -> Unit,
     onApplyingDocument: (Boolean) -> Unit,
 ) {
     Column(
@@ -549,21 +572,27 @@ private fun ContentEditorOverflowMenu(
 private fun ContentEditorTextArea(
     document: EditorDocument,
     onEditorCreated: (ContentEditorView) -> Unit,
-    onEditorTextChanged: (String) -> Unit,
+    onEditorTextChanged: (String, ContentEdit?) -> Unit,
     onApplyingDocument: (Boolean) -> Unit,
 ) {
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = { context ->
             ContentEditorView(context).apply {
-                subscribeEvent(ContentChangeEvent::class.java) { _, _ ->
-                    onEditorTextChanged(text.toString())
+                subscribeEvent(ContentChangeEvent::class.java) { event, _ ->
+                    val start = event.changeStart.index
+                    val edit = when (event.action) {
+                        ContentChangeEvent.ACTION_INSERT -> ContentEdit(start, start, event.changedText.toString())
+                        ContentChangeEvent.ACTION_DELETE -> ContentEdit(start, event.changeEnd.index, "")
+                        else -> null
+                    }
+                    onEditorTextChanged(text.toString(), edit)
                 }
                 onEditorCreated(this)
             }
         },
         onRelease = { editor ->
-            onEditorTextChanged(editor.text.toString())
+            onEditorTextChanged(editor.text.toString(), null)
             editor.release()
         },
         update = { editText ->

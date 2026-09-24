@@ -64,6 +64,18 @@ class PageView(context: Context) : FrameLayout(context) {
     private var isMainView = false
     var isScroll = false
 
+    internal val contentViewport get() = binding.contentTextView
+
+    private var layoutPageLabel: Pair<Int, Int>? = null
+
+    internal fun setLayoutPageLabel(index: Int, count: Int) {
+        layoutPageLabel = if (count > 0) index to count else null
+        if (count > 0) {
+            tvPage?.setTextIfNotEqual("$index/$count")
+            tvPageAndTotal?.setTextIfNotEqual("$index/$count  ${ReadBook.curTextChapter?.getPageByReadPos(ReadBook.durChapterPos)?.readProgress.orEmpty()}")
+        }
+    }
+
     val headerHeight: Int
         get() {
             val h1 = if (binding.vwStatusBar.isGone) 0 else binding.vwStatusBar.height
@@ -416,7 +428,11 @@ class PageView(context: Context) : FrameLayout(context) {
         val readProgress = readProgress
         tvTotalProgress?.setTextIfNotEqual(readProgress)
         tvTotalProgress1?.setTextIfNotEqual("${chapterIndex.plus(1)}/${chapterSize}")
-        if (textChapter.isCompleted) {
+        val displayed = layoutPageLabel
+        if (displayed != null) {
+            tvPageAndTotal?.setTextIfNotEqual("${displayed.first}/${displayed.second}  $readProgress")
+            tvPage?.setTextIfNotEqual("${displayed.first}/${displayed.second}")
+        } else if (textChapter.isCompleted) {
             tvPageAndTotal?.setTextIfNotEqual("${index.plus(1)}/$pageSize  $readProgress")
             tvPage?.setTextIfNotEqual("${index.plus(1)}/$pageSize")
         } else {

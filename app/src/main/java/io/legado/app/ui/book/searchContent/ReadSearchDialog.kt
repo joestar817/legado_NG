@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -842,6 +843,8 @@ private fun SearchResultList(
     }
     val listState = rememberLazyListState()
     var draggedChapterOrdinal by remember { mutableStateOf<Int?>(null) }
+    var chapterScrollRequest by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val isListDragged by listState.interactionSource.collectIsDraggedAsState()
     val visibleChapterOrdinal by remember(chapterTargets, listState) {
         derivedStateOf {
             val firstVisibleItemIndex = listState.firstVisibleItemIndex
@@ -859,8 +862,8 @@ private fun SearchResultList(
             listState.scrollToItem(selectedLazyItemIndex)
         }
     }
-    LaunchedEffect(draggedChapterOrdinal) {
-        draggedChapterOrdinal?.let { ordinal ->
+    LaunchedEffect(chapterScrollRequest) {
+        chapterScrollRequest?.first?.let { ordinal ->
             chapterTargets.getOrNull(ordinal)?.let { target ->
                 listState.scrollToItem(target.lazyItemIndex)
             }
@@ -992,9 +995,18 @@ private fun SearchResultList(
                 targets = chapterTargets,
                 currentOrdinal = visibleChapterOrdinal,
                 draggedOrdinal = draggedChapterOrdinal,
+                isListDragged = isListDragged,
+                selectedItemIndex = selectedLazyItemIndex,
                 mutedColor = mutedColor,
                 accentColor = accentColor,
-                onDraggedOrdinalChange = { draggedChapterOrdinal = it },
+                onDraggedOrdinalChange = { ordinal ->
+                    if (ordinal != null && ordinal != draggedChapterOrdinal) {
+                        // Releasing the pointer hides its label, but must not cancel the
+                        // final scroll. A new gesture can request the same chapter again.
+                        chapterScrollRequest = ordinal to ((chapterScrollRequest?.second ?: 0) + 1)
+                    }
+                    draggedChapterOrdinal = ordinal
+                },
             )
         }
     }
@@ -1030,12 +1042,15 @@ private fun SearchChapterFastNavigator(
     targets: List<SearchChapterTarget>,
     currentOrdinal: Int,
     draggedOrdinal: Int?,
+    isListDragged: Boolean,
+    selectedItemIndex: Int,
     mutedColor: Color,
     accentColor: Color,
     onDraggedOrdinalChange: (Int?) -> Unit,
 ) {
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var draggedFraction by remember { mutableStateOf<Float?>(null) }
+    var lastDraggedOrdinal by remember { mutableStateOf<Int?>(null) }
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     val chapterTitleStyle = TextStyle(
@@ -1048,6 +1063,21 @@ private fun SearchChapterFastNavigator(
     val latestTargets by rememberUpdatedState(targets)
     val latestOnDraggedOrdinalChange by rememberUpdatedState(onDraggedOrdinalChange)
     val safeCurrentOrdinal = currentOrdinal.coerceIn(targets.indices)
+    LaunchedEffect(targets.size, selectedItemIndex) {
+        if (draggedOrdinal == null) {
+            draggedFraction = null
+            lastDraggedOrdinal = null
+        }
+    }
+    LaunchedEffect(currentOrdinal, isListDragged) {
+        // Keep the release position while the requested chapter catches up. Direct
+        // list scrolling (or navigation to another chapter) takes ownership again.
+        if (draggedOrdinal == null && (isListDragged ||
+                lastDraggedOrdinal != null && lastDraggedOrdinal != safeCurrentOrdinal)) {
+            draggedFraction = null
+            lastDraggedOrdinal = null
+        }
+    }
     val displayOrdinal = draggedOrdinal ?: safeCurrentOrdinal
     val displayFraction = draggedFraction ?: if (targets.lastIndex > 0) {
         displayOrdinal.toFloat() / targets.lastIndex
@@ -1085,6 +1115,7 @@ private fun SearchChapterFastNavigator(
                                         fraction * (gestureTargetCount - 1)
                                         ).roundToInt()
                                     draggedFraction = fraction
+                                    lastDraggedOrdinal = ordinal
                                     latestOnDraggedOrdinalChange(ordinal)
                                 }
                             }
@@ -1098,7 +1129,6 @@ private fun SearchChapterFastNavigator(
                                 }
                             } while (event.changes.any { it.pressed })
                         } finally {
-                            draggedFraction = null
                             latestOnDraggedOrdinalChange(null)
                         }
                     }

@@ -2,6 +2,7 @@ package io.legado.app.ui.book.read.page.provider
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReadNineSliceGeometryTest {
@@ -27,6 +28,44 @@ class ReadNineSliceGeometryTest {
     @Test
     fun largeLineGapKeepsOriginalFrameSize() {
         assertEquals(29f to 33f, geometry(bubble).verticalInsets(300f, 2f))
+    }
+
+    @Test
+    fun contentFrameKeepsTextInsideTheCentre() {
+        val cuts = geometry(bubble.copy(npLeft = .08f, npRight = .08f, npTop = .25f, npBottom = .25f))
+        for (height in listOf(16f, 26f, 44f)) {
+            val frame = cuts.forContentHeight(height)
+            assertTrue(frame.topHeight > 0f && frame.leftWidth > 0f)
+            assertEquals(frame.leftWidth / cuts.left, frame.topHeight / cuts.top, .00001f)
+            assertEquals(height, (cuts.bottom - cuts.top) * frame.leftWidth / cuts.left, .0001f)
+            assertEquals(height, frame.topHeight + frame.bottomHeight, .0001f)
+        }
+        // Existing TXT outside-frame behavior is independent of content-box layout.
+        assertEquals(0f, cuts.forLine(26f, 1f).leftWidth, 0f)
+        assertEquals(0f to 0f, cuts.verticalInsets(26f, 1f))
+    }
+
+    @Test
+    fun contentFrameAgreesWithUnconstrainedNativeFrameAndNeverUpscalesCorners() {
+        val cuts = geometry(bubble)
+        assertEquals(cuts.forLine(40f, 2f), cuts.forContentHeight(40f))
+        val large = cuts.forContentHeight(1000f)
+        assertEquals(cuts.left.toFloat(), large.leftWidth, 0f)
+        assertEquals(cuts.top.toFloat(), large.topHeight, 0f)
+    }
+
+    @Test
+    fun fixedVectorFrameFitsAuthoredBoundsAndKeepsCornerAspectRatio() {
+        val cuts = geometry(bubble.copy(npLeft = .08f, npRight = .08f, npTop = .25f, npBottom = .25f))
+        for ((width, height) in listOf(160f to 20f, 12f to 36f, 2200f to 540f)) {
+            val frame = cuts.forOuterSize(width, height)
+            val scale = frame.leftWidth / cuts.left
+            assertEquals(scale, frame.topHeight / cuts.top, .00001f)
+            assertTrue(frame.leftWidth + frame.rightWidth <= width)
+            assertTrue(frame.topHeight + frame.bottomHeight <= height)
+            assertTrue(scale <= 1f)
+        }
+        assertEquals(0f, cuts.forOuterSize(0f, 20f).topHeight, 0f)
     }
 
     @Test

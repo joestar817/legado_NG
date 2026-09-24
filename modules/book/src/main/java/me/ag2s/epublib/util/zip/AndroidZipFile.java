@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 
 import java.io.BufferedInputStream;
 import java.io.DataInput;
+import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
@@ -219,10 +220,30 @@ public class AndroidZipFile implements ZipConstants {
         //raf.seek(centralOffset);
         seek(pfd, centralOffset);
 
+        // Directory records are sequential. Buffer them instead of issuing a descriptor read
+        // for every header/name/extra field (particularly expensive for SAF/shared storage).
+        // The enclosing pfd lock protects its position; later entry reads seek explicitly.
+        // This stream does not own or close the archive's descriptor.
+        DataInput directory = new DataInputStream(new BufferedInputStream(new InputStream() {
+            private final byte[] single = new byte[1];
+
+            @Override
+            public int read() throws IOException {
+                return read(single, 0, 1) < 0 ? -1 : single[0] & 0xff;
+            }
+
+            @Override
+            public int read(byte[] bytes, int off, int len) throws IOException {
+                if (len == 0) return 0;
+                int count = PfdHelper.read(pfd, bytes, off, len);
+                // Os.read reports EOF as zero; DataInputStream needs InputStream's -1.
+                return count == 0 ? -1 : count;
+            }
+        }, 16 * 1024));
         byte[] buffer = new byte[16];
         for (int i = 0; i < count; i++) {
             //raf.readFully(ebs);
-            PfdHelper.readFully(pfd, ebs);
+            directory.readFully(ebs);
             if (readLeInt(ebs, 0) != CENSIG)
                 throw new ZipException("Wrong Central Directory signature: " + name);
 
@@ -241,7 +262,7 @@ public class AndroidZipFile implements ZipConstants {
             if (buffer.length < needBuffer)
                 buffer = new byte[needBuffer];
 
-            PfdHelper.readFully(pfd, buffer, 0, nameLen);
+            directory.readFully(buffer, 0, nameLen);
             String name = new String(buffer, 0, nameLen);
 
             AndroidZipEntry entry = new AndroidZipEntry(name, nameLen);
@@ -252,11 +273,11 @@ public class AndroidZipFile implements ZipConstants {
             entry.setTime(dostime);
             if (extraLen > 0) {
                 byte[] extra = new byte[extraLen];
-                PfdHelper.readFully(pfd, extra);
+                directory.readFully(extra);
                 entry.setExtra(extra);
             }
             if (commentLen > 0) {
-                PfdHelper.readFully(pfd, buffer, 0, commentLen);
+                directory.readFully(buffer, 0, commentLen);
                 entry.setComment(new String(buffer, 0, commentLen));
             }
             entry.offset = offset;

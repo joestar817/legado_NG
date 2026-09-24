@@ -16,7 +16,10 @@ import java.io.File
 
 /** 正文与规则预览共用的高亮背景图绘制，目标矩形由各自文字布局提供。 */
 internal object ReadHighlightImageRenderer {
+    const val CONTENT_INSET_DP = 1
     private val highlightBitmapCache = LruCache<String, Bitmap>(16)
+
+    fun scale(style: ReadCharStyle): Float = style.bgImageScale.coerceIn(0.1f, 5f)
 
     fun draw(
         canvas: Canvas,
@@ -29,7 +32,7 @@ internal object ReadHighlightImageRenderer {
             isFilterBitmap = true
             this.style = Paint.Style.FILL
         }
-        val scale = style.bgImageScale.coerceIn(0.1f, 5f)
+        val scale = scale(style)
         when (style.bgImageFit) {
             1 -> {
                 val width = destination.width() * scale

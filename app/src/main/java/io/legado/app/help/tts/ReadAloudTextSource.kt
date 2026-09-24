@@ -32,6 +32,17 @@ interface ReadAloudPageText {
     val paragraphs: List<ReadAloudParagraph>
 
     fun textAt(index: Int): String
+    fun startAt(index: Int): Int = (0 until index.coerceIn(0, size)).sumOf { textAt(it).length }
+
+    fun indexAt(position: Int): Int {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (startAt(middle) <= position) low = middle + 1 else high = middle
+        }
+        return (low - 1).coerceAtLeast(0)
+    }
 }
 
 private val readAloudPlaceholder = Regex("[袮꧁]")

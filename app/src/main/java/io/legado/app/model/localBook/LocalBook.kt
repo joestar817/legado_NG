@@ -20,6 +20,7 @@ import io.legado.app.exception.TocEmptyException
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
+import io.legado.app.help.book.EpubContentEntities
 import io.legado.app.help.book.addType
 import io.legado.app.help.book.archiveName
 import io.legado.app.help.book.getArchiveUri
@@ -51,7 +52,6 @@ import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.isDataUrl
 import io.legado.app.utils.printOnDebug
 import kotlinx.coroutines.runBlocking
-import org.apache.commons.text.StringEscapeUtils
 import splitties.init.appCtx
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -200,10 +200,7 @@ object LocalBook {
         }
         if (book.isEpub) {
             content ?: return null
-            if (content.indexOf('&') > -1) {
-                content = content.replace("&lt;img", "&lt; img", true)
-                return StringEscapeUtils.unescapeHtml4(content)
-            }
+            if (content.indexOf('&') > -1) return EpubContentEntities.normalize(content)
         }
 
         if (content.isNullOrEmpty() && !chapter.isVolume) {

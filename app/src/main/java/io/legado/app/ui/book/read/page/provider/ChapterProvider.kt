@@ -174,6 +174,7 @@ object ChapterProvider {
             bookChapter.isPay,
             bookContent.effectiveReplaceRules
         ).apply {
+            contentPositionMap = bookContent.positionMap
             createLayout(scope, book, bookContent)
         }
 

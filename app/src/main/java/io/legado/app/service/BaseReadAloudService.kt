@@ -159,6 +159,25 @@ abstract class BaseReadAloudService : BaseService(),
     internal var nowSpeak: Int = 0
     internal var readAloudNumber: Int = 0
     internal var textChapter: TextChapter? = null
+    @Volatile
+    private var activeReadAloudInput: Pair<TextChapter, io.legado.app.help.tts.ReadAloudTextSource>? = null
+
+    protected fun readAloudInput(chapter: TextChapter): io.legado.app.help.tts.ReadAloudTextSource =
+        activeReadAloudInput?.takeIf { it.first === chapter }?.second ?: chapter.readAloudText
+
+    protected fun bindReadAloudInput(chapter: TextChapter, source: io.legado.app.help.tts.ReadAloudTextSource) {
+        activeReadAloudInput = chapter to source
+    }
+
+    protected fun readAloudPageCount(chapter: TextChapter): Int = readAloudInput(chapter).pageText?.size ?: 0
+    protected val needsLayoutProgress: Boolean get() = textChapter?.contentPositionMap != null
+    protected fun readAloudPageStart(chapter: TextChapter, index: Int): Int = readAloudInput(chapter).pageText?.startAt(index) ?: 0
+    protected fun moveReadAloudPage(next: Boolean) {
+        val chapter = textChapter ?: return
+        if (readAloudInput(chapter).pageText is io.legado.app.help.tts.LayoutReadAloudPageText) {
+            ReadBook.commitContentPosition(readAloudPageStart(chapter, pageIndex))
+        } else if (next) ReadBook.moveToNextPage() else ReadBook.moveToPrevPage()
+    }
     internal var pageIndex = 0
     private var needResumeOnAudioFocusGain = false
     private var needResumeOnCallStateIdle = false
@@ -268,7 +287,8 @@ abstract class BaseReadAloudService : BaseService(),
                 intent.getBooleanExtra("play", true),
                 intent.getIntExtra("pageIndex", ReadBook.durPageIndex),
                 intent.getIntExtra("startPos", 0),
-                intent.getBooleanExtra("forceRebuild", false)
+                intent.getBooleanExtra("forceRebuild", false),
+                intent.takeIf { it.hasExtra("contentPosition") }?.getIntExtra("contentPosition", 0),
             )
 
             IntentAction.pause -> pauseReadAloud()
@@ -292,7 +312,8 @@ abstract class BaseReadAloudService : BaseService(),
         play: Boolean,
         pageIndex: Int,
         startPos: Int,
-        forceRebuild: Boolean = false
+        forceRebuild: Boolean = false,
+        contentPosition: Int? = null,
     ) {
         onNewReadAloudRequest()
         execute(executeContext = IO) {
@@ -300,11 +321,12 @@ abstract class BaseReadAloudService : BaseService(),
             textChapter = ReadBook.curTextChapter
             val textChapter = textChapter ?: return@execute
             val readAloudText = textChapter.readAloudText
+            bindReadAloudInput(textChapter, readAloudText)
             if (!readAloudText.isReady) {
                 return@execute
             }
             activeBookUrl = ReadBook.book?.bookUrl
-            readAloudNumber = textChapter.getReadLength(pageIndex) + startPos
+            readAloudNumber = contentPosition ?: (textChapter.getReadLength(pageIndex) + startPos)
             readAloudByPage = getPrefBoolean(PreferKey.readAloudByPage)
             contentList = readAloudText.readText(readAloudByPage)
                 .split("\n")
@@ -332,7 +354,12 @@ abstract class BaseReadAloudService : BaseService(),
                             readAloudText.paragraphs[nowSpeak].chapterPosition
                 }
             }
+            if (contentPosition != null && !toLast) {
+                val paragraph = readAloudText.readParagraphs(readAloudByPage).getOrNull(nowSpeak) ?: return@execute
+                pos = (readAloudNumber - paragraph.chapterPosition).coerceIn(0, paragraph.length)
+            }
             paragraphStartPos = pos
+            this@BaseReadAloudService.pageIndex = readAloudText.pageText?.indexAt(readAloudNumber) ?: pageIndex
             upTtsBufferProgress(readAloudNumber + 1)
             launch(Main) {
                 if (tryReusePreparedPlayback(play, forceRebuild)) {
@@ -394,16 +421,16 @@ abstract class BaseReadAloudService : BaseService(),
         }
         textChapter?.let {
             if (readAloudByPage) {
-                val paragraphs = it.readAloudText.readParagraphs(true)
+                val paragraphs = readAloudInput(it).readParagraphs(true)
                 if (paragraphs.getOrNull(nowSpeak)?.isParagraphEnd == false) {
                     readAloudNumber--
                 }
             }
-            if (pageIndex + 1 < it.pageSize
-                && readAloudNumber >= it.getReadLength(pageIndex + 1)
+            if (pageIndex + 1 < readAloudPageCount(it)
+                && readAloudNumber >= readAloudPageStart(it, pageIndex + 1)
             ) {
                 pageIndex++
-                ReadBook.moveToNextPage()
+                moveReadAloudPage(true)
             }
         }
         upTtsProgress(readAloudNumber + 1)
@@ -617,12 +644,12 @@ abstract class BaseReadAloudService : BaseService(),
             } while (contentList[nowSpeak].matches(AppPattern.notReadAloudRegex))
             textChapter?.let {
                 if (readAloudByPage) {
-                    val paragraphs = it.readAloudText.readParagraphs(true)
+                    val paragraphs = readAloudInput(it).readParagraphs(true)
                     if (!paragraphs[nowSpeak].isParagraphEnd) readAloudNumber++
                 }
-                if (readAloudNumber < it.getReadLength(pageIndex)) {
+                if (readAloudNumber < readAloudPageStart(it, pageIndex)) {
                     pageIndex--
-                    ReadBook.moveToPrevPage()
+                    moveReadAloudPage(false)
                 }
             }
             upTtsProgress(readAloudNumber + 1)
@@ -641,14 +668,14 @@ abstract class BaseReadAloudService : BaseService(),
             nowSpeak++
             textChapter?.let {
                 if (readAloudByPage) {
-                    val paragraphs = it.readAloudText.readParagraphs(true)
+                    val paragraphs = readAloudInput(it).readParagraphs(true)
                     if (!paragraphs[nowSpeak].isParagraphEnd) readAloudNumber--
                 }
-                if (pageIndex + 1 < it.pageSize
-                    && readAloudNumber >= it.getReadLength(pageIndex + 1)
+                if (pageIndex + 1 < readAloudPageCount(it)
+                    && readAloudNumber >= readAloudPageStart(it, pageIndex + 1)
                 ) {
                     pageIndex++
-                    ReadBook.moveToNextPage()
+                    moveReadAloudPage(true)
                 }
             }
             upTtsProgress(readAloudNumber + 1)

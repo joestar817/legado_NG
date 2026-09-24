@@ -1,6 +1,8 @@
 package io.legado.app.utils
 
 import io.legado.app.model.analyzeRule.AnalyzeUrl
+import io.legado.app.help.book.ContentEdit
+import io.legado.app.help.book.ContentPositionMap
 import java.net.URL
 import java.util.regex.Pattern
 
@@ -21,27 +23,33 @@ object HtmlFormatter {
     private val indent2Regex = "^[\\n\\s]+".toRegex()
     private val lastRegex = "[\\n\\s]+$".toRegex()
 
-    fun format(html: String?, otherRegex: Regex = otherHtmlRegex): String {
+    @JvmOverloads
+    fun format(html: String?, otherRegex: Regex = otherHtmlRegex, trace: ContentPositionMap? = null): String {
         html ?: return ""
-        return html.replace(nbspRegex, " ")
-            .replace(espRegex, " ")
-            .replace(noPrintRegex, "")
-            .replace(wrapHtmlRegex, "\n")
-            .replace(commentRegex, "")
-            .replace(otherRegex, "")
-            .replace(indent1Regex, "\n　　")
-            .replace(indent2Regex, "　　")
-            .replace(lastRegex, "")
+        return html.formatReplace(nbspRegex, " ", trace)
+            .formatReplace(espRegex, " ", trace)
+            .formatReplace(noPrintRegex, "", trace)
+            .formatReplace(wrapHtmlRegex, "\n", trace)
+            .formatReplace(commentRegex, "", trace)
+            .formatReplace(otherRegex, "", trace)
+            .formatReplace(indent1Regex, "\n　　", trace)
+            .formatReplace(indent2Regex, "　　", trace)
+            .formatReplace(lastRegex, "", trace)
     }
 
-    fun formatKeepImg(html: String?, redirectUrl: URL? = null): String {
+    private fun String.formatReplace(regex: Regex, replacement: String, trace: ContentPositionMap?): String =
+        trace?.regex(this, regex, display = false) { replacement } ?: regex.replace(this, replacement)
+
+    @JvmOverloads
+    fun formatKeepImg(html: String?, redirectUrl: URL? = null, trace: ContentPositionMap? = null): String {
         html ?: return ""
-        val keepImgHtml = format(html, notImgHtmlRegex)
+        val keepImgHtml = format(html, notImgHtmlRegex, trace)
 
         //正则的“|”处于顶端而不处于（）中时，具有类似||的熔断效果，故以此机制简化原来的代码
         val matcher = formatImagePattern.matcher(keepImgHtml)
         var appendPos = 0
         val sb = StringBuilder()
+        val edits = if (trace != null) ArrayList<ContentEdit>() else null
         while (matcher.find()) {
             var param = ""
             val rawSource = matcher.group(1)?.let {
@@ -59,9 +67,9 @@ object HtmlFormatter {
                 NetworkUtils.getAbsoluteURL(redirectUrl, rawSource)
             }
             sb.append(keepImgHtml.substring(appendPos, matcher.start()))
-            if (imageUrl.isNotBlank()) {
-                sb.append("<img src=\"${imageUrl + param}\">")
-            }
+            val replacement = if (imageUrl.isNotBlank()) "<img src=\"${imageUrl + param}\">" else ""
+            sb.append(replacement)
+            edits?.add(ContentEdit(matcher.start(), matcher.end(), replacement))
             appendPos = matcher.end()
         }
         if (appendPos < keepImgHtml.length) sb.append(
@@ -70,6 +78,6 @@ object HtmlFormatter {
                 keepImgHtml.length
             )
         )
-        return sb.toString()
+        return sb.toString().also { output -> if (edits != null) trace?.record(keepImgHtml, output, edits, display = false) }
     }
 }

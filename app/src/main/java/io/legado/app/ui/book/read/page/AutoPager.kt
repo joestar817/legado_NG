@@ -30,7 +30,7 @@ class AutoPager(private val readView: ReadView) : Runnable {
     fun start() {
         isRunning = true
         isEInkMode = AppConfig.isEInkMode
-        readView.curPage.upSelectAble(false)
+        readView.upSelectAble(false)
         if (isEInkMode) {
             readView.postDelayed(this, ReadBookConfig.autoReadSpeed * 1000L)
         } else {
@@ -45,10 +45,11 @@ class AutoPager(private val readView: ReadView) : Runnable {
             return
         }
         isRunning = false
+        readView.cancelAutoPage()
         isPausing = false
         isEInkMode = false
         readView.removeCallbacks(this)
-        readView.curPage.upSelectAble(AppConfig.textSelectAble)
+        readView.upSelectAble(AppConfig.textSelectAble)
         readView.invalidate()
         reset()
         canvasRecorder.recycle()
@@ -99,16 +100,18 @@ class AutoPager(private val readView: ReadView) : Runnable {
 
         if (readView.isScroll) {
             if (!isPausing) {
-                readView.curPage.scroll(-scrollOffset)
+                readView.scrollAutoPage(scrollOffset)
                 scrollOffset = 0
             }
         } else {
             val bottom = progress
             val width = readView.width
 
-            canvasRecorder.recordIfNeeded(readView.nextPage)
             canvas.withClip(0, 0, width, bottom) {
-                canvasRecorder.draw(this)
+                if (!readView.drawAutoPage(this)) {
+                    canvasRecorder.recordIfNeeded(readView.nextPage)
+                    canvasRecorder.draw(this)
+                }
             }
 
             canvas.drawRect(
@@ -118,8 +121,8 @@ class AutoPager(private val readView: ReadView) : Runnable {
                 bottom.toFloat(),
                 paint
             )
-            if (!isPausing) readView.postInvalidate()
         }
+        if (!isPausing) readView.postInvalidateOnAnimation()
 
     }
 
@@ -131,6 +134,7 @@ class AutoPager(private val readView: ReadView) : Runnable {
         val currentTime = SystemClock.uptimeMillis()
         val elapsedTime = currentTime - lastTimeMillis
         lastTimeMillis = currentTime
+        if (!readView.prepareAutoPage()) return
 
         val readTime = ReadBookConfig.autoReadSpeed * 1000.0
         val height = readView.height

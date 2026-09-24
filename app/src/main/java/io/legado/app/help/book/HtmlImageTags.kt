@@ -25,6 +25,7 @@ internal object HtmlImageTags {
      */
     fun preserveDuringTextTransform(
         content: String,
+        trace: ContentPositionMap? = null,
         transform: (String) -> String,
     ): String {
         if (!content.contains("<img", ignoreCase = true)) {
@@ -32,11 +33,13 @@ internal object HtmlImageTags {
         }
         val imageTags = arrayListOf<String>()
         val placeholderPrefix = uniquePlaceholderPrefix(content)
-        val protectedContent = anyImageTag.replace(content) { matchResult ->
+        val protect: (MatchResult) -> String = { matchResult ->
             val index = imageTags.size
             imageTags.add(matchResult.value)
             "$placeholderPrefix$index$PLACEHOLDER_END"
         }
+        val protectedContent = trace?.regex(content, anyImageTag, display = false, replace = protect)
+            ?: anyImageTag.replace(content, protect)
         if (imageTags.isEmpty()) {
             return transform(content)
         }
@@ -44,10 +47,12 @@ internal object HtmlImageTags {
         val placeholderRegex = Regex(
             "${Regex.escape(placeholderPrefix)}(\\d+)${Regex.escape(PLACEHOLDER_END.toString())}"
         )
-        return placeholderRegex.replace(transformedContent) { matchResult ->
+        val restore: (MatchResult) -> String = { matchResult ->
             val index = matchResult.groupValues[1].toIntOrNull()
             index?.let(imageTags::getOrNull) ?: matchResult.value
         }
+        return trace?.regex(transformedContent, placeholderRegex, display = false, replace = restore)
+            ?: placeholderRegex.replace(transformedContent, restore)
     }
 
     private fun uniquePlaceholderPrefix(content: String): String {
@@ -61,8 +66,8 @@ internal object HtmlImageTags {
         }
     }
 
-    fun removeEmptySources(content: String): String {
-        return anyImageTag.replace(content) { matchResult ->
+    fun removeEmptySources(content: String, trace: ContentPositionMap? = null): String {
+        val replace: (MatchResult) -> String = replace@{ matchResult ->
             val matcher = formattedImagePattern.matcher(matchResult.value)
             if (!matcher.find()) {
                 return@replace matchResult.value
@@ -76,5 +81,6 @@ internal object HtmlImageTags {
             }
             if (imageUrl.isBlank()) "" else matchResult.value
         }
+        return trace?.regex(content, anyImageTag, replace = replace) ?: anyImageTag.replace(content, replace)
     }
 }

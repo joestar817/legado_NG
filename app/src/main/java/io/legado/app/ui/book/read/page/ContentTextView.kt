@@ -8,11 +8,9 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.withSave
 import androidx.core.graphics.withTranslation
 import androidx.core.graphics.drawable.DrawableCompat
-import io.legado.app.R
 import io.legado.app.data.entities.Bookmark
 import io.legado.app.help.book.isOnLineTxt
 import io.legado.app.help.config.AppConfig
@@ -33,6 +31,7 @@ import io.legado.app.ui.book.read.page.entities.column.ReviewColumn
 import io.legado.app.ui.book.read.page.entities.column.TextBaseColumn
 import io.legado.app.ui.book.read.page.entities.column.TextColumn
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
+import io.legado.app.ui.book.read.page.provider.ReadNoteMarkerStyle
 import io.legado.app.ui.book.read.page.provider.TextPageFactory
 import io.legado.app.ui.widget.dialog.PhotoDialog
 import io.legado.app.utils.ColorUtils
@@ -53,10 +52,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
     val selectedPaint by lazy {
         Paint().apply {
             // 普通选字使用弱化的强调色，进入划线后由会话状态清空。
-            color = ColorUtils.withAlpha(
-                ReadDrawerStyle.indicatorColor(context),
-                SELECTION_OVERLAY_ALPHA,
-            )
+            color = selectionHighlightColor(context)
             style = Paint.Style.FILL
         }
     }
@@ -65,7 +61,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
 
     fun setSelectionHighlightTransparent(transparent: Boolean) {
         val color = if (transparent) android.graphics.Color.TRANSPARENT
-        else ColorUtils.withAlpha(ReadDrawerStyle.indicatorColor(context), SELECTION_OVERLAY_ALPHA)
+        else selectionHighlightColor(context)
         if (selectionHighlightTransparent == transparent && selectedPaint.color == color) return
         selectionHighlightTransparent = transparent
         selectedPaint.color = color
@@ -86,9 +82,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
     private var textHighlightNotesByEndChapter: Map<Int, List<Bookmark>> = emptyMap()
     private val textHighlightNoteMarkers = mutableListOf<TextHighlightNoteMarker>()
     private val textHighlightNoteMarkerDrawable by lazy {
-        AppCompatResources.getDrawable(context, R.drawable.ic_ai_chat_suggestion)
-            ?.let { DrawableCompat.wrap(it) }
-            ?.mutate()
+        ReadNoteMarkerStyle.drawable(context)
     }
     var textPage: TextPage = TextPage()
         private set
@@ -134,10 +128,8 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
 
     fun setTextHighlights(bookmarks: List<Bookmark>) {
         textHighlights = bookmarks.filter(Bookmark::isTextHighlight)
-        textHighlightNotesByEndChapter = textHighlights
-            .filter { it.content.isNotBlank() }
+        textHighlightNotesByEndChapter = ReadNoteMarkerStyle.notes(textHighlights)
             .groupBy(Bookmark::endChapterIndex)
-            .mapValues { (_, highlights) -> highlights.sortedBy(Bookmark::time) }
         textHighlightNoteMarkers.clear()
         postInvalidate()
     }
@@ -373,11 +365,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
     private fun drawTextHighlightNoteMarkerIcons(canvas: Canvas) {
         if (textHighlightNoteMarkers.isEmpty()) return
         val drawable = textHighlightNoteMarkerDrawable ?: return
-        val markerColor = if (AppConfig.isEInkMode) {
-            ReadBookConfig.textColor
-        } else {
-            ColorUtils.withAlpha(ReadBookConfig.textAccentColor, NOTE_MARKER_ALPHA)
-        }
+        val markerColor = ReadNoteMarkerStyle.color()
         DrawableCompat.setTint(drawable, markerColor)
         canvas.withSave {
             clipRect(
@@ -1248,17 +1236,19 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
     }
 
     companion object {
+        internal fun selectionHighlightColor(context: Context): Int =
+            ColorUtils.withAlpha(ReadDrawerStyle.indicatorColor(context), SELECTION_OVERLAY_ALPHA)
+
         private val renderThread by lazy {
             Executors.newSingleThreadExecutor {
                 Thread(it, "TextPageRender")
             }
         }
         private const val SELECTION_OVERLAY_ALPHA = 0.20f
-        private const val NOTE_MARKER_SIZE_DP = 12
-        private const val NOTE_MARKER_GAP_DP = 2
-        private const val NOTE_MARKER_TRAILING_GAP_DP = 2
-        private const val NOTE_MARKER_TOUCH_SIZE_DP = 24
-        private const val NOTE_MARKER_ALPHA = 0.76f
+        private const val NOTE_MARKER_SIZE_DP = ReadNoteMarkerStyle.SIZE_DP
+        private const val NOTE_MARKER_GAP_DP = ReadNoteMarkerStyle.GAP_DP
+        private const val NOTE_MARKER_TRAILING_GAP_DP = ReadNoteMarkerStyle.TRAILING_GAP_DP
+        private const val NOTE_MARKER_TOUCH_SIZE_DP = ReadNoteMarkerStyle.TOUCH_SIZE_DP
         private val cursorWidth = 24.dpToPx()
     }
 

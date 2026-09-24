@@ -25,6 +25,7 @@ import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
 import io.legado.app.help.DefaultData
+import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadPresetPreferences
@@ -73,6 +74,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private lateinit var composeView: ComposeView
     private var page by mutableStateOf(ReadStylePage.PRESET)
     private var screenState by mutableStateOf<ReadStyleUiState?>(null)
+    private var showEpubSettings by mutableStateOf(false)
     private var editorBackgroundCache: List<ReadStyleBackgroundUi>? = null
     private var backgroundColorPickerDialog: ComponentDialog? = null
     private var editingHighlightIndex: Int? = null
@@ -177,6 +179,16 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                                 actions = createActions(),
                             )
                         }
+                        if (showEpubSettings) {
+                            ReadBook.book?.takeIf { it.isEpub }?.let { book ->
+                                EpubLayoutSheet(book,
+                                    onStyleChanged = {
+                                        if (ReadBook.book === book) postEvent(EventBus.UP_CONFIG, arrayListOf(2))
+                                    },
+                                    onDismiss = { showEpubSettings = false },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -225,6 +237,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onDeletePreset = ::deleteCurrentStyle,
         onRestoreCurrentPreset = ::confirmRestoreCurrentPreset,
         onRestoreAllPresets = ::confirmRestoreAllPresets,
+        onOpenEpubSettings = { showEpubSettings = true },
         onShareLayoutChanged = { checked ->
             ReadBookConfig.shareLayout = checked
             refreshUi()
@@ -480,6 +493,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 rules.size,
             ),
             shareLayout = ReadBookConfig.shareLayout,
+            isEpub = ReadBook.book?.isEpub == true,
             globalFloatingFollowApp = ReadBookConfig.readFloatingFollowAppGlobally,
             textSize = ReadBookConfig.textSize,
             letterSpacing = ReadBookConfig.letterSpacing,
@@ -1055,7 +1069,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             rules.mapIndexed { index, rule -> rule.copy(position = index) }
         )
         refreshUi()
-        postEvent(EventBus.UP_CONFIG, arrayListOf(8, 5))
+        postEvent(EventBus.UP_CONFIG, arrayListOf(13))
     }
 
     private fun beginHighlightSelection(mode: HighlightSelectionMode) {
@@ -1224,7 +1238,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 val result = ReadHighlightRuleStore.restoreBuiltIn(DefaultData.readHighlightRules)
                 refreshUi()
                 if (result.addedCount > 0 || result.updatedCount > 0) {
-                    postEvent(EventBus.UP_CONFIG, arrayListOf(8, 5))
+                    postEvent(EventBus.UP_CONFIG, arrayListOf(13))
                     toastOnUi(
                         getString(
                             R.string.read_highlight_restore_built_in_done,
@@ -1344,7 +1358,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 replaceMatchingIds = true,
             )
             refreshUi()
-            postEvent(EventBus.UP_CONFIG, arrayListOf(8, 5))
+            postEvent(EventBus.UP_CONFIG, arrayListOf(13))
             val messages = buildList {
                 add("新增 ${merge.addedCount} 条，更新 ${merge.updatedCount} 条，跳过 ${merge.skippedCount} 条")
                 addAll(result.warnings)

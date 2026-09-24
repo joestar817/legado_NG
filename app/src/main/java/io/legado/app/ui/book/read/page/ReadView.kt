@@ -3,6 +3,8 @@ package io.legado.app.ui.book.read.page
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Bitmap
+import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Build
 import android.util.AttributeSet
@@ -15,17 +17,23 @@ import io.legado.app.constant.PageAnim
 import io.legado.app.data.entities.BookProgress
 import io.legado.app.data.entities.Bookmark
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.EpubLayoutPreferences
+import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.book.read.ContentEditDialog
+import io.legado.app.ui.book.read.ReadBookActivity
+import io.legado.app.ui.book.read.epub.EpubLayoutController
+import io.legado.app.ui.book.read.epub.EpubStartupTiming
 import io.legado.app.ui.book.read.createBookmark
 import io.legado.app.ui.book.read.createTextHighlight
 import io.legado.app.ui.book.read.page.api.DataSource
 import io.legado.app.ui.book.read.page.api.ReaderContentEditTarget
 import io.legado.app.ui.book.read.page.api.ReaderSelection
 import io.legado.app.ui.book.read.page.api.ReaderSelectionSource
+import io.legado.app.ui.book.read.page.api.readerWordBoundary
 import io.legado.app.ui.book.read.page.delegate.CoverPageDelegate
 import io.legado.app.ui.book.read.page.delegate.HorizontalPageDelegate
 import io.legado.app.ui.book.read.page.delegate.NoAnimPageDelegate
@@ -48,8 +56,7 @@ import io.legado.app.utils.invisible
 import io.legado.app.utils.longToastOnUi
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.throttle
-import java.text.BreakIterator
-import java.util.Locale
+import io.legado.app.utils.getPrefBoolean
 import kotlin.math.abs
 
 /**
@@ -72,7 +79,170 @@ class ReadView(context: Context, attrs: AttributeSet) :
     val prevPage by lazy { PageView(context) }
     val curPage by lazy { PageView(context) }
     val nextPage by lazy { PageView(context) }
-    private val selectionSource: ReaderSelectionSource by lazy { NativeReaderSelectionSource(this) }
+    private val nativeSelectionSource: ReaderSelectionSource by lazy { NativeReaderSelectionSource(this) }
+    private val selectionSource: ReaderSelectionSource
+        get() = epubLayout?.takeIf { it.active } ?: nativeSelectionSource
+    private var epubLayout: EpubLayoutController? = null
+    private var openingTiming = if (io.legado.app.BuildConfig.DEBUG) EpubStartupTiming("reader").also { it.mark("created") } else null
+    private var textSelectAble = AppConfig.textSelectAble
+    private var textHighlights: List<Bookmark> = emptyList()
+    private val epubViewport = Rect()
+    private var epubPointerSequence = false
+    private var epubCover = false
+    internal var externalPageSnapshots: Pair<Bitmap, Bitmap>? = null
+        private set
+    private var externalAnimationCommit: (() -> Unit)? = null
+    private var externalAnimationFinishing = false
+
+    private fun captureNativeFrame(): Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
+        // PageView contains native chrome only while the external document is active.
+        curPage.draw(Canvas(it))
+    }
+
+    private fun animateLayoutFrames(before: Bitmap, after: Bitmap, direction: Int, commit: () -> Unit) {
+        finishLayoutFrames()
+        val delegate = pageDelegate as? HorizontalPageDelegate
+        if (delegate == null) {
+            before.recycle(); after.recycle(); commit()
+            return
+        }
+        delegate.abortAnim()
+        externalPageSnapshots = before to after
+        externalAnimationCommit = commit
+        externalAnimationFinishing = false
+        if (autoPager.isRunning && !AppConfig.isEInkMode) { invalidate(); return }
+        delegate.startExternalAnimation(if (direction > 0) PageDirection.NEXT else PageDirection.PREV, defaultAnimationSpeed)
+        invalidate()
+    }
+
+    private fun finishLayoutFrames() {
+        val frames = externalPageSnapshots ?: return
+        externalAnimationCommit = null
+        // Abort while the external-frame guard is still installed; never advance native pages.
+        (pageDelegate as? HorizontalPageDelegate)?.abortAnim()
+        externalPageSnapshots = null
+        externalAnimationCommit = null
+        externalAnimationFinishing = false
+        (pageDelegate as? HorizontalPageDelegate)?.upRecorder()
+        post { frames.first.recycle(); frames.second.recycle() }
+        invalidate()
+    }
+
+    private fun completeLayoutFrames() {
+        val commit = externalAnimationCommit ?: return
+        externalAnimationCommit = null
+        externalAnimationFinishing = true
+        // Like native repeated taps, complete the current turn before accepting the next one.
+        (pageDelegate as? HorizontalPageDelegate)?.abortAnim()
+        commit()
+        invalidate()
+    }
+
+    private fun bindEpubLayout() {
+        if (ReadBook.book?.isEpub == true && epubLayout == null) {
+            epubLayout = EpubLayoutController(this,
+                blankTap = { x, y -> startX = x; startY = y; onSingleTapUp() },
+                chapterTurn = { direction ->
+                    when (direction) {
+                        1 -> ReadBook.moveToNextChapter(true)
+                        -1 -> ReadBook.moveToPrevChapter(upContent = true, toLast = false)
+                        else -> {
+                            val target = ReadBook.durChapterIndex + direction
+                            if (target in 0 until ReadBook.chapterSize) ReadBook.openChapter(target)
+                        }
+                    }
+                },
+                reportPage = { index, count, cover ->
+                    curPage.setLayoutPageLabel(index, count)
+                    setEpubViewportFull(cover)
+                    if (count > 0) { openingTiming?.mark("epub-ready"); openingTiming = null }
+                },
+                requestViewport = ::setEpubViewportFull,
+                reportError = { message -> context.longToastOnUi(message) },
+                nativeFrame = ::captureNativeFrame,
+                animate = ::animateLayoutFrames,
+                finishAnimation = ::finishLayoutFrames,
+                completeAnimation = ::completeLayoutFrames,
+                animationsEnabled = { autoPager.isRunning && !AppConfig.isEInkMode ||
+                    pageDelegate is HorizontalPageDelegate && pageDelegate !is NoAnimPageDelegate },
+                autoPaging = { autoPager.isRunning },
+                isScroll = { isScroll },
+                publisherStyle = { EpubLayoutPreferences.read(ReadBook.book?.bookUrl).getValue(EpubLayoutPreferences.PUBLISHER) },
+                position = { ReadBook.durChapterPos },
+                neighboringChapters = { listOfNotNull(ReadBook.prevTextChapter, ReadBook.curTextChapter, ReadBook.nextTextChapter) },
+                commitPosition = { chapter, position ->
+                    when (chapter - ReadBook.durChapterIndex) {
+                        0 -> if (position != ReadBook.durChapterPos) ReadBook.commitContentPosition(position)
+                        1 -> ReadBook.moveToNextChapter(true, restartReadAloud = !isScroll, startPosition = position)
+                        -1 -> ReadBook.moveToPrevChapter(true, restartReadAloud = !isScroll, startPosition = position)
+                    }
+                    upProgress()
+                },
+                selectionChanged = { value, finished ->
+                    isTextSelected = value != null
+                    if (value == null) callBack.onCancelSelect()
+                    else {
+                        val scale = resources.displayMetrics.density
+                        val left = value.getInt("leftPx")
+                        val top = value.getInt("topPx")
+                        val start = value.getJSONObject("start")
+                        val end = value.getJSONObject("end")
+                        callBack.upSelectedStart(left + start.getDouble("left").toFloat() * scale,
+                            top + start.getDouble("bottom").toFloat() * scale, top + start.getDouble("top").toFloat() * scale)
+                        callBack.upSelectedEnd(left + end.getDouble("right").toFloat() * scale,
+                            top + end.getDouble("bottom").toFloat() * scale)
+                        if (finished) callBack.showTextActionMenu()
+                    }
+                },
+                highlightClick = { bookmark, x, top, bottom ->
+                    callBack.onTextHighlightClick(bookmark, x, top, bottom)
+                },
+                imageLongPress = { x, y, src -> (activity as? ReadBookActivity)?.onImageLongPress(x, y, src) },
+                openingPreparation = { (activity as? ReadBookActivity)?.epubOpeningPreparation },
+                openingPreview = { (activity as? ReadBookActivity)?.epubOpeningPreview },
+            )
+        }
+        epubLayout?.bind(ReadBook.book, currentChapter)
+        epubLayout?.setSelectionEnabled(textSelectAble)
+        epubLayout?.setTextHighlights(textHighlights)
+        epubLayout?.syncAloudHighlight()
+        if (epubLayout?.active != true) { epubCover = false; curPage.setLayoutPageLabel(0, 0) }
+        curPage.contentViewport.visibility = if (epubLayout?.active == true) INVISIBLE else VISIBLE
+        post { updateEpubViewport() }
+    }
+
+    private fun setEpubViewportFull(full: Boolean) {
+        if (epubCover == full) return
+        epubCover = full
+        post { updateEpubViewport() }
+    }
+
+    private fun updateEpubViewport() {
+        val viewport = curPage.contentViewport
+        val normal = Rect(0, 0, viewport.width, viewport.height)
+        offsetDescendantRectToMyCoords(viewport, normal)
+        val chromeTop = normal.top
+        val chromeBottom = normal.bottom
+        // TextView bounds exclude the information bars, but native text padding lives in
+        // ChapterProvider rather than View.padding. EPUB must include that same padding.
+        normal.left += ChapterProvider.paddingLeft
+        normal.top += ChapterProvider.paddingTop
+        normal.right -= ChapterProvider.paddingRight
+        normal.bottom -= ChapterProvider.paddingBottom
+        if (normal.width() <= 0 || normal.height() <= 0) return
+        epubLayout?.insets(normal.left, normal.top, width - normal.right, height - normal.bottom,
+            chromeTop, height - chromeBottom)
+        if (epubCover) epubViewport.set(0, 0, width, height)
+        else {
+            epubViewport.set(normal)
+        }
+        epubLayout?.viewport(epubViewport.left, epubViewport.top, epubViewport.width(), epubViewport.height(), epubCover)
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        super.onLayout(changed, l, t, r, b)
+        updateEpubViewport()
+    }
     val defaultAnimationSpeed = 300
     private var pressDown = false
     private var isMove = false
@@ -116,7 +286,6 @@ class ReadView(context: Context, attrs: AttributeSet) :
     private val blRect = RectF()
     private val bcRect = RectF()
     private val brRect = RectF()
-    private val boundary by lazy { BreakIterator.getWordInstance(Locale.getDefault()) }
     private val upProgressThrottle = throttle(200) { post { upProgress() } }
     val autoPager = AutoPager(this)
     val isAutoPage get() = autoPager.isRunning
@@ -135,6 +304,17 @@ class ReadView(context: Context, attrs: AttributeSet) :
         nextPage.invisible()
         curPage.markAsMainView()
         upPageTouchClick()
+        if (openingTiming != null) viewTreeObserver.addOnDrawListener(object : android.view.ViewTreeObserver.OnDrawListener {
+            override fun onDraw() {
+                if (openingTiming != null && ReadBook.book?.isEpub == false && currentChapter != null &&
+                    curPage.textPage.textChapter === currentChapter && curPage.textPage.lineSize > 0 &&
+                    !curPage.textPage.isMsgPage && curPage.contentViewport.visibility == VISIBLE) {
+                    openingTiming?.mark("native-ready")
+                    openingTiming = null
+                }
+                if (openingTiming == null) post { if (viewTreeObserver.isAlive) viewTreeObserver.removeOnDrawListener(this) }
+            }
+        })
     }
 
     private fun setRect9x() {
@@ -162,7 +342,13 @@ class ReadView(context: Context, attrs: AttributeSet) :
 
     override fun dispatchDraw(canvas: Canvas) {
         super.dispatchDraw(canvas)
-        pageDelegate?.onDraw(canvas)
+        val frames = externalPageSnapshots
+        if (frames != null) {
+            canvas.drawBitmap(if (externalAnimationFinishing) frames.second else frames.first, 0f, 0f, null)
+            if (!externalAnimationFinishing && !autoPager.isRunning) pageDelegate?.onDraw(canvas)
+        } else if (epubLayout?.active != true) {
+            pageDelegate?.onDraw(canvas)
+        }
         autoPager.onDraw(canvas)
     }
 
@@ -180,6 +366,22 @@ class ReadView(context: Context, attrs: AttributeSet) :
      */
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
+            callBack.screenOffTimerStart()
+        }
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            epubPointerSequence = epubLayout?.active == true && epubViewport.contains(event.x.toInt(), event.y.toInt()) &&
+                epubLayout?.containsVisibleDocument(event.x, event.y) == true
+        }
+        if (epubPointerSequence) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                // Match the native path before handing the gesture to the EPUB layout.
+                callBack.dismissTextActionMenu()
+            }
+            val handled = epubLayout?.touch(event) ?: true
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) epubPointerSequence = false
+            return handled
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val insets = this.rootWindowInsets.getInsetsIgnoringVisibility(
                 WindowInsets.Type.mandatorySystemGestures()
@@ -201,7 +403,6 @@ class ReadView(context: Context, attrs: AttributeSet) :
         }
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                callBack.screenOffTimerStart()
                 if (isTextSelected) {
                     curPage.cancelSelect()
                     isTextSelected = false
@@ -238,7 +439,6 @@ class ReadView(context: Context, attrs: AttributeSet) :
             }
 
             MotionEvent.ACTION_UP -> {
-                callBack.screenOffTimerStart()
                 removeCallbacks(longPressRunnable)
                 if (!pressDown) return true
                 pressDown = false
@@ -274,17 +474,67 @@ class ReadView(context: Context, attrs: AttributeSet) :
         return true
     }
 
+    /** Dispatch the existing search match to the active layout; matching stays in the view model. */
+    fun showSearchResult(chapter: TextChapter, positions: Array<Int>, selecting: (Boolean) -> Unit) {
+        if (ReadBook.book?.isEpub == true) {
+            bindEpubLayout()
+            ReadBook.commitContentPosition(positions[6])
+            epubLayout?.showSearchResult(chapter, positions[6], positions[5])
+            return
+        }
+        val (pageIndex, lineIndex, charIndex, addLine, charIndex2) = positions
+        ReadBook.skipToPage(pageIndex) {
+            selecting(true)
+            curPage.selectStartMoveIndex(0, lineIndex, charIndex)
+            when (addLine) {
+                0 -> curPage.selectEndMoveIndex(
+                    0,
+                    lineIndex,
+                    charIndex + positions[5] - 1
+                )
+
+                1 -> curPage.selectEndMoveIndex(
+                    0, lineIndex + 1, charIndex2
+                )
+                //consider change page, jump to scroll position
+                -1 -> curPage.selectEndMoveIndex(1, 0, charIndex2)
+            }
+            isTextSelected = true
+            selecting(false)
+        }
+    }
+
     fun cancelSelect(clearSearchResult: Boolean = false) {
+        if (epubLayout?.active == true && clearSearchResult) {
+            epubLayout?.clearSelection()
+            isTextSelected = false
+            return
+        }
         if (isTextSelected) {
-            curPage.cancelSelect(clearSearchResult)
+            if (epubLayout?.active == true) epubLayout?.clearSelection()
+            else curPage.cancelSelect(clearSearchResult)
             isTextSelected = false
         }
     }
 
+    fun moveSelectionHandle(start: Boolean, x: Float, y: Float) {
+        if (epubLayout?.active == true) epubLayout?.moveSelection(start, x, y)
+        else if (start) curPage.selectStartMove(x, y) else curPage.selectEndMove(x, y)
+    }
+
+    fun finishSelectionHandleDrag() { epubLayout?.finishSelectionDrag() }
+
     fun setSelectionHighlightTransparent(transparent: Boolean) {
+        epubLayout?.setSelectionHighlightTransparent(transparent)
         curPage.setSelectionHighlightTransparent(transparent)
         prevPage.setSelectionHighlightTransparent(transparent)
         nextPage.setSelectionHighlightTransparent(transparent)
+    }
+
+    fun upSelectAble(enabled: Boolean) {
+        textSelectAble = enabled
+        curPage.upSelectAble(enabled)
+        epubLayout?.setSelectionEnabled(enabled)
     }
 
     /**
@@ -297,6 +547,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
     }
 
     fun setTextHighlights(bookmarks: List<Bookmark>) {
+        textHighlights = bookmarks
+        epubLayout?.setTextHighlights(bookmarks)
         curPage.setTextHighlights(bookmarks)
         prevPage.setTextHighlights(bookmarks)
         nextPage.setTextHighlights(bookmarks)
@@ -374,18 +626,9 @@ class ReadView(context: Context, attrs: AttributeSet) :
                         break
                     }
                 }
-                var start: Int
-                var end: Int
-                boundary.setText(stringBuilder.toString())
-                start = boundary.first()
-                end = boundary.next()
-                while (end != BreakIterator.DONE) {
-                    if (cIndex in start until end) {
-                        break
-                    }
-                    start = end
-                    end = boundary.next()
-                }
+                val word = readerWordBoundary(stringBuilder.toString(), cIndex) ?: return@longPress
+                val start = word.first
+                val end = word.last + 1
                 kotlin.run {
                     var ci = 0
                     for (index in lineStart..lineEnd) {
@@ -468,8 +711,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
                 callBack.showActionMenu()
             }
 
-            1 -> pageDelegate?.nextPageByAnim(defaultAnimationSpeed)
-            2 -> pageDelegate?.prevPageByAnim(defaultAnimationSpeed)
+            1 -> turnPage(1)
+            2 -> turnPage(-1)
             3 -> ReadBook.moveToNextChapter(true)
             4 -> ReadBook.moveToPrevChapter(upContent = true, toLast = false)
             5 -> ReadAloud.prevParagraph(context)
@@ -522,6 +765,9 @@ class ReadView(context: Context, attrs: AttributeSet) :
      * 销毁事件
      */
     fun onDestroy() {
+        finishLayoutFrames()
+        epubLayout?.close()
+        epubLayout = null
         pageDelegate?.onDestroy()
         curPage.cancelSelect()
         invalidateTextPage()
@@ -532,6 +778,19 @@ class ReadView(context: Context, attrs: AttributeSet) :
      * @param direction 翻页方向
      */
     fun fillPage(direction: PageDirection): Boolean {
+        if (externalPageSnapshots != null) {
+            externalAnimationFinishing = true
+            val commit = externalAnimationCommit
+            externalAnimationCommit = null
+            commit?.invoke()
+            return true
+        }
+        if (autoPager.isRunning && epubLayout?.active == true) {
+            if (epubLayout?.readyForAutoPage() != true) return true
+            if (epubLayout?.hasNextPage() != true) return false
+            epubLayout?.turn(if (direction == PageDirection.PREV) -1 else 1)
+            return true
+        }
         return when (direction) {
             PageDirection.PREV -> {
                 pageFactory.moveToPrev(true)
@@ -591,6 +850,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
             curPage.setAutoPager(null)
         }
         curPage.setIsScroll(isScroll)
+        bindEpubLayout()
+        epubLayout?.restyle()
     }
 
     /**
@@ -599,6 +860,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
      * @param resetPageOffset 滚动阅读是是否重置位置
      */
     override fun upContent(relativePosition: Int, resetPageOffset: Boolean) {
+        bindEpubLayout()
         post {
             curPage.setContentDescription(pageFactory.curPage.text)
         }
@@ -651,6 +913,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
         curPage.upStyle()
         prevPage.upStyle()
         nextPage.upStyle()
+        bindEpubLayout()
+        epubLayout?.restyle()
         if (ReadBookConfig.isNineBgImg) {
             upBg()
         }
@@ -659,6 +923,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
     /**
      * 更新背景
      */
+    fun refreshHighlightRules(): Boolean = epubLayout?.takeIf { it.active }?.refreshHighlightRules() ?: false
+
     fun upBg() {
         ReadBookConfig.upBg(width, height)
         curPage.upBg()
@@ -697,6 +963,31 @@ class ReadView(context: Context, attrs: AttributeSet) :
      * 从选择位置开始朗读
      */
     suspend fun aloudStartSelect() {
+        if (epubLayout?.active == true) {
+            val selected = selectionSource.highlightSelection() ?: return
+            val bookUrl = ReadBook.book?.bookUrl ?: return
+            val play = {
+                ReadBook.curTextChapter?.takeIf {
+                    ReadBook.book?.bookUrl == bookUrl && it.chapter.index == selected.chapterIndex && it.isCompleted
+                }?.let { chapter ->
+                    val pageIndex = chapter.getPageIndexByCharIndex(selected.chapterPosition)
+                    ReadAloud.play(context, pageIndex = pageIndex,
+                        startPos = selected.chapterPosition - chapter.getReadLength(pageIndex),
+                        contentPosition = selected.chapterPosition)
+                }
+                Unit
+            }
+            val start = {
+                epubLayout?.whenChapterReady(selected.chapterIndex) {
+                    if (context.getPrefBoolean(io.legado.app.constant.PreferKey.readAloudByPage)) epubLayout?.prepareReadAloudPages(play)
+                    else play()
+                }
+                Unit
+            }
+            if (selected.chapterIndex == ReadBook.durChapterIndex) start()
+            else ReadBook.openChapter(selected.chapterIndex, selected.chapterPosition, success = start)
+            return
+        }
         val selectStartPos = curPage.selectStartPos
         var pagePos = selectStartPos.relativePagePos
         val line = selectStartPos.lineIndex
@@ -716,6 +1007,20 @@ class ReadView(context: Context, attrs: AttributeSet) :
      */
     fun getSelectText(): String {
         return selectionSource.selectedText
+    }
+
+    private fun turnPage(direction: Int) {
+        val layout = epubLayout
+        if (layout?.active == true) layout.turn(direction)
+        else if (direction > 0) pageDelegate?.nextPageByAnim(defaultAnimationSpeed)
+        else pageDelegate?.prevPageByAnim(defaultAnimationSpeed)
+    }
+
+    internal fun turnLayoutPage(direction: Int): Boolean {
+        val layout = epubLayout ?: return false
+        if (!layout.active) return false
+        layout.turn(direction)
+        return true
     }
 
     fun createBookmark(): Bookmark? {
@@ -748,6 +1053,65 @@ class ReadView(context: Context, attrs: AttributeSet) :
 
     fun getReadAloudPos(): Pair<Int, TextLine>? {
         return curPage.getReadAloudPos()
+    }
+
+    fun followReadAloud(position: Int) { epubLayout?.followReadAloud(position) }
+    fun stopFollowingReadAloud() {
+        epubLayout?.stopFollowingReadAloud()
+        // STOP/PAUSE must also clear the DOM paint when manual browsing skips a native repaint.
+        epubLayout?.syncAloudHighlight()
+    }
+
+    internal fun prepareAutoPage(): Boolean {
+        val layout = epubLayout?.takeIf { it.active } ?: return true
+        if (externalPageSnapshots != null) return !externalAnimationFinishing
+        if (!layout.readyForAutoPage()) return false
+        if (!layout.hasNextPage()) { callBack.autoPageStop(); return false }
+        if (isScroll) return layout.readyForAutoPage()
+        if (externalPageSnapshots == null) layout.prepareAutoPage()
+        return externalPageSnapshots != null && !externalAnimationFinishing
+    }
+
+    internal fun drawAutoPage(canvas: Canvas): Boolean {
+        if (epubLayout?.active != true) return false
+        externalPageSnapshots?.let { canvas.drawBitmap(it.second, 0f, 0f, null) }
+        return true
+    }
+
+    internal fun scrollAutoPage(amount: Int) {
+        val layout = epubLayout?.takeIf { it.active }
+        if (layout != null) layout.scrollAutoPage(amount.toFloat()) else curPage.scroll(-amount)
+    }
+
+    internal fun cancelAutoPage() {
+        epubLayout?.cancelAutoPage()
+        finishLayoutFrames()
+    }
+
+    /** Returns true when the visible layout owns the request, including while it is loading. */
+    fun aloudStartVisible(): Boolean {
+        if (ReadBook.book?.isEpub != true) return false
+        val (index, position) = epubLayout?.visiblePosition() ?: return true
+        val bookUrl = ReadBook.book?.bookUrl ?: return true
+        val play = {
+            ReadBook.curTextChapter?.takeIf {
+                ReadBook.book?.bookUrl == bookUrl && it.chapter.index == index && it.isCompleted
+            }?.let { chapter ->
+                val page = chapter.getPageIndexByCharIndex(position)
+                ReadAloud.play(context, pageIndex = page, startPos = position - chapter.getReadLength(page),
+                    contentPosition = position)
+            }
+            Unit
+        }
+        val start = {
+            epubLayout?.whenChapterReady(index) {
+                if (context.getPrefBoolean(io.legado.app.constant.PreferKey.readAloudByPage)) epubLayout?.prepareReadAloudPages(play)
+                else play()
+            }
+            Unit
+        }
+        if (index == ReadBook.durChapterIndex) start() else ReadBook.openChapter(index, position, success = start)
+        return true
     }
 
     fun invalidateTextPage() {
@@ -790,6 +1154,10 @@ class ReadView(context: Context, attrs: AttributeSet) :
         upProgressThrottle.invoke()
     }
 
+    override fun onLayoutCompleted() {
+        post { bindEpubLayout() }
+    }
+
     override val currentChapter: TextChapter?
         get() {
             return if (callBack.isInitFinish) ReadBook.textChapter(0) else null
@@ -826,5 +1194,9 @@ class ReadView(context: Context, attrs: AttributeSet) :
         fun dismissTextActionMenu()
         fun upSystemUiVisibility()
         fun sureNewProgress(progress: BookProgress)
+        fun upSelectedStart(x: Float, y: Float, top: Float)
+        fun upSelectedEnd(x: Float, y: Float)
+        fun onCancelSelect()
+        fun onTextHighlightClick(bookmark: Bookmark, anchorX: Float, top: Float, bottom: Float)
     }
 }

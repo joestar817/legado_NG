@@ -328,7 +328,8 @@ data class TextLine(
             canvas,
             bitmap,
             if (style.bgImageFit == 3) RectF(start - 3.dpToPx(), 0f, end + 3.dpToPx(), height)
-            else RectF(start, 1.dpToPx().toFloat(), end, height - 1.dpToPx()),
+            else RectF(start, ReadHighlightImageRenderer.CONTENT_INSET_DP.dpToPx().toFloat(),
+                end, height - ReadHighlightImageRenderer.CONTENT_INSET_DP.dpToPx()),
             style,
         )
     }

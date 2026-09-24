@@ -8,6 +8,9 @@ data class BookContent(
     //起效的替换规则
     val effectiveReplaceRules: List<ReplaceRule>?
 ) {
+    /** Current preparation only; never serialized or a second content cache. */
+    @Transient
+    internal var positionMap: ContentPositionMap? = null
 
     override fun toString(): String {
         return textList.joinToString("\n")

@@ -506,7 +506,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                 val nextStoryboardTask = startNextStoryboardPreload()
                 scheduleAdditionalStoryboardPreloads(nextStoryboardTask)
                 val currentSpeakItems = speakItems
-                val paragraphStarts = textChapter?.readAloudText?.readParagraphs(readAloudByPage)
+                val paragraphStarts = textChapter?.let(::readAloudInput)?.readParagraphs(readAloudByPage)
                     .orEmpty()
                     .map { it.chapterPosition }
                 val prefetchedPrefix = buildList {
@@ -761,6 +761,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     sourceMediaItemCount = sourceMediaItemCount,
                     chapterIndex = targetChapterIndex,
                     textChapter = nextTextChapter,
+                    readAloudInput = nextReadAloudText,
                     contentList = nextContentList,
                     paragraphStarts = nextReadAloudText.readParagraphs(readAloudByPage)
                         .map { it.chapterPosition },
@@ -1755,13 +1756,14 @@ class HttpReadAloudService : BaseReadAloudService(),
             val sleep = maxOf(1L, (durationMs / speakTextLength / playbackRate).toLong())
             for (i in start..speakTextLength.toLong()) {
                 if (activeGeneration != progressGeneration) return@launch
-                if (pageIndex + 1 < textChapter.pageSize
-                    && progressBase + i > textChapter.getReadLength(pageIndex + 1)
+                if (pageIndex + 1 < readAloudPageCount(textChapter)
+                    && progressBase + i > readAloudPageStart(textChapter, pageIndex + 1)
                 ) {
                     pageIndex++
-                    ReadBook.moveToNextPage()
+                    moveReadAloudPage(true)
                     upTtsProgress(progressBase + i.toInt())
                 }
+                else if (needsLayoutProgress) upTtsProgress(progressBase + i.toInt())
                 delay(sleep)
             }
         }
@@ -1920,6 +1922,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         progressGeneration++
         playIndexJob?.cancel()
         textChapter = ReadBook.curTextChapter ?: plan.textChapter
+        textChapter?.let { bindReadAloudInput(it, plan.readAloudInput) }
         contentList = plan.contentList
         speakItems = plan.items
         speakItemIndex = identity.itemIndex
@@ -1930,7 +1933,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         nowSpeak = item.paragraphIndex
         paragraphStartPos = 0
         readAloudNumber = plan.paragraphStarts.getOrNull(nowSpeak) ?: 0
-        pageIndex = textChapter?.getPageIndexByCharIndex(readAloudNumber) ?: 0
+        pageIndex = plan.readAloudInput.pageText?.indexAt(readAloudNumber) ?: 0
         exoPlayer.removeMediaItems(0, oldChapterMediaCount)
         plan.handedOff = true
         AppLog.putDebug(
@@ -2062,6 +2065,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         val sourceMediaItemCount: Int,
         val chapterIndex: Int,
         val textChapter: TextChapter,
+        val readAloudInput: io.legado.app.help.tts.ReadAloudTextSource,
         val contentList: List<String>,
         val paragraphStarts: List<Int>,
         val router: ReadAloudTtsRouter?,

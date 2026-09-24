@@ -2,6 +2,12 @@ package io.legado.app.utils
 
 import com.github.liuyueyi.quick.transfer.ChineseUtils
 import com.github.liuyueyi.quick.transfer.constants.TransType
+import com.github.liuyueyi.quick.transfer.Trie
+import com.github.liuyueyi.quick.transfer.TrieNode
+import com.github.liuyueyi.quick.transfer.dictionary.BasicDictionary
+import com.github.liuyueyi.quick.transfer.dictionary.DictionaryContainer
+import io.legado.app.help.book.ContentEdit
+import io.legado.app.help.book.ContentPositionMap
 
 object ChineseUtils {
 
@@ -16,6 +22,39 @@ object ChineseUtils {
             fixT2sDict()
         }
         return ChineseUtils.t2s(content)
+    }
+
+    internal fun s2t(content: String, trace: ContentPositionMap): String =
+        convertWithPositions(content, TransType.SIMPLE_TO_TRADITIONAL, trace)
+
+    internal fun t2s(content: String, trace: ContentPositionMap): String {
+        if (!fixed) fixT2sDict()
+        return convertWithPositions(content, TransType.TRADITIONAL_TO_SIMPLE, trace)
+    }
+
+    /** Observe the library's actual longest-match conversion; do not run a second converter. */
+    private fun convertWithPositions(content: String, type: TransType, trace: ContentPositionMap): String {
+        val dictionary = DictionaryContainer.getInstance().getDictionary(type)
+        val edits = ArrayList<ContentEdit>()
+        var cursor = 0
+        val observedTrie = object : Trie<String>() {
+            override fun bestMatch(chars: CharArray, offset: Int, length: Int): TrieNode<String>? {
+                return dictionary.dict.bestMatch(chars, offset, length)?.also { match ->
+                    edits.add(ContentEdit(cursor, cursor + match.level, match.value))
+                    cursor += match.level
+                }
+            }
+        }
+        val observed = object : BasicDictionary(type.name, dictionary.chars, observedTrie, dictionary.maxLen) {
+            override fun convert(char: Char): Char = dictionary.convert(char).also {
+                edits.add(ContentEdit(cursor, cursor + 1, it.toString()))
+                cursor++
+            }
+        }
+        val output = observed.convert(content)
+        check(cursor == content.length)
+        trace.record(content, output, edits)
+        return output
     }
 
     fun preLoad(async: Boolean, vararg transType: TransType) {

@@ -18,6 +18,7 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
+import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isLocalModified
 import io.legado.app.help.book.removeType
@@ -120,12 +121,14 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
     }
 
     private suspend fun initBook(book: Book) {
+        val startup = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("book-init") else null
         val isSameBook = ReadBook.book?.bookUrl == book.bookUrl
         if (isSameBook) {
             ReadBook.upData(book)
         } else {
             ReadBook.resetData(book)
         }
+        startup?.mark("reader-bound")
         prepareReplaceRuleResetOnEnter(book)
         isInitFinish = true
         if (!book.isLocal && book.tocUrl.isEmpty() && !loadBookInfo(book)) {
@@ -134,9 +137,11 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
         if (book.isLocal && !checkLocalBookFileExist(book)) {
             return
         }
+        startup?.mark("file-check-ready")
         if ((ReadBook.chapterSize == 0 || book.isLocalModified()) && !loadChapterListAwait(book)) {
             return
         }
+        startup?.mark("chapter-list-ready")
         ReadBook.upMsg(null)
         if (!isSameBook) {
             ReadBook.loadContent(resetPageOffset = true) {
@@ -226,7 +231,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
 
     private fun checkLocalBookFileExist(book: Book): Boolean {
         try {
-            LocalBook.getBookInputStream(book)
+            LocalBook.getBookInputStream(book).use { }
             return true
         } catch (e: Throwable) {
             ReadBook.upMsg("打开本地书籍出错: ${e.localizedMessage}")
@@ -522,12 +527,15 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
         } else {
             var count = 0
             index = content.indexOf(searchContentQuery)
-            while (count != searchResult.resultCountWithinChapter) {
+            while (index >= 0 && count != searchResult.resultCountWithinChapter) {
                 index = content.indexOf(searchContentQuery, index + queryLength)
                 count += 1
             }
         }
         val contentPosition = index
+        if (contentPosition < 0 || queryLength <= 0 || pages.isEmpty()) {
+            return arrayOf(0, 0, 0, 0, 0, queryLength, -1)
+        }
         var pageIndex = 0
         var length = pages[pageIndex].text.length
         while (length < contentPosition && pageIndex + 1 < pages.size) {
@@ -568,7 +576,9 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
             addLine = -1
             charIndex2 = charIndex + queryLength - curLineLength - 1
         }
-        return arrayOf(pageIndex, lineIndex, charIndex, addLine, charIndex2, queryLength)
+        // Keep the exact shared match as well as native geometry. Another layout must
+        // not interpret a native page number as a position or search the text again.
+        return arrayOf(pageIndex, lineIndex, charIndex, addLine, charIndex2, queryLength, contentPosition)
     }
 
     /**

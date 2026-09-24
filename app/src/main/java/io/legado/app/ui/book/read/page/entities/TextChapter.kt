@@ -6,6 +6,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.ReplaceRule
 import io.legado.app.help.book.BookContent
+import io.legado.app.help.book.ContentPositionMap
 import io.legado.app.help.tts.ReadAloudTextSource
 import io.legado.app.help.tts.paragraphNumberAt
 import io.legado.app.help.tts.readTextRange
@@ -35,11 +36,19 @@ data class TextChapter(
     val effectiveReplaceRules: List<ReplaceRule>?
 ) : LayoutProgressListener {
 
+    @Transient
+    internal val highlightInputs = arrayListOf<io.legado.app.ui.book.read.page.provider.ReadHighlightInput>()
+
     private val textPages = arrayListOf<TextPage>()
+    @Transient
+    internal var contentPositionMap: ContentPositionMap? = null
     val pages: List<TextPage> get() = textPages
 
-    @delegate:Transient
-    val readAloudText: ReadAloudTextSource by lazy { NativeReadAloudTextSource(this) }
+    @Transient
+    @Volatile
+    internal var layoutReadAloudPages: io.legado.app.help.tts.ReadAloudPageText? = null
+
+    val readAloudText: ReadAloudTextSource get() = NativeReadAloudTextSource(this, layoutReadAloudPages)
 
     private var layout: TextChapterLayout? = null
 
@@ -63,6 +72,7 @@ data class TextChapter(
 
     var listener: LayoutProgressListener? = null
 
+    @Volatile
     var isCompleted = false
 
     val paragraphs by lazy {
@@ -191,7 +201,7 @@ data class TextChapter(
         startPos: Int,
         pageEndIndex: Int = pages.lastIndex
     ): String {
-        return checkNotNull(readAloudText.pageText).readTextRange(
+        return NativeReadAloudTextSource(this, null).pageText.readTextRange(
             pageIndex, pageSplit, startPos, pageEndIndex,
         )
     }

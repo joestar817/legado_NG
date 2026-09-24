@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="epub_publisher_style">原书排版优先</string>
     <string name="bookshelf_highlight_unread">Highlight unread count</string>
     <string name="interface_font">Interface font</string>
     <string name="text_selection_action_order">Text toolbar order</string>

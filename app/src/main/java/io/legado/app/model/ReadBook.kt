@@ -12,6 +12,7 @@ import io.legado.app.data.entities.ReadRecord
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
+import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.isImage
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isPdf
@@ -375,10 +376,11 @@ object ReadBook : CoroutineScope by MainScope() {
     fun moveToNextChapter(
         upContent: Boolean,
         upContentInPlace: Boolean = true,
-        restartReadAloud: Boolean = true
+        restartReadAloud: Boolean = true,
+        startPosition: Int = 0,
     ): Boolean {
         if (durChapterIndex < simulatedChapterSize - 1) {
-            durChapterPos = 0
+            durChapterPos = startPosition
             durChapterIndex++
             clearExpiredChapterLoadingJob()
             prevTextChapter = curTextChapter
@@ -439,10 +441,11 @@ object ReadBook : CoroutineScope by MainScope() {
         upContent: Boolean,
         toLast: Boolean = true,
         upContentInPlace: Boolean = true,
-        restartReadAloud: Boolean = true
+        restartReadAloud: Boolean = true,
+        startPosition: Int? = null,
     ): Boolean {
         if (durChapterIndex > 0) {
-            durChapterPos = if (toLast) prevTextChapter?.lastReadLength ?: Int.MAX_VALUE else 0
+            durChapterPos = startPosition ?: if (toLast) prevTextChapter?.lastReadLength ?: Int.MAX_VALUE else 0
             durChapterIndex--
             clearExpiredChapterLoadingJob()
             nextTextChapter = curTextChapter
@@ -475,7 +478,12 @@ object ReadBook : CoroutineScope by MainScope() {
 
     fun setPageIndex(index: Int) {
         recycleRecorders(durPageIndex, index)
-        durChapterPos = curTextChapter?.getReadLength(index) ?: index
+        commitContentPosition(curTextChapter?.getReadLength(index) ?: index)
+    }
+
+    /** A layout supplies a content offset; persistence and playback policy stay here. */
+    internal fun commitContentPosition(position: Int) {
+        durChapterPos = position
         saveRead(true)
         curPageChanged(true)
     }
@@ -551,6 +559,9 @@ object ReadBook : CoroutineScope by MainScope() {
                 play = play,
                 startPos = startPos,
                 engineVerified = engineVerified,
+                // EPUB's visible page can start inside a native page. Preserve
+                // the committed content offset when the existing policy restarts speech.
+                contentPosition = if (book?.isEpub == true && startPos == 0) durChapterPos else null,
             )
         }
     }
@@ -631,9 +642,12 @@ object ReadBook : CoroutineScope by MainScope() {
     ) {
         Coroutine.async {
             val book = book!!
+            val startup = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("content-read-$index") else null
             val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index) ?: return@async
             if (addLoading(index)) {
+                startup?.mark("before-content")
                 BookHelp.getContent(book, chapter)?.let {
+                    startup?.mark("content-read")
                     contentLoadFinish(
                         book,
                         chapter,
@@ -763,18 +777,22 @@ object ReadBook : CoroutineScope by MainScope() {
         }
         chapterLoadingJobs[chapter.index]?.cancel()
         val job = Coroutine.async(this, start = CoroutineStart.LAZY) {
+            val startup = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("content-prepare-${chapter.index}") else null
             val contentProcessor = ContentProcessor.get(book.name, book.origin)
             val displayTitle = chapter.getDisplayTitle(
                 contentProcessor.getTitleReplaceRules(),
                 book.getUseReplaceRule(),
                 replaceBook = book.toReplaceBook()
             )
+            startup?.mark("title-ready")
             val contents = contentProcessor
                 .getContent(book, chapter, content, includeTitle = false)
+            startup?.mark("processed")
             ensureActive()
             val textChapter = ChapterProvider.getTextChapterAsync(
                 this, book, chapter, displayTitle, contents, simulatedChapterSize
             )
+            startup?.mark("native-created")
             when (val offset = chapter.index - durChapterIndex) {
                 0 -> curChapterLoadingLock.withLock {
                     withContext(Main) {

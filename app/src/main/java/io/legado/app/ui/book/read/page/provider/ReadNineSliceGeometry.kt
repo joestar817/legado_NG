@@ -12,6 +12,8 @@ internal data class ReadNineSliceGeometry(
 ) {
     val leftWidth: Float get() = left * frameScale
     val rightWidth: Float get() = (width - right) * frameScale
+    val topHeight: Float get() = top * frameScale
+    val bottomHeight: Float get() = (height - bottom) * frameScale
 
     /** 四角横纵共用倍率；同时受文字高度和行间距约束，不能仅压缩纵向。 */
     fun forLine(lineHeight: Float, lineSpacing: Float): ReadNineSliceGeometry {
@@ -20,6 +22,17 @@ internal data class ReadNineSliceGeometry(
         val gapScale = halfGap / maxOf(top.toFloat(), (height - bottom).toFloat(), 0.1f)
         return copy(frameScale = minOf(centerScale, gapScale, 1f).coerceAtLeast(0f))
     }
+
+    /** The centre contains the text; callers must reserve the returned outer frame in layout. */
+    fun forContentHeight(contentHeight: Float): ReadNineSliceGeometry = copy(
+        frameScale = (contentHeight.coerceAtLeast(0f) / (bottom - top).coerceAtLeast(1)).coerceAtMost(1f),
+    )
+
+    /** Fixed vector labels cannot reserve extra space outside their authored coordinates. */
+    fun forOuterSize(outerWidth: Float, outerHeight: Float): ReadNineSliceGeometry = copy(
+        frameScale = minOf(outerWidth.coerceAtLeast(0f) / width.coerceAtLeast(1),
+            outerHeight.coerceAtLeast(0f) / height.coerceAtLeast(1), 1f),
+    )
 
     fun verticalInsets(lineHeight: Float, lineSpacing: Float): Pair<Float, Float> {
         val scale = forLine(lineHeight, lineSpacing).frameScale

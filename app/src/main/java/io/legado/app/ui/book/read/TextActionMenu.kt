@@ -36,6 +36,9 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.legado.app.R
@@ -243,6 +246,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
         inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
         softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         setOnDismissListener {
+            highlightMenuGeneration++
             contentView.viewTreeObserver.removeOnGlobalLayoutListener(windowLayoutListener)
             popupParentView?.viewTreeObserver?.removeOnGlobalLayoutListener(windowLayoutListener)
             commitTextHighlightNote()
@@ -304,6 +308,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
         textHighlight: Bookmark?,
         anchorX: Int?,
     ) {
+        highlightMenuGeneration++
         ReadFloatingAppearanceState.refreshFromConfig()
         actionOrderState.value = TextSelectionActionOrder.load()
         disabledActionKeysState.value = TextSelectionActionOrder.disabledKeys()
@@ -443,19 +448,37 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
         return appMenu.visibleItems + processTextMenu.visibleItems
     }
 
+    private var highlightMenuGeneration = 0L
+    private var pendingHighlightGeneration: Long? = null
+
     private fun onActionClick(item: MenuItemImpl) {
         dismissMoreMenu()
         if (item.itemId == R.id.menu_bookmark && textHighlightState.value == null) {
-            val textHighlight = callBack.onTextHighlightCreate()
-            if (textHighlight == null) {
-                callBack.onMenuActionFinally()
-                return
+            val mine = highlightMenuGeneration
+            if (pendingHighlightGeneration == mine) return
+            pendingHighlightGeneration = mine
+            context.lifecycleScope.launch {
+                try {
+                    val textHighlight = callBack.onTextHighlightCreate()
+                    if (mine != highlightMenuGeneration || !isShowing) return@launch
+                    if (textHighlight == null) {
+                        callBack.onMenuActionFinally()
+                        return@launch
+                    }
+                    textHighlightState.value = textHighlight
+                    noteDraftState.value = textHighlight.content
+                    callBack.onTextHighlightOpened(textHighlight)
+                    currentPageState.intValue = 0
+                    updateToolbarEditorHeight()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    AppLog.put("保存划线失败", error)
+                    if (mine == highlightMenuGeneration && isShowing) context.toastOnUi(R.string.create_bookmark_error)
+                } finally {
+                    if (pendingHighlightGeneration == mine) pendingHighlightGeneration = null
+                }
             }
-            textHighlightState.value = textHighlight
-            noteDraftState.value = textHighlight.content
-            callBack.onTextHighlightOpened(textHighlight)
-            currentPageState.intValue = 0
-            updateToolbarEditorHeight()
             return
         }
         commitTextHighlightNote()
@@ -866,7 +889,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
 
         fun onMenuItemSelected(itemId: Int): Boolean
 
-        fun onTextHighlightCreate(): Bookmark?
+        suspend fun onTextHighlightCreate(): Bookmark?
 
         fun onTextHighlightOpened(bookmark: Bookmark)
 

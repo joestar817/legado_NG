@@ -53,6 +53,10 @@ class CoverPageDelegate(readView: ReadView) : HorizontalPageDelegate(readView) {
     }
 
     override fun setBitmap() {
+        if (readView.externalPageSnapshots != null) {
+            super.setBitmap()
+            return
+        }
         when (mDirection) {
             PageDirection.PREV -> {
                 prevPage.screenshot(prevRecorder)

@@ -470,9 +470,7 @@ object NgMenuPopup {
             R.id.menu_cover_progress,
             R.id.menu_read_record -> R.drawable.ic_history
             R.id.menu_aloud -> R.drawable.ic_read_aloud
-            R.id.menu_same_title_removed,
-            R.id.menu_del_ruby_tag,
-            R.id.menu_del_h_tag -> R.drawable.ic_clear_all
+            R.id.menu_same_title_removed -> R.drawable.ic_clear_all
 
             R.id.menu_open_in_browser,
             R.id.menu_browser_open,

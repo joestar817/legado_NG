@@ -180,15 +180,24 @@ object BookHelp {
         book: Book,
         bookChapter: BookChapter,
         content: String
+    ) = saveText(book, bookChapter, content, null)
+
+    internal fun saveText(
+        book: Book,
+        bookChapter: BookChapter,
+        content: String,
+        positions: ContentPositionMap?,
     ) {
         if (content.isEmpty()) return
         //保存文本
-        FileUtils.createFileIfNotExist(
+        val file = FileUtils.createFileIfNotExist(
             downloadDir,
             cacheFolderName,
             book.getFolderName(),
             bookChapter.getFileName(),
-        ).writeText(content)
+        )
+        if (book.isEpub && positions != null) EpubEditProvenance.save(file, content, positions)
+        else file.writeText(content)
         if (book.isOnLineTxt && AppConfig.tocCountWords) {
             val wordCount = StringUtils.contentWordCountFormat(content)
             bookChapter.wordCount = wordCount
@@ -427,13 +436,19 @@ object BookHelp {
      * 删除章节内容
      */
     fun delContent(book: Book, bookChapter: BookChapter) {
-        FileUtils.createFileIfNotExist(
+        val file = FileUtils.createFileIfNotExist(
             downloadDir,
             cacheFolderName,
             book.getFolderName(),
             bookChapter.getFileName()
-        ).delete()
+        )
+        file.delete()
+        if (book.isEpub) EpubEditProvenance.delete(file)
     }
+
+    internal fun epubContentPositions(book: Book, chapter: BookChapter, source: String, cached: String): ContentPositionMap? =
+        EpubEditProvenance.restore(downloadDir.getFile(cacheFolderName, book.getFolderName(), chapter.getFileName()),
+            source, cached, chapter.title)
 
     /**
      * 格式化书名

@@ -231,11 +231,11 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
                 if (isReadAloudTextSilent()) {
                     nextParagraph()
                 }
-                if (pageIndex + 1 < it.pageSize
-                    && readAloudNumber + 1 > it.getReadLength(pageIndex + 1)
+                if (pageIndex + 1 < readAloudPageCount(it)
+                    && readAloudNumber + 1 > readAloudPageStart(it, pageIndex + 1)
                 ) {
                     pageIndex++
-                    ReadBook.moveToNextPage()
+                    moveReadAloudPage(true)
                 }
                 upTtsProgress(readAloudNumber + 1)
             }
@@ -252,13 +252,14 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
                 "onRangeStart nowSpeak:$nowSpeak pageIndex:$pageIndex utteranceId:$utteranceId start:$start end:$end frame:$frame"
             LogUtils.d(TAG, msg)
             textChapter?.let {
-                if (pageIndex + 1 < it.pageSize
-                    && readAloudNumber + start > it.getReadLength(pageIndex + 1)
+                if (pageIndex + 1 < readAloudPageCount(it)
+                    && readAloudNumber + start > readAloudPageStart(it, pageIndex + 1)
                 ) {
                     pageIndex++
-                    ReadBook.moveToNextPage()
+                    moveReadAloudPage(true)
                     upTtsProgress(readAloudNumber + start)
                 }
+                else if (needsLayoutProgress) upTtsProgress(readAloudNumber + start)
             }
         }
 

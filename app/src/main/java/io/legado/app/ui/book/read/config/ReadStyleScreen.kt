@@ -153,6 +153,7 @@ internal data class ReadStyleUiState(
     val selectedPresetName: String,
     val canRestoreCurrentDefault: Boolean,
     val highlightSummary: String,
+    val isEpub: Boolean,
     val shareLayout: Boolean,
     val globalFloatingFollowApp: Boolean,
     val textSize: Int,
@@ -198,6 +199,7 @@ internal data class ReadStyleActions(
     val onDeletePreset: () -> Unit,
     val onRestoreCurrentPreset: () -> Unit,
     val onRestoreAllPresets: () -> Unit,
+    val onOpenEpubSettings: () -> Unit,
     val onShareLayoutChanged: (Boolean) -> Unit,
     val onGlobalFloatingFollowAppChanged: (Boolean) -> Unit,
     val onImportHighlights: () -> Unit,
@@ -320,7 +322,7 @@ internal fun ReadStyleScreen(
                 ReadStylePage.PRESET -> Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(StandardPageHeight),
+                        .height(StandardPageHeight + if (state.isEpub) 56.8.dp else 0.dp),
                 ) {
                     PresetPage(
                         state = state,
@@ -491,6 +493,18 @@ private fun PresetPage(
         onCheckedChange = actions.onGlobalFloatingFollowAppChanged,
     )
     ReadDivider(contentColor)
+    if (state.isEpub) {
+        Row(Modifier.fillMaxWidth().height(56.dp)
+            .clickable(role = Role.Button, onClick = actions.onOpenEpubSettings).padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(painterResource(R.drawable.ic_view_quilt), null, tint = contentColor, modifier = Modifier.size(25.dp))
+            Text("EPUB 排版", color = contentColor, fontSize = 15.sp,
+                modifier = Modifier.padding(start = 14.dp).weight(1f))
+            Icon(painterResource(R.drawable.ic_chevron_right_20), null, tint = contentColor.copy(alpha = .72f),
+                modifier = Modifier.size(18.dp))
+        }
+        ReadDivider(contentColor)
+    }
     PresetRestoreAllRow(
         contentColor = contentColor,
         onClick = actions.onRestoreAllPresets,

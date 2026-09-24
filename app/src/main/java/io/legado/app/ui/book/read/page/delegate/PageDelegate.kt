@@ -118,6 +118,7 @@ abstract class PageDelegate(protected val readView: ReadView) {
     abstract fun prevPageByAnim(animationSpeed: Int)
 
     open fun keyTurnPage(direction: PageDirection) {
+        if (direction != PageDirection.NONE && readView.turnLayoutPage(if (direction == PageDirection.NEXT) 1 else -1)) return
         if (isRunning) return
         when (direction) {
             PageDirection.NEXT -> nextPageByAnim(100)

@@ -7,6 +7,7 @@ import io.legado.app.data.entities.ReplaceBook
 import io.legado.app.exception.RegexTimeoutException
 import io.legado.app.help.CrashHandler
 import io.legado.app.help.RegexJsExtensions
+import io.legado.app.help.book.ContentEdit
 import io.legado.app.help.coroutine.Coroutine
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,13 +26,15 @@ private val handler by lazy { buildMainHandler() }
  * 带有超时检测的正则替换
  */
 @OptIn(ExperimentalCoroutinesApi::class)
+@JvmOverloads
 fun CharSequence.replace(
     name: String,
     regex: Regex,
     replacement: String,
     timeout: Long,
     chapter: BookChapter? = null,
-    book: ReplaceBook? = null
+    book: ReplaceBook? = null,
+    onEdits: ((List<ContentEdit>) -> Unit)? = null,
 ): String {
     val charSequence = this@replace
     val isJs = replacement.startsWith("@js:")
@@ -45,7 +48,10 @@ fun CharSequence.replace(
                         val pattern = regex.toPattern()
                         val matcher = pattern.matcher(charSequence)
                         val stringBuffer = StringBuffer()
+                        val edits = if (onEdits != null) ArrayList<ContentEdit>() else null
+                        var previousEnd = 0
                         while (matcher.find()) {
+                            val outputStart = stringBuffer.length + matcher.start() - previousEnd
                             if (isJs) {
                                 val jsResult = RhinoScriptEngine.run {
                                     val bindings = ScriptBindings()
@@ -60,8 +66,11 @@ fun CharSequence.replace(
                             } else {
                                 matcher.appendReplacement(stringBuffer, replacement1)
                             }
+                            edits?.add(ContentEdit(matcher.start(), matcher.end(), stringBuffer.substring(outputStart)))
+                            previousEnd = matcher.end()
                         }
                         matcher.appendTail(stringBuffer)
+                        if (block.isActive && edits != null) onEdits?.invoke(edits)
                         block.resume(stringBuffer.toString())
                     } catch (e: Exception) {
                         block.resumeWithException(e)

@@ -14,13 +14,13 @@ import io.legado.app.constant.AppLog
 import io.legado.app.constant.AppPattern
 import io.legado.app.constant.PageAnim
 import io.legado.app.data.entities.Book
+import io.legado.app.help.book.isEpub
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.help.book.BookContent
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.getBookSource
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
-import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.model.ImageProvider
 import io.legado.app.model.ReadBook
@@ -111,11 +111,10 @@ class TextChapterLayout(
     private val textFullJustify = ReadBookConfig.textFullJustify
     private val adaptSpecialStyle = AppConfig.adaptSpecialStyle
     private val pageAnim = book.getPageAnim()
-    private val compiledHighlightRules = ReadBookConfig.highlightRules.mapNotNull { rule ->
-        runCatching { rule to Regex(rule.pattern) }.getOrNull()
-    }
+    private val highlightMatcher = ReadHighlightMatcher(ReadBookConfig.highlightRules)
     // init 会立即启动后台排版，所需缓存必须在启动任务前完成初始化。
     private val nineSliceDimensions = mutableMapOf<String, Pair<Int, Int>?>()
+    private val startupTiming = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("native-${textChapter.position}") else null
 
     private var pendingTextPage = TextPage()
 
@@ -186,7 +185,6 @@ class TextChapterLayout(
     }
 
     private fun onCompleted() {
-        channel.close()
         try {
             listener?.onLayoutCompleted()
         } catch (e: Exception) {
@@ -194,6 +192,9 @@ class TextChapterLayout(
             AppLog.put("调用布局进度监听回调出错\n${e.localizedMessage}", e)
         } finally {
             listener = null
+            // Consumers may immediately publish the chapter after observing channel closure.
+            // Its completed state must already be visible, or the EPUB renderer can wait forever.
+            channel.close()
         }
     }
 
@@ -222,6 +223,7 @@ class TextChapterLayout(
         displayTitle: String,
         bookContent: BookContent,
     ) {
+        startupTiming?.mark("layout-start")
         val contents = bookContent.textList
         val imageStyle = book.getImageStyle()
         val isSingleImageStyle = imageStyle.equals(Book.imgStyleSingle, true)
@@ -537,7 +539,9 @@ class TextChapterLayout(
         }
         val chapterWordCount = StringUtils.wordCountFormat(wordCount.toString())
         bookChapter.wordCount = chapterWordCount
+        startupTiming?.mark("before-word-count-save")
         appDb.bookChapterDao.upWordCount(bookChapter.bookUrl, bookChapter.url, chapterWordCount)
+        startupTiming?.mark("after-word-count-save")
         val textPage = pendingTextPage
         val endPadding = 20.dpToPx()
         val durYPadding = durY + endPadding
@@ -550,6 +554,7 @@ class TextChapterLayout(
         currentCoroutineContext().ensureActive()
         onPageCompleted()
         onCompleted()
+        startupTiming?.mark("completed")
     }
 
     /**
@@ -954,7 +959,7 @@ class TextChapterLayout(
         srcList: LinkedList<String>? = null,
         clickList: LinkedList<String?>?
     ) {
-        val charStyles = createHighlightStyles(text, isTitle)
+        val charStyles = highlightMatcher.match(text, isTitle)
         val widthsArray = allocateFloatArray(text.length)
         textPaint.getTextWidthsCompat(text, widthsArray, reviewCharWidth)
         remeasureHighlightFonts(text, charStyles, textPaint, widthsArray)
@@ -1073,6 +1078,9 @@ class TextChapterLayout(
                 textLine.isLeftLine = absStartX < viewWidth / 2
             }
             calcTextLinePosition(textPages, textLine, stringBuilder.length)
+            if (book.isEpub && lineIndex == 0) {
+                textChapter.highlightInputs.add(ReadHighlightInput(textLine.chapterPosition, text, isTitle))
+            }
             stringBuilder.append(lineText)
             val textPage = pendingTextPage
             textPage.addLine(textLine)
@@ -1082,44 +1090,6 @@ class TextChapterLayout(
             }
         }
         durY += textHeight * paragraphSpacing / 10f
-    }
-
-    private fun createHighlightStyles(text: String, isTitle: Boolean): Array<ReadCharStyle?>? {
-        if (text.isEmpty() || compiledHighlightRules.isEmpty()) return null
-        var styles: Array<ReadCharStyle?>? = null
-        compiledHighlightRules.forEach { (rule, regex) ->
-            if (!rule.appliesToTitle(isTitle)) return@forEach
-            val style = rule.toReadCharStyle()
-            regex.findAll(text).forEach { match ->
-                val active = styles ?: arrayOfNulls<ReadCharStyle>(text.length).also { styles = it }
-                match.range.forEach { index ->
-                    if (index in active.indices) active[index] = style
-                }
-            }
-        }
-        return styles
-    }
-
-    private fun ReadHighlightRule.toReadCharStyle(): ReadCharStyle {
-        return ReadCharStyle(
-            textColor = textColor,
-            bgColor = bgColor,
-            underlineMode = underlineMode,
-            underlineColor = underlineColor,
-            underlineWidth = underlineWidth,
-            underlineOffset = underlineOffset,
-            underlineSvgPath = underlineSvgPath.orEmpty(),
-            bgImage = bgImage.orEmpty(),
-            bgImageFit = bgImageFit,
-            bgImageScale = bgImageScale,
-            fontPath = fontPath.orEmpty(),
-            fontWeight = fontWeight,
-            isItalic = isItalic,
-            npLeft = npLeft,
-            npRight = npRight,
-            npTop = npTop,
-            npBottom = npBottom,
-        )
     }
 
     private fun remeasureHighlightFonts(

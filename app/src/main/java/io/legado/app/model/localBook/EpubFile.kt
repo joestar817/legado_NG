@@ -9,10 +9,11 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.help.book.BookHelp
+import io.legado.app.model.epub.EpubBodyReader
+import io.legado.app.model.epub.EpubSourceCapture
+import io.legado.app.model.epub.EpubSourceChapter
 import io.legado.app.help.config.AppConfig
 import io.legado.app.utils.FileUtils
-import io.legado.app.utils.HtmlFormatter
-import io.legado.app.utils.encodeURI
 import io.legado.app.utils.isXml
 import io.legado.app.utils.printOnDebug
 import me.ag2s.epublib.domain.EpubBook
@@ -22,13 +23,11 @@ import me.ag2s.epublib.epub.EpubReader
 import me.ag2s.epublib.util.zip.AndroidZipFile
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import org.jsoup.parser.Parser
 import org.jsoup.select.Elements
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.Charset
 
@@ -57,6 +56,13 @@ class EpubFile(var book: Book) {
         @Synchronized
         override fun getContent(book: Book, chapter: BookChapter): String? {
             return getEFile(book).getContent(chapter)
+        }
+
+        @Synchronized
+        internal fun getSourceChapter(book: Book, chapter: BookChapter): EpubSourceChapter? {
+            val capture = EpubSourceCapture()
+            getEFile(book).getContent(chapter, capture)
+            return capture.result
         }
 
         @Synchronized
@@ -122,7 +128,7 @@ class EpubFile(var book: Book) {
         }.getOrThrow()
     }
 
-    private fun getContent(chapter: BookChapter): String? {
+    private fun getContent(chapter: BookChapter, capture: EpubSourceCapture? = null): String? {
         /*获取当前章节文本*/
         val contents = epubBookContents ?: return null
         val nextChapterFirstResourceHref = chapter.getVariable("nextUrl").substringBeforeLast("#")
@@ -131,17 +137,28 @@ class EpubFile(var book: Book) {
         val startFragmentId = chapter.startFragmentId
         val endFragmentId = chapter.endFragmentId
         val elements = Elements()
+        // With no navigation document the existing chapter list is the spine itself. Its index
+        // identifies the occurrence; EpubBook.contents deduplicates resources and cannot do that.
+        if (epubBook?.tableOfContents?.tocReferences.isNullOrEmpty()) {
+            val reference = epubBook?.spine?.spineReferences?.getOrNull(chapter.index)
+            if (reference?.resource?.href == currentChapterFirstResourceHref) {
+                capture?.sourceOccurrence = chapter.index
+                elements.add(getBody(reference.resource, startFragmentId, endFragmentId, capture))
+                return EpubBodyReader.format(elements, book.getDelTag(Book.rubyTag), capture)
+            }
+        }
         var findChapterFirstSource = false
         val includeNextChapterResource = !endFragmentId.isNullOrBlank()
         /*一些书籍依靠href索引的resource会包含多个章节，需要依靠fragmentId来截取到当前章节的内容*/
         /*注:这里较大增加了内容加载的时间，所以首次获取内容后可存储到本地cache，减少重复加载*/
         for (res in contents) {
+            capture?.sourceOccurrence = epubBook?.spine?.spineReferences?.indexOfFirst { it.resource.href == res.href } ?: -1
             if (!findChapterFirstSource) {
                 if (currentChapterFirstResourceHref != res.href) continue
                 findChapterFirstSource = true
                 // 第一个xhtml文件
                 elements.add(
-                    getBody(res, startFragmentId, endFragmentId)
+                    getBody(res, startFragmentId, endFragmentId, capture)
                 )
                 // 不是最后章节 且 已经遍历到下一章节的内容时停止
                 if (!isLastChapter && res.href == nextChapterFirstResourceHref) break
@@ -149,108 +166,22 @@ class EpubFile(var book: Book) {
             }
             if (nextChapterFirstResourceHref != res.href) {
                 // 其余部分
-                elements.add(getBody(res, null, null))
+                elements.add(getBody(res, null, null, capture))
             } else {
                 // 下一章节的第一个xhtml
                 if (includeNextChapterResource) {
                     //有Fragment 则添加到上一章节
-                    elements.add(getBody(res, null, endFragmentId))
+                    elements.add(getBody(res, null, endFragmentId, capture))
                 }
                 break
             }
         }
-        //title标签中的内容不需要显示在正文中，去除
-        elements.select("title").remove()
-        elements.select("[style*=display:none]").remove()
-        elements.select("img[src=\"cover.jpeg\"]").forEachIndexed { i, it ->
-            if (i > 0) it.remove()
-        }
-        elements.select("img").forEach {
-            if (it.attributesSize() <= 1) {
-                return@forEach
-            }
-            val src = it.attr("src")
-            it.clearAttributes()
-            it.attr("src", src)
-        }
-        val tag = Book.rubyTag
-        if (book.getDelTag(tag)) {
-            elements.select("rp, rt").remove()
-        }
-        val html = elements.outerHtml()
-        return HtmlFormatter.formatKeepImg(html)
+        return EpubBodyReader.format(elements, book.getDelTag(Book.rubyTag), capture)
     }
 
-    private fun getBody(res: Resource, startFragmentId: String?, endFragmentId: String?): Element {
-        /**
-         * <image width="1038" height="670" xlink:href="..."/>
-         * ...titlepage.xhtml
-         * 大多数epub文件的封面页都会带有cover，可以一定程度上解决封面读取问题
-         */
-        if (res.href.contains("titlepage.xhtml") ||
-            res.href.contains("cover")
-        ) {
-            return Jsoup.parseBodyFragment("<img src=\"cover.jpeg\" />")
-        }
-
-        // Jsoup可能会修复不规范的xhtml文件 解析处理后再获取
-        var bodyElement = Jsoup.parse(String(res.data, mCharset)).body()
-        bodyElement.children().run {
-            select("script").remove()
-            select("style").remove()
-        }
-        // 获取body对应的文本
-        var bodyString = bodyElement.outerHtml()
-        val originBodyString = bodyString
-        /**
-         * 某些xhtml文件 章节标题和内容不在一个节点或者不是兄弟节点
-         * <div>
-         *    <a class="mulu1>目录1</a>
-         * </div>
-         * <p>....</p>
-         * <div>
-         *    <a class="mulu2>目录2</a>
-         * </div>
-         * <p>....</p>
-         * 先找到FragmentId对应的Element 然后直接截取之间的html
-         */
-        if (!startFragmentId.isNullOrBlank()) {
-            bodyElement.getElementById(startFragmentId)?.outerHtml()?.let {
-                val tagStart = it.substringBefore("\n")
-                bodyString = tagStart + bodyString.substringAfter(tagStart)
-            }
-        }
-        if (!endFragmentId.isNullOrBlank() && endFragmentId != startFragmentId) {
-            bodyElement.getElementById(endFragmentId)?.outerHtml()?.let {
-                val tagStart = it.substringBefore("\n")
-                bodyString = bodyString.substringBefore(tagStart)
-            }
-        }
-        //截取过再重新解析
-        if (bodyString != originBodyString) {
-            bodyElement = Jsoup.parse(bodyString).body()
-        }
-        /*选择去除正文中的H标签，部分书籍标题与阅读标题重复待优化*/
-        val tag = Book.hTag
-        if (book.getDelTag(tag)) {
-            bodyElement.run {
-                select("h1, h2, h3, h4, h5, h6").remove()
-                //getElementsMatchingOwnText(chapter.title)?.remove()
-            }
-        }
-        bodyElement.select("image").forEach {
-            it.tagName("img", Parser.NamespaceHtml)
-            it.attr("src", it.attr("xlink:href"))
-        }
-        bodyElement.select("img").forEach {
-            val src = it.attr("src").trim().encodeURI()
-            val href = res.href.encodeURI()
-            val resolvedHref = URLDecoder.decode(URI(href).resolve(src).toString(), "UTF-8")
-            it.attr("src", resolvedHref)
-        }
-        return bodyElement
-    }
-
+    private fun getBody(res: Resource, startFragmentId: String?, endFragmentId: String?, capture: EpubSourceCapture?): Element =
+        EpubBodyReader.body(res.href, { String(res.data, mCharset) }, startFragmentId, endFragmentId,
+            book.getDelTag(Book.hTag), capture)
     private fun getImage(href: String): InputStream? {
         if (href == "cover.jpeg") return epubBook?.coverImage?.inputStream
         val abHref = URLDecoder.decode(href, "UTF-8")
