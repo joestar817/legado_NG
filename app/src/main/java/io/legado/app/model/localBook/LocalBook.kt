@@ -292,6 +292,20 @@ object LocalBook {
         }
     }
 
+    fun canExtractCover(book: Book): Boolean =
+        book.isEpub || book.isUmd || book.isPdf || book.isMobi
+
+    /** 重新提取本地书封面并写回缓存目录，返回本次是否写出成功（不支持的格式返回 false） */
+    fun upCover(book: Book, force: Boolean = false): Boolean {
+        return when {
+            book.isEpub -> EpubFile.upCover(book, force)
+            book.isUmd -> UmdFile.upCover(book, force)
+            book.isPdf -> PdfFile.upCover(book, force)
+            book.isMobi -> MobiFile.upCover(book, force)
+            else -> false
+        }
+    }
+
     /* 导入压缩包内的书籍；只有接收失败结果的调用方才继续下一个条目。 */
     fun importArchiveFile(
         archiveFileUri: Uri,
