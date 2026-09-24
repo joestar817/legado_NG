@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -104,6 +105,8 @@ internal fun AiModelSelectionSheetState.selectedLazyItemIndex(
 @Composable
 internal fun AiModelSelectionSheet(
     state: AiModelSelectionSheetState,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
     onSelect: (providerId: String, modelId: String) -> Unit,
     onFollowAssistant: (() -> Unit)? = null,
 ) {
@@ -136,6 +139,7 @@ internal fun AiModelSelectionSheet(
         ))
     val filterActive = query.isNotBlank() || selectedProviderIds.isNotEmpty()
     val filterInteractionSource = remember { MutableInteractionSource() }
+    val refreshInteractionSource = remember { MutableInteractionSource() }
     val locateInteractionSource = remember { MutableInteractionSource() }
     val includeFollowAssistant = state.followAssistantLabel != null && onFollowAssistant != null
     val selectedVisibleIndex = state.selectedLazyItemIndex(
@@ -186,6 +190,31 @@ internal fun AiModelSelectionSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable(
+                        enabled = !isRefreshing,
+                        interactionSource = refreshInteractionSource,
+                        indication = null,
+                    ) { onRefresh() },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = Color(NgTheme.colors.primary),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_refresh_black_24dp),
+                        contentDescription = stringResource(R.string.ai_refresh_all_models),
+                        modifier = Modifier.size(22.dp),
+                        tint = colorResource(R.color.ng_on_surface),
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .size(40.dp)

@@ -621,6 +621,9 @@
     <string name="ai_model_tag_tool">工具</string>
     <string name="ai_model_tag_reasoning">推理</string>
     <string name="ai_fetch_models">获取模型列表</string>
+    <string name="ai_refresh_all_models">刷新所有模型</string>
+    <string name="ai_refresh_models_result">成功 %1$d 家（%2$d 个模型），失败 %3$d 家，未配置密钥 %4$d 家</string>
+    <string name="ai_refresh_models_failed_providers">获取失败：%1$s</string>
     <string name="ai_fetch_models_summary">使用当前 Base URL 和 API Key 拉取可用模型</string>
     <string name="ai_select_model">选择模型</string>
     <string name="ai_select_model_empty">未缓存模型列表，点击后会先获取模型</string>

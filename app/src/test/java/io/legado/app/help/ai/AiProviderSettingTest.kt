@@ -143,4 +143,26 @@ class AiProviderSettingTest {
         assertFalse(result[builtIn.size].enabled)
         assertFalse(result.last().enabled)
     }
+
+    @Test
+    fun fetchedModelsKeepExplicitSelectionAndEnableAllOnFirstFetch() {
+        val models = listOf(AiModel("old-model"), AiModel("new-model"))
+        val provider = AiDefaultProviders.all().first().copy(
+            model = "old-model",
+            availableModelIds = listOf("old-model", "removed-model"),
+            availableModelSelectionInitialized = true
+        )
+
+        val refreshed = provider.withFetchedModels(models)
+        assertEquals(models, refreshed.models)
+        assertEquals(listOf("old-model"), refreshed.availableModelIds)
+        assertEquals("old-model", refreshed.model)
+        assertTrue(refreshed.availableModelSelectionInitialized)
+
+        val firstFetch = provider.copy(
+            availableModelIds = emptyList(),
+            availableModelSelectionInitialized = false
+        ).withFetchedModels(models)
+        assertEquals(models.map { it.id }, firstFetch.availableModelIds)
+    }
 }

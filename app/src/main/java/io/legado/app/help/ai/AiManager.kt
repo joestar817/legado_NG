@@ -1,5 +1,20 @@
 package io.legado.app.help.ai
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+
+data class AiModelBatchRefreshResult(
+    val refreshedProviderCount: Int,
+    val refreshedModelCount: Int,
+    val missingKeyProviders: List<String>,
+    val failedProviders: List<String>
+)
+
 object AiManager {
 
     private val openAIProvider by lazy { OpenAiCompatibleProvider() }
@@ -21,6 +36,10 @@ object AiManager {
 
     suspend fun listModels(providerId: String): List<AiModel> {
         val setting = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
+        return listModels(setting)
+    }
+
+    private suspend fun listModels(setting: AiProviderSetting): List<AiModel> {
         return providerFor(setting).listModels(setting)
             .filter { it.id.isNotBlank() }
             .map { AiModelRegistry.enrich(it) }
@@ -30,21 +49,59 @@ object AiManager {
 
     suspend fun fetchAndSaveModels(providerId: String): List<AiModel> {
         val models = listModels(providerId)
+        if (models.isEmpty()) return models
         val setting = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
-        val modelIds = models.map { it.id }.toSet()
-        val availableModelIds = if (setting.availableModelSelectionInitialized) {
-            setting.availableModelIds.filter { it in modelIds }
-        } else {
-            models.map { it.id }
-        }
-        AiProviderStore.saveProvider(
-            setting.copy(
-                models = models,
-                availableModelIds = availableModelIds,
-                availableModelSelectionInitialized = true
-            )
-        )
+        AiProviderStore.saveProvider(setting.withFetchedModels(models))
         return models
+    }
+
+    suspend fun refreshEnabledProviderModels(): AiModelBatchRefreshResult {
+        val enabled = AiProviderStore.enabledProviders()
+        val missingKey = enabled.filter { it.apiKey.isBlank() }.map { it.name }
+        val ready = enabled.filter { it.apiKey.isNotBlank() }
+        val semaphore = Semaphore(4)
+        val attempts = coroutineScope {
+            ready.map { provider ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        try {
+                            val models = listModels(provider)
+                            check(models.isNotEmpty()) { "No available models returned" }
+                            ProviderModelFetch(provider, models)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Throwable) {
+                            ProviderModelFetch(provider, error = e)
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
+        val fetched = attempts.filter { it.models != null }.associateBy { it.provider.id }
+        val failed = attempts.filter { it.error != null }.map { it.provider.name }.toMutableList()
+        var refreshedCount = 0
+        var modelCount = 0
+        if (fetched.isNotEmpty()) {
+            val current = AiProviderStore.providers()
+            val updated = current.map { provider ->
+                val result = fetched[provider.id] ?: return@map provider
+                if (!provider.enabled || provider.apiKey != result.provider.apiKey ||
+                    provider.baseUrl != result.provider.baseUrl ||
+                    provider.modelsUrl != result.provider.modelsUrl ||
+                    provider.type != result.provider.type
+                ) {
+                    failed += provider.name
+                    provider
+                } else {
+                    val models = requireNotNull(result.models)
+                    refreshedCount++
+                    modelCount += models.size
+                    provider.withFetchedModels(models)
+                }
+            }
+            if (refreshedCount > 0) AiProviderStore.saveProviders(updated)
+        }
+        return AiModelBatchRefreshResult(refreshedCount, modelCount, missingKey, failed)
     }
 
     suspend fun testConnection(providerId: String): AiTextResult {
@@ -88,4 +145,24 @@ object AiManager {
             AiProviderType.CLAUDE -> claudeProvider
         }
     }
+
+    private data class ProviderModelFetch(
+        val provider: AiProviderSetting,
+        val models: List<AiModel>? = null,
+        val error: Throwable? = null
+    )
+}
+
+internal fun AiProviderSetting.withFetchedModels(models: List<AiModel>): AiProviderSetting {
+    val modelIds = models.map { it.id }.toSet()
+    val availableModelIds = if (availableModelSelectionInitialized) {
+        availableModelIds.filter { it in modelIds }
+    } else {
+        models.map { it.id }
+    }
+    return copy(
+        models = models,
+        availableModelIds = availableModelIds,
+        availableModelSelectionInitialized = true
+    )
 }

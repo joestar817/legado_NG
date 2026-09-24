@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -41,6 +40,8 @@ import io.legado.app.ui.design.components.compose.NgManagementLeadingIcon
 import io.legado.app.ui.design.components.compose.NgManagementListCard
 import io.legado.app.ui.design.components.compose.NgManagementTrailingIcon
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
+import io.legado.app.ui.design.components.compose.NgPullRefreshBox
+import io.legado.app.ui.design.components.compose.NgPullRefreshIndicatorVariant
 import io.legado.app.ui.design.components.compose.NgSwipeToDelete
 import io.legado.app.ui.design.components.compose.ngDraggedItem
 import io.legado.app.ui.design.components.compose.ngReorderHandle
@@ -114,23 +115,21 @@ internal fun AiProviderListScreen(
             onAction = onAction,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
-        if (state.isRefreshing) {
-            Spacer(Modifier.height(8.dp))
-            LinearProgressIndicator(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                color = Color(NgTheme.colors.primary),
-                trackColor = Color(NgTheme.colors.surfaceVariant)
-            )
-        }
-        NgListStateContent(
-            state = state.listState,
-            modifier = Modifier.weight(1f),
-            onRetry = {
-                onAction(AiProviderListScreenAction.RetryRequested)
-            }
-        ) { providers ->
+        NgPullRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = { onAction(AiProviderListScreenAction.RefreshRequested) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            indicatorVariant = NgPullRefreshIndicatorVariant.SINGLE_SPINNER,
+        ) {
+            NgListStateContent(
+                state = state.listState,
+                modifier = Modifier.fillMaxSize(),
+                onRetry = {
+                    onAction(AiProviderListScreenAction.RetryRequested)
+                }
+            ) { providers ->
             var orderedProviders by remember(providers) { mutableStateOf(providers) }
             val reorderState = rememberNgLazyReorderState(
                 onMove = { fromIndex, toIndex ->
@@ -242,6 +241,7 @@ internal fun AiProviderListScreen(
                         )
                     }
                 }
+            }
             }
         }
     }

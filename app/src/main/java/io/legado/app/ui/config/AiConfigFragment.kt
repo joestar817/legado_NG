@@ -63,7 +63,10 @@ import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.showWithAppNavigationBarVisibility
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -178,6 +181,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var providerDetailTab = ProviderDetailTab.CONFIG
     private val autoFetchedModelProviderIds = hashSetOf<String>()
     private var requestJob: Job? = null
+    private var modelRefreshJob: Job? = null
+    private var isRefreshingAllModels by mutableStateOf(false)
     private var skillSummaryJob: Job? = null
     private var skipNextResumeRefresh = false
     private var entryPage = Page.MAIN
@@ -246,6 +251,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         clearPageActions()
         super.onDestroyView()
         requestJob?.cancel()
+        modelRefreshJob?.cancel()
+        modelRefreshJob = null
+        isRefreshingAllModels = false
         skillSummaryJob?.cancel()
         skillSummaryJob = null
         skipNextResumeRefresh = false
@@ -739,9 +747,66 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     )
                 }
             ),
-            isRefreshing = false,
+            isRefreshing = isRefreshingAllModels,
             showDisabled = showDisabledProviders,
         )
+    }
+
+    private fun refreshEnabledModels(onModelsUpdated: (() -> Unit)? = null) {
+        if (isRefreshingAllModels) return
+        val refreshJob = lifecycleScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                // Give the pull indicator a frame even when every enabled provider has no API key.
+                delay(24L)
+                val result = AiManager.refreshEnabledProviderModels()
+                refreshProviders()
+                refreshModelSettings()
+                refreshMain()
+                onModelsUpdated?.invoke()
+                Toast.makeText(
+                    requireContext(),
+                    getString(
+                        R.string.ai_refresh_models_result,
+                        result.refreshedProviderCount,
+                        result.refreshedModelCount,
+                        result.failedProviders.size,
+                        result.missingKeyProviders.size,
+                    ),
+                    Toast.LENGTH_LONG,
+                ).show()
+                if (result.failedProviders.isNotEmpty()) {
+                    showAiClassicDialog(
+                        title = getString(R.string.ai_refresh_all_models),
+                        message = getString(
+                            R.string.ai_refresh_models_failed_providers,
+                            result.failedProviders.joinToString(", "),
+                        ),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (isAdded) {
+                    showAiClassicDialog(
+                        title = getString(R.string.ai_refresh_all_models),
+                        message = getString(
+                            R.string.ai_test_failed,
+                            e.localizedMessage ?: e.javaClass.simpleName,
+                        ),
+                    )
+                }
+            } finally {
+                if (modelRefreshJob === coroutineContext[Job]) {
+                    modelRefreshJob = null
+                    isRefreshingAllModels = false
+                    providerScreenState = providerScreenState.copy(isRefreshing = false)
+                }
+            }
+        }
+        modelRefreshJob = refreshJob
+        isRefreshingAllModels = true
+        providerScreenState = providerScreenState.copy(isRefreshing = true)
+        refreshJob.start()
     }
 
     private fun handleProviderListAction(action: AiProviderListScreenAction) {
@@ -779,8 +844,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 }
             }
 
-            AiProviderListScreenAction.RetryRequested,
-            AiProviderListScreenAction.RefreshRequested -> refreshProviders()
+            AiProviderListScreenAction.RetryRequested -> refreshProviders()
+            AiProviderListScreenAction.RefreshRequested -> refreshEnabledModels()
         }
     }
 
@@ -1924,14 +1989,16 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         CONTEXT_COMPACTION,
     }
 
-    private fun showComposeModelSelectionSheet(target: AiModelSelectionTarget) {
+    private fun modelSelectionProviders(
+        target: AiModelSelectionTarget
+    ): List<AiModelSelectionProviderUiModel> {
         val sourceProviders = when (target) {
             AiModelSelectionTarget.ASSISTANT -> AiProviderStore.providers().filter { provider ->
                 provider.enabled && provider.assistantEligibleModels().isNotEmpty()
             }
             else -> purifyModelProviders()
         }
-        val providers = sourceProviders.map { provider ->
+        return sourceProviders.map { provider ->
             val models = when (target) {
                 AiModelSelectionTarget.ASSISTANT -> provider.assistantEligibleModels()
                 else -> provider.purifyEligibleModels()
@@ -1951,6 +2018,9 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 },
             )
         }
+    }
+
+    private fun showComposeModelSelectionSheet(target: AiModelSelectionTarget) {
         val selectedProviderId = when (target) {
             AiModelSelectionTarget.PURIFY -> AiConfig.purifyProviderId
             AiModelSelectionTarget.READ_ALOUD -> AiConfig.readAloudStoryboardProviderId
@@ -1964,7 +2034,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiModelSelectionTarget.CONTEXT_COMPACTION -> AiConfig.contextCompactionModelId
         }
         val dialog = BottomSheetDialog(requireContext())
-        val sheetState = AiModelSelectionSheetState(
+        var sheetState by mutableStateOf(AiModelSelectionSheetState(
             title = getString(R.string.ai_model_select),
             emptyText = when (target) {
                 AiModelSelectionTarget.ASSISTANT ->
@@ -1972,14 +2042,14 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 AiModelSelectionTarget.CONTEXT_COMPACTION -> null
                 else -> getString(R.string.ai_purify_model_empty)
             },
-            providers = providers,
+            providers = modelSelectionProviders(target),
             selectedProviderId = selectedProviderId,
             selectedModelId = selectedModelId,
             followAssistantLabel = getString(R.string.ai_context_compaction_model_follow)
                 .takeIf { target == AiModelSelectionTarget.CONTEXT_COMPACTION },
             followAssistantSelected = target == AiModelSelectionTarget.CONTEXT_COMPACTION &&
                 (selectedProviderId.isBlank() || selectedModelId.isBlank()),
-        )
+        ))
         dialog.setContentView(
             requireContext().createNgBottomDrawerComposeHost(
                 fillMaxHeight = true,
@@ -1987,6 +2057,16 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             ) {
                 AiModelSelectionSheet(
                     state = sheetState,
+                    isRefreshing = isRefreshingAllModels,
+                    onRefresh = {
+                        refreshEnabledModels {
+                            if (dialog.isShowing) {
+                                sheetState = sheetState.copy(
+                                    providers = modelSelectionProviders(target)
+                                )
+                            }
+                        }
+                    },
                     onSelect = { providerId, modelId ->
                         when (target) {
                             AiModelSelectionTarget.PURIFY -> {

@@ -624,6 +624,9 @@
     <string name="ai_model_tag_tool">Tools</string>
     <string name="ai_model_tag_reasoning">Reasoning</string>
     <string name="ai_fetch_models">Fetch model list</string>
+    <string name="ai_refresh_all_models">Refresh all models</string>
+    <string name="ai_refresh_models_result">Updated %1$d providers (%2$d models); %3$d failed, %4$d without an API key</string>
+    <string name="ai_refresh_models_failed_providers">Could not fetch models from: %1$s</string>
     <string name="ai_fetch_models_summary">Fetch available models with the current base URL and API key</string>
     <string name="ai_select_model">Select model</string>
     <string name="ai_select_model_empty">No cached model list. Tap to fetch models first</string>
