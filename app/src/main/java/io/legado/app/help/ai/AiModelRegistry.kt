@@ -100,6 +100,12 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val GPT_6 = defineAiModel {
+        tokens("gpt", "6", "astra|sol|luna")
+        visionInput()
+        reasoningAbility()
+    }
+
     private val GEMINI_20_FLASH = defineAiModel {
         tokens("gemini", "2", "0", "flash")
         visionInput()
@@ -172,6 +178,34 @@ object AiModelRegistry {
         tokens("gemini", "3", "5")
         visionInput()
         toolReasoningAbility()
+    }
+
+    private val GEMINI_3_6_FLASH = defineAiModel {
+        tokens("gemini", "3", "6", "flash")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val GEMINI_3_7_FLASH = defineAiModel {
+        tokens("gemini", "3", "7", "flash")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val GEMINI_3_8_FLASH = defineAiModel {
+        tokens("gemini", "3", "8", "flash")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val GEMINI_TRANSCRIBE = defineAiModel {
+        tokens("gemini", "3", "5", "transcribe")
+        speechRecognition()
+    }
+
+    private val GEMINI_FLASH_TTS = defineAiModel {
+        tokens("gemini", "3", "8", "flash", "tts")
+        speechSynthesis()
     }
 
     private val GEMINI_FLASH_LATEST = defineAiModel {
@@ -255,6 +289,30 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val CLAUDE_SONNET_5 = defineAiModel {
+        tokens("claude", "sonnet", "5")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val CLAUDE_OPUS_5 = defineAiModel {
+        tokens("claude", "opus", "5")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val CLAUDE_OPUS_5_5 = defineAiModel {
+        tokens("claude", "opus", "5", "5")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val CLAUDE_FABLE_5_1 = defineAiModel {
+        tokens("claude", "fable", "5", "1")
+        visionInput()
+        toolReasoningAbility()
+    }
+
     @Suppress("unused")
     private val CLAUDE_SERIES = defineAiModelGroup {
         add(
@@ -302,6 +360,18 @@ object AiModelRegistry {
 
     private val DEEPSEEK_V4_PRO = defineAiModel {
         tokens("deepseek", "v", "4", "pro")
+        toolReasoningAbility()
+    }
+
+    private val DEEPSEEK_FLASH = defineAiModel {
+        exact("deepseek-flash")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val DEEPSEEK_V4_1_FLASH = defineAiModel {
+        tokens("deepseek", "v", "4", "1", "flash")
+        visionInput()
         toolReasoningAbility()
     }
 
@@ -398,6 +468,22 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val QWEN_3_8 = defineAiModel {
+        tokens("qwen", "3", "8")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val QWEN_3_7_TEXT_EMBEDDING = defineAiModel {
+        tokens("qwen", "3", "7", "text", "embedding")
+        textEmbedding()
+    }
+
+    private val QWEN_3_7_TEXT_RERANK = defineAiModel {
+        tokens("qwen", "3", "7", "text", "rerank")
+        textEmbedding()
+    }
+
     private val QWEN_2_5_INSTRUCT = defineAiModel {
         tokens("qwen", "2", "5", "instruct")
         toolAbility()
@@ -415,8 +501,20 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val DOUBAO_SEED_2_1 = defineAiModel {
+        tokens("doubao", "seed", "2", "1")
+        visionInput()
+        toolReasoningAbility()
+    }
+
     private val GROK_4 = defineAiModel {
         tokens("grok", "4")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val GROK_4_7 = defineAiModel {
+        tokens("grok", "4", "7")
         visionInput()
         toolReasoningAbility()
     }
@@ -438,6 +536,17 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val KIMI_K3 = defineAiModel {
+        tokens("kimi", "k", "3")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val KIMI_FOR_CODING = defineAiModel {
+        exact("kimi-for-coding")
+        toolReasoningAbility()
+    }
+
     private val STEP_3 = defineAiModel {
         tokens("step", "3")
         visionInput()
@@ -450,10 +559,22 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val STEP_5_PREVIEW = defineAiModel {
+        tokens("step|stepfun", "5", "preview")
+        visionInput()
+        toolReasoningAbility()
+    }
+
     private val INTERN_S1 = defineAiModel {
         tokens("intern", "s", "1")
         visionInput()
         toolReasoningAbility()
+    }
+
+    private val INTERN_S2 = defineAiModel {
+        tokens("intern", "s", "2")
+        visionInput()
+        reasoningAbility()
     }
 
     private val GLM_4_5 = defineAiModel {
@@ -500,6 +621,12 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val GLM_5_3_FLASH = defineAiModel {
+        tokens("glm", "5", "3", "flash|flashx")
+        visionInput()
+        toolReasoningAbility()
+    }
+
     private val GLM_Z1 = defineAiModel {
         tokens("glm", "z", "1")
         toolReasoningAbility()
@@ -507,6 +634,12 @@ object AiModelRegistry {
 
     private val NEX_N2 = defineAiModel {
         tokens("nex", "n", "2")
+        toolReasoningAbility()
+    }
+
+    private val NEX_N2_5_VISION = defineAiModel {
+        tokens("nex", "n", "2", "5", "mini|pro")
+        visionInput()
         toolReasoningAbility()
     }
 
@@ -531,8 +664,31 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val MINIMAX_H3 = defineAiModel {
+        tokens("minimax", "h", "3")
+        type(AiModelType.VIDEO)
+        input(AiModelModality.TEXT, AiModelModality.IMAGE, AiModelModality.AUDIO, AiModelModality.VIDEO)
+        output(AiModelModality.VIDEO)
+    }
+
     private val LING_2 = defineAiModel {
         tokens("ling", "flash|mini", "2")
+        toolReasoningAbility()
+    }
+
+    private val LING_3_FLASH = defineAiModel {
+        tokens("ling", "3", "0", "flash")
+        toolReasoningAbility()
+    }
+
+    private val LING_3_FLASH_VL = defineAiModel {
+        tokens("ling", "3", "0", "flash", "vl")
+        input(AiModelModality.TEXT, AiModelModality.IMAGE, AiModelModality.VIDEO)
+        toolReasoningAbility()
+    }
+
+    private val LING_3_TINY = defineAiModel {
+        tokens("ling", "3", "0", "tiny")
         toolReasoningAbility()
     }
 
@@ -545,6 +701,15 @@ object AiModelRegistry {
         tokens("hunyuan", "mt")
     }
 
+    private val HY4_PREVIEW = defineAiModel {
+        tokens("hy", "4", "preview")
+        toolReasoningAbility()
+    }
+
+    private val HY_MT2_PRO = defineAiModel {
+        tokens("hy", "mt", "2", "pro")
+    }
+
     private val SEED_OSS = defineAiModel {
         tokens("seed", "oss")
         toolReasoningAbility()
@@ -552,6 +717,12 @@ object AiModelRegistry {
 
     private val SENSENOVA_6_7_FLASH_LITE = defineAiModel {
         tokens("sensenova", "6", "7", "flash", "lite")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val SENSENOVA_6_8_FLASH_LITE = defineAiModel {
+        tokens("sensenova", "6", "8", "flash", "lite")
         visionInput()
         toolReasoningAbility()
     }
@@ -602,6 +773,13 @@ object AiModelRegistry {
         imageToVideo()
     }
 
+    private val WAN_3_VIDEO = defineAiModel {
+        tokens("wan", "3", "0", "video")
+        type(AiModelType.VIDEO)
+        input(AiModelModality.TEXT, AiModelModality.IMAGE, AiModelModality.AUDIO, AiModelModality.VIDEO)
+        output(AiModelModality.VIDEO)
+    }
+
     private val XIAOMI_MIMO_V2 = defineAiModel {
         tokens("mimo", "v", "2")
         excludeXiaomiSpeechModels()
@@ -627,6 +805,13 @@ object AiModelRegistry {
         toolReasoningAbility()
     }
 
+    private val XIAOMI_MIMO_V2_6 = defineAiModel {
+        tokens("mimo", "v", "2", "6", "pro|flash")
+        excludeXiaomiSpeechModels()
+        input(AiModelModality.TEXT, AiModelModality.IMAGE, AiModelModality.AUDIO, AiModelModality.VIDEO)
+        toolReasoningAbility()
+    }
+
     private val XIAOMI_MIMO_TTS = defineAiModel {
         tokens("mimo", "tts")
         input(AiModelModality.TEXT)
@@ -645,6 +830,31 @@ object AiModelRegistry {
         tokens("qwen", "mt")
     }
 
+    private val QWEN_MT_IMAGE = defineAiModel {
+        tokens("qwen", "mt", "image")
+        imageEditOutput()
+    }
+
+    private val SENSENOVA_U1_5_LITE = defineAiModel {
+        tokens("sensenova", "u", "1", "5", "lite")
+        imageEditOutput()
+    }
+
+    private val HY_IMAGE_3_5 = defineAiModel {
+        tokens("hy", "image", "3", "5")
+        imageOutput()
+    }
+
+    private val GROK_VOICE_TRANSCRIBE = defineAiModel {
+        tokens("grok", "voice", "transcribe")
+        speechRecognition()
+    }
+
+    private val GPT_TRANSCRIBE = defineAiModel {
+        tokens("gpt", "transcribe")
+        speechRecognition()
+    }
+
     private val ALL_MODELS = listOf(
         GPT4O,
         GPT_4_1,
@@ -659,6 +869,7 @@ object AiModelRegistry {
         GPT_5_4_NANO,
         GPT_5_5,
         GPT_5_6,
+        GPT_6,
         GEMINI_20_FLASH,
         GEMINI_2_5_FLASH,
         GEMINI_2_5_PRO,
@@ -671,6 +882,11 @@ object AiModelRegistry {
         GEMINI_3_1_PRO_PREVIEW_CUSTOMTOOLS,
         GEMINI_3_1_FLASH_IMAGE,
         GEMINI_3_5,
+        GEMINI_3_6_FLASH,
+        GEMINI_3_7_FLASH,
+        GEMINI_3_8_FLASH,
+        GEMINI_TRANSCRIBE,
+        GEMINI_FLASH_TTS,
         GEMINI_FLASH_LATEST,
         GEMINI_PRO_LATEST,
         CLAUDE_SONNET_3_5,
@@ -681,12 +897,18 @@ object AiModelRegistry {
         CLAUDE_OPUS_4_6,
         CLAUDE_OPUS_4_7,
         CLAUDE_OPUS_4_8,
+        CLAUDE_SONNET_5,
+        CLAUDE_OPUS_5,
+        CLAUDE_OPUS_5_5,
+        CLAUDE_FABLE_5_1,
         DEEPSEEK_V3_MODEL,
         DEEPSEEK_CHAT,
         DEEPSEEK_R1_MODEL,
         DEEPSEEK_REASONER,
         DEEPSEEK_V4_FLASH,
         DEEPSEEK_V4_PRO,
+        DEEPSEEK_FLASH,
+        DEEPSEEK_V4_1_FLASH,
         OCR_MODEL,
         PADDLE_OCR_MODEL,
         IMAGE_EDIT_MODEL,
@@ -703,16 +925,25 @@ object AiModelRegistry {
         QWEN_3_5,
         QWEN_3_6,
         QWEN_3_7,
+        QWEN_3_8,
+        QWEN_3_7_TEXT_EMBEDDING,
+        QWEN_3_7_TEXT_RERANK,
         QWEN_2_5_INSTRUCT,
         DOUBAO_1_6,
         DOUBAO_1_8,
+        DOUBAO_SEED_2_1,
         GROK_4,
+        GROK_4_7,
         KIMI_K2,
         KIMI_K2_5,
         KIMI_K2_6,
+        KIMI_K3,
+        KIMI_FOR_CODING,
         STEP_3,
         STEP_3_7_FLASH,
+        STEP_5_PREVIEW,
         INTERN_S1,
+        INTERN_S2,
         GLM_4_5,
         GLM_4_5_V,
         GLM_4_BASE,
@@ -721,17 +952,26 @@ object AiModelRegistry {
         GLM_5,
         GLM_5_1,
         GLM_5_2,
+        GLM_5_3_FLASH,
         GLM_Z1,
         NEX_N2,
+        NEX_N2_5_VISION,
         MINIMAX_M2,
         MINIMAX_M2_5,
         MINIMAX_M2_7,
         MINIMAX_M3,
+        MINIMAX_H3,
         LING_2,
+        LING_3_FLASH,
+        LING_3_FLASH_VL,
+        LING_3_TINY,
         HUNYUAN_A13B,
         HUNYUAN_MT,
+        HY4_PREVIEW,
+        HY_MT2_PRO,
         SEED_OSS,
         SENSENOVA_6_7_FLASH_LITE,
+        SENSENOVA_6_8_FLASH_LITE,
         ASR_MODEL,
         TELE_SPEECH_ASR,
         SENSE_VOICE,
@@ -741,13 +981,20 @@ object AiModelRegistry {
         KOLORS_IMAGE,
         WAN_TEXT_TO_VIDEO,
         WAN_IMAGE_TO_VIDEO,
+        WAN_3_VIDEO,
         XIAOMI_MIMO_V2,
         XIAOMI_MIMO_V2_PRO,
         XIAOMI_MIMO_V2_5,
         XIAOMI_MIMO_V2_5_PRO,
+        XIAOMI_MIMO_V2_6,
         XIAOMI_MIMO_TTS,
         XIAOMI_MIMO_ASR,
-        QWEN_MT
+        QWEN_MT,
+        QWEN_MT_IMAGE,
+        SENSENOVA_U1_5_LITE,
+        HY_IMAGE_3_5,
+        GROK_VOICE_TRANSCRIBE,
+        GPT_TRANSCRIBE
     )
 
     private val DEEPSEEK_REASONING_MODELS = setOf(
@@ -755,6 +1002,8 @@ object AiModelRegistry {
         DEEPSEEK_REASONER,
         DEEPSEEK_V4_FLASH,
         DEEPSEEK_V4_PRO,
+        DEEPSEEK_FLASH,
+        DEEPSEEK_V4_1_FLASH,
         DEEPSEEK_V3_1,
         DEEPSEEK_V3_2
     )
@@ -763,11 +1012,13 @@ object AiModelRegistry {
         XIAOMI_MIMO_V2,
         XIAOMI_MIMO_V2_PRO,
         XIAOMI_MIMO_V2_5,
-        XIAOMI_MIMO_V2_5_PRO
+        XIAOMI_MIMO_V2_5_PRO,
+        XIAOMI_MIMO_V2_6
     )
 
     private val SENSENOVA_REASONING_MODELS = setOf(
-        SENSENOVA_6_7_FLASH_LITE
+        SENSENOVA_6_7_FLASH_LITE,
+        SENSENOVA_6_8_FLASH_LITE
     )
 
     fun capabilities(modelId: String): AiModelCapabilities {

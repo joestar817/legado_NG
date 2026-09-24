@@ -28,6 +28,19 @@ class AiModelRegistryTest {
     }
 
     @Test
+    fun inferCurrentDeepSeekFlashIdsWithThinkingAndTools() {
+        listOf("deepseek-flash", "DeepSeek-V4.1-Flash").forEach { id ->
+            val capabilities = AiModelRegistry.capabilities(id)
+
+            assertTrue(AiModelModality.IMAGE in capabilities.inputModalities)
+            assertTrue(AiModelAbility.TOOL in capabilities.abilities)
+            assertTrue(AiModelAbility.REASONING in capabilities.abilities)
+            assertEquals("thinking", capabilities.reasoning.thinkingParam)
+            assertEquals("reasoning_effort", capabilities.reasoning.effortParam)
+        }
+    }
+
+    @Test
     fun inferMimoReasoningWithoutEffortFromModelId() {
         val capabilities = AiModelRegistry.capabilities("mimo-v2.5-pro")
 
@@ -35,6 +48,30 @@ class AiModelRegistryTest {
         assertTrue(AiModelAbility.TOOL in capabilities.abilities)
         assertEquals("thinking", capabilities.reasoning.thinkingParam)
         assertEquals("", capabilities.reasoning.effortParam)
+    }
+
+    @Test
+    fun inferMimoV26OmniInputAndKeepSpeechModelsSeparate() {
+        listOf("mimo-v2.6-flash", "mimo-v2.6-pro", "mimo-v2.6-pro-ultraspeed").forEach { id ->
+            val capabilities = AiModelRegistry.capabilities(id)
+
+            assertEquals(
+                listOf(
+                    AiModelModality.TEXT,
+                    AiModelModality.IMAGE,
+                    AiModelModality.AUDIO,
+                    AiModelModality.VIDEO
+                ),
+                capabilities.inputModalities
+            )
+            assertTrue(AiModelAbility.TOOL in capabilities.abilities)
+            assertTrue(AiModelAbility.REASONING in capabilities.abilities)
+            assertEquals("thinking", capabilities.reasoning.thinkingParam)
+        }
+        val tts = AiModelRegistry.enrich(AiModel(id = "mimo-v2.6-flash-tts"))
+        assertEquals(AiModelType.TTS, tts.type)
+        assertFalse(AiModelAbility.TOOL in tts.abilities)
+        assertFalse(AiModelAbility.REASONING in tts.abilities)
     }
 
     @Test
@@ -241,6 +278,69 @@ class AiModelRegistryTest {
             assertEquals(listOf(AiModelModality.TEXT), model.outputModalities)
             assertTrue(AiModelAbility.TOOL in model.abilities)
             assertTrue(AiModelAbility.REASONING in model.abilities)
+        }
+    }
+
+    @Test
+    fun distinguishNewChatModelsFromProtocolLimitedGpt6Tools() {
+        val gpt6 = AiModelRegistry.enrich(AiModel(id = "gpt-6-astra"))
+        assertEquals(AiModelType.CHAT, gpt6.type)
+        assertTrue(AiModelModality.IMAGE in gpt6.inputModalities)
+        assertTrue(AiModelAbility.REASONING in gpt6.abilities)
+        assertFalse(AiModelAbility.TOOL in gpt6.abilities)
+
+        listOf(
+            "claude-fable-5-1",
+            "claude-opus-5-5",
+            "qwen3.8-flash",
+            "doubao-seed-2-1-pro-260915",
+            "grok-4.7",
+            "kimi-k3",
+            "stepfun/step-5-preview",
+            "ZHIPU/GLM-5.3-FlashX",
+            "nex-agi/Nex-N2.5-Pro",
+            "Ling-3.0-flash-VL"
+        ).forEach { id ->
+            val model = AiModelRegistry.enrich(AiModel(id = id))
+            assertEquals(id, AiModelType.CHAT, model.type)
+            assertTrue(id, AiModelModality.IMAGE in model.inputModalities)
+            assertTrue(id, AiModelAbility.TOOL in model.abilities)
+            assertTrue(id, AiModelAbility.REASONING in model.abilities)
+        }
+    }
+
+    @Test
+    fun keepNewEmbeddingRerankAndSpeechModelsOutOfChat() {
+        listOf("qwen3.7-text-embedding-flash", "qwen3.7-text-rerank").forEach { id ->
+            val model = AiModelRegistry.enrich(AiModel(id = id))
+            assertEquals(AiModelType.EMBEDDING, model.type)
+            assertFalse(AiModelAbility.TOOL in model.abilities)
+            assertFalse(AiModelAbility.REASONING in model.abilities)
+        }
+        listOf("gemini-3.5-transcribe-live", "gpt-live-transcribe", "grok-voice-transcribe-2.0").forEach { id ->
+            val model = AiModelRegistry.enrich(AiModel(id = id))
+            assertEquals(AiModelType.ASR, model.type)
+            assertEquals(listOf(AiModelAbility.ASR), model.abilities)
+        }
+        listOf("gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts").forEach { id ->
+            val model = AiModelRegistry.enrich(AiModel(id = id))
+            assertEquals(AiModelType.TTS, model.type)
+            assertEquals(listOf(AiModelAbility.TTS), model.abilities)
+        }
+    }
+
+    @Test
+    fun classifyNewImageAndVideoModelsByOutputType() {
+        listOf("qwen-mt-image-2.0", "sensenova-u1.5-lite", "Hy-Image-3.5-preview").forEach { id ->
+            val model = AiModelRegistry.enrich(AiModel(id = id))
+            assertEquals(AiModelType.IMAGE, model.type)
+            assertEquals(listOf(AiModelModality.IMAGE), model.outputModalities)
+        }
+        listOf("wan3.0-video", "wan3.0-video-prime", "MiniMax-H3").forEach { id ->
+            val model = AiModelRegistry.enrich(AiModel(id = id))
+            assertEquals(AiModelType.VIDEO, model.type)
+            assertEquals(listOf(AiModelModality.VIDEO), model.outputModalities)
+            assertFalse(AiModelAbility.TOOL in model.abilities)
         }
     }
 }
