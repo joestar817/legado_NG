@@ -59,9 +59,14 @@ class NgAppViewInflater : AppCompatViewInflater() {
             if (!TextView::class.java.isAssignableFrom(viewClass)) {
                 return super.createView(context, name, attrs)
             }
-            viewClass.asSubclass(TextView::class.java)
-                .getConstructor(Context::class.java, AttributeSet::class.java)
-                .also { textConstructors[className] = it }
+            val textConstructor = try {
+                viewClass.asSubclass(TextView::class.java)
+                    .getConstructor(Context::class.java, AttributeSet::class.java)
+            } catch (_: NoSuchMethodException) {
+                // NumberPicker's internal text field is created by the framework inflater.
+                return super.createView(context, name, attrs)
+            }
+            textConstructor.also { textConstructors[className] = it }
         }
         return constructor.newInstance(context, attrs).withInterfaceFont()
     }
