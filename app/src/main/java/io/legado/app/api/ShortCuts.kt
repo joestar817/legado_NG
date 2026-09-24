@@ -20,6 +20,7 @@ object ShortCuts {
 
     private fun buildBookShelfShortCutInfo(context: Context): ShortcutInfoCompat {
         val bookShelfIntent = buildIntent<MainActivity>(context)
+        bookShelfIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         return ShortcutInfoCompat.Builder(context, "bookshelf")
             .setShortLabel(context.getString(R.string.bookshelf))
             .setLongLabel(context.getString(R.string.bookshelf))

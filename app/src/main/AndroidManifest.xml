@@ -41,7 +41,7 @@
             android:alwaysRetainTaskState="true"
             android:configChanges="locale|keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout"
             android:exported="true"
-            android:launchMode="singleTask" />
+            android:launchMode="singleTop" />
         <!-- 默认桌面入口；直接指向主界面，不再经过欢迎页 Activity。 -->
         <activity-alias
             android:name=".ui.welcome.WelcomeActivity"

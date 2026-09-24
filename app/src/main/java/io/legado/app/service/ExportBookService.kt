@@ -185,7 +185,9 @@ class ExportBookService : BaseService() {
         val notification = NotificationCompat.Builder(this, AppConst.channelIdDownload)
             .setSmallIcon(R.drawable.ic_export)
             .setSubText(getString(R.string.export_book))
-            .setContentIntent(activityPendingIntent<MainActivity>("mainActivity"))
+            .setContentIntent(activityPendingIntent<MainActivity>("mainActivity") {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            })
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentText(notificationContentText)
             .setDeleteIntent(servicePendingIntent<ExportBookService>(IntentAction.stop))

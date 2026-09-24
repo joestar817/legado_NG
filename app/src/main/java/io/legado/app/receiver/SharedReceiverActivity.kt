@@ -52,7 +52,9 @@ class SharedReceiverActivity : AppCompatActivity() {
                 result.append("\n").append(url.trim { it <= ' ' })
         }
         if (result.length > 1) {
-            startActivity<MainActivity>()
+            startActivity<MainActivity> {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
         } else {
             SearchActivity.start(this, text)
         }

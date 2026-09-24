@@ -53,7 +53,9 @@ class CacheBookService : BaseService() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentTitle(getString(R.string.offline_cache))
-            .setContentIntent(activityPendingIntent<MainActivity>("mainActivity"))
+            .setContentIntent(activityPendingIntent<MainActivity>("mainActivity") {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            })
         builder.addAction(
             R.drawable.ic_stop_black_24dp,
             getString(R.string.cancel),
