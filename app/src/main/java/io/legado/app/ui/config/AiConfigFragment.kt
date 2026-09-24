@@ -1992,17 +1992,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private fun modelSelectionProviders(
         target: AiModelSelectionTarget
     ): List<AiModelSelectionProviderUiModel> {
-        val sourceProviders = when (target) {
-            AiModelSelectionTarget.ASSISTANT -> AiProviderStore.providers().filter { provider ->
-                provider.enabled && provider.assistantEligibleModels().isNotEmpty()
-            }
-            else -> purifyModelProviders()
+        if (target == AiModelSelectionTarget.ASSISTANT) {
+            return assistantModelSelectionProviders()
         }
-        return sourceProviders.map { provider ->
-            val models = when (target) {
-                AiModelSelectionTarget.ASSISTANT -> provider.assistantEligibleModels()
-                else -> provider.purifyEligibleModels()
-            }
+        return purifyModelProviders().map { provider ->
+            val models = provider.purifyEligibleModels()
             AiModelSelectionProviderUiModel(
                 id = provider.id,
                 name = provider.name,

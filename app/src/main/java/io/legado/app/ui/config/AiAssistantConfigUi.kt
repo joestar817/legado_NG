@@ -19,10 +19,14 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
 import io.legado.app.help.ai.AiConfig
+import io.legado.app.help.ai.AiManager
 import io.legado.app.help.ai.AiModel
 import io.legado.app.help.ai.AiModelAbility
 import io.legado.app.help.ai.AiModelModality
@@ -36,9 +40,18 @@ import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgDrawerDefaults
 import io.legado.app.ui.widget.dialog.NgLongListBottomSheet
+import io.legado.app.ui.widget.dialog.createNgBottomDrawerComposeHost
 import io.legado.app.ui.widget.dialog.createNgBottomDrawerViewHost
 import io.legado.app.utils.applyTint
 import io.legado.app.utils.showWithAppNavigationBarVisibility
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 object AiAssistantConfigUi {
 
@@ -76,21 +89,126 @@ object AiAssistantConfigUi {
 
     fun showModelSelectSheet(
         context: Context,
-        onChanged: () -> Unit
+        scope: CoroutineScope,
+        onChanged: () -> Unit,
+        onDismiss: () -> Unit,
     ) {
-        val sheet = NgLongListBottomSheet(
-            context = context,
-            searchHint = context.getString(R.string.ai_search_model),
+        val dialog = BottomSheetDialog(context)
+        var sheetState by mutableStateOf(AiModelSelectionSheetState(
             title = context.getString(R.string.ai_model_select),
-            showSearch = false,
-            compact = true,
-            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+            emptyText = context.getString(R.string.ai_assistant_model_empty),
+            providers = emptyList(),
+            selectedProviderId = AiConfig.assistantProviderId,
+            selectedModelId = AiConfig.assistantModelId,
+        ))
+        var loading by mutableStateOf(true)
+        var refreshing by mutableStateOf(false)
+        var loadJob: Job? = null
+        var refreshJob: Job? = null
+        dialog.setContentView(
+            context.createNgBottomDrawerComposeHost(
+                fillMaxHeight = true,
+                contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+            ) {
+                AiModelSelectionSheet(
+                    state = sheetState,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
+                    onRefresh = {
+                        if (!refreshing) {
+                            refreshing = true
+                            loadJob?.cancel()
+                            refreshJob = scope.launch(start = CoroutineStart.LAZY) {
+                                try {
+                                    delay(24L)
+                                    val result = AiManager.refreshEnabledProviderModels()
+                                    val providers = withContext(Dispatchers.IO) {
+                                        assistantModelSelectionProviders()
+                                    }
+                                    if (dialog.isShowing) {
+                                        sheetState = sheetState.copy(providers = providers)
+                                        loading = false
+                                        onChanged()
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(
+                                                R.string.ai_refresh_models_result,
+                                                result.refreshedProviderCount,
+                                                result.refreshedModelCount,
+                                                result.failedProviders.size,
+                                                result.missingKeyProviders.size,
+                                            ),
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Throwable) {
+                                    if (dialog.isShowing) {
+                                        Toast.makeText(
+                                            context,
+                                            "刷新模型失败：${e.localizedMessage ?: e.javaClass.simpleName}",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                } finally {
+                                    if (dialog.isShowing) loading = false
+                                    refreshing = false
+                                    refreshJob = null
+                                }
+                            }
+                            refreshJob?.start()
+                        }
+                    },
+                    onSelect = { providerId, modelId ->
+                        AiConfig.saveAssistantModel(providerId, modelId)
+                        onChanged()
+                        dialog.dismiss()
+                    },
+                )
+            }
         )
-        val filters = AiModelSelectionFilters(context, sheet, assistantModelProviders())
-        sheet.setScrollableContent { container, query, dialog ->
-            renderModelOptions(context, container, query, dialog, filters, onChanged)
+        dialog.setOnShowListener {
+            val sheet = dialog.findViewById<View>(
+                com.google.android.material.R.id.design_bottom_sheet
+            ) ?: return@setOnShowListener
+            sheet.setBackgroundColor(Color.TRANSPARENT)
+            sheet.layoutParams = sheet.layoutParams.apply {
+                height = (context.resources.displayMetrics.heightPixels * 0.88f).toInt()
+            }
+            BottomSheetBehavior.from(sheet).apply {
+                skipCollapsed = true
+                state = BottomSheetBehavior.STATE_EXPANDED
+            }
         }
-        sheet.show()
+        dialog.setOnDismissListener {
+            loadJob?.cancel()
+            refreshJob?.cancel()
+            onDismiss()
+        }
+        dialog.showWithAppNavigationBarVisibility()
+        loadJob = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val providers = withContext(Dispatchers.IO) {
+                    assistantModelSelectionProviders()
+                }
+                if (dialog.isShowing) sheetState = sheetState.copy(providers = providers)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (dialog.isShowing) {
+                    Toast.makeText(
+                        context,
+                        "加载模型失败：${e.localizedMessage ?: e.javaClass.simpleName}",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            } finally {
+                if (!refreshing) loading = false
+                loadJob = null
+            }
+        }
+        loadJob?.start()
     }
 
     fun showReasoningSheet(
@@ -744,6 +862,28 @@ internal fun AiProviderSetting.assistantEligibleModels(): List<AiModel> {
         .filter { it.supportsChatText() }
 }
 
+internal fun assistantModelSelectionProviders(): List<AiModelSelectionProviderUiModel> {
+    return AiProviderStore.providers().mapNotNull { provider ->
+        if (!provider.enabled) return@mapNotNull null
+        val models = provider.assistantEligibleModels()
+        if (models.isEmpty()) return@mapNotNull null
+        AiModelSelectionProviderUiModel(
+            id = provider.id,
+            name = provider.name,
+            iconRes = provider.iconRes(),
+            models = models.map { model ->
+                AiModelSelectionItemUiModel(
+                    id = model.safeId(),
+                    name = model.displayName(),
+                    searchAliases = listOf(model.safeName()),
+                    iconRes = model.iconRes(provider.iconRes()),
+                    capabilities = model.capabilityTags(),
+                )
+            },
+        )
+    }
+}
+
 internal fun AiProviderSetting.displayModels(): List<AiModel> {
     if (apiKey.isBlank()) {
         return emptyList()
@@ -899,7 +1039,7 @@ private fun resolveModelIconRes(modelName: String): Int? {
     }
 }
 
-private fun AiReasoningLevel.displayName(context: Context): String {
+internal fun AiReasoningLevel.displayName(context: Context): String {
     return when (this) {
         AiReasoningLevel.OFF -> context.getString(R.string.ai_reasoning_level_off)
         AiReasoningLevel.AUTO -> context.getString(R.string.ai_reasoning_level_auto)

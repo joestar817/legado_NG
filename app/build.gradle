@@ -293,6 +293,7 @@ dependencies {
     //Glide
     implementation(libs.glide.glide)
     implementation(libs.glide.okhttp)
+    implementation(libs.glide.compose)
     ksp(libs.glide.ksp)
 
     //Svg

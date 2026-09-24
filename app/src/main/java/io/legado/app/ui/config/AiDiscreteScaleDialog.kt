@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
 
@@ -56,7 +57,7 @@ internal fun AiDiscreteScaleDialogContent(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
-            .background(colorResource(R.color.ng_surface_card))
+            .background(ngDrawerContentCardColor())
             .padding(start = 24.dp, top = 26.dp, end = 24.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSearchBarVariant
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.theme.NgTheme
 
 @Immutable
@@ -105,6 +106,7 @@ internal fun AiModelSelectionSheetState.selectedLazyItemIndex(
 @Composable
 internal fun AiModelSelectionSheet(
     state: AiModelSelectionSheetState,
+    isLoading: Boolean = false,
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     onSelect: (providerId: String, modelId: String) -> Unit,
@@ -285,7 +287,7 @@ internal fun AiModelSelectionSheet(
                     onQueryChange = { query = it },
                     hint = stringResource(R.string.ai_search_model),
                     variant = NgSearchBarVariant.COMPACT_FILTER,
-                    containerColor = colorResource(R.color.ng_surface_card),
+                    containerColor = ngDrawerContentCardColor(),
                     allowLiquidGlass = false,
                 )
                 if (state.providers.size > 1) {
@@ -325,6 +327,22 @@ internal fun AiModelSelectionSheet(
             state = listState,
             contentPadding = PaddingValues(bottom = 10.dp),
         ) {
+            if (isLoading) {
+                item(key = "loading") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 44.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            color = Color(NgTheme.colors.primary),
+                            strokeWidth = 2.5.dp,
+                        )
+                    }
+                }
+            }
             if (showFollowAssistant && onFollowAssistant != null) {
                 item(key = "follow-assistant-header") {
                     Text(
@@ -382,7 +400,9 @@ internal fun AiModelSelectionSheet(
                     )
                 }
             }
-            if (!showFollowAssistant && filteredProviders.isEmpty() && state.emptyText != null) {
+            if (!isLoading && !showFollowAssistant && filteredProviders.isEmpty() &&
+                state.emptyText != null
+            ) {
                 item(key = "empty") {
                     Text(
                         text = requireNotNull(state.emptyText),
@@ -416,7 +436,7 @@ private fun AiProviderFilterChip(
             .clip(RoundedCornerShape(16.dp))
             .background(
                 if (selected) Color(NgTheme.colors.selectedContainer)
-                else colorResource(R.color.ng_surface_card)
+                else ngDrawerContentCardColor()
             )
             .clickable(
                 interactionSource = interactionSource,
@@ -459,7 +479,7 @@ private fun AiModelSelectionCard(
             .fillMaxWidth()
             .padding(bottom = 12.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(colorResource(R.color.ng_surface_card)),
+            .background(ngDrawerContentCardColor()),
     ) {
         Row(
             modifier = Modifier
@@ -528,7 +548,7 @@ private fun AiFollowAssistantModelCard(
             .fillMaxWidth()
             .padding(bottom = 12.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(colorResource(R.color.ng_surface_card)),
+            .background(ngDrawerContentCardColor()),
     ) {
         Row(
             modifier = Modifier

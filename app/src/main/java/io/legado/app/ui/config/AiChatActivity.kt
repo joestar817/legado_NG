@@ -1,13 +1,14 @@
 package io.legado.app.ui.config
 
-import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
+import android.os.SystemClock
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -20,6 +21,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.DrawableRes
+import androidx.activity.ComponentDialog
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -134,6 +136,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -141,16 +144,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -169,6 +178,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.graphics.drawable.toBitmap
+import com.bumptech.glide.integration.compose.GlideImage
+import com.bumptech.glide.integration.compose.ExperimentalGlideComposeApi
 import com.bumptech.glide.Glide
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
@@ -425,27 +437,47 @@ private data class AiChatInteractionAction(
     val onCompleted: (Boolean) -> Unit = {}
 )
 
+private class AiModelSheetLaunchGate {
+    private var showing = false
+    private var lastOpenedAt = Long.MIN_VALUE
+
+    fun tryOpen(nowMillis: Long): Boolean {
+        if (showing || lastOpenedAt != Long.MIN_VALUE && nowMillis - lastOpenedAt < 700L) {
+            return false
+        }
+        showing = true
+        lastOpenedAt = nowMillis
+        return true
+    }
+
+    fun release() {
+        showing = false
+    }
+}
+
 @Composable
 private fun ChatBackgroundImage(
-    drawableProvider: () -> Drawable,
+    drawable: Drawable,
     modifier: Modifier = Modifier
 ) {
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            ImageView(context).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                setImageDrawable(drawableProvider())
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = drawable) {
+        value = withContext(Dispatchers.Default) {
+            when (drawable) {
+                is BitmapDrawable -> drawable.bitmap.asImageBitmap()
+                else -> (drawable.constantState?.newDrawable() ?: drawable)
+                    .toBitmap()
+                    .asImageBitmap()
             }
-        },
-        update = { imageView ->
-            imageView.setImageDrawable(drawableProvider())
         }
-    )
+    }
+    bitmap?.let { image ->
+        Image(
+            bitmap = image,
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = ContentScale.Crop,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -453,6 +485,7 @@ private fun ChatBackgroundImage(
 private fun AiChatRoute(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val modelSheetLaunchGate = remember { AiModelSheetLaunchGate() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val chatClient = remember { AiChatClient() }
     val entrySource = remember {
@@ -557,6 +590,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
     var activeStreamMemoryTraceTarget by remember { mutableStateOf<List<AiMemoryTraceItem>>(emptyList()) }
     var selectedDrawerIndex by remember { mutableIntStateOf(2) }
     var configVersion by remember { mutableIntStateOf(0) }
+    var showModelSheet by remember { mutableStateOf(false) }
+    var showReasoningSheet by remember { mutableStateOf(false) }
+    var showInternalMcpSheet by remember { mutableStateOf(false) }
     var previewMode by remember { mutableStateOf(false) }
     var globalSearchMode by remember { mutableStateOf(false) }
     var globalSearchQuery by remember { mutableStateOf("") }
@@ -1209,100 +1245,29 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     resumed = true
                     continuation.resume(value)
                 }
-                val dialog = Dialog(activity)
-                val root = LinearLayout(activity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    background = ContextCompat.getDrawable(activity, R.drawable.ng_bg_dialog)
-                    clipToOutline = true
+                val dialog = ComponentDialog(activity)
+                val composeView = ComposeView(activity).apply {
+                    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                    setContent {
+                        NgAppTheme(updateSystemBars = false) {
+                            AiToolWriteConfirmationContent(
+                                summaries = summaries,
+                                destructive = containsDestructiveOperation,
+                                onCancel = {
+                                    dialog.dismiss()
+                                    resumeOnce(false)
+                                },
+                                onConfirm = {
+                                    dialog.dismiss()
+                                    resumeOnce(true)
+                                },
+                            )
+                        }
+                    }
                 }
-                root.addView(LinearLayout(activity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(24.dpToPx(), 24.dpToPx(), 24.dpToPx(), 10.dpToPx())
-                    addView(TextView(activity).apply {
-                        NgThemeRuntimeAssets.applyAppTypeface(context, this)
-                        text = if (containsDestructiveOperation) "确认高风险操作" else "确认写操作"
-                        setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface))
-                        textSize = 24f
-                        setTypeface(
-                            NgThemeRuntimeAssets.appTypeface(context) ?: android.graphics.Typeface.DEFAULT,
-                            android.graphics.Typeface.BOLD,
-                        )
-                    })
-                })
-                val scrollView = ScrollView(activity).apply {
-                    isFillViewport = false
-                    addView(LinearLayout(activity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        addView(TextView(activity).apply {
-                            NgThemeRuntimeAssets.applyAppTypeface(context, this)
-                            text = if (containsDestructiveOperation) {
-                                "AI 请求执行删除、清空或回滚操作。请确认对象和影响范围后再执行。"
-                            } else {
-                                "AI 请求执行以下写操作，确认后会写入或修改本地数据。"
-                            }
-                            setTextColor(ContextCompat.getColor(activity, R.color.ng_on_surface_variant))
-                            textSize = 15f
-                            setLineSpacing(2f, 1.05f)
-                        })
-                        summaries.forEachIndexed { index, summary ->
-                            addView(createWriteOperationSummaryView(activity, index + 1, summary))
-                        }
-                    })
-                }
-                root.addView(scrollView, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    0
-                ).apply {
-                    weight = 1f
-                    leftMargin = 24.dpToPx()
-                    rightMargin = 24.dpToPx()
-                    bottomMargin = 10.dpToPx()
-                })
-                root.addView(LinearLayout(activity).apply {
-                    gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.END
-                    setPadding(24.dpToPx(), 10.dpToPx(), 24.dpToPx(), 20.dpToPx())
-                    background = ContextCompat.getDrawable(activity, R.drawable.ng_bg_dialog_action_bar)
-                    addView(TextView(activity).apply {
-                        NgThemeRuntimeAssets.applyAppTypeface(context, this)
-                        text = "取消"
-                        gravity = android.view.Gravity.CENTER
-                        setTextColor(ContextCompat.getColor(activity, R.color.ng_primary))
-                        textSize = 14f
-                        includeFontPadding = false
-                        background = ContextCompat.getDrawable(activity, R.drawable.ng_bg_button_secondary)
-                        setOnClickListener {
-                            dialog.dismiss()
-                            resumeOnce(false)
-                        }
-                    }, LinearLayout.LayoutParams(
-                        76.dpToPx(),
-                        36.dpToPx()
-                    ).apply {
-                        rightMargin = 8.dpToPx()
-                    })
-                    addView(TextView(activity).apply {
-                        NgThemeRuntimeAssets.applyAppTypeface(context, this)
-                        text = "执行"
-                        gravity = android.view.Gravity.CENTER
-                        setTextColor(ContextCompat.getColor(activity, R.color.ng_on_primary))
-                        textSize = 14f
-                        includeFontPadding = false
-                        background = ContextCompat.getDrawable(activity, R.drawable.ng_bg_button_primary)
-                        setOnClickListener {
-                            dialog.dismiss()
-                            resumeOnce(true)
-                        }
-                    }, LinearLayout.LayoutParams(
-                        76.dpToPx(),
-                        36.dpToPx()
-                    ))
-                }, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ))
-                dialog.setContentView(root)
+                dialog.setContentView(composeView)
                 dialog.setOnCancelListener {
-                        resumeOnce(false)
+                    resumeOnce(false)
                 }
                 continuation.invokeOnCancellation {
                     dialog.dismiss()
@@ -2350,14 +2315,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
             NgThemeGradientBackground(modifier = Modifier.fillMaxSize())
             if (chatBackgroundDrawable != null) {
                 ChatBackgroundImage(
-                    drawableProvider = { chatBackgroundDrawable },
+                    drawable = chatBackgroundDrawable,
                     modifier = Modifier.fillMaxSize()
                 )
             }
             NgThemeSceneBackground(modifier = Modifier.fillMaxSize())
-            if (globalSearchMode || previewMode) {
-                AiChatSearchBackdrop()
-            }
+            AiChatBackgroundMask()
             if (globalSearchMode) {
                 GlobalMessageSearchPage(
                     query = globalSearchQuery,
@@ -2494,13 +2457,24 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                 onSend = ::sendMessage,
                                 onStop = ::stopSending,
                                 onModelClick = {
-                                    AiAssistantConfigUi.showModelSelectSheet(context) {
-                                        configVersion++
+                                    if (modelSheetLaunchGate.tryOpen(SystemClock.elapsedRealtime())) {
+                                        showModelSheet = true
                                     }
                                 },
                                 onReasoningClick = {
-                                    AiAssistantConfigUi.showReasoningSheet(context) {
-                                        configVersion++
+                                    val model = AiAssistantConfigUi.selectedModel()
+                                    when {
+                                        model == null -> Toast.makeText(
+                                            context,
+                                            R.string.ai_assistant_reasoning_select_model_first,
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                        !model.model.supportsReasoning() -> Toast.makeText(
+                                            context,
+                                            R.string.ai_assistant_reasoning_unsupported,
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                        else -> showReasoningSheet = true
                                     }
                                 },
                                 onMcpClick = {
@@ -2508,9 +2482,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                                         if (internalMcpEnabled) {
                                             showMcpCapabilitySheet = true
                                         } else {
-                                            AiAssistantConfigUi.showInternalMcpSheet(context) {
-                                                configVersion++
-                                            }
+                                            showInternalMcpSheet = true
                                         }
                                     }
                                 },
@@ -2736,6 +2708,27 @@ private fun AiChatRoute(onBack: () -> Unit) {
             onDismiss = { showMcpCapabilitySheet = false }
         )
     }
+    if (showReasoningSheet) {
+        AiChatReasoningSheet(
+            onChanged = { configVersion++ },
+            onDismiss = { showReasoningSheet = false },
+        )
+    }
+    if (showModelSheet) {
+        AiChatModelSheet(
+            onChanged = { configVersion++ },
+            onDismiss = {
+                showModelSheet = false
+                modelSheetLaunchGate.release()
+            },
+        )
+    }
+    if (showInternalMcpSheet) {
+        AiChatInternalMcpSheet(
+            onChanged = { configVersion++ },
+            onDismiss = { showInternalMcpSheet = false },
+        )
+    }
 }
 
 @Composable
@@ -2801,7 +2794,7 @@ private fun AiTokenActivityCard(tokenActivityPerDay: Map<LocalDate, Long>) {
     val selectedBar = bars.getOrNull(selectedIndex)
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+            containerColor = colorResource(R.color.ng_surface_card)
         ),
         shape = RoundedCornerShape(18.dp),
         modifier = Modifier.fillMaxWidth()
@@ -2871,6 +2864,7 @@ private fun TokenActivityBarChart(
 ) {
     val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
     val maxValue = bars.maxOfOrNull { it.value } ?: 0L
+    val accentColor = Color(NgTheme.colors.primary)
     Row(
         modifier = Modifier.horizontalScroll(scrollState),
         horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -2906,11 +2900,11 @@ private fun TokenActivityBarChart(
                             .clip(RoundedCornerShape(topStart = 7.dp, topEnd = 7.dp))
                             .background(
                                 if (bar.value <= 0L) {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+                                    accentColor.copy(alpha = if (selected) 0.42f else 0.20f)
                                 } else if (selected) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.88f)
+                                    accentColor.copy(alpha = 0.92f)
                                 } else {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+                                    accentColor.copy(alpha = 0.58f)
                                 }
                             )
                     )
@@ -2986,7 +2980,8 @@ private fun AiStatCard(
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
+            containerColor = colorResource(R.color.ng_surface_card),
+            contentColor = colorResource(R.color.ng_on_surface)
         ),
         shape = RoundedCornerShape(18.dp)
     ) {
@@ -2998,14 +2993,14 @@ private fun AiStatCard(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = Color(NgTheme.colors.primary),
                     modifier = Modifier.size(20.dp)
                 )
             } else if (iconRes != null) {
                 Icon(
                     painter = painterResource(iconRes),
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = Color(NgTheme.colors.primary),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -3023,7 +3018,7 @@ private fun AiStatCard(
 }
 
 @Composable
-private fun AiChatSearchBackdrop() {
+private fun AiChatBackgroundMask() {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -4077,6 +4072,7 @@ private fun RikkaMessageItem(
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.widthIn(max = 320.dp)
             ) {
                 Text(
@@ -4270,6 +4266,13 @@ private fun ContextCompactionEventItem(
 }
 
 @Composable
+private fun aiChatContentCardColor(): Color = if (NgTheme.snapshot.isDark) {
+    Color(NgTheme.colors.surfaceContainerHigh)
+} else {
+    colorResource(R.color.ng_surface_card)
+}
+
+@Composable
 private fun ChatInteractionBlock(
     interaction: AiChatInteraction,
     resolvedLabel: String?,
@@ -4281,10 +4284,11 @@ private fun ChatInteractionBlock(
             .fillMaxWidth()
             .padding(top = 6.dp),
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+        color = aiChatContentCardColor(),
+        contentColor = colorResource(R.color.ng_on_surface),
         border = BorderStroke(
             width = 0.8.dp,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f)
         )
     ) {
         Column(
@@ -4912,6 +4916,7 @@ private fun AssistantMessageHeader() {
             text = currentAssistantModelLabel(),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
+            color = colorResource(R.color.ng_on_surface),
             maxLines = 1
         )
     }
@@ -4942,7 +4947,8 @@ private fun ReasoningEntry(
                 .fillMaxWidth()
                 .padding(top = 4.dp, bottom = 6.dp),
             shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+            color = colorResource(R.color.ng_surface_card),
+            contentColor = colorResource(R.color.ng_on_surface)
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -4999,12 +5005,23 @@ private fun MarkdownCalloutBlock(
     callout: MarkdownCallout,
     modifier: Modifier = Modifier
 ) {
+    val isDark = NgTheme.snapshot.isDark
     val (accent, container) = when (callout.type) {
-        MarkdownCalloutType.NOTE -> Color(0xFF35618D) to Color(0xFFDCEBFA)
-        MarkdownCalloutType.TIP -> Color(0xFF2E7D32) to Color(0xFFE8F5E9)
-        MarkdownCalloutType.IMPORTANT -> Color(0xFF6B4EA0) to Color(0xFFEDE3F7)
-        MarkdownCalloutType.WARNING -> Color(0xFFD26A00) to Color(0xFFFFEEDB)
-        MarkdownCalloutType.CAUTION -> Color(0xFFB3261E) to Color(0xFFF9DEDC)
+        MarkdownCalloutType.NOTE -> if (isDark) {
+            Color(0xFF9EC9FF) to Color(0xFF1C3043)
+        } else Color(0xFF35618D) to Color(0xFFDCEBFA)
+        MarkdownCalloutType.TIP -> if (isDark) {
+            Color(0xFFA5D6A7) to Color(0xFF1D342A)
+        } else Color(0xFF2E7D32) to Color(0xFFE8F5E9)
+        MarkdownCalloutType.IMPORTANT -> if (isDark) {
+            Color(0xFFD1B3FF) to Color(0xFF30233F)
+        } else Color(0xFF6B4EA0) to Color(0xFFEDE3F7)
+        MarkdownCalloutType.WARNING -> if (isDark) {
+            Color(0xFFFFC17A) to Color(0xFF3B2B1F)
+        } else Color(0xFFD26A00) to Color(0xFFFFEEDB)
+        MarkdownCalloutType.CAUTION -> if (isDark) {
+            Color(0xFFFFA8A1) to Color(0xFF412827)
+        } else Color(0xFFB3261E) to Color(0xFFF9DEDC)
     }
     val warning = callout.type in setOf(MarkdownCalloutType.WARNING, MarkdownCalloutType.CAUTION)
     Surface(
@@ -5139,6 +5156,7 @@ private fun MarkdownCodeBlock(
 }
 
 @Composable
+@OptIn(ExperimentalGlideComposeApi::class)
 private fun MarkdownImageBlock(
     alt: String,
     url: String,
@@ -5151,28 +5169,17 @@ private fun MarkdownImageBlock(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
     ) {
-        AndroidView(
+        GlideImage(
+            model = url,
+            contentDescription = alt,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 96.dp, max = 320.dp)
                 .clip(RoundedCornerShape(12.dp)),
-            factory = { viewContext ->
-                ImageView(viewContext).apply {
-                    adjustViewBounds = true
-                    contentDescription = alt
-                    scaleType = ImageView.ScaleType.CENTER_INSIDE
-                    setOnClickListener { context.openMarkdownImage(url) }
-                }
-            },
-            update = { imageView ->
-                imageView.contentDescription = alt
-                imageView.setOnClickListener { context.openMarkdownImage(url) }
-                Glide.with(imageView)
-                    .load(url)
-                    .error(R.drawable.image_loading_error)
-                    .into(imageView)
-            }
-        )
+            contentScale = ContentScale.Fit,
+        ) { request ->
+            request.error(R.drawable.image_loading_error)
+        }
     }
 }
 
@@ -6343,7 +6350,8 @@ private fun ToolTraceEntry(toolTrace: List<String>) {
                 .fillMaxWidth()
                 .padding(top = 4.dp, bottom = 6.dp),
             shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+            color = colorResource(R.color.ng_surface_card),
+            contentColor = colorResource(R.color.ng_on_surface)
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -6411,7 +6419,8 @@ private fun MemoryTraceEntry(memoryTrace: List<AiMemoryTraceItem>) {
                 .fillMaxWidth()
                 .padding(top = 4.dp, bottom = 6.dp),
             shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+            color = colorResource(R.color.ng_surface_card),
+            contentColor = colorResource(R.color.ng_on_surface)
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -6738,8 +6747,10 @@ private fun MessageActionButton(
             .size(16.dp),
         contentAlignment = Alignment.Center
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            content()
+        CompositionLocalProvider(LocalContentColor provides colorResource(R.color.ng_on_surface)) {
+            Box(contentAlignment = Alignment.Center) {
+                content()
+            }
         }
     }
 }
@@ -7110,6 +7121,7 @@ private fun RikkaChatInput(
     onRemoveAttachment: (AiChatInputAttachment) -> Unit,
     onRemoveSkill: (AiChatInputAttachment) -> Unit
 ) {
+    var inputFocused by remember { mutableStateOf(false) }
     Surface(color = Color.Transparent) {
         Column(
             modifier = Modifier
@@ -7120,7 +7132,7 @@ private fun RikkaChatInput(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                color = aiChatContentCardColor(),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
             ) {
                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
@@ -7143,18 +7155,22 @@ private fun RikkaChatInput(
                     TextField(
                         value = value,
                         onValueChange = onValueChange,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { inputFocused = it.isFocused },
                         readOnly = !messageInputEnabled,
                         placeholder = {
-                            Text(
-                                if (skillErrorText != null) {
-                                    "请先切换到支持工具调用的模型"
-                                } else if (messageInputEnabled) {
-                                    "输入消息与 AI 聊天"
-                                } else {
-                                    "可先设置模型和思考深度"
-                                }
-                            )
+                            if (!inputFocused) {
+                                Text(
+                                    if (skillErrorText != null) {
+                                        "请先切换到支持工具调用的模型"
+                                    } else if (messageInputEnabled) {
+                                        "输入消息与 AI 聊天"
+                                    } else {
+                                        "可先设置模型和思考深度"
+                                    }
+                                )
+                            }
                         },
                         maxLines = 5,
                         colors = TextFieldDefaults.colors(

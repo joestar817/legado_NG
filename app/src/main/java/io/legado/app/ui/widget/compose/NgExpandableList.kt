@@ -29,12 +29,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import io.legado.app.R
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
+import io.legado.app.ui.design.theme.NgTheme
 
 enum class NgListBadgeTone {
     Neutral,
@@ -70,7 +70,8 @@ fun NgExpandableSectionHeader(
         onClick = onToggleExpanded,
         modifier = modifier,
         shape = RoundedCornerShape(10.dp),
-        color = colorResource(R.color.ng_surface_card),
+        color = ngDrawerContentCardColor(),
+        contentColor = Color(NgTheme.colors.onSurface),
         border = BorderStroke(
             1.dp,
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
@@ -136,7 +137,8 @@ fun NgExpandableChildGroup(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(10.dp),
-        color = colorResource(R.color.ng_surface_card),
+        color = ngDrawerContentCardColor(),
+        contentColor = Color(NgTheme.colors.onSurface),
         border = BorderStroke(
             1.dp,
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
