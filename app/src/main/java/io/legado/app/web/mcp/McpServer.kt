@@ -17,6 +17,7 @@ import io.legado.app.data.entities.AiChatMessageNode
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.help.ai.AiChatMessageSnapshot
+import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiTtsStoryboardHelper
 import io.legado.app.help.http.NetworkLog
 import io.legado.app.help.source.exploreKinds
@@ -61,6 +62,8 @@ object McpServer {
     private const val MAX_DEBUG_LOG_STACK_CHARS = 64 * 1024
     private const val DEFAULT_AI_CHAT_CONVERSATION_LIMIT = 20
     private const val MAX_AI_CHAT_CONVERSATION_LIMIT = 50
+    private const val DEFAULT_AI_MODEL_CACHE_LIMIT = 100
+    private const val MAX_AI_MODEL_CACHE_LIMIT = 200
     private const val DEFAULT_AI_CHAT_MESSAGE_LIMIT = 100
     private const val MAX_AI_CHAT_MESSAGE_LIMIT = 300
     private const val DEFAULT_AI_CHAT_TEXT_CHARS = 8 * 1024
@@ -458,6 +461,19 @@ object McpServer {
                 )
             ),
             tool(
+                name = "ai_model_cache_list",
+                description = "List models already fetched and saved in AI provider settings. Read-only; does not contact model APIs or return credentials.",
+                properties = mapOf(
+                    "provider_id" to stringSchema("Optional provider id filter"),
+                    "offset" to mapOf("type" to "number", "default" to 0),
+                    "limit" to mapOf(
+                        "type" to "number",
+                        "default" to DEFAULT_AI_MODEL_CACHE_LIMIT,
+                        "maximum" to MAX_AI_MODEL_CACHE_LIMIT
+                    )
+                )
+            ),
+            tool(
                 name = "ai_chat_conversation_list",
                 description = "List persisted AI assistant chat conversations as compact summaries.",
                 properties = mapOf(
@@ -667,6 +683,7 @@ object McpServer {
             "network_log_get" -> getNetworkLog(arguments)
             "network_log_clear" -> clearNetworkLogs()
             "read_aloud_storyboard_debug_get" -> getReadAloudStoryboardDebug(arguments)
+            "ai_model_cache_list" -> listCachedAiModels(arguments)
             "ai_chat_conversation_list" -> listAiChatConversations(arguments)
             "ai_chat_conversation_get" -> getAiChatConversation(arguments)
             "debug_log_list" -> listDebugLogs(arguments)
@@ -1172,6 +1189,47 @@ object McpServer {
             upstreamEndpoint = "native://readAloud/storyboardDebug",
             normalizedData = data,
             warnings = warnings
+        )
+    }
+
+    private fun listCachedAiModels(arguments: JsonObject): Map<String, Any?> {
+        val providerId = arguments.get("provider_id").asStringOrNull().orEmpty()
+        val offset = (arguments.get("offset").asIntOrNull() ?: 0).coerceAtLeast(0)
+        val limit = (arguments.get("limit").asIntOrNull() ?: DEFAULT_AI_MODEL_CACHE_LIMIT)
+            .coerceIn(1, MAX_AI_MODEL_CACHE_LIMIT)
+        val providers = AiProviderStore.providers().filter { providerId.isBlank() || it.id == providerId }
+        val models = providers.flatMap { provider ->
+            provider.models.map { model ->
+                mapOf(
+                    "provider_id" to provider.id,
+                    "provider_name" to provider.name,
+                    "provider_enabled" to provider.enabled,
+                    "id" to model.id,
+                    "name" to model.name,
+                    "display_name" to model.displayName,
+                    "owned_by" to model.ownedBy,
+                    "type" to model.type.name.lowercase(Locale.ROOT),
+                    "input_modalities" to model.inputModalities.map { it.name.lowercase(Locale.ROOT) },
+                    "output_modalities" to model.outputModalities.map { it.name.lowercase(Locale.ROOT) },
+                    "abilities" to model.abilities.map { it.name.lowercase(Locale.ROOT) },
+                    "available" to (!provider.availableModelSelectionInitialized || model.id in provider.availableModelIds)
+                )
+            }
+        }
+        val page = models.drop(offset).take(limit)
+        return toolResult(
+            ok = true,
+            upstreamEndpoint = "native://ai/modelCache",
+            normalizedData = mapOf(
+                "providers" to providers.map {
+                    mapOf("id" to it.id, "name" to it.name, "enabled" to it.enabled, "model_count" to it.models.size)
+                },
+                "models" to page,
+                "offset" to offset,
+                "limit" to limit,
+                "total" to models.size,
+                "has_more" to (offset + page.size < models.size)
+            )
         )
     }
 

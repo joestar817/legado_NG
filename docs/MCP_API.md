@@ -95,6 +95,7 @@ MCP 现在有两条通道：
 | 网络日志 | `network_log_get` | tool | 按 ID 获取单条网络请求日志详情。 |
 | 网络日志 | `network_log_clear` | tool | 清空当前内存网络日志窗口；测试脚本默认跳过。 |
 | 听书调试 | `read_aloud_storyboard_debug_get` | tool | 读取当前章节的 AI 听书分镜调试快照。 |
+| AI 模型 | `ai_model_cache_list` | tool | 分页读取提供商设置中已保存的模型和能力字段；不联网、不返回密钥。 |
 | AI 聊天历史 | `ai_chat_conversation_list` | tool | 分页列出 AI 助手聊天会话摘要。 |
 | AI 聊天历史 | `ai_chat_conversation_get` | tool | 按会话 ID 获取聊天消息、思考和工具轨迹。 |
 | AI 记忆 | `agent_memory_status_get` | tool | 检查 AI 助手记忆系统开关状态。 |
@@ -819,6 +820,10 @@ curl -s http://192.0.2.10:1124/mcp \
 - `settings_dict_rule_set_enabled`：按 `names` 启用或停用字典规则。
 
 注意：设置模块写接口同样是写操作；当前 P0 不做 token 和权限分级，外部调试时应只在受信任局域网环境开启 MCP 服务。
+
+### ai_model_cache_list
+
+只读分页列出各提供商设置中已保存的模型。可传 `provider_id`、`offset` 和 `limit`（最多 200）；返回模型 ID、类型、输入/输出模态、能力、是否可选，以及各提供商的缓存数量。不请求厂商 `/models`，不返回 API Key 或其它连接配置。默认内置模型也可能在保存列表中，结果不等同于实时接口可用性。
 
 ### ai_chat_conversation_list
 
