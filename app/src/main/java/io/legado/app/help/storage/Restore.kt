@@ -9,7 +9,6 @@ import io.legado.app.BuildConfig
 import io.legado.app.R
 import io.legado.app.constant.AppConst.androidId
 import io.legado.app.constant.AppLog
-import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
@@ -34,10 +33,12 @@ import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadHighlightRuleStore
 import io.legado.app.help.config.ThemeConfig
-import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.model.VideoPlay.VIDEO_PREF_NAME
 import io.legado.app.model.BookCover
 import io.legado.app.model.localBook.LocalBook
+import io.legado.app.model.localBook.localBookCoverUpdates
+import io.legado.app.model.localBook.needsCoverRebuild
+import io.legado.app.model.localBook.rebuildBookCovers
 import io.legado.app.utils.ACache
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.GSON
@@ -52,12 +53,16 @@ import io.legado.app.utils.getSharedPreferences
 import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.isJsonArray
 import io.legado.app.utils.openInputStream
-import io.legado.app.utils.postEvent
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -101,6 +106,10 @@ object Restore {
     }
 
     private suspend fun restore(path: String) {
+        // 新恢复开始前等上一批退出，避免旧任务继续写入或刷新本次恢复的书架。
+        coverRebuildJob?.cancelAndJoin()
+        coverRebuildJob = null
+        val restoredLocalBooks = arrayListOf<Book>()
         failures.clear()
         val modules = BackupResources.validate(File(path))
         val aes = BackupAES()
@@ -139,7 +148,6 @@ object Restore {
                     book.coverUrl = LocalBook.getCoverPath(book)
                 }
             val newBooks = arrayListOf<Book>()
-            val restoredLocalBooks = arrayListOf<Book>()
             val ignoreLocalBook = BackupConfig.ignoreLocalBook
             it.forEach { book ->
                 if (ignoreLocalBook && book.isLocal) {
@@ -159,7 +167,6 @@ object Restore {
                 }
             }
             appDb.bookDao.insert(*newBooks.toTypedArray())
-            rebuildLocalBookCoversAsync(restoredLocalBooks)
         }
         fileToListT<Bookmark>(path, "bookmark.json")?.let {
             appDb.bookmarkDao.insert(*it.toTypedArray())
@@ -403,43 +410,31 @@ object Restore {
             }
             ThemeConfig.applyDayNight(appCtx)
         }
+        rebuildLocalBookCoversAsync(restoredLocalBooks)
     }
 
-    private var coverRebuildJob: Coroutine<Unit>? = null
+    private val coverRebuildScope = CoroutineScope(SupervisorJob() + IO)
+    private var coverRebuildJob: Job? = null
 
     private fun rebuildLocalBookCoversAsync(books: List<Book>) {
         if (books.isEmpty()) return
-        coverRebuildJob?.cancel()
-        coverRebuildJob = Coroutine.async(context = IO) {
-            var success = 0
-            var failed = 0
-            books.forEach { book ->
-                ensureActive()
-                if (!LocalBook.canExtractCover(book)) {
-                    //TXT 等格式无法提取封面，跳过
-                    return@forEach
-                }
-                val coverFile = book.coverUrl?.takeIf { it.isNotBlank() }?.let(::File)
-                if (coverFile?.exists() == true) {
-                    //已有封面文件则跳过，仅补缺失
-                    return@forEach
-                }
-                if (!book.customCoverUrl.isNullOrBlank()) {
-                    //自定义封面优先显示，无需重建自动封面
-                    return@forEach
-                }
-                if (LocalBook.upCover(book)) {
-                    success++
-                } else {
-                    failed++
-                    AppLog.put("恢复后重建封面失败：${book.name}")
-                }
-            }
+        coverRebuildJob = coverRebuildScope.launch {
+            val (success, failed, _) = rebuildBookCovers(
+                books = books,
+                shouldExtract = { book ->
+                    needsCoverRebuild(book,
+                        File(book.coverUrl?.takeIf { it.isNotBlank() } ?: LocalBook.getCoverPath(book)))
+                },
+                extract = { book -> LocalBook.upCover(book) },
+                onFailure = { book, error ->
+                    val reason = error?.localizedMessage ?: "书中无可提取封面或封面写入失败"
+                    AppLog.put("恢复后重建封面失败：${book.name}\n$reason", error)
+                },
+                onSuccess = { book -> localBookCoverUpdates.notifyChanged(book.bookUrl) },
+            )
+            ensureActive()
             if (success > 0 || failed > 0) {
                 AppLog.put("恢复后封面重建完成：成功 $success 本，失败 $failed 本")
-            }
-            if (success > 0) {
-                postEvent(EventBus.BOOKSHELF_REFRESH, "")
             }
             if (failed > 0) {
                 withContext(Main) {

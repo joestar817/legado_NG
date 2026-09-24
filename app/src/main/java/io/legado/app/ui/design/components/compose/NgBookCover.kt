@@ -2,12 +2,18 @@ package io.legado.app.ui.design.components.compose
 
 import android.widget.ImageView
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
 import io.legado.app.data.entities.Book
+import io.legado.app.help.book.isLocal
+import io.legado.app.model.localBook.localBookCoverUpdates
 import io.legado.app.ui.widget.image.CoverImageView
 
 /**
@@ -28,6 +34,13 @@ fun NgBookCover(
     fragment: Fragment? = null,
     lifecycle: Lifecycle? = null,
 ) {
+    val localRevision = if (book.isLocal) key(book.bookUrl) {
+        val updates = remember(book.bookUrl) { localBookCoverUpdates.observe(book.bookUrl) }
+        val currentRevision by updates.collectAsStateWithLifecycle(
+            initialValue = localBookCoverUpdates.revisionOf(book.bookUrl),
+        )
+        currentRevision
+    } else 0
     val loadKey = NgBookCoverLoadKey(
         bookUrl = book.bookUrl,
         displayCover = book.getDisplayCover(),
@@ -35,6 +48,7 @@ fun NgBookCover(
         author = book.author,
         origin = book.origin,
         revision = revision,
+        localRevision = localRevision,
         loadOnlyWifi = loadOnlyWifi,
         fragment = fragment,
         lifecycle = lifecycle,
@@ -70,6 +84,7 @@ private data class NgBookCoverLoadKey(
     val author: String,
     val origin: String,
     val revision: Int,
+    val localRevision: Int,
     val loadOnlyWifi: Boolean,
     val fragment: Fragment?,
     val lifecycle: Lifecycle?,

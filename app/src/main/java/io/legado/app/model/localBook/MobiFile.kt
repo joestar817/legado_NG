@@ -58,14 +58,10 @@ class MobiFile(var book: Book) {
         }
 
         @Synchronized
-        override fun upCover(book: Book, force: Boolean): Boolean {
-            val file = getMFile(book)
-            if (!force) {
-                //init 已按 fastCheck=true 补写缺失封面，这里仅报告结果
-                return File(book.coverUrl ?: LocalBook.getCoverPath(book)).exists()
+        override fun upCover(book: Book, force: Boolean): Boolean =
+            extractBookCover(File(book.coverUrl?.takeIf { it.isNotBlank() } ?: LocalBook.getCoverPath(book)), force) {
+                getMFile(book).upBookCover(fastCheck = !force)
             }
-            return file.upCover()
-        }
 
         fun clear() {
             mFile = null
@@ -281,17 +277,13 @@ class MobiFile(var book: Book) {
         return kf8Book.getResourceByHref(href)?.inputStream()
     }
 
-    fun upCover(): Boolean {
-        return upBookCover(fastCheck = false)
-    }
-
     private fun upBookCover(fastCheck: Boolean = false): Boolean {
         return try {
             mobiBook?.let {
-                if (book.coverUrl.isNullOrEmpty()) {
+                if (book.coverUrl.isNullOrBlank()) {
                     book.coverUrl = LocalBook.getCoverPath(book)
                 }
-                if (fastCheck && File(book.coverUrl!!).exists()) {
+                if (fastCheck && File(book.coverUrl!!).hasBookCover()) {
                     return true
                 }
                 var written = false
@@ -308,6 +300,7 @@ class MobiFile(var book: Book) {
                 written
             } ?: false
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             AppLog.put("加载书籍封面失败\n${e.localizedMessage}", e)
             e.printOnDebug()
             false

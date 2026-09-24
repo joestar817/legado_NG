@@ -49,14 +49,10 @@ class UmdFile(var book: Book) {
         }
 
         @Synchronized
-        override fun upCover(book: Book, force: Boolean): Boolean {
-            val file = getUFile(book)
-            if (!force) {
-                //init 已按 fastCheck=true 补写缺失封面，这里仅报告结果
-                return File(book.coverUrl ?: LocalBook.getCoverPath(book)).exists()
+        override fun upCover(book: Book, force: Boolean): Boolean =
+            extractBookCover(File(book.coverUrl?.takeIf { it.isNotBlank() } ?: LocalBook.getCoverPath(book)), force) {
+                getUFile(book).upBookCover(fastCheck = !force)
             }
-            return file.upCover()
-        }
     }
 
 
@@ -78,22 +74,19 @@ class UmdFile(var book: Book) {
         return UmdReader().read(input)
     }
 
-    fun upCover(): Boolean {
-        return upBookCover(fastCheck = false)
-    }
-
     private fun upBookCover(fastCheck: Boolean = false): Boolean {
         return try {
             umdBook?.let {
-                if (book.coverUrl.isNullOrEmpty()) {
+                if (book.coverUrl.isNullOrBlank()) {
                     book.coverUrl = LocalBook.getCoverPath(book)
                 }
-                if (fastCheck && File(book.coverUrl!!).exists()) {
+                if (fastCheck && File(book.coverUrl!!).hasBookCover()) {
                     return true
                 }
                 FileUtils.writeBytes(book.coverUrl!!, it.cover.coverData)
             } ?: false
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             e.printOnDebug()
             false
         }

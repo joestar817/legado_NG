@@ -79,14 +79,10 @@ class EpubFile(var book: Book) {
         }
 
         @Synchronized
-        override fun upCover(book: Book, force: Boolean): Boolean {
-            val file = getEFile(book)
-            if (!force) {
-                //init 已按 fastCheck=true 补写缺失封面，这里仅报告结果
-                return File(book.coverUrl ?: LocalBook.getCoverPath(book)).exists()
+        override fun upCover(book: Book, force: Boolean): Boolean =
+            extractBookCover(File(book.coverUrl?.takeIf { it.isNotBlank() } ?: LocalBook.getCoverPath(book)), force) {
+                getEFile(book).upBookCover(fastCheck = !force)
             }
-            return file.upCover()
-        }
 
         fun clear() {
             eFile = null
@@ -202,17 +198,13 @@ class EpubFile(var book: Book) {
         return epubBook?.resources?.getByHref(abHref)?.inputStream
     }
 
-    fun upCover(): Boolean {
-        return upBookCover(fastCheck = false)
-    }
-
     private fun upBookCover(fastCheck: Boolean = false): Boolean {
         return try {
             epubBook?.let {
-                if (book.coverUrl.isNullOrEmpty()) {
+                if (book.coverUrl.isNullOrBlank()) {
                     book.coverUrl = LocalBook.getCoverPath(book)
                 }
-                if (fastCheck && File(book.coverUrl!!).exists()) {
+                if (fastCheck && File(book.coverUrl!!).hasBookCover()) {
                     return true
                 }
                 var written = false
@@ -220,15 +212,16 @@ class EpubFile(var book: Book) {
                 it.coverImage?.inputStream?.use { input ->
                     val cover = BitmapFactory.decodeStream(input)
                     if (cover != null) {
-                        val out = FileOutputStream(FileUtils.createFileIfNotExist(book.coverUrl!!))
-                        written = cover.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                        out.flush()
-                        out.close()
+                        FileOutputStream(FileUtils.createFileIfNotExist(book.coverUrl!!)).use { out ->
+                            written = cover.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                            out.flush()
+                        }
                     }
                 } ?: AppLog.putDebug("Epub: 封面获取为空. path: ${book.bookUrl}")
                 written
             } ?: false
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             AppLog.put("加载书籍封面失败\n${e.localizedMessage}", e)
             e.printOnDebug()
             false
