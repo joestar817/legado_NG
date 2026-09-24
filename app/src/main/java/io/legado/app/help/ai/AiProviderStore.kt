@@ -8,6 +8,7 @@ import io.legado.app.utils.GSON
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
+import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.putPrefString
 import splitties.init.appCtx
 
@@ -16,15 +17,21 @@ object AiProviderStore {
     fun providers(): List<AiProviderSetting> {
         val saved = readSavedProviders()
         if (saved.isEmpty()) {
-            val migrated = migrateLegacyConfig(AiDefaultProviders.all())
+            val migrated = enableBuiltInAiProviders(migrateLegacyConfig(AiDefaultProviders.all()))
             saveProviders(migrated)
+            appCtx.putPrefBoolean(PreferKey.aiBuiltInProvidersEnabled, true)
             return migrated
         }
         val merged = mergeWithDefaults(saved)
-        if (merged != saved) {
-            saveProviders(merged)
+        val needsEnable = !appCtx.getPrefBoolean(PreferKey.aiBuiltInProvidersEnabled, false)
+        val providers = if (needsEnable) enableBuiltInAiProviders(merged) else merged
+        if (providers != saved) {
+            saveProviders(providers)
         }
-        return merged
+        if (needsEnable) {
+            appCtx.putPrefBoolean(PreferKey.aiBuiltInProvidersEnabled, true)
+        }
+        return providers
     }
 
     fun enabledProviders(): List<AiProviderSetting> {
@@ -482,4 +489,15 @@ object AiProviderStore {
         }
     }
 
+}
+
+internal fun enableBuiltInAiProviders(providers: List<AiProviderSetting>): List<AiProviderSetting> {
+    val builtInIds = AiDefaultProviders.all().map { it.id }.toSet()
+    return providers.map { provider ->
+        if (provider.builtIn && provider.id in builtInIds) {
+            provider.copy(enabled = true)
+        } else {
+            provider
+        }
+    }
 }

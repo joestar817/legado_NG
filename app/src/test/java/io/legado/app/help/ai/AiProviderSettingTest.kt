@@ -107,25 +107,40 @@ class AiProviderSettingTest {
             providers.getValue("aliyun_bailian").baseUrl
         )
         assertEquals("/models", providers.getValue("aliyun_bailian").modelsUrl)
-        assertFalse(providers.getValue("aliyun_bailian").enabled)
+        assertTrue(providers.getValue("aliyun_bailian").enabled)
 
         assertEquals(
             "https://ark.cn-beijing.volces.com/api/v3",
             providers.getValue("volcengine").baseUrl
         )
         assertEquals("/models", providers.getValue("volcengine").modelsUrl)
-        assertFalse(providers.getValue("volcengine").enabled)
+        assertTrue(providers.getValue("volcengine").enabled)
 
         assertEquals("https://api.moonshot.cn/v1", providers.getValue("moonshot").baseUrl)
         assertEquals("/models", providers.getValue("moonshot").modelsUrl)
         assertEquals("/users/me/balance", providers.getValue("moonshot").balanceUrl)
-        assertFalse(providers.getValue("moonshot").enabled)
+        assertTrue(providers.getValue("moonshot").enabled)
 
         assertEquals(
             "https://open.bigmodel.cn/api/paas/v4",
             providers.getValue("zhipu").baseUrl
         )
         assertEquals("/models", providers.getValue("zhipu").modelsUrl)
-        assertFalse(providers.getValue("zhipu").enabled)
+        assertTrue(providers.getValue("zhipu").enabled)
+        assertTrue(providers.values.all { it.builtIn && it.enabled })
+    }
+
+    @Test
+    fun enableOnlyBuiltInProvidersForOneTimeRollout() {
+        val builtIn = AiDefaultProviders.all().map { it.copy(enabled = false) }
+        val custom = builtIn.first().copy(id = "custom_openai", builtIn = false)
+        val unknown = builtIn.first().copy(id = "other", enabled = false)
+
+        val result = enableBuiltInAiProviders(builtIn + custom + unknown)
+
+        assertTrue(result.take(builtIn.size).all { it.enabled })
+        assertEquals(builtIn.map { it.copy(enabled = true) }, result.take(builtIn.size))
+        assertFalse(result[builtIn.size].enabled)
+        assertFalse(result.last().enabled)
     }
 }

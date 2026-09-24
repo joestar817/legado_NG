@@ -98,7 +98,7 @@ object AiDefaultProviders {
             name = "阿里云百炼",
             baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
             modelsUrl = "/models",
-            enabled = false
+            enabled = true
         ),
         AiProviderSetting(
             id = "volcengine",
@@ -106,7 +106,7 @@ object AiDefaultProviders {
             name = "火山引擎",
             baseUrl = "https://ark.cn-beijing.volces.com/api/v3",
             modelsUrl = "/models",
-            enabled = false
+            enabled = true
         ),
         AiProviderSetting(
             id = "moonshot",
@@ -116,7 +116,7 @@ object AiDefaultProviders {
             modelsUrl = "/models",
             balanceUrl = "/users/me/balance",
             balanceJsonPath = "data.available_balance",
-            enabled = false
+            enabled = true
         ),
         AiProviderSetting(
             id = "zhipu",
@@ -124,7 +124,7 @@ object AiDefaultProviders {
             name = "智谱",
             baseUrl = "https://open.bigmodel.cn/api/paas/v4",
             modelsUrl = "/models",
-            enabled = false
+            enabled = true
         )
     )
 
