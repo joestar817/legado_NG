@@ -105,6 +105,7 @@ public class EpubReader {
 
     public EpubBook readEpubLazy(@NonNull AndroidZipFile zipFile, @NonNull String encoding,
                                  @NonNull List<MediaType> lazyLoadedTypes) throws IOException {
+        zipFile.validate();
         Resources resources = ResourcesLoader
                 .loadResources(new ZipFileWrapper(zipFile), encoding, lazyLoadedTypes);
         return readEpub(resources);

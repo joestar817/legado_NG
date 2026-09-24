@@ -191,35 +191,14 @@ public class AndroidZipFile implements ZipConstants {
      * @throws ZipException if the central directory is malformed
      */
     private void readEntries() throws ZipException, IOException {
-        /* Search for the End Of Central Directory.  When a zip comment is
-         * present the directory may start earlier.
-         * FIXME: This searches the whole file in a very slow manner if the
-         * file isn't a zip file.
-         */
-        //long pos = raf.length() - ENDHDR;
-        long pos = PfdHelper.length(pfd) - ENDHDR;
-        //zip注释最长65535字节,目录结束签名只会出现在文件末尾64K范围内,
-        //限定扫描范围,避免非zip文件导致的全文件逐字节扫描(卡死)
-        long minPos = Math.max(0, pos - 65535);
+        long length = PfdHelper.length(pfd);
+        byte[] tail = new byte[(int) Math.min(length, ZipEndRecord.MAX_TAIL)];
+        seek(pfd, length - tail.length);
+        PfdHelper.readFully(pfd, tail);
+        int end = ZipEndRecord.find(tail);
         byte[] ebs = new byte[CENHDR];
-
-        do {
-            if (pos < minPos)
-                throw new ZipException
-                        ("central directory not found, probably not a zip file: " + name);
-            //raf.seek(pos--);
-            seek(pfd, pos--);
-        }
-        //while (readLeInt(raf, ebs) != ENDSIG);
-        while (readLeInt(pfd, ebs) != ENDSIG);
-
-        if (PfdHelper.skipBytes(pfd, ENDTOT - ENDNRD) != ENDTOT - ENDNRD)
-            throw new EOFException(name);
-        //int count = readLeShort(raf, ebs);
-        int count = readLeShort(pfd, ebs);
-        if (PfdHelper.skipBytes(pfd, ENDOFF - ENDSIZ) != ENDOFF - ENDSIZ)
-            throw new EOFException(name);
-        int centralOffset = readLeInt(pfd, ebs);
+        int count = readLeShort(tail, end + ENDTOT);
+        long centralOffset = Integer.toUnsignedLong(readLeInt(tail, end + ENDOFF));
 
         entries = new HashMap<>(count + count / 2);
         //raf.seek(centralOffset);
@@ -326,6 +305,11 @@ public class AndroidZipFile implements ZipConstants {
             Log.e("AndroidZipFile", "read entries error: " + name, ioe);
             return Collections.emptyEnumeration();
         }
+    }
+
+    /** Preserve the actual ZIP error for callers that need to report import failures. */
+    public void validate() throws IOException {
+        getEntries();
     }
 
     /**

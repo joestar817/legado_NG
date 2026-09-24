@@ -105,6 +105,8 @@ class EpubFile(var book: Book) {
         }
 
     init {
+        // Parse once before optional cover handling; a corrupt package must fail the import.
+        checkNotNull(epubBook) { "无法读取 EPUB 文件" }
         upBookCover(true)
     }
 
@@ -123,6 +125,8 @@ class EpubFile(var book: Book) {
 
 
         }.onFailure {
+            fileDescriptor?.close()
+            fileDescriptor = null
             AppLog.put("读取Epub文件失败\n${it.localizedMessage}", it)
             it.printOnDebug()
         }.getOrThrow()
@@ -206,7 +210,7 @@ class EpubFile(var book: Book) {
                     out.close()
                 } ?: AppLog.putDebug("Epub: 封面获取为空. path: ${book.bookUrl}")
             }
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
             AppLog.put("加载书籍封面失败\n${e.localizedMessage}", e)
             e.printOnDebug()
         }
