@@ -4,6 +4,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.addCallback
 import androidx.activity.viewModels
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +26,7 @@ import io.legado.app.lib.permission.Permissions
 import io.legado.app.lib.permission.PermissionsCompat
 import io.legado.app.model.localBook.LocalBook
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.utils.AlphanumComparator
 import io.legado.app.utils.ArchiveUtils
 import io.legado.app.utils.FileDoc
 import io.legado.app.utils.SelectDirectoryContract
@@ -63,9 +65,6 @@ class ImportBookActivity :
     private var isAtRoot by mutableStateOf(true)
     private var isLoading by mutableStateOf(false)
     private var currentSort by mutableIntStateOf(0)
-    private var importing by mutableStateOf(false)
-    private var importTotal by mutableIntStateOf(-1)
-    private var importDone by mutableIntStateOf(0)
     private var archivePickerState by mutableStateOf<ArchivePickerState>(
         ArchivePickerState.Hidden,
     )
@@ -91,6 +90,7 @@ class ImportBookActivity :
         initContent()
         onBackPressedDispatcher.addCallback(this) {
             when {
+                viewModel.importBatch.value != null -> viewModel.dismissImport()
                 archivePickerState !is ArchivePickerState.Hidden -> {
                     archivePickerState = ArchivePickerState.Hidden
                 }
@@ -113,6 +113,7 @@ class ImportBookActivity :
         )
         binding.composeView.setContent {
             NgAppTheme {
+                val batch by viewModel.importBatch.collectAsState()
                 ImportBookScreen(
                     items = items,
                     selectedItems = selectedItems,
@@ -122,7 +123,6 @@ class ImportBookActivity :
                     isAtRoot = isAtRoot,
                     isLoading = isLoading,
                     sort = currentSort,
-                    importProgressText = if (importTotal >= 0) "$importDone/$importTotal" else null,
                     archivePickerState = archivePickerState,
                     onBack = { onBackPressedDispatcher.onBackPressed() },
                     onSearchExpandedChange = { expanded ->
@@ -143,8 +143,13 @@ class ImportBookActivity :
                         archivePickerState = ArchivePickerState.Hidden
                     },
                     onArchiveEntryClick = ::onArchiveEntryClick,
+                    onToggleAllArchiveEntries = ::toggleAllArchiveEntries,
                     onImportArchiveEntries = ::importArchiveEntries,
                 )
+                batch?.let {
+                    BookImportProgressDialog(it, onStop = viewModel::stopImport,
+                        onRetry = viewModel::retryImport, onDismiss = viewModel::dismissImport)
+                }
             }
         }
     }
@@ -339,62 +344,12 @@ class ImportBookActivity :
     }
 
     private fun addSelected() {
-        val selected = HashSet(selectedItems)
-        if (selected.isEmpty() || importing) return
-        importing = true
-        importTotal = selected.size
-        importDone = 0
-        if (importTotal > 3) {
-            toastOnUi("共选择 $importTotal 本，正在后台导入，进度及结果请查看日志")
-        }
-        isLoading = true
-        viewModel.addToBookshelf(selected,
-            onItemDone = { fileKey, success ->
-                importDone++
-                if (success) {
-                    //实时更新对应行的状态为已在书架（按文件 URI 匹配，避免同名文件误标）
-                    items.find { it.isSelectableForImport && it.file.toString() == fileKey }
-                        ?.let { it.isOnBookShelf = true }
-                    items = items.toList()
-                }
-            },
-            onComplete = { result ->
-                when {
-                    result.failures.isEmpty() -> toastOnUi("添加书架成功")
-                    importTotal <= 3 -> showImportResultDialog(result)
-                    else -> toastOnUi(
-                        "导入完成：成功 ${result.successCount} 本，" +
-                                "失败 ${result.failures.size} 本，失败详情见日志"
-                    )
-                }
-            }
-        ) {
-            importing = false
-            importTotal = -1
-            importDone = 0
-            isLoading = false
-            selectedItems = emptySet()
-            viewModel.dataCallback?.upAdapter()
-        }
-    }
-
-    private fun showImportResultDialog(result: LocalBook.ImportResult) {
-        val message = buildString {
-            append("成功导入 ").append(result.successCount).append(" 本")
-            if (result.failures.isNotEmpty()) {
-                append("，失败 ").append(result.failures.size).append(" 本")
-                append("\n\n失败列表：")
-                result.failures.take(20).forEach {
-                    append("\n").append(it.fileName).append("：").append(it.reason)
-                }
-                if (result.failures.size > 20) {
-                    append("\n…等 ").append(result.failures.size).append(" 个文件，详见日志")
-                }
-            }
-        }
-        alert("导入结果", message) {
-            okButton()
-        }
+        if (viewModel.importBatch.value != null) return
+        val selected = selectedItems.filter { it.isSelectableForImport }
+            .sortedWith(compareBy(AlphanumComparator) { it.name })
+        if (selected.isEmpty()) return
+        selectedItems = emptySet()
+        viewModel.addToBookshelf(selected)
     }
 
     private fun deleteSelected() {
@@ -465,16 +420,20 @@ class ImportBookActivity :
         archivePickerState = state.copy(selectedEntryNames = selected)
     }
 
+    private fun toggleAllArchiveEntries() {
+        val state = archivePickerState as? ArchivePickerState.Ready ?: return
+        if (state.importing) return
+        archivePickerState = state.copy(
+            selectedEntryNames = if (state.allSelected) emptySet() else state.selectableEntryNames,
+        )
+    }
+
     private fun importArchiveEntries() {
         val state = archivePickerState as? ArchivePickerState.Ready ?: return
-        if (state.selectedEntryNames.isEmpty() || state.importing) return
-        archivePickerState = state.copy(importing = true)
-        viewModel.addArchiveEntries(state.archive, state.selectedEntryNames) { success ->
-            archivePickerState = if (success) {
-                ArchivePickerState.Hidden
-            } else {
-                state.copy(importing = false)
-            }
-        }
+        if (state.selectedEntryNames.isEmpty() || viewModel.importBatch.value != null) return
+        archivePickerState = ArchivePickerState.Hidden
+        viewModel.addArchiveEntries(state.archive, state.entries.filter {
+            it.entryName in state.selectedEntryNames && !it.isOnBookShelf
+        }.map { it.entryName })
     }
 }

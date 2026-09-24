@@ -23,6 +23,11 @@ import java.nio.charset.StandardCharsets
 
 object LibArchiveUtils {
 
+    interface ExtractionObserver {
+        fun onStart(entryName: String)
+        fun onExtracted(entryName: String, file: File)
+    }
+
     internal fun resolveArchiveEntry(
         destDir: File,
         entryName: String,
@@ -233,9 +238,10 @@ object LibArchiveUtils {
     fun unArchive(
         pfd: ParcelFileDescriptor,
         destDir: File,
+        observer: ExtractionObserver? = null,
         filter: ((String) -> Boolean)? = null
     ): List<File> {
-        return unArchive(openArchive(pfd), destDir, filter)
+        return unArchive(openArchive(pfd), destDir, observer, filter)
     }
 
     /**
@@ -245,6 +251,7 @@ object LibArchiveUtils {
     private fun unArchive(
         archive: Long,
         destDir: File?,
+        observer: ExtractionObserver? = null,
         filter: ((String) -> Boolean)? = null
     ): List<File> {
         destDir ?: throw NullPointerException("解压路径不能为空")
@@ -275,18 +282,19 @@ object LibArchiveUtils {
                     entryFile.parentFile?.mkdirs()
                 }
                 if (filter != null && !filter.invoke(entryName)) continue
+                observer?.onStart(entryName)
                 if (!entryFile.exists()) {
                     entryFile.createNewFile()
                     entryFile.setReadable(true)
                     entryFile.setExecutable(true)
                 }
 
-                ParcelFileDescriptor.open(entryFile, ParcelFileDescriptor.MODE_WRITE_ONLY).use {
+                ParcelFileDescriptor.open(entryFile,
+                    ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_TRUNCATE).use {
                     Archive.readDataIntoFd(archive, it.fd)
                     files.add(entryFile)
                 }
-
-
+                observer?.onExtracted(entryName, entryFile)
             }
         } finally {
             Archive.free(archive)

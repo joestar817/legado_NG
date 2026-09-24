@@ -61,6 +61,10 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.regex.Pattern
 import androidx.core.net.toUri
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import io.legado.app.utils.compress.LibArchiveUtils
+import java.io.OutputStream
 import kotlinx.coroutines.currentCoroutineContext
 
 /**
@@ -288,45 +292,66 @@ object LocalBook {
         }
     }
 
-    /* 导入压缩包内的书籍 */
+    /* 导入压缩包内的书籍；只有接收失败结果的调用方才继续下一个条目。 */
     fun importArchiveFile(
         archiveFileUri: Uri,
         saveFileName: String? = null,
         onEntryFailure: ((entryName: String, reason: String) -> Unit)? = null,
+        observer: BookImportObserver? = null,
         filter: ((String) -> Boolean)? = null,
     ): List<Book> {
         val archiveFileDoc = FileDoc.fromUri(archiveFileUri, false)
-        val files = ArchiveUtils.deCompress(archiveFileDoc, filter = filter)
+        val books = arrayListOf<Book>()
+        var failureCount = 0
+        fun importEntry(entryName: String, file: File) {
+            val total = file.length()
+            val book = try {
+                observer?.onProgress(entryName, BookImportPhase.COPYING, 0, total)
+                val uri = saveBookFile(FileInputStream(file), saveFileName ?: file.name,
+                    onProgress = observer?.let { progress ->
+                        { bytes -> progress.onProgress(entryName, BookImportPhase.COPYING, bytes, total) }
+                    })
+                observer?.onProgress(entryName, BookImportPhase.PARSING)
+                importFile(uri).apply {
+                    origin = "${BookType.localTag}::${archiveFileDoc.name}"
+                    addType(BookType.archive)
+                    save()
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                if (observer == null && onEntryFailure == null) throw error
+                failureCount++
+                val reason = error.localizedMessage ?: error.javaClass.simpleName
+                val fullName = "${archiveFileDoc.name}/$entryName"
+                AppLog.put("ImportArchiveFile Error:\n$fullName\n$reason", error)
+                onEntryFailure?.invoke(fullName, reason)
+                observer?.onFailure(entryName, error)
+                return
+            }
+            books.add(book)
+            observer?.onProgress(entryName, BookImportPhase.SUCCESS)
+        }
+        val extractionObserver = observer?.let { progress ->
+            object : LibArchiveUtils.ExtractionObserver {
+                override fun onStart(entryName: String) {
+                    progress.beforeEntry(entryName)
+                    progress.onProgress(entryName, BookImportPhase.EXTRACTING)
+                }
+
+                override fun onExtracted(entryName: String, file: File) {
+                    importEntry(entryName, file)
+                }
+            }
+        }
+        val files = ArchiveUtils.deCompress(archiveFileDoc, observer = extractionObserver, filter = filter)
         if (files.isEmpty()) {
             throw NoStackTraceException(appCtx.getString(R.string.unsupport_archivefile_entry))
         }
-        val failures = arrayListOf<ImportResult.ImportFailure>()
-        val books = files.mapNotNull { file ->
-            runCatching {
-                saveBookFile(FileInputStream(file), saveFileName ?: file.name).let { uri ->
-                    importFile(uri).apply {
-                        //附加压缩包名称 以便解压文件被删后再解压
-                        origin = "${BookType.localTag}::${archiveFileDoc.name}"
-                        addType(BookType.archive)
-                        save()
-                    }
-                }
-            }.onFailure {
-                val entryName = "${archiveFileDoc.name}/${file.name}"
-                val reason = it.localizedMessage ?: it.javaClass.simpleName
-                AppLog.put("ImportArchiveFile Error:\n$entryName\n$reason", it)
-                failures.add(ImportResult.ImportFailure(entryName, reason))
-                onEntryFailure?.invoke(entryName, reason)
-            }.getOrNull()
-        }
-        if (books.isEmpty()) {
-            throw NoStackTraceException(
-                if (failures.isEmpty()) {
-                    appCtx.getString(R.string.unsupport_archivefile_entry)
-                } else {
-                    "压缩包内书籍全部导入失败"
-                }
-            )
+        // 未接进度的旧入口保持先解压再导入的顺序与报错语义。
+        if (observer == null) files.forEach { importEntry(it.name, it) }
+        if (books.isEmpty() && observer == null) {
+            throw NoStackTraceException(if (failureCount > 0) "压缩包内书籍全部导入失败"
+                else appCtx.getString(R.string.unsupport_archivefile_entry))
         }
         return books
     }
@@ -354,9 +379,10 @@ object LocalBook {
         val failures = arrayListOf<ImportResult.ImportFailure>()
         var successCount = 0
         uris.forEach { uri ->
+            currentCoroutineContext().ensureActive()
             var fileKey = uri.toString()
             val failuresBefore = failures.size
-            runCatching {
+            val success = try {
                 val fileDoc = FileDoc.fromUri(uri, false)
                 fileKey = fileDoc.toString()
                 if (ArchiveUtils.isArchive(fileDoc.name)) {
@@ -369,25 +395,27 @@ object LocalBook {
                     )
                     //按实际导入成功的书籍数统计，压缩包内部分失败不视为整体成功
                     successCount += books.size
-                    onItemDone?.invoke(fileKey, failures.size == failuresBefore)
+                    failures.size == failuresBefore
                 } else {
                     importFile(uri)
                     successCount++
-                    onItemDone?.invoke(fileKey, true)
+                    true
                 }
-            }.onFailure {
-                AppLog.put("ImportFile Error:\nFile $fileKey\n${it.localizedMessage}", it)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                AppLog.put("ImportFile Error:\nFile $fileKey\n${error.localizedMessage}", error)
                 //压缩包内条目失败已逐条记录，避免重复计入整个压缩包
                 if (failures.size == failuresBefore) {
                     failures.add(
                         ImportResult.ImportFailure(
                             fileKey,
-                            it.localizedMessage ?: it.javaClass.simpleName
+                            error.localizedMessage ?: error.javaClass.simpleName
                         )
                     )
                 }
-                onItemDone?.invoke(fileKey, false)
+                false
             }
+            onItemDone?.invoke(fileKey, success)
         }
         return ImportResult(successCount, failures)
     }
@@ -483,7 +511,8 @@ object LocalBook {
     @Throws(SecurityException::class)
     fun saveBookFile(
         inputStream: InputStream,
-        fileName: String
+        fileName: String,
+        onProgress: ((Long) -> Unit)? = null,
     ): Uri {
         inputStream.use {
             val defaultBookTreeUri = AppConfig.defaultBookTreeUri
@@ -497,7 +526,7 @@ object LocalBook {
                         ?: throw SecurityException("请重新设置书籍保存位置\nPermission Denial")
                 }
                 appCtx.contentResolver.openOutputStream(doc.uri)!!.use { oStream ->
-                    it.copyTo(oStream)
+                    it.copyBookTo(oStream, onProgress)
                 }
                 doc.uri
             } else {
@@ -505,7 +534,7 @@ object LocalBook {
                     val treeFile = File(treeUri.path!!)
                     val file = treeFile.getFile(fileName)
                     FileOutputStream(file).use { oStream ->
-                        it.copyTo(oStream)
+                        it.copyBookTo(oStream, onProgress)
                     }
                     Uri.fromFile(file)
                 } catch (e: FileNotFoundException) {
@@ -514,6 +543,23 @@ object LocalBook {
                     }
                 }
             }
+        }
+    }
+
+    private fun InputStream.copyBookTo(output: OutputStream, onProgress: ((Long) -> Unit)?) {
+        if (onProgress == null) {
+            copyTo(output)
+            return
+        }
+        val buffer = ByteArray(64 * 1024)
+        var copied = 0L
+        while (true) {
+            val count = read(buffer)
+            if (count < 0) break
+            if (count == 0) continue
+            output.write(buffer, 0, count)
+            copied += count
+            onProgress(copied)
         }
     }
 

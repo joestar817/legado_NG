@@ -23,7 +23,7 @@ object ArchiveUtils {
         path: String = TEMP_PATH,
         filter: ((String) -> Boolean)? = null
     ): List<File> {
-        return deCompress(FileDoc.fromUri(archiveUri, false), path, filter)
+        return deCompress(FileDoc.fromUri(archiveUri, false), path, filter = filter)
     }
 
     fun deCompress(
@@ -39,7 +39,7 @@ object ArchiveUtils {
         path: String = TEMP_PATH,
         filter: ((String) -> Boolean)? = null
     ): List<File> {
-        return deCompress(FileDoc.fromFile(archiveFile), path, filter)
+        return deCompress(FileDoc.fromFile(archiveFile), path, filter = filter)
     }
 
     fun deCompress(
@@ -47,12 +47,13 @@ object ArchiveUtils {
         path: String = TEMP_PATH,
         filter: ((String) -> Boolean)? = null
     ): List<File> {
-        return deCompress(FileDoc.fromDocumentFile(archiveDoc), path, filter)
+        return deCompress(FileDoc.fromDocumentFile(archiveDoc), path, filter = filter)
     }
 
     fun deCompress(
         archiveFileDoc: FileDoc,
         path: String = TEMP_PATH,
+        observer: LibArchiveUtils.ExtractionObserver? = null,
         filter: ((String) -> Boolean)? = null
     ): List<File> {
         if (archiveFileDoc.isDir) throw IllegalArgumentException("Unexpected Folder input")
@@ -62,7 +63,7 @@ object ArchiveUtils {
         val workPath = workPathFileDoc.toString()
 
         return archiveFileDoc.openReadPfd().getOrThrow().use {
-            LibArchiveUtils.unArchive(it, File(workPath), filter)
+            LibArchiveUtils.unArchive(it, File(workPath), observer, filter)
         }
 
     }

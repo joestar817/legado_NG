@@ -91,7 +91,11 @@ internal sealed interface ArchivePickerState {
         val entries: List<ArchiveBookEntry>,
         val selectedEntryNames: Set<String> = emptySet(),
         val importing: Boolean = false,
-    ) : ArchivePickerState
+    ) : ArchivePickerState {
+        val selectableEntryNames get() = entries.asSequence()
+            .filterNot { it.isOnBookShelf }.map { it.entryName }.toSet()
+        val allSelected get() = selectableEntryNames.let { it.isNotEmpty() && selectedEntryNames.containsAll(it) }
+    }
 }
 
 @Composable
@@ -121,6 +125,7 @@ internal fun ImportBookScreen(
     onAddSelected: () -> Unit,
     onDismissArchive: () -> Unit,
     onArchiveEntryClick: (ArchiveBookEntry) -> Unit,
+    onToggleAllArchiveEntries: () -> Unit,
     onImportArchiveEntries: () -> Unit,
 ) {
     val selectedCount = selectedItems.size
@@ -165,6 +170,7 @@ internal fun ImportBookScreen(
             state = archivePickerState,
             onDismiss = onDismissArchive,
             onEntryClick = onArchiveEntryClick,
+            onToggleAll = onToggleAllArchiveEntries,
             onImport = onImportArchiveEntries,
         )
     }
@@ -638,6 +644,7 @@ private fun ArchiveEntryPickerDialog(
     state: ArchivePickerState,
     onDismiss: () -> Unit,
     onEntryClick: (ArchiveBookEntry) -> Unit,
+    onToggleAll: () -> Unit,
     onImport: () -> Unit,
 ) {
     val archive = when (state) {
@@ -660,18 +667,18 @@ private fun ArchiveEntryPickerDialog(
                 NgButton(
                     onClick = onDismiss,
                     modifier = Modifier
-                        .width(92.dp)
-                        .height(42.dp),
+                        .width(80.dp)
+                        .height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                     enabled = ready?.importing != true,
                     variant = NgButtonVariant.OUTLINE,
                 ) {
-                    Text(stringResource(R.string.cancel), fontSize = 14.sp)
+                    Text(stringResource(R.string.cancel), fontSize = 14.sp, lineHeight = 20.sp)
                 }
                 NgButton(
                     onClick = onImport,
-                    modifier = Modifier
-                        .width(116.dp)
-                        .height(42.dp),
+                    modifier = Modifier.height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                     enabled = ready?.selectedEntryNames?.isNotEmpty() == true && !ready.importing,
                     variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
                 ) {
@@ -682,6 +689,7 @@ private fun ArchiveEntryPickerDialog(
                             stringResource(R.string.nb_file_add_shelf)
                         },
                         fontSize = 14.sp,
+                        lineHeight = 20.sp,
                         maxLines = 1,
                     )
                 }
@@ -747,15 +755,26 @@ private fun ArchiveEntryPickerDialog(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(
-                            R.string.local_import_archive_selected_count,
-                            state.selectedEntryNames.size,
-                        ),
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        color = Color(NgTheme.colors.onSurfaceVariant),
-                        fontSize = 12.sp,
-                    )
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.local_import_archive_selected_count,
+                                state.selectedEntryNames.size),
+                            color = Color(NgTheme.colors.onSurfaceVariant),
+                            fontSize = 12.sp,
+                        )
+                        TextButton(
+                            onClick = onToggleAll,
+                            enabled = !state.importing && state.selectableEntryNames.isNotEmpty(),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color(NgTheme.colors.primary)),
+                        ) {
+                            Text(if (state.allSelected) "取消全选" else "全选", fontSize = 13.sp)
+                        }
+                    }
                 }
 
                 ArchivePickerState.Hidden -> Unit

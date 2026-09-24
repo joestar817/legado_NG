@@ -1,6 +1,17 @@
 package io.legado.app.ui.book.import.local
 
 import android.app.Application
+import android.os.SystemClock
+import androidx.lifecycle.viewModelScope
+import io.legado.app.model.localBook.BookImportObserver
+import io.legado.app.model.localBook.BookImportPhase
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import java.util.concurrent.atomic.AtomicBoolean
 import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.AppPattern.archiveFileRegex
@@ -66,6 +77,14 @@ class ImportBookViewModel(application: Application) : BaseViewModel(application)
             override fun upAdapter() {
                 trySend(list)
             }
+
+            override fun markImported(fileKey: String) {
+                synchronized(list) {
+                    val index = list.indexOfFirst { it.file.toString() == fileKey }
+                    if (index >= 0) list[index] = list[index].copy(isOnBookShelf = true)
+                    trySend(list.toList())
+                }
+            }
         }
 
         withContext(Main) {
@@ -90,73 +109,115 @@ class ImportBookViewModel(application: Application) : BaseViewModel(application)
         }.sortedWith(comparator).toList()
     }.flowOn(IO)
 
-    fun addToBookshelf(
-        bookList: HashSet<ImportBook>,
-        onItemDone: suspend (fileKey: String, success: Boolean) -> Unit,
-        onComplete: (LocalBook.ImportResult) -> Unit,
-        finally: () -> Unit
-    ) {
-        val total = bookList.size
-        execute {
-            val fileUris = bookList.map {
-                it.file.uri
-            }
-            LocalBook.importFiles(fileUris) { fileKey, success ->
-                withContext(Main) {
-                    onItemDone(fileKey, success)
-                }
-            }
-        }.onError {
-            context.toastOnUi("添加书架失败，请尝试重新选择文件夹")
-            AppLog.put("添加书架失败\n${it.localizedMessage}", it)
-        }.onSuccess { result ->
-            AppLog.put(
-                buildString {
-                    append("导入完成：选择 ").append(total).append(" 本，成功 ")
-                        .append(result.successCount).append(" 本，失败 ")
-                        .append(result.failures.size).append(" 本")
-                    result.failures.forEach {
-                        append("\n").append(it.fileName).append("：").append(it.reason)
-                    }
-                }
-            )
-            onComplete(result)
-        }.onFinally {
-            finally.invoke()
-        }
+    private val importState = MutableStateFlow<BookImportBatch?>(null)
+    internal val importBatch = importState.asStateFlow()
+    private val stopImport = AtomicBoolean(false)
+    private var importFiles = emptyList<FileDoc>()
+    private var importArchive: FileDoc? = null
+
+    internal fun addToBookshelf(books: List<ImportBook>) {
+        if (importState.value != null || books.isEmpty()) return
+        importFiles = books.map { it.file }
+        importArchive = null
+        importState.value = BookImportBatch("本地书籍", importFiles.map {
+            BookImportItem(it.toString(), it.name)
+        }, SystemClock.elapsedRealtime())
+        runImport()
     }
 
-    fun addArchiveEntries(
-        archive: FileDoc,
-        entryNames: Set<String>,
-        finally: (Boolean) -> Unit,
-    ) {
-        var success = false
-        execute {
-            val failures = arrayListOf<LocalBook.ImportResult.ImportFailure>()
-            val books = LocalBook.importArchiveFile(
-                archiveFileUri = archive.uri,
-                filter = { entryName -> entryName in entryNames },
-                onEntryFailure = { entryName, reason ->
-                    failures.add(LocalBook.ImportResult.ImportFailure(entryName, reason))
-                },
-            )
-            books.size to failures
-        }.onError {
-            context.toastOnUi("添加书架失败，请重新选择压缩包内书籍")
-            AppLog.put("添加压缩包内书籍失败\n${it.localizedMessage}", it)
-        }.onSuccess { (count, failures) ->
-            success = true
-            if (failures.isEmpty()) {
-                context.toastOnUi("添加书架成功")
-            } else {
-                context.toastOnUi("成功导入 $count 本，失败 ${failures.size} 本，失败详情见日志")
-                failures.forEach {
-                    AppLog.put("导入压缩包内书籍失败：${it.fileName}\n${it.reason}")
+    internal fun addArchiveEntries(archive: FileDoc, entryNames: List<String>) {
+        if (importState.value != null || entryNames.isEmpty()) return
+        importFiles = emptyList()
+        importArchive = archive
+        importState.value = BookImportBatch(archive.name, entryNames.distinct().map {
+            BookImportItem(it, it.substringAfterLast('/').substringAfterLast('\\'))
+        }, SystemClock.elapsedRealtime())
+        runImport()
+    }
+
+    internal fun stopImport() {
+        if (importState.value?.running != true) return
+        stopImport.set(true)
+        importState.update { it?.copy(stopRequested = true) }
+    }
+
+    internal fun dismissImport() {
+        if (importState.value?.running == true) return
+        importState.value = null
+        importFiles = emptyList()
+        importArchive = null
+    }
+
+    internal fun retryImport() {
+        val batch = importState.value ?: return
+        if (batch.running || batch.items.none { it.canRetry }) return
+        importState.value = batch.retry(SystemClock.elapsedRealtime())
+        runImport()
+    }
+
+    private fun runImport() {
+        stopImport.set(false)
+        val keys = importState.value?.items?.filter { it.phase == BookImportPhase.WAITING }
+            ?.mapTo(hashSetOf()) { it.key } ?: return
+        val archive = importArchive
+        val files = importFiles.filter { it.toString() in keys }
+        viewModelScope.launch(IO) {
+            var stopped = false
+            var batchError = ImportFailureInfo("未找到书籍", "压缩包中找不到所选条目")
+            var lastProgressAt = 0L
+            var lastProgressKey = ""
+            var lastPhase = BookImportPhase.WAITING
+            val observer = object : BookImportObserver {
+                override fun beforeEntry(key: String) {
+                    coroutineContext.ensureActive()
+                    if (stopImport.get()) throw CancellationException("停止导入")
+                }
+
+                override fun onProgress(key: String, phase: BookImportPhase, bytes: Long, total: Long) {
+                    val now = SystemClock.elapsedRealtime()
+                    // Copy callbacks may fire for each 64KB; do not copy/recompose the list that often.
+                    if (key == lastProgressKey && phase == lastPhase && phase == BookImportPhase.COPYING
+                        && bytes < total && now - lastProgressAt < 150) return
+                    lastProgressAt = now
+                    lastProgressKey = key
+                    lastPhase = phase
+                    importState.update { it?.progress(key, phase, now, bytes, total) }
+                    if (phase == BookImportPhase.SUCCESS && archive == null) dataCallback?.markImported(key)
+                }
+
+                override fun onFailure(key: String, error: Exception) {
+                    importState.update { it?.progress(key, BookImportPhase.FAILED,
+                        SystemClock.elapsedRealtime(), error = ImportFailureInfo.from(error)) }
+                    AppLog.put("导入失败：$key\n${error.localizedMessage}", error)
                 }
             }
-        }.onFinally {
-            finally(success)
+            try {
+                if (archive != null) {
+                    LocalBook.importArchiveFile(archive.uri, observer = observer, filter = { it in keys })
+                } else {
+                    files.forEach { file ->
+                        val key = file.toString()
+                        observer.beforeEntry(key)
+                        observer.onProgress(key, BookImportPhase.PARSING)
+                        try {
+                            LocalBook.importFile(file.uri)
+                        } catch (error: Exception) {
+                            if (error is CancellationException) throw error
+                            observer.onFailure(key, error)
+                            return@forEach
+                        }
+                        observer.onProgress(key, BookImportPhase.SUCCESS)
+                    }
+                }
+            } catch (error: CancellationException) {
+                stopped = true
+                if (!stopImport.get()) throw error
+            } catch (error: Exception) {
+                batchError = ImportFailureInfo.from(error)
+                AppLog.put("导入失败\n${error.localizedMessage}", error)
+            } finally {
+                importState.update { it?.finish(SystemClock.elapsedRealtime(), stopped, batchError) }
+            }
         }
     }
 
@@ -231,6 +292,8 @@ class ImportBookViewModel(application: Application) : BaseViewModel(application)
         fun clear()
 
         fun upAdapter()
+
+        fun markImported(fileKey: String)
 
     }
 
