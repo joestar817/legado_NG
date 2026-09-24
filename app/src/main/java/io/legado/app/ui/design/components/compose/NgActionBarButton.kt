@@ -37,6 +37,7 @@ import io.legado.app.R
 enum class NgActionBarButtonSurfaceVariant {
     LIGHT_GLASS,
     THEMED,
+    THEMED_HIGH_CONTRAST,
     NEUTRAL,
 }
 
@@ -71,10 +72,15 @@ fun NgActionBarButton(
         NgActionBarButtonSurfaceVariant.LIGHT_GLASS -> Color.White.copy(alpha = 0.82f)
         NgActionBarButtonSurfaceVariant.THEMED ->
             colorResource(R.color.background_menu).copy(alpha = 0.9f)
+        NgActionBarButtonSurfaceVariant.THEMED_HIGH_CONTRAST ->
+            Color(colors.surfaceContainerHigh).copy(alpha = 0.94f)
         NgActionBarButtonSurfaceVariant.NEUTRAL ->
             ngDrawerContentCardColor()
     }
-    val outlineAccent = if (surfaceVariant == NgActionBarButtonSurfaceVariant.NEUTRAL) {
+    val outlineAccent = if (
+        surfaceVariant == NgActionBarButtonSurfaceVariant.NEUTRAL ||
+        surfaceVariant == NgActionBarButtonSurfaceVariant.THEMED_HIGH_CONTRAST
+    ) {
         Color(colors.onSurface)
     } else {
         Color(colors.primary)

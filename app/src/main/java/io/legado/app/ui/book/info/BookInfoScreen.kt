@@ -1283,6 +1283,11 @@ private fun BookInfoBottomActions(
     } else {
         NgActionBarButtonSurfaceVariant.LIGHT_GLASS
     }
+    val secondarySurfaceVariant = if (NgTheme.snapshot.isDark) {
+        NgActionBarButtonSurfaceVariant.THEMED_HIGH_CONTRAST
+    } else {
+        surfaceVariant
+    }
     val barModifier = if (isLandscape) {
         Modifier
             .fillMaxWidth()
@@ -1308,7 +1313,7 @@ private fun BookInfoBottomActions(
             ),
             onClick = { onEvent(BookInfoUiEvent.Shelf) },
             modifier = Modifier.weight(1f),
-            surfaceVariant = surfaceVariant,
+            surfaceVariant = secondarySurfaceVariant,
         )
         if (state.showListen) {
             NgActionBarButton(
@@ -1316,7 +1321,7 @@ private fun BookInfoBottomActions(
                 icon = ImageVector.vectorResource(R.drawable.ic_tts_headphones),
                 onClick = { onEvent(BookInfoUiEvent.Listen) },
                 modifier = Modifier.weight(1f),
-                surfaceVariant = surfaceVariant,
+                surfaceVariant = secondarySurfaceVariant,
             )
         }
         NgActionBarButton(
