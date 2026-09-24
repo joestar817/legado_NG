@@ -343,4 +343,127 @@ class AiModelRegistryTest {
             assertFalse(AiModelAbility.TOOL in model.abilities)
         }
     }
+
+    @Test
+    fun classifyCachedAliyunModelsWithoutTreatingAllChatAsToolCapable() {
+        val legacy = AiModelRegistry.enrich(AiModel(id = "qwen1.5-72b-chat"))
+        val plus = AiModelRegistry.enrich(AiModel(id = "qwen-plus"))
+        val character = AiModelRegistry.enrich(AiModel(id = "qwen-flash-character"))
+        val vl = AiModelRegistry.enrich(AiModel(id = "qwen-vl-max"))
+        val qvq = AiModelRegistry.enrich(AiModel(id = "qvq-max"))
+        val tts = AiModelRegistry.enrich(AiModel(id = "MiniMax/speech-2.8-hd"))
+
+        assertEquals(listOf(AiModelModality.TEXT), legacy.inputModalities)
+        assertEquals(listOf(AiModelModality.TEXT), AiModelRegistry.enrich(AiModel(id = "qwen-14b-chat")).inputModalities)
+        assertFalse(AiModelAbility.TOOL in legacy.abilities)
+        assertTrue(AiModelAbility.TOOL in plus.abilities)
+        assertFalse(AiModelAbility.TOOL in character.abilities)
+        assertTrue(AiModelModality.IMAGE in vl.inputModalities)
+        assertTrue(AiModelModality.IMAGE in qvq.inputModalities)
+        assertTrue(AiModelAbility.REASONING in qvq.abilities)
+        assertFalse(AiModelAbility.TOOL in qvq.abilities)
+        assertEquals(AiModelType.TTS, tts.type)
+        assertEquals(listOf(AiModelModality.AUDIO), tts.outputModalities)
+        val gui = AiModelRegistry.enrich(AiModel(id = "gui-plus"))
+        assertTrue(AiModelModality.IMAGE in gui.inputModalities)
+        assertFalse(AiModelAbility.TOOL in gui.abilities)
+    }
+
+    @Test
+    fun classifyCachedVolcModelsByActualEndpointFamily() {
+        val embedding = AiModelRegistry.enrich(AiModel(id = "doubao-embedding-vision-250615"))
+        val seedream = AiModelRegistry.enrich(AiModel(id = "doubao-seedream-5-0-flash-260915"))
+        val seedance = AiModelRegistry.enrich(AiModel(id = "doubao-seedance-2-5-260628"))
+        val textToVideo = AiModelRegistry.enrich(AiModel(id = "doubao-seedance-1-0-lite-t2v-250428"))
+        val imageToVideo = AiModelRegistry.enrich(AiModel(id = "doubao-seedance-1-0-lite-i2v-250428"))
+        val seedance15 = AiModelRegistry.enrich(AiModel(id = "doubao-seedance-1-5-pro-251215"))
+        val seedChat = AiModelRegistry.enrich(AiModel(id = "doubao-seed-2-0-pro-260215"))
+
+        assertEquals(AiModelType.EMBEDDING, embedding.type)
+        assertTrue(AiModelModality.IMAGE in embedding.inputModalities)
+        assertEquals(AiModelType.IMAGE, seedream.type)
+        assertTrue(AiModelModality.IMAGE in seedream.inputModalities)
+        assertEquals(listOf(AiModelModality.IMAGE), seedream.outputModalities)
+        assertEquals(AiModelType.VIDEO, seedance.type)
+        assertEquals(listOf(AiModelModality.VIDEO), seedance.outputModalities)
+        assertTrue(AiModelModality.AUDIO in seedance.inputModalities)
+        assertEquals(listOf(AiModelModality.TEXT), textToVideo.inputModalities)
+        assertEquals(AiModelType.VIDEO, imageToVideo.type)
+        assertEquals(listOf(AiModelModality.TEXT, AiModelModality.IMAGE), imageToVideo.inputModalities)
+        assertEquals(AiModelType.VIDEO, seedance15.type)
+        assertEquals(listOf(AiModelModality.VIDEO), seedance15.outputModalities)
+        assertTrue(AiModelAbility.TOOL in seedChat.abilities)
+        assertTrue(AiModelAbility.REASONING in seedChat.abilities)
+    }
+
+    @Test
+    fun backfillOnlyUnspecifiedCachedCapabilities() {
+        val existing = AiModel(
+            id = "qwen-plus",
+            inputModalities = listOf(AiModelModality.TEXT),
+            outputModalities = listOf(AiModelModality.TEXT)
+        )
+        val models = enrichUnspecifiedAiModels(
+            listOf(existing, AiModel(id = "XingChenAGI/XingChenASR-V3.2"), AiModel(id = "opaque-model"))
+        )
+
+        assertEquals(existing, models[0])
+        assertEquals(AiModelType.ASR, models[1].type)
+        assertEquals(listOf(AiModelAbility.ASR), models[1].abilities)
+        assertEquals(emptyList<AiModelModality>(), models[2].inputModalities)
+        assertEquals(emptyList<AiModelAbility>(), models[2].abilities)
+    }
+
+    @Test
+    fun correctCachedQwenAsrWithoutKeepingChatAbilities() {
+        val savedWrong = AiModel(
+            id = "qwen3-asr-flash-realtime",
+            inputModalities = listOf(AiModelModality.TEXT),
+            outputModalities = listOf(AiModelModality.TEXT),
+            abilities = listOf(AiModelAbility.TOOL, AiModelAbility.REASONING)
+        )
+
+        val corrected = enrichUnspecifiedAiModels(listOf(savedWrong)).single()
+
+        assertEquals(AiModelType.ASR, corrected.type)
+        assertEquals(listOf(AiModelModality.AUDIO), corrected.inputModalities)
+        assertEquals(listOf(AiModelModality.TEXT), corrected.outputModalities)
+        assertEquals(listOf(AiModelAbility.ASR), corrected.abilities)
+        assertEquals(AiModelType.ASR, AiModelRegistry.enrich(AiModel(id = "qwen-audio-3.0-asr-flash")).type)
+        assertEquals(listOf(AiModelAbility.ASR), AiModelRegistry.enrich(AiModel(id = "Qwen/Qwen3-ASR-1.7B")).abilities)
+
+        val savedEmbedding = AiModel(
+            id = "Qwen/Qwen3-Embedding-8B",
+            type = AiModelType.EMBEDDING,
+            inputModalities = listOf(AiModelModality.TEXT),
+            outputModalities = listOf(AiModelModality.TEXT),
+            abilities = listOf(AiModelAbility.TOOL, AiModelAbility.REASONING)
+        )
+        val correctedEmbedding = enrichUnspecifiedAiModels(listOf(savedEmbedding)).single()
+        assertEquals(AiModelType.EMBEDDING, correctedEmbedding.type)
+        assertEquals(emptyList<AiModelAbility>(), correctedEmbedding.abilities)
+        assertEquals(
+            emptyList<AiModelAbility>(),
+            AiModelRegistry.enrich(AiModel(id = "Qwen/Qwen3-Reranker-8B")).abilities
+        )
+
+        val savedVideoAsChat = AiModel(
+            id = "doubao-seedance-1-5-pro-251215",
+            inputModalities = listOf(AiModelModality.TEXT),
+            outputModalities = listOf(AiModelModality.TEXT)
+        )
+        val correctedVideo = enrichUnspecifiedAiModels(listOf(savedVideoAsChat)).single()
+        assertEquals(AiModelType.VIDEO, correctedVideo.type)
+        assertEquals(listOf(AiModelModality.VIDEO), correctedVideo.outputModalities)
+    }
+
+    @Test
+    fun classifyCachedXingChatWithoutInventingVision() {
+        val model = AiModelRegistry.enrich(AiModel(id = "XingChenAGI/Xing4.0-29B"))
+
+        assertEquals(AiModelType.CHAT, model.type)
+        assertEquals(listOf(AiModelModality.TEXT), model.inputModalities)
+        assertTrue(AiModelAbility.TOOL in model.abilities)
+        assertTrue(AiModelAbility.REASONING in model.abilities)
+    }
 }

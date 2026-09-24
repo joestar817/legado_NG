@@ -40,7 +40,7 @@
 
 ## 后续验证与协议事项
 
-1. **DeepSeek**：读取截图对应的设备保存模型条目；验证 `deepseek-flash` 带工具的思考请求和 `role=tool` 第二轮。已保存能力不会仅因 Registry 更新而自动改写，必要时由用户在应用中重新获取模型列表。
+1. **DeepSeek**：读取截图对应的设备保存模型条目；验证 `deepseek-flash` 带工具的思考请求和 `role=tool` 第二轮。当前版本会为能力全空的已保存模型补上有证据的 Registry 分类，无需仅为更新标签重新请求厂商列表。
 2. **MiMo**：分别验证三款 2.6 的模型列表、思考参数、工具调用回填和图片输入；静态能力标记不能代替 API 往返。
 3. **其它 OpenAI 兼容提供商**：Qwen3.8、Doubao2.1、Grok4.7、Kimi K3、Step5、GLM5.3 Flash、Nex-N2.5、Ling3.0、Hy4、SenseNova6.8 仍需逐 Provider 验证请求和返回。
 4. **需要新调用链的系列**：GPT-6 Responses 工具条件、原生 Claude/Gemini 聊天工具、Wan3 视频及各家实时语音/图像模型，完成协议适配后才能标为 App 功能可用。
@@ -50,4 +50,21 @@
 - 已把官方新 ID 和可由现有 `AiModelType` 表达的能力补入 `AiModelRegistry`：DeepSeek Flash/V4.1、MiMo 2.6 三款、GPT-6、Gemini 3.6～3.8、Claude 5、Qwen 3.8 与 3.7 向量/重排、豆包 2.1、Grok 4.7、Kimi K3、Step 5、Intern-S2、GLM-5.3 Flash、Nex-N2.5、Ling 3、Hy4、SenseNova 6.8，以及清单中可明确归类的图像、视频、转写和 TTS 型号。匹配器优先级已有回归测试源码覆盖。
 - GPT-6 在当前 Chat Completions 聊天链下只标推理与视觉，不误标可同时使用的工具能力。官方 API 的工具支持仍须按 Responses 或其条件约束接入。
 - Qwen 3.8 Omni Realtime、StepAudio Realtime 等需要独立实时协议的型号仍只在清单中记录；当前 `AiModelType` 与请求链不能完整表达其协议，未标为普通聊天已支持。云端模型功能如内置搜索、电脑操作、图片生成也不等于 App 具有对应调用链。
-- `git diff --check` 通过。首次串行安装成功后，差异复核发现并修正 `stepfun` 与 `FlashX` 两种完整 token 的匹配遗漏；在前一任务明确退出后串行复装最终源码，流式安装成功，`BUILD SUCCESSFUL in 32s`。新增单元测试源码未按仓库约定另起 Gradle 任务运行；未做付费 API 往返或人工界面验收。用户原有 `docs/READING_NG_UI_STYLE.md` 改动保持原样；本批未暂存、提交或推送。
+- `git diff --check` 通过。首次串行安装成功后，差异复核发现并修正 `stepfun` 与 `FlashX` 两种完整 token 的匹配遗漏；在前一任务明确退出后串行复装最终源码，流式安装成功，`BUILD SUCCESSFUL in 32s`。新增单元测试源码未按仓库约定另起 Gradle 任务运行；未做付费 API 往返。该批在用户验收后以 `baa7e9f4a` 提交，未推送；用户原有 `docs/READING_NG_UI_STYLE.md` 改动保持原样。
+
+## 设备 MCP 缓存复核（2026-09-25）
+
+通过只读 `ai_model_cache_list` 分页读取设备里 12 个内置提供商保存的全部 **525** 条模型（提供商 ID + 模型 ID 均唯一）。DeepSeek、硅基流动、MiMo、商汤、百炼、火山、智谱共 7 家有缓存；OpenAI、Claude、Gemini、OpenRouter、月之暗面共 5 家缓存为空。完整、脱敏的前后快照在 `.agent/reviews/2026-09-25-ai-model-capabilities/`，不含 API Key 或连接配置。MCP 此次读取的是**已保存列表**，不触发厂商 `/models`、不证明模型仍可调用。
+
+首次读取有 **163** 条模型的输入模态、输出模态和能力均为空。依据官方模型目录补全旧 Qwen/QVQ/QwQ、MiniMax Speech、星辰 ASR、豆包旧聊天/Seed 2.0、Seedream/Seedance/Embedding 等明确系列，并在读取已有缓存时定向补全空字段；最终 **146 条从全空变为有能力标签，17 条仍保持未知**。另纠正了 11 条原有错误标签，包括 Qwen ASR 被通用 Qwen3 规则标成聊天，以及 Qwen 向量/重排、商汤生图误带工具/思考标签；复核过程中发现的 Seedance 1.5 误命中也已修正。最终类型分布：聊天 431、图像 33、视频 14、向量 25、ASR 12、TTS 10。[百炼文本能力](https://help.aliyun.com/zh/model-studio/text-generation-model)、[视觉推理](https://help.aliyun.com/zh/model-studio/visual-reasoning)、[语音识别](https://help.aliyun.com/zh/model-studio/asr-model)、[MiniMax 语音](https://solutions.minimaxi.com/debug/speech)、[硅基流动模型](https://siliconflow.cn/models)、[火山方舟模型](https://docs.volcengine.com/docs/ark/model-list?lang=zh)、[方舟视频接口](https://docs.volcengine.com/docs/ark/create-video-generation-task-api?lang=zh&redirect=1)、[方舟图片接口](https://docs.volcengine.com/docs/ark/image-generation-api?lang=zh&redirect=1)。
+
+仍未知的 17 条：
+
+| 提供商 | 模型 ID | 保留未知的原因 |
+| --- | --- | --- |
+| 硅基流动 | `diffusiongemma`、`Kev-4B`、`SemIf`、`XingChenAGI/XingChenGSR-V1.0` | 未找到足以确定当前接口输入/输出及工具/推理字段的官方说明 |
+| 商汤 | `sensenova-u1-fast` | 现有特殊规则明确清除不可靠的厂商声明；未做实际接口验证 |
+| 阿里云百炼 | `qwen-deep-research-2025-12-15`、`qwen-deep-search-planning`、`sre-gpu-auto-handle`、`test-sre-gpu-auto-handle`、`tongyi-xiaomi-analysis-flash`、`tongyi-xiaomi-analysis-pro`、`unisound/unisound-u2` | 专用工作流、内部或转售 ID 的普通聊天协议与能力未核实 |
+| 火山引擎 | `doubao-seaweed-241128`、`doubao-seed3d-1-0-250928`、`doubao-smart-router-250928`、`hitem3d-2-0-251223`、`hyper3d-gen2-260112` | 路由或 3D 生成等类型不能由现有模型类型可靠表达；Seaweed 用途待核实 |
+
+标签仅表示模型名称/官方文档可确认的能力；视频生成、图像生成、向量、ASR/TTS 和实时协议仍需各自的应用调用链，聊天模型的工具与思考仍需按 Provider 做真实往返验证。

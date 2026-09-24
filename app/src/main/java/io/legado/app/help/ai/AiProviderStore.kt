@@ -22,7 +22,9 @@ object AiProviderStore {
             appCtx.putPrefBoolean(PreferKey.aiBuiltInProvidersEnabled, true)
             return migrated
         }
-        val merged = mergeWithDefaults(saved)
+        val merged = mergeWithDefaults(saved).map { provider ->
+            provider.copy(models = enrichUnspecifiedAiModels(provider.models))
+        }
         val needsEnable = !appCtx.getPrefBoolean(PreferKey.aiBuiltInProvidersEnabled, false)
         val providers = if (needsEnable) enableBuiltInAiProviders(merged) else merged
         if (providers != saved) {
@@ -498,6 +500,26 @@ internal fun enableBuiltInAiProviders(providers: List<AiProviderSetting>): List<
             provider.copy(enabled = true)
         } else {
             provider
+        }
+    }
+}
+
+internal fun enrichUnspecifiedAiModels(models: List<AiModel>): List<AiModel> {
+    return models.map { model ->
+        val hasNoCapabilities = model.inputModalities.isEmpty() &&
+            model.outputModalities.isEmpty() && model.abilities.isEmpty()
+        val possibleWrongType = model.type == AiModelType.CHAT &&
+            (model.id.contains("asr", ignoreCase = true) ||
+                model.id.contains("seedance", ignoreCase = true))
+        val hasWrongType = possibleWrongType &&
+            AiModelRegistry.capabilities(model.id).type?.let { it != AiModelType.CHAT } == true
+        val nonChatWithChatAbilities = model.type != AiModelType.CHAT &&
+            (AiModelAbility.TOOL in model.abilities || AiModelAbility.REASONING in model.abilities) &&
+            AiModelRegistry.capabilities(model.id).type?.let { it != AiModelType.CHAT } == true
+        if (hasNoCapabilities || hasWrongType || nonChatWithChatAbilities) {
+            AiModelRegistry.enrich(model)
+        } else {
+            model
         }
     }
 }

@@ -452,24 +452,40 @@ object AiModelRegistry {
 
     private val QWEN_3_5 = defineAiModel {
         tokens("qwen", "3", "5")
+        notTokens("asr")
+        notTokens("embedding")
+        notTokens("rerank")
+        notTokens("reranker")
         visionInput()
         toolReasoningAbility()
     }
 
     private val QWEN_3_6 = defineAiModel {
         tokens("qwen", "3", "6")
+        notTokens("asr")
+        notTokens("embedding")
+        notTokens("rerank")
+        notTokens("reranker")
         visionInput()
         toolReasoningAbility()
     }
 
     private val QWEN_3_7 = defineAiModel {
         tokens("qwen", "3", "7")
+        notTokens("asr")
+        notTokens("embedding")
+        notTokens("rerank")
+        notTokens("reranker")
         visionInput()
         toolReasoningAbility()
     }
 
     private val QWEN_3_8 = defineAiModel {
         tokens("qwen", "3", "8")
+        notTokens("asr")
+        notTokens("embedding")
+        notTokens("rerank")
+        notTokens("reranker")
         visionInput()
         toolReasoningAbility()
     }
@@ -489,6 +505,73 @@ object AiModelRegistry {
         toolAbility()
     }
 
+    private val QWEN_LEGACY_CHAT = defineAiModel {
+        tokens("qwen", "max|plus|turbo|flash|coder|math|long")
+        notTokens("qwen", "vl")
+        notTokens("qwen", "omni")
+    }
+
+    private val QWEN_LEGACY_TOOLS = defineAiModel {
+        tokens("qwen", "max|plus|turbo|flash|coder")
+        notTokens("character")
+        notTokens("qwen", "vl")
+        notTokens("qwen", "omni")
+        toolAbility()
+    }
+
+    private val QWEN_OLD_OPEN_CHAT = defineAiModel {
+        tokens("qwen", "1|2")
+        notTokens("vl")
+        notTokens("omni")
+        notTokens("image")
+        notTokens("embedding")
+    }
+
+    private val QWEN_EARLY_CHAT = defineAiModel {
+        tokens("qwen", "7|14|72", "b", "chat")
+    }
+
+    private val QWEN_ASR = defineAiModel {
+        tokens("qwen", "3", "asr")
+        speechRecognition()
+    }
+
+    private val QWEN_AUDIO_ASR = defineAiModel {
+        tokens("qwen", "audio", "3", "asr")
+        speechRecognition()
+    }
+
+    private val CODEQWEN_CHAT = defineAiModel {
+        tokens("codeqwen")
+    }
+
+    private val QWEN_LEGACY_VL = defineAiModel {
+        tokens("qwen", "vl")
+        visionInput()
+    }
+
+    private val QWEN_LEGACY_OMNI = defineAiModel {
+        exact("qwen-omni-turbo")
+        input(AiModelModality.TEXT, AiModelModality.IMAGE, AiModelModality.AUDIO, AiModelModality.VIDEO)
+        output(AiModelModality.TEXT, AiModelModality.AUDIO)
+    }
+
+    private val QVQ_REASONING = defineAiModel {
+        tokens("qvq", "max|plus")
+        visionInput()
+        reasoningAbility()
+    }
+
+    private val QWQ_REASONING = defineAiModel {
+        tokens("qwq", "plus")
+        reasoningAbility()
+    }
+
+    private val GUI_PLUS = defineAiModel {
+        exact("gui-plus")
+        visionInput()
+    }
+
     private val DOUBAO_1_6 = defineAiModel {
         tokens("doubao", "1", "6")
         visionInput()
@@ -505,6 +588,128 @@ object AiModelRegistry {
         tokens("doubao", "seed", "2", "1")
         visionInput()
         toolReasoningAbility()
+    }
+
+    private val DOUBAO_SEED_2_0 = defineAiModel {
+        tokens("doubao", "seed", "2", "0")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val DOUBAO_SEED_EVOLVING = defineAiModel {
+        tokens("doubao", "seed", "evolving")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val DOUBAO_LEGACY_CHAT = defineAiModel {
+        tokens("doubao", "lite|pro")
+        notTokens("seedance")
+        notTokens("seedream")
+        notTokens("seededit")
+        notTokens("embedding")
+    }
+
+    private val DOUBAO_1_5_CHAT = defineAiModel {
+        tokens("doubao", "1", "5")
+        notTokens("seedance")
+        notTokens("seedream")
+        notTokens("seededit")
+        notTokens("embedding")
+    }
+
+    private val DOUBAO_LEGACY_VISION = defineAiModel {
+        tokens("doubao", "vision")
+        visionInput()
+    }
+
+    private val DOUBAO_1_5_VISION = defineAiModel {
+        tokens("doubao", "1", "5", "vision")
+        visionInput()
+    }
+
+    private val DOUBAO_1_5_THINKING = defineAiModel {
+        tokens("doubao", "1", "5", "thinking")
+        reasoningAbility()
+    }
+
+    private val DOUBAO_1_5_THINKING_VISION = defineAiModel {
+        tokens("doubao", "1", "5", "thinking", "vision")
+        visionInput()
+        reasoningAbility()
+    }
+
+    private val DOUBAO_LEGACY_FUNCTION_CALL = defineAiModel {
+        tokens("doubao", "functioncall")
+        toolAbility()
+    }
+
+    private val DOUBAO_SEED_CHARACTER = defineAiModel {
+        tokens("doubao", "seed", "character")
+        toolAbility()
+    }
+
+    private val DOUBAO_SEED_CHARACTER_REASONING = defineAiModel {
+        exact("doubao-seed-character-260628")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val DOUBAO_SEED_CODE = defineAiModel {
+        tokens("doubao", "seed", "code")
+    }
+
+    private val DOUBAO_SEED_TRANSLATION = defineAiModel {
+        tokens("doubao", "seed", "translation")
+    }
+
+    private val DOUBAO_EMBEDDING = defineAiModel {
+        tokens("doubao", "embedding")
+        textEmbedding()
+    }
+
+    private val DOUBAO_VISION_EMBEDDING = defineAiModel {
+        tokens("doubao", "embedding", "vision")
+        visionEmbedding()
+    }
+
+    private val DOUBAO_SEEDREAM = defineAiModel {
+        tokens("doubao", "seedream")
+        imageOutput()
+    }
+
+    private val DOUBAO_SEEDREAM_EDIT = defineAiModel {
+        tokens("doubao", "seedream", "4|5")
+        imageEditOutput()
+    }
+
+    private val DOUBAO_SEEDEDIT = defineAiModel {
+        tokens("doubao", "seededit")
+        imageEditOutput()
+    }
+
+    private val DOUBAO_SEEDANCE = defineAiModel {
+        tokens("doubao", "seedance")
+        type(AiModelType.VIDEO)
+        input(AiModelModality.TEXT, AiModelModality.IMAGE)
+        output(AiModelModality.VIDEO)
+    }
+
+    private val DOUBAO_SEEDANCE_TEXT_ONLY = defineAiModel {
+        tokens("doubao", "seedance", "1", "0", "lite", "t", "2", "v")
+        textToVideo()
+    }
+
+    private val DOUBAO_SEEDANCE_IMAGE_TO_VIDEO = defineAiModel {
+        tokens("doubao", "seedance", "1", "0", "lite", "i", "2", "v")
+        imageToVideo()
+    }
+
+    private val DOUBAO_SEEDANCE_2 = defineAiModel {
+        tokens("doubao", "seedance", "2", "0|5")
+        type(AiModelType.VIDEO)
+        input(AiModelModality.TEXT, AiModelModality.IMAGE, AiModelModality.AUDIO, AiModelModality.VIDEO)
+        output(AiModelModality.VIDEO)
     }
 
     private val GROK_4 = defineAiModel {
@@ -742,8 +947,18 @@ object AiModelRegistry {
         speechRecognition()
     }
 
+    private val XINGCHEN_ASR = defineAiModel {
+        tokens("xingchenasr")
+        speechRecognition()
+    }
+
     private val TTS_MODEL = defineAiModel {
         tokens(aiTokenRegex("^(tts|ttsd|cosyvoice)$"))
+        speechSynthesis()
+    }
+
+    private val MINIMAX_SPEECH = defineAiModel {
+        tokens("minimax", "speech")
         speechSynthesis()
     }
 
@@ -771,6 +986,25 @@ object AiModelRegistry {
     private val WAN_IMAGE_TO_VIDEO = defineAiModel {
         tokens("wan", "i", "2", "v")
         imageToVideo()
+    }
+
+    private val WAN_FIRST_LAST_FRAME_TO_VIDEO = defineAiModel {
+        tokens("wan", "flf", "2", "v")
+        imageToVideo()
+    }
+
+    private val MISTRAL_7B_INSTRUCT = defineAiModel {
+        tokens("mistral", "7", "b", "instruct")
+    }
+
+    private val LONGCAT_2 = defineAiModel {
+        tokens("longcat", "2", "0")
+        reasoningAbility()
+    }
+
+    private val XING_4 = defineAiModel {
+        tokens("xing", "4", "0", "29", "b")
+        toolReasoningAbility()
     }
 
     private val WAN_3_VIDEO = defineAiModel {
@@ -929,9 +1163,43 @@ object AiModelRegistry {
         QWEN_3_7_TEXT_EMBEDDING,
         QWEN_3_7_TEXT_RERANK,
         QWEN_2_5_INSTRUCT,
+        QWEN_LEGACY_CHAT,
+        QWEN_LEGACY_TOOLS,
+        QWEN_OLD_OPEN_CHAT,
+        QWEN_EARLY_CHAT,
+        QWEN_ASR,
+        QWEN_AUDIO_ASR,
+        CODEQWEN_CHAT,
+        QWEN_LEGACY_VL,
+        QWEN_LEGACY_OMNI,
+        QVQ_REASONING,
+        QWQ_REASONING,
+        GUI_PLUS,
         DOUBAO_1_6,
         DOUBAO_1_8,
         DOUBAO_SEED_2_1,
+        DOUBAO_SEED_2_0,
+        DOUBAO_SEED_EVOLVING,
+        DOUBAO_LEGACY_CHAT,
+        DOUBAO_1_5_CHAT,
+        DOUBAO_LEGACY_VISION,
+        DOUBAO_1_5_VISION,
+        DOUBAO_1_5_THINKING,
+        DOUBAO_1_5_THINKING_VISION,
+        DOUBAO_LEGACY_FUNCTION_CALL,
+        DOUBAO_SEED_CHARACTER,
+        DOUBAO_SEED_CHARACTER_REASONING,
+        DOUBAO_SEED_CODE,
+        DOUBAO_SEED_TRANSLATION,
+        DOUBAO_EMBEDDING,
+        DOUBAO_VISION_EMBEDDING,
+        DOUBAO_SEEDREAM,
+        DOUBAO_SEEDREAM_EDIT,
+        DOUBAO_SEEDEDIT,
+        DOUBAO_SEEDANCE,
+        DOUBAO_SEEDANCE_TEXT_ONLY,
+        DOUBAO_SEEDANCE_IMAGE_TO_VIDEO,
+        DOUBAO_SEEDANCE_2,
         GROK_4,
         GROK_4_7,
         KIMI_K2,
@@ -975,13 +1243,19 @@ object AiModelRegistry {
         ASR_MODEL,
         TELE_SPEECH_ASR,
         SENSE_VOICE,
+        XINGCHEN_ASR,
         TTS_MODEL,
+        MINIMAX_SPEECH,
         BGE_EMBEDDING,
         BGE_RERANKER,
         KOLORS_IMAGE,
         WAN_TEXT_TO_VIDEO,
         WAN_IMAGE_TO_VIDEO,
+        WAN_FIRST_LAST_FRAME_TO_VIDEO,
         WAN_3_VIDEO,
+        MISTRAL_7B_INSTRUCT,
+        LONGCAT_2,
+        XING_4,
         XIAOMI_MIMO_V2,
         XIAOMI_MIMO_V2_PRO,
         XIAOMI_MIMO_V2_5,
@@ -1055,7 +1329,11 @@ object AiModelRegistry {
             } else {
                 mergeModalities(model.safeOutputModalities() + inferred.outputModalities)
             },
-            abilities = mergeAbilities(model.safeAbilities() + inferred.abilities)
+            abilities = if (inferredType != null && inferredType != AiModelType.CHAT) {
+                inferred.abilities
+            } else {
+                mergeAbilities(model.safeAbilities() + inferred.abilities)
+            }
         )
     }
 
