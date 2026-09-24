@@ -1321,10 +1321,12 @@ internal class EpubLayoutController(
             documentIndex = originalIndex
             val from = documents[originalIndex].location
             val to = documents[targetDocument].location
-            prepared.prepare(chrome, from, beforeOptions, to, targetOptions) { oldBody, newBody ->
+            val deliver: (EpubCapturedFrame, EpubCapturedFrame) -> Unit = delivery@ { oldBody, newBody ->
                 if (closed || mine != generation || requestEpoch != frameEpoch || !turning) {
-                    oldBody.close(); newBody.close()
-                    return@prepare
+                    // Cached frames remain owned by the window, including cancellation.
+                    if (oldBody !== beforeFrame) oldBody.close()
+                    if (newBody !== afterFrame) newBody.close()
+                    return@delivery
                 }
                 val after = chrome.copy(Bitmap.Config.ARGB_8888, true)
                 drawFrame(Canvas(chrome), oldBody, current)
@@ -1334,10 +1336,13 @@ internal class EpubLayoutController(
                     (state.optJSONArray("media")?.length() ?: 0) == 0 &&
                     current.width.toLong() * current.height * 8 <= 48L * 1024 * 1024) {
                     frameDocument = originalIndex
-                    frames.put(state.optInt("pageIndex"), oldBody)
-                    frames.put(index, newBody)
+                    if (oldBody !== beforeFrame) frames.put(state.optInt("pageIndex"), oldBody)
+                    if (newBody !== afterFrame) frames.put(index, newBody)
                     anticipatedPage = index
-                } else { oldBody.close(); newBody.close() }
+                } else {
+                    if (oldBody !== beforeFrame) oldBody.close()
+                    if (newBody !== afterFrame) newBody.close()
+                }
                 preparationFrame = null // Ownership moves to the existing animation host.
                 animate(chrome, after, direction) {
                     if (!closed && mine == generation && requestEpoch == frameEpoch && turning) {
@@ -1354,6 +1359,13 @@ internal class EpubLayoutController(
                 if (io.legado.app.BuildConfig.DEBUG) android.util.Log.d("EpubTurnFrames",
                     "cached=false prepareMs=${android.os.SystemClock.uptimeMillis() - requestedAt}")
                 scheduleWarm()
+            }
+            // A click can arrive between two warm captures. Only render the missing
+            // viewport; recapturing the cached side adds another compositor round trip.
+            when {
+                beforeFrame != null -> prepared.capturePage(chrome, to, targetOptions) { deliver(beforeFrame, it) }
+                afterFrame != null -> prepared.capturePage(chrome, from, beforeOptions) { deliver(it, afterFrame) }
+                else -> prepared.prepare(chrome, from, beforeOptions, to, targetOptions, deliver)
             }
         }
     }

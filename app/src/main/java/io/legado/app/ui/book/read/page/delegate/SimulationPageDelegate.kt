@@ -142,18 +142,9 @@ class SimulationPageDelegate(readView: ReadView) : HorizontalPageDelegate(readVi
     }
 
     override fun setBitmap() {
-        readView.externalPageSnapshots?.let { (before, after) ->
-            curBitmap?.recycle()
-            curBitmap = before.copy(Bitmap.Config.ARGB_8888, false)
-            if (mDirection == PageDirection.PREV) {
-                prevBitmap?.recycle()
-                prevBitmap = after.copy(Bitmap.Config.ARGB_8888, false)
-            } else {
-                nextBitmap?.recycle()
-                nextBitmap = after.copy(Bitmap.Config.ARGB_8888, false)
-            }
-            return
-        }
+        // ReadView owns these stable frames until the animation handoff ends.
+        // Drawing them directly avoids two more full-screen copies per turn.
+        if (readView.externalPageSnapshots != null) return
         when (mDirection) {
             PageDirection.PREV -> {
                 prevBitmap = prevPage.screenshot(prevBitmap, canvas)
@@ -258,21 +249,25 @@ class SimulationPageDelegate(readView: ReadView) : HorizontalPageDelegate(readVi
 
     override fun onDraw(canvas: Canvas) {
         if (!isRunning) return
+        val frames = readView.externalPageSnapshots
+        val current = frames?.first ?: curBitmap
+        val previous = frames?.second ?: prevBitmap
+        val next = frames?.second ?: nextBitmap
         when (mDirection) {
             PageDirection.NEXT -> {
                 calcPoints()
-                drawCurrentPageArea(canvas, curBitmap)
-                drawNextPageAreaAndShadow(canvas, nextBitmap)
+                drawCurrentPageArea(canvas, current)
+                drawNextPageAreaAndShadow(canvas, next)
                 drawCurrentPageShadow(canvas)
-                drawCurrentBackArea(canvas, curBitmap)
+                drawCurrentBackArea(canvas, current)
             }
 
             PageDirection.PREV -> {
                 calcPoints()
-                drawCurrentPageArea(canvas, prevBitmap)
-                drawNextPageAreaAndShadow(canvas, curBitmap)
+                drawCurrentPageArea(canvas, previous)
+                drawNextPageAreaAndShadow(canvas, current)
                 drawCurrentPageShadow(canvas)
-                drawCurrentBackArea(canvas, prevBitmap)
+                drawCurrentBackArea(canvas, previous)
             }
 
             else -> return

@@ -107,6 +107,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
             return
         }
         delegate.abortAnim()
+        before.prepareToDraw()
+        after.prepareToDraw()
         externalPageSnapshots = before to after
         externalAnimationCommit = commit
         externalAnimationFinishing = false
@@ -341,8 +343,10 @@ class ReadView(context: Context, attrs: AttributeSet) :
     }
 
     override fun dispatchDraw(canvas: Canvas) {
-        super.dispatchDraw(canvas)
         val frames = externalPageSnapshots
+        // The animation frames already contain the complete page and chrome.
+        // Resume the live document for its existing visual commit at handoff.
+        if (frames == null || externalAnimationFinishing) super.dispatchDraw(canvas)
         if (frames != null) {
             canvas.drawBitmap(if (externalAnimationFinishing) frames.second else frames.first, 0f, 0f, null)
             if (!externalAnimationFinishing && !autoPager.isRunning) pageDelegate?.onDraw(canvas)
