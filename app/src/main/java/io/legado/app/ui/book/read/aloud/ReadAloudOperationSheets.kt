@@ -100,6 +100,7 @@ import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
@@ -1218,6 +1219,7 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
                     searchHint = "搜索引擎或发音人",
                     emptyText = "没有可选发音人",
                     state = state,
+                    contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
                     enableLongPressPreview = true,
                     onSelect = ::selectVoice,
                     onPreview = { previewController?.preview(it.engine, it.voice, it.systemDefault) },

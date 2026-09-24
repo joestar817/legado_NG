@@ -64,6 +64,7 @@ import io.legado.app.R
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
+import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
 import io.legado.app.ui.design.components.compose.NgLazyListFastScrollerVariant
@@ -399,7 +400,7 @@ private fun TtsVoiceFilterPanel(
             .fillMaxWidth()
             .padding(top = 6.dp, bottom = 8.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(Color(NgTheme.colors.inputContainer))
+            .background(ngDrawerContentCardColor())
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         TtsVoiceSearchField(query, onQueryChange, searchHint)
@@ -504,7 +505,7 @@ private fun TtsVoiceSelectionCard(
             .fillMaxWidth()
             .heightIn(min = 70.dp)
             .clip(shape)
-            .background(Color(NgTheme.colors.inputContainer))
+            .background(ngDrawerContentCardColor())
             .then(cardClickModifier),
     ) {
         Row(
