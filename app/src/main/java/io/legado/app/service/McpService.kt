@@ -53,7 +53,8 @@ class McpService : BaseService() {
     }
 
     private var mcpHttpServer: McpHttpServer? = null
-    private var notificationList = mutableListOf(appCtx.getString(R.string.service_starting))
+    @Volatile
+    private var notificationText = appCtx.getString(R.string.service_starting)
     private val networkChangedListener by lazy {
         NetworkChangedListener(this)
     }
@@ -116,19 +117,20 @@ class McpService : BaseService() {
 
     private fun updateHostAddress() {
         val addressList = NetworkUtils.getLocalIPAddress()
-        notificationList.clear()
-        if (addressList.any()) {
-            notificationList.addAll(addressList.map { address ->
+        val messages = if (addressList.any()) {
+            addressList.map { address ->
                 getString(
                     R.string.mcp_service_url_format,
                     getString(R.string.http_ip, address.hostAddress, getPort())
                 )
-            })
-            hostAddress = notificationList.first()
+            }
         } else {
-            hostAddress = getString(R.string.network_connection_unavailable)
-            notificationList.add(hostAddress)
+            listOf(getString(R.string.network_connection_unavailable))
         }
+        hostAddress = messages.first()
+        // Network callbacks and service startup can run concurrently. Publish a
+        // complete immutable value instead of mutating a list another thread reads.
+        notificationText = messages.joinToString("\n")
     }
 
     private fun getPort(): Int {
@@ -146,7 +148,7 @@ class McpService : BaseService() {
             .setSmallIcon(R.drawable.ic_web_service_noti)
             .setOngoing(true)
             .setContentTitle(getString(R.string.mcp_service))
-            .setContentText(notificationList.joinToString("\n"))
+            .setContentText(notificationText)
             .setContentIntent(
                 servicePendingIntent<McpService>("copyHostAddress")
             )
