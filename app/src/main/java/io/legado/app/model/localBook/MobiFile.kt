@@ -28,8 +28,8 @@ class MobiFile(var book: Book) {
         private val doctypeDeclarationRegex = "<!DOCTYPE[^>]*>".toRegex()
 
         @Synchronized
-        private fun getMFile(book: Book): MobiFile {
-            if (mFile == null || mFile?.book?.bookUrl != book.bookUrl) {
+        private fun getMFile(book: Book, reload: Boolean = false): MobiFile {
+            if (reload || mFile == null || mFile?.book?.bookUrl != book.bookUrl) {
                 mFile = MobiFile(book)
                 return mFile!!
             }
@@ -60,7 +60,7 @@ class MobiFile(var book: Book) {
         @Synchronized
         override fun upCover(book: Book, force: Boolean): Boolean =
             extractBookCover(File(book.coverUrl?.takeIf { it.isNotBlank() } ?: LocalBook.getCoverPath(book)), force) {
-                getMFile(book).upBookCover(fastCheck = !force)
+                getMFile(book, reload = force).upBookCover(fastCheck = !force)
             }
 
         fun clear() {

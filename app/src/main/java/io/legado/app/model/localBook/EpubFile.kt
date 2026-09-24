@@ -37,8 +37,8 @@ class EpubFile(var book: Book) {
         private var eFile: EpubFile? = null
 
         @Synchronized
-        private fun getEFile(book: Book): EpubFile {
-            if (eFile == null || eFile?.book?.bookUrl != book.bookUrl) {
+        private fun getEFile(book: Book, reload: Boolean = false): EpubFile {
+            if (reload || eFile == null || eFile?.book?.bookUrl != book.bookUrl) {
                 eFile = EpubFile(book)
                 //对于Epub文件默认不启用替换
                 //io.legado.app.data.entities.Book getUseReplaceRule
@@ -81,7 +81,7 @@ class EpubFile(var book: Book) {
         @Synchronized
         override fun upCover(book: Book, force: Boolean): Boolean =
             extractBookCover(File(book.coverUrl?.takeIf { it.isNotBlank() } ?: LocalBook.getCoverPath(book)), force) {
-                getEFile(book).upBookCover(fastCheck = !force)
+                getEFile(book, reload = force).upBookCover(fastCheck = !force)
             }
 
         fun clear() {

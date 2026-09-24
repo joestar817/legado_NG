@@ -8,8 +8,11 @@ import java.io.File
 
 internal fun File.hasBookCover(): Boolean = isFile && length() > 0
 
+internal fun canExtractOriginalCover(book: Book): Boolean =
+    LocalBook.canExtractCover(book) && book.customCoverUrl.isNullOrBlank()
+
 internal fun needsCoverRebuild(book: Book, cover: File): Boolean =
-    LocalBook.canExtractCover(book) && book.customCoverUrl.isNullOrBlank() && !cover.hasBookCover()
+    canExtractOriginalCover(book) && !cover.hasBookCover()
 
 /** 已有缓存无需打开书籍；缺图时始终显式提取，不依赖解析器构造副作用。 */
 internal inline fun extractBookCover(cover: File, force: Boolean, extract: () -> Boolean): Boolean =

@@ -9,6 +9,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestBuilder
+import com.bumptech.glide.signature.ObjectKey
 import io.legado.app.utils.isAbsUrl
 import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.isDataUrl
@@ -31,7 +32,8 @@ object ImageLoader {
             path.isAbsUrl() -> Glide.with(context).load(path)
             path.isContentScheme() -> Glide.with(context).load(path.toUri())
             else -> kotlin.runCatching {
-                Glide.with(context).load(File(path))
+                val file = File(path)
+                Glide.with(context).load(file).withFileVersion(file)
             }.getOrElse {
                 Glide.with(context).load(path)
             }
@@ -47,7 +49,8 @@ object ImageLoader {
             path.isContentScheme() -> requestManager.load(path.toUri())
 
             else -> kotlin.runCatching {
-                requestManager.load(File(path))
+                val file = File(path)
+                requestManager.load(file).withFileVersion(file)
             }.getOrElse {
                 requestManager.load(path)
             }
@@ -62,7 +65,8 @@ object ImageLoader {
             path.isAbsUrl() -> requestManager.load(path)
             path.isContentScheme() -> requestManager.load(path.toUri())
             else -> kotlin.runCatching {
-                requestManager.load(File(path))
+                val file = File(path)
+                requestManager.load(file).withFileVersion(file)
             }.getOrElse {
                 requestManager.load(path)
             }
@@ -87,7 +91,8 @@ object ImageLoader {
     }
 
     fun load(context: Context, file: File?): RequestBuilder<Drawable> {
-        return Glide.with(context).load(file)
+        val request = Glide.with(context).load(file)
+        return if (file != null) request.withFileVersion(file) else request
     }
 
     fun load(context: Context, uri: Uri?): RequestBuilder<Drawable> {
@@ -105,5 +110,8 @@ object ImageLoader {
     fun load(context: Context, bytes: ByteArray?): RequestBuilder<Drawable> {
         return Glide.with(context).load(bytes)
     }
+
+    private fun <T> RequestBuilder<T>.withFileVersion(file: File): RequestBuilder<T> =
+        if (file.isFile) signature(ObjectKey(localImageFileVersion(file))) else this
 
 }

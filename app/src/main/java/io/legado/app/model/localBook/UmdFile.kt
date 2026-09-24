@@ -15,8 +15,8 @@ class UmdFile(var book: Book) {
         private var uFile: UmdFile? = null
 
         @Synchronized
-        private fun getUFile(book: Book): UmdFile {
-            if (uFile == null || uFile?.book?.bookUrl != book.bookUrl) {
+        private fun getUFile(book: Book, reload: Boolean = false): UmdFile {
+            if (reload || uFile == null || uFile?.book?.bookUrl != book.bookUrl) {
                 uFile = UmdFile(book)
                 return uFile!!
             }
@@ -51,7 +51,7 @@ class UmdFile(var book: Book) {
         @Synchronized
         override fun upCover(book: Book, force: Boolean): Boolean =
             extractBookCover(File(book.coverUrl?.takeIf { it.isNotBlank() } ?: LocalBook.getCoverPath(book)), force) {
-                getUFile(book).upBookCover(fastCheck = !force)
+                getUFile(book, reload = force).upBookCover(fastCheck = !force)
             }
     }
 

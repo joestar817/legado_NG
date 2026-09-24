@@ -25,6 +25,10 @@ import io.legado.app.help.book.isLocal
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.model.CacheBook
+import io.legado.app.model.localBook.LocalBook
+import io.legado.app.model.localBook.canExtractOriginalCover
+import io.legado.app.model.localBook.localBookCoverUpdates
+import io.legado.app.model.localBook.rebuildBookCovers
 import io.legado.app.service.ExportBookService
 import io.legado.app.ui.book.group.GroupManageDialog
 import io.legado.app.ui.book.info.BookInfoActivity
@@ -50,6 +54,7 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 /** 书架管理。页面宿主、列表、选择与拖排均使用 Compose。 */
@@ -65,6 +70,8 @@ class BookshelfManageActivity :
     private val groupList: ArrayList<BookGroup> = arrayListOf()
     private var isManualSort = false
     private var booksFlowJob: Job? = null
+    private var coverUpdateJob: Job? = null
+    private var coverUpdateSelection by mutableStateOf<List<Book>?>(null)
     private var topBarQuery by mutableStateOf("")
     private var topBarGroups by mutableStateOf<List<BookGroup>>(emptyList())
     private var topBarSelectedGroupId by mutableLongStateOf(BookGroup.IdAll)
@@ -135,6 +142,7 @@ class BookshelfManageActivity :
                     books = visibleBooks,
                     selectedBookUrls = selectedBookUrls,
                     cachedChapterCounts = cachedChapterCounts,
+                    coverUpdateSelection = coverUpdateSelection,
                     deleteDialogVisible = deleteDialogVisible,
                     deleteOriginal = deleteOriginal,
                     batchChangeSourceRunning = batchChangeSourceRunning,
@@ -159,6 +167,12 @@ class BookshelfManageActivity :
                     onSelectAll = ::selectAll,
                     onInvertSelection = ::invertSelection,
                     onDockAction = ::onDockAction,
+                    onDismissCoverUpdate = { coverUpdateSelection = null },
+                    onConfirmCoverUpdate = {
+                        val selected = coverUpdateSelection
+                        coverUpdateSelection = null
+                        if (selected != null) updateBookCovers(selected)
+                    },
                     onDeleteOriginalChange = { deleteOriginal = it },
                     onDismissDelete = { deleteDialogVisible = false },
                     onConfirmDelete = ::confirmDeleteSelection,
@@ -272,6 +286,13 @@ class BookshelfManageActivity :
                 cacheBook(book, 0, book.lastChapterIndex)
             }
 
+            BookshelfManageDockAction.UPDATE_COVER -> {
+                if (coverUpdateJob?.isActive == true) {
+                    toastOnUi(R.string.update_book_cover_running)
+                } else {
+                    coverUpdateSelection = selected
+                }
+            }
             BookshelfManageDockAction.EXPORT_CONTENT -> showExportSettings(selected)
             BookshelfManageDockAction.GROUP -> BookshelfBookGroupSheet(this, selected).show()
             BookshelfManageDockAction.EXPORT_SOURCE -> exportBookSources(selected)
@@ -299,6 +320,39 @@ class BookshelfManageActivity :
 
     private fun clearSelectedBookGroups(books: List<Book>) {
         viewModel.updateBook(*books.map { it.copy(group = 0L) }.toTypedArray())
+    }
+
+    private fun updateBookCovers(books: List<Book>) {
+        if (coverUpdateJob?.isActive == true) {
+            toastOnUi(R.string.update_book_cover_running)
+            return
+        }
+        val extractable = books.filter(::canExtractOriginalCover)
+        if (extractable.isEmpty()) {
+            toastOnUi(R.string.update_book_cover_no_local)
+            return
+        }
+        val ignored = books.size - extractable.size
+        toastOnUi(if (ignored > 0) {
+            getString(R.string.update_book_cover_start_ignored, extractable.size, ignored)
+        } else {
+            getString(R.string.update_book_cover_start, extractable.size)
+        })
+        coverUpdateJob = lifecycleScope.launch {
+            val result = withContext(IO) {
+                rebuildBookCovers(
+                    books = extractable,
+                    shouldExtract = ::canExtractOriginalCover,
+                    extract = { LocalBook.upCover(it, force = true) },
+                    onFailure = { book, error ->
+                        val reason = error?.localizedMessage ?: "书中无可提取封面或封面写入失败"
+                        AppLog.put("更新封面失败：${book.name}\n$reason", error)
+                    },
+                    onSuccess = { localBookCoverUpdates.notifyChanged(it.bookUrl) },
+                )
+            }
+            toastOnUi(getString(R.string.update_book_cover_done, result.success, result.failed))
+        }
     }
 
     private fun openBook(book: Book) {

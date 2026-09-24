@@ -31,8 +31,8 @@ class PdfFile(var book: Book) {
         const val PAGE_SIZE = 10
 
         @Synchronized
-        private fun getPFile(book: Book): PdfFile {
-            if (pFile == null || pFile?.book?.bookUrl != book.bookUrl) {
+        private fun getPFile(book: Book, reload: Boolean = false): PdfFile {
+            if (reload || pFile == null || pFile?.book?.bookUrl != book.bookUrl) {
                 pFile = PdfFile(book)
                 return pFile!!
             }
@@ -48,7 +48,7 @@ class PdfFile(var book: Book) {
         @Synchronized
         override fun upCover(book: Book, force: Boolean): Boolean =
             extractBookCover(File(book.coverUrl?.takeIf { it.isNotBlank() } ?: LocalBook.getCoverPath(book)), force) {
-                getPFile(book).upBookCover(fastCheck = !force)
+                getPFile(book, reload = force).upBookCover(fastCheck = !force)
             }
 
         @Synchronized

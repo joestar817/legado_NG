@@ -796,6 +796,15 @@
     <string name="clear_cache_success">成功清理缓存</string>
     <string name="book_cache">缓存</string>
     <string name="restore_cover_rebuild_done">封面重建完成：成功 %1$d 本，失败 %2$d 本</string>
+    <string name="update_book_cover">重新提取封面</string>
+    <string name="update_book_cover_no_local">所选书籍没有可提取的原书封面</string>
+    <string name="update_book_cover_running">正在提取封面，请稍候</string>
+    <string name="update_book_cover_start">正在提取 %1$d 本封面…</string>
+    <string name="update_book_cover_start_ignored">正在提取 %1$d 本封面，已跳过 %2$d 本</string>
+    <string name="update_book_cover_done">封面提取完成：成功 %1$d 本，失败 %2$d 本</string>
+    <string name="extract_book_cover_confirm">开始提取</string>
+    <string name="extract_book_cover_description">重新提取本地书籍的封面。\n自定义封面保留，不支持的书籍跳过。</string>
+    <string name="extract_book_cover_selection">可处理 %1$d 本，跳过 %2$d 本</string>
     <string name="book_cache_label">缓存：</string>
     <string name="book_cache_progress">%1$d/%2$d</string>
     <string name="action_save">保存</string>

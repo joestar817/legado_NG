@@ -9,12 +9,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +44,7 @@ import androidx.compose.ui.window.DialogProperties
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
+import io.legado.app.model.localBook.canExtractOriginalCover
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgButton
@@ -58,6 +63,7 @@ internal fun BookshelfManageScreen(
     books: List<Book>,
     selectedBookUrls: Set<String>,
     cachedChapterCounts: Map<String, Int>,
+    coverUpdateSelection: List<Book>?,
     deleteDialogVisible: Boolean,
     deleteOriginal: Boolean,
     batchChangeSourceRunning: Boolean,
@@ -75,6 +81,8 @@ internal fun BookshelfManageScreen(
     onSelectAll: () -> Unit,
     onInvertSelection: () -> Unit,
     onDockAction: (BookshelfManageDockAction) -> Unit,
+    onDismissCoverUpdate: () -> Unit,
+    onConfirmCoverUpdate: () -> Unit,
     onDeleteOriginalChange: (Boolean) -> Unit,
     onDismissDelete: () -> Unit,
     onConfirmDelete: () -> Unit,
@@ -181,6 +189,15 @@ internal fun BookshelfManageScreen(
         )
     }
 
+    coverUpdateSelection?.let { selection ->
+        val extractableCount = remember(selection) { selection.count(::canExtractOriginalCover) }
+        BookshelfCoverExtractionDialog(
+            extractableCount = extractableCount,
+            skippedCount = selection.size - extractableCount,
+            onDismiss = onDismissCoverUpdate,
+            onConfirm = onConfirmCoverUpdate,
+        )
+    }
     if (deleteDialogVisible) {
         BookshelfDeleteDialog(
             deleteOriginal = deleteOriginal,
@@ -201,6 +218,62 @@ internal fun BookshelfManageScreen(
             onDismiss = onDismissExportSuccess,
             onCopy = onCopyExportPath,
         )
+    }
+}
+
+@Composable
+private fun BookshelfCoverExtractionDialog(
+    extractableCount: Int,
+    skippedCount: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        NgDialog(
+            title = stringResource(R.string.update_book_cover),
+            modifier = Modifier.padding(horizontal = 20.dp).widthIn(max = 520.dp),
+            variant = NgDialogVariant.CONFIRMATION,
+            actions = {
+                NgButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.width(80.dp).height(36.dp),
+                    variant = NgButtonVariant.OUTLINE,
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Text(stringResource(R.string.cancel), fontSize = 14.sp, lineHeight = 20.sp)
+                }
+                NgButton(
+                    onClick = onConfirm,
+                    enabled = extractableCount > 0,
+                    modifier = Modifier.height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                ) {
+                    Text(stringResource(R.string.extract_book_cover_confirm), fontSize = 14.sp, lineHeight = 20.sp)
+                }
+            },
+        ) {
+            Column(
+                modifier = Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.extract_book_cover_description),
+                    color = Color(NgTheme.colors.onSurface),
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                )
+                Text(
+                    text = stringResource(R.string.extract_book_cover_selection, extractableCount, skippedCount),
+                    color = Color(NgTheme.colors.onSurface),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
     }
 }
 
