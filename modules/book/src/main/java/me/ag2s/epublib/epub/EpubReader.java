@@ -121,6 +121,10 @@ public class EpubReader {
         handleMimeType(result, resources);
         String packageResourceHref = getPackageResourceHref(resources);
         Resource packageResource = processPackageResource(packageResourceHref, result, resources);
+        if (packageResource == null) {
+            //zip中找不到OPF包文档,不是有效的epub文件
+            throw new IllegalArgumentException("不是有效的EPUB文件(缺少OPF文档)");
+        }
         result.setOpfResource(packageResource);
         Resource ncxResource = processNcxResource(packageResource, result);
         result.setNcxResource(ncxResource);

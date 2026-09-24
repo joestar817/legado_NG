@@ -180,9 +180,12 @@ public class NCXDocumentV2 {
         Element navLabel = DOMUtil
                 .getFirstElementByTagNameNS(navpointElement, NAMESPACE_NCX,
                         NCXTags.navLabel);
-        assert navLabel != null;
-        return DOMUtil.getTextChildrenContent(DOMUtil
-                .getFirstElementByTagNameNS(navLabel, NAMESPACE_NCX, NCXTags.text));
+        if (navLabel == null) {
+            return "";
+        }
+        Element textElement = DOMUtil
+                .getFirstElementByTagNameNS(navLabel, NAMESPACE_NCX, NCXTags.text);
+        return textElement == null ? "" : DOMUtil.getTextChildrenContent(textElement);
     }
 
     @SuppressWarnings("unused")
