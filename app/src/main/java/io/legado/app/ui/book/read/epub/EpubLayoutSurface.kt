@@ -7,9 +7,12 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.net.http.SslError
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.HttpAuthHandler
 import android.webkit.PermissionRequest
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -54,6 +57,11 @@ internal class EpubLayoutSurface(
     private var container = false
     private val api get() = if (container) "window.__ngEpubContainer" else "window.__ngEpub"
     private var closed = false
+    private var failed = false
+    var rendererTerminated = false
+        private set
+    private val main = Handler(Looper.getMainLooper())
+    private val watchdog = EpubRenderWatchdog({ task, delay -> main.postDelayed(task, delay); Unit }, main::removeCallbacks)
     private var revision = 0L
     private var loaded = false
     private var optionsReady = false
@@ -103,6 +111,14 @@ internal class EpubLayoutSurface(
             override fun onPermissionRequest(request: PermissionRequest) = request.deny()
         }
         webView.webViewClient = object : WebViewClient() {
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                val notify = !closed
+                rendererTerminated = true
+                close()
+                if (notify) onError("EPUB 渲染进程已退出")
+                return true
+            }
+
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
                 val response = gateway.serve(request.url.toString(), request.method, request.isForMainFrame, request.requestHeaders)
                 val encoding = if (response.headers["Content-Type"]?.contains("charset=utf-8") == true) "UTF-8" else null
@@ -118,14 +134,15 @@ internal class EpubLayoutSurface(
             override fun onReceivedHttpAuthRequest(view: WebView, handler: HttpAuthHandler, host: String, realm: String) = handler.cancel()
 
             override fun onPageFinished(view: WebView, url: String) {
-                if (closed || url != loadUrl || loaded) return
+                if (closed || failed || url != loadUrl || loaded) return
                 startup?.mark("load-ready")
                 loaded = true
+                watchdog.cancel()
                 configure()
             }
 
             override fun onPageCommitVisible(view: WebView, url: String) {
-                if (closed || url != loadUrl || loaded) return
+                if (closed || failed || url != loadUrl || loaded) return
                 startup?.mark("page-commit")
                 val readyDeadline = SystemClock.uptimeMillis() + 25_000
                 // DOM and stylesheets are enough to select the viewport. The reader's
@@ -134,14 +151,19 @@ internal class EpubLayoutSurface(
                     override fun run() {
                         if (closed || url != loadUrl || loaded) return
                         if (SystemClock.uptimeMillis() >= readyDeadline) {
-                            onError("EPUB 文档就绪超时")
+                            fail("EPUB 文档就绪超时")
                             return
                         }
                         view.evaluateJavascript("location.href === ${JSONObject.quote(url)} && " +
                             "document.readyState !== 'loading' && [].slice.call(document.querySelectorAll('link[rel~=stylesheet]')).every(" +
                             "function(e) { return e.disabled || (e.media && !matchMedia(e.media).matches) || e.sheet != null; })") { ready ->
                             if (closed || url != loadUrl || loaded) return@evaluateJavascript
-                            if (ready == "true") { startup?.mark("dom-css-ready"); loaded = true; configure() }
+                            if (ready == "true") {
+                                startup?.mark("dom-css-ready")
+                                loaded = true
+                                watchdog.cancel()
+                                configure()
+                            }
                             else view.postDelayed(this, 16)
                         }
                     }
@@ -170,11 +192,13 @@ internal class EpubLayoutSurface(
         startup = EpubStartupTiming("visible")
         loadUrl = gateway.prepareDocument(location.copy(query = "ng-load=" + revision, fragment = null))
         startup?.mark("stage-navigate")
+        watchdog.arm { fail("EPUB 文档就绪超时") }
         webView.loadUrl(loadUrl!!)
     }
 
     fun open(location: EpubResourceLink, value: JSONObject) {
         if (closed) return
+        failed = false
         val useContainer = !value.isNull("containerMode")
         if (useContainer) onViewportRequired?.invoke(true)
         if (useContainer != container) { loaded = false; container = useContainer }
@@ -198,6 +222,7 @@ internal class EpubLayoutSurface(
             startup = EpubStartupTiming(if (onViewportRequired != null) "visible" else "preparation")
             loadUrl = if (container) gateway.prepareContainer() + "?ng-load=" + revision else gateway.prepareDocument(target)
             startup?.mark("navigate")
+            watchdog.arm { fail("EPUB 文档就绪超时") }
             webView.loadUrl(loadUrl!!)
         }
     }
@@ -270,7 +295,7 @@ internal class EpubLayoutSurface(
     fun refreshViewport() { if (loaded) configure() }
 
     private fun configure() {
-        if (closed || !loaded || !optionsReady || width == 0 || height == 0) return
+        if (closed || failed || !loaded || !optionsReady || width == 0 || height == 0) return
         // A requested viewport resize must reach layout before starting pagination.
         if (layoutParams?.let { it.width > 0 && it.width != width || it.height > 0 && it.height != height } == true) return
         val token = begin()
@@ -291,7 +316,7 @@ internal class EpubLayoutSurface(
         webView.evaluateJavascript(EpubWebViewCapabilities.CHECK) { supported ->
             if (closed || revision.toString() != token) return@evaluateJavascript
             if (supported != "true") {
-                onError("系统 WebView 过旧，请更新后重新打开本书")
+                fail("系统 WebView 过旧，请更新后重新打开本书")
                 return@evaluateJavascript
             }
             webView.evaluateJavascript(runtime, null)
@@ -369,6 +394,7 @@ internal class EpubLayoutSurface(
         val token = revision
         val task = Runnable {
             if (closed || token != revision) return@Runnable
+            watchdog.arm { fail("EPUB 排版超时") }
             val amount = scrollDelta
             scrollDelta = 0f
             val request = ++scrollRevision
@@ -389,13 +415,13 @@ internal class EpubLayoutSurface(
                 report?.optString("token") == token.toString() && report.optString("status") == "error" -> {
                     scrollTask = null
                     scrollDelta = 0f
-                    onError(report.optString("error"))
+                    fail(report.optString("error"))
                 }
                 report?.optString("token") == token.toString() && report.optString("status") == "ready" && !report.optBoolean("busy") -> {
                     scrollTask = null
                     val count = report.optInt("pageCount")
                     val index = report.optInt("pageIndex", -1)
-                    if (count !in 1..100_000 || index !in 0 until count) onError("EPUB 返回了无效的分页结果")
+                    if (count !in 1..100_000 || index !in 0 until count) fail("EPUB 返回了无效的分页结果")
                     else publishState(report)
                     // Keep only one geometry query in flight. Incoming drag/auto-scroll
                     // deltas accumulate until its position has reached the native owner.
@@ -404,7 +430,7 @@ internal class EpubLayoutSurface(
                 SystemClock.uptimeMillis() >= until -> {
                     scrollTask = null
                     scrollDelta = 0f
-                    onError("EPUB 排版超时")
+                    fail("EPUB 排版超时")
                 }
                 else -> webView.postOnAnimation { readScrolledState(token, request, until) }
             }
@@ -444,10 +470,20 @@ internal class EpubLayoutSurface(
         cancelPending()
         state = null
         deadline = SystemClock.uptimeMillis() + 25_000
+        watchdog.arm { fail("EPUB 排版超时") }
         return revision.toString()
     }
 
+    private fun fail(message: String) {
+        if (closed || failed) return
+        failed = true
+        state = null
+        cancelPending()
+        onError(message)
+    }
+
     private fun publishState(report: JSONObject) {
+        watchdog.cancel()
         startup?.mark("publish")
         startup = null
         // Clip only the document layer, leaving the existing native information bars visible.
@@ -468,6 +504,7 @@ internal class EpubLayoutSurface(
     }
 
     private fun cancelPending() {
+        watchdog.cancel()
         documentReadyPoll?.let(webView::removeCallbacks)
         documentReadyPoll = null
         revision++
@@ -489,13 +526,13 @@ internal class EpubLayoutSurface(
                     report?.optString("token") == token && report.optString("status") == "viewport" && onViewportRequired != null ->
                         onViewportRequired?.invoke(report.optBoolean("fullViewport"))
                     report?.optString("token") == token && report.optString("status") == "error" ->
-                        onError(report.optString("error"))
+                        fail(report.optString("error"))
                     report?.optString("token") == token && report.optString("status") == "ready" -> {
                         startup?.mark("layout-ready")
                         val count = report.optInt("pageCount")
                         val index = report.optInt("pageIndex", -1)
                         if (count !in 1..100_000 || index !in 0 until count) {
-                            onError("EPUB 返回了无效的分页结果")
+                            fail("EPUB 返回了无效的分页结果")
                             return@evaluateJavascript
                         }
                         val ready = {
@@ -522,7 +559,7 @@ internal class EpubLayoutSurface(
                             }
                         }
                     }
-                    SystemClock.uptimeMillis() >= deadline -> onError("EPUB 排版超时")
+                    SystemClock.uptimeMillis() >= deadline -> fail("EPUB 排版超时")
                     else -> poll?.let { webView.postDelayed(it, 32) }
                 }
             }
@@ -543,7 +580,7 @@ internal class EpubLayoutSurface(
         if (closed) return
         closed = true
         cancelPending()
-        webView.stopLoading()
+        if (!rendererTerminated) webView.stopLoading()
         webView.setOnTouchListener(null)
         removeView(webView)
         webView.destroy()

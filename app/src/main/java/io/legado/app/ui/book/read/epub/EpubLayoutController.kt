@@ -120,6 +120,8 @@ internal class EpubLayoutController(
     private var linkRequest = 0L
     private var pendingChapterLink: Pair<Int, EpubResourceLink>? = null
     private var loading = false
+    private var renderFailed = false
+    private var rendererRecoveryUsed = false
     @Volatile private var closed = false
     private var downX = 0f
     private var downY = 0f
@@ -138,6 +140,7 @@ internal class EpubLayoutController(
     private val pendingTurns = java.util.ArrayDeque<Int>()
     private val pendingInteractions = java.util.ArrayDeque<() -> Unit>()
     private val warmTask = Runnable { warmFrames() }
+    private val warmWatchdog = EpubRenderWatchdog({ task, delay -> host.postDelayed(task, delay); Unit }, host::removeCallbacks)
     var active = false
         private set
 
@@ -149,6 +152,15 @@ internal class EpubLayoutController(
             return
         }
         boundBook = book
+        // Completion notifications of a failed revision must not start a retry loop.
+        if (renderFailed && bookUrl == book.bookUrl) {
+            if (value === textChapter && position() == requestedPosition) return
+            chapter = value?.chapter
+            textChapter = value
+            retryRendering()
+            return
+        }
+        renderFailed = false
         if (value != null && pendingSearchSelection?.chapter !== value) pendingSearchSelection = null
         active = true
         // Progress repaints of this same chapter must not seek back while a
@@ -207,7 +219,7 @@ internal class EpubLayoutController(
                 } catch (error: Exception) {
                     if (!closed && mine == generation) {
                         loading = false
-                        reportError(error.localizedMessage ?: "EPUB 打开失败")
+                        failRendering(error.localizedMessage ?: "EPUB 打开失败")
                     }
                 } finally {
                     withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { opened?.close() }
@@ -288,9 +300,13 @@ internal class EpubLayoutController(
                 host.post { continueTurns() }
                 if (pendingHighlightUpdate) host.post { refreshHighlightRules() }
             }
-        val next = openingPreview()?.take(bookUrl, publication)?.also {
-            it.adopt(onReady, reportError, requestViewport)
-        } ?: EpubLayoutSurface(host.context, publication, onReady, reportError, requestViewport)
+        lateinit var next: EpubLayoutSurface
+        val onFailure: (String) -> Unit = { message ->
+            if (surface === next) failRendering(message, next.rendererTerminated)
+        }
+        next = openingPreview()?.take(bookUrl, publication)?.also {
+            it.adopt(onReady, onFailure, requestViewport)
+        } ?: EpubLayoutSurface(host.context, publication, onReady, onFailure, requestViewport)
         surface = next
         next.readerFont(readerFontBytes)
         next.titleFont(titleFontBytes)
@@ -417,6 +433,15 @@ internal class EpubLayoutController(
     }
 
     fun touch(event: MotionEvent): Boolean {
+        if (renderFailed) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) { downX = event.x; downY = event.y }
+            if (event.actionMasked == MotionEvent.ACTION_UP &&
+                kotlin.math.abs(event.x - downX) < ViewConfiguration.get(host.context).scaledTouchSlop &&
+                kotlin.math.abs(event.y - downY) < ViewConfiguration.get(host.context).scaledTouchSlop) {
+                blankTap(event.x, event.y)
+            }
+            return true
+        }
         if ((loading || preparedContent == null) && chapterTurnTarget == null) return true
         val view = surface ?: return true
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -435,8 +460,49 @@ internal class EpubLayoutController(
     }
 
     fun containsVisibleDocument(x: Float, y: Float): Boolean {
+        if (renderFailed) return true
         val view = surface ?: return false
         return view.clipBounds?.contains((x - view.left).toInt(), (y - view.top).toInt()) ?: true
+    }
+
+    private fun failRendering(message: String, rendererGone: Boolean = false) {
+        if (closed || renderFailed) return
+        renderFailed = true
+        loading = false
+        contentGeneration++
+        highlightRevision++
+        pendingReadAloud = null
+        speechFollowPosition = null
+        speechFollowRevision++
+        cancelTurn()
+        clearSelection()
+        gestures?.cancel()
+        gestures = null
+        surface?.let { host.removeView(it); it.close() }
+        surface = null
+        // The native reader owns the last confirmed location, including cross-chapter moves.
+        requestedPosition = position()
+        openAtEnd = false
+        if (rendererGone && !rendererRecoveryUsed) {
+            rendererRecoveryUsed = true
+            val mine = generation
+            host.post {
+                if (!closed && mine == generation && renderFailed) retryRendering()
+            }
+        } else reportError(message)
+    }
+
+    private fun retryRendering() {
+        if (closed || !renderFailed) return
+        val book = boundBook ?: return
+        val current = textChapter ?: return
+        renderFailed = false
+        preparedContent = null
+        requestedPosition = position()
+        if (snapshot == null) {
+            bookUrl = null
+            bind(book, current)
+        } else showChapter(book)
     }
 
     private fun showChapter(book: Book) {
@@ -458,7 +524,7 @@ internal class EpubLayoutController(
                 if (item != null && publication.layoutFor(item) != EpubLayout.FIXED) surface?.stage(document.location, document.html)
             }
         } catch (error: Exception) {
-            reportError(error.localizedMessage ?: "EPUB 打开失败")
+            failRendering(error.localizedMessage ?: "EPUB 打开失败")
             return
         }
         if (!current.isCompleted) return
@@ -529,8 +595,7 @@ internal class EpubLayoutController(
                 else openDocument(offset = requestedPosition)
             } catch (error: Exception) {
                 if (!closed && mine == contentGeneration) {
-                    cancelTurn()
-                    reportError(error.localizedMessage ?: "EPUB 章节解析失败")
+                    failRendering(error.localizedMessage ?: "EPUB 章节解析失败")
                 }
             } finally {
                 if (mine == contentGeneration) {
@@ -768,6 +833,7 @@ internal class EpubLayoutController(
     }
 
     fun jump(offset: Int) {
+        if (renderFailed) { retryRendering(); return }
         val content = preparedContent ?: return
         requestedPosition = offset
         cancelTurn()
@@ -1080,12 +1146,15 @@ internal class EpubLayoutController(
                 titleFontBytes = titleFont
                 surface?.readerFont(font)
                 surface?.titleFont(titleFont)
-                if (preparedContent != null && !loading) openDocument(offset = position())
+                if (renderFailed) retryRendering()
+                else if (preparedContent != null && !loading) openDocument(offset = position())
             }
-        } else if (preparedContent != null && !loading) openDocument(offset = position())
+        } else if (renderFailed) retryRendering()
+        else if (preparedContent != null && !loading) openDocument(offset = position())
     }
 
     private fun interactReady(value: JSONObject, callback: (JSONObject?) -> Unit) {
+        if (renderFailed) { callback(null); return }
         val view = surface ?: return
         val deliver: (JSONObject?) -> Unit = { result ->
             callback(result)
@@ -1116,6 +1185,7 @@ internal class EpubLayoutController(
         // Paint changes do not change document geometry. Let an in-flight warm
         // capture finish; its paint signature below prevents publishing old ink.
         if (keepPreparedDocument) return
+        warmWatchdog.cancel()
         frameEpoch++
         frameDocument = -1
         preparationWorking = false
@@ -1166,9 +1236,18 @@ internal class EpubLayoutController(
         val doc = documentIndex
         val paint = aloudPaintSignature
         preparationWorking = true
+        warmWatchdog.arm {
+            val requested = pendingTurns.isNotEmpty()
+            clearFrames()
+            if (requested) {
+                cancelTurn()
+                reportError("EPUB 翻页画面准备超时，请重试")
+            }
+        }
         current.captureOptions { captured ->
             if (closed || mine != frameEpoch) return@captureOptions
             if (captured == null) {
+                warmWatchdog.cancel()
                 preparationWorking = false
                 if (pendingTurns.isNotEmpty()) host.post { continueTurns() }
                 return@captureOptions
@@ -1181,6 +1260,7 @@ internal class EpubLayoutController(
             val prepared = preparer(current, chrome)
             prepared.capturePage(chrome, documents[doc].location, config) { frame ->
                 if (closed || mine != frameEpoch) { frame.close(); return@capturePage }
+                warmWatchdog.cancel()
                 preparationWorking = false
                 if (paint == aloudPaintSignature) frames.put(target, frame) else frame.close()
                 if (pendingTurns.isNotEmpty() && !turning) host.post { continueTurns() }
@@ -1202,6 +1282,7 @@ internal class EpubLayoutController(
         speechFollowRevision++
         speechFollowPosition = null
         if (closed) return
+        if (renderFailed) { retryRendering(); return }
         if (loading || preparedContent == null) {
             if (chapterTurnTarget != null) pendingTurns.addLast(direction)
             return
@@ -1427,6 +1508,8 @@ internal class EpubLayoutController(
     private fun css(px: Float) = px / host.resources.displayMetrics.density
 
     private fun releasePublication() {
+        renderFailed = false
+        rendererRecoveryUsed = false
         speechFollowPosition = null
         speechFollowRevision++
         pageTextRequest++

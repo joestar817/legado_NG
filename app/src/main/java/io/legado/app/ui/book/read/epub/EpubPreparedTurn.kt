@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
+import android.os.Handler
+import android.os.Looper
 import io.legado.app.model.epub.EpubPublicationSession
 import io.legado.app.model.epub.EpubResourceLink
 import org.json.JSONObject
@@ -21,10 +23,12 @@ internal class EpubPreparedTurn(
     displayWidth: Int,
     displayHeight: Int,
     private val viewport: Rect,
-    onError: (Throwable) -> Unit,
+    private val onError: (Throwable) -> Unit,
     private val setContent: (EpubLayoutSurface, EpubResourceLink, JSONObject) -> Unit,
 ) : Closeable {
     private var closed = false
+    private val main = Handler(Looper.getMainLooper())
+    private val watchdog = EpubRenderWatchdog({ task, delay -> main.postDelayed(task, delay); Unit }, main::removeCallbacks)
     private var surface: EpubLayoutSurface? = null
     private var captureHost: android.widget.FrameLayout? = null
     private val background = Bitmap.createBitmap(viewport.width(), viewport.height(), Bitmap.Config.ARGB_8888)
@@ -45,14 +49,14 @@ internal class EpubPreparedTurn(
                 host.background = BitmapDrawable(host.resources, background)
                 val view = EpubLayoutSurface(host.context, publication,
                     onReady = { captureReady() },
-                    onError = { onError(IllegalStateException(it)) },
+                    onError = { fail(IllegalStateException(it)) },
                 )
                 surface = view
                 host.addView(view, android.widget.FrameLayout.LayoutParams(-1, -1))
                 job?.let { show(it.beforeLocation, it.beforeOptions) }
             }
         },
-        onError = onError,
+        onError = ::fail,
     )
 
     fun prepare(
@@ -67,6 +71,7 @@ internal class EpubPreparedTurn(
         captureHost?.invalidate()
         phase = 0
         job = Job(beforeLocation, beforeOptions, afterLocation, afterOptions, callback)
+        watchJob()
         show(beforeLocation, beforeOptions)
     }
 
@@ -77,6 +82,7 @@ internal class EpubPreparedTurn(
         captureHost?.invalidate()
         phase = 0
         job = Job(location, options, location, options, null, callback)
+        watchJob()
         show(location, options)
     }
 
@@ -91,7 +97,18 @@ internal class EpubPreparedTurn(
         check(!closed && job == null)
         Canvas(background).drawBitmap(nativeFrame, -viewport.left.toFloat(), -viewport.top.toFloat(), null)
         job = Job(location, options, location, options, null, bounds = callback)
+        watchJob()
         show(location, options)
+    }
+
+    private fun watchJob() {
+        watchdog.arm { fail(IllegalStateException("EPUB 翻页画面准备超时")) }
+    }
+
+    private fun fail(error: Throwable) {
+        if (closed) return
+        close()
+        onError(error)
     }
 
     private fun captureReady() {
@@ -99,15 +116,16 @@ internal class EpubPreparedTurn(
         val current = job ?: return
         current.bounds?.let { callback ->
             surface?.interact(JSONObject().put("action", "pageBounds").put("index", current.beforeOptions.optInt("index"))) {
-                if (!closed && job === current) { job = null; callback(it) }
+                if (!closed && job === current) { watchdog.cancel(); job = null; callback(it) }
             }
             return
         }
         val clip = surface?.clipBounds?.let(::Rect)
         capture.capture { bitmap ->
-            if (closed) { bitmap.recycle(); return@capture }
+            if (closed || job !== current) { bitmap.recycle(); return@capture }
             val frame = EpubCapturedFrame(bitmap, clip)
             if (current.single != null) {
+                watchdog.cancel()
                 job = null
                 current.single.invoke(frame)
                 return@capture
@@ -120,6 +138,7 @@ internal class EpubPreparedTurn(
                 val first = before
                 before = null
                 phase = 2
+                watchdog.cancel()
                 job = null
                 if (first == null) frame.close() else current.callback?.invoke(first, frame)
             }
@@ -129,6 +148,7 @@ internal class EpubPreparedTurn(
     override fun close() {
         if (closed) return
         closed = true
+        watchdog.cancel()
         job = null
         surface?.close()
         surface = null

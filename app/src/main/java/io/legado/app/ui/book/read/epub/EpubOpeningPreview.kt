@@ -33,7 +33,11 @@ internal class EpubOpeningPreview(context: Context, owner: EpubOpeningPreparatio
                 if (publication.layoutFor(item) == EpubLayout.FIXED) return@launch
                 val timing = EpubStartupTiming("prefetch")
                 initial = value
-                val next = EpubLayoutSurface(context, value.session, {}, { failed = true })
+                val next = EpubLayoutSurface(context, value.session, {}, {
+                    failed = true
+                    surface?.close()
+                    surface = null
+                })
                 surface = next
                 timing.mark("surface-created")
                 next.stage(value.document.location, value.document.html)

@@ -239,6 +239,7 @@
                     if (result.reflow) {
                         var local = entry.api.state();
                         entry.length = local.scrolled ? local.scrollLength : extent;
+                        entry.scroll = local.scrolled ? local.scrollOffset : 0;
                         lengths.set(entry.index, entry.length);
                     }
                 }
