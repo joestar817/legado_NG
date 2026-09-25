@@ -6,7 +6,6 @@ import io.legado.app.help.book.EpubContentEntities
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 import org.jsoup.parser.Parser
 
@@ -72,16 +71,13 @@ internal class EpubSourceCapture {
                 media.add(EpubSourceMedia(id, element.attr("src").ifEmpty { element.attr("xlink:href") }))
             }
         }
-        fun visit(node: Node) {
-            if (node is Element && node.normalName() in setOf("head", "style", "script")) return
+        forEachEpubBodyNode(document.body()) { node ->
             if (node is TextNode) {
-                val parent = node.parent() as? Element ?: return
+                val parent = node.parent() as? Element ?: return@forEachEpubBodyNode
                 val ordinal = parent.textNodes().indexOf(node)
                 nodes.add(EpubSourceNode(parent.attr(ATTRIBUTE), ordinal, node.wholeText))
             }
-            node.childNodes().forEach(::visit)
         }
-        visit(document.body())
         drafts.add(Draft(href, document.clone(), nodes, media, sourceOccurrence))
         return media.firstOrNull()?.element
     }
@@ -104,8 +100,7 @@ internal class EpubSourceCapture {
         for (body in bodyHtml) {
             val parsed = Jsoup.parse(body, "", Parser.htmlParser().setTrackPosition(true))
             val cursors = HashMap<String, Int>()
-            fun visit(node: Node) {
-                if (node is Element && node.normalName() in setOf("head", "style", "script")) return
+            forEachEpubBodyNode(parsed.body()) { node ->
                 val element = if (node is Element) node else node.parent() as? Element
                 val id = element?.attr(ATTRIBUTE).orEmpty()
                 val doc = id.substringBefore('-').toIntOrNull()
@@ -159,9 +154,7 @@ internal class EpubSourceCapture {
                     if (range.isTracked) tokens.add(EpubSourceToken(base + range.start().pos(), base + range.end().pos(),
                         doc, id, "", null, emptyList()))
                 }
-                node.childNodes().forEach(::visit)
             }
-            visit(parsed.body())
             base += body.length + 1
         }
         if (markerEdits.isNotEmpty()) {

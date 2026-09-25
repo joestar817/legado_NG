@@ -4,7 +4,6 @@ import io.legado.app.help.book.ContentEdit
 import io.legado.app.help.book.ContentPositionMap
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 
 /**
@@ -54,10 +53,9 @@ internal class EpubContentProjection(
             val parsed = Jsoup.parse(document.html)
             val indices = document.nodes.withIndex().associate { (index, node) -> (node.element to node.ordinal) to index }
             val mediaIds = document.media.mapTo(HashSet()) { it.element }
-            fun visit(node: Node) {
-                if (node is Element && node.normalName() in setOf("head", "script", "style")) return
+            forEachEpubBodyNode(parsed.body()) { node ->
                 if (node is TextNode) {
-                    val parent = node.parent() as? Element ?: return
+                    val parent = node.parent() as? Element ?: return@forEachEpubBodyNode
                     val id = parent.attr(EpubSourceCapture.ATTRIBUTE)
                     val index = indices[id to parent.textNodes().indexOf(node)] ?: error("EPUB source text identity missing")
                     check(node.wholeText == document.nodes[index].text) { "EPUB source text changed while serializing" }
@@ -73,9 +71,7 @@ internal class EpubContentProjection(
                         mediaGlyphs[documentIndex to id] = it
                     }
                 }
-                node.childNodes().forEach(::visit)
             }
-            visit(parsed.body())
         }
         source.tokens.forEach { token ->
             if (token.media != null) {

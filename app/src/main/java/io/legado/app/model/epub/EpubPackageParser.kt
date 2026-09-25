@@ -131,7 +131,9 @@ internal class EpubPackageParser(private val limits: EpubArchiveLimits = EpubArc
             val location = if (isRemote(href)) null else EpubPaths.resolve(packagePath, href)
             if (location != null) {
                 if (location.fragment != null) fail("Manifest href cannot include a fragment")
-                if (location.path !in archive.entries) fail("Missing manifest resource: ${location.path}")
+                // A stale image/font declaration must not reject otherwise readable chapters.
+                // Required documents and actually requested assets are checked by openResource.
+                if (location.path !in archive.entries) warnings.add("Missing manifest resource: ${location.path}")
             }
             EpubManifestItem(
                 id = id,

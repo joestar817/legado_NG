@@ -78,6 +78,13 @@ class EpubSourceCaptureTest {
     }
 
     @Test
+    fun deeplyNestedHtmlKeepsContentAndCoordinatesWithoutRecursion() {
+        val source = capture("<body>" + "<div>".repeat(5000) +
+            "Visible text" + "</div>".repeat(5000) + "</body>")
+        assertTrue(source.content.contains("Visible text"))
+    }
+
+    @Test
     fun ordinaryHtmlKeepsExistingProjection() {
         capture("<body><p>甲<b>重复</b>乙 &amp; 丙</p><p>下一段<img src=\"a.jpg\"></p></body>")
     }
