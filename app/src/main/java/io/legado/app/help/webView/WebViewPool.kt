@@ -62,9 +62,6 @@ object WebViewPool {
         pooledWebView.realWebView.clearKnownJavascriptInterfaces()
         pooledWebView.upContext(context).apply {
             realWebView.settings.setDarkeningAllowed(AppConfig.isNightTheme) //设置是否夜间
-            if (inUsePool.isEmpty()) {
-                realWebView.resumeTimers()
-            }
             isInUse = true
         }
         inUsePool[pooledWebView.id] = pooledWebView
@@ -120,9 +117,8 @@ object WebViewPool {
                             loadWithOverviewMode = false // 恢复默认
                             textZoom = 100
                         }
-                        if (inUsePool.isEmpty()) {
-                            webview.pauseTimers()
-                        }
+                        // pauseTimers() affects every WebView in the process, including EPUB
+                        // surfaces outside this pool. Only pause the recycled instance.
                         webview.onPause()
                     }
                     pooledWebView.isInUse = false
