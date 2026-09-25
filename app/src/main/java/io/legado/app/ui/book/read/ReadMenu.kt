@@ -84,6 +84,7 @@ class ReadMenu @JvmOverloads constructor(
     private val binding = ViewReadMenuBinding.inflate(LayoutInflater.from(context), this, true)
     private var confirmSkipToChapter: Boolean = false
     private var isMenuOutAnimating = false
+    private var floatingMenuTopInset: Int? = null
     private var floatingToolExpansion by mutableStateOf<ReadFloatingToolExpansion?>(null)
     private var floatingBrightness by mutableIntStateOf(AppConfig.readBrightness)
     private var floatingBrightnessAutomatic by mutableStateOf(true)
@@ -443,24 +444,17 @@ class ReadMenu @JvmOverloads constructor(
     private fun initFloatingMenuInsets() = binding.run {
         updateFloatingMenuTopMargin()
         titleBarContainer.setOnApplyWindowInsetsListenerCompat { _, windowInsets ->
-            val statusBars = WindowInsetsCompat.Type.statusBars()
-            val visibleTopInset = if (windowInsets.isVisible(statusBars)) {
-                windowInsets.getInsets(statusBars).top
-            } else {
-                0
-            }
-            val fallbackInset = if (ReadBookConfig.hideStatusBar) {
-                0
-            } else {
-                context.statusBarHeight
-            }
-            updateFloatingMenuTopMargin(maxOf(visibleTopInset, fallbackInset))
+            floatingMenuTopInset = windowInsets.getInsets(
+                WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout()
+            ).top
+            updateFloatingMenuTopMargin()
             windowInsets
         }
     }
 
     private fun updateFloatingMenuTopMargin(
-        statusBarInset: Int = if (ReadBookConfig.hideStatusBar) 0 else context.statusBarHeight
+        statusBarInset: Int = floatingMenuTopInset
+            ?: if (ReadBookConfig.hideStatusBar) 0 else context.statusBarHeight
     ) {
         binding.titleBarContainer.updateLayoutParams<ConstraintLayout.LayoutParams> {
             topMargin = statusBarInset + 4.dpToPx()
