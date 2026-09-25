@@ -10,6 +10,8 @@ import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
+import io.legado.app.R
 import io.legado.app.base.BaseActivity
 import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.data.appDb
@@ -21,8 +23,10 @@ import io.legado.app.utils.cnCompare
 import io.legado.app.utils.getInt
 import io.legado.app.utils.putInt
 import io.legado.app.utils.startActivityForBook
+import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -40,10 +44,11 @@ class ReadRecordActivity : BaseActivity<ComposeActivityBinding>() {
         referentialEqualityPolicy(),
     )
     private var totalReadTime by mutableLongStateOf(0L)
+    private var recordCount by mutableIntStateOf(0)
     private var query by mutableStateOf("")
     private var searchExpanded by mutableStateOf(false)
     private var recordEnabled by mutableStateOf(AppConfig.enableReadRecord)
-    private var deleteTarget by mutableStateOf<ReadRecordUiItem?>(null)
+    private var deleting by mutableStateOf(false)
     private var clearAllDialogVisible by mutableStateOf(false)
     private var loadJob: Job? = null
     private var sortMode by mutableIntStateOf(LocalConfig.getInt(READ_RECORD_SORT_KEY))
@@ -64,11 +69,12 @@ class ReadRecordActivity : BaseActivity<ComposeActivityBinding>() {
                 ReadRecordScreen(
                     items = items,
                     totalReadTime = formatDuring(totalReadTime),
+                    recordCount = recordCount,
                     query = query,
                     searchExpanded = searchExpanded,
                     sortMode = sortMode,
                     recordEnabled = recordEnabled,
-                    deleteTarget = deleteTarget,
+                    deleting = deleting,
                     clearAllDialogVisible = clearAllDialogVisible,
                     onBack = { onBackPressedDispatcher.onBackPressed() },
                     onSearchExpandedChange = { expanded ->
@@ -84,9 +90,7 @@ class ReadRecordActivity : BaseActivity<ComposeActivityBinding>() {
                     onClearAllDismiss = { clearAllDialogVisible = false },
                     onClearAllConfirm = ::clearAll,
                     onItemClick = ::openItem,
-                    onDeleteRequest = { deleteTarget = it },
-                    onDeleteDismiss = { deleteTarget = null },
-                    onDeleteConfirm = ::deleteItem,
+                    onDeleteConfirm = ::deleteItems,
                 )
             }
         }
@@ -118,7 +122,10 @@ class ReadRecordActivity : BaseActivity<ComposeActivityBinding>() {
         val currentSort = sortMode
         loadJob = lifecycleScope.launch {
             val result = withContext(IO) {
-                val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val dateFormat = SimpleDateFormat("MM-dd", Locale.getDefault())
+                val fullDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val currentYear = SimpleDateFormat("yyyy", Locale.getDefault())
+                val thisYear = currentYear.format(System.currentTimeMillis())
                 val records = appDb.readRecordDao.search(searchKey).let { records ->
                     when (currentSort) {
                         SORT_READING_DURATION -> records.sortedByDescending { it.readTime }
@@ -133,23 +140,29 @@ class ReadRecordActivity : BaseActivity<ComposeActivityBinding>() {
                 } else {
                     appDb.bookDao.findByName(*records.map { it.bookName }.toTypedArray())
                         .groupBy { it.name }
-                        .mapValues { (_, books) -> books.first() }
                 }
                 records.map { record ->
                     ReadRecordUiItem(
                         record = record,
-                        book = booksByName[record.bookName],
+                        book = booksByName[record.bookName]?.firstOrNull(),
+                        // Records are grouped by title; only show an author for an unambiguous match.
+                        author = booksByName[record.bookName]?.singleOrNull()?.author.orEmpty(),
                         durationText = formatDuring(record.readTime),
                         lastReadText = if (record.lastRead > 0) {
-                            dateFormat.format(record.lastRead)
+                            if (currentYear.format(record.lastRead) == thisYear) {
+                                dateFormat.format(record.lastRead)
+                            } else {
+                                fullDateFormat.format(record.lastRead)
+                            }
                         } else {
                             ""
                         },
                     )
-                } to appDb.readRecordDao.allTime
+                }.let { Triple(it, appDb.readRecordDao.allTime, appDb.readRecordDao.recordCount) }
             }
             items = result.first
             totalReadTime = result.second
+            recordCount = result.third
         }
     }
 
@@ -174,11 +187,26 @@ class ReadRecordActivity : BaseActivity<ComposeActivityBinding>() {
         }
     }
 
-    private fun deleteItem(item: ReadRecordUiItem) {
-        deleteTarget = null
+    private fun deleteItems(bookNames: List<String>, onComplete: () -> Unit) {
+        if (deleting || bookNames.isEmpty()) return
+        deleting = true
         lifecycleScope.launch {
-            withContext(IO) { appDb.readRecordDao.deleteByName(item.record.bookName) }
-            loadData()
+            try {
+                withContext(IO) {
+                    appDb.withTransaction {
+                        // Keep one atomic operation while respecting SQLite's bind limit.
+                        bookNames.distinct().chunked(900).forEach(appDb.readRecordDao::deleteByNames)
+                    }
+                }
+                onComplete()
+                loadData()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                toastOnUi(e.localizedMessage ?: getString(R.string.read_record_delete_failed))
+            } finally {
+                deleting = false
+            }
         }
     }
 

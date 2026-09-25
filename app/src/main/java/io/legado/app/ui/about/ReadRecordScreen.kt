@@ -2,11 +2,13 @@ package io.legado.app.ui.about
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,31 +19,34 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -65,29 +70,30 @@ import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingTitleToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
+import io.legado.app.ui.design.components.compose.NgFileSelectionCheckbox
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.theme.NgTheme
-import kotlin.math.cos
-import kotlin.math.sin
 
 internal data class ReadRecordUiItem(
     val record: ReadRecordShow,
     val book: Book?,
     val durationText: String,
     val lastReadText: String,
+    val author: String = "",
 )
 
 @Composable
 internal fun ReadRecordScreen(
     items: List<ReadRecordUiItem>,
     totalReadTime: String,
+    recordCount: Int,
     query: String,
     searchExpanded: Boolean,
     sortMode: Int,
     recordEnabled: Boolean,
-    deleteTarget: ReadRecordUiItem?,
+    deleting: Boolean,
     clearAllDialogVisible: Boolean,
     onBack: () -> Unit,
     onSearchExpandedChange: (Boolean) -> Unit,
@@ -98,30 +104,65 @@ internal fun ReadRecordScreen(
     onClearAllDismiss: () -> Unit,
     onClearAllConfirm: () -> Unit,
     onItemClick: (ReadRecordUiItem) -> Unit,
-    onDeleteRequest: (ReadRecordUiItem) -> Unit,
-    onDeleteDismiss: () -> Unit,
-    onDeleteConfirm: (ReadRecordUiItem) -> Unit,
+    onDeleteConfirm: (List<String>, () -> Unit) -> Unit,
 ) {
+    var managing by rememberSaveable { mutableStateOf(false) }
+    // Filtering starts a fresh selection; sorting preserves selection by record identity.
+    var selectedNames by rememberSaveable(query) { mutableStateOf(arrayListOf<String>()) }
+    var deleteNames by rememberSaveable { mutableStateOf<ArrayList<String>?>(null) }
+    val visibleSelection = remember(items, selectedNames) {
+        val visibleNames = items.mapTo(hashSetOf()) { it.record.bookName }
+        selectedNames.filterTo(linkedSetOf()) { it in visibleNames }
+    }
+    LaunchedEffect(items) {
+        // The first frame after recreation is empty while the Activity reloads records.
+        if (items.isNotEmpty()) {
+            val visibleNames = items.mapTo(hashSetOf()) { it.record.bookName }
+            selectedNames = ArrayList(selectedNames.filter { it in visibleNames })
+        }
+    }
+    val exitManagement = {
+        managing = false
+        selectedNames = arrayListOf()
+    }
+    BackHandler(enabled = managing && deleteNames == null) { exitManagement() }
     Column(modifier = Modifier.fillMaxSize()) {
         ReadRecordTopBar(
             query = query,
             searchExpanded = searchExpanded,
             sortMode = sortMode,
             recordEnabled = recordEnabled,
-            onBack = onBack,
+            onBack = { if (managing) exitManagement() else onBack() },
             onSearchExpandedChange = onSearchExpandedChange,
             onQueryChange = onQueryChange,
             onSortChange = onSortChange,
             onRecordEnabledChange = onRecordEnabledChange,
-            onClearAllRequest = onClearAllRequest,
+            onClearAllRequest = {
+                exitManagement()
+                onClearAllRequest()
+            },
             modifier = Modifier.padding(horizontal = 16.dp),
         )
         ReadRecordPanel(
             items = items,
             totalReadTime = totalReadTime,
+            recordCount = recordCount,
             recordEnabled = recordEnabled,
+            managing = managing,
+            selectedNames = visibleSelection,
+            onManageClick = { if (managing) exitManagement() else managing = true },
+            onToggleSelection = { name ->
+                selectedNames = ArrayList(
+                    if (name in selectedNames) selectedNames - name else selectedNames + name,
+                )
+            },
+            onSelectAll = {
+                val visibleNames = items.map { it.record.bookName }
+                selectedNames = if (selectedNames.containsAll(visibleNames)) arrayListOf()
+                else ArrayList(visibleNames)
+            },
             onItemClick = onItemClick,
-            onDeleteRequest = onDeleteRequest,
+            onDeleteRequest = { deleteNames = ArrayList(visibleSelection) },
             modifier = Modifier
                 .weight(1f)
                 .navigationBarsPadding()
@@ -136,11 +177,17 @@ internal fun ReadRecordScreen(
             onConfirm = onClearAllConfirm,
         )
     }
-    deleteTarget?.let { item ->
+    deleteNames?.let { names ->
         ReadRecordConfirmationDialog(
-            message = stringResource(R.string.sure_del_any, item.record.bookName),
-            onDismiss = onDeleteDismiss,
-            onConfirm = { onDeleteConfirm(item) },
+            message = stringResource(R.string.read_record_delete_selected_confirm, names.size),
+            busy = deleting,
+            onDismiss = { if (!deleting) deleteNames = null },
+            onConfirm = {
+                onDeleteConfirm(names) {
+                    deleteNames = null
+                    exitManagement()
+                }
+            },
         )
     }
 }
@@ -293,46 +340,126 @@ private fun ReadRecordMoreMenu(
 private fun ReadRecordPanel(
     items: List<ReadRecordUiItem>,
     totalReadTime: String,
+    recordCount: Int,
     recordEnabled: Boolean,
+    managing: Boolean,
+    selectedNames: Set<String>,
+    onManageClick: () -> Unit,
+    onToggleSelection: (String) -> Unit,
+    onSelectAll: () -> Unit,
     onItemClick: (ReadRecordUiItem) -> Unit,
-    onDeleteRequest: (ReadRecordUiItem) -> Unit,
+    onDeleteRequest: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    NgVisualSurface(
-        modifier = modifier.fillMaxWidth(),
-        role = NgMaterialRole.CONTENT,
-        cornerRadius = NgTheme.shapes.mediumDp.dp,
-        style = NgGlassDefaults.neutralStyle(),
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            ReadRecordSummary(
-                totalReadTime = totalReadTime,
-                recordCount = items.size,
-                recordEnabled = recordEnabled,
-            )
-            HorizontalDivider(
-                color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.28f),
-                thickness = 0.6.dp,
-            )
-            if (items.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
+    Column(modifier = modifier.fillMaxWidth()) {
+        NgVisualSurface(
+            modifier = Modifier.fillMaxWidth(),
+            role = NgMaterialRole.CONTENT,
+            cornerRadius = NgTheme.shapes.mediumDp.dp,
+            style = NgGlassDefaults.neutralStyle(),
+        ) {
+            ReadRecordSummary(totalReadTime, recordCount, recordEnabled)
+        }
+        Spacer(Modifier.height(12.dp))
+        NgVisualSurface(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            role = NgMaterialRole.CONTENT,
+            cornerRadius = NgTheme.shapes.mediumDp.dp,
+            style = NgGlassDefaults.neutralStyle(),
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = stringResource(R.string.read_record_empty),
-                        color = Color(NgTheme.colors.onSurfaceVariant),
-                        fontSize = 14.sp,
+                        text = if (managing) {
+                            stringResource(R.string.read_record_selected_count, selectedNames.size)
+                        } else stringResource(R.string.read_record_all),
+                        modifier = Modifier.weight(1f),
+                        color = Color(NgTheme.colors.onSurface),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
                     )
-                }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(items, key = { it.record.bookName }) { item ->
-                        ReadRecordRow(
-                            item = item,
-                            onClick = { onItemClick(item) },
-                            onDelete = { onDeleteRequest(item) },
+                    TextButton(onClick = onManageClick) {
+                        Text(
+                            stringResource(if (managing) R.string.complete else R.string.manage),
+                            color = Color(NgTheme.colors.primary),
+                            fontSize = 14.sp,
                         )
+                    }
+                }
+                if (items.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = stringResource(R.string.read_record_empty),
+                            color = Color(NgTheme.colors.onSurfaceVariant),
+                            fontSize = 14.sp,
+                        )
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                        items(items, key = { it.record.bookName }) { item ->
+                            ReadRecordRow(
+                                item = item,
+                                managing = managing,
+                                selected = item.record.bookName in selectedNames,
+                                onClick = { onItemClick(item) },
+                                onToggleSelection = { onToggleSelection(item.record.bookName) },
+                            )
+                        }
+                    }
+                }
+                if (managing) {
+                    HorizontalDivider(
+                        color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.28f),
+                        thickness = 0.6.dp,
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val allSelected = items.isNotEmpty() &&
+                            items.all { it.record.bookName in selectedNames }
+                        Row(
+                            Modifier.weight(1f).clickable(
+                                enabled = items.isNotEmpty(), onClick = onSelectAll,
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            NgFileSelectionCheckbox(
+                                checked = allSelected,
+                                onCheckedChange = { onSelectAll() },
+                                enabled = items.isNotEmpty(),
+                            )
+                            Text(
+                                stringResource(if (allSelected) R.string.unselect_all else R.string.select_all),
+                                color = Color(NgTheme.colors.onSurface),
+                                fontSize = 14.sp,
+                            )
+                        }
+                        NgButton(
+                            onClick = onDeleteRequest,
+                            enabled = selectedNames.isNotEmpty(),
+                            modifier = Modifier.widthIn(min = 92.dp).height(38.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            variant = NgButtonVariant.DANGER,
+                        ) {
+                            Text(
+                                stringResource(R.string.read_record_delete_selected, selectedNames.size),
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                style = TextStyle(
+                                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                                    lineHeightStyle = LineHeightStyle(
+                                        alignment = LineHeightStyle.Alignment.Center,
+                                        trim = LineHeightStyle.Trim.Both,
+                                    ),
+                                ),
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
             }
@@ -346,46 +473,42 @@ private fun ReadRecordSummary(
     recordCount: Int,
     recordEnabled: Boolean,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(116.dp)
-            .padding(start = 14.dp, end = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ReadRecordTimeDial()
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.all_read_time),
+                modifier = Modifier.weight(1f),
+                color = Color(NgTheme.colors.onSurfaceVariant),
+                fontSize = 13.sp,
+            )
+            ReadRecordStatusTag(recordEnabled)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { ReadRecordDurationText(totalReadTime) }
+            Spacer(Modifier.width(12.dp))
+            Box(
+                Modifier.width(0.6.dp).height(42.dp)
+                    .background(Color(NgTheme.colors.outlineVariant).copy(alpha = 0.4f)),
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(horizontalAlignment = Alignment.Start) {
                 Text(
-                    text = stringResource(R.string.all_read_time),
-                    color = Color(NgTheme.colors.onSurfaceVariant),
-                    fontSize = 13.sp,
-                    lineHeight = 17.sp,
+                    text = buildAnnotatedString {
+                        withStyle(SpanStyle(fontSize = 28.sp, fontWeight = FontWeight.SemiBold)) {
+                            append(recordCount.toString())
+                        }
+                        withStyle(SpanStyle(fontSize = 12.sp)) {
+                            append(" ")
+                            append(stringResource(R.string.read_record_books_unit))
+                        }
+                    },
+                    color = Color(NgTheme.colors.onSurface),
                 )
-                ReadRecordStatusTag(recordEnabled = recordEnabled)
-            }
-            Spacer(Modifier.height(7.dp))
-            ReadRecordDurationText(totalReadTime)
-            Spacer(Modifier.height(9.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_book_info_read),
-                    contentDescription = null,
-                    tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.78f),
-                    modifier = Modifier.size(15.dp),
-                )
-                Spacer(Modifier.width(6.dp))
                 Text(
-                    text = stringResource(R.string.read_record_count, recordCount),
+                    text = stringResource(R.string.read_record_recorded),
                     color = Color(NgTheme.colors.onSurfaceVariant),
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 11.sp,
                 )
             }
         }
@@ -393,170 +516,78 @@ private fun ReadRecordSummary(
 }
 
 @Composable
-private fun ReadRecordTimeDial(
-    modifier: Modifier = Modifier,
-) {
-    val primary = Color(NgTheme.colors.primary)
-    val track = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.18f)
-    val endpointHalo = Color(NgTheme.colors.selectedContainer)
-    Canvas(modifier = modifier.size(44.dp).padding(2.dp)) {
-        val strokeWidth = 2.dp.toPx()
-        val radius = (size.minDimension - strokeWidth) / 2f
-        val arcBoundsTopLeft = Offset(center.x - radius, center.y - radius)
-        val arcSize = androidx.compose.ui.geometry.Size(radius * 2f, radius * 2f)
-        val startAngle = -90f
-        val sweepAngle = 152f
-        drawArc(
-            color = track,
-            startAngle = 0f,
-            sweepAngle = 360f,
-            useCenter = false,
-            topLeft = arcBoundsTopLeft,
-            size = arcSize,
-            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-        )
-        drawArc(
-            color = primary,
-            startAngle = startAngle,
-            sweepAngle = sweepAngle,
-            useCenter = false,
-            topLeft = arcBoundsTopLeft,
-            size = arcSize,
-            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-        )
-        drawLine(
-            color = primary,
-            start = center,
-            end = Offset(center.x, center.y - 9.dp.toPx()),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color = primary,
-            start = center,
-            end = Offset(center.x + 7.dp.toPx(), center.y + 6.dp.toPx()),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round,
-        )
-        drawCircle(color = primary, radius = 1.5.dp.toPx(), center = center)
-        val endpointRadians = Math.toRadians((startAngle + sweepAngle).toDouble())
-        val endpoint = Offset(
-            x = center.x + radius * cos(endpointRadians).toFloat(),
-            y = center.y + radius * sin(endpointRadians).toFloat(),
-        )
-        drawCircle(color = endpointHalo, radius = 4.5.dp.toPx(), center = endpoint)
-        drawCircle(color = primary, radius = 3.dp.toPx(), center = endpoint)
-    }
-}
-
-@Composable
 private fun ReadRecordStatusTag(recordEnabled: Boolean) {
-    val tint = if (recordEnabled) {
-        colorResource(R.color.ng_success)
-    } else {
-        Color(NgTheme.colors.onSurfaceVariant)
-    }
+    val tint = if (recordEnabled) colorResource(R.color.ng_success)
+    else Color(NgTheme.colors.onSurfaceVariant)
     Row(
-        modifier = Modifier
-            .height(22.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(tint.copy(alpha = 0.12f))
-            .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .clip(CircleShape)
-                .background(tint),
-        )
+        Box(Modifier.size(6.dp).clip(CircleShape).background(tint))
         Text(
             text = stringResource(
                 if (recordEnabled) R.string.read_record_active else R.string.read_record_paused,
             ),
             color = tint,
             fontSize = 11.sp,
-            lineHeight = 14.sp,
-            fontWeight = FontWeight.Medium,
             maxLines = 1,
         )
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ReadRecordDurationText(totalReadTime: String) {
     val numberColor = Color(NgTheme.colors.onSurface)
     val unitColor = Color(NgTheme.colors.onSurfaceVariant)
-    val parts = READ_DURATION_PART_REGEX.findAll(totalReadTime).map { match ->
-        match.groupValues[1] to when (match.groupValues[2]) {
-            "分钟" -> "分"
-            else -> match.groupValues[2]
-        }
-    }.toList()
-    if (parts.isEmpty()) {
-        Text(
-            text = totalReadTime,
-            color = numberColor,
-            fontSize = 23.sp,
-            lineHeight = 29.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    } else {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            parts.forEach { (number, unit) ->
-                val styledPart = buildAnnotatedString {
-                    withStyle(
-                        SpanStyle(
-                            color = numberColor,
-                            fontSize = 23.sp,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                    ) {
-                        append(number)
-                    }
-                    withStyle(
-                        SpanStyle(
-                            color = unitColor,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                    ) {
+    val parts = remember(totalReadTime) {
+        READ_DURATION_PART_REGEX.findAll(totalReadTime).map { match ->
+            match.groupValues[1] to match.groupValues[2].replace("分钟", "分")
+        }.toList()
+    }
+    // Wrap complete number/unit pairs for long durations and large interface fonts.
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        parts.forEach { (number, unit) ->
+            val secondary = unit == "秒" && parts.size > 1
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(SpanStyle(
+                        color = if (secondary) unitColor else numberColor,
+                        fontSize = if (secondary) 16.sp else 28.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )) { append(number) }
+                    withStyle(SpanStyle(color = unitColor, fontSize = 12.sp)) {
                         append(unit)
                     }
-                }
-                Text(
-                    text = styledPart,
-                    lineHeight = 29.sp,
-                    maxLines = 1,
-                )
-            }
+                },
+                modifier = Modifier.alignByBaseline(),
+                maxLines = 1,
+            )
         }
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ReadRecordRow(
     item: ReadRecordUiItem,
+    managing: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
-    onDelete: () -> Unit,
+    onToggleSelection: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 78.dp)
+        modifier = Modifier.fillMaxWidth().heightIn(min = 82.dp)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = if (managing) onToggleSelection else onClick,
             )
-            .padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (item.book != null) {
@@ -580,44 +611,61 @@ private fun ReadRecordRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(7.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_mingcute_time_line),
-                    contentDescription = null,
-                    tint = Color(NgTheme.colors.onSurfaceVariant),
-                    modifier = Modifier.size(15.dp),
-                )
-                Spacer(Modifier.width(5.dp))
+            if (item.author.isNotBlank()) {
                 Text(
-                    text = item.durationText,
+                    text = item.author,
+                    modifier = Modifier.padding(top = 3.dp),
                     color = Color(NgTheme.colors.onSurfaceVariant),
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+            }
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_mingcute_time_line),
+                        contentDescription = null,
+                        tint = Color(NgTheme.colors.onSurfaceVariant),
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = item.durationText,
+                        color = Color(NgTheme.colors.onSurface),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
                 if (item.lastReadText.isNotEmpty()) {
                     Text(
-                        text = "  ·  ${item.lastReadText}",
+                        text = stringResource(R.string.read_record_last_read, item.lastReadText),
                         color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.82f),
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp,
-                        maxLines = 1,
+                        fontSize = 10.sp,
+                        lineHeight = 15.sp,
                     )
                 }
             }
         }
-        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
-            Icon(
-                painter = painterResource(R.drawable.ic_book_info_delete),
-                contentDescription = stringResource(R.string.delete),
-                tint = Color(NgTheme.colors.onSurfaceVariant),
-                modifier = Modifier.size(21.dp),
+        if (managing) {
+            NgFileSelectionCheckbox(
+                checked = selected,
+                onCheckedChange = { onToggleSelection() },
+                modifier = Modifier.size(48.dp),
             )
         }
     }
     HorizontalDivider(
-        modifier = Modifier.padding(start = 70.dp, end = 12.dp),
+        modifier = Modifier.padding(start = 70.dp, end = 14.dp),
         color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
         thickness = 0.6.dp,
     )
@@ -644,6 +692,7 @@ private fun ReadRecordConfirmationDialog(
     message: String,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    busy: Boolean = false,
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -656,20 +705,25 @@ private fun ReadRecordConfirmationDialog(
             actions = {
                 NgButton(
                     onClick = onDismiss,
-                    modifier = Modifier.width(92.dp).height(42.dp),
+                    enabled = !busy,
+                    modifier = Modifier.width(80.dp).height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                     variant = NgButtonVariant.OUTLINE,
                 ) {
-                    Text(stringResource(R.string.cancel), fontSize = 14.sp)
+                    Text(stringResource(R.string.cancel), fontSize = 14.sp, lineHeight = 20.sp)
                 }
                 NgButton(
                     onClick = onConfirm,
-                    modifier = Modifier.width(92.dp).height(42.dp),
+                    enabled = !busy,
+                    modifier = Modifier.width(80.dp).height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                     variant = NgButtonVariant.DANGER,
                 ) {
                     Text(
                         text = stringResource(R.string.delete),
                         color = Color.White,
                         fontSize = 14.sp,
+                        lineHeight = 20.sp,
                     )
                 }
             },

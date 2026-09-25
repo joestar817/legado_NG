@@ -22,6 +22,9 @@ interface ReadRecordDao {
     @get:Query("select sum(readTime) from readRecord")
     val allTime: Long
 
+    @get:Query("select count(distinct bookName) from readRecord")
+    val recordCount: Int
+
     @Query(
         """
         select bookName, sum(readTime) as readTime, max(lastRead) as lastRead 
@@ -52,4 +55,7 @@ interface ReadRecordDao {
 
     @Query("delete from readRecord where bookName = :bookName")
     fun deleteByName(bookName: String)
+
+    @Query("delete from readRecord where bookName in (:bookNames)")
+    fun deleteByNames(bookNames: List<String>)
 }

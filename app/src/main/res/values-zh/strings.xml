@@ -1620,6 +1620,14 @@
     <string name="read_record">阅读记录</string>
     <string name="del_read_record">删除阅读记录</string>
     <string name="read_record_summary">阅读时间记录</string>
+    <string name="read_record_all">全部记录</string>
+    <string name="read_record_selected_count">已选 %1$d 项</string>
+    <string name="read_record_delete_selected">删除 (%1$d)</string>
+    <string name="read_record_delete_selected_confirm">确定删除所选的 %1$d 条阅读记录？</string>
+    <string name="read_record_delete_failed">删除阅读记录失败</string>
+    <string name="read_record_books_unit">本书</string>
+    <string name="read_record_recorded">已记录</string>
+    <string name="read_record_last_read">最近阅读 %1$s</string>
     <string name="read_record_count">已记录 %1$d 本书</string>
     <string name="read_record_active">记录中</string>
     <string name="read_record_paused">已关闭</string>

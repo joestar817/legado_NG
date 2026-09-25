@@ -1625,6 +1625,14 @@
     <string name="read_record">Read record</string>
     <string name="del_read_record">Delete Read record</string>
     <string name="read_record_summary">Read record summary</string>
+    <string name="read_record_all">All records</string>
+    <string name="read_record_selected_count">Selected %1$d</string>
+    <string name="read_record_delete_selected">Delete (%1$d)</string>
+    <string name="read_record_delete_selected_confirm">Delete %1$d selected reading records?</string>
+    <string name="read_record_delete_failed">Unable to delete reading records</string>
+    <string name="read_record_books_unit">books</string>
+    <string name="read_record_recorded">Recorded</string>
+    <string name="read_record_last_read">Last read %1$s</string>
     <string name="read_record_count">Recorded %1$d books</string>
     <string name="read_record_active">Recording</string>
     <string name="read_record_paused">Paused</string>
