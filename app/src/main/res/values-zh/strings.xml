@@ -2438,4 +2438,9 @@
     <string name="bookshelf_swipe_ai">右滑进入 AI 助理</string>
     <string name="bookshelf_swipe_ai_summary">切换分组时，仅首组右滑进入</string>
     <string name="bookshelf_reminders">书架提醒</string>
+    <string name="explore_show_categories">展开分类</string>
+    <string name="explore_hide_categories">收起分类</string>
+    <string name="explore_jump_page">跳页</string>
+    <string name="explore_jump">跳转</string>
+    <string name="explore_page_input_hint">当前第 %1$d 页</string>
 </resources>

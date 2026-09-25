@@ -7,6 +7,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
@@ -19,7 +20,6 @@ import io.legado.app.ui.book.info.BookInfoActivity
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.main.explore.ExploreInfoStore
 import io.legado.app.ui.widget.dialog.TextDialog
-import io.legado.app.ui.widget.number.NumberPickerDialog
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
 import kotlinx.coroutines.Dispatchers.IO
@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
  * 发现详情
  */
 class ExploreShowActivity :
-    VMBaseActivity<ExploreShowActivityBinding, ExploreShowViewModel>(imageBg = false) {
+    VMBaseActivity<ExploreShowActivityBinding, ExploreShowViewModel>() {
 
     override val binding by lazy { ExploreShowActivityBinding(this) }
     override val viewModel by viewModels<ExploreShowViewModel>()
@@ -53,6 +53,7 @@ class ExploreShowActivity :
         binding.composeView.setContent {
             NgAppTheme {
                 val state by viewModel.uiState.collectAsState()
+                var pagePickerPage by rememberSaveable { mutableStateOf<Int?>(null) }
                 ExploreShowScreen(
                     state = state,
                     layoutMode = layoutMode,
@@ -61,13 +62,23 @@ class ExploreShowActivity :
                     onRefreshKinds = viewModel::reloadKinds,
                     onSelectKind = viewModel::selectKind,
                     onLayoutModeChange = ::updateLayoutMode,
-                    onSelectPage = { showPagePicker(state.displayPage) },
-                    onLoadPrevious = viewModel::loadPreviousPage,
+                    onSelectPage = { pagePickerPage = it },
+                    onJumpToPage = viewModel::navigateToPage,
                     onLoadNext = viewModel::loadNextPage,
                     onRetryContent = viewModel::retryContent,
                     onOpenBook = ::showBookInfo,
                     onShowError = { showDialogFragment(TextDialog("ERROR", it)) }
                 )
+                pagePickerPage?.let { currentPage ->
+                    ExplorePageJumpDialog(
+                        currentPage = currentPage,
+                        onDismiss = { pagePickerPage = null },
+                        onJump = { page ->
+                            pagePickerPage = null
+                            if (page != currentPage) viewModel.jumpToPage(page)
+                        }
+                    )
+                }
             }
         }
     }
@@ -76,17 +87,6 @@ class ExploreShowActivity :
         if (layoutMode == mode) return
         layoutMode = mode
         AppConfig.exploreShowLayoutMode = mode.value
-    }
-
-    private fun showPagePicker(currentPage: Int) {
-        NumberPickerDialog(this)
-            .setTitle(getString(R.string.change_page))
-            .setMaxValue(999)
-            .setMinValue(1)
-            .setValue(currentPage)
-            .show { page ->
-                if (page != currentPage) viewModel.jumpToPage(page)
-            }
     }
 
     private fun showBookInfo(book: SearchBook) {

@@ -35,6 +35,7 @@ internal data class ExploreShowUiState(
     val kinds: List<io.legado.app.data.entities.rule.ExploreKind> = emptyList(),
     val selectedKind: io.legado.app.data.entities.rule.ExploreKind? = null,
     val books: List<SearchBook> = emptyList(),
+    val bookPages: Map<String, Int> = emptyMap(),
     val bookshelfKeys: Set<String> = emptySet(),
     val isKindsLoading: Boolean = true,
     val isRefreshing: Boolean = false,
@@ -66,6 +67,8 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
     private var initialized = false
     private var contentJob: Job? = null
     private var contentRequestId = 0L
+    private data class FailedPage(val page: Int, val placement: Placement, val kindUrl: String)
+    private var failedPage: FailedPage? = null
 
     init {
         execute {
@@ -145,6 +148,7 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
             it.copy(
                 selectedKind = kind,
                 books = emptyList(),
+                bookPages = emptyMap(),
                 isContentLoading = false,
                 isLoadingPrevious = false,
                 contentError = null,
@@ -188,6 +192,7 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
                 _uiState.update {
                     it.copy(
                         books = emptyList(),
+                        bookPages = emptyMap(),
                         firstLoadedPage = 1,
                         lastLoadedPage = 0,
                         hasMore = true
@@ -225,6 +230,7 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
                         kinds = kinds,
                         selectedKind = selected,
                         books = emptyList(),
+                        bookPages = emptyMap(),
                         isKindsLoading = false,
                         isContentLoading = false,
                         isLoadingPrevious = false,
@@ -264,12 +270,9 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
     fun retryContent() {
         val state = _uiState.value
         if (state.selectedKind == null || state.isContentLoading) return
-        val page = when {
-            state.books.isEmpty() -> state.firstLoadedPage
-            state.hasMore -> state.lastLoadedPage + 1
-            else -> state.lastLoadedPage
-        }.coerceAtLeast(1)
-        loadPage(page, if (state.books.isEmpty()) Placement.RESET else Placement.APPEND)
+        val failed = failedPage ?: return
+        if (failed.kindUrl != state.selectedKind.url) return
+        loadPage(failed.page, failed.placement)
     }
 
     fun loadNextPage() {
@@ -285,20 +288,17 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
         loadPage(state.firstLoadedPage - 1, Placement.PREPEND)
     }
 
+    fun navigateToPage(page: Int) {
+        val state = _uiState.value
+        if (state.isContentLoading || state.isKindsLoading || state.isRefreshing) return
+        if (page > state.lastLoadedPage && !state.hasMore) return
+        jumpToPage(page)
+    }
+
     fun jumpToPage(page: Int) {
         if (page <= 0 || _uiState.value.selectedKind == null) return
-        contentJob?.cancel()
-        contentRequestId++
-        _uiState.update {
-            it.copy(
-                books = emptyList(),
-                contentError = null,
-                firstLoadedPage = page,
-                lastLoadedPage = 0,
-                hasMore = true,
-                selectionRevision = it.selectionRevision + 1
-            )
-        }
+        // Keep the accepted page until the requested page proves it has content.
+        // A duplicate/empty response or a failed request must not invent a new page.
         loadPage(page, Placement.RESET)
     }
 
@@ -307,6 +307,7 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
         val source = state.source ?: return
         val selected = state.selectedKind ?: return
         val url = selected.url ?: return
+        failedPage = null
         val requestId = ++contentRequestId
         contentJob?.cancel()
         _uiState.update {
@@ -328,25 +329,41 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
                 if (requestId != contentRequestId || _uiState.value.selectedKind?.url != url) {
                     return@launch
                 }
-                val before = _uiState.value.books
-                val merged = linkedSetOf<SearchBook>().apply {
-                    when (placement) {
-                        Placement.RESET -> addAll(searchBooks)
-                        Placement.APPEND -> {
-                            addAll(before)
-                            addAll(searchBooks)
-                        }
-
-                        Placement.PREPEND -> {
-                            addAll(searchBooks)
-                            addAll(before)
-                        }
+                val accepted = _uiState.value
+                val before = accepted.books
+                val decision = evaluateExplorePage(
+                    knownUrls = before.mapTo(hashSetOf()) { it.bookUrl },
+                    incomingUrls = searchBooks.map { it.bookUrl },
+                    targetPage = page,
+                    lastAcceptedPage = accepted.lastLoadedPage
+                )
+                if (decision != ExplorePageDecision.ACCEPT) {
+                    _uiState.update {
+                        it.copy(
+                            isContentLoading = false,
+                            isLoadingPrevious = false,
+                            contentError = null,
+                            hasMore = if (decision == ExplorePageDecision.END) false else it.hasMore
+                        )
                     }
-                }.toList()
-                val addedNewBooks = merged.size > before.size || placement == Placement.RESET
+                    return@launch
+                }
+                val merged = when (placement) {
+                    Placement.RESET -> searchBooks
+                    Placement.APPEND -> before + searchBooks
+                    Placement.PREPEND -> searchBooks + before
+                }.distinctBy { it.bookUrl }
                 _uiState.update {
                     it.copy(
                         books = merged,
+                        bookPages = buildMap {
+                            if (placement != Placement.RESET) putAll(it.bookPages)
+                            searchBooks.forEach { book ->
+                                if (placement == Placement.PREPEND || book.bookUrl !in this) {
+                                    put(book.bookUrl, page)
+                                }
+                            }
+                        },
                         isContentLoading = false,
                         isLoadingPrevious = false,
                         contentError = null,
@@ -358,11 +375,11 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
                             Placement.RESET, Placement.APPEND -> page
                             Placement.PREPEND -> it.lastLoadedPage
                         },
-                        hasMore = if (placement == Placement.PREPEND) {
-                            it.hasMore
-                        } else {
-                            searchBooks.isNotEmpty() && addedNewBooks
-                        }
+                        hasMore = if (placement == Placement.PREPEND) it.hasMore
+                            else searchBooks.isNotEmpty(),
+                        selectionRevision = if (placement == Placement.RESET) {
+                            it.selectionRevision + 1
+                        } else it.selectionRevision
                     )
                 }
                 appDb.searchBookDao.insert(*searchBooks.toTypedArray())
@@ -371,6 +388,7 @@ class ExploreShowViewModel(application: Application) : BaseViewModel(application
             } catch (e: Throwable) {
                 e.printOnDebug()
                 if (requestId == contentRequestId) {
+                    failedPage = FailedPage(page, placement, url)
                     _uiState.update {
                         it.copy(
                             isContentLoading = false,

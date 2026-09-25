@@ -2536,4 +2536,9 @@
     <string name="bookshelf_swipe_ai">Swipe right to open AI assistant</string>
     <string name="bookshelf_swipe_ai_summary">When switching groups, swipe right from the first group</string>
     <string name="bookshelf_reminders">Bookshelf reminders</string>
+    <string name="explore_show_categories">Show categories</string>
+    <string name="explore_hide_categories">Hide categories</string>
+    <string name="explore_jump_page">Jump to page</string>
+    <string name="explore_jump">Go</string>
+    <string name="explore_page_input_hint">Current page: %1$d</string>
 </resources>

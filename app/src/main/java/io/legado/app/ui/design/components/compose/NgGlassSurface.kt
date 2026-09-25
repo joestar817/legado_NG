@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -86,15 +87,17 @@ internal fun NgTransparentGlassSurface(
     materialViewport: NgGlassMaterialViewport?,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val segmented = shape as? NgSegmentedGlassShape
+    val contentShape = remember(shape) { segmented?.let(::NgGlassContentShape) }
     Surface(
         modifier = modifier,
-        shape = shape,
+        shape = if (segmented != null) RectangleShape else shape,
         color = Color.Transparent,
         contentColor = style.contentColor,
         shadowElevation = style.shadowElevation
     ) {
         Box(
-            modifier = Modifier.clip(shape),
+            modifier = if (segmented != null) Modifier else Modifier.clip(shape),
             propagateMinConstraints = true
         ) {
             if (backdrop != null) {
@@ -109,7 +112,7 @@ internal fun NgTransparentGlassSurface(
                     Modifier.matchParentSize()
                 }
                 Box(
-                    modifier = backdropModifier,
+                    modifier = if (segmented != null) backdropModifier.clip(shape) else backdropModifier,
                     content = backdrop
                 )
             }
@@ -121,7 +124,8 @@ internal fun NgTransparentGlassSurface(
             )
 
             Column(
-                modifier = Modifier.padding(contentPadding),
+                modifier = Modifier.then(contentShape?.let { Modifier.clip(it) } ?: Modifier)
+                    .padding(contentPadding),
                 content = content
             )
         }
@@ -584,6 +588,7 @@ internal fun Modifier.ngGlassLayer(
     materialViewport: NgGlassMaterialViewport?,
 ): Modifier = drawWithCache {
     val outline = shape.createOutline(size, layoutDirection, this)
+    val geometry = (shape as? NgSegmentedGlassShape)?.createGlassGeometry(size, layoutDirection, this)
     val outlinePath = when (outline) {
         is Outline.Rectangle -> null
         is Outline.Rounded -> Path().apply { addRoundRect(outline.roundRect) }
@@ -655,18 +660,19 @@ internal fun Modifier.ngGlassLayer(
     )
 
     onDrawBehind {
-        drawGlassOutline(outline, outlinePath, containerBrush)
+        drawGlassOutline(outline, outlinePath, containerBrush, geometry = geometry)
         if (style.accentGlow.alpha > 0f) {
-            drawGlassOutline(outline, outlinePath, accentBrush)
+            drawGlassOutline(outline, outlinePath, accentBrush, geometry = geometry)
         }
         if (style.surfaceGloss.alpha > 0f) {
-            drawGlassOutline(outline, outlinePath, glossBrush)
+            drawGlassOutline(outline, outlinePath, glossBrush, geometry = geometry)
         }
         if (style.depthEdge.alpha > 0f) {
-            drawGlassOutline(outline, outlinePath, depthFillBrush)
+            drawGlassOutline(outline, outlinePath, depthFillBrush, geometry = geometry)
         }
         if (style.highlightWidth > 0.dp && style.edgeHighlight.alpha > 0f) {
             drawGlassOutline(
+                geometry = geometry,
                 outline = outline,
                 outlinePath = outlinePath,
                 brush = softHighlightBrush,
@@ -675,6 +681,7 @@ internal fun Modifier.ngGlassLayer(
         }
         if (style.borderWidth > 0.dp) {
             drawGlassOutline(
+                geometry = geometry,
                 outline = outline,
                 outlinePath = outlinePath,
                 brush = SolidColor(style.borderColor),
@@ -683,6 +690,7 @@ internal fun Modifier.ngGlassLayer(
         }
         if (style.highlightWidth > 0.dp && style.edgeHighlight.alpha > 0f) {
             drawGlassOutline(
+                geometry = geometry,
                 outline = outline,
                 outlinePath = outlinePath,
                 brush = highlightBrush,
@@ -691,6 +699,7 @@ internal fun Modifier.ngGlassLayer(
         }
         if (style.borderWidth > 0.dp && style.depthEdge.alpha > 0f) {
             drawGlassOutline(
+                geometry = geometry,
                 outline = outline,
                 outlinePath = outlinePath,
                 brush = depthBrush,
@@ -704,8 +713,18 @@ private fun DrawScope.drawGlassOutline(
     outline: Outline,
     outlinePath: Path?,
     brush: Brush,
-    drawStyle: DrawStyle = Fill
+    drawStyle: DrawStyle = Fill,
+    geometry: NgGlassGeometry? = null
 ) {
+    if (geometry != null) {
+        if (drawStyle is Stroke) {
+            geometry.strokePaths.forEach { drawPath(it, brush, style = drawStyle) }
+        } else {
+            geometry.fillRects.forEach { drawRect(brush, it.topLeft, it.size) }
+            geometry.fillPaths.forEach { drawPath(it, brush) }
+        }
+        return
+    }
     when (outline) {
         is Outline.Rectangle -> drawRect(
             brush = brush,

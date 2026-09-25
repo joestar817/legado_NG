@@ -71,6 +71,8 @@ import io.legado.app.R
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
 
+enum class NgMenuSelectionStyle { INDICATOR, TEXT_ONLY }
+
 @Immutable
 data class NgExpandableActionMenuItem(
     @IdRes val itemId: Int,
@@ -80,6 +82,7 @@ data class NgExpandableActionMenuItem(
     val children: List<NgExpandableActionMenuItem> = emptyList(),
     val title: String? = null,
     val checked: Boolean = false,
+    val selectionStyle: NgMenuSelectionStyle = NgMenuSelectionStyle.INDICATOR,
     val danger: Boolean = false,
     val themedIconKind: NgThemedActionIconKind? = null,
     val enabled: Boolean = true,
@@ -132,7 +135,7 @@ internal fun rememberNgExpandableActionMenuContentWidth(
                 ).size.width.toFloat()
                 var fixedWidthDp = 24.dp
                 if (reserveIconSpace) fixedWidthDp += 30.dp
-                if (item.checked) fixedWidthDp += 30.dp
+                if (item.checked && item.selectionStyle == NgMenuSelectionStyle.INDICATOR) fixedWidthDp += 30.dp
                 if (item.children.isNotEmpty()) fixedWidthDp += 30.dp
                 val rowWidthPx = textWidthPx + with(density) { fixedWidthDp.toPx() }
                 maxOf(rowWidthPx, groupWidthPx(item.children))
@@ -699,7 +702,11 @@ private fun NgExpandableActionMenuRow(
     onClick: () -> Unit
 ) {
     val contentColor = Color(
-        if (item.danger) NgTheme.colors.error else NgTheme.colors.onSurface
+        when {
+            item.danger -> NgTheme.colors.error
+            item.checked && item.selectionStyle == NgMenuSelectionStyle.TEXT_ONLY -> NgTheme.colors.primary
+            else -> NgTheme.colors.onSurface
+        }
     ).copy(alpha = if (item.enabled) 1f else 0.38f)
     val themedIconKind = item.themedIconKind
     Row(
@@ -743,7 +750,7 @@ private fun NgExpandableActionMenuRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        if (item.checked) {
+        if (item.checked && item.selectionStyle == NgMenuSelectionStyle.INDICATOR) {
             Spacer(Modifier.width(10.dp))
             Icon(
                 painter = painterResource(R.drawable.ng_ic_popup_selected),
