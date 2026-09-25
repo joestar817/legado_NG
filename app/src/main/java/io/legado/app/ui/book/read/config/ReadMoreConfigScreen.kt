@@ -444,7 +444,7 @@ private fun ReadMoreSectionLabel(text: String, color: Color) {
 }
 
 @Composable
-private fun SwitchSettingRow(
+internal fun SwitchSettingRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -690,7 +690,7 @@ internal fun ReadThresholdSliderDialog(
 }
 
 @Composable
-private fun ActionSettingRow(
+internal fun ActionSettingRow(
     title: String,
     value: String? = null,
     onClick: () -> Unit,
@@ -799,7 +799,7 @@ private fun ReadMoreConfigDock(
 }
 
 @Composable
-private fun ReadMoreDivider(contentColor: Color) {
+internal fun ReadMoreDivider(contentColor: Color) {
     Spacer(
         modifier = Modifier
             .fillMaxWidth()

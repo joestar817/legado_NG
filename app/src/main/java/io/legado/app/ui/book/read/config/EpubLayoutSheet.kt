@@ -18,12 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.data.entities.Book
 import io.legado.app.help.config.EpubLayoutPreferences
-import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerDefaults
-import io.legado.app.ui.design.components.compose.NgCompactSettingsDivider
-import io.legado.app.ui.design.components.compose.NgCompactSettingsGroup
-import io.legado.app.ui.design.components.compose.NgCompactSettingsItem
 import io.legado.app.ui.design.theme.NgTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,26 +48,35 @@ internal fun EpubLayoutSheet(
             modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(top = 8.dp),
             appearance = appearance,
         ) {
-            Column(Modifier.navigationBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
-                Text("EPUB 排版", color = Color(NgTheme.colors.onSurface), fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 14.dp, bottom = 16.dp))
-                NgCompactSettingsGroup {
-                    NgCompactSettingsItem(title = "原书排版优先",
-                        trailing = NgSettingsTrailing.SWITCH, checked = choices.getValue("publisher"),
-                        onCheckedChange = { change("publisher", it) }, onClick = { change("publisher", !choices.getValue("publisher")) })
-                }
-                Text("保留原书特性", color = Color(NgTheme.colors.onSurface), modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp))
-                NgCompactSettingsGroup {
-                    EpubLayoutPreferences.features.entries.forEachIndexed { index, (key, title) ->
-                        NgCompactSettingsItem(title = title, trailing = NgSettingsTrailing.SWITCH,
-                            checked = choices.getValue(key), onCheckedChange = { change(key, it) },
-                            onClick = { change(key, !choices.getValue(key)) })
-                        if (index < EpubLayoutPreferences.features.size - 1) NgCompactSettingsDivider()
+            val contentColor = Color(NgTheme.colors.onSurface)
+            Column(
+                Modifier.navigationBarsPadding().verticalScroll(rememberScrollState())
+                    .padding(top = 10.dp, bottom = 8.dp)
+            ) {
+                Text(
+                    text = "EPUB 排版",
+                    modifier = Modifier.height(42.dp).padding(horizontal = 16.dp),
+                    color = contentColor,
+                    fontSize = 20.sp,
+                    lineHeight = 42.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    SwitchSettingRow(
+                        title = "原书排版优先",
+                        checked = choices.getValue("publisher"),
+                        onCheckedChange = { change("publisher", it) },
+                    )
+                    ReadMoreDivider(contentColor)
+                    EpubLayoutPreferences.features.entries.forEach { (key, title) ->
+                        SwitchSettingRow(
+                            title = title,
+                            checked = choices.getValue(key),
+                            onCheckedChange = { change(key, it) },
+                        )
+                        ReadMoreDivider(contentColor)
                     }
-                }
-                Spacer(Modifier.height(12.dp))
-                NgCompactSettingsGroup {
-                    NgCompactSettingsItem(title = "恢复默认", onClick = {
+                    ActionSettingRow(title = "恢复默认", onClick = {
                         EpubLayoutPreferences.reset(book.bookUrl)
                         choices = EpubLayoutPreferences.read(book.bookUrl)
                         onStyleChanged()
