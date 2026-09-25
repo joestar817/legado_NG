@@ -706,6 +706,8 @@
     <string name="chapter_list">目录</string>
     <string name="read_catalog_search_chapters">搜索章节</string>
     <string name="read_catalog_search_bookmarks">搜索书签</string>
+    <string name="read_catalog_search_chapter_count">搜索结果 · %1$d 章</string>
+    <string name="read_catalog_search_bookmark_count">搜索结果 · %1$d 条</string>
     <string name="read_catalog_reading_progress">进度：%1$d/%2$d&#160;&#160;%3$.1f%%</string>
     <string name="read_catalog_bookmark_count">数量：%1$d</string>
     <string name="read_catalog_current">当前阅读</string>
@@ -717,6 +719,9 @@
     <string name="read_catalog_descending">倒序</string>
     <string name="read_catalog_vip_unpaid">VIP 章节，未购买</string>
     <string name="read_catalog_vip_purchased">VIP 章节，已购买</string>
+    <string name="read_catalog_style">目录抽屉样式</string>
+    <string name="read_catalog_style_card">卡片式</string>
+    <string name="read_catalog_style_compact_side">紧凑侧栏</string>
     <string name="next_chapter">下一章</string>
     <string name="previous_chapter">上一章</string>
     <string name="pt_hide_status_bar">隐藏状态栏</string>

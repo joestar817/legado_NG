@@ -2475,7 +2475,15 @@ class ReadBookActivity : BaseReadBookActivity(),
      */
     override fun openChapterList() {
         if (ReadBook.book == null) return
-        ReadCatalogDialog().show(supportFragmentManager, "readCatalog")
+        val style = ReadCatalogStyle.fromValue(
+            getPrefString(PreferKey.readCatalogStyle, ReadCatalogStyle.CARD.value)
+        )
+        val dialog = if (style == ReadCatalogStyle.COMPACT_SIDE) {
+            ReadCompactCatalogDialog()
+        } else {
+            ReadCatalogDialog()
+        }
+        dialog.show(supportFragmentManager, "readCatalog")
     }
 
     /**

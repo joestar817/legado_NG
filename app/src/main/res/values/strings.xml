@@ -709,6 +709,8 @@
     <string name="chapter_list">Chapters</string>
     <string name="read_catalog_search_chapters">Search chapters</string>
     <string name="read_catalog_search_bookmarks">Search bookmarks</string>
+    <string name="read_catalog_search_chapter_count">Search results · %1$d chapters</string>
+    <string name="read_catalog_search_bookmark_count">Search results · %1$d bookmarks</string>
     <string name="read_catalog_reading_progress">Progress: %1$d/%2$d&#160;&#160;%3$.1f%%</string>
     <string name="read_catalog_bookmark_count">Count: %1$d</string>
     <string name="read_catalog_current">Current</string>
@@ -720,6 +722,9 @@
     <string name="read_catalog_descending">Descending</string>
     <string name="read_catalog_vip_unpaid">VIP chapter, not purchased</string>
     <string name="read_catalog_vip_purchased">VIP chapter, purchased</string>
+    <string name="read_catalog_style">Catalog drawer style</string>
+    <string name="read_catalog_style_card">Cards</string>
+    <string name="read_catalog_style_compact_side">Compact sidebar</string>
     <string name="next_chapter">Next</string>
     <string name="previous_chapter">Prior</string>
     <string name="pt_hide_status_bar">Hide status bar</string>

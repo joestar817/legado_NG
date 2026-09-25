@@ -26,6 +26,7 @@ import io.legado.app.help.config.ReadTipConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
+import io.legado.app.ui.book.read.ReadCatalogStyle
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.components.compose.NgDismissibleDrawer
@@ -371,6 +372,10 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
                 "0",
             ).orEmpty(),
             PreferKey.clickImgWay to context.getPrefString(PreferKey.clickImgWay, "0").orEmpty(),
+            PreferKey.readCatalogStyle to context.getPrefString(
+                PreferKey.readCatalogStyle,
+                ReadCatalogStyle.CARD.value,
+            ).orEmpty(),
             ReadMoreConfigKeys.BOOK_IMAGE_STYLE to currentImageStyle(),
         )
         screenState = ReadMoreConfigUiState(
@@ -398,6 +403,16 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
                 PreferKey.clickImgWay to options(
                     R.array.click_image_way_title,
                     R.array.click_image_way_value,
+                ),
+                PreferKey.readCatalogStyle to listOf(
+                    ReadMoreConfigOption(
+                        ReadCatalogStyle.CARD.value,
+                        getString(R.string.read_catalog_style_card),
+                    ),
+                    ReadMoreConfigOption(
+                        ReadCatalogStyle.COMPACT_SIDE.value,
+                        getString(R.string.read_catalog_style_compact_side),
+                    ),
                 ),
                 ReadMoreConfigKeys.BOOK_IMAGE_STYLE to imageStyleOptions(),
             ),

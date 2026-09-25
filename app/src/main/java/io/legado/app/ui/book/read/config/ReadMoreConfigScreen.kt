@@ -194,6 +194,13 @@ private fun InterfaceSettingsPage(
 ) {
     SettingsColumn {
         ChoiceSettingRow(
+            title = stringResource(R.string.read_catalog_style),
+            selectedValue = state.value(PreferKey.readCatalogStyle),
+            options = state.options(PreferKey.readCatalogStyle),
+            onSelected = { actions.onValueChanged(PreferKey.readCatalogStyle, it) },
+        )
+        ReadMoreDivider(contentColor)
+        ChoiceSettingRow(
             title = stringResource(R.string.screen_direction),
             selectedValue = state.value(PreferKey.screenOrientation),
             options = state.options(PreferKey.screenOrientation),
