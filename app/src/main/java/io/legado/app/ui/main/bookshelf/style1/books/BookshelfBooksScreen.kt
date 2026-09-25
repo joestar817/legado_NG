@@ -3,7 +3,6 @@ package io.legado.app.ui.main.bookshelf.style1.books
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -63,6 +62,9 @@ import io.legado.app.data.entities.Book
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isUpError
 import io.legado.app.help.config.BookshelfLayoutMode
+import io.legado.app.help.config.BookshelfCardStyle
+import io.legado.app.help.config.BookshelfCardAppearanceStore
+import io.legado.app.ui.design.components.compose.NgBookshelfCardSurface
 import io.legado.app.ui.design.components.compose.NgBookCover
 import io.legado.app.ui.design.components.compose.NgBookshelfUnreadBadge
 import io.legado.app.ui.design.components.compose.NgBookshelfUpdateIndicator
@@ -190,6 +192,8 @@ private fun BookshelfBookList(
     onOpenBookActions: (Book) -> Unit,
 ) {
     val state = rememberLazyListState()
+    val isDark = NgTheme.snapshot.isDark
+    val appearance = remember(isDark) { BookshelfCardAppearanceStore.read().forNight(isDark) }
     val density = LocalDensity.current
     val itemSpacing = with(density) { spacing.toDp() }
     val firstItemExtra = with(density) { 4.toDp() }
@@ -218,6 +222,7 @@ private fun BookshelfBookList(
             ) {
                 BookshelfListBookItem(
                     book = book,
+                    appearance = appearance,
                     compact = compact,
                     highlightUnread = highlightUnread,
                     updating = !book.isLocal && book.bookUrl in updatingBookUrls,
@@ -238,6 +243,7 @@ private fun BookshelfBookList(
 @Composable
 private fun BookshelfListBookItem(
     book: Book,
+    appearance: BookshelfCardStyle,
     compact: Boolean,
     highlightUnread: Boolean,
     updating: Boolean,
@@ -260,15 +266,8 @@ private fun BookshelfListBookItem(
     val progressTrackColor = progressColor.copy(alpha = if (NgTheme.snapshot.isEInk) 0.3f else 0.14f)
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val shape = RoundedCornerShape(dimensionResource(R.dimen.ng_radius_s))
-    val cardColor = colorResource(
-        if (isPressed) {
-            R.color.ng_bookshelf_list_card_pressed
-        } else {
-            R.color.ng_bookshelf_list_card_surface
-        }
-    )
-    val cardStrokeColor = colorResource(R.color.ng_bookshelf_list_card_stroke)
+    val radius = dimensionResource(R.dimen.ng_radius_s)
+    val shape = RoundedCornerShape(radius)
     val titleColor = colorResource(R.color.primaryText)
     val summaryColor = colorResource(R.color.tv_text_summary)
     val authorSummary = book.bookshelfAuthorText(context)
@@ -291,14 +290,16 @@ private fun BookshelfListBookItem(
         null
     }
 
-    Box(
+    NgBookshelfCardSurface(
+        appearance = appearance,
+        pressed = isPressed,
+        cornerRadius = radius,
+        contentPadding = PaddingValues(start = 10.dp, top = 7.dp, end = 14.dp, bottom = 7.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .height(cardHeight)
             .clip(shape)
-            .background(cardColor)
-            .border(0.6.dp, cardStrokeColor, shape)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -327,8 +328,7 @@ private fun BookshelfListBookItem(
                         }
                     }
                 }
-            }
-            .padding(start = 10.dp, top = 7.dp, end = 14.dp, bottom = 7.dp),
+            },
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),

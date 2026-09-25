@@ -257,6 +257,9 @@
     <string name="bookshelf_grid_columns">网格列数</string>
     <string name="bookshelf_group_inner_columns">组内列数</string>
     <string name="bookshelf_layout_details">布局细节</string>
+    <string name="bookshelf_card_appearance">卡片外观</string>
+    <string name="bookshelf_card_solid">实色卡片</string>
+    <string name="bookshelf_card_transparency">透明度</string>
     <string name="bookshelf_book_name_position">书名位置</string>
     <string name="bookshelf_book_name_below">封面下方</string>
     <string name="bookshelf_book_name_hidden">不显示</string>

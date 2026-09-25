@@ -55,6 +55,7 @@ internal class NgViewLiquidGlassRenderer(
 
     var role: NgMaterialRole = NgMaterialRole.NAVIGATION
     var specOverride: NgLiquidGlassSpec? = null
+    var visualSystemOverride: NgVisualSystem? = null
     var cornerRadiusPx: Float = 0f
     @ColorInt var surfaceColor: Int = Color.TRANSPARENT
     var surfaceAlpha: Float = 0f
@@ -87,7 +88,7 @@ internal class NgViewLiquidGlassRenderer(
 
     fun isEnabled(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || AppConfig.isEInkMode) return false
-        if (NgVisualSystemStore.current(owner.context) != NgVisualSystem.LIQUID_GLASS) return false
+        if ((visualSystemOverride ?: NgVisualSystemStore.current(owner.context)) != NgVisualSystem.LIQUID_GLASS) return false
         val source = sourceView ?: return false
         return source.isAttachedToWindow && !source.containsDescendant(owner)
     }

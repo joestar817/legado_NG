@@ -259,6 +259,9 @@
     <string name="bookshelf_grid_columns">Grid columns</string>
     <string name="bookshelf_group_inner_columns">Columns inside group</string>
     <string name="bookshelf_layout_details">Layout details</string>
+    <string name="bookshelf_card_appearance">Card appearance</string>
+    <string name="bookshelf_card_solid">Solid card</string>
+    <string name="bookshelf_card_transparency">Transparency</string>
     <string name="bookshelf_book_name_position">Title position</string>
     <string name="bookshelf_book_name_below">Below cover</string>
     <string name="bookshelf_book_name_hidden">Hidden</string>

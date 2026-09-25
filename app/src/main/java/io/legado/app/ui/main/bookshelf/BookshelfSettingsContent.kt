@@ -156,7 +156,7 @@ private fun SettingsChoiceRail(titles: List<String>, selected: Int, onSelect: (I
 }
 
 @Composable
-private fun SettingsSlider(title: String, value: Int, range: IntRange, unit: String, onChange: (Int) -> Unit) {
+internal fun SettingsSlider(title: String, value: Int, range: IntRange, unit: String, onChange: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, fontSize = 14.sp, color = Color(NgTheme.colors.onSurface))
         NgSlider(value = value.toFloat(), onValueChange = { onChange(it.toInt().coerceIn(range)) },

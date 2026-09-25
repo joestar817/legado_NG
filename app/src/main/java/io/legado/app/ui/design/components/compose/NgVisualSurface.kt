@@ -336,6 +336,7 @@ fun NgVisualSurface(
         NgViewLiquidGlassSurface(
             modifier = modifier,
             sourceView = requireNotNull(resolvedViewBackdropSource),
+            visualSystemOverride = visualSystemOverride,
             role = role,
             shape = shape,
             cornerRadius = cornerRadius,
@@ -398,6 +399,7 @@ private fun NgLiquidGlassSurface(
 private fun NgViewLiquidGlassSurface(
     modifier: Modifier,
     sourceView: View,
+    visualSystemOverride: NgVisualSystem?,
     role: NgMaterialRole,
     shape: Shape,
     cornerRadius: Dp,
@@ -420,6 +422,7 @@ private fun NgViewLiquidGlassSurface(
                 modifier = Modifier.matchParentSize(),
                 update = { view ->
                     view.renderer.sourceView = sourceView
+                    view.renderer.visualSystemOverride = visualSystemOverride
                     view.renderer.role = role
                     view.renderer.specOverride = spec
                     view.renderer.cornerRadiusPx = with(density) { cornerRadius.toPx() }

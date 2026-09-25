@@ -7,6 +7,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -46,6 +49,9 @@ import io.legado.app.constant.AppLog
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.BookshelfLayoutMode
 import io.legado.app.help.config.BookshelfLayoutProfile
+import io.legado.app.help.config.BookshelfCardAppearance
+import io.legado.app.help.config.BookshelfCardAppearanceStore
+import io.legado.app.ui.design.components.compose.NgFormNavigationRow
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
@@ -122,12 +128,13 @@ class BookshelfLayoutDialog : BottomSheetDialogFragment() {
 
     private fun confirm(draft: BookshelfLayoutDraft) {
         val barsChanged = draft.settings?.save() == true
+        val cardChanged = draft.cardAppearance != BookshelfCardAppearanceStore.read()
         val oldMode = AppConfig.activeBookshelfLayoutMode
         val oldProfile = AppConfig.getBookshelfLayoutProfile(oldMode)
         val oldShowWaitUpCount = AppConfig.showWaitUpCount
         val newProfile = draft.profiles[draft.selectedMode]
         val result = BookshelfLayoutResult(
-            recreate = barsChanged || oldMode != draft.selectedMode ||
+            recreate = barsChanged || cardChanged || oldMode != draft.selectedMode ||
                 oldProfile.columns != newProfile.columns ||
                 oldProfile.innerColumns != newProfile.innerColumns ||
                 oldProfile.showBookName != newProfile.showBookName ||
@@ -142,6 +149,7 @@ class BookshelfLayoutDialog : BottomSheetDialogFragment() {
             sortChanged = oldProfile.sort != newProfile.sort,
         )
         draft.profiles.forEach(AppConfig::setBookshelfLayoutProfile)
+        BookshelfCardAppearanceStore.save(draft.cardAppearance)
         AppConfig.showWaitUpCount = draft.showWaitUpCount
         AppConfig.bookshelfHighlightUnread = draft.highlightUnread
         AppConfig.bookshelfShowReadingProgress = draft.showReadingProgress
@@ -191,6 +199,7 @@ private data class BookshelfLayoutDraft(
     val showReadingProgress: Boolean,
     val showGridBackground: Boolean,
     val settings: BookshelfSettingsDraft? = null,
+    val cardAppearance: BookshelfCardAppearance,
 )
 
 private data class BookshelfLayoutProfiles(
@@ -243,6 +252,10 @@ private fun BookshelfLayoutSheet(
     settingsMode: Boolean = false,
 ) {
     var selectedMode by rememberSaveable { mutableStateOf(AppConfig.activeBookshelfLayoutMode) }
+    var cardAppearance by rememberSaveable(stateSaver = bookshelfCardAppearanceSaver) {
+        mutableStateOf(BookshelfCardAppearanceStore.read())
+    }
+    var showCardAppearance by rememberSaveable { mutableStateOf(false) }
     var profiles by rememberSaveable(stateSaver = layoutProfilesSaver) { mutableStateOf(BookshelfLayoutProfiles.fromConfig()) }
     var showWaitUpCount by rememberSaveable { mutableStateOf(AppConfig.showWaitUpCount) }
     var highlightUnread by rememberSaveable { mutableStateOf(AppConfig.bookshelfHighlightUnread) }
@@ -403,6 +416,27 @@ private fun BookshelfLayoutSheet(
                                     updateProfile { it.copy(spacing = value) }
                                 },
                             )
+                            if (!isGridBooks) {
+                                NgFormGroupDivider()
+                                NgFormNavigationRow(
+                                    title = stringResource(R.string.bookshelf_card_appearance),
+                                    value = bookshelfCardMaterialTitle(cardAppearance.forNight(NgTheme.snapshot.isDark).material),
+                                    onClick = { showCardAppearance = !showCardAppearance },
+                                    arrowIcon = painterResource(
+                                        if (showCardAppearance) R.drawable.ic_expand_more else R.drawable.ic_arrow_right,
+                                    ),
+                                )
+                                AnimatedVisibility(
+                                    visible = showCardAppearance,
+                                    enter = expandVertically(),
+                                    exit = shrinkVertically(),
+                                ) {
+                                    BookshelfCardAppearanceFields(
+                                        appearance = cardAppearance,
+                                        onChange = { cardAppearance = it },
+                                    )
+                                }
+                            }
                         }
                     }
                     if (selectedMode != BookshelfLayoutMode.GROUP_GRID) {
@@ -510,6 +544,7 @@ private fun BookshelfLayoutSheet(
                             showReadingProgress = showReadingProgress,
                             showGridBackground = showGridBackground,
                             settings = settings.takeIf { settingsMode },
+                            cardAppearance = cardAppearance,
                         )
                     )
                 },
