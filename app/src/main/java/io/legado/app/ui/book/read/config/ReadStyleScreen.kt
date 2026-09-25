@@ -53,7 +53,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -86,7 +85,6 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private val StandardPageHeight = 336.dp
 private val EditorPageHeight = 500.dp
-private val PresetInitialScrollOffset = 10.dp
 private val PresetVisibleHorizontalInset = 6.dp
 private val BackgroundTileSpacing = 6.dp
 
@@ -318,7 +316,7 @@ internal fun ReadStyleScreen(
                             }
                         )
                     },
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp),
                 )
             }
 
@@ -430,52 +428,40 @@ private fun PresetPage(
     accentColor: Color,
     actions: ReadStyleActions,
 ) {
-    val density = LocalDensity.current
-    val initialScrollOffset = with(density) { PresetInitialScrollOffset.roundToPx() }
-    val presetListState = rememberLazyListState(
-        initialFirstVisibleItemScrollOffset = initialScrollOffset,
-    )
+    val presetListState = rememberLazyListState()
     val bookPresetPosition = state.presets.indexOfFirst { it.index == -1 }
-    LaunchedEffect(state.onlyThisBook, bookPresetPosition, initialScrollOffset) {
+    LaunchedEffect(state.onlyThisBook, bookPresetPosition) {
         if (state.onlyThisBook && bookPresetPosition >= 0) {
-            presetListState.animateScrollToItem(bookPresetPosition, scrollOffset = initialScrollOffset)
+            presetListState.animateScrollToItem(bookPresetPosition)
         }
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = stringResource(R.string.reading_presets),
-            color = contentColor,
-            fontSize = 17.sp,
-        )
-    }
-
-    LazyRow(
-        state = presetListState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(64.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        itemsIndexed(
-            items = state.presets,
-            key = { _, item -> item.index },
-        ) { _, item ->
-            PresetCard(
-                name = item.name,
-                textColor = Color(item.textColor),
-                background = item.background,
-                selected = item.index == state.selectedPresetIndex,
-                accentColor = accentColor,
-                onClick = { actions.onSelectPreset(item.index) },
-            )
+    Spacer(Modifier.height(24.dp))
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val spacing = 8.dp
+        val presetWidth = (maxWidth - spacing * 6) / 5
+        LazyRow(
+            state = presetListState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = spacing),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            itemsIndexed(
+                items = state.presets,
+                key = { _, item -> item.index },
+            ) { _, item ->
+                PresetCard(
+                    name = item.name,
+                    width = presetWidth,
+                    textColor = Color(item.textColor),
+                    background = item.background,
+                    selected = item.index == state.selectedPresetIndex,
+                    accentColor = accentColor,
+                    onClick = { actions.onSelectPreset(item.index) },
+                )
+            }
         }
     }
 
@@ -539,6 +525,7 @@ private fun PresetPage(
 @Composable
 private fun PresetCard(
     name: String,
+    width: Dp,
     textColor: Color,
     background: ImageBitmap?,
     selected: Boolean,
@@ -548,7 +535,7 @@ private fun PresetCard(
     val shape = RoundedCornerShape(10.dp)
     Box(
         modifier = Modifier
-            .size(width = 64.dp, height = 56.dp)
+            .size(width = width, height = 56.dp)
             .clip(shape)
             .background(Color.White.copy(alpha = 0.13f))
             .border(
@@ -1525,7 +1512,7 @@ private fun AdjustPage(
         modifier = Modifier
             .fillMaxWidth()
             .height(72.dp)
-            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+            .padding(start = 8.dp, end = 8.dp, top = 12.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

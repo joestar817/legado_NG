@@ -2357,7 +2357,7 @@
     <string name="read_tip_position">%1$s · %2$s</string>
     <string name="read_tip_used_at">Used in %1$s</string>
     <string name="reading_presets">Reading presets</string>
-    <string name="read_style_only_this_book">This book only</string>
+    <string name="read_style_only_this_book">Preset for this book only</string>
     <string name="read_style_this_book">This book</string>
     <string name="read_style_follow_global">Use global</string>
     <string name="create_style">＋ New</string>
