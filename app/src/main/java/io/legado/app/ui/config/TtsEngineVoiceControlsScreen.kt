@@ -255,7 +255,7 @@ private fun TtsSystemVoiceParamsPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(30.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(colorResource(R.color.ng_surface))
             .padding(horizontal = 18.dp, vertical = 14.dp),
     ) {
