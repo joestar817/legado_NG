@@ -49,6 +49,7 @@ import io.legado.app.help.config.NgThemeGradientMotion
 import io.legado.app.help.config.NgThemeGradientProfile
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
+import io.legado.app.ui.design.components.view.NgBackdropSourceLayout
 import io.legado.app.utils.printOnDebug
 import kotlin.math.hypot
 
@@ -551,7 +552,7 @@ internal fun NgThemeGradientBackground(
         NgThemeGradientHostView(context)
     }
     val backgroundSource = remember(context, backgroundHost) {
-        FrameLayout(context).apply {
+        NgBackdropSourceLayout(context).apply {
             id = R.id.ng_liquid_glass_backdrop_source
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isClickable = false

@@ -31,6 +31,7 @@ import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.transparentNavBar
 import io.legado.app.ui.book.read.aloud.ReadAloudMiniPlayer
+import io.legado.app.ui.design.components.view.NgBackdropSourceLayout
 import io.legado.app.ui.design.theme.NgThemeGradientDrawable
 import io.legado.app.ui.design.theme.NgThemeGradientHostView
 import io.legado.app.ui.design.theme.NgThemeSceneHostView
@@ -135,7 +136,7 @@ abstract class BaseActivity<VB : ViewBinding>(
     private fun createContentRoot(content: View): View {
         if (!imageBg) return content
         val root = FrameLayout(this)
-        val sceneSource = FrameLayout(this).apply {
+        val sceneSource = NgBackdropSourceLayout(this).apply {
             id = R.id.ng_liquid_glass_backdrop_source
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isClickable = false

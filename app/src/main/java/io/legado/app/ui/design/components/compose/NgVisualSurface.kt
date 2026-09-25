@@ -17,7 +17,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
@@ -408,10 +412,12 @@ private fun NgViewLiquidGlassSurface(
     contentPadding: PaddingValues,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val segmented = shape as? NgSegmentedGlassShape
+    val contentShape = remember(shape) { segmented?.let(::NgGlassContentShape) }
     val density = androidx.compose.ui.platform.LocalDensity.current
     Surface(
         modifier = modifier,
-        shape = shape,
+        shape = if (segmented != null) RectangleShape else shape,
         color = Color.Transparent,
         contentColor = style.contentColor,
         shadowElevation = style.shadowElevation,
@@ -419,7 +425,19 @@ private fun NgViewLiquidGlassSurface(
         Box(propagateMinConstraints = true) {
             AndroidView(
                 factory = { context -> NgViewLiquidGlassBackdropView(context) },
-                modifier = Modifier.matchParentSize(),
+                modifier = Modifier.matchParentSize()
+                    .then(
+                        if (segmented != null) {
+                            // Keep the expensive concave clip inside a cached hardware layer.
+                            // Backdrop invalidations still refresh it; foreground interaction
+                            // and the parent's visibility animation only composite the result.
+                            Modifier.graphicsLayer {
+                                compositingStrategy = CompositingStrategy.Offscreen
+                            }.clip(shape)
+                        } else {
+                            Modifier
+                        }
+                    ),
                 update = { view ->
                     view.renderer.sourceView = sourceView
                     view.renderer.visualSystemOverride = visualSystemOverride
@@ -436,7 +454,8 @@ private fun NgViewLiquidGlassSurface(
                     .ngGlassLayer(shape, style, materialViewport = null),
             )
             Column(
-                modifier = Modifier.padding(contentPadding),
+                modifier = Modifier.then(contentShape?.let { Modifier.clip(it) } ?: Modifier)
+                    .padding(contentPadding),
                 content = content,
             )
         }

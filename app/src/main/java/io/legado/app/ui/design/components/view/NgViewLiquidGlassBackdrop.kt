@@ -49,6 +49,7 @@ internal class NgViewLiquidGlassRenderer(
             if (field === value) return
             detachPreDrawListener()
             field = value
+            recordedBackdrop = null
             attachPreDrawListener()
             owner.invalidate()
         }
@@ -63,6 +64,9 @@ internal class NgViewLiquidGlassRenderer(
 
     private var renderNode: RenderNode? = null
     private var refractionShader: RuntimeShader? = null
+    private var recordedBackdrop: BackdropRecording? = null
+    private var appliedEffect: EffectParameters? = null
+    private var drawnSurface: SurfaceParameters? = null
     private var observedTree: ViewTreeObserver? = null
     private val ownerLocation = IntArray(2)
     private val sourceLocation = IntArray(2)
@@ -72,8 +76,91 @@ internal class NgViewLiquidGlassRenderer(
     private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val clipPath = Path()
     private val preDrawListener = ViewTreeObserver.OnPreDrawListener {
-        owner.invalidate()
+        invalidateChangedBackdrop()
         true
+    }
+
+    private data class SourceGeometry(
+        val x: Int,
+        val y: Int,
+        val width: Int,
+        val height: Int,
+        val scrollX: Int,
+        val scrollY: Int,
+    )
+
+    private data class BackdropRecording(
+        val source: NgBackdropSourceLayout,
+        val sourceRevision: Long,
+        val sourceGeometry: SourceGeometry,
+        val pageSource: NgBackdropSourceLayout?,
+        val pageRevision: Long?,
+        val pageGeometry: SourceGeometry?,
+        val root: View,
+        val rootGeometry: SourceGeometry,
+        val backgroundRevision: Long,
+        val width: Int,
+        val height: Int,
+        val padding: Int,
+    )
+
+    private data class EffectParameters(
+        val width: Int,
+        val height: Int,
+        val density: Float,
+        val cornerRadius: Float,
+        val spec: NgLiquidGlassSpec,
+    )
+
+    private data class SurfaceParameters(val color: Int, val alpha: Float, val draws: Boolean)
+
+    private fun effectParameters(spec: NgLiquidGlassSpec) = EffectParameters(
+        owner.width, owner.height, owner.resources.displayMetrics.density, cornerRadiusPx, spec,
+    )
+
+    private fun surfaceParameters() = SurfaceParameters(surfaceColor, surfaceAlpha, drawsSurface)
+
+    private fun backdropPadding(spec: NgLiquidGlassSpec, density: Float): Float =
+        (spec.blurRadius.value * density - spec.refractionHeight.value * density).coerceAtLeast(0f)
+
+    private fun pageBackdropSource(source: View): View? =
+        owner.rootView.findViewById<View>(R.id.ng_liquid_glass_backdrop_source)
+            ?.takeIf { it !== source && it.isAttachedToWindow && !it.containsDescendant(owner) }
+
+    /** Only explicit background hosts promise revisions for all of their drawing changes. */
+    private fun backdropRecording(source: View, padding: Int): BackdropRecording? {
+        if (source !is NgBackdropSourceLayout || source.rootView !== owner.rootView) return null
+        val pageSource = pageBackdropSource(source)
+        if (pageSource != null && pageSource !is NgBackdropSourceLayout) return null
+        owner.getLocationInWindow(ownerLocation)
+        fun geometry(view: View): SourceGeometry {
+            view.getLocationInWindow(sourceLocation)
+            return SourceGeometry(
+                sourceLocation[0] - ownerLocation[0], sourceLocation[1] - ownerLocation[1],
+                view.width, view.height, view.scrollX, view.scrollY,
+            )
+        }
+        val versionedPage = pageSource as? NgBackdropSourceLayout
+        return BackdropRecording(
+            source, source.contentRevision, geometry(source),
+            versionedPage, versionedPage?.contentRevision, versionedPage?.let(::geometry),
+            owner.rootView, geometry(owner.rootView), source.windowBackgroundRevision,
+            owner.width, owner.height, padding,
+        )
+    }
+
+    private fun invalidateChangedBackdrop() {
+        if (!isEnabled() || !owner.isShown || owner.width <= 0 || owner.height <= 0) return
+        val spec = resolvedSpec()
+        val padding = ceil(backdropPadding(spec, owner.resources.displayMetrics.density)).toInt()
+        val recording = backdropRecording(requireNotNull(sourceView), padding)
+        // Arbitrary content Views (e.g. a scrolling page behind a Dock) keep live sampling.
+        // A stable background must not invalidate its own root again on every preDraw.
+        if (recording == null || recording != recordedBackdrop ||
+            appliedEffect != effectParameters(spec) || drawnSurface != surfaceParameters()
+        ) {
+            owner.invalidate()
+        }
     }
 
     fun onAttachedToWindow() {
@@ -84,6 +171,9 @@ internal class NgViewLiquidGlassRenderer(
         detachPreDrawListener()
         renderNode = null
         refractionShader = null
+        recordedBackdrop = null
+        appliedEffect = null
+        drawnSurface = null
     }
 
     fun isEnabled(): Boolean {
@@ -100,6 +190,7 @@ internal class NgViewLiquidGlassRenderer(
         val source = sourceView ?: return false
         drawBackdrop(canvas, source)
         if (drawsSurface) drawSurface(canvas)
+        drawnSurface = surfaceParameters()
         return true
     }
 
@@ -112,7 +203,7 @@ internal class NgViewLiquidGlassRenderer(
         val refractionAmountPx = spec.refractionAmount.value * density
         val interiorRefractionAmountPx = spec.interiorRefractionAmount.value * density
         // lens 不按折射位移外扩录制范围，避免把 Dock 外的列表内容折进来。
-        val padding = (blurPx - refractionHeightPx).coerceAtLeast(0f)
+        val padding = backdropPadding(spec, density)
         val paddingInt = ceil(padding).toInt()
         val paddedWidth = (owner.width + paddingInt * 2).coerceAtLeast(1)
         val paddedHeight = (owner.height + paddingInt * 2).coerceAtLeast(1)
@@ -120,52 +211,46 @@ internal class NgViewLiquidGlassRenderer(
         node.setPosition(-paddingInt, -paddingInt, owner.width + paddingInt, owner.height + paddingInt)
 
         owner.getLocationInWindow(ownerLocation)
-        val recordingCanvas = node.beginRecording(paddedWidth, paddedHeight)
-        try {
-            drawWindowBackground(recordingCanvas, paddingInt)
-            owner.rootView.findViewById<View>(R.id.ng_liquid_glass_backdrop_source)
-                ?.takeIf { pageSource ->
-                    pageSource !== source &&
-                        pageSource.isAttachedToWindow &&
-                        !pageSource.containsDescendant(owner)
-                }
-                ?.let { pageSource ->
-                    drawSource(recordingCanvas, pageSource, paddingInt)
-                }
-            drawSource(recordingCanvas, source, paddingInt)
-        } finally {
-            node.endRecording()
+        val recording = backdropRecording(source, paddingInt)
+        if (recording == null || recording != recordedBackdrop || !node.hasDisplayList()) {
+            val recordingCanvas = node.beginRecording(paddedWidth, paddedHeight)
+            try {
+                drawWindowBackground(recordingCanvas, paddingInt, recording?.source)
+                pageBackdropSource(source)?.let { drawSource(recordingCanvas, it, paddingInt) }
+                drawSource(recordingCanvas, source, paddingInt)
+            } finally {
+                node.endRecording()
+            }
+            // Keep the revision from before recording: a real update during draw must not be lost.
+            recordedBackdrop = recording
         }
 
-        node.setRenderEffect(
-            createRenderEffect(
-                width = owner.width.toFloat(),
-                height = owner.height.toFloat(),
-                padding = padding,
-                cornerRadius = cornerRadiusPx,
-                blurRadius = blurPx,
-                refractionHeight = refractionHeightPx,
-                refractionAmount = refractionAmountPx,
-                interiorRefractionAmount = interiorRefractionAmountPx,
-                convexLightingStrength = spec.convexLightingStrength,
-                saturation = spec.saturation,
-                depthEffect = spec.depthEffect,
-                chromaticAberration = spec.chromaticAberration,
+        val effect = effectParameters(spec)
+        if (effect != appliedEffect) {
+            node.setRenderEffect(
+                createRenderEffect(
+                    width = owner.width.toFloat(),
+                    height = owner.height.toFloat(),
+                    padding = padding,
+                    cornerRadius = cornerRadiusPx,
+                    blurRadius = blurPx,
+                    refractionHeight = refractionHeightPx,
+                    refractionAmount = refractionAmountPx,
+                    interiorRefractionAmount = interiorRefractionAmountPx,
+                    convexLightingStrength = spec.convexLightingStrength,
+                    saturation = spec.saturation,
+                    depthEffect = spec.depthEffect,
+                    chromaticAberration = spec.chromaticAberration,
+                )
             )
-        )
+            clipPath.rewind()
+            clipPath.addRoundRect(
+                RectF(0f, 0f, owner.width.toFloat(), owner.height.toFloat()),
+                cornerRadiusPx, cornerRadiusPx, Path.Direction.CW,
+            )
+            appliedEffect = effect
+        }
         val saveCount = canvas.save()
-        clipPath.rewind()
-        clipPath.addRoundRect(
-            RectF(
-                0f,
-                0f,
-                owner.width.toFloat(),
-                owner.height.toFloat(),
-            ),
-            cornerRadiusPx,
-            cornerRadiusPx,
-            Path.Direction.CW,
-        )
         canvas.clipPath(clipPath)
         canvas.drawRenderNode(node)
         canvas.restoreToCount(saveCount)
@@ -182,7 +267,7 @@ internal class NgViewLiquidGlassRenderer(
         canvas.restoreToCount(saveCount)
     }
 
-    private fun drawWindowBackground(canvas: Canvas, padding: Int) {
+    private fun drawWindowBackground(canvas: Canvas, padding: Int, source: NgBackdropSourceLayout?) {
         val root = owner.rootView
         val background = root.background ?: return
         root.getLocationInWindow(rootLocation)
@@ -192,10 +277,20 @@ internal class NgViewLiquidGlassRenderer(
             (padding + rootLocation[0] - ownerLocation[0]).toFloat(),
             (padding + rootLocation[1] - ownerLocation[1]).toFloat(),
         )
-        background.setBounds(0, 0, root.width, root.height)
-        background.draw(canvas)
-        background.bounds = oldDrawableBounds
-        canvas.restoreToCount(saveCount)
+        fun setBounds(bounds: Rect) {
+            if (source != null) {
+                source.withUntrackedWindowBackgroundBounds { background.bounds = bounds }
+            } else {
+                background.bounds = bounds
+            }
+        }
+        try {
+            setBounds(Rect(0, 0, root.width, root.height))
+            background.draw(canvas)
+        } finally {
+            setBounds(oldDrawableBounds)
+            canvas.restoreToCount(saveCount)
+        }
     }
 
     @RequiresApi(Build.VERSION_CODES.S)

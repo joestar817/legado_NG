@@ -32,12 +32,13 @@ import io.legado.app.ui.book.read.aloud.ListeningCartoonTextureHost
 import io.legado.app.ui.book.read.aloud.availableCartoonTypes
 import io.legado.app.ui.book.read.aloud.createCartoonMotionTextureView
 import io.legado.app.ui.book.read.aloud.motionEnvironmentAllowed
+import io.legado.app.ui.design.components.view.NgBackdropSourceLayout
 
 /** Page-level host for the animated scene owned by the active NG theme. */
 internal class NgThemeSceneHostView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-) : FrameLayout(context, attrs) {
+) : NgBackdropSourceLayout(context, attrs) {
 
     private val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
     private var profile: NgThemeSceneProfile? = null
@@ -134,9 +135,9 @@ internal class NgThemeSceneHostView @JvmOverloads constructor(
 
     private fun createScene(type: ListeningCartoonType) {
         val view = context.createCartoonMotionTextureView(type)
-        view.layoutParams = LayoutParams(
-            LayoutParams.MATCH_PARENT,
-            LayoutParams.MATCH_PARENT,
+        view.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
         )
         addView(view)
         sceneType = type
