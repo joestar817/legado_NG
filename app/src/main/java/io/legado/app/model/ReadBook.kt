@@ -75,6 +75,7 @@ object ReadBook : CoroutineScope by MainScope() {
     var bookSource: BookSource? = null
     var msg: String? = null
     private val loadingChapters = arrayListOf<Int>()
+    private val loadEpoch = ReadBookLoadEpoch()
     private val readRecord = ReadRecord()
     private val chapterLoadingJobs = ConcurrentHashMap<Int, Coroutine<*>>()
     private val prevChapterLoadingLock = Mutex()
@@ -96,6 +97,7 @@ object ReadBook : CoroutineScope by MainScope() {
     val preDownloadSemaphore = Semaphore(2)
     val executor = globalExecutor
 
+    @Synchronized
     fun resetData(book: Book) {
         releaseAndCancel()
         ReadBook.book = book
@@ -128,6 +130,7 @@ object ReadBook : CoroutineScope by MainScope() {
         }
     }
 
+    @Synchronized
     fun upData(book: Book) {
         releaseAndCancel()
         ReadBook.book = book
@@ -641,30 +644,31 @@ object ReadBook : CoroutineScope by MainScope() {
         resetPageOffset: Boolean = false,
         success: (() -> Unit)? = null
     ) {
-        Coroutine.async {
-            val book = book!!
+        val (book, generation) = currentLoad() ?: return
+        Coroutine.async(this) {
             val startup = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("content-read-$index") else null
+            ensureLoadCurrent(book, generation)
             val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index) ?: return@async
-            if (addLoading(index)) {
-                startup?.mark("before-content")
-                BookHelp.getContent(book, chapter)?.let {
+            if (addLoading(index, book, generation)) {
+                try {
+                    startup?.mark("before-content")
+                    val content = BookHelp.getContent(book, chapter)
                     startup?.mark("content-read")
-                    contentLoadFinish(
-                        book,
-                        chapter,
-                        it,
-                        upContent,
-                        resetPageOffset,
-                        success = success
-                    )
-                } ?: download(
-                    downloadScope,
-                    chapter,
-                    resetPageOffset
-                )
+                    ensureActive()
+                    ensureLoadCurrent(book, generation)
+                    if (content != null) {
+                        contentLoadFinish(book, chapter, content, upContent, resetPageOffset,
+                            success = success, generation = generation)
+                    } else {
+                        download(downloadScope, book, chapter, generation, resetPageOffset)
+                    }
+                } catch (e: Exception) {
+                    removeLoading(index, book, generation)
+                    throw e
+                }
             }
         }.onError {
-            AppLog.put("加载正文出错\n${it.localizedMessage}")
+            if (it !is CancellationException) AppLog.put("加载正文出错\n${it.localizedMessage}")
         }
     }
 
@@ -673,85 +677,123 @@ object ReadBook : CoroutineScope by MainScope() {
         upContent: Boolean = true,
         resetPageOffset: Boolean = false,
         success: (() -> Unit)? = null
-    ) = withContext(IO) {
-        if (addLoading(index)) {
-            try {
-                val book = book!!
-                val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index)!!
-                val content = BookHelp.getContent(book, chapter) ?: downloadAwait(chapter)
-                contentLoadFinishAwait(book, chapter, content, upContent, resetPageOffset)
-                success?.invoke()
-            } catch (e: Exception) {
-                AppLog.put("加载正文出错\n${e.localizedMessage}")
-            } finally {
-                removeLoading(index)
+    ) {
+        val (book, generation) = currentLoad() ?: return
+        withContext(IO) {
+            if (addLoading(index, book, generation)) {
+                try {
+                    val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index) ?: return@withContext
+                    val content = BookHelp.getContent(book, chapter) ?: downloadAwait(book, chapter, generation)
+                    ensureActive()
+                    ensureLoadCurrent(book, generation)
+                    contentLoadFinishAwait(book, chapter, content, upContent, resetPageOffset, generation)
+                    withCurrentLoad(book, generation) { success?.invoke() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    AppLog.put("加载正文出错\n${e.localizedMessage}")
+                } finally {
+                    removeLoading(index, book, generation)
+                }
             }
         }
     }
 
-    /**
-     * 下载正文
-     */
-    private suspend fun downloadIndex(index: Int) {
+    private suspend fun downloadIndex(index: Int, book: Book, generation: Long) {
+        ensureLoadCurrent(book, generation)
         if (index < 0) return
         if (index > chapterSize - 1) {
-            upToc()
+            withCurrentLoad(book, generation) { upToc() }
             return
         }
-        val book = book ?: return
         val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index) ?: return
         if (BookHelp.hasContent(book, chapter)) {
-            downloadedChapters.add(chapter.index)
+            withCurrentLoad(book, generation) { downloadedChapters.add(chapter.index) }
         } else {
             delay(1000)
-            if (addLoading(index)) {
-                download(downloadScope, chapter, false, preDownloadSemaphore)
+            if (addLoading(index, book, generation)) {
+                download(downloadScope, book, chapter, generation, false, preDownloadSemaphore)
             }
         }
     }
 
-    /**
-     * 下载正文
-     */
     private fun download(
         scope: CoroutineScope,
+        book: Book,
         chapter: BookChapter,
+        generation: Long,
         resetPageOffset: Boolean,
-        semaphore: Semaphore? = null,
-        success: (() -> Unit)? = null
-    ) {
-        val book = book ?: return removeLoading(chapter.index)
-        val bookSource = bookSource
-        if (bookSource != null) {
-            CacheBook.getOrCreate(bookSource, book).download(scope, chapter, semaphore)
+        semaphore: Semaphore? = null
+    ) = withCurrentLoad(book, generation) {
+        val source = bookSource
+        if (source != null) {
+            CacheBook.getOrCreate(source, book).download(scope, chapter, semaphore, resetPageOffset, generation)
         } else {
             val msg = if (book.isLocal) "无内容" else "没有书源"
-            contentLoadFinish(
-                book,
-                chapter,
-                "加载正文失败\n$msg",
-                resetPageOffset = resetPageOffset,
-                success = success
-            )
+            contentLoadFinish(book, chapter, "加载正文失败\n$msg",
+                resetPageOffset = resetPageOffset, generation = generation)
         }
     }
 
-    private suspend fun downloadAwait(chapter: BookChapter): String {
-        val book = book!!
-        val bookSource = bookSource
-        if (bookSource != null) {
-            return CacheBook.getOrCreate(bookSource, book).downloadAwait(chapter)
+    private suspend fun downloadAwait(book: Book, chapter: BookChapter, generation: Long): String {
+        val source = withCurrentLoad(book, generation) { bookSource }
+        return if (source != null) {
+            CacheBook.getOrCreate(source, book).downloadAwait(chapter, generation)
         } else {
             val msg = if (book.isLocal) "无内容" else "没有书源"
-            return "加载正文失败\n$msg"
+            "加载正文失败\n$msg"
         }
     }
 
     @Synchronized
-    private fun addLoading(index: Int): Boolean {
+    private fun currentLoad(): Pair<Book, Long>? = book?.let { it to loadEpoch.current }
+
+    @Synchronized
+    internal fun captureLoadGeneration(bookUrl: String): Long? =
+        if (book?.bookUrl == bookUrl) loadEpoch.current else null
+
+    @Synchronized
+    internal fun isLoadCurrent(bookUrl: String, generation: Long): Boolean =
+        book?.bookUrl == bookUrl && loadEpoch.isCurrent(generation)
+
+    private fun ensureLoadCurrent(book: Book, generation: Long) {
+        if (!isLoadCurrent(book.bookUrl, generation)) throw CancellationException("Reader changed")
+    }
+
+    @Synchronized
+    private fun <T> withCurrentLoad(book: Book, generation: Long, block: () -> T): T {
+        ensureLoadCurrent(book, generation)
+        return block()
+    }
+
+    @Synchronized
+    internal fun resumePendingContent(book: Book, generation: Long, index: Int, resetPageOffset: Boolean) {
+        if (!isLoadCurrent(book.bookUrl, generation)) return
+        loadingChapters.remove(index)
+        loadContent(index, resetPageOffset = resetPageOffset)
+    }
+
+    @Synchronized
+    internal fun recordDownload(bookUrl: String, generation: Long?, index: Int, failed: Boolean) {
+        if (generation == null || !isLoadCurrent(bookUrl, generation)) return
+        if (failed) downloadFailChapters[index] = (downloadFailChapters[index] ?: 0) + 1
+        else {
+            downloadedChapters.add(index)
+            downloadFailChapters.remove(index)
+        }
+    }
+
+    @Synchronized
+    private fun addLoading(index: Int, book: Book, generation: Long): Boolean {
+        ensureLoadCurrent(book, generation)
         if (loadingChapters.contains(index)) return false
         loadingChapters.add(index)
         return true
+    }
+
+    @Synchronized
+    private fun removeLoading(index: Int, book: Book, generation: Long) {
+        if (isLoadCurrent(book.bookUrl, generation)) loadingChapters.remove(index)
     }
 
     @Synchronized
@@ -770,8 +812,10 @@ object ReadBook : CoroutineScope by MainScope() {
         upContent: Boolean = true,
         resetPageOffset: Boolean,
         canceled: Boolean = false,
-        success: (() -> Unit)? = null
+        success: (() -> Unit)? = null,
+        generation: Long = captureLoadGeneration(book.bookUrl) ?: -1L
     ) {
+        if (!isLoadCurrent(book.bookUrl, generation) || chapter.bookUrl != book.bookUrl) return
         removeLoading(chapter.index)
         if (canceled || chapter.index !in durChapterIndex - 1..durChapterIndex + 1) {
             return
@@ -790,6 +834,7 @@ object ReadBook : CoroutineScope by MainScope() {
                 .getContent(book, chapter, content, includeTitle = false)
             startup?.mark("processed")
             ensureActive()
+            ensureLoadCurrent(book, generation)
             val textChapter = ChapterProvider.getTextChapterAsync(
                 this, book, chapter, displayTitle, contents, simulatedChapterSize
             )
@@ -798,49 +843,49 @@ object ReadBook : CoroutineScope by MainScope() {
                 0 -> curChapterLoadingLock.withLock {
                     withContext(Main) {
                         ensureActive()
-                        curTextChapter = textChapter
+                        withCurrentLoad(book, generation) { curTextChapter = textChapter }
                     }
-                    callBack?.upMenuView()
+                    withCurrentLoad(book, generation) { callBack?.upMenuView() }
                     var available = false
                     for (page in textChapter.layoutChannel) {
                         val index = page.index
                         if (!available && page.containPos(durChapterPos)) {
                             if (upContent) {
-                                callBack?.upContent(offset, resetPageOffset)
+                                withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                             }
                             available = true
                         }
                         if (upContent && isScroll) {
                             if (max(index - 3, 0) < durPageIndex) {
-                                callBack?.upContent(offset, false)
+                                withCurrentLoad(book, generation) { callBack?.upContent(offset, false) }
                             }
                         }
-                        callBack?.onLayoutPageCompleted(index, page)
+                        withCurrentLoad(book, generation) { callBack?.onLayoutPageCompleted(index, page) }
                     }
-                    if (upContent) callBack?.upContent(offset, !available && resetPageOffset)
-                    curPageChanged()
-                    callBack?.contentLoadFinish()
+                    if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, !available && resetPageOffset) }
+                    withCurrentLoad(book, generation) { curPageChanged() }
+                    withCurrentLoad(book, generation) { callBack?.contentLoadFinish() }
                 }
 
                 -1 -> prevChapterLoadingLock.withLock {
                     withContext(Main) {
                         ensureActive()
-                        prevTextChapter = textChapter
+                        withCurrentLoad(book, generation) { prevTextChapter = textChapter }
                     }
                     textChapter.layoutChannel.receiveAsFlow().collect()
-                    if (upContent) callBack?.upContent(offset, resetPageOffset)
+                    if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                 }
 
                 1 -> nextChapterLoadingLock.withLock {
                     withContext(Main) {
                         ensureActive()
-                        nextTextChapter = textChapter
+                        withCurrentLoad(book, generation) { nextTextChapter = textChapter }
                     }
                     for (page in textChapter.layoutChannel) {
                         if (page.index > 1) {
                             continue
                         }
-                        if (upContent) callBack?.upContent(offset, resetPageOffset)
+                        if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                     }
                 }
             }
@@ -853,7 +898,7 @@ object ReadBook : CoroutineScope by MainScope() {
             AppLog.put("ChapterProvider ERROR", it)
             appCtx.toastOnUi("ChapterProvider ERROR:\n${it.stackTraceStr}")
         }.onSuccess {
-            success?.invoke()
+            withCurrentLoad(book, generation) { success?.invoke() }
         }
         chapterLoadingJobs[chapter.index] = job
         job.start()
@@ -864,9 +909,12 @@ object ReadBook : CoroutineScope by MainScope() {
         chapter: BookChapter,
         content: String,
         upContent: Boolean = true,
-        resetPageOffset: Boolean
+        resetPageOffset: Boolean,
+        generation: Long = captureLoadGeneration(book.bookUrl) ?: -1L
     ) {
-        removeLoading(chapter.index)
+        ensureLoadCurrent(book, generation)
+        if (chapter.bookUrl != book.bookUrl) return
+        removeLoading(chapter.index, book, generation)
         if (chapter.index !in durChapterIndex - 1..durChapterIndex + 1) {
             return
         }
@@ -879,62 +927,63 @@ object ReadBook : CoroutineScope by MainScope() {
             )
             val contents = contentProcessor
                 .getContent(book, chapter, content, includeTitle = false)
+            ensureLoadCurrent(book, generation)
             val textChapter = ChapterProvider.getTextChapterAsync(
-                this@ReadBook, book, chapter, displayTitle, contents, simulatedChapterSize
+                CoroutineScope(kotlin.coroutines.coroutineContext), book, chapter, displayTitle, contents, simulatedChapterSize
             )
             when (val offset = chapter.index - durChapterIndex) {
                 0 -> {
-                    curTextChapter?.cancelLayout()
+                    withCurrentLoad(book, generation) { curTextChapter?.cancelLayout() }
                     withContext(Main) {
-                        curTextChapter = textChapter
+                        withCurrentLoad(book, generation) { curTextChapter = textChapter }
                     }
-                    callBack?.upMenuView()
+                    withCurrentLoad(book, generation) { callBack?.upMenuView() }
                     var available = false
                     for (page in textChapter.layoutChannel) {
                         val index = page.index
                         if (!available && page.containPos(durChapterPos)) {
                             if (upContent) {
-                                callBack?.upContent(offset, resetPageOffset)
+                                withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                             }
                             available = true
                         }
                         if (upContent && isScroll) {
                             if (max(index - 3, 0) < durPageIndex) {
-                                callBack?.upContent(offset, false)
+                                withCurrentLoad(book, generation) { callBack?.upContent(offset, false) }
                             }
                         }
-                        callBack?.onLayoutPageCompleted(index, page)
+                        withCurrentLoad(book, generation) { callBack?.onLayoutPageCompleted(index, page) }
                     }
-                    if (upContent) callBack?.upContent(offset, !available && resetPageOffset)
-                    curPageChanged()
-                    callBack?.contentLoadFinish()
+                    if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, !available && resetPageOffset) }
+                    withCurrentLoad(book, generation) { curPageChanged() }
+                    withCurrentLoad(book, generation) { callBack?.contentLoadFinish() }
                 }
 
                 -1 -> {
-                    prevTextChapter?.cancelLayout()
+                    withCurrentLoad(book, generation) { prevTextChapter?.cancelLayout() }
                     withContext(Main) {
-                        prevTextChapter = textChapter
+                        withCurrentLoad(book, generation) { prevTextChapter = textChapter }
                     }
                     textChapter.layoutChannel.receiveAsFlow().collect()
-                    if (upContent) callBack?.upContent(offset, resetPageOffset)
+                    if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                 }
 
                 1 -> {
-                    nextTextChapter?.cancelLayout()
+                    withCurrentLoad(book, generation) { nextTextChapter?.cancelLayout() }
                     withContext(Main) {
-                        nextTextChapter = textChapter
+                        withCurrentLoad(book, generation) { nextTextChapter = textChapter }
                     }
                     for (page in textChapter.layoutChannel) {
                         if (page.index > 1) {
                             continue
                         }
-                        if (upContent) callBack?.upContent(offset, resetPageOffset)
+                        if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                     }
                 }
             }
         }.onFailure {
             if (it is CancellationException) {
-                return@onFailure
+                throw it
             }
             AppLog.put("ChapterProvider ERROR", it)
             appCtx.toastOnUi("ChapterProvider ERROR:\n${it.stackTraceStr}")
@@ -982,25 +1031,23 @@ object ReadBook : CoroutineScope by MainScope() {
         saveRead()
     }
 
+    @Synchronized
     fun saveRead(pageChanged: Boolean = false) {
         val book = book ?: return
+        val progress = ReadBookProgressSnapshot(book, bookSource, durChapterIndex, durChapterPos, System.currentTimeMillis())
         if (!pageChanged) ReadBookConfig.saveBookStyle(book)
         executor.execute {
             kotlin.runCatching {
-                book.lastCheckCount = 0
-                val durTime = System.currentTimeMillis()
-                book.durChapterTime = durTime
-                val chapterChanged = book.durChapterIndex != durChapterIndex
-                book.durChapterIndex = durChapterIndex
-                book.durChapterPos = durChapterPos
+                val durTime = progress.time
+                val chapterChanged = progress.apply()
                 if (!pageChanged || chapterChanged) {
-                    appDb.bookChapterDao.getChapter(book.bookUrl, durChapterIndex)?.let {
+                    appDb.bookChapterDao.getChapter(book.bookUrl, progress.chapterIndex)?.let {
                         book.durChapterTitle = it.getDisplayTitle(
                             ContentProcessor.get(book.name, book.origin).getTitleReplaceRules(),
                             book.getUseReplaceRule(),
                             replaceBook = book.toReplaceBook()
                         )
-                        SourceCallBack.callBackBook(SourceCallBack.SAVE_READ, bookSource, book, it, durTime.toString())
+                        SourceCallBack.callBackBook(SourceCallBack.SAVE_READ, progress.source, book, it, durTime.toString())
                     }
                 }
                 book.update()
@@ -1014,30 +1061,34 @@ object ReadBook : CoroutineScope by MainScope() {
      * 预下载
      */
     private fun preDownload() {
-        if (book?.isLocal == true) return
+        val (book, generation) = currentLoad() ?: return
+        if (book.isLocal) return
         executor.execute {
-            if (AppConfig.preDownloadNum < 2) {
-                upToc()
-                return@execute
-            }
-            preDownloadTask?.cancel()
-            preDownloadTask = launch(IO) {
-                //预下载
-                launch {
-                    val maxChapterIndex =
-                        min(durChapterIndex + AppConfig.preDownloadNum, chapterSize)
-                    for (i in durChapterIndex.plus(2)..maxChapterIndex) {
-                        if (downloadedChapters.contains(i)) continue
-                        if ((downloadFailChapters[i] ?: 0) >= 3) continue
-                        downloadIndex(i)
-                    }
+            synchronized(this) {
+                if (!isLoadCurrent(book.bookUrl, generation)) return@execute
+                if (AppConfig.preDownloadNum < 2) {
+                    upToc()
+                    return@execute
                 }
-                launch {
-                    val minChapterIndex = durChapterIndex - min(5, AppConfig.preDownloadNum)
-                    for (i in durChapterIndex.minus(2) downTo minChapterIndex) {
-                        if (downloadedChapters.contains(i)) continue
-                        if ((downloadFailChapters[i] ?: 0) >= 3) continue
-                        downloadIndex(i)
+                preDownloadTask?.cancel()
+                preDownloadTask = launch(IO) {
+                    //预下载
+                    launch {
+                        val maxChapterIndex =
+                            min(durChapterIndex + AppConfig.preDownloadNum, chapterSize)
+                        for (i in durChapterIndex.plus(2)..maxChapterIndex) {
+                            if (downloadedChapters.contains(i)) continue
+                            if ((downloadFailChapters[i] ?: 0) >= 3) continue
+                            downloadIndex(i, book, generation)
+                        }
+                    }
+                    launch {
+                        val minChapterIndex = durChapterIndex - min(5, AppConfig.preDownloadNum)
+                        for (i in durChapterIndex.minus(2) downTo minChapterIndex) {
+                            if (downloadedChapters.contains(i)) continue
+                            if ((downloadFailChapters[i] ?: 0) >= 3) continue
+                            downloadIndex(i, book, generation)
+                        }
                     }
                 }
             }
@@ -1093,11 +1144,13 @@ object ReadBook : CoroutineScope by MainScope() {
     fun unregister(cb: CallBack) {
         if (callBack === cb) {
             callBack = null
+            releaseAndCancel()
         }
-        releaseAndCancel()
     }
 
+    @Synchronized
     private fun releaseAndCancel() {
+        loadEpoch.invalidate()
         msg = null
         preDownloadTask?.cancel()
         downloadScope.coroutineContext.cancelChildren()

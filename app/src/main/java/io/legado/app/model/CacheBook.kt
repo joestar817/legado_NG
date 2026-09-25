@@ -22,6 +22,8 @@ import io.legado.app.utils.onEachParallel
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.startService
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers.IO
@@ -200,6 +202,8 @@ object CacheBook {
 
         private val waitDownloadSet = linkedSetOf<Int>()
         private val onDownloadSet = linkedSetOf<Int>()
+        private val downloadGenerations = hashMapOf<Int, Long?>()
+        private val downloadCompletions = hashMapOf<Int, CompletableDeferred<Unit>>()
         private val tasks = CompositeCoroutine()
         private var isStopped = false
         private var waitingRetry = false
@@ -259,9 +263,17 @@ object CacheBook {
             postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
         }
 
+        // Called under the model lock. Waiters only resume on their own scope and
+        // never call ReadBook while holding this lock.
+        private fun finishDownload(index: Int) {
+            onDownloadSet.remove(index)
+            downloadGenerations.remove(index)
+            downloadCompletions.remove(index)?.complete(Unit)
+        }
+
         @Synchronized
         private fun onSuccess(chapter: BookChapter) {
-            onDownloadSet.remove(chapter.index)
+            finishDownload(chapter.index)
             successDownloadSet.add(chapter.primaryStr())
             errorDownloadMap.remove(chapter.primaryStr())
         }
@@ -273,7 +285,7 @@ object CacheBook {
                 errorDownloadMap[chapter.primaryStr()] =
                     (errorDownloadMap[chapter.primaryStr()] ?: 0) + 1
             }
-            onDownloadSet.remove(chapter.index)
+            finishDownload(chapter.index)
         }
 
         @Synchronized
@@ -298,7 +310,7 @@ object CacheBook {
 
         @Synchronized
         private fun onCancel(index: Int) {
-            onDownloadSet.remove(index)
+            finishDownload(index)
             if (!isStopped) waitDownloadSet.add(index)
         }
 
@@ -313,8 +325,13 @@ object CacheBook {
         /**
          * 从待下载列表内取第一条下载
          */
-        @Synchronized
         fun download(scope: CoroutineScope, context: CoroutineContext) {
+            val generation = ReadBook.captureLoadGeneration(book.bookUrl)
+            downloadNext(scope, context, generation)
+        }
+
+        @Synchronized
+        private fun downloadNext(scope: CoroutineScope, context: CoroutineContext, generation: Long?) {
             val chapterIndex = waitDownloadSet.firstOrNull()
             if (chapterIndex == null) {
                 if (!isLoading && onDownloadSet.isEmpty()) {
@@ -367,23 +384,25 @@ object CacheBook {
                 }
                 return
             }
+            val requestBook = book
+            downloadGenerations[chapter.index] = generation
             WebBook.getContent(
                 scope,
                 bookSource,
-                book,
+                requestBook,
                 chapter,
                 context = context,
                 start = CoroutineStart.LAZY,
                 executeContext = context
             ).onSuccess { content ->
                 onSuccess(chapter)
-                downloadFinish(chapter, content)
+                downloadFinish(requestBook, generation, chapter, content)
             }.onError {
                 onPreError(chapter, it)
                 //出现错误等待一秒后重新加入待下载列表
                 delay(1000)
                 onPostError(chapter, it)
-                downloadFinish(chapter, "获取正文失败\n${it.localizedMessage}")
+                downloadFinish(requestBook, generation, chapter, "获取正文失败\n${it.localizedMessage}")
             }.onCancel {
                 onCancel(chapterIndex)
             }.onFinally {
@@ -430,27 +449,42 @@ object CacheBook {
             }
         }
 
-        suspend fun downloadAwait(chapter: BookChapter): String {
-            synchronized(this) {
-                onDownloadSet.add(chapter.index)
-                waitDownloadSet.remove(chapter.index)
+        suspend fun downloadAwait(
+            chapter: BookChapter,
+            generation: Long? = ReadBook.captureLoadGeneration(chapter.bookUrl)
+        ): String {
+            val requestBook = book
+            val requestSource = bookSource
+            // Serialize await callers with foreground/background downloads too.
+            while (true) {
+                val completion = synchronized(this) {
+                    if (onDownloadSet.contains(chapter.index)) {
+                        downloadCompletions.getOrPut(chapter.index) { CompletableDeferred() }
+                    } else {
+                        onDownloadSet.add(chapter.index)
+                        waitDownloadSet.remove(chapter.index)
+                        null
+                    }
+                }
+                if (completion == null) break
+                completion.await()
             }
             try {
-                val content = WebBook.getContentAwait(bookSource, book, chapter)
+                val content = BookHelp.getContent(requestBook, chapter)
+                    ?: WebBook.getContentAwait(requestSource, requestBook, chapter)
                 onSuccess(chapter)
-                ReadBook.downloadedChapters.add(chapter.index)
-                ReadBook.downloadFailChapters.remove(chapter.index)
+                ReadBook.recordDownload(requestBook.bookUrl, generation, chapter.index, false)
                 return content
             } catch (e: Exception) {
                 if (e is CancellationException) {
                     onCancel(chapter.index)
+                    throw e
                 }
                 onError(chapter, e)
-                ReadBook.downloadFailChapters[chapter.index] =
-                    (ReadBook.downloadFailChapters[chapter.index] ?: 0) + 1
+                ReadBook.recordDownload(requestBook.bookUrl, generation, chapter.index, true)
                 return "获取正文失败\n${e.localizedMessage}"
             } finally {
-                postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
+                postEvent(EventBus.UP_DOWNLOAD, requestBook.bookUrl)
             }
         }
 
@@ -459,50 +493,66 @@ object CacheBook {
             scope: CoroutineScope,
             chapter: BookChapter,
             semaphore: Semaphore?,
-            resetPageOffset: Boolean = false
+            resetPageOffset: Boolean = false,
+            generation: Long? = ReadBook.captureLoadGeneration(chapter.bookUrl)
         ) {
+            val requestBook = book
             if (onDownloadSet.contains(chapter.index)) {
+                // Same reader request is already delivered by the original callback.
+                if (generation != null && downloadGenerations[chapter.index] == generation) return
+                val completion = downloadCompletions.getOrPut(chapter.index) { CompletableDeferred() }
+                Coroutine.async(scope) {
+                    completion.await()
+                    ensureActive()
+                    if (generation != null) {
+                        ReadBook.resumePendingContent(requestBook, generation, chapter.index, resetPageOffset)
+                    }
+                }.onError {
+                    if (it !is CancellationException) AppLog.put("等待正文下载失败", it)
+                }
                 return
             }
+            downloadGenerations[chapter.index] = generation
             onDownloadSet.add(chapter.index)
             waitDownloadSet.remove(chapter.index)
             WebBook.getContent(
                 scope,
                 bookSource,
-                book,
+                requestBook,
                 chapter,
                 start = CoroutineStart.LAZY,
                 executeContext = IO,
                 semaphore = semaphore
             ).onSuccess { content ->
                 onSuccess(chapter)
-                ReadBook.downloadedChapters.add(chapter.index)
-                ReadBook.downloadFailChapters.remove(chapter.index)
-                downloadFinish(chapter, content, resetPageOffset)
+                ReadBook.recordDownload(requestBook.bookUrl, generation, chapter.index, false)
+                downloadFinish(requestBook, generation, chapter, content, resetPageOffset)
             }.onError {
                 onError(chapter, it)
-                ReadBook.downloadFailChapters[chapter.index] =
-                    (ReadBook.downloadFailChapters[chapter.index] ?: 0) + 1
-                downloadFinish(chapter, "获取正文失败\n${it.localizedMessage}", resetPageOffset)
+                ReadBook.recordDownload(requestBook.bookUrl, generation, chapter.index, true)
+                downloadFinish(requestBook, generation, chapter, "获取正文失败\n${it.localizedMessage}", resetPageOffset)
             }.onCancel {
                 onCancel(chapter.index)
-                downloadFinish(chapter, "download canceled", resetPageOffset, true)
+                downloadFinish(requestBook, generation, chapter, "download canceled", resetPageOffset, true)
             }.onFinally {
-                postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
+                postEvent(EventBus.UP_DOWNLOAD, requestBook.bookUrl)
             }.start()
         }
 
         private fun downloadFinish(
+            requestBook: Book,
+            generation: Long?,
             chapter: BookChapter,
             content: String,
             resetPageOffset: Boolean = false,
             canceled: Boolean = false
         ) {
-            if (ReadBook.book?.bookUrl == book.bookUrl) {
+            if (generation != null) {
                 ReadBook.contentLoadFinish(
-                    book, chapter, content,
+                    requestBook, chapter, content,
                     resetPageOffset = resetPageOffset,
-                    canceled = canceled
+                    canceled = canceled,
+                    generation = generation
                 )
             }
         }
