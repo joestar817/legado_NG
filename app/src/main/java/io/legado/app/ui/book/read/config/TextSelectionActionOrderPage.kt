@@ -54,8 +54,8 @@ internal fun TextSelectionActionOrderPage(onBack: () -> Unit) {
         .background(Color(NgTheme.colors.surface).copy(alpha = 0.12f))
         .border(0.6.dp, color.copy(alpha = 0.10f), shape)
     NgGlassSurface(
-        modifier = Modifier.padding(8.dp).fillMaxSize(),
-        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.padding(top = 8.dp).fillMaxSize(),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         style = readFloatingGlassStyle(),
     ) {
         Column(Modifier.fillMaxSize().padding(bottom = 4.dp)) {

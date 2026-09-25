@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.data.entities.Book
@@ -33,7 +34,7 @@ internal fun EpubLayoutSheet(
     onDismiss: () -> Unit,
 ) {
     val maxHeight = minOf(READ_MORE_CONFIG_WINDOW_HEIGHT_DP.dp, LocalConfiguration.current.screenHeightDp.dp)
-    val appearance = NgDrawerDefaults.currentAppearance().copy(horizontalMarginDp = 8, cornerRadiusDp = 20)
+    val appearance = NgDrawerDefaults.currentAppearance().copy(horizontalMarginDp = 0, cornerRadiusDp = 20)
     var choices by remember(book.bookUrl) { mutableStateOf(EpubLayoutPreferences.read(book.bookUrl)) }
     fun change(key: String, value: Boolean) {
         EpubLayoutPreferences.set(book.bookUrl, key, value)
@@ -43,11 +44,12 @@ internal fun EpubLayoutSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetMaxWidth = Dp.Unspecified,
         containerColor = Color.Transparent, shape = RectangleShape, dragHandle = null,
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
         NgBottomDrawerSurface(
-            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(top = 8.dp),
             appearance = appearance,
         ) {
             Column(Modifier.navigationBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {

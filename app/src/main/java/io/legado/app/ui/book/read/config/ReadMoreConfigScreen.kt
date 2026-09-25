@@ -127,9 +127,9 @@ internal fun ReadMoreConfigScreen(
 
     NgGlassSurface(
         modifier = Modifier
-            .padding(horizontal = 8.dp, vertical = 8.dp)
+            .padding(top = 8.dp)
             .fillMaxSize(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         style = readFloatingGlassStyle(),
     ) {
         Column(

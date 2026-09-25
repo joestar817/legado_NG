@@ -285,8 +285,8 @@ internal fun ReadStyleScreen(
     NgGlassSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(20.dp),
+            .padding(top = 8.dp),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         style = readFloatingGlassStyle(),
     ) {
         Column(
