@@ -442,7 +442,7 @@ class AnalyzeUrl(
         skipRateLimit: Boolean = false
     ): StrResponse {
         if (type != null) {
-            return StrResponse(url, HexUtil.encodeHexStr(getByteArrayAwait()))
+            return StrResponse(url, HexUtil.encodeHexStr(getByteArrayAwait(skipRateLimit)))
         }
         if (skipRateLimit) {
             return executeStrRequest(jsStr, sourceRegex, useWebView, isTest)
@@ -577,35 +577,36 @@ class AnalyzeUrl(
     /**
      * 访问网站,返回Response
      */
-    suspend fun getResponseAwait(): Response {
-        concurrentRateLimiter.withLimit {
-            setCookie()
-            val response = getClient().newCallResponse(retry) {
-                addHeaders(headerMap)
-                networkLogSource(getTag())
-                when (method) {
-                    RequestMethod.POST -> {
-                        url(urlNoQuery)
-                        val contentType = headerMap["Content-Type"]
-                        val body = body
-                        if (!encodedForm.isNullOrEmpty() || body.isNullOrBlank()) {
-                            postForm(encodedForm ?: "")
-                        } else if (!contentType.isNullOrBlank()) {
-                            val requestBody = body.toRequestBody(contentType.toMediaType())
-                            post(requestBody)
-                        } else {
-                            postJson(body)
-                        }
-                    }
+    suspend fun getResponseAwait(): Response = getResponseAwait(false)
 
-                    else -> get(urlNoQuery, encodedQuery)
+    private suspend fun getResponseAwait(skipRateLimit: Boolean): Response {
+        if (!skipRateLimit) concurrentRateLimiter.getConcurrentRecord()
+        setCookie()
+        val response = getClient().newCallResponse(retry) {
+            addHeaders(headerMap)
+            networkLogSource(getTag())
+            when (method) {
+                RequestMethod.POST -> {
+                    url(urlNoQuery)
+                    val contentType = headerMap["Content-Type"]
+                    val body = body
+                    if (!encodedForm.isNullOrEmpty() || body.isNullOrBlank()) {
+                        postForm(encodedForm ?: "")
+                    } else if (!contentType.isNullOrBlank()) {
+                        val requestBody = body.toRequestBody(contentType.toMediaType())
+                        post(requestBody)
+                    } else {
+                        postJson(body)
+                    }
                 }
+
+                else -> get(urlNoQuery, encodedQuery)
             }
-            if (enabledCookieJar) {
-                bookSourceCookieStore?.saveResponse(response)
-            }
-            return response
         }
+        if (enabledCookieJar) {
+            bookSourceCookieStore?.saveResponse(response)
+        }
+        return response
     }
 
     /**
@@ -673,11 +674,13 @@ class AnalyzeUrl(
     /**
      * 访问网站,返回ByteArray
      */
-    suspend fun getByteArrayAwait(): ByteArray {
+    suspend fun getByteArrayAwait(): ByteArray = getByteArrayAwait(false)
+
+    private suspend fun getByteArrayAwait(skipRateLimit: Boolean): ByteArray {
         getByteArrayIfDataUri()?.let {
             return it
         }
-        return getResponseAwait().body.bytes()
+        return getResponseAwait(skipRateLimit).body.bytes()
     }
 
     fun getByteArray(): ByteArray {
