@@ -324,6 +324,8 @@ object McpServer {
                 properties = mapOf(
                     "tag" to stringSchema("BookSource.bookSourceUrl"),
                     "key" to stringSchema("Keyword or URL used by Legado debug"),
+                    "main_js_override" to stringSchema("Optional mainJs for this debug request only; never saved to the source."),
+                    "js_lib_override" to stringSchema("Optional jsLib for this debug request only; never saved to the source."),
                     "mode" to mapOf(
                         "type" to "string",
                         "enum" to listOf("auto", "search", "detail", "explore", "toc", "content"),
@@ -766,13 +768,30 @@ object McpServer {
             "content" -> "--$key"
             else -> key
         }
-        val source = appDb.bookSourceDao.getBookSource(tag)
+        val storedSource = appDb.bookSourceDao.getBookSource(tag)
             ?: return toolResult(
                 ok = false,
                 upstreamEndpoint = "native://bookSourceDebug",
                 normalizedData = null,
                 warnings = listOf("未找到源，请检查书源地址")
             )
+        val mainOverride = arguments.get("main_js_override").asStringOrNull()
+        val libraryOverride = arguments.get("js_lib_override").asStringOrNull()
+        // Keep identity/login/preferences and the normal source class policy. The copy
+        // is consumed only by Debug; editing either rule never mutates the stored row.
+        val source = if (mainOverride != null || libraryOverride != null) {
+            val main = mainOverride ?: storedSource.mainJs
+            val library = libraryOverride ?: storedSource.jsLib
+            require((main?.length ?: 0).toLong() + (library?.length ?: 0) <= 2_000_000L &&
+                (main?.toByteArray(Charsets.UTF_8)?.size ?: 0).toLong() +
+                (library?.toByteArray(Charsets.UTF_8)?.size ?: 0) <= 2_000_000L) {
+                "Debug rule overrides exceed size limit"
+            }
+            storedSource.copy(
+                mainJs = main,
+                jsLib = library,
+            )
+        } else storedSource
         val logs = Collections.synchronizedList(mutableListOf<String>())
         val latch = CountDownLatch(1)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
