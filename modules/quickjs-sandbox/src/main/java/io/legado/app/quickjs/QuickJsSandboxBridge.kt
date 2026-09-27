@@ -1,74 +1,43 @@
 package io.legado.app.quickjs
 
-import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
-import android.content.ServiceConnection
 import android.os.Build
 import android.os.DeadObjectException
 import android.os.Bundle
-import android.os.IBinder
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.RemoteException
 import android.os.SystemClock
+import java.io.Closeable
 import java.io.IOException
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 
-class QuickJsSandboxBridge(context: Context) {
+class QuickJsSandboxBridge internal constructor(
+    context: Context,
+    private val execution: QuickJsSandboxExecution?,
+) {
+    constructor(context: Context) : this(context, null)
 
     private val appContext = context.applicationContext ?: context
 
-    fun evalString(script: String): String = synchronized(evaluationLock) {
+    fun evalString(script: String): String = evaluate(script, null)
+
+    /** The data is visible only as the string `sandboxData` in this fresh runtime. */
+    fun evalStringWithData(script: String, data: String): String = evaluate(script, data)
+
+    private fun evaluate(script: String, data: String?): String = synchronized(evaluationLock) {
         requireSupportedCall(script)
-
-        val serviceRef = AtomicReference<IQuickJsSandbox?>()
-        val connectionLatch = CountDownLatch(1)
-        val connection = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                serviceRef.set(IQuickJsSandbox.Stub.asInterface(service))
-                connectionLatch.countDown()
-            }
-
-            override fun onServiceDisconnected(name: ComponentName?) {
-                serviceRef.set(null)
-                connectionLatch.countDown()
-            }
-
-            override fun onNullBinding(name: ComponentName?) {
-                connectionLatch.countDown()
-            }
-
-            override fun onBindingDied(name: ComponentName?) {
-                serviceRef.set(null)
-                connectionLatch.countDown()
-            }
+        if (data != null && (data.length > QuickJsSandboxProtocol.MAX_DATA_CHARS ||
+                data.toByteArray(Charsets.UTF_8).size > QuickJsSandboxProtocol.MAX_DATA_BYTES)) {
+            fail(QuickJsSandboxProtocol.ERROR_INPUT_TOO_LARGE)
         }
 
-        val bound = try {
-            appContext.bindService(
-                Intent(appContext, QuickJsSandboxService::class.java),
-                connection,
-                Context.BIND_AUTO_CREATE
-            )
-        } catch (_: RuntimeException) {
-            false
-        }
-        if (!bound) fail(QuickJsSandboxProtocol.ERROR_BIND_FAILED)
-
-        try {
-            if (!connectionLatch.await(
-                    QuickJsSandboxProtocol.BIND_TIMEOUT_MILLIS,
-                    TimeUnit.MILLISECONDS
-                )
-            ) {
-                fail(QuickJsSandboxProtocol.ERROR_BIND_TIMEOUT)
+        if (execution == null) {
+            return@synchronized QuickJsSandboxExecution(appContext).use {
+                it.bridge.evaluate(script, data)
             }
-            val service = serviceRef.get()
-                ?: fail(QuickJsSandboxProtocol.ERROR_PROCESS_DIED)
-            val response = callService(service, script)
+        }
+        execution.withService { service ->
+            val response = callService(service, script, data)
             if (!response.containsKey(QuickJsSandboxProtocol.KEY_SUCCESS)) {
                 fail(QuickJsSandboxProtocol.ERROR_INVALID_RESPONSE)
             }
@@ -80,24 +49,22 @@ class QuickJsSandboxBridge(context: Context) {
             }
             response.getString(QuickJsSandboxProtocol.KEY_VALUE)
                 ?: fail(QuickJsSandboxProtocol.ERROR_INVALID_RESPONSE)
-        } finally {
-            runCatching { appContext.unbindService(connection) }
         }
     }
 
-    private fun callService(service: IQuickJsSandbox, script: String): Bundle {
-        val pipe = try {
+    private inner class InputPipe(text: String) : Closeable {
+        private val pipe = try {
             ParcelFileDescriptor.createPipe()
         } catch (_: IOException) {
             fail(QuickJsSandboxProtocol.ERROR_INPUT_PIPE_FAILED)
         }
         val readSide = pipe[0]
-        val writeSide = pipe[1]
-        val writer = Thread({
+        private val writeSide = pipe[1]
+        private val writer = Thread({
             try {
                 ParcelFileDescriptor.AutoCloseOutputStream(writeSide)
                     .bufferedWriter(Charsets.UTF_8)
-                    .use { it.write(script) }
+                    .use { it.write(text) }
             } catch (_: IOException) {
                 // The service may close the read side after rejecting input or being killed.
             } finally {
@@ -107,23 +74,15 @@ class QuickJsSandboxBridge(context: Context) {
             isDaemon = true
         }
 
-        try {
+        fun start() {
             try {
                 writer.start()
             } catch (_: RuntimeException) {
                 fail(QuickJsSandboxProtocol.ERROR_INPUT_PIPE_FAILED)
             }
-            val evaluationStartedAt = SystemClock.elapsedRealtime()
-            return try {
-                readSide.use { descriptor ->
-                    service.evalString(descriptor, script.length)
-                }
-            } catch (_: DeadObjectException) {
-                fail(processFailureCode(evaluationStartedAt))
-            } catch (_: RemoteException) {
-                fail(processFailureCode(evaluationStartedAt))
-            } ?: fail(QuickJsSandboxProtocol.ERROR_INVALID_RESPONSE)
-        } finally {
+        }
+
+        override fun close() {
             runCatching { readSide.close() }
             runCatching { writeSide.close() }
             if (writer.isAlive) {
@@ -132,6 +91,32 @@ class QuickJsSandboxBridge(context: Context) {
             }
         }
     }
+
+    private fun callService(service: IQuickJsSandbox, script: String, data: String?): Bundle =
+        InputPipe(script).use { scriptPipe ->
+            // Starting both bounded streams before the Binder call avoids pipe deadlocks.
+            // use also closes the first stream if allocation of the second one fails.
+            val dataPipe = data?.let { InputPipe(it) }
+            dataPipe.use {
+                scriptPipe.start()
+                dataPipe?.start()
+                val evaluationStartedAt = SystemClock.elapsedRealtime()
+                try {
+                    if (dataPipe == null) {
+                        service.evalString(scriptPipe.readSide, script.length)
+                    } else {
+                        service.evalStringWithData(
+                            scriptPipe.readSide, script.length,
+                            dataPipe.readSide, requireNotNull(data).length,
+                        )
+                    }
+                } catch (_: DeadObjectException) {
+                    fail(processFailureCode(evaluationStartedAt))
+                } catch (_: RemoteException) {
+                    fail(processFailureCode(evaluationStartedAt))
+                } ?: fail(QuickJsSandboxProtocol.ERROR_INVALID_RESPONSE)
+            }
+        }
 
     private fun requireSupportedCall(script: String) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {

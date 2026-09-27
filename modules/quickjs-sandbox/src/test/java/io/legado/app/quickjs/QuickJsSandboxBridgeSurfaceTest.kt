@@ -7,7 +7,7 @@ import java.lang.reflect.Modifier
 class QuickJsSandboxBridgeSurfaceTest {
 
     @Test
-    fun rhinoBridgeKeepsASingleStringOnlyMethod() {
+    fun rhinoBridgeKeepsOnlyBoundedStringMethods() {
         val methods = QuickJsSandboxBridge::class.java.declaredMethods
             .filter { Modifier.isPublic(it.modifiers) && !it.isSynthetic }
             .map { method ->
@@ -17,7 +17,10 @@ class QuickJsSandboxBridgeSurfaceTest {
             .sorted()
 
         assertEquals(
-            listOf("evalString(java.lang.String):java.lang.String"),
+            listOf(
+                "evalString(java.lang.String):java.lang.String",
+                "evalStringWithData(java.lang.String,java.lang.String):java.lang.String",
+            ),
             methods,
         )
     }
@@ -45,6 +48,7 @@ class QuickJsSandboxBridgeSurfaceTest {
             listOf(
                 "equals(java.lang.Object):boolean",
                 "evalString(java.lang.String):java.lang.String",
+                "evalStringWithData(java.lang.String,java.lang.String):java.lang.String",
                 "getClass():java.lang.Class",
                 "hashCode():int",
                 "notify():void",

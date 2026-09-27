@@ -36,6 +36,7 @@ android {
 
 dependencies {
     implementation(libs.quickjs.kt)
+    implementation(libs.javascript.engine)
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)

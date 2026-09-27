@@ -276,15 +276,50 @@ class RhinoBookSourceClassPolicyTest {
 
     @Test
     fun quickJsRuntimeIsOnlyReachableThroughTheIsolatedHostFacade() {
-        val className = "com.dokar.quickjs.QuickJs"
         val source = BookSource(
             bookSourceUrl = "https://example.com/quickjs-policy",
             bookSourceName = "QuickJS策略测试",
         )
 
-        assertFalse(RhinoClassShutter.visibleToScripts(className))
-        val result = source.evalJS("String(Packages.$className)").toString()
-        assertTrue(result, result.startsWith("[JavaPackage "))
+        assertFalse(RhinoClassShutter.visibleToScripts("com.dokar.quickjs.QuickJs"))
+        listOf(
+            "com.dokar.quickjs.QuickJs",
+            "io.legado.app.quickjs.QuickJsSandboxExecution",
+            "androidx.javascriptengine.JavaScriptSandbox",
+            "androidx.javascriptengine.JavaScriptIsolate",
+            "org.chromium.android_webview.js_sandbox.IJsSandboxService",
+            "io.legado.app.quickjs.V8SandboxExecution",
+            "io.legado.app.quickjs.V8SandboxConnection",
+            "io.legado.app.model.JsLibraryBundle",
+            "io.legado.app.model.jsSource.MemoryArchiveReader",
+        ).forEach { className ->
+            assertFalse(RhinoClassShutter.withBookSourceClassPolicy(true) {
+                RhinoClassShutter.visibleToScripts(className)
+            })
+            val result = source.evalJS("String(Packages.$className)").toString()
+            assertTrue(result, result.startsWith("[JavaPackage "))
+        }
+    }
+
+    @Test
+    fun libraryResourcesAreInertAndBelongToTheCurrentSource() {
+        fun source(value: String) = BookSource(
+            bookSourceUrl = "https://example.com/js-library-$value",
+            bookSourceName = "书源资源测试",
+            jsLib = """{"format":"legado.js.library/1","scripts":["var libraryValue=7;"],"resources":{"data":"$value;throw Error('resource executed')"}}""",
+            mainJs = """
+                function probe() {
+                    return libraryValue + '|' + java.getJsLibResource('data') + '|' +
+                        (java.getJsLibResource('missing') === null);
+                }
+            """.trimIndent(),
+        )
+        for (value in listOf("one", "two")) {
+            assertEquals(
+                "7|$value;throw Error('resource executed')|true",
+                JsSourceEngine(source(value)).callFunction("probe", emptyList()),
+            )
+        }
     }
 
     @Test

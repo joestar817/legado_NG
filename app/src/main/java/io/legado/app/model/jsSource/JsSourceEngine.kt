@@ -1,6 +1,7 @@
 package io.legado.app.model.jsSource
 
 import androidx.collection.LruCache
+import android.os.SystemClock
 import cn.hutool.core.codec.Base64
 import com.google.gson.JsonObject
 import com.script.CompiledScript
@@ -22,7 +23,12 @@ import io.legado.app.help.source.getShareScope
 import io.legado.app.help.source.scriptCacheObject
 import io.legado.app.help.source.withBookSourceClassPolicy
 import io.legado.app.model.SharedJsScope
+import io.legado.app.model.JsLibraryBundle
+import io.legado.app.model.Debug
 import io.legado.app.quickjs.QuickJsSandboxBridge
+import io.legado.app.quickjs.QuickJsSandboxExecution
+import io.legado.app.quickjs.V8SandboxBridge
+import io.legado.app.quickjs.V8SandboxExecution
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonObject
 import kotlinx.coroutines.CancellationException
@@ -64,13 +70,57 @@ class JsSourceEngine(
     private val coroutineContext = coroutineContext?.withoutScriptDispatcher()
 
     private val quickJsSandboxBridge by lazy { QuickJsSandboxBridge(appCtx) }
+    private val quickJsExecution = ThreadLocal<Lazy<QuickJsSandboxExecution>>()
+    private val v8SandboxBridge by lazy { V8SandboxBridge(appCtx) }
+    private val v8Execution = ThreadLocal<Lazy<V8SandboxExecution>>()
+    private val libraryBundle by lazy { JsLibraryBundle.parse(source.jsLib) }
 
     override fun getSource(): BaseSource = source
 
     override fun getTag(): String = source.getTag()
 
+    /** Read-only access to this source's inline data; no files, URLs or host objects. */
+    fun getJsLibResource(name: String): String? = libraryBundle?.resources?.get(name)
+
+    /** Bounded archive data already owned by the source; never opens a URL or file. */
+    fun getArchiveByteArrayContent(base64: String, entryName: String): ByteArray? =
+        MemoryArchiveReader.read(base64, entryName)
+
     /** 仅单文件 JS 运行时可达；QuickJS 本体不暴露给 Rhino。 */
-    fun getQuickJsSandbox(): QuickJsSandboxBridge = quickJsSandboxBridge
+    fun getQuickJsSandbox(): QuickJsSandboxBridge {
+        val execution = quickJsExecution.get()?.value ?: return quickJsSandboxBridge
+        // The source can acquire its bridge before HTTP work. Only the isolated
+        // service connection starts here; no script or user data is evaluated.
+        execution.prepare()
+        return execution.bridge
+    }
+
+    /** System engine stays behind the same string-only isolation boundary. */
+    fun getV8Sandbox(): V8SandboxBridge {
+        val execution = v8Execution.get()?.value ?: return v8SandboxBridge
+        execution.prepare()
+        return execution.bridge
+    }
+
+    private fun <T> withQuickJsExecution(block: () -> T): T {
+        val previous = quickJsExecution.get()
+        val previousV8 = v8Execution.get()
+        val execution = lazy { QuickJsSandboxExecution(appCtx) }
+        val systemExecution = lazy { V8SandboxExecution(appCtx) }
+        quickJsExecution.set(execution)
+        v8Execution.set(systemExecution)
+        return try {
+            block()
+        } finally {
+            if (previous == null) quickJsExecution.remove() else quickJsExecution.set(previous)
+            if (previousV8 == null) v8Execution.remove() else v8Execution.set(previousV8)
+            try {
+                if (execution.isInitialized()) execution.value.close()
+            } finally {
+                if (systemExecution.isInitialized()) systemExecution.value.close()
+            }
+        }
+    }
 
     /**
      * 仅单文件 JS 运行时可达。用于协议确实要求原始二进制正文的请求；调用方以 Base64
@@ -130,13 +180,15 @@ class JsSourceEngine(
     }
 
     fun callFunction(name: String, args: List<Pair<String, Any?>>): String? {
-        return source.withBookSourceClassPolicy {
-            val scope = buildScope(args)
-            if (ScriptableObject.getProperty(scope, name) !is Function) {
-                throw NoStackTraceException("JS源缺少函数 $name")
+        return withQuickJsExecution {
+            source.withBookSourceClassPolicy {
+                val scope = buildScope(args)
+                if (ScriptableObject.getProperty(scope, name) !is Function) {
+                    throw NoStackTraceException("JS源缺少函数 $name")
+                }
+                val expression = "$name(${args.joinToString(", ") { it.first }})"
+                normalizeJsResult(compile(expression).eval(scope, coroutineContext), coroutineContext)
             }
-            val expression = "$name(${args.joinToString(", ") { it.first }})"
-            normalizeJsResult(compile(expression).eval(scope, coroutineContext), coroutineContext)
         }
     }
 
@@ -148,19 +200,21 @@ class JsSourceEngine(
         name: String,
         args: List<Pair<String, Any?>>,
     ): OptionalCallResult {
-        return source.withBookSourceClassPolicy {
-            val scope = buildScope(args)
-            if (ScriptableObject.getProperty(scope, name) !is Function) {
-                return@withBookSourceClassPolicy OptionalCallResult(false, null)
+        return withQuickJsExecution {
+            source.withBookSourceClassPolicy {
+                val scope = buildScope(args)
+                if (ScriptableObject.getProperty(scope, name) !is Function) {
+                    return@withBookSourceClassPolicy OptionalCallResult(false, null)
+                }
+                val expression = "$name(${args.joinToString(", ") { it.first }})"
+                OptionalCallResult(
+                    exists = true,
+                    value = normalizeJsResult(
+                        compile(expression).eval(scope, coroutineContext),
+                        coroutineContext,
+                    ),
+                )
             }
-            val expression = "$name(${args.joinToString(", ") { it.first }})"
-            OptionalCallResult(
-                exists = true,
-                value = normalizeJsResult(
-                    compile(expression).eval(scope, coroutineContext),
-                    coroutineContext,
-                ),
-            )
         }
     }
 
@@ -170,6 +224,8 @@ class JsSourceEngine(
     )
 
     private fun buildScope(args: List<Pair<String, Any?>>): ScriptBindings {
+        val profiling = Debug.isDebugging(source.getKey())
+        val started = if (profiling) SystemClock.elapsedRealtime() else 0L
         val script = source.mainJs?.takeIf { it.isNotBlank() }
             ?: throw NoStackTraceException("mainJs 为空，不是 JS 书源")
         val bindings = buildScriptBindings { values ->
@@ -188,12 +244,16 @@ class JsSourceEngine(
                 bookSourceClassPolicy = true,
                 bookSourceLabel = source.getTag(),
             )
+        val sharedReady = if (profiling) SystemClock.elapsedRealtime() else 0L
         val scope = if (sharedScope == null) {
             RhinoScriptEngine.getRuntimeScope(bindings)
         } else {
             bindings.apply { chainTo(sharedScope) }
         }
         compile(script).eval(scope, coroutineContext)
+        if (profiling) {
+            Debug.log(source.getKey(), "JS初始化：共享库 ${sharedReady - started}ms，主脚本 ${SystemClock.elapsedRealtime() - sharedReady}ms")
+        }
         return scope
     }
 

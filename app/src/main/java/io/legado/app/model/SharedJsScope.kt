@@ -114,8 +114,13 @@ object SharedJsScope {
                 scope = RhinoScriptEngine.run {
                     getRuntimeScope(ScriptBindings())
                 }
-                installCryptoJs(scope, coroutineContext)
-                if (jsLib.isJsonObject()) {
+                val bundle = JsLibraryBundle.parse(jsLib)
+                if (bundle?.usesCryptoJs != false) installCryptoJs(scope, coroutineContext)
+                if (bundle != null) {
+                    bundle.scripts.forEach { script ->
+                        RhinoScriptEngine.eval(script, scope, coroutineContext)
+                    }
+                } else if (jsLib.isJsonObject()) {
                     val jsMap: Map<String, String> = GSON.fromJson(
                         jsLib,
                         TypeToken.getParameterized(
@@ -160,7 +165,7 @@ object SharedJsScope {
         if (jsLib.isNullOrBlank()) {
             return
         }
-        if (jsLib.isJsonObject()) {
+        if (JsLibraryBundle.parse(jsLib) == null && jsLib.isJsonObject()) {
             val jsMap: Map<String, String> = GSON.fromJson(
                 jsLib,
                 TypeToken.getParameterized(

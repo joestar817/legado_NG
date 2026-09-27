@@ -133,6 +133,9 @@ object RhinoClassShutter : ClassShutter {
             "cn.hutool.core.lang.reflect",
             // QuickJS 只能经宿主注入的隔离进程窄门面调用，禁止 Rhino 直接构造运行时。
             "com.dokar.quickjs",
+            // System JS execution is available only through the bounded host facade.
+            "androidx.javascriptengine",
+            "org.chromium.android_webview.js_sandbox",
             "dalvik.system",
             "java.nio.file",
             "java.lang.reflect",

@@ -5,6 +5,9 @@ internal object QuickJsSandboxProtocol {
 
     const val MAX_INPUT_CHARS = 384_000
     const val MAX_INPUT_BYTES = MAX_INPUT_CHARS * 4
+    // Data is supplied as an inert string, separately from executable source.
+    const val MAX_DATA_CHARS = 3_000_000
+    const val MAX_DATA_BYTES = 8 * 1024 * 1024
     const val MAX_OUTPUT_CHARS = 65_536
     const val MEMORY_LIMIT_BYTES = 64L * 1024L * 1024L
     const val MAX_STACK_SIZE_BYTES = 512L * 1024L

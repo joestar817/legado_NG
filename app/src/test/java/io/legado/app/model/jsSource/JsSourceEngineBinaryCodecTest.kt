@@ -20,6 +20,15 @@ class JsSourceEngineBinaryCodecTest {
     )
 
     @Test
+    fun memoryArchiveRejectsInvalidInputBeforeNativeAccess() {
+        assertThrows(IllegalArgumentException::class.java) { engine.getArchiveByteArrayContent("", "data") }
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.getArchiveByteArrayContent("A".repeat(2_000_001), "data")
+        }
+        assertThrows(IllegalArgumentException::class.java) { engine.getArchiveByteArrayContent("AA==", "bad\u0000name") }
+    }
+
+    @Test
     fun gzipRoundTripsUtf8Text() {
         val value = "番茄正文\n第二段"
 
