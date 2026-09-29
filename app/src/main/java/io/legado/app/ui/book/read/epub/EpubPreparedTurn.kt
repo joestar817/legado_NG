@@ -12,7 +12,13 @@ import io.legado.app.model.epub.EpubResourceLink
 import org.json.JSONObject
 import java.io.Closeable
 
-internal data class EpubCapturedFrame(val bitmap: Bitmap, val clip: Rect?) : Closeable {
+internal data class EpubCapturedFrame(
+    val bitmap: Bitmap,
+    val clip: Rect?,
+    val canvas: Boolean = false,
+    val hideHeader: Boolean = false,
+    val hideFooter: Boolean = false,
+) : Closeable {
     override fun close() = bitmap.recycle()
 }
 
@@ -126,11 +132,17 @@ internal class EpubPreparedTurn(
             }
             return
         }
-        val clip = surface?.clipBounds?.let(::Rect)
+        val view = surface ?: return
+        val ready = view.readyState ?: return
+        val clip = view.clipBounds?.let(::Rect)
+        // These belong to this captured document, never the visible source chapter.
+        val canvas = ready.optBoolean("canvas")
+        val hideHeader = ready.optBoolean("hideHeader")
+        val hideFooter = ready.optBoolean("hideFooter")
         capturing = true
         capture.capture { bitmap ->
             if (closed || job !== current) { bitmap.recycle(); return@capture }
-            val frame = EpubCapturedFrame(bitmap, clip)
+            val frame = EpubCapturedFrame(bitmap, clip, canvas, hideHeader, hideFooter)
             timing?.mark("frame-ready")
             if (current.single != null) {
                 watchdog.cancel()

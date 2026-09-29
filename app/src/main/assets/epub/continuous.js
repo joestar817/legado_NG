@@ -32,7 +32,8 @@
         }
         function dispose(i) {
             var entry = entries.get(i); if (!entry) return;
-            entry.api.cancelConfiguration(); entry.api.pauseMedia(); entry.wrapper.remove(); entries.delete(i);
+            window.__ngEpubCancelBackground(entry.backdrop);
+            entry.api.cancelConfiguration(); entry.api.pauseMedia(); entry.wrapper.remove(); entry.backgroundClip.remove(); entries.delete(i);
         }
         async function ensure(i, mine) {
             check(mine);
@@ -43,6 +44,11 @@
             var loading = (async function () {
                 var item = documents[i]; if (!item) throw new Error('EPUB document is outside reading order');
                 var wrapper = document.createElement('div'), iframe = document.createElement('iframe');
+                var backgroundClip = document.createElement('div'), backdrop = document.createElement('div');
+                backgroundClip.style.cssText = 'position:absolute;overflow:hidden;opacity:0;pointer-events:none';
+                backdrop.style.cssText = 'position:absolute;pointer-events:none;width:' + width + 'px;height:' + height + 'px';
+                backdrop.setAttribute('data-ng-epub-background', 'continuous');
+                backgroundClip.appendChild(backdrop); host.insertBefore(backgroundClip, host.firstChild);
                 wrapper.style.cssText = 'position:absolute;overflow:hidden;opacity:0;left:0;top:0;pointer-events:none;width:' + width + 'px;height:' + height + 'px';
                 iframe.style.cssText = 'position:absolute;border:0;left:0;top:0;width:' + width + 'px;height:' + height + 'px';
                 iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
@@ -51,13 +57,15 @@
                 var loadTimeout, cancel, cancellation = new Promise(function (_, reject) { cancel = function () {
                     clearTimeout(loadTimeout); iframe.onload = null; iframe.onerror = null;
                     if (api) api.cancelConfiguration();
-                    wrapper.remove(); reject(new Error('continuous-cancelled'));
+                    window.__ngEpubCancelBackground(backdrop);
+                    wrapper.remove(); backgroundClip.remove(); reject(new Error('continuous-cancelled'));
                 }; });
                 pending.add(cancel);
                 try {
                     await Promise.race([cancellation, new Promise(function (resolve, reject) {
                         loadTimeout = setTimeout(function () { reject(new Error('EPUB chapter load timed out')); }, 25000);
-                        iframe.onload = function () { clearTimeout(loadTimeout); iframe.onload = null; iframe.onerror = null; resolve(); };
+                        iframe.onload = function () { if (iframe.contentWindow.location.href === 'about:blank') return;
+                            clearTimeout(loadTimeout); iframe.onload = null; iframe.onerror = null; resolve(); };
                         iframe.onerror = function () { clearTimeout(loadTimeout); iframe.onload = null; iframe.onerror = null; reject(new Error('EPUB chapter load failed')); };
                         iframe.src = item.url;
                     })]);
@@ -68,7 +76,7 @@
 
                     await Promise.race([cancellation, api.configure(Object.assign({}, options, { token: token + ':doc:' + i + ':' + (++serial),
                         width: width, height: height, flow: 'scrolled-doc', fixed: false, preservePosition: false,
-                        continuousInsets: true,
+                        continuousInsets: true, externalBackground: true,
                         contentUrl: item.contentUrl || null,
                         noteMarkers: (options.noteMarkers || []).filter(function (mark) { return mark.occurrence === item.occurrence; }),
                         titleSegments: (options.titleSegmentsByDocument || {})[item.occurrence] || [],
@@ -79,12 +87,14 @@
                         location: null, textOffset: null, fragment: null, page: 0, last: false }))]);
                     check(mine);
                     var state = api.state(); if (state.status !== 'ready') throw new Error(state.error || 'EPUB chapter layout failed');
+                    await window.__ngEpubPaintBackground(backdrop, state.pageBackground); check(mine);
                     var documentAxis = state.scrollAxis || (state.mode === 'HORIZONTAL' ? 'y' : 'x');
                     var documentSign = state.scrollSign || (state.mode === 'VERTICAL_RL' ? -1 : 1);
                     var length = state.scrolled ? state.scrollLength : (documentAxis === 'x' ? width : height);
                     if (!Number.isFinite(length) || length < 0) throw new Error('Invalid EPUB flow length');
                     var entry = { index: i, api: api, iframe: iframe, wrapper: wrapper, length: length,
-                        axis: documentAxis, sign: documentSign, scroll: 0, clip: null, cover: !!state.cover, bleedTop: false };
+                        axis: documentAxis, sign: documentSign, scroll: 0, clip: null, cover: !!state.cover, bleedTop: false,
+                        backgroundClip: backgroundClip, backdrop: backdrop };
                     bindLinks(entry);
                     ['mousedown', 'touchstart', 'focusin'].forEach(function (event) {
                         iframe.contentDocument.addEventListener(event, function () {
@@ -97,7 +107,8 @@
                     if (!length) { emptySources.set(i, state); dispose(i); return { length: 0 }; }
                     return entry;
                 } catch (failure) {
-                    wrapper.remove();
+                    window.__ngEpubCancelBackground(backdrop);
+                    wrapper.remove(); backgroundClip.remove();
                     if (!closed && mine === revision) failures.set(i, String(failure.message || failure));
                     throw failure;
                 }
@@ -158,7 +169,7 @@
             }
             check(mine);
             renderEnd = i;
-            var nextVisible = [];
+            var nextVisible = [], backgroundVisible = [];
             windows.forEach(function (window) {
                 var entry = window.entry;
                 entry.flowStart = window.start; entry.flowEnd = window.start + entry.length;
@@ -173,6 +184,15 @@
                     (axis === 'y' ? 'left:0;top:' + position + 'px;width:' + width + 'px;height:' + size + 'px'
                         : 'top:0;left:' + position + 'px;height:' + height + 'px;width:' + size + 'px');
                 var translation = sign > 0 ? -remainder : size - extent + remainder;
+                // Background slices follow their document's visible flow window, before
+                // content is clipped to the safe reading rectangle. Clicking/selecting
+                // another source therefore cannot replace the whole screen's backdrop.
+                entry.backgroundClip.style.cssText = 'position:absolute;overflow:hidden;pointer-events:none;' +
+                    (axis === 'y' ? 'left:0;top:' + position + 'px;width:' + width + 'px;height:' + size + 'px'
+                        : 'top:0;left:' + position + 'px;height:' + height + 'px;width:' + size + 'px');
+                entry.backdrop.style.left = (axis === 'x' ? translation : 0) + 'px';
+                entry.backdrop.style.top = (axis === 'y' ? translation : 0) + 'px';
+                backgroundVisible.push(entry.index);
                 entry.iframe.style.left = (axis === 'x' ? translation : 0) + 'px';
                 entry.iframe.style.top = (axis === 'y' ? translation : 0) + 'px';
                 entry.clip = { left: axis === 'x' ? position : 0, top: axis === 'y' ? position : 0,
@@ -204,6 +224,7 @@
             });
             entries.forEach(function (entry, key) {
                 if (!nextVisible.includes(key)) { entry.api.pauseMedia(); entry.wrapper.style.opacity = '0'; entry.wrapper.style.pointerEvents = 'none'; }
+                if (!backgroundVisible.includes(key)) entry.backgroundClip.style.opacity = '0';
             });
             var activeEntry = entries.get(active);
             var selecting = activeEntry && activeEntry.iframe.contentWindow.getSelection().rangeCount > 0;
@@ -211,7 +232,7 @@
             // Only visible documents and one neighbor on each side retain a live document context.
             // The logical origin may be behind the reader's top/side inset while
             // the next source is already visible. Keep it for offset arithmetic.
-            wanted = new Set(visible.concat([index - 1, index, i]));
+            wanted = new Set(visible.concat(backgroundVisible, [index - 1, index, i]));
             if (selecting) wanted.add(active);
             Array.from(entries.keys()).forEach(function (key) { if (!wanted.has(key)) dispose(key); });
             await frame(); check(mine);
@@ -232,9 +253,12 @@
                 if (styleMine !== styleRevision) return { cancelled: true };
                 var reflow = false;
                 for (var entry of entries.values()) {
+                    window.__ngEpubCancelBackground(entry.backdrop);
                     var result = await entry.api.updateStyles(Object.assign({}, value, { token: token + ':style:' + entry.index }));
                     check(mine); if (styleMine !== styleRevision) return { cancelled: true };
                     if (result.error) throw new Error(result.error);
+                    await window.__ngEpubPaintBackground(entry.backdrop, entry.api.state().pageBackground);
+                    check(mine); if (styleMine !== styleRevision) return { cancelled: true };
                     reflow = reflow || result.reflow;
                     if (result.reflow) {
                         var local = entry.api.state();
@@ -253,7 +277,8 @@
                 check(mine); status = 'ready';
                 return { reflow: reflow };
             } catch (failure) {
-                if (mine === revision && !closed) { status = 'error'; error = String(failure.message || failure); }
+                if (mine === revision && styleMine === styleRevision && !closed) { status = 'error'; error = String(failure.message || failure); }
+                if (styleMine !== styleRevision) return { cancelled: true };
                 return { error: String(failure.message || failure) };
             }
         }
@@ -447,6 +472,7 @@
                 fontWarnings: Array.from(new Set(visible.flatMap(function (i) { return read(entries.get(i)).fontWarnings || []; }))),
                 bleed: true, cover: !!(entry && entry.cover), bleedHeader: !!(entry && entry.bleedTop),
                 textLength: local && local.textLength || 0, warnings: (local && local.warnings || []).concat(
+                    visible.flatMap(function (i) { return window.__ngEpubBackgroundWarnings(entries.get(i).backdrop); }),
                     [failureMessage(failedBefore), failureMessage(failedAfter)].filter(Boolean)),
                 failedBefore: failureMessage(failedBefore), failedAfter: failureMessage(failedAfter), selectionError: selectionError,
                 chapterBoundaries: local && local.chapterBoundaries || [], activeChapterBoundaries: activeState && activeState.chapterBoundaries || [],
@@ -543,10 +569,15 @@
                 chapterBoundaries: entry.api.state().chapterBoundaries, textLength: entry.api.state().textLength });
         }
         return Object.freeze({ configure: configure, updateStyles: updateStyles, seek: seek, move: move, prepareSelection: prepareSelection,
+            cancelConfiguration: function () {
+                revision++; styleRevision++; queued = 0; draining = false;
+                pending.forEach(function (cancel) { cancel(); }); pending.clear(); loads.clear();
+                entries.forEach(function (entry) { entry.api.cancelConfiguration(); window.__ngEpubCancelBackground(entry.backdrop); });
+            },
             setLinkHandler: function (handler) { linkHandler = typeof handler === 'function' ? handler : null; entries.forEach(bindLinks); },
             beginScroll: function () { overshoot = 0; },
             scrollBy: function (delta) { if (Number.isFinite(delta)) { queued += delta; drain(); } return state(); },
-            settle: settle, state: state, interact: interact,
+            settle: settle, state: state, interact: interact, captureLocation: captureLocation,
             revealText: function (textOffset) {
                 var entry = entries.get(active); if (!entry) return null;
                 var position = entry.api.flowPosition(textOffset && typeof textOffset === 'object' ? { location: textOffset } : { textOffset: textOffset });

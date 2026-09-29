@@ -48,7 +48,7 @@ internal class EpubLayoutSurface(
             if (name == Context.UI_MODE_SERVICE) applicationContext.getSystemService(name)
             else super.getSystemService(name)
     })
-    private val runtime = listOf("epub/lines.js", "epub/content.js", "epub/reader.js", "epub/continuous.js", "epub/container.js").joinToString("\n") { asset ->
+    private val runtime = listOf("epub/lines.js", "epub/content.js", "epub/reader.js", "epub/continuous.js", "epub/canvas.js", "epub/container.js").joinToString("\n") { asset ->
         context.assets.open(asset).bufferedReader().use { it.readText() }
     }
     private var loadUrl: String? = null
@@ -77,6 +77,14 @@ internal class EpubLayoutSurface(
     private var scrollDelta = 0f
     private var scrollTask: Runnable? = null
     private var scrollRevision = 0L
+    private var readyContentKey: String? = null
+    private var readyContentUrl = ""
+    private var readyDocumentsKey = ""
+    private var readyReaderFontUrl = ""
+    private var readyTitleFontUrl = ""
+    private var readyLayoutOptions = ""
+    private var readyWidth = 0
+    private var readyHeight = 0
     var viewportFull = false
     var state: JSONObject? = null
         private set
@@ -231,11 +239,12 @@ internal class EpubLayoutSurface(
             if (loaded) configure()
             return
         }
-        if ((container || path == location.path) && loaded) configure() else {
+        val sameDocument = path == location.path
+        path = location.path
+        if ((container || sameDocument) && loaded) configure() else {
             cancelPending()
             loaded = false
             webView.alpha = 0f
-            path = location.path
             val target = location.copy(query = "ng-load=" + revision, fragment = null)
             startup = EpubStartupTiming(if (onViewportRequired != null) "visible" else "preparation")
             loadUrl = if (container) gateway.prepareContainer() + "?ng-load=" + revision else gateway.prepareDocument(target)
@@ -372,9 +381,26 @@ internal class EpubLayoutSurface(
 
     /** Preparation-only seek; its owner discards the surface on style/viewport/content changes. */
     fun movePrepared(location: EpubResourceLink, value: JSONObject): Boolean {
-        val ready = state ?: return false
-        if (closed || !loaded || container || options.optBoolean("fixed") || path != location.path ||
-            ready.optString("status") != "ready") return false
+        val ready = readyState ?: return false
+        if (!loaded || options.optBoolean("fixed") || value.optBoolean("fixed") || path != location.path ||
+            ready.optString("status") != "ready" || ready.optBoolean("busy") ||
+            contentKey == null || readyContentKey != contentKey || readyDocumentsKey != documentsKey ||
+            readyContentUrl != gateway.contentUrl() || readyReaderFontUrl != gateway.readerFontUrl() ||
+            readyTitleFontUrl != gateway.titleFontUrl() ||
+            readyWidth != width || readyHeight != height || readyLayoutOptions != preparedLayoutOptions(value)) return false
+        if (container) {
+            // Only the already committed, reflowable canvas document can seek without a
+            // configure. Fixed spreads and continuous windows retain their existing lifecycle.
+            val index = value.optInt("index", -1)
+            val document = documentOptions.optJSONObject(index) ?: return false
+            if (options.optString("containerMode") != "canvas" || value.optString("containerMode") != "canvas" ||
+                !ready.optBoolean("canvas") || ready.optString("mode") == "FIXED" || ready.optBoolean("scrolled") ||
+                index != options.optInt("index", -1) || index != ready.optInt("index", -1) ||
+                document.optString("path") != location.path ||
+                document.optString("url").isEmpty() || ready.optString("canvasDocumentKey") != document.optString("url")) return false
+            val targetIndex = value.optJSONObject("location")?.optInt("index", index) ?: index
+            if (targetIndex != index) return false
+        } else if (!value.isNull("containerMode")) return false
         // A gallery may have changed on the visible surface since the last captured frame.
         if (value.has("galleryIndexes") &&
             value.optJSONArray("galleryIndexes")?.toString() != ready.optJSONArray("galleryIndexes")?.toString()) return false
@@ -382,6 +408,29 @@ internal class EpubLayoutSurface(
         options.put("aloud", value.optJSONObject("aloud") ?: JSONObject.NULL)
         move(value.optInt("page"), value.optJSONObject("location"))
         return true
+    }
+
+    /** Compare layout inputs independently of the frame's seek and generated gateway URLs. */
+    private fun preparedLayoutOptions(value: JSONObject): String {
+        val layout = JSONObject(value.toString())
+        listOf("token", "page", "location", "last", "fragment", "textOffset", "spreadPage", "preservePosition",
+            "galleryIndexes", "aloud", "width", "height", "deviceWidth", "deviceHeight", "viewportFull",
+            "contentUrl", "documents").forEach(layout::remove)
+        listOf("readerStyle", "readerDefaults").forEach { name ->
+            layout.optJSONObject(name)?.let { reader ->
+                reader.remove("fontUrl")
+                reader.optJSONObject("title")?.remove("fontUrl")
+            }
+        }
+        fun ordered(item: Any?): String = when (item) {
+            is JSONObject -> item.keys().asSequence().sorted().joinToString(prefix = "{", postfix = "}") {
+                JSONObject.quote(it) + ":" + ordered(item.opt(it))
+            }
+            is JSONArray -> (0 until item.length()).joinToString(prefix = "[", postfix = "]") { ordered(item.opt(it)) }
+            is String -> JSONObject.quote(item)
+            else -> item.toString()
+        }
+        return ordered(layout)
     }
 
     fun advance(direction: Int) {
@@ -536,17 +585,25 @@ internal class EpubLayoutSurface(
         watchdog.cancel()
         startup?.mark("publish")
         startup = null
-        // Clip only the document layer, leaving the existing native information bars visible.
-        // The same Surface is used for animated page captures, so their chrome stays identical.
+        // Canvas documents clip their text inside JS. Clipping the Surface would also cut
+        // their page background away from the native information bars and reader margins.
         val full = report.optBoolean("bleed") || report.optBoolean("fullViewport")
         val chrome = options.optJSONObject("chromeInsets")
-        clipBounds = if (!full || report.optBoolean("cover") || report.optString("mode") == "FIXED" || chrome == null) null
+        clipBounds = if (report.optBoolean("canvas") || !full || report.optBoolean("cover") || report.optString("mode") == "FIXED" || chrome == null) null
         else {
             val density = resources.displayMetrics.density
             val top = if (report.optBoolean("hideHeader")) 0 else (chrome.optDouble("top") * density).toInt().coerceIn(0, height)
             val bottom = if (report.optBoolean("hideFooter")) height else (height - chrome.optDouble("bottom") * density).toInt().coerceIn(top, height)
             Rect(0, top, width, bottom)
         }
+        readyContentKey = contentKey
+        readyContentUrl = gateway.contentUrl()
+        readyDocumentsKey = documentsKey
+        readyReaderFontUrl = gateway.readerFontUrl()
+        readyTitleFontUrl = gateway.titleFontUrl()
+        readyLayoutOptions = preparedLayoutOptions(options)
+        readyWidth = width
+        readyHeight = height
         state = report
         onReady(report)
         // The visual-state callback has completed and native clipping/chrome is now in sync.

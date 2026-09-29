@@ -3,9 +3,11 @@ package io.legado.app.ui.book.read.page
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.drawable.LayerDrawable
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.core.content.ContextCompat
@@ -49,6 +51,7 @@ class PageView(context: Context) : FrameLayout(context) {
     private val readBookActivity get() = activity as? ReadBookActivity
     private var readerOverlayVisible = false
     private val headerBackBounds = Rect()
+    private val externalDrawBounds = Rect()
     private var battery = 100
     private var tvTitle: BatteryView? = null
     private var tvTime: BatteryView? = null
@@ -340,6 +343,39 @@ class PageView(context: Context) : FrameLayout(context) {
             )
         )
         upBgAlpha()
+    }
+
+    /** The external document paints above the preset, with the existing information views on top. */
+    internal fun drawPageBackground(canvas: Canvas) {
+        val root = binding.vwRoot
+        val drawable = root.background ?: return
+        val saved = canvas.save()
+        root.getDrawingRect(externalDrawBounds)
+        offsetDescendantRectToMyCoords(root, externalDrawBounds)
+        canvas.translate(externalDrawBounds.left.toFloat(), externalDrawBounds.top.toFloat())
+        drawable.setBounds(0, 0, root.width, root.height)
+        drawable.draw(canvas)
+        canvas.restoreToCount(saved)
+    }
+
+    internal fun drawInformation(canvas: Canvas, hideHeader: Boolean, hideFooter: Boolean) {
+        fun draw(view: View) {
+            if (!view.isVisible) return
+            val saved = canvas.save()
+            view.getDrawingRect(externalDrawBounds)
+            offsetDescendantRectToMyCoords(view, externalDrawBounds)
+            canvas.translate(externalDrawBounds.left.toFloat(), externalDrawBounds.top.toFloat())
+            view.draw(canvas)
+            canvas.restoreToCount(saved)
+        }
+        if (!hideHeader) {
+            draw(binding.llHeader)
+            draw(binding.vwTopDivider)
+        }
+        if (!hideFooter) {
+            draw(binding.llFooter)
+            draw(binding.vwBottomDivider)
+        }
     }
 
     /**

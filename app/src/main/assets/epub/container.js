@@ -4,44 +4,56 @@
     var host = document.getElementById('ng-epub-continuous'), flow = null, documents = [], key = '';
     var status = { status: 'idle' }, entries = [], revision = 0, options = {}, active = 0;
     var highlights = [], pending = new Set();
-    var selectionTransparent = false;
+    var selectionTransparent = false, linkHandler = null, flowMode = '';
     function clear() {
         pending.forEach(function (cancel) { cancel(); }); pending.clear();
-        if (flow) flow.close(); flow = null;
-        entries.forEach(function (entry) { entry.api.cancelConfiguration(); entry.api.pauseMedia(); entry.frame.remove(); }); entries = [];
+        if (flow) flow.close(); flow = null; flowMode = '';
+        entries.forEach(function (entry) { window.__ngEpubCancelBackground(entry.backdrop);
+            entry.api.cancelConfiguration(); entry.api.pauseMedia(); entry.frame.remove(); }); entries = [];
         host.replaceChildren();
     }
     function check(mine) { if (mine !== revision) throw new Error('EPUB layout cancelled'); }
     async function fixedEntry(index, mine) {
-        var value = documents[index], iframe = document.createElement('iframe');
+        var value = documents[index], iframe = document.createElement('iframe'), backdrop = document.createElement('div');
         var url = new URL(value.url, location.href);
-        if (url.origin !== location.origin) throw new Error('EPUB document origin mismatch');
+        if (url.origin !== location.origin || url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error('EPUB document origin mismatch');
         iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
         iframe.style.cssText = 'position:absolute;border:0;opacity:0;left:0;top:0;width:' + options.width + 'px;height:' + options.height + 'px';
-        host.appendChild(iframe);
+        backdrop.setAttribute('data-ng-epub-background', 'fixed');
+        backdrop.style.cssText = 'position:absolute;pointer-events:none';
+        host.insertBefore(backdrop, host.firstChild); host.appendChild(iframe);
         await new Promise(function (resolve, reject) {
             var timeout, cancel = function () { clearTimeout(timeout); iframe.onload = null; iframe.remove(); reject(new Error('EPUB layout cancelled')); };
             pending.add(cancel);
             timeout = setTimeout(function () { pending.delete(cancel); cancel(); }, 25000);
-            iframe.onload = function () { clearTimeout(timeout); pending.delete(cancel); resolve(); };
+            iframe.onload = function () { if (iframe.contentWindow.location.href === 'about:blank') return;
+                clearTimeout(timeout); pending.delete(cancel); resolve(); };
             iframe.onerror = function () { pending.delete(cancel); cancel(); };
             iframe.src = url.href;
         });
         check(mine);
         var api = window.__ngEpubInstall(iframe.contentWindow);
+        // Register before resource/layout waits so close/configure can cancel this
+        // document even while its fixed dimensions are still being measured.
+        var entry = { index: index, api: api, frame: iframe, backdrop: backdrop,
+            width: options.width, height: options.height, left: 0, top: 0, scale: 1 };
+        entries.push(entry);
         var config = Object.assign({}, options, { token: options.token + ':' + index, contentUrl: value.contentUrl,
             noteMarkers: (options.noteMarkers || []).filter(function (mark) { return mark.occurrence === index; }),
             titleSegments: (options.titleSegmentsByDocument || {})[index] || [],
             fixedWidth: value.fixedWidth, fixedHeight: value.fixedHeight, fixedSvg: value.fixedSvg,
-            width: options.width, height: options.height, fixed: true, flow: 'paginated', preservePosition: false,
+            width: options.width, height: options.height, fixed: true, externalBackground: true, flow: 'paginated', preservePosition: false,
             location: null, textOffset: null, fragment: null, startFragment: value.startFragment, endFragment: value.endFragment });
         await api.configure(config); check(mine);
         var state = api.state(); if (state.status !== 'ready') throw new Error(state.error || 'EPUB fixed page failed');
         var width = state.fixedWidth, height = state.fixedHeight;
         iframe.style.width = width + 'px'; iframe.style.height = height + 'px';
         await api.configure(Object.assign({}, config, { width: width, height: height })); check(mine);
-        var entry = { index: index, api: api, frame: iframe, width: width, height: height, left: 0, top: 0, scale: 1 };
-        entries.push(entry); api.setHighlights(highlights.filter(function (mark) { return mark.occurrence === index; }));
+        entry.width = width; entry.height = height;
+        api.setLinkHandler(function (value) { if (linkHandler && status.status === 'ready') {
+            active = index; linkHandler(Object.assign({}, value, { token: options.token, index: index, document: documents[index] }));
+        } });
+        api.setHighlights(highlights.filter(function (mark) { return mark.occurrence === index; }));
         api.setSelectionTransparent(selectionTransparent); return entry;
     }
     function fixedState() {
@@ -51,8 +63,11 @@
         // displays the active document's pagination, not its preloaded neighbours.
         return Object.assign({}, status, { index: active, location: local && local.location,
             fontWarnings: Array.from(new Set(entries.flatMap(function (e) { return e.api.state().fontWarnings || []; }))),
+            warnings: Array.from(new Set(entries.flatMap(function (e) { return (e.api.state().warnings || [])
+                .concat(window.__ngEpubBackgroundWarnings(e.backdrop)); }))),
             displayPageIndex: local && local.pageIndex || 0, displayPageCount: local && local.pageCount || 1,
             textLength: local && local.textLength || 0, mode: 'FIXED', cover: false, fullViewport: true, scrolled: false,
+            hideHeader: true, hideFooter: true,
             media: entries.flatMap(function (e) { return (e.api.state().media || []).map(function (m) {
                 return Object.assign({}, m, { left: e.left + m.left * e.scale, right: e.left + m.right * e.scale,
                     top: e.top + m.top * e.scale, bottom: e.top + m.bottom * e.scale });
@@ -74,12 +89,18 @@
         var naturalHeight = Math.max.apply(null, entries.map(function (e) { return e.height; }));
         var scale = Math.min(options.width / naturalWidth, options.height / naturalHeight);
         var start = (options.width - naturalWidth * scale) / 2;
+        var split = start + pageLeft.width * scale;
         entries.forEach(function (entry) {
             entry.left = start + (!centered && entry === right ? pageLeft.width * scale : 0);
             entry.top = (options.height - entry.height * scale) / 2; entry.scale = scale;
             entry.frame.style.left = entry.left + 'px'; entry.frame.style.top = entry.top + 'px';
             entry.frame.style.transformOrigin = '0 0'; entry.frame.style.transform = 'scale(' + scale + ')'; entry.frame.style.opacity = '1';
+            entry.backdrop.style.left = (!centered && entry === right ? split : 0) + 'px';
+            entry.backdrop.style.top = '0'; entry.backdrop.style.width = (centered ? options.width : entry === right ? options.width - split : split) + 'px';
+            entry.backdrop.style.height = options.height + 'px';
         });
+        await Promise.all(entries.map(function (entry) { return window.__ngEpubPaintBackground(entry.backdrop, entry.api.state().pageBackground); }));
+        check(mine);
         // A TOC/restore target may be the second page of a spread. Displaying its partner
         // must not silently move the native chapter/progress back to the first page.
         var requested = options.index;
@@ -91,24 +112,33 @@
         var mine = ++revision;
         options.token = value.token; status.token = value.token;
         if (flow) return flow.updateStyles(value);
+        status.status = 'loading';
+        entries.forEach(function (entry) { window.__ngEpubCancelBackground(entry.backdrop); });
         try {
             for (var entry of entries) {
                 var result = await entry.api.updateStyles(Object.assign({}, value, { token: value.token + ':style:' + entry.index }));
                 check(mine); if (result.error) throw new Error(result.error);
+                await window.__ngEpubPaintBackground(entry.backdrop, entry.api.state().pageBackground); check(mine);
             }
+            status.status = 'ready';
         } catch (error) { if (mine === revision) status = { status: 'error', token: value.token, error: String(error.message || error) }; }
     }
     async function configure(value) {
         var mine = ++revision, previous = state();
         options = value; status = { status: 'loading', token: value.token };
+        if (Array.isArray(value.highlights)) highlights = value.highlights;
+        if (typeof value.selectionTransparent === 'boolean') selectionTransparent = value.selectionTransparent;
         try {
             var nextKey = JSON.stringify(value.documents.map(function (d) { return d.url; }));
-            if (key !== nextKey || value.containerMode !== 'continuous' || !flow) {
+            if (key !== nextKey || flowMode !== value.containerMode || !flow) {
                 clear(); documents = value.documents; key = nextKey;
                 if (value.containerMode === 'continuous') flow = window.__ngEpubCreateContinuous(host, documents);
+                else if (value.containerMode === 'canvas') flow = window.__ngEpubCreateCanvas(host, documents);
+                if (flow) { flowMode = value.containerMode; flow.setLinkHandler(linkHandler); }
             }
             host.style.cssText = 'position:relative;overflow:hidden;width:' + value.width + 'px;height:' + value.height + 'px';
             if (flow) {
+                flow.setHighlights(highlights); flow.setSelectionTransparent(selectionTransparent);
                 await flow.configure(value); check(mine);
             } else {
                 var index = value.preservePosition && Number.isInteger(previous.index) ? previous.index : value.index || 0;
@@ -137,7 +167,8 @@
         if (status.status === 'error') return status;
         if (!flow) return fixedState();
         var current = flow.state();
-        return Object.assign({}, current, { fullViewport: true, scrollOvershoot: current.overshoot,
+        if (flowMode === 'canvas') return current;
+        return Object.assign({}, current, { canvas: true, fullViewport: true, scrollOvershoot: current.overshoot,
             hideHeader: current.cover || current.bleedHeader, hideFooter: current.cover });
     }
     function interact(value) {
@@ -189,10 +220,22 @@
         return result && Object.assign({}, result, { token: value.token, index: entry.index });
     }
     window.__ngEpubContainer = Object.freeze({ configure: configure, updateStyles: updateStyles, move: move, state: state, interact: interact,
+        setLinkHandler: function (handler) { linkHandler = typeof handler === 'function' ? handler : null;
+            if (flow) flow.setLinkHandler(linkHandler); },
+        cancelConfiguration: function () { revision++; pending.forEach(function (cancel) { cancel(); }); pending.clear();
+            if (flow && flow.cancelConfiguration) flow.cancelConfiguration();
+            else entries.forEach(function (e) { e.api.cancelConfiguration(); window.__ngEpubCancelBackground(e.backdrop); }); },
+        pauseMedia: function () { if (flow) flow.pauseMedia(); else entries.forEach(function (e) { e.api.pauseMedia(); }); },
+        mediaOverlay: function (value) { if (flow) flow.mediaOverlay(value); else entries.forEach(function (e) {
+            e.api.mediaOverlay(e.index === active ? value : {}); }); },
+        revealText: function (value) { if (flow) return flow.revealText(value);
+            var entry = entries.find(function (e) { return e.index === active; }); return entry && entry.api.revealText(value); },
+        prepareSelection: function (value) { if (flow && flow.prepareSelection) return flow.prepareSelection(value); },
+        flowPosition: function (value) { return flow && flow.flowPosition ? flow.flowPosition(value) : null; },
         beginScroll: function () { if (flow) flow.beginScroll(); },
         scrollBy: function (delta) { if (flow) flow.scrollBy(delta); },
         settle: async function () { if (flow) await flow.settle(); return state(); },
-        captureLocation: function () { return state().location; },
+        captureLocation: function () { if (flow && flow.captureLocation) flow.captureLocation(); return state().location; },
         setHighlights: function (values) { highlights = values; if (flow) flow.setHighlights(values); else entries.forEach(function (e) {
             e.api.setHighlights(values.filter(function (mark) { return mark.occurrence === e.index; }));
         }); },

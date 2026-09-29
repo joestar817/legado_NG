@@ -1012,13 +1012,22 @@
             return { element: el, sides: directions, leading: leading === body.firstElementChild };
         }).filter(Boolean);
     }
+    function hasPageBackground(computed) {
+        return computed.backgroundImage !== 'none' || computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && computed.backgroundColor !== 'transparent';
+    }
+    var backgroundProperties = ['background-color', 'background-image', 'background-position', 'background-size',
+        'background-repeat', 'background-origin', 'background-clip', 'background-attachment', 'background-blend-mode'];
+    function pageBackground(computed) {
+        var properties = {};
+        backgroundProperties.forEach(function (name) { properties[name] = computed.getPropertyValue(name); });
+        return { properties: properties, backgroundImage: computed.backgroundImage, backgroundColor: computed.backgroundColor };
+    }
     function preserveBackground(computed, cover) {
-        var hasBackground = computed.backgroundImage !== 'none' || computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && computed.backgroundColor !== 'transparent';
-        if (hasBackground) {
+        if (hasPageBackground(computed)) {
             // A viewport layer keeps decorations stationary when the paginated body translates.
-            style(root, { background: computed.background });
-            style(body, { background: 'transparent', color: computed.color });
-        } else if (cover) style(root, { 'background-color': '#000' });
+            style(root, computed.properties);
+            style(body, { background: 'transparent' });
+        } else if (cover && !hasPageBackground(getComputedStyle(root))) style(root, { 'background-color': '#000' });
     }
     function fitImagePage(w, h) {
         style(body, { width: w + 'px', height: h + 'px', margin: '0', padding: '0',
@@ -1297,7 +1306,9 @@
                 if (features.initial !== false && initialCandidates.includes(el)) properties['font-size'] = '2em';
             }
             if (features.decoration === false) {
-                Object.assign(properties, { background: 'transparent', border: 'none', 'box-shadow': 'none', 'text-shadow': 'none' });
+                Object.assign(properties, { border: 'none', 'box-shadow': 'none', 'text-shadow': 'none' });
+                // The same choice clears the page canvas below, including fixed pages and covers.
+                if (el !== root && el !== body) properties.background = 'transparent';
             }
             if (Object.keys(properties).length) adjust(el, properties);
         });
@@ -1392,7 +1403,9 @@
                     ';line-height:' + (defaults.lineHeight > 0 && defaults.fontSize > 0 ? defaults.lineHeight / defaults.fontSize : 'normal') + '}';
                 document.head.insertBefore(defaultsSheet, document.head.firstChild);
             }
-            adjusted.forEach(function (value, el) { restore(el, value); }); adjusted.clear();
+            // Root/body have already been restored from the original document. A cover's
+            // image-parent adjustment may have saved their intermediate transparent background.
+            adjusted.forEach(function (value, el) { if (el !== root && el !== body) restore(el, value); }); adjusted.clear();
             applyChapterBounds(value);
             applyFeaturePolicy(value);
             // Determine the native viewport before doing font/resource waits and pagination.
@@ -1445,8 +1458,7 @@
             if (!(w > 0 && h > 0)) throw new Error('正文区域尺寸无效');
             viewportWidth = w; viewportHeight = h;
             var computed = getComputedStyle(body), writing = computed.writingMode || computed.webkitWritingMode;
-            var authorBackground = { background: computed.background, backgroundImage: computed.backgroundImage,
-                backgroundColor: computed.backgroundColor, color: computed.color };
+            var authorBackground = pageBackground(computed);
             var mode = value.fixed ? 'FIXED' : writing === 'vertical-rl' ? 'VERTICAL_RL' : writing === 'vertical-lr' ? 'VERTICAL_LR' : 'HORIZONTAL';
             style(root, { width: w + 'px', height: h + 'px', 'min-width': '0', 'min-height': '0',
                 margin: '0', padding: '0', border: '0', position: 'fixed', left: '0', top: '0',
@@ -1462,6 +1474,13 @@
                 bleedHeader: bleeds.some(function (b) { return b.leading && b.sides.includes('top'); }),
                 pageCount: 1, pageIndex: 0, warnings: warnings, fontWarnings: fontWarnings };
             state.scrolled = !value.fixed && !cover && /^scrolled-/.test(value.flow || '');
+            var bookBackground = (value.features || {}).decoration !== false;
+            // This choice also applies to fixed pages and covers without removing their images.
+            // Root/body styles are restored at the next configuration, like the other choices.
+            if (!bookBackground) {
+                style(root, { background: 'transparent' });
+                if (body !== root) style(body, { background: 'transparent' });
+            }
             if (value.fixed) {
                 if (root.localName === 'svg') {
                     var vb = root.viewBox.baseVal;
@@ -1525,12 +1544,8 @@
                     state.scrollAxis = axis; state.scrollSign = sign;
                 }
                 extent = axis === 'x' ? w : h;
-                if (value.readerStyle && !cover) {
-                    // The preset owns the page canvas in reader-style mode. Nested decorations
-                    // and images remain authored content; the native page supplies its background.
-                    style(root, { background: 'transparent' });
-                    style(body, { background: 'transparent' });
-                } else preserveBackground(authorBackground, cover);
+                // Typography mode does not override the explicit background-and-decoration choice.
+                if (bookBackground) preserveBackground(authorBackground, cover);
                 if (cover) {
                     fitImagePage(w, h);
                 } else {
@@ -1620,6 +1635,15 @@
                 var fixedNineWarnings = await window.__ngEpubContent.prepareStyleImages();
                 if (mine !== generation) return;
                 warnings.push.apply(warnings, fixedNineWarnings);
+            }
+            // A parent canvas owns the page background, while this document keeps its
+            // original content viewport and all source/text coordinates. Local element
+            // backgrounds remain in the document and are clipped together with content.
+            if (value.externalBackground) {
+                if (value.fixed && bookBackground && body !== root) preserveBackground(authorBackground, false);
+                state.pageBackground = bookBackground ? pageBackground(getComputedStyle(root)) : null;
+                style(root, { background: 'transparent' });
+                if (body !== root) style(body, { background: 'transparent' });
             }
             if (!value.preserveScroll) place(value.last ? state.pageCount - 1 : (value.page || 0));
             locate(value.fragment);

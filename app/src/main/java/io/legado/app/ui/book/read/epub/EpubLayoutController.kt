@@ -59,6 +59,7 @@ internal class EpubLayoutController(
     private val requestViewport: (Boolean) -> Unit,
     private val reportError: (String) -> Unit,
     private val nativeFrame: () -> Bitmap,
+    private val nativeChrome: (Canvas, Boolean, Boolean) -> Unit,
     private val animate: (Bitmap, Bitmap, Int, () -> Unit) -> Unit,
     private val finishAnimation: () -> Unit,
     private val completeAnimation: () -> Unit,
@@ -130,6 +131,7 @@ internal class EpubLayoutController(
     private var insetsChanged = false
     private var snapshot: EpubSnapshotSession? = null
     private var surface: EpubLayoutSurface? = null
+    private var visibleChromeMask = 0
     private var gestures: EpubReaderGestures? = null
     private var documents = emptyList<EpubPreparedContent.Document>()
     private var documentIndex = 0
@@ -290,8 +292,12 @@ internal class EpubLayoutController(
 
     private fun attachSurface() {
         val publication = snapshot?.publicationSession ?: return
+        visibleChromeMask = 0
         val onReady: (JSONObject) -> Unit = ready@ { state ->
                 if (preparedContent?.chapter !== textChapter || preparedContent == null) return@ready
+                visibleChromeMask = (if (state.optBoolean("hideHeader")) 1 else 0) or
+                    (if (state.optBoolean("hideFooter")) 2 else 0)
+                host.invalidate()
                 visibleInteractionToken = state.optString("token")
                 val completesChapterTurn = chapterTurnTarget != null && chapterTurnTarget == textChapter?.chapter?.index
                 if (completesChapterTurn) stopFollowingReadAloud()
@@ -514,7 +520,25 @@ internal class EpubLayoutController(
     fun containsVisibleDocument(x: Float, y: Float): Boolean {
         if (renderFailed) return true
         val view = surface ?: return false
+        val state = view.readyState
+        if (state == null || state.optBoolean("canvas")) {
+            val localX = css(x - view.left)
+            val localY = css(y - view.top)
+            val top = if (visibleChromeMask and 1 != 0) 0.0 else chromeInsets.optDouble("top", 0.0)
+            val bottom = css(view.height.toFloat()) -
+                if (visibleChromeMask and 2 != 0) 0.0 else chromeInsets.optDouble("bottom", 0.0)
+            if (localY < top || localY >= bottom) return false
+            state?.optJSONObject("documentRect")?.let { rect ->
+                return localX >= rect.optDouble("left") && localY >= rect.optDouble("top") &&
+                    localX < rect.optDouble("left") + rect.optDouble("width") &&
+                    localY < rect.optDouble("top") + rect.optDouble("height")
+            }
+        }
         return view.clipBounds?.contains((x - view.left).toInt(), (y - view.top).toInt()) ?: true
+    }
+
+    fun drawInformation(canvas: Canvas) {
+        if (active) nativeChrome(canvas, visibleChromeMask and 1 != 0, visibleChromeMask and 2 != 0)
     }
 
     private fun failRendering(message: String, rendererGone: Boolean = false) {
@@ -536,6 +560,7 @@ internal class EpubLayoutController(
         gestures = null
         surface?.let { host.removeView(it); it.close() }
         surface = null
+        visibleChromeMask = 0
         // The native reader owns the last confirmed location, including cross-chapter moves.
         requestedPosition = position()
         openAtEnd = false
@@ -797,7 +822,7 @@ internal class EpubLayoutController(
                     put(JSONObject().put("left", index(spread.left) ?: JSONObject.NULL)
                         .put("right", index(spread.right) ?: JSONObject.NULL).put("center", index(spread.center) ?: JSONObject.NULL))
                 } })
-        } else if (isScroll()) value.put("containerMode", "continuous")
+        } else value.put("containerMode", if (isScroll()) "continuous" else "canvas")
         val highlights = highlightData(value.has("containerMode"))
         val notes = JSONArray().apply { for (i in 0 until highlights.length()) {
             val mark = highlights.getJSONObject(i)
@@ -1430,6 +1455,7 @@ internal class EpubLayoutController(
         frame.clip?.let(canvas::clipRect)
         canvas.drawBitmap(frame.bitmap, 0f, 0f, null)
         canvas.restoreToCount(saved)
+        if (frame.canvas) nativeChrome(canvas, frame.hideHeader, frame.hideFooter)
     }
 
     fun turn(direction: Int) {
@@ -1745,6 +1771,7 @@ internal class EpubLayoutController(
         gestures = null
         surface?.let { host.removeView(it); it.close() }
         surface = null
+        visibleChromeMask = 0
         visibleInteractionToken = null
         val old = snapshot
         snapshot = null

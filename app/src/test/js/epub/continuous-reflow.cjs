@@ -26,21 +26,23 @@ const api = {
 };
 function element(type) {
     const value = {
-        style: {}, setAttribute() {}, appendChild() {}, remove() {}, replaceChildren() {}
+        style: {}, setAttribute() {}, appendChild() {}, insertBefore() {}, remove() {}, replaceChildren() {}
     };
     if (type === 'iframe') {
         child = value;
         value.scroll = 0;
         value.contentDocument = { contentType: 'text/html', addEventListener() {} };
-        value.contentWindow = { getSelection: () => ({ rangeCount: 0 }) };
+        value.contentWindow = { location: { href: 'about:blank' }, getSelection: () => ({ rangeCount: 0 }) };
         Object.defineProperty(value, 'src', {
-            set() { queueMicrotask(() => value.onload?.()); }
+            set(url) { value.contentWindow.location.href = url; queueMicrotask(() => value.onload?.()); }
         });
     }
     return value;
 }
 const context = {
-    window: { __ngEpubInstall: () => api },
+    window: { __ngEpubInstall: () => api,
+        // This test isolates scroll ownership; browser fixtures exercise background decoding.
+        __ngEpubPaintBackground: async () => {}, __ngEpubCancelBackground() {}, __ngEpubBackgroundWarnings: () => [] },
     document: { baseURI: 'https://local/book', createElement: element },
     URL, setTimeout, clearTimeout,
     requestAnimationFrame: callback => setImmediate(callback)

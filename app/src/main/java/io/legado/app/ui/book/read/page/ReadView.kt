@@ -9,6 +9,7 @@ import android.graphics.RectF
 import android.os.Build
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowInsets
 import android.widget.FrameLayout
@@ -95,8 +96,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
     private var externalAnimationFinishing = false
 
     private fun captureNativeFrame(): Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-        // PageView contains native chrome only while the external document is active.
-        curPage.draw(Canvas(it))
+        // Information is composed after the authored canvas, never underneath a translucent one.
+        curPage.drawPageBackground(Canvas(it))
     }
 
     private fun animateLayoutFrames(before: Bitmap, after: Bitmap, direction: Int, commit: () -> Unit) {
@@ -162,6 +163,9 @@ class ReadView(context: Context, attrs: AttributeSet) :
                 requestViewport = ::setEpubViewportFull,
                 reportError = { message -> context.longToastOnUi(message) },
                 nativeFrame = ::captureNativeFrame,
+                nativeChrome = { canvas, hideHeader, hideFooter ->
+                    curPage.drawInformation(canvas, hideHeader, hideFooter)
+                },
                 animate = ::animateLayoutFrames,
                 finishAnimation = ::finishLayoutFrames,
                 completeAnimation = ::completeLayoutFrames,
@@ -234,11 +238,10 @@ class ReadView(context: Context, attrs: AttributeSet) :
         if (normal.width() <= 0 || normal.height() <= 0) return
         epubLayout?.insets(normal.left, normal.top, width - normal.right, height - normal.bottom,
             chromeTop, height - chromeBottom)
-        if (epubCover) epubViewport.set(0, 0, width, height)
-        else {
-            epubViewport.set(normal)
-        }
-        epubLayout?.viewport(epubViewport.left, epubViewport.top, epubViewport.width(), epubViewport.height(), epubCover)
+        // The browser canvas covers the page; the document retains this same safe rectangle
+        // inside its frame via readerInsets, without changing text pagination dimensions.
+        epubViewport.set(0, 0, width, height)
+        epubLayout?.viewport(0, 0, width, height, true)
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
@@ -342,6 +345,17 @@ class ReadView(context: Context, attrs: AttributeSet) :
         }
     }
 
+    override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
+        if (child === curPage && epubLayout?.active == true) {
+            val saved = canvas.save()
+            canvas.translate(child.x, child.y)
+            curPage.drawPageBackground(canvas)
+            canvas.restoreToCount(saved)
+            return true
+        }
+        return super.drawChild(canvas, child, drawingTime)
+    }
+
     override fun dispatchDraw(canvas: Canvas) {
         val frames = externalPageSnapshots
         // The animation frames already contain the complete page and chrome.
@@ -355,6 +369,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
             }
         } else if (epubLayout?.active != true) {
             pageDelegate?.onDraw(canvas)
+        } else {
+            epubLayout?.drawInformation(canvas)
         }
         autoPager.onDraw(canvas)
     }
