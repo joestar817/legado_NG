@@ -33,6 +33,7 @@ import io.legado.app.data.appDb
 import io.legado.app.databinding.ActivityMainBinding
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.ai.AiConfig
+import io.legado.app.help.ai.AiChatEntryStyle
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.BookshelfGestureConfig
@@ -58,6 +59,7 @@ import io.legado.app.ui.config.AiChatActivity
 import io.legado.app.ui.design.components.view.NgFloatingTabItem
 import io.legado.app.ui.design.components.view.NgFloatingTabBarVariant
 import io.legado.app.ui.main.bookshelf.BaseBookshelfFragment
+import io.legado.app.ui.main.chatentry.ChatPetViewModel
 import io.legado.app.ui.main.bookshelf.style1.BookshelfFragment1
 import io.legado.app.ui.main.explore.ExploreFragment
 import io.legado.app.ui.main.my.MyFragment
@@ -97,6 +99,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     override val binding by viewBinding(ActivityMainBinding::inflate)
     override val viewModel by viewModels<MainViewModel>()
+    private val chatPetViewModel by viewModels<ChatPetViewModel>()
     private val idBookshelf = 0
     private val idBookshelf1 = 11
     private val idExplore = 1
@@ -132,6 +135,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     private var bottomNavigationIconTintCaptured = false
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
+        chatPetViewModel.restorePlacements(savedInstanceState?.getBundle("chatPetPlacements"))
         upBottomMenu()
         initView()
         upHomePage()
@@ -206,6 +210,12 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         super.onResume()
         updateBottomNavigationStyle()
         refreshAiChatFab()
+        binding.aiChatPet.setHostActive(binding.aiChatPet.visibility == View.VISIBLE)
+    }
+
+    override fun onPause() {
+        binding.aiChatPet.setHostActive(false)
+        super.onPause()
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
@@ -229,7 +239,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                     content?.getGlobalVisibleRect(bounds) == true && bounds.contains(event.rawX.toInt(), event.rawY.toInt()) &&
                     !isTouchInsideBookshelfFloatingDock(event) &&
                     !isTouchInsideView(event, binding.floatingBottomNavigation) &&
-                    !isTouchInsideView(event, binding.fabAiChat)
+                    !isTouchInsideChatEntry(event)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (shelfSwipeEligible && shelfSwipeMode == BookshelfSwipeMode.DISABLED) {
@@ -283,6 +293,9 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             bounds.contains(event.rawX.toInt(), event.rawY.toInt())
     }
 
+    private fun isTouchInsideChatEntry(event: MotionEvent): Boolean =
+        isTouchInsideView(event, binding.fabAiChat) || binding.aiChatPet.isTouchOnPet(event.rawX, event.rawY)
+
     private fun cancelShelfTouchTarget(event: MotionEvent) {
         MotionEvent.obtain(event).also { cancel ->
             cancel.action = MotionEvent.ACTION_CANCEL
@@ -302,7 +315,8 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                         event.rawX <= startLimit &&
                         allowsBookshelfAiSwipe(BookshelfGestureConfig.mode,
                             (fragmentMap[idBookshelf1] as? BookshelfFragment1)?.canSwipeGroup(-1) == true) &&
-                        !isTouchInsideBookshelfFloatingDock(event)
+                        !isTouchInsideBookshelfFloatingDock(event) &&
+                        !isTouchInsideChatEntry(event)
             }
 
             MotionEvent.ACTION_UP -> {
@@ -416,6 +430,12 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 startActivity<AiChatActivity>()
             }
         }
+        aiChatPet.setOnClickListener {
+            aiChatPet.setHostActive(false)
+            aiChatPet.visibility = View.GONE
+            if (pagePosition == 0) startBookshelfGenericAiChat() else startActivity<AiChatActivity>()
+        }
+        aiChatPet.onAssetLoadFailed = { toastOnUi(R.string.ai_chat_entry_load_failed) }
         refreshAiChatFab()
     }
 
@@ -435,12 +455,17 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     }
 
     private fun refreshAiChatFab() = binding.run {
-        fabAiChat.visibility = if (AiConfig.chatFabEnabled) {
-            android.view.View.VISIBLE
-        } else {
-            android.view.View.GONE
-        }
+        val style = AiConfig.chatEntryStyle
+        fabAiChat.visibility = if (style == AiChatEntryStyle.BUTTON) View.VISIBLE else View.GONE
         fabAiChat.updateAccentColor(accentColor)
+        val petEngine = style.petAssetPath?.let { chatPetViewModel.engineFor(style.id) }
+        if (petEngine != null) {
+            aiChatPet.bindEngine(petEngine)
+            aiChatPet.visibility = View.VISIBLE
+        } else {
+            aiChatPet.setHostActive(false)
+            aiChatPet.visibility = View.GONE
+        }
     }
 
     /**
@@ -539,6 +564,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBundle("chatPetPlacements", chatPetViewModel.savePlacements())
         super.onSaveInstanceState(outState)
         if (AppConfig.autoRefreshBook) {
             outState.putBoolean("isAutoRefreshedBook", true)

@@ -1,6 +1,8 @@
 package io.legado.app.help.ai
 
+import androidx.core.content.edit
 import io.legado.app.constant.PreferKey
+import io.legado.app.utils.defaultSharedPreferences
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
@@ -74,6 +76,23 @@ object AiConfig {
         get() = appCtx.getPrefBoolean(PreferKey.aiChatFab, false)
         set(value) {
             appCtx.putPrefBoolean(PreferKey.aiChatFab, value)
+        }
+
+    var chatEntryStyle: AiChatEntryStyle
+        get() = if (chatFabEnabled) {
+            AiChatEntryStyle.fromId(
+                appCtx.getPrefString(PreferKey.aiChatEntryStyle, AiChatEntryStyle.BUTTON.id)
+            )
+        } else {
+            AiChatEntryStyle.NONE
+        }
+        set(value) {
+            appCtx.defaultSharedPreferences.edit {
+                putBoolean(PreferKey.aiChatFab, value != AiChatEntryStyle.NONE)
+                if (value != AiChatEntryStyle.NONE) {
+                    putString(PreferKey.aiChatEntryStyle, value.id)
+                }
+            }
         }
 
     var bookshelfSwipeEnabled: Boolean

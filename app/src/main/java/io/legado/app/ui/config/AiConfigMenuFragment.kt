@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
+import io.legado.app.help.ai.AiChatEntryStyle
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiModel
 import io.legado.app.help.ai.AiProviderSetting
@@ -45,7 +46,7 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
                     AiConfigMenuScreen(
                         state = screenState,
                         onOpenPage = ::openPage,
-                        onChatFabChanged = ::updateChatFab,
+                        onChatEntryStyleChanged = ::updateChatEntryStyle,
                         onBookshelfSwipeChanged = ::updateBookshelfSwipe,
                     )
                 }
@@ -81,8 +82,7 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
                 providers.size.toString()
             ),
             skillSummary = screenState.skillSummary,
-            chatFabEnabled = AiConfig.chatFabEnabled,
-            chatFabSummary = chatFabSummary(),
+            chatEntryStyle = AiConfig.chatEntryStyle,
             bookshelfSwipeEnabled = AiConfig.bookshelfSwipeEnabled,
             bookshelfSwipeSummary = bookshelfSwipeSummary(),
             purifySummary = getString(
@@ -104,21 +104,10 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
         refreshSkillSummary()
     }
 
-    private fun updateChatFab(enabled: Boolean) {
-        AiConfig.chatFabEnabled = enabled
+    private fun updateChatEntryStyle(style: AiChatEntryStyle) {
+        AiConfig.chatEntryStyle = style
         screenState = screenState.copy(
-            chatFabEnabled = enabled,
-            chatFabSummary = chatFabSummary()
-        )
-    }
-
-    private fun chatFabSummary(): String {
-        return getString(
-            if (AiConfig.chatFabEnabled) {
-                R.string.ai_chat_fab_summary_on
-            } else {
-                R.string.ai_chat_fab_summary_off
-            }
+            chatEntryStyle = AiConfig.chatEntryStyle
         )
     }
 

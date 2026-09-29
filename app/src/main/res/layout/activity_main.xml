@@ -59,4 +59,10 @@
         android:contentDescription="@string/ai_chat"
         android:visibility="gone" />
 
+    <io.legado.app.ui.main.chatentry.AiChatPetView
+        android:id="@+id/ai_chat_pet"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
 </FrameLayout>

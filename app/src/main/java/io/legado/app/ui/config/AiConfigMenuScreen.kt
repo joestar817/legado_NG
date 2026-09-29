@@ -5,11 +5,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+import io.legado.app.help.ai.AiChatEntryStyle
 import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsIcon
@@ -19,8 +24,7 @@ import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
 internal data class AiConfigMenuScreenState(
     val providerSummary: String = "",
     val skillSummary: String = "",
-    val chatFabEnabled: Boolean = false,
-    val chatFabSummary: String = "",
+    val chatEntryStyle: AiChatEntryStyle = AiChatEntryStyle.NONE,
     val bookshelfSwipeEnabled: Boolean = true,
     val bookshelfSwipeSummary: String = "",
     val purifySummary: String = "",
@@ -32,9 +36,10 @@ internal data class AiConfigMenuScreenState(
 internal fun AiConfigMenuScreen(
     state: AiConfigMenuScreenState,
     onOpenPage: (String) -> Unit,
-    onChatFabChanged: (Boolean) -> Unit,
+    onChatEntryStyleChanged: (AiChatEntryStyle) -> Unit,
     onBookshelfSwipeChanged: (Boolean) -> Unit,
 ) {
+    var showChatEntryPicker by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -56,13 +61,10 @@ internal fun AiConfigMenuScreen(
                 onClick = { onOpenPage(AiConfigFragment.PAGE_PROMPTS) }
             )
             AiConfigMenuEntry(
-                title = stringResource(R.string.ai_chat_fab),
-                summary = state.chatFabSummary,
+                title = stringResource(R.string.ai_chat_entry),
+                summary = stringResource(state.chatEntryStyle.titleRes),
                 iconRes = R.drawable.ic_ai_setting,
-                trailing = NgSettingsTrailing.SWITCH,
-                checked = state.chatFabEnabled,
-                onCheckedChange = onChatFabChanged,
-                onClick = { onChatFabChanged(!state.chatFabEnabled) }
+                onClick = { showChatEntryPicker = true }
             )
             AiConfigMenuEntry(
                 title = stringResource(R.string.ai_bookshelf_swipe),
@@ -92,6 +94,20 @@ internal fun AiConfigMenuScreen(
                 onClick = { onOpenPage(AiConfigFragment.PAGE_READ_ALOUD) }
             )
         }
+    }
+    if (showChatEntryPicker) {
+        ConfigChoiceDialog(
+            title = stringResource(R.string.ai_chat_entry),
+            options = AiChatEntryStyle.entries.map {
+                ConfigChoiceOption(label = stringResource(it.titleRes), value = it.id)
+            },
+            selectedValue = state.chatEntryStyle.id,
+            onDismissRequest = { showChatEntryPicker = false },
+            onSelected = { id ->
+                showChatEntryPicker = false
+                onChatEntryStyleChanged(AiChatEntryStyle.fromId(id))
+            },
+        )
     }
 }
 

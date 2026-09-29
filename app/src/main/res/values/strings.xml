@@ -421,6 +421,11 @@
     <string name="ai_chat_fab">Chat floating button</string>
     <string name="ai_chat_fab_summary_off">Off. Home entry hidden.</string>
     <string name="ai_chat_fab_summary_on">On. Home entry visible.</string>
+    <string name="ai_chat_entry">Home chat entry</string>
+    <string name="ai_chat_entry_none">Off</string>
+    <string name="ai_chat_entry_button">Floating button</string>
+    <string name="ai_chat_entry_gugugaga">咕咕嘎嘎</string>
+    <string name="ai_pet_open_chat">Open AI chat</string>
     <string name="ai_bookshelf_swipe">Swipe right on bookshelf for AI</string>
     <string name="ai_bookshelf_swipe_summary_off">Off. Right swipe no longer opens AI.</string>
     <string name="ai_bookshelf_swipe_summary_on">On. Right swipe opens AI chat.</string>
@@ -2541,4 +2546,5 @@
     <string name="explore_jump_page">Jump to page</string>
     <string name="explore_jump">Go</string>
     <string name="explore_page_input_hint">Current page: %1$d</string>
+    <string name="ai_chat_entry_load_failed">Unable to load the chat character</string>
 </resources>

@@ -418,6 +418,11 @@
     <string name="ai_chat_fab">聊天悬浮按钮</string>
     <string name="ai_chat_fab_summary_off">已关闭，首页不显示入口</string>
     <string name="ai_chat_fab_summary_on">已开启，首页显示入口</string>
+    <string name="ai_chat_entry">首页聊天入口</string>
+    <string name="ai_chat_entry_none">关闭</string>
+    <string name="ai_chat_entry_button">悬浮按钮</string>
+    <string name="ai_chat_entry_gugugaga">咕咕嘎嘎</string>
+    <string name="ai_pet_open_chat">打开 AI 聊天</string>
     <string name="ai_bookshelf_swipe">书架右滑进入 AI 助理</string>
     <string name="ai_bookshelf_swipe_summary_off">已关闭，右滑不再进入</string>
     <string name="ai_bookshelf_swipe_summary_on">已开启，右滑可进入聊天</string>
@@ -2443,4 +2448,5 @@
     <string name="explore_jump_page">跳页</string>
     <string name="explore_jump">跳转</string>
     <string name="explore_page_input_hint">当前第 %1$d 页</string>
+    <string name="ai_chat_entry_load_failed">无法加载聊天形象</string>
 </resources>

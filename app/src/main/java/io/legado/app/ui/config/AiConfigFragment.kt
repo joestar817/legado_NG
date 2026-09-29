@@ -567,14 +567,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                 providers.size.toString(),
             ),
             skillSummary = aiMenuScreenState.skillSummary,
-            chatFabEnabled = AiConfig.chatFabEnabled,
-            chatFabSummary = getString(
-                if (AiConfig.chatFabEnabled) {
-                    R.string.ai_chat_fab_summary_on
-                } else {
-                    R.string.ai_chat_fab_summary_off
-                }
-            ),
+            chatEntryStyle = AiConfig.chatEntryStyle,
             bookshelfSwipeEnabled = AiConfig.bookshelfSwipeEnabled,
             bookshelfSwipeSummary = getString(
                 if (AiConfig.bookshelfSwipeEnabled) {
@@ -1076,8 +1069,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     AiConfigMenuScreen(
                         state = aiMenuScreenState,
                         onOpenPage = ::handleAiMainOpenPage,
-                        onChatFabChanged = { enabled ->
-                            AiConfig.chatFabEnabled = enabled
+                        onChatEntryStyleChanged = { style ->
+                            AiConfig.chatEntryStyle = style
                             refreshMain()
                         },
                         onBookshelfSwipeChanged = { enabled ->
