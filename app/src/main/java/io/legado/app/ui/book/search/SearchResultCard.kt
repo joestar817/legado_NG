@@ -12,19 +12,24 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowOverflow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -45,9 +49,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -67,11 +75,12 @@ import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.textHeight
 import io.legado.app.utils.toStringArray
 
-private val LegacyTextStyle: TextStyle
+private val SearchCardTextStyle: TextStyle
     @Composable
     get() = TextStyle(
         fontFamily = NgTheme.fontFamily,
-        platformStyle = PlatformTextStyle(includeFontPadding = true)
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        textAlign = TextAlign.Start
     )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -85,11 +94,10 @@ internal fun SearchResultCard(
     outerHorizontalPadding: Dp = 12.dp,
     outerVerticalPadding: Dp = 4.dp,
     cardCornerRadius: Dp = 18.dp,
-    cardHeight: Dp = 148.dp,
+    minCardHeight: Dp = 120.dp,
     cardContentPadding: Dp = 10.dp,
     coverWidth: Dp = 78.dp,
-    coverHeight: Dp = 104.dp,
-    contentStartPadding: Dp = 90.dp,
+    coverHeight: Dp = 116.5.dp,
     cardBackgroundColorRes: Int = R.color.ng_surface_card,
     cardStrokeColorRes: Int = R.color.ng_settings_item_stroke,
     cardBorderWidth: Dp = 0.8.dp
@@ -107,12 +115,13 @@ internal fun SearchResultCard(
     val secondaryText = colorResource(R.color.secondaryText)
     val accent = Color(NgTheme.colors.primary)
     val onAccent = Color.White
+    val textStyle = SearchCardTextStyle
 
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = outerHorizontalPadding, vertical = outerVerticalPadding)
-            .height(cardHeight)
+            .heightIn(min = minCardHeight)
             .clip(shape)
             .background(cardColor)
             .then(if (isPressed) Modifier.background(pressedOverlay) else Modifier)
@@ -126,46 +135,44 @@ internal fun SearchResultCard(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            .padding(cardContentPadding)
+            .padding(cardContentPadding),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         SearchBookCover(
             book = book,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .size(width = coverWidth, height = coverHeight),
+            modifier = Modifier.size(width = coverWidth, height = coverHeight),
             coverWidth = coverWidth,
             coverHeight = coverHeight
         )
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(start = contentStartPadding)
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .background(
-                            if (inBookshelf) colorResource(R.color.md_green_600)
-                            else Color.Transparent,
-                            CircleShape
-                        )
-                )
-                Spacer(Modifier.width(8.dp))
                 Text(
                     text = book.name,
                     modifier = Modifier.weight(1f),
                     color = primaryText,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = LegacyTextStyle
+                    lineHeight = 19.sp,
+                    style = textStyle
                 )
+                if (inBookshelf) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(colorResource(R.color.md_green_600), CircleShape)
+                    )
+                }
                 if (originCount > 0) {
                     Spacer(Modifier.width(8.dp))
                     Text(
@@ -176,85 +183,115 @@ internal fun SearchResultCard(
                             .padding(horizontal = 5.dp, vertical = 1.dp),
                         color = onAccent,
                         fontSize = 11.sp,
+                        lineHeight = 14.sp,
                         maxLines = 1,
-                        style = LegacyTextStyle
+                        style = textStyle
                     )
                 }
             }
 
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = context.getString(R.string.author_show, book.author),
+            SearchBookMetadata(
+                icon = R.drawable.ic_author,
+                text = book.author,
+                description = context.getString(R.string.author_show, book.author),
                 color = secondaryText,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = LegacyTextStyle
             )
-            Text(
-                text = context.getString(R.string.origin_show, book.originName),
+            SearchBookMetadata(
+                icon = R.drawable.ic_web_outline,
+                text = book.originName,
+                description = context.getString(R.string.origin_show, book.originName),
                 color = secondaryText,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = LegacyTextStyle
             )
             val kinds = book.getKindList()
             if (kinds.isNotEmpty()) {
                 SearchKindLabels(kinds, accent, onAccent)
             }
             book.latestChapterTitle?.takeIf { it.isNotEmpty() }?.let { latest ->
-                Text(
-                    text = context.getString(R.string.lasted_show, latest),
+                SearchBookMetadata(
+                    icon = R.drawable.ic_book_last,
+                    text = latest,
+                    description = context.getString(R.string.lasted_show, latest),
                     color = secondaryText,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = LegacyTextStyle
                 )
             }
             Text(
                 text = book.trimIntro(context),
-                modifier = Modifier.weight(1f),
-                color = primaryText,
+                color = secondaryText,
                 fontSize = 12.sp,
+                minLines = 1,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = LegacyTextStyle
+                lineHeight = 16.sp,
+                style = textStyle
             )
         }
     }
 }
 
 @Composable
-private fun SearchKindLabels(labels: List<String>, accent: Color, onAccent: Color) {
-    Box(
+private fun SearchBookMetadata(
+    icon: Int,
+    text: String,
+    description: String,
+    color: Color,
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(18.dp)
-            .clipToBounds()
+            .clearAndSetSemantics { contentDescription = description },
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row {
-            labels.forEach { label ->
-                Box(
-                    modifier = Modifier
-                        .height(18.dp)
-                        .defaultMinSize(minWidth = 28.dp)
-                        .background(accent, RoundedCornerShape(2.dp))
-                        .padding(horizontal = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = label,
-                        color = onAccent,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        style = TextStyle(
-                            fontFamily = NgTheme.fontFamily,
-                            platformStyle = PlatformTextStyle(includeFontPadding = false)
-                        )
-                    )
-                }
-                Spacer(Modifier.width(2.dp))
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(13.dp)
+        )
+        Text(
+            text = text,
+            modifier = Modifier.weight(1f),
+            color = color,
+            fontSize = 13.sp,
+            lineHeight = 16.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = SearchCardTextStyle
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SearchKindLabels(
+    labels: List<String>,
+    accent: Color,
+    onAccent: Color
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        maxLines = 1,
+        overflow = FlowRowOverflow.Clip
+    ) {
+        labels.forEach { label ->
+            Box(
+                modifier = Modifier
+                    .heightIn(min = 18.dp)
+                    .defaultMinSize(minWidth = 28.dp)
+                    .background(accent, RoundedCornerShape(2.dp))
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = label,
+                    color = onAccent,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = SearchCardTextStyle
+                )
             }
         }
     }

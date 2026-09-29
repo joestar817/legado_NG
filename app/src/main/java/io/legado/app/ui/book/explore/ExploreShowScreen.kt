@@ -285,11 +285,7 @@ internal fun ExploreShowScreen(
                                         outerHorizontalPadding = 0.dp,
                                         outerVerticalPadding = 0.dp,
                                         cardCornerRadius = 0.dp,
-                                        cardHeight = 120.dp,
                                         cardContentPadding = 8.dp,
-                                        coverWidth = 68.dp,
-                                        coverHeight = 92.dp,
-                                        contentStartPadding = 78.dp,
                                         cardBackgroundColorRes = android.R.color.transparent,
                                         cardBorderWidth = 0.dp
                                     )
