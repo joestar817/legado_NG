@@ -19,7 +19,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.legado.app.R
-import io.legado.app.ui.main.chatentry.core.ChatPetEngine
+import io.legado.app.ui.main.chatentry.core.BlueFishCharacter
+import io.legado.app.ui.main.chatentry.core.PetController
 import io.legado.app.ui.main.chatentry.core.PetArmMesh
 import io.legado.app.ui.main.chatentry.core.PetFrame
 import io.legado.app.ui.main.chatentry.core.PetLayerDefinition
@@ -71,7 +72,8 @@ class AiChatPetView @JvmOverloads constructor(
     private var loadJob: Job? = null
     private var bitmaps: Map<String, Bitmap> = emptyMap()
     private var loadedDirectory: String? = null
-    private var engine: ChatPetEngine? = null
+    private var engine: PetController? = null
+    private var blueFishRenderer: BlueFishPetRenderer? = null
     private var hostActive = false
     private var framePosted = false
     private var lastFrameTime = 0L
@@ -120,7 +122,7 @@ class AiChatPetView @JvmOverloads constructor(
         lifecycleReady = true
     }
 
-    fun bindEngine(value: ChatPetEngine) {
+    fun bindEngine(value: PetController) {
         if (engine !== value) {
             cancelPointer()
             stopTicker()
@@ -129,6 +131,7 @@ class AiChatPetView @JvmOverloads constructor(
                 loadJob = null
                 loadedDirectory = null
                 bitmaps = emptyMap()
+                blueFishRenderer = null
             }
             engine = value
             drawLayers.clear()
@@ -203,17 +206,20 @@ class AiChatPetView @JvmOverloads constructor(
         loadJob = loadScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    PetPose.entries.flatMap { definition.layers(it) }.map { it.file }.distinct().associateWith { file ->
+                    val decoded = definition.assetFiles.associateWith { file ->
                         assetManager.open("$directory/$file").use { stream ->
                             requireNotNull(BitmapFactory.decodeStream(stream, null, BitmapFactory.Options().apply {
                                 inScaled = false
+                                inSampleSize = definition.bitmapSampleSize
                                 inPreferredConfig = Bitmap.Config.ARGB_8888
                             })) { "Invalid pet artwork: $file" }
                         }
                     }
+                    decoded to if (definition.id == BlueFishCharacter.definition.id) BlueFishPetRenderer(decoded) else null
                 }
                 if (engine?.definition?.assetDirectory == directory) {
-                    bitmaps = result
+                    bitmaps = result.first
+                    blueFishRenderer = result.second
                     loadedDirectory = directory
                     invalidate()
                     updateTicker()
@@ -240,6 +246,15 @@ class AiChatPetView @JvmOverloads constructor(
         val viewportWidth = (width - insetLeft - insetRight) / density
         val viewportHeight = (height - insetTop - insetBottom) / density
         canvas.clipRect(0f, 0f, viewportWidth, viewportHeight)
+        if (frame.blueFish != null) {
+            blueFishRenderer?.let { renderer ->
+                renderer.draw(canvas, frame, viewportWidth, viewportHeight)
+                hitBounds.set(renderer.hitBounds)
+            }
+            canvas.restore()
+            if (!hitBounds.intersect(0f, 0f, viewportWidth, viewportHeight)) hitBounds.setEmpty()
+            return
+        }
         for (layer in definition.layers(frame.pose)) {
             val opacity = definition.layerOpacity(frame.motion, layer, frame.pose)
             if (opacity <= 0f) continue
@@ -345,6 +360,7 @@ class AiChatPetView @JvmOverloads constructor(
 
     private fun hitTest(point: PetPoint): Boolean {
         if (!hitBounds.contains(point.x, point.y)) return false
+        blueFishRenderer?.let { return it.hitTest(point) }
         for (item in drawLayers.asReversed()) {
             fun alphaAt(x: Float, y: Float): Int {
                 if (x < 0f || y < 0f || x >= item.layer.width || y >= item.layer.height) return 0

@@ -62,7 +62,12 @@ data class PetMotion(
     }
 }
 
-data class PetFrame(val pose: PetPose, val anchor: PetPoint, val motion: PetMotion) {
+data class PetFrame(
+    val pose: PetPose,
+    val anchor: PetPoint,
+    val motion: PetMotion,
+    val blueFish: BlueFishVisual? = null,
+) {
     val anchorX get() = anchor.x
     val anchorY get() = anchor.y
 }
@@ -89,6 +94,8 @@ class PetCharacterDefinition(
     peekLayers: List<PetLayerDefinition>,
     val peekRestCutX: Float = 225f,
     val peekMoreCutX: Float = 315f,
+    additionalAssets: List<String> = emptyList(),
+    val bitmapSampleSize: Int = 1,
 ) {
     private val full = fullLayers.sortedBy { it.z }
     private val peek = peekLayers.sortedBy { it.z }
@@ -96,6 +103,7 @@ class PetCharacterDefinition(
     private val peekById = peek.associateBy { it.id }
     private val fullAnchor = anchor(fullById.getValue("head"))
     private val peekAnchor = anchor(peekById.getValue("head"))
+    val assetFiles: List<String> = (full.map { it.file } + peek.map { it.file } + additionalAssets).distinct()
 
     /** Conservative distance beyond the right edge that hides either rotating pose. */
     val hiddenReach: Float = PetPose.entries.maxOf { pose ->
@@ -113,6 +121,7 @@ class PetCharacterDefinition(
 
     init {
         require(scale.isFinite() && scale > 0f)
+        require(bitmapSampleSize > 0)
     }
 
     fun layers(pose: PetPose): List<PetLayerDefinition> = if (pose == PetPose.FULL) full else peek

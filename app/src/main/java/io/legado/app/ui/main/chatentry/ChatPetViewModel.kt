@@ -3,18 +3,26 @@ package io.legado.app.ui.main.chatentry
 import android.os.Bundle
 import androidx.lifecycle.ViewModel
 import io.legado.app.ui.main.chatentry.core.ChatPetEngine
+import io.legado.app.ui.main.chatentry.core.BlueFishCharacter
+import io.legado.app.ui.main.chatentry.core.BlueFishPetEngine
 import io.legado.app.ui.main.chatentry.core.GuguGagaCharacter
+import io.legado.app.ui.main.chatentry.core.PetController
 import io.legado.app.ui.main.chatentry.core.PetPlacement
 import io.legado.app.ui.main.chatentry.core.PetPose
 
 /** Retains animation state across rotation without retaining an Activity or bitmap. */
 class ChatPetViewModel : ViewModel() {
-    private val characters = listOf(GuguGagaCharacter.definition).associateBy { it.id }
-    private val engines = mutableMapOf<String, ChatPetEngine>()
+    private val engines = mutableMapOf<String, PetController>()
 
-    fun engineFor(characterId: String): ChatPetEngine? {
-        val definition = characters[characterId] ?: return null
-        return engines.getOrPut(characterId) { ChatPetEngine(definition) }
+    fun engineFor(characterId: String): PetController? {
+        engines[characterId]?.let { return it }
+        val engine = when (characterId) {
+            GuguGagaCharacter.definition.id -> ChatPetEngine()
+            BlueFishCharacter.definition.id -> BlueFishPetEngine()
+            else -> return null
+        }
+        engines[characterId] = engine
+        return engine
     }
 
     fun restorePlacements(saved: Bundle?) {

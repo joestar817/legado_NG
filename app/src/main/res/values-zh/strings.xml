@@ -422,6 +422,7 @@
     <string name="ai_chat_entry_none">关闭</string>
     <string name="ai_chat_entry_button">悬浮按钮</string>
     <string name="ai_chat_entry_gugugaga">咕咕嘎嘎</string>
+    <string name="ai_chat_entry_blue_fish">蓝色大肥鱼</string>
     <string name="ai_pet_open_chat">打开 AI 聊天</string>
     <string name="ai_bookshelf_swipe">书架右滑进入 AI 助理</string>
     <string name="ai_bookshelf_swipe_summary_off">已关闭，右滑不再进入</string>

@@ -70,26 +70,26 @@ class PetEngineSnapshot internal constructor(
  * artwork scale never changes. The host owns hit testing, the 6dp threshold,
  * lifecycle suspension, navigation, and supplying elapsed foreground time.
  */
-class ChatPetEngine(val definition: PetCharacterDefinition = GuguGagaCharacter.definition) {
+class ChatPetEngine(override val definition: PetCharacterDefinition = GuguGagaCharacter.definition) : PetController {
     private var state = PetSavedState()
     private var pointer: PetPointerState? = null
     private var pendingPlacement: PetPlacement? = null
 
-    var widthDp = 0f
+    override var widthDp = 0f
         private set
-    var heightDp = 0f
+    override var heightDp = 0f
         private set
     var quietIdle = true
 
-    val isPressed get() = pointer != null
-    val isDragging get() = pointer?.dragging == true
+    override val isPressed get() = pointer != null
+    override val isDragging get() = pointer?.dragging == true
     val stableMode get() = state.mode
     val phase get() = state.phase
     val sceneMs get() = state.sceneMs
     val currentAction get() = state.action?.id
     val hiddenAnchorX get() = widthDp + definition.hiddenReach
 
-    fun frame(): PetFrame {
+    override fun frame(): PetFrame {
         val activePointer = pointer
         if (state.phase == PetPhase.PRESSED && activePointer != null) return activePointer.frozenFrame
         if (state.phase == PetPhase.DOCKING) return dockingFrame()
@@ -104,7 +104,7 @@ class ChatPetEngine(val definition: PetCharacterDefinition = GuguGagaCharacter.d
         return poseFrame(pose, state.position, motion)
     }
 
-    fun resize(widthDp: Float, heightDp: Float) {
+    override fun resize(widthDp: Float, heightDp: Float) {
         require(widthDp.isFinite() && heightDp.isFinite() && widthDp >= 0f && heightDp >= 0f)
         cancel()
         if (widthDp <= 0f || heightDp <= 0f) return
@@ -138,7 +138,7 @@ class ChatPetEngine(val definition: PetCharacterDefinition = GuguGagaCharacter.d
         )
     }
 
-    fun press(x: Float, y: Float, eventTimeMs: Long = 0L): Boolean {
+    override fun press(x: Float, y: Float, eventTimeMs: Long): Boolean {
         if (pointer != null || widthDp <= 0f || heightDp <= 0f || !x.isFinite() || !y.isFinite()) return false
         val frozen = frame()
         pointer = PetPointerState(
@@ -152,7 +152,7 @@ class ChatPetEngine(val definition: PetCharacterDefinition = GuguGagaCharacter.d
         return true
     }
 
-    fun move(x: Float, y: Float, eventTimeMs: Long, dragThresholdExceeded: Boolean) {
+    override fun move(x: Float, y: Float, eventTimeMs: Long, dragThresholdExceeded: Boolean) {
         val previous = pointer ?: return
         if (!x.isFinite() || !y.isFinite()) return
         val dt = if (previous.eventTimeMs == 0L) 16L else (eventTimeMs - previous.eventTimeMs).coerceAtLeast(8L)
@@ -186,7 +186,7 @@ class ChatPetEngine(val definition: PetCharacterDefinition = GuguGagaCharacter.d
     }
 
     /** True means a click; state has already been restored before host navigation. */
-    fun release(x: Float, y: Float): Boolean {
+    override fun release(x: Float, y: Float): Boolean {
         val active = pointer ?: return false
         if (!x.isFinite() || !y.isFinite() || x < 0f || y < 0f || y > heightDp) {
             cancel()
@@ -222,14 +222,14 @@ class ChatPetEngine(val definition: PetCharacterDefinition = GuguGagaCharacter.d
         return false
     }
 
-    fun cancel() {
+    override fun cancel() {
         val active = pointer ?: return
         pointer = null
         state = active.before
     }
 
     /** Call only while the entry is visible; a pressed-but-not-dragged pet freezes. */
-    fun advance(deltaMs: Long) {
+    override fun advance(deltaMs: Long) {
         require(deltaMs >= 0L)
         if (widthDp <= 0f || heightDp <= 0f || state.phase == PetPhase.PRESSED || deltaMs == 0L) return
         state = state.copy(sceneMs = state.sceneMs + deltaMs)
@@ -260,7 +260,7 @@ class ChatPetEngine(val definition: PetCharacterDefinition = GuguGagaCharacter.d
         quietIdle = snapshot.quietIdle
     }
 
-    fun placement(): PetPlacement {
+    override fun placement(): PetPlacement {
         pendingPlacement?.let { return it }
         val placementState = pointer?.before ?: state
         val docked = placementState.mode == PetStableMode.DOCKED || placementState.phase == PetPhase.DOCKING
@@ -272,14 +272,14 @@ class ChatPetEngine(val definition: PetCharacterDefinition = GuguGagaCharacter.d
         )
     }
 
-    fun restorePlacement(placement: PetPlacement) {
+    override fun restorePlacement(placement: PetPlacement) {
         require(placement.xFraction.isFinite() && placement.yFraction.isFinite())
         cancel()
         if (widthDp <= 0f || heightDp <= 0f) pendingPlacement = placement else applyPlacement(placement)
     }
 
     /** Null suspends drawing. Idle wakes at the next blink/action rather than polling. */
-    fun nextFrameDelayMs(): Long? {
+    override fun nextFrameDelayMs(): Long? {
         if (widthDp <= 0f || heightDp <= 0f || state.phase == PetPhase.PRESSED) return null
         if (state.phase != PetPhase.IDLE) return 16L
         val elapsed = state.sceneMs - state.phaseStartMs
