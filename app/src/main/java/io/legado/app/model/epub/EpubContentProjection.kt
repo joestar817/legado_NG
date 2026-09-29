@@ -13,6 +13,7 @@ import org.jsoup.nodes.TextNode
 internal class EpubContentProjection(
     val source: EpubSourceChapter,
     val prepared: ContentPositionMap,
+    internal val checkCancelled: () -> Unit = {},
 ) {
     internal class Glyph(
         val document: Int,
@@ -50,10 +51,12 @@ internal class EpubContentProjection(
         head.next = tail
         tail.previous = head
         source.documents.forEachIndexed { documentIndex, document ->
+            checkCancelled()
             val parsed = Jsoup.parse(document.html)
             val indices = document.nodes.withIndex().associate { (index, node) -> (node.element to node.ordinal) to index }
             val mediaIds = document.media.mapTo(HashSet()) { it.element }
             forEachEpubBodyNode(parsed.body()) { node ->
+                checkCancelled()
                 if (node is TextNode) {
                     val parent = node.parent() as? Element ?: return@forEachEpubBodyNode
                     val id = parent.attr(EpubSourceCapture.ATTRIBUTE)
@@ -74,6 +77,7 @@ internal class EpubContentProjection(
             }
         }
         source.tokens.forEach { token ->
+            checkCancelled()
             if (token.media != null) {
                 val glyph = mediaGlyphs[token.document to token.media]
                 if (glyph != null) for (index in token.start until token.end) lexical[index] = Mark(glyph, glyph)
@@ -99,9 +103,11 @@ internal class EpubContentProjection(
         require(input.size == map.source.length)
         var current = input
         map.steps.forEach { step ->
+            checkCancelled()
             val result = ArrayList<Mark?>(step.outputLength)
             var cursor = 0
             step.edits.forEach { edit ->
+                checkCancelled()
                 result.addAll(current.subList(cursor, edit.start))
                 if (edit.nested != null) {
                     result.addAll(apply(edit.nested, current.subList(edit.start, edit.end), draw && step.display))
@@ -216,7 +222,9 @@ internal class EpubContentProjection(
             glyph = glyph.next ?: tail
         }
         return source.documents.mapIndexed { documentIndex, document ->
+            checkCancelled()
             val nodes = document.nodes.mapIndexed { index, node ->
+                checkCancelled()
                 projectedNode(node.element, node.ordinal, node.text, byNode[documentIndex to index].orEmpty())
             }.toMutableList()
             extraNodes.forEachIndexed { index, (owner, media) ->

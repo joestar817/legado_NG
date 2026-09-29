@@ -23,6 +23,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import androidx.webkit.WebSettingsCompat
 import io.legado.app.model.epub.EpubResourceGateway
 import io.legado.app.model.epub.EpubResourceLink
 import io.legado.app.model.epub.EpubPublicationSession
@@ -69,6 +70,7 @@ internal class EpubLayoutSurface(
     private var path: String? = null
     private var options = JSONObject()
     private var poll: Runnable? = null
+    private val pendingInteractions = LinkedHashSet<(JSONObject?) -> Unit>()
     private var documentReadyPoll: Runnable? = null
     private var startup: EpubStartupTiming? = null
     private var deadline = 0L
@@ -97,6 +99,12 @@ internal class EpubLayoutSurface(
             @Suppress("DEPRECATION")
             allowUniversalAccessFromFileURLs = false
             blockNetworkLoads = true
+            // This WebView only renders generated, per-session origins served by the local
+            // gateway (including every rejection). URL reputation checks still run for
+            // intercepted requests and can delay these offline documents by seconds.
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
+                WebSettingsCompat.setSafeBrowsingEnabled(this, false)
+            }
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             domStorageEnabled = false
             databaseEnabled = false
@@ -120,7 +128,15 @@ internal class EpubLayoutSurface(
             }
 
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
-                val response = gateway.serve(request.url.toString(), request.method, request.isForMainFrame, request.requestHeaders)
+                val requestedUrl = request.url.toString()
+                val began = SystemClock.elapsedRealtime()
+                val response = gateway.serve(requestedUrl, request.method, request.isForMainFrame, request.requestHeaders)
+                if (request.isForMainFrame) {
+                    val elapsed = SystemClock.elapsedRealtime() - began
+                    main.post {
+                        if (!closed && requestedUrl == loadUrl) startup?.mark("main-resource-served cost=${elapsed}ms")
+                    }
+                }
                 val encoding = if (response.headers["Content-Type"]?.contains("charset=utf-8") == true) "UTF-8" else null
                 return WebResourceResponse(response.mediaType, encoding, response.status, response.reason, response.headers, response.data)
             }
@@ -136,6 +152,8 @@ internal class EpubLayoutSurface(
             override fun onPageFinished(view: WebView, url: String) {
                 if (closed || failed || url != loadUrl || loaded) return
                 startup?.mark("load-ready")
+                documentReadyPoll?.let(webView::removeCallbacks)
+                documentReadyPoll = null
                 loaded = true
                 watchdog.cancel()
                 configure()
@@ -144,35 +162,35 @@ internal class EpubLayoutSurface(
             override fun onPageCommitVisible(view: WebView, url: String) {
                 if (closed || failed || url != loadUrl || loaded) return
                 startup?.mark("page-commit")
-                val readyDeadline = SystemClock.uptimeMillis() + 25_000
-                // DOM and stylesheets are enough to select the viewport. The reader's
-                // resource gate still waits for fonts/images before publishing a page.
-                val task = object : Runnable {
-                    override fun run() {
-                        if (closed || url != loadUrl || loaded) return
-                        if (SystemClock.uptimeMillis() >= readyDeadline) {
-                            fail("EPUB 文档就绪超时")
-                            return
-                        }
-                        view.evaluateJavascript("location.href === ${JSONObject.quote(url)} && " +
-                            "document.readyState !== 'loading' && [].slice.call(document.querySelectorAll('link[rel~=stylesheet]')).every(" +
-                            "function(e) { return e.disabled || (e.media && !matchMedia(e.media).matches) || e.sheet != null; })") { ready ->
-                            if (closed || url != loadUrl || loaded) return@evaluateJavascript
-                            if (ready == "true") {
-                                startup?.mark("dom-css-ready")
-                                loaded = true
-                                watchdog.cancel()
-                                configure()
-                            }
-                            else view.postDelayed(this, 16)
-                        }
-                    }
-                }
-                documentReadyPoll?.let(view::removeCallbacks)
-                documentReadyPoll = task
-                view.post(task)
+                awaitDocument(url)
             }
         }
+    }
+
+    /** Check that the committed document has finished loading before configuring it.
+     * A non-null link.sheet can still have pending @imports, so interactive is insufficient.
+     */
+    private fun awaitDocument(url: String) {
+        val task = object : Runnable {
+            override fun run() {
+                if (documentReadyPoll !== this || closed || failed || url != loadUrl || loaded) return
+                webView.evaluateJavascript("location.href === ${JSONObject.quote(url)} && " +
+                    "document.readyState === 'complete' && [].slice.call(document.querySelectorAll('link[rel~=stylesheet]')).every(" +
+                    "function(e) { return e.disabled || (e.media && !matchMedia(e.media).matches) || e.sheet != null; })") { ready ->
+                    if (documentReadyPoll !== this || closed || failed || url != loadUrl || loaded) return@evaluateJavascript
+                    if (ready == "true") {
+                        startup?.mark("dom-css-ready")
+                        documentReadyPoll = null
+                        loaded = true
+                        watchdog.cancel()
+                        configure()
+                    } else webView.postDelayed(this, 32)
+                }
+            }
+        }
+        documentReadyPoll?.let(webView::removeCallbacks)
+        documentReadyPoll = task
+        webView.post(task)
     }
 
     fun adopt(onReady: (JSONObject) -> Unit, onError: (String) -> Unit, onViewportRequired: (Boolean) -> Unit) {
@@ -294,6 +312,23 @@ internal class EpubLayoutSurface(
 
     fun refreshViewport() { if (loaded) configure() }
 
+    /** Preparation-only cancellation; keep the WebView, never publish its old revision. */
+    fun cancelPreparation() {
+        if (closed) return
+        cancelPending()
+        state = null
+        optionsReady = false
+        startup = null
+        webView.evaluateJavascript("$api && $api.${if (container) "close" else "cancelConfiguration"}()", null)
+        if (!loaded || container) {
+            webView.stopLoading()
+            loaded = false
+            loadUrl = null
+            path = null
+            stagedDocument = null
+        }
+    }
+
     private fun configure() {
         if (closed || failed || !loaded || !optionsReady || width == 0 || height == 0) return
         // A requested viewport resize must reach layout before starting pagination.
@@ -327,6 +362,7 @@ internal class EpubLayoutSurface(
 
     fun move(page: Int, location: JSONObject? = null) {
         if (closed || state == null) return
+        startup = EpubStartupTiming(if (onViewportRequired != null) "visible-move" else "preparation-move")
         val token = begin()
         val value = JSONObject().put("token", token).put("page", page)
         location?.let { value.put("location", it) }
@@ -350,6 +386,7 @@ internal class EpubLayoutSurface(
 
     fun advance(direction: Int) {
         if (closed || state == null) return
+        startup = EpubStartupTiming(if (onViewportRequired != null) "visible-move" else "preparation-move")
         val token = begin()
         val value = JSONObject().put("token", token).put("delta", direction)
         webView.evaluateJavascript("$api.move($value)", null)
@@ -358,12 +395,25 @@ internal class EpubLayoutSurface(
 
     fun interact(value: JSONObject, callback: (JSONObject?) -> Unit) {
         val token = revision.toString()
-        if (closed || state?.optString("token") != token) return
+        if (closed || state?.optString("token") != token) { callback(null); return }
         // This is the current paint payload, also consumed by prepared animation pages.
         if (value.optString("action") == "aloud") options.put("aloud", JSONObject(value.toString()))
         value.put("token", token)
+        var delivered = false
+        lateinit var deliver: (JSONObject?) -> Unit
+        val timeout = Runnable { deliver(null) }
+        deliver = { result ->
+            if (!delivered) {
+                delivered = true
+                main.removeCallbacks(timeout)
+                pendingInteractions.remove(deliver)
+                callback(result)
+            }
+        }
+        pendingInteractions.add(deliver)
+        main.postDelayed(timeout, 25_000)
         webView.evaluateJavascript("$api.interact($value)") { raw ->
-            if (!closed && revision.toString() == token) callback(runCatching { JSONObject(raw) }.getOrNull())
+            deliver(if (!closed && revision.toString() == token) runCatching { JSONObject(raw) }.getOrNull() else null)
         }
     }
 
@@ -508,6 +558,9 @@ internal class EpubLayoutSurface(
         documentReadyPoll?.let(webView::removeCallbacks)
         documentReadyPoll = null
         revision++
+        val cancelled = pendingInteractions.toList()
+        pendingInteractions.clear()
+        cancelled.forEach { it(null) }
         poll?.let(webView::removeCallbacks)
         poll = null
         scrollTask?.let(webView::removeCallbacks)
@@ -529,6 +582,11 @@ internal class EpubLayoutSurface(
                         fail(report.optString("error"))
                     report?.optString("token") == token && report.optString("status") == "ready" -> {
                         startup?.mark("layout-ready")
+                        report.optJSONObject("timings")?.let { times ->
+                            // Only numeric durations, never document text or resource URLs.
+                            startup?.mark("js resources=${times.optInt("resourcesMs")} layout=${times.optInt("layoutMs")} " +
+                                "frameWait=${times.optInt("frameWaitMs")} frameMax=${times.optInt("frameMaxMs")} frames=${times.optInt("frameWaits")}")
+                        }
                         val count = report.optInt("pageCount")
                         val index = report.optInt("pageIndex", -1)
                         if (count !in 1..100_000 || index !in 0 until count) {

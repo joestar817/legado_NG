@@ -14,6 +14,8 @@ import io.legado.app.ui.book.read.page.entities.PageDirection
 import kotlin.math.abs
 
 abstract class PageDelegate(protected val readView: ReadView) {
+    private val animationGeneration = PageAnimationGeneration()
+    protected fun invalidateAnimationCallbacks() = animationGeneration.advance()
 
     protected val context: Context = readView.context
 
@@ -61,6 +63,7 @@ abstract class PageDelegate(protected val readView: ReadView) {
         startX: Int, startY: Int, velocityX: Int, velocityY: Int,
         minX: Int, maxX: Int, minY: Int, maxY: Int
     ) {
+        invalidateAnimationCallbacks()
         scroller.fling(startX, startY, velocityX, velocityY, minX, maxX, minY, maxY)
         isRunning = true
         isStarted = true
@@ -68,6 +71,7 @@ abstract class PageDelegate(protected val readView: ReadView) {
     }
 
     protected fun startScroll(startX: Int, startY: Int, dx: Int, dy: Int, animationSpeed: Int) {
+        invalidateAnimationCallbacks()
         val duration = if (dx != 0) {
             (animationSpeed * abs(dx)) / viewWidth
         } else {
@@ -81,11 +85,12 @@ abstract class PageDelegate(protected val readView: ReadView) {
 
     protected fun stopScroll() {
         isStarted = false
-        readView.post {
+        val finish = animationGeneration.guard {
             isMoved = false
             isRunning = false
             readView.invalidate()
         }
+        readView.post { finish() }
     }
 
     @CallSuper
@@ -98,8 +103,9 @@ abstract class PageDelegate(protected val readView: ReadView) {
         if (scroller.computeScrollOffset()) {
             readView.setTouchPoint(scroller.currX.toFloat(), scroller.currY.toFloat())
         } else if (isStarted) {
+            val finish = animationGeneration.guard { stopScroll() }
             onAnimStop()
-            stopScroll()
+            finish()
         }
     }
 
@@ -201,7 +207,7 @@ abstract class PageDelegate(protected val readView: ReadView) {
     }
 
     open fun onDestroy() {
-        // run on destroy
+        invalidateAnimationCallbacks()
     }
 
 }

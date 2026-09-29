@@ -349,7 +349,10 @@ class ReadView(context: Context, attrs: AttributeSet) :
         if (frames == null || externalAnimationFinishing) super.dispatchDraw(canvas)
         if (frames != null) {
             canvas.drawBitmap(if (externalAnimationFinishing) frames.second else frames.first, 0f, 0f, null)
-            if (!externalAnimationFinishing && !autoPager.isRunning) pageDelegate?.onDraw(canvas)
+            if (!externalAnimationFinishing && !autoPager.isRunning) {
+                pageDelegate?.onDraw(canvas)
+                epubLayout?.onAnimationFrame()
+            }
         } else if (epubLayout?.active != true) {
             pageDelegate?.onDraw(canvas)
         }

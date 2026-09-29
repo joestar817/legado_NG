@@ -130,6 +130,7 @@ abstract class HorizontalPageDelegate(readView: ReadView) : PageDelegate(readVie
     }
 
     override fun abortAnim() {
+        invalidateAnimationCallbacks()
         isStarted = false
         isMoved = false
         isRunning = false

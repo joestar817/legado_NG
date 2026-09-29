@@ -117,7 +117,7 @@ internal object EpubOpeningMappingFile {
         }
     } catch (_: Exception) { null }
 
-    fun write(file: File, record: Record) {
+    fun write(file: File, record: Record, publish: (() -> Unit) -> Unit = { it() }) {
         var partial: File? = null
         try {
             val buffer = BoundedOutput()
@@ -141,7 +141,8 @@ internal object EpubOpeningMappingFile {
             val bytes = buffer.toByteArray()
             partial = File.createTempFile("opening-mapping-", ".part", file.parentFile)
             partial.outputStream().use { it.write(bytes); it.write(MessageDigest.getInstance("SHA-256").digest(bytes)) }
-            Files.move(partial.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            val completed = partial
+            publish { Files.move(completed.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
         } catch (_: Exception) {
             // A lost cache hit never prevents ordinary preparation and never changes book data.
         } finally { partial?.delete() }

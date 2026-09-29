@@ -408,20 +408,26 @@
             } catch (failure) { if (mine === revision && !closed) { status = 'error'; error = String(failure.message || failure); } }
         }
         function state() {
-            var entry = entries.get(index), local = entry ? entry.api.state() : emptySources.get(index);
-            var activeEntry = entries.get(active), activeState = activeEntry ? activeEntry.api.state() : emptySources.get(active);
+            // All geometry/media queries below belong to one synchronous state transaction.
+            var states = new Map();
+            function read(entry) {
+                if (!states.has(entry)) states.set(entry, entry.api.state());
+                return states.get(entry);
+            }
+            var entry = entries.get(index), local = entry ? read(entry) : emptySources.get(index);
+            var activeEntry = entries.get(active), activeState = activeEntry ? read(activeEntry) : emptySources.get(active);
             var pageCount = Math.max(1, Math.ceil((entry && entry.length || 0) / Math.max(1, extent)));
             // A source's bottom margin can remain in the viewport after all of its
             // content has left. Report the next visible source anchor in that case.
-            var anchored = visible.find(function (i) { var e = entries.get(i); return e && (e.cover || e.api.state().location); });
+            var anchored = visible.find(function (i) { var e = entries.get(i); return e && (e.cover || read(e).location); });
             var readingIndex = anchored != null ? anchored : visible.length ? visible[0] : index, readingEntry = entries.get(readingIndex);
-            var readingState = readingEntry ? readingEntry.api.state() : emptySources.get(readingIndex);
+            var readingState = readingEntry ? read(readingEntry) : emptySources.get(readingIndex);
             var readingOffset = readingEntry ? Math.max(0, -readingEntry.flowStart) : 0;
             var readingCount = Math.max(1, Math.ceil((readingEntry && readingEntry.length || 0) / Math.max(1, extent)));
             var media = [];
             visible.forEach(function (i) {
                 var e = entries.get(i), c = e && e.clip; if (!c) return;
-                (e.api.state().media || []).forEach(function (item) {
+                (read(e).media || []).forEach(function (item) {
                     var left = item.left + c.left + c.translateX, right = item.right + c.left + c.translateX;
                     var top = item.top + c.top + c.translateY, bottom = item.bottom + c.top + c.translateY;
                     media.push(Object.assign({}, item, { left: Math.max(left, c.left), right: Math.min(right, c.left + c.width),
@@ -438,7 +444,7 @@
                 readingIndex: readingIndex, readingLocation: readingState && readingState.location,
                 displayPageCount: readingCount, displayPageIndex: readingOffset >= Math.max(0, (readingEntry && readingEntry.length || 0) - extent) - 1
                     ? readingCount - 1 : Math.floor(readingOffset / Math.max(1, extent)),
-                fontWarnings: Array.from(new Set(visible.flatMap(function (i) { return entries.get(i).api.state().fontWarnings || []; }))),
+                fontWarnings: Array.from(new Set(visible.flatMap(function (i) { return read(entries.get(i)).fontWarnings || []; }))),
                 bleed: true, cover: !!(entry && entry.cover), bleedHeader: !!(entry && entry.bleedTop),
                 textLength: local && local.textLength || 0, warnings: (local && local.warnings || []).concat(
                     [failureMessage(failedBefore), failureMessage(failedAfter)].filter(Boolean)),

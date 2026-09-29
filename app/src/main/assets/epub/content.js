@@ -746,22 +746,48 @@
         var item = media.find(function (value) { return value.node === node || value.node.contains(node) || node.contains(value.node); });
         return item ? (after ? item.end : item.start) : null;
     }
+    var pointEntries = null, pointMedia = null, pointTree = null;
     function point(position, after) {
-        var closest = null, distance = Infinity;
-        entries.forEach(function (entry) {
-            entry.runs.forEach(function (r) {
-                var delta = after ? (position <= r[2] ? r[2] - position + 1 : position > r[3] ? position - r[3] : 0)
-                    : (position < r[2] ? r[2] - position : position >= r[3] ? position - r[3] + 1 : 0);
-                if (delta < distance) {
-                    distance = delta;
-                    closest = { node: entry.node, offset: r[4] ? r[0] + Math.max(0, Math.min(r[1] - r[0], position - r[2])) : r[after ? 1 : 0] };
-                }
-            });
-        });
-        media.forEach(function (item) {
-            var delta = position < item.start ? item.start - position : position >= item.end ? position - item.end + 1 : 0;
-            if (delta < distance) { distance = delta; closest = { node: item.node, offset: 0 }; }
-        });
+        // Entries are replaced whenever styles, notes, titles or line boxes rebuild text nodes.
+        // An interval tree also handles reordered/overlapping edit runs; DOM order is the tie-break.
+        if (pointEntries !== entries || pointMedia !== media) {
+            pointEntries = entries; pointMedia = media;
+            var items = [], order = 0;
+            entries.forEach(function (entry) { entry.runs.forEach(function (r) {
+                items.push({ node: entry.node, run: r, start: r[2], end: r[3], order: order++ });
+            }); });
+            media.forEach(function (item) { items.push({ node: item.node, start: item.start, end: item.end, order: order++ }); });
+            items.sort(function (a, b) { return a.start - b.start || a.order - b.order; });
+            function tree(from, to) {
+                if (from >= to) return null;
+                var middle = (from + to) >>> 1, item = items[middle];
+                var left = tree(from, middle), right = tree(middle + 1, to);
+                return { item: item, left: left, right: right, start: items[from].start,
+                    end: Math.max(item.end, left ? left.end : -Infinity, right ? right.end : -Infinity),
+                    order: Math.min(item.order, left ? left.order : Infinity, right ? right.order : Infinity) };
+            }
+            pointTree = tree(0, items.length);
+        }
+        var closest = null, distance = Infinity, bestOrder = Infinity;
+        function lower(node) { return !node ? Infinity : Math.max(0, node.start - position, position - node.end); }
+        function visit(node) {
+            if (!node) return;
+            var bound = lower(node);
+            if (bound > distance || bound === distance && node.order >= bestOrder) return;
+            var item = node.item, r = item.run;
+            var delta = r && after ? (position <= item.start ? item.start - position + 1 : position > item.end ? position - item.end : 0)
+                : (position < item.start ? item.start - position : position >= item.end ? position - item.end + 1 : 0);
+            if (delta < distance || delta === distance && item.order < bestOrder) {
+                distance = delta; bestOrder = item.order;
+                closest = { node: item.node, offset: !r ? 0 : r[4] ? r[0] + Math.max(0, Math.min(r[1] - r[0], position - r[2])) : r[after ? 1 : 0] };
+            }
+            var first = node.left, second = node.right;
+            if (lower(second) < lower(first) || lower(second) === lower(first) && second && (!first || second.order < first.order)) {
+                first = node.right; second = node.left;
+            }
+            visit(first); visit(second);
+        }
+        visit(pointTree);
         return closest;
     }
     function selection(range) {

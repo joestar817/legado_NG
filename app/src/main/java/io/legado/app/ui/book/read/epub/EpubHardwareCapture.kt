@@ -34,6 +34,8 @@ internal class EpubHardwareCapture(
     private val onHost: (FrameLayout) -> Unit,
     private val onError: (Throwable) -> Unit,
 ) : Closeable {
+    private val marker = EpubCaptureMarker(actualWidth, actualHeight)
+    private val markerPixels = ByteBuffer.allocateDirect(marker.byteCount)
     private val main = Handler(Looper.getMainLooper())
     private val thread = HandlerThread("epub-frame").apply { start() }
     private val gl = Handler(thread.looper)
@@ -41,8 +43,21 @@ internal class EpubHardwareCapture(
     private var presentation: Presentation? = null
     private var display: VirtualDisplay? = null
     private var frame: CaptureFrame? = null
-    private var marker = 0
-    private data class CaptureRequest(val marker: Int, val callback: (Bitmap) -> Unit, var timestamp: Long? = null)
+    private var pulseToken: Long? = null // Main thread only.
+    private val capturePulse = object : Runnable {
+        override fun run() {
+            val token = pulseToken ?: return
+            if (closed || !epoch.isCurrent(token)) return
+            frame?.let { it.pulse = !it.pulse; it.invalidate() }
+            main.postDelayed(this, 100)
+        }
+    }
+    @Volatile var waitingFor = "初始化画面捕获"
+        private set
+    private val epoch = EpubRequestEpoch()
+    private val startup = EpubStartupTiming("capture-host")
+    private data class CaptureRequest(val token: Long, val callback: (Bitmap) -> Unit,
+                                      val timing: EpubStartupTiming, var timestamp: Long? = null)
     private var request: CaptureRequest? = null // GL thread only.
     private var texture: SurfaceTexture? = null
     private var surface: Surface? = null
@@ -86,10 +101,13 @@ internal class EpubHardwareCapture(
         ), 0)
         check(EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext))
         program = GLES20.glCreateProgram()
+        val precision = IntArray(1)
+        GLES20.glGetShaderPrecisionFormat(GLES20.GL_FRAGMENT_SHADER, GLES20.GL_HIGH_FLOAT, IntArray(2), 0, precision, 0)
+        val coordinatePrecision = if (precision[0] > 0) "highp" else "mediump"
         val vertex = shader(GLES20.GL_VERTEX_SHADER,
-            "attribute vec2 p; attribute vec2 uv; uniform mat4 m; varying vec2 t; void main(){gl_Position=vec4(p,0.,1.);t=(m*vec4(uv,0.,1.)).xy;}")
+            "attribute vec2 p; attribute vec2 uv; uniform mat4 m; varying $coordinatePrecision vec2 t; void main(){gl_Position=vec4(p,0.,1.);t=(m*vec4(uv,0.,1.)).xy;}")
         val fragment = shader(GLES20.GL_FRAGMENT_SHADER,
-            "#extension GL_OES_EGL_image_external : require\nprecision mediump float; uniform samplerExternalOES s; varying vec2 t; void main(){gl_FragColor=texture2D(s,t);}")
+            "#extension GL_OES_EGL_image_external : require\nprecision $coordinatePrecision float; uniform samplerExternalOES s; varying $coordinatePrecision vec2 t; void main(){gl_FragColor=texture2D(s,t);}")
         GLES20.glAttachShader(program, vertex)
         GLES20.glAttachShader(program, fragment)
         GLES20.glLinkProgram(program)
@@ -115,6 +133,7 @@ internal class EpubHardwareCapture(
         }, gl)
         val output = Surface(source)
         surface = output
+        startup.mark("gl-ready")
         main.post {
             if (closed) return@post
             runCatching {
@@ -132,7 +151,7 @@ internal class EpubHardwareCapture(
                     decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
                         View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 }
-                val root = CaptureFrame(window.context)
+                val root = CaptureFrame(window.context, marker)
                 frame = root
                 val content = FrameLayout(window.context)
                 root.addView(content, FrameLayout.LayoutParams(width, height).apply {
@@ -140,6 +159,7 @@ internal class EpubHardwareCapture(
                 })
                 window.setContentView(root)
                 window.show()
+                startup.mark("host-ready")
                 onHost(content)
             }.onFailure(onError)
         }
@@ -149,23 +169,40 @@ internal class EpubHardwareCapture(
     fun capture(callback: (Bitmap) -> Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
         if (closed) return
-        val color = Color.rgb(++marker and 255, marker.shr(8) and 255, 113)
+        val token = epoch.next()
+        waitingFor = "等待捕获标记"
+        val timing = EpubStartupTiming("capture")
         gl.post {
-            request = CaptureRequest(color, callback)
+            if (closed || !epoch.isCurrent(token)) return@post
+            request = CaptureRequest(token, callback, timing)
             main.post {
-                if (!closed) {
-                    frame?.marker = color
+                if (!closed && epoch.isCurrent(token)) {
+                    frame?.markerToken = token
                     frame?.markerVisible = true
                     frame?.invalidate()
+                    pulseToken = token
+                    main.removeCallbacks(capturePulse)
+                    main.postDelayed(capturePulse, 100)
                 }
             }
         }
+    }
+
+    /** Keep the GL/display host, but invalidate queued marker work and pixel delivery. */
+    fun cancel() {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        epoch.next()
+        waitingFor = "捕获已取消"
+        stopPulse()
+        frame?.let { it.markerVisible = false; it.invalidate() }
+        gl.post { request = null }
     }
 
     private fun receiveFrame() {
         val source = texture ?: return
         source.updateTexImage()
         val pending = request ?: return
+        if (!epoch.isCurrent(pending.token)) { request = null; return }
         val matrix = FloatArray(16)
         source.getTransformMatrix(matrix)
         GLES20.glViewport(0, 0, actualWidth, actualHeight)
@@ -183,19 +220,22 @@ internal class EpubHardwareCapture(
         GLES20.glVertexAttribPointer(p, 2, GLES20.GL_FLOAT, false, 0, vertices)
         GLES20.glVertexAttribPointer(uv, 2, GLES20.GL_FLOAT, false, 0, coordinates)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        markerPixels.clear()
+        GLES20.glReadPixels(marker.left, actualHeight - marker.top - marker.height, marker.width, marker.height,
+            GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, markerPixels)
+        check(GLES20.glGetError() == GLES20.GL_NO_ERROR) { "EPUB 捕获标记读取失败" }
         if (pending.timestamp == null) {
-            val pixel = ByteBuffer.allocateDirect(4)
-            GLES20.glReadPixels(0, actualHeight - 1, 1, 1, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixel)
-            val stamp = Color.argb(pixel.get(3).toInt() and 255, pixel.get(0).toInt() and 255,
-                pixel.get(1).toInt() and 255, pixel.get(2).toInt() and 255)
-            if (stamp != pending.marker) return
+            if (!marker.matches(markerPixels, pending.token)) return
             pending.timestamp = source.timestamp
+            waitingFor = "等待完整画面"
+            pending.timing.mark("marker-ready")
             main.post {
-                if (!closed) { frame?.markerVisible = false; frame?.invalidate() }
+                if (!closed && epoch.isCurrent(pending.token)) { frame?.markerVisible = false; frame?.invalidate() }
             }
             return
         }
-        if (source.timestamp <= pending.timestamp!!) return
+        if (!marker.isCleanAfter(markerPixels, pending.timestamp!!, source.timestamp)) return
+        waitingFor = "读取画面像素"
         val pixels = pixelBuffer ?: ByteBuffer.allocateDirect(width * height * 4).also { pixelBuffer = it }
         pixels.clear()
         GLES20.glReadPixels(viewport.left, actualHeight - viewport.bottom, width, height,
@@ -205,8 +245,18 @@ internal class EpubHardwareCapture(
         val colors = pixelColors ?: IntArray(width * height).also { pixelColors = it }
         readEpubFramePixels(pixels, width, height, colors)
         val bitmap = Bitmap.createBitmap(colors, width, height, Bitmap.Config.ARGB_8888)
+        pending.timing.mark("pixels-ready")
         request = null
-        main.post { if (closed) bitmap.recycle() else pending.callback(bitmap) }
+        waitingFor = "交付捕获画面"
+        main.post {
+            if (closed || !epoch.isCurrent(pending.token)) bitmap.recycle()
+            else { stopPulse(); pending.timing.mark("delivered"); pending.callback(bitmap) }
+        }
+    }
+
+    private fun stopPulse() {
+        pulseToken = null
+        main.removeCallbacks(capturePulse)
     }
 
     private fun shader(type: Int, code: String): Int {
@@ -225,6 +275,8 @@ internal class EpubHardwareCapture(
     override fun close() {
         if (closed) return
         closed = true
+        epoch.next()
+        stopPulse()
         presentation?.dismiss()
         presentation = null
         frame = null
@@ -253,15 +305,27 @@ internal class EpubHardwareCapture(
         }
     }
 
-    private class CaptureFrame(context: Context) : FrameLayout(context) {
-        var marker: Int = Color.BLACK
+    private class CaptureFrame(context: Context, private val marker: EpubCaptureMarker) : FrameLayout(context) {
+        var markerToken = 0L
         var markerVisible = false
-        private val markerPaint = Paint()
+        var pulse = false
+        private val markerPaint = Paint().apply { isAntiAlias = false; isDither = false }
         override fun dispatchDraw(canvas: Canvas) {
             super.dispatchDraw(canvas)
             if (markerVisible) {
-                markerPaint.color = marker
-                canvas.drawRect(0f, 0f, 1f, 1f, markerPaint)
+                for (cell in 0 until EpubCaptureMarker.CELLS) {
+                    val x = marker.left + cell % EpubCaptureMarker.COLUMNS * marker.cellSize
+                    val y = marker.top + cell / EpubCaptureMarker.COLUMNS * marker.cellSize
+                    markerPaint.color = if (marker.white(markerToken, cell)) Color.WHITE else Color.BLACK
+                    canvas.drawRect(x.toFloat(), y.toFloat(), (x + marker.cellSize).toFloat(), (y + marker.cellSize).toFloat(), markerPaint)
+                }
+                // Change only a cell border, outside every sampled center. This keeps a stalled
+                // private display producing frames without changing the request identity.
+                if (marker.cellSize >= 4) {
+                    markerPaint.color = if (pulse) Color.WHITE else Color.BLACK
+                    canvas.drawRect(marker.left.toFloat(), marker.top.toFloat(),
+                        (marker.left + 1).toFloat(), (marker.top + 1).toFloat(), markerPaint)
+                }
             }
         }
     }

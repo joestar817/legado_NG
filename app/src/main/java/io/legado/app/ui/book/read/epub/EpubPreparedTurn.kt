@@ -20,8 +20,8 @@ internal data class EpubCapturedFrame(val bitmap: Bitmap, val clip: Rect?) : Clo
 internal class EpubPreparedTurn(
     context: Context,
     publication: EpubPublicationSession,
-    displayWidth: Int,
-    displayHeight: Int,
+    private val displayWidth: Int,
+    private val displayHeight: Int,
     private val viewport: Rect,
     private val onError: (Throwable) -> Unit,
     private val setContent: (EpubLayoutSurface, EpubResourceLink, JSONObject) -> Unit,
@@ -35,6 +35,9 @@ internal class EpubPreparedTurn(
     private var before: EpubCapturedFrame? = null
     private var phase = 0
     private var job: Job? = null
+    private var timing: EpubStartupTiming? = null
+    private var capturing = false
+    val waitingFor: String get() = if (capturing) capture.waitingFor else "等待准备页排版"
     private data class Job(
         val beforeLocation: EpubResourceLink, val beforeOptions: JSONObject,
         val afterLocation: EpubResourceLink, val afterOptions: JSONObject,
@@ -87,6 +90,7 @@ internal class EpubPreparedTurn(
     }
 
     private fun show(location: EpubResourceLink, options: JSONObject) {
+        capturing = false
         val view = surface ?: return
         setContent(view, location, options)
         if (!view.movePrepared(location, options)) view.open(location, options)
@@ -102,7 +106,8 @@ internal class EpubPreparedTurn(
     }
 
     private fun watchJob() {
-        watchdog.arm { fail(IllegalStateException("EPUB 翻页画面准备超时")) }
+        timing = EpubStartupTiming("frame-prepare")
+        watchdog.arm { fail(IllegalStateException("EPUB 翻页画面准备超时（$waitingFor）")) }
     }
 
     private fun fail(error: Throwable) {
@@ -114,6 +119,7 @@ internal class EpubPreparedTurn(
     private fun captureReady() {
         if (closed) return
         val current = job ?: return
+        timing?.mark("layout-ready")
         current.bounds?.let { callback ->
             surface?.interact(JSONObject().put("action", "pageBounds").put("index", current.beforeOptions.optInt("index"))) {
                 if (!closed && job === current) { watchdog.cancel(); job = null; callback(it) }
@@ -121,9 +127,11 @@ internal class EpubPreparedTurn(
             return
         }
         val clip = surface?.clipBounds?.let(::Rect)
+        capturing = true
         capture.capture { bitmap ->
             if (closed || job !== current) { bitmap.recycle(); return@capture }
             val frame = EpubCapturedFrame(bitmap, clip)
+            timing?.mark("frame-ready")
             if (current.single != null) {
                 watchdog.cancel()
                 job = null
@@ -143,6 +151,23 @@ internal class EpubPreparedTurn(
                 if (first == null) frame.close() else current.callback?.invoke(first, frame)
             }
         }
+    }
+
+    fun matches(width: Int, height: Int, bounds: Rect): Boolean =
+        !closed && displayWidth == width && displayHeight == height && viewport == bounds
+
+    /** All callers also invalidate their own request epoch before dropping callbacks. */
+    fun cancel() {
+        if (closed) return
+        watchdog.cancel()
+        job = null
+        timing = null
+        before?.close()
+        before = null
+        phase = 0
+        capturing = false
+        capture.cancel()
+        surface?.cancelPreparation()
     }
 
     override fun close() {

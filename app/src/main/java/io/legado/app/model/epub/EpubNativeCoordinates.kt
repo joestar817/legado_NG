@@ -22,6 +22,7 @@ internal fun EpubContentProjection.bindNativeContent(paragraphs: List<String>, l
     data class Token(val offset: Int, val char: Char?, val media: Boolean)
     var paragraphOffset = 0
     val tokens = paragraphs.map { paragraph ->
+        checkCancelled()
         val result = ArrayList<Token>()
         val matcher = AppPattern.imgPattern.matcher(paragraph)
         var cursor = 0
@@ -40,6 +41,7 @@ internal fun EpubContentProjection.bindNativeContent(paragraphs: List<String>, l
     val title = StringBuilder()
     val titlePositions = ArrayList<Int>()
     for (line in lines) {
+        checkCancelled()
         line.text.toCharArray().copyInto(text, line.position)
         if (line.title) {
             if (title.isNotEmpty() && line.position > titlePositions.last() + 1) {

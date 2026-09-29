@@ -74,7 +74,8 @@
     var galleries = [], galleryIndexes = new WeakMap();
     var sourceNodes = [], sourceOffsets = new WeakMap(), sourceLengths = new WeakMap(), sourceText = '', sourceAnchors = new Map(), chapterBoundaries = [];
     var displayOffsets = new WeakMap(), displayText = '', textTransform = null;
-    var textRequest = null, contentCoordinates = false;
+    var textRequest = null, contentCoordinates = false, contentCache = null;
+    var resourceWaits = new Set(), paintedHighlights = null;
     var pageStartsCache = null;
     var readerFonts = {
         reader: { family: 'NGReaderFont', url: null, face: null, failed: false },
@@ -330,6 +331,7 @@
     }
     function paintHighlights() {
         if (body === root) return;
+        paintedHighlights = JSON.stringify(highlights);
         paintSelection();
         paintFullLineUnderlines();
         if (window.__ngEpubContent) window.__ngEpubContent.paintUnderlines(visible);
@@ -387,9 +389,13 @@
             if(result.shifted)indexContentNodes();
         } finally { place(page); }
     }
-    function setHighlights(values) { highlights = values || []; paintHighlights(); }
+    function setHighlights(values) {
+        highlights = values || [];
+        if (JSON.stringify(highlights) !== paintedHighlights) paintHighlights();
+    }
     var selectionLayer, selectionHighlightTransparent = false;
     function setSelectionTransparent(value) {
+        if (selectionHighlightTransparent === !!value && document.getElementById('ng-epub-selection-style')) return;
         selectionHighlightTransparent = !!value;
         var sheet = document.getElementById('ng-epub-selection-style');
         if (!sheet) {
@@ -1072,19 +1078,37 @@
         });
     }
     function pauseMedia() { document.querySelectorAll('video,audio').forEach(function (el) { el.pause(); }); }
-    function frame() { return new Promise(function (resolve) {
+    function frame(timing) { return new Promise(function (resolve) {
+        var began = performance.now();
+        function ready() {
+            var elapsed = performance.now() - began;
+            timing.total += elapsed; timing.max = Math.max(timing.max, elapsed); timing.count++;
+            resolve();
+        }
         // A service-owned measurement document has no visible frame. Its caller needs
         // computed DOM geometry after resources settle, not a claim of painted pixels.
-        if (options && options.measurementOnly) window.setTimeout(resolve, 0);
-        else requestAnimationFrame(resolve);
+        if (options && options.measurementOnly) window.setTimeout(ready, 0);
+        else requestAnimationFrame(ready);
     }); }
+    function layoutTimings(frameTiming, resourcesMs, layoutMs) {
+        return { resourcesMs: Math.round(resourcesMs), layoutMs: Math.round(layoutMs),
+            frameWaitMs: Math.round(frameTiming.total), frameMaxMs: Math.round(frameTiming.max), frameWaits: frameTiming.count };
+    }
     function resources() {
         if (!document.fonts || !document.fonts.ready) return Promise.reject(new Error('WebView 不支持字体就绪检测'));
-        return Promise.all([document.fonts.ready].concat(Array.from(document.images || []).map(function (img) {
+        var cleanups = [], cancel;
+        var aborted = new Promise(function (_, reject) { cancel = function () {
+            cleanups.forEach(function (cleanup) { cleanup(); });
+            reject(new Error('EPUB 资源等待已取消'));
+        }; });
+        resourceWaits.add(cancel);
+        var settled = Promise.all([document.fonts.ready].concat(Array.from(document.images || []).map(function (img) {
             img.loading = 'eager';
             return new Promise(function (resolve, reject) {
+                function cleanup() { img.removeEventListener('load', done); img.removeEventListener('error', done); }
+                cleanups.push(cleanup);
                 function done() {
-                    img.removeEventListener('load', done); img.removeEventListener('error', done);
+                    cleanup();
                     if (img.naturalWidth <= 0) {
                         resourceWarnings.add('图片加载失败：' + (img.getAttribute('src') || '').slice(0, 160));
                         if (!img.getAttribute('alt')) img.setAttribute('alt', '图片加载失败');
@@ -1094,6 +1118,7 @@
                 if (img.complete) done(); else { img.addEventListener('load', done); img.addEventListener('error', done); }
             });
         })));
+        return Promise.race([settled, aborted]).finally(function () { resourceWaits.delete(cancel); cleanups.forEach(function (cleanup) { cleanup(); }); });
     }
     function place(page) {
         // There is one page offset only, never native scroll plus a CSS transform.
@@ -1135,6 +1160,7 @@
     function cancelConfiguration() {
         ++generation;
         if (textRequest) { textRequest.abort(); textRequest = null; }
+        resourceWaits.forEach(function (cancel) { cancel(); }); resourceWaits.clear();
     }
     function indexContentNodes() {
         sourceNodes = window.__ngEpubContent.nodes();
@@ -1147,6 +1173,7 @@
     }
     var styleUpdatePending = false, styleReflowPending = false, styleSelection = null;
     async function updateStyles(value) {
+        contentCache = null;
         cancelConfiguration();
         var mine = generation, location = sourceLocation();
         if (!styleUpdatePending) styleSelection = selectedRange && window.__ngEpubContent.selection(selectedRange);
@@ -1192,9 +1219,18 @@
             try {
                 var contentUrl = new URL(value.contentUrl, document.baseURI);
                 if (contentUrl.origin !== window.location.origin || contentUrl.username || contentUrl.password) throw new Error('正文位置数据来源无效');
-                var contentResponse = await fetch(contentUrl.href, { credentials: 'omit', redirect: 'error' });
-                if (!contentResponse.ok) throw new Error('正文位置数据加载失败');
-                var contentValue = await contentResponse.json();
+                var contentValue;
+                if (contentCache && contentCache.url === contentUrl.href) contentValue = contentCache.value;
+                else {
+                    var request = typeof AbortController === 'function' ? new AbortController() : null;
+                    textRequest = request;
+                    var contentResponse = await fetch(contentUrl.href, { credentials: 'omit', redirect: 'error', signal: request ? request.signal : undefined });
+                    if (!contentResponse.ok) throw new Error('正文位置数据加载失败');
+                    contentValue = await contentResponse.json();
+                    if (mine !== generation) return;
+                    if (textRequest === request) textRequest = null;
+                    contentCache = { url: contentUrl.href, value: contentValue };
+                }
                 if (mine !== generation) return;
                 window.__ngEpubContent.apply(contentValue);
                 var styleWarnings = await window.__ngEpubContent.loadFonts();
@@ -1306,6 +1342,7 @@
         }
     }
     async function configureLayout(value, mine, retainedLocation) {
+        var frameTiming = { total: 0, max: 0, count: 0 };
         pageStartsCache = null;
 
         var began = performance.now(), resourcesAt = began;
@@ -1370,9 +1407,12 @@
                 return;
             }
             var reader = value.readerStyle || value.readerDefaults || {}, fontWarnings = [];
-            if (await loadReaderFont('reader', !value.fixed && reader.fontUrl, mine)) fontWarnings.push('reader');
-            if (mine !== generation) return;
-            if (await loadReaderFont('title', !value.fixed && (value.features || {}).title === false && (reader.title || {}).fontUrl, mine)) fontWarnings.push('title');
+            var fontResults = await Promise.all([
+                loadReaderFont('reader', !value.fixed && reader.fontUrl, mine),
+                loadReaderFont('title', !value.fixed && (value.features || {}).title === false && (reader.title || {}).fontUrl, mine)
+            ]);
+            if (fontResults[0]) fontWarnings.push('reader');
+            if (fontResults[1]) fontWarnings.push('title');
             if (mine !== generation) return;
 
             if (body !== root) {
@@ -1383,7 +1423,7 @@
                 }
                 viewport.setAttribute('content', 'width=device-width,initial-scale=1');
             }
-            await frame();
+            await frame(frameTiming);
             if (mine !== generation) return;
             await resources();
             resourcesAt = performance.now();
@@ -1546,7 +1586,7 @@
                     var target = value.galleryIndexes[index];
                     if (Number.isInteger(target)) changeGallery(gallery, target - (galleryIndexes.get(gallery.element) || 0));
                 });
-                await frame();
+                await frame(frameTiming);
                 if (mine !== generation) return;
                 if (window.__ngEpubContent) {
                     var nineWarnings = await window.__ngEpubContent.prepareStyleImages();
@@ -1586,10 +1626,10 @@
             if (value.location) restoreAnchor(locationAnchor(value.location));
             if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset));
             var restored = restoreAnchor(anchor);
-            await frame(); await frame();
+            await frame(frameTiming); await frame(frameTiming);
             if (mine !== generation) return;
             readingAnchor = restored ? anchor : captureAnchor();
-            state.timings = { resourcesMs: Math.round(resourcesAt - began), layoutMs: Math.round(performance.now() - resourcesAt) };
+            state.timings = layoutTimings(frameTiming, resourcesAt - began, performance.now() - resourcesAt);
             state.hasSelectableText = sourceNodes.some(function (node) {
                 if (!node.data.trim() || getComputedStyle(node.parentElement).visibility !== 'visible') return false;
                 var range = document.createRange(); range.selectNodeContents(node);
@@ -1606,6 +1646,8 @@
     async function move(value) {
         cancelConfiguration();
         var mine = generation;
+        var began = performance.now();
+        var frameTiming = { total: 0, max: 0, count: 0 };
         if (!value.preserveSelection) clearSelection();
         if (!value.preserveScroll) pauseMedia();
         state.token = value.token;
@@ -1616,9 +1658,10 @@
             delete state.timings;
             if (value.location) restoreAnchor(locationAnchor(value.location));
             if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset));
-            await frame(); await frame();
+            await frame(frameTiming); await frame(frameTiming);
             if (mine === generation) {
                 readingAnchor = captureAnchor();
+                state.timings = layoutTimings(frameTiming, 0, performance.now() - began);
                   state.status = 'ready';
                   paintHighlights();
             }

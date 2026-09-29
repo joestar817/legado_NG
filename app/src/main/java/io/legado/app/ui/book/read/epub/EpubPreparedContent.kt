@@ -15,18 +15,27 @@ import io.legado.app.model.localBook.EpubFile
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import org.json.JSONObject
 import java.util.UUID
-import java.io.File
 import org.jsoup.Jsoup
 import splitties.init.appCtx
 import io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.book.ContentPositionMap
 
 /** One existing prepared chapter, projected onto its original documents without running rules again. */
 internal class EpubPreparedContent private constructor(
     val chapter: TextChapter,
     val mapped: EpubMappedContent,
     val documents: List<Document>,
+    private val cachePositions: ContentPositionMap? = null,
+    val cacheRecord: EpubOpeningMappingFile.Record? = null,
 ) {
+    fun estimatedBytes(): Long = mapped.text.length * 2L + documents.sumOf {
+        it.html.length * 2L + it.payload.toString().length * 2L + it.styleFonts.values.sumOf { font -> font.size.toLong() }
+    } + mapped.documents.sumOf { document -> document.nodes.sumOf { (it.starts.size + it.ends.size) * 4L } }
+    /** Called only after the owner accepts this chapter; speculative work has no publication side effects. */
+    fun publishMapping(book: Book, revision: String?) {
+        cachePositions?.let { EpubOpeningMappingCache.put(book, chapter, revision, it, mapped) }
+    }
     data class Document(val location: EpubResourceLink, val html: String, val payload: JSONObject,
                         val first: Int, val last: Int, val endFragment: String?, val spineIndex: Int,
                         val chapter: TextChapter, val text: String, val svgSize: EpubPageSize?,
@@ -50,8 +59,11 @@ internal class EpubPreparedContent private constructor(
     companion object {
         fun create(book: Book, chapter: TextChapter, session: EpubPublicationSession,
                    openingSource: EpubSourceChapter? = null, sourceRevision: String? = null,
-                   openingRecord: EpubOpeningMappingFile.Record? = null, mappingFile: File? = null): EpubPreparedContent {
+                   openingRecord: EpubOpeningMappingFile.Record? = null,
+                   matcher: ReadHighlightMatcher = ReadHighlightMatcher(ReadBookConfig.highlightRules.map { it.copy() }),
+                   checkCancelled: () -> Unit = {}): EpubPreparedContent {
             val startup = EpubStartupTiming("projection")
+            checkCancelled()
             check(chapter.isCompleted) { "EPUB 正文尚未准备完成" }
             val publication = session.publication
             val prepared = checkNotNull(chapter.contentPositionMap) { "EPUB 正文缺少位置记录" }
@@ -63,7 +75,8 @@ internal class EpubPreparedContent private constructor(
             val storedPositions = stored?.let { BookHelp.epubContentPositions(book, chapter.chapter, it.source, prepared.source) }
             val disk = stored?.takeIf { storedPositions != null &&
                 EpubOpeningMappingFile.signature(chapter, storedPositions) == it.signature }?.mapped
-            if (disk != null) EpubOpeningMappingCache.put(book, chapter, sourceRevision, checkNotNull(storedPositions), disk)
+            var cachePositions = if (disk != null) storedPositions else null
+            var cacheRecord: EpubOpeningMappingFile.Record? = null
             val reused = memory ?: disk
             val mapped = reused ?: run {
                 val path = chapter.chapter.url.substringBeforeLast('#')
@@ -76,36 +89,41 @@ internal class EpubPreparedContent private constructor(
                     }
                 }.getOrNull()
                 val directPositions = direct?.let {
+                    checkCancelled()
                     BookHelp.epubContentPositions(book, chapter.chapter, it.content, prepared.source)
                 }
                 val source = if (directPositions != null) checkNotNull(direct)
                     else EpubFile.getSourceChapter(book, chapter.chapter) ?: error("EPUB 原文不存在")
+                checkCancelled()
                 startup.mark(if (directPositions != null) "snapshot-source-ready" else "source-ready")
                 val cached = directPositions ?: BookHelp.epubContentPositions(book, chapter.chapter, source.content, prepared.source)
                     ?: error("本章缺少可验证的正文位置记录，原编辑内容已保留，请在正文编辑器中检查")
-                val projection = EpubContentProjection(source, cached.followedBy(prepared))
+                val projection = EpubContentProjection(source, cached.followedBy(prepared), checkCancelled)
                 val lines = chapter.pages.flatMap { page -> page.lines.map { line ->
+                    checkCancelled()
                     EpubContentLine(line.chapterPosition, line.sourceParagraphIndex, line.text,
                         line.isTitle, line.isImage, line.isParagraphEnd)
                 } }
                 projection.bindNativeContent(chapter.sourceParagraphs, lines).also {
-                    EpubOpeningMappingCache.put(book, chapter, sourceRevision, cached, it)
-                    if (mappingFile != null && sourceRevision != null) EpubOpeningMappingFile.signature(chapter, cached)?.let { signature ->
-                        EpubOpeningMappingFile.write(mappingFile, EpubOpeningMappingFile.Record(
-                            EpubOpeningMappingFile.request(book, chapter.chapter, sourceRevision), source.content, signature, it))
+                    checkCancelled()
+                    cachePositions = cached
+                    if (sourceRevision != null) EpubOpeningMappingFile.signature(chapter, cached)?.let { signature ->
+                        cacheRecord = EpubOpeningMappingFile.Record(
+                            EpubOpeningMappingFile.request(book, chapter.chapter, sourceRevision), source.content, signature, it)
                     }
                 }
             }
             startup.mark(if (disk != null) "mapping-disk-reused" else if (memory != null) "mapping-reused" else "mapping-ready")
             val charStyles = EpubCharStyles { path ->
                 runCatching { readEpubReaderFont(appCtx, path) }.getOrNull()
-            }.apply { rematch(chapter.highlightInputs, ReadHighlightMatcher(ReadBookConfig.highlightRules)) }
+            }.apply { checkCancelled(); rematch(chapter.highlightInputs, matcher); checkCancelled() }
             startup.mark("styles-ready")
             val key = UUID.randomUUID().toString()
             var last = 0
             var nextOccurrence = 0
             val titleLines = chapter.pages.flatMap { it.lines }.filter { it.isTitle }
             val documents = mapped.documents.mapIndexed { index, document ->
+                checkCancelled()
                 val (first, end) = document.contentBounds(last)
                 last = end
                 val location = document.source.location.copy(
@@ -129,7 +147,8 @@ internal class EpubPreparedContent private constructor(
             }
             check(documents.isNotEmpty()) { "EPUB 章节没有正文文档" }
             startup.mark("payload-ready")
-            return EpubPreparedContent(chapter, mapped, documents)
+            checkCancelled()
+            return EpubPreparedContent(chapter, mapped, documents, cachePositions, cacheRecord)
         }
     }
 }

@@ -22,7 +22,12 @@ internal class EpubResourceGateway(
     @Volatile private var documentPath: String? = null
     private val containerPath = "__ng_reader_${UUID.randomUUID()}/index.html"
     private val contentPath = "__ng_reader_${UUID.randomUUID()}/content.json"
-    private data class DocumentContent(val path: String, val html: ByteArray, val data: ByteArray)
+    private data class DocumentContent(val path: String, val html: ByteArray, val data: ByteArray) {
+        fun same(other: DocumentContent?) = other != null && path == other.path &&
+            html.contentEquals(other.html) && data.contentEquals(other.data)
+    }
+    private var contentRevision = 0L
+    private var documentsRevision = 0L
     @Volatile private var content: DocumentContent? = null
     @Volatile private var documentContents: Map<String, DocumentContent> = emptyMap()
     private val readerFontPath = "__ng_reader_${UUID.randomUUID()}/font"
@@ -61,20 +66,25 @@ internal class EpubResourceGateway(
     }
     fun titleFontUrl(): String = "$origin/$titleFontPath?revision=$titleFontRevision"
 
-    fun contentUrl(): String = "$origin/$contentPath"
+    fun contentUrl(): String = "$origin/$contentPath?revision=$contentRevision"
 
-    fun contentUrl(key: String): String = "$origin/$contentPath?document=$key"
+    fun contentUrl(key: String): String = "$origin/$contentPath?document=$key&revision=$documentsRevision"
 
     fun setDocumentContents(values: List<Triple<String, String, Pair<String, String>>>) {
-        documentContents = values.associate { (key, path, value) ->
+        val next = values.associate { (key, path, value) ->
             require(key.matches(Regex("[a-zA-Z0-9-]+")))
             key to DocumentContent(path, value.first.toByteArray(Charsets.UTF_8), value.second.toByteArray(Charsets.UTF_8))
+        }
+        if (next.size != documentContents.size || next.any { (key, value) -> !value.same(documentContents[key]) }) {
+            documentContents = next
+            documentsRevision++
         }
     }
 
     fun setContent(path: String, html: String, data: String) {
         check(!closed)
-        content = DocumentContent(path, html.toByteArray(Charsets.UTF_8), data.toByteArray(Charsets.UTF_8))
+        val next = DocumentContent(path, html.toByteArray(Charsets.UTF_8), data.toByteArray(Charsets.UTF_8))
+        if (!next.same(content)) { content = next; contentRevision++ }
     }
     /** App-owned top-level document; publication resources never supply this shell. */
     fun prepareContainer(): String {
@@ -128,7 +138,7 @@ internal class EpubResourceGateway(
         if (method != "GET" && method != "HEAD") return error(405, "Method Not Allowed")
         val link = resolve(url) ?: return error(403, "Forbidden")
         if (mainFrame && link.path != documentPath) return error(403, "Forbidden")
-        val key = link.query?.takeIf { it.startsWith("document=") }?.removePrefix("document=")
+        val key = link.query?.split('&')?.firstOrNull { it.startsWith("document=") }?.removePrefix("document=")
         val current = if (key == null) content else documentContents[key]
         if (!mainFrame && link.path.startsWith("__ng_style_background/")) {
             val parts = link.path.removePrefix("__ng_style_background/").split('/')
