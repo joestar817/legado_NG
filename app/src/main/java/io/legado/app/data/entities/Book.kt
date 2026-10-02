@@ -480,6 +480,8 @@ data class Book(
         var playSpeed: Float = 1.0f,     //音频播放速度
         @SerializedName("independentReadStyle")
         var independentReadStyle: String? = null,
+        @SerializedName("independentOverrides")
+        var independentOverrides: String? = null,
     ) : Parcelable
 
     class Converters {
