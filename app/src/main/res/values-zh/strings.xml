@@ -2319,6 +2319,11 @@
     <string name="read_style_global_follow_app_color">跟随应用颜色</string>
     <string name="read_style_global_follow_app_color_managed">取色来源已由全局设置接管</string>
     <string name="read_style_global_color_style">全局色彩风格</string>
+    <string name="read_style_done">完成</string>
+    <string name="read_style_discard_changes">放弃修改</string>
+    <string name="read_style_unsaved_changes">未保存的修改</string>
+    <string name="read_style_keep_and_close">保留并关闭</string>
+    <string name="read_style_discard_and_close">放弃并关闭</string>
     <string name="read_highlight_rules">高亮规则</string>
     <string name="read_highlight_summary">%1$d/%2$d 启用</string>
     <string name="read_highlight_select_rules">选择规则</string>

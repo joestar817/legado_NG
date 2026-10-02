@@ -121,6 +121,96 @@ internal fun showReadConfirmDialog(
     }
 }
 
+internal fun showReadUnsavedConfirmDialog(
+    context: Context,
+    title: String,
+    keepLabel: String,
+    discardLabel: String,
+    cancelLabel: String,
+    onKeep: () -> Unit,
+    onDiscard: () -> Unit,
+    themeSnapshot: NgThemeSnapshot? = null,
+): ComponentDialog {
+    var actionTaken = false
+    return showReadComposeDialog(
+        context = context,
+        onDismiss = {
+            // 未点击任何按钮即关闭（点外部/返回）= 取消，不执行保留或放弃
+            if (!actionTaken) {
+                // no-op：等同取消
+            }
+        },
+        themeSnapshot = themeSnapshot ?: ReadDrawerStyle.themeSnapshot(context),
+    ) { dismiss ->
+        ReadUnsavedConfirmDialogContent(
+            title = title,
+            keepLabel = keepLabel,
+            discardLabel = discardLabel,
+            cancelLabel = cancelLabel,
+            onKeep = {
+                actionTaken = true
+                dismiss()
+                onKeep()
+            },
+            onDiscard = {
+                actionTaken = true
+                dismiss()
+                onDiscard()
+            },
+            onCancel = {
+                actionTaken = true
+                dismiss()
+            },
+        )
+    }
+}
+
+@Composable
+internal fun ReadUnsavedConfirmDialogContent(
+    title: String,
+    keepLabel: String,
+    discardLabel: String,
+    cancelLabel: String,
+    onKeep: () -> Unit,
+    onDiscard: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    ReadConfigDialogSurface(
+        contentPadding = PaddingValues(
+            start = 20.dp,
+            top = 20.dp,
+            end = 20.dp,
+            bottom = 16.dp,
+        ),
+    ) {
+        ReadConfigDialogTitle(title)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NgFormActionButton(
+                text = cancelLabel,
+                onClick = onCancel,
+                modifier = Modifier.weight(1f),
+            )
+            NgFormActionButton(
+                text = discardLabel,
+                onClick = onDiscard,
+                modifier = Modifier.weight(1f),
+            )
+            NgFormActionButton(
+                text = keepLabel,
+                onClick = onKeep,
+                modifier = Modifier.weight(1f),
+                variant = NgButtonVariant.PRIMARY,
+            )
+        }
+    }
+}
+
 @Composable
 internal fun ReadConfirmDialogContent(
     title: String,

@@ -2419,6 +2419,11 @@
     <string name="read_style_global_follow_app_color">Follow app colors</string>
     <string name="read_style_global_follow_app_color_managed">Color source is controlled globally for all presets</string>
     <string name="read_style_global_color_style">Global color style</string>
+    <string name="read_style_done">Done</string>
+    <string name="read_style_discard_changes">Discard changes</string>
+    <string name="read_style_unsaved_changes">Unsaved changes</string>
+    <string name="read_style_keep_and_close">Keep &amp; close</string>
+    <string name="read_style_discard_and_close">Discard &amp; close</string>
     <string name="read_highlight_rules">Highlight rules</string>
     <string name="read_highlight_summary">%1$d/%2$d enabled</string>
     <string name="read_highlight_select_rules">Select rules</string>

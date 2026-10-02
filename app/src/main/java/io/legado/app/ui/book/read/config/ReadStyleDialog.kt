@@ -20,6 +20,8 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.toColorInt
 import com.github.liuyueyi.quick.transfer.constants.TransType
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.AppLog
@@ -87,6 +89,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var preparingPresetExport = false
     private var preparingHighlightExport = false
     private var openTipConfigAfterDismiss = false
+    private var sessionSnapshot: ReadStyleSnapshot? = null
+    private var sessionSnapshotJson: String = ""
     private val configFileName = "readConfig.zip"
     private val selectExportDocument = registerForActivityResult(
         CreateDocumentContract("application/zip")
@@ -127,12 +131,14 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         super.onCreate(savedInstanceState)
         pendingHighlightExportName = savedInstanceState?.getString("pendingHighlightExportName")
         pendingPresetExportName = savedInstanceState?.getString("pendingPresetExportName")
+        sessionSnapshotJson = savedInstanceState?.getString("sessionSnapshotJson") ?: ""
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString("pendingHighlightExportName", pendingHighlightExportName)
         outState.putString("pendingPresetExportName", pendingPresetExportName)
+        outState.putString("sessionSnapshotJson", sessionSnapshotJson)
     }
 
     override fun onStart() {
@@ -153,6 +159,13 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         (activity as ReadBookActivity).bottomDialog++
         composeView = view as ComposeView
         composeView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        if (sessionSnapshotJson.isEmpty()) {
+            captureSessionSnapshot()
+        } else {
+            sessionSnapshot = runCatching {
+                Gson().fromJson(sessionSnapshotJson, ReadStyleSnapshot::class.java)
+            }.getOrNull()
+        }
         refreshUi()
         composeView.apply {
             setViewCompositionStrategy(
@@ -170,7 +183,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                         ),
                         updateSystemBars = false,
                     ) {
-                        NgDismissibleDrawer(onDismiss = { dismissAllowingStateLoss() }) {
+                        NgDismissibleDrawer(onDismiss = { requestDismiss() }) {
                             ReadStyleScreen(
                                 page = page,
                                 state = state,
@@ -204,6 +217,14 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             if (!parentFragmentManager.isStateSaved) {
                 TipConfigDialog().show(parentFragmentManager, "tipConfigDialog")
             }
+        }
+    }
+
+    override fun onCancel(dialog: DialogInterface) {
+        if (computeUnsaved()) {
+            showUnsavedConfirm()
+        } else {
+            super.onCancel(dialog)
         }
     }
 
@@ -450,14 +471,106 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 applyHighlightRules(rules)
             }
         },
+        onDone = { dismissAllowingStateLoss() },
+        onDiscard = ::discardChanges,
     )
 
     private fun updateAdjustState(transform: ReadStyleUiState.() -> ReadStyleUiState) {
-        screenState = screenState?.transform()
+        // 滑块拖动连续触发：只置脏，避免每帧全量 GSON 序列化（关闭/确认时 computeUnsaved 仍会精确比对）
+        screenState = screenState?.transform()?.copy(hasUnsavedChanges = true)
     }
 
     private fun updateEditorState(transform: ReadStyleUiState.() -> ReadStyleUiState) {
-        screenState = screenState?.transform()
+        screenState = screenState?.transform()?.copy(hasUnsavedChanges = computeUnsaved())
+    }
+
+    private data class ReadStyleSnapshot(
+        val configListJson: String,
+        val shareConfigJson: String,
+        val onlyThisBook: Boolean,
+        val bookConfigJson: String?,
+        val styleSelect: Int,
+        val comicStyleSelect: Int,
+    )
+
+    private fun captureSessionSnapshot() {
+        val gson = Gson()
+        val snapshot = ReadStyleSnapshot(
+            configListJson = gson.toJson(ReadBookConfig.configList),
+            shareConfigJson = gson.toJson(ReadBookConfig.shareConfig),
+            onlyThisBook = ReadBookConfig.onlyThisBook,
+            bookConfigJson = if (ReadBookConfig.onlyThisBook) gson.toJson(ReadBookConfig.durConfig) else null,
+            styleSelect = ReadBookConfig.styleSelect,
+            comicStyleSelect = ReadBookConfig.comicStyleSelect,
+        )
+        sessionSnapshot = snapshot
+        sessionSnapshotJson = gson.toJson(snapshot)
+    }
+
+    private fun currentSnapshotJson(): String {
+        val gson = Gson()
+        return gson.toJson(
+            ReadStyleSnapshot(
+                configListJson = gson.toJson(ReadBookConfig.configList),
+                shareConfigJson = gson.toJson(ReadBookConfig.shareConfig),
+                onlyThisBook = ReadBookConfig.onlyThisBook,
+                bookConfigJson = if (ReadBookConfig.onlyThisBook) gson.toJson(ReadBookConfig.durConfig) else null,
+                styleSelect = ReadBookConfig.styleSelect,
+                comicStyleSelect = ReadBookConfig.comicStyleSelect,
+            )
+        )
+    }
+
+    private fun computeUnsaved(): Boolean = sessionSnapshot != null && currentSnapshotJson() != sessionSnapshotJson
+
+    private fun discardChanges() {
+        val snapshot = sessionSnapshot ?: sessionSnapshotJson.takeIf { it.isNotBlank() }?.let {
+            runCatching { Gson().fromJson(it, ReadStyleSnapshot::class.java) }.getOrNull()
+        } ?: return
+        val gson = Gson()
+        val configListType = object : TypeToken<List<ReadBookConfig.Config>>() {}.type
+        val configList: List<ReadBookConfig.Config> = gson.fromJson(snapshot.configListJson, configListType)
+        val shareConfig: ReadBookConfig.Config = gson.fromJson(snapshot.shareConfigJson, ReadBookConfig.Config::class.java)
+        if (snapshot.onlyThisBook) {
+            if (!ReadBookConfig.onlyThisBook) ReadBookConfig.setOnlyThisBook(true)
+            snapshot.bookConfigJson?.let {
+                ReadBookConfig.durConfig = gson.fromJson(it, ReadBookConfig.Config::class.java)
+            }
+        } else {
+            if (ReadBookConfig.onlyThisBook) ReadBookConfig.setOnlyThisBook(false)
+            ReadBookConfig.configList.clear()
+            ReadBookConfig.configList.addAll(configList)
+            ReadBookConfig.shareConfig = shareConfig
+        }
+        ReadBookConfig.styleSelect = snapshot.styleSelect
+        ReadBookConfig.comicStyleSelect = snapshot.comicStyleSelect
+        editorBackgroundCache = null
+        ReadFloatingAppearanceState.refreshFromConfig()
+        refreshUi()
+        notifyPresetRestored()
+    }
+
+    private fun requestDismiss() {
+        if (computeUnsaved()) {
+            showUnsavedConfirm()
+        } else {
+            dismissAllowingStateLoss()
+        }
+    }
+
+    private fun showUnsavedConfirm() {
+        showReadUnsavedConfirmDialog(
+            context = requireContext(),
+            title = getString(R.string.read_style_unsaved_changes),
+            keepLabel = getString(R.string.read_style_keep_and_close),
+            discardLabel = getString(R.string.read_style_discard_and_close),
+            cancelLabel = getString(R.string.cancel),
+            onKeep = { dismissAllowingStateLoss() },
+            onDiscard = {
+                discardChanges()
+                dismissAllowingStateLoss()
+            },
+        )
     }
 
     private fun refreshUi() {
@@ -543,6 +656,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             editorInitialBackgroundType = null,
             editorInitialBackgroundName = null,
             editorInitialBackground = null,
+            hasUnsavedChanges = computeUnsaved(),
         )
     }
 
@@ -773,6 +887,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun showTipConfigCentered() {
         if (openTipConfigAfterDismiss) return
         openTipConfigAfterDismiss = true
+        // 有意为之：这是抽屉内部的页面跳转（关闭阅读样式后立即打开 TipConfig），
+        // 直接 dismiss 即落盘当前编辑，不弹未保存确认。
         dismiss()
     }
 
@@ -1054,6 +1170,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             cancelLabel = getString(R.string.no),
             onConfirm = {
                 if (ReadBookConfig.restoreCurrentDefault()) {
+                    captureSessionSnapshot()
                     editorBackgroundCache = null
                     refreshUi()
                     notifyPresetRestored()
@@ -1072,6 +1189,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             cancelLabel = getString(R.string.no),
             onConfirm = {
                 if (ReadBookConfig.restoreAllDefaults()) {
+                    captureSessionSnapshot()
                     editorBackgroundCache = null
                     clearHighlightDraft()
                     page = ReadStylePage.PRESET
@@ -1307,6 +1425,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             val appendResult = ReadBookConfig.appendImportedConfigWithReport(result.config)
             if (!ReadBookConfig.onlyThisBook) result.readerSettings?.let(ReadPresetPreferences::apply)
             ReadBookConfig.styleSelect = appendResult.index
+            captureSessionSnapshot()
             editorBackgroundCache = null
             refreshUi()
             postEvent(

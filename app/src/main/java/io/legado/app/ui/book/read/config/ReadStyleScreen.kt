@@ -188,6 +188,7 @@ internal data class ReadStyleUiState(
     val editorInitialBackgroundType: Int?,
     val editorInitialBackgroundName: String?,
     val editorInitialBackground: ImageBitmap?,
+    val hasUnsavedChanges: Boolean = false,
 )
 
 internal data class ReadStyleActions(
@@ -258,6 +259,8 @@ internal data class ReadStyleActions(
     val onDeleteHighlight: () -> Unit,
     val onHighlightEnabledChanged: (Int, Boolean) -> Unit,
     val onReorderHighlights: (List<ReadHighlightRule>) -> Unit,
+    val onDone: () -> Unit,
+    val onDiscard: () -> Unit,
 )
 
 @Composable
@@ -417,7 +420,60 @@ internal fun ReadStyleScreen(
                     actions = actions,
                 )
             }
+
+            ReadStyleSessionBar(
+                hasUnsavedChanges = state.hasUnsavedChanges,
+                contentColor = contentColor,
+                onDiscard = actions.onDiscard,
+                onDone = actions.onDone,
+            )
         }
+    }
+}
+
+@Composable
+private fun ReadStyleSessionBar(
+    hasUnsavedChanges: Boolean,
+    contentColor: Color,
+    onDiscard: () -> Unit,
+    onDone: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (hasUnsavedChanges) {
+            Text(
+                text = "● " + stringResource(R.string.read_style_unsaved_changes),
+                color = contentColor.copy(alpha = 0.72f),
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        Text(
+            text = stringResource(R.string.read_style_discard_changes),
+            color = if (hasUnsavedChanges) contentColor else contentColor.copy(alpha = 0.38f),
+            fontSize = 14.sp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(enabled = hasUnsavedChanges, onClick = onDiscard)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = stringResource(R.string.read_style_done),
+            color = Color(NgTheme.colors.onPrimary),
+            fontSize = 14.sp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(NgTheme.colors.primary))
+                .clickable(onClick = onDone)
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+        )
     }
 }
 
