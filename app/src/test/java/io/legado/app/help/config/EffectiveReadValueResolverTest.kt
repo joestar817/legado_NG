@@ -9,12 +9,11 @@ import org.junit.Test
  * 用例来源：docs/reading-settings-redesign-plan.md §3.6 契约测试表。
  * 每个用例都断言 value 与 source（scope 一并断言）。
  *
- * 生产解析器（Phase 2）实现后，把 [ReferenceResolver] 替换为生产实现并保证本文件全绿；
- * 本文件即实现必须满足的可执行规格。
+ * 本文件是生产解析器 [EffectiveReadValueResolverContract]（Phase 2 落地）必须满足的可执行规格。
  */
 class EffectiveReadValueResolverTest {
 
-    private val resolver: EffectiveReadValueResolver = ReferenceResolver
+    private val resolver: EffectiveReadValueResolver = EffectiveReadValueResolverContract
 
     // region 非 EPUB：global default / book override
 
@@ -363,49 +362,4 @@ class EffectiveReadValueResolverTest {
     }
 
     // endregion
-}
-
-/**
- * 契约参考实现（可执行规格）。
- *
- * Phase 2 生产解析器实现后，把测试中的 [ReferenceResolver] 替换为生产实现；
- * 此参考实现只用于让契约测试从第一天起就可运行、可读。
- */
-private object ReferenceResolver : EffectiveReadValueResolver {
-    override fun resolve(context: ReadValueContext): ResolvedReadValue {
-        val scope = context.scope
-
-        // EPUB：respect 且原书声明了该属性 → publisher 胜出（级联 caveat：未声明则走 App 路径）。
-        context.epub?.let { epub ->
-            if (epub.rule == ReadEpubRule.RESPECT && epub.publisherFont != null) {
-                return ResolvedReadValue(epub.publisherFont, ReadValueSource.PUBLISHER, scope)
-            }
-        }
-
-        // 1a. 本书脚本级稀疏 override
-        context.bookScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.THIS_BOOK, scope) }
-        // 1b. 本书默认级稀疏 override（压过全局脚本档案）
-        context.bookDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.THIS_BOOK, scope) }
-
-        // 2. 本书基准预设（pinned 快照，或 follow_global 当前预设）
-        context.basePreset?.let { preset ->
-            when (preset.mode) {
-                ReadBasePresetMode.PINNED -> {
-                    val snapshot = requireNotNull(preset.snapshot)
-                    snapshot.scriptFonts[scope]?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
-                    snapshot.defaultFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
-                }
-
-                ReadBasePresetMode.FOLLOW_GLOBAL -> {
-                    context.globalScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
-                    context.globalDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
-                }
-            }
-        }
-
-        // 3. 全局脚本档案 → 4. 全局 default → 5. platform
-        context.globalScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.GLOBAL, scope) }
-        context.globalDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.GLOBAL, scope) }
-        return ResolvedReadValue(context.platformFont, ReadValueSource.PLATFORM, scope)
-    }
 }

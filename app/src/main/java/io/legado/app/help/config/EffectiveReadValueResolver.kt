@@ -73,3 +73,46 @@ data class ReadValueContext(
 fun interface EffectiveReadValueResolver {
     fun resolve(context: ReadValueContext): ResolvedReadValue
 }
+
+/**
+ * 生产解析器（Phase 2 落地）：机械实现 §3.6 优先级矩阵。
+ * 契约测试 EffectiveReadValueResolverTest 直接消费本对象。
+ */
+object EffectiveReadValueResolverContract : EffectiveReadValueResolver {
+    override fun resolve(context: ReadValueContext): ResolvedReadValue {
+        val scope = context.scope
+
+        // EPUB：respect 且原书声明了该属性 → publisher 胜出（级联 caveat：未声明则走 App 路径）。
+        context.epub?.let { epub ->
+            if (epub.rule == ReadEpubRule.RESPECT && epub.publisherFont != null) {
+                return ResolvedReadValue(epub.publisherFont, ReadValueSource.PUBLISHER, scope)
+            }
+        }
+
+        // 1a. 本书脚本级稀疏 override
+        context.bookScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.THIS_BOOK, scope) }
+        // 1b. 本书默认级稀疏 override（压过全局脚本档案）
+        context.bookDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.THIS_BOOK, scope) }
+
+        // 2. 本书基准预设（pinned 快照，或 follow_global 当前预设）
+        context.basePreset?.let { preset ->
+            when (preset.mode) {
+                ReadBasePresetMode.PINNED -> {
+                    val snapshot = requireNotNull(preset.snapshot)
+                    snapshot.scriptFonts[scope]?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
+                    snapshot.defaultFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
+                }
+
+                ReadBasePresetMode.FOLLOW_GLOBAL -> {
+                    context.globalScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
+                    context.globalDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
+                }
+            }
+        }
+
+        // 3. 全局脚本档案 → 4. 全局 default → 5. platform（非空兜底，全函数）
+        context.globalScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.GLOBAL, scope) }
+        context.globalDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.GLOBAL, scope) }
+        return ResolvedReadValue(context.platformFont, ReadValueSource.PLATFORM, scope)
+    }
+}
