@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="epub_publisher_style">原书排版优先</string>
+    <string name="epub_layout_title">EPUB formatting</string>
+    <string name="epub_formatting_respect">Respect publisher</string>
+    <string name="epub_formatting_override">Override publisher</string>
+    <string name="epub_formatting_custom">Custom</string>
     <string name="bookshelf_highlight_unread">Highlight unread count</string>
     <string name="interface_font">Interface font</string>
     <string name="text_selection_action_order">Text toolbar order</string>

@@ -1,4 +1,8 @@
 <resources>
+    <string name="epub_layout_title">EPUB 排版</string>
+    <string name="epub_formatting_respect">尊重出版方</string>
+    <string name="epub_formatting_override">覆盖出版方</string>
+    <string name="epub_formatting_custom">自定义</string>
     <string name="bookshelf_highlight_unread">强调未读数量</string>
     <string name="interface_font">界面字体</string>
     <string name="text_selection_action_order">工具浮窗排序</string>

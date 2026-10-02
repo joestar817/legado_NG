@@ -543,6 +543,18 @@ private fun PresetPage(
         )
         ReadDivider(contentColor)
     }
+    if (state.isEpub) {
+        Row(Modifier.fillMaxWidth().height(56.dp)
+            .clickable(role = Role.Button, onClick = actions.onOpenEpubSettings).padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(painterResource(R.drawable.ic_view_quilt), null, tint = contentColor, modifier = Modifier.size(25.dp))
+            Text(stringResource(R.string.epub_layout_title), color = contentColor, fontSize = 15.sp,
+                modifier = Modifier.padding(start = 14.dp).weight(1f))
+            Icon(painterResource(R.drawable.ic_chevron_right_20), null, tint = contentColor.copy(alpha = .72f),
+                modifier = Modifier.size(18.dp))
+        }
+        ReadDivider(contentColor)
+    }
     if (!state.onlyThisBook) {
         PresetSwitchRow(
             title = stringResource(R.string.share_layout),
@@ -559,18 +571,6 @@ private fun PresetPage(
             contentColor = contentColor,
             onCheckedChange = actions.onGlobalFloatingFollowAppChanged,
         )
-        ReadDivider(contentColor)
-    }
-    if (state.isEpub) {
-        Row(Modifier.fillMaxWidth().height(56.dp)
-            .clickable(role = Role.Button, onClick = actions.onOpenEpubSettings).padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Icon(painterResource(R.drawable.ic_view_quilt), null, tint = contentColor, modifier = Modifier.size(25.dp))
-            Text("EPUB 排版", color = contentColor, fontSize = 15.sp,
-                modifier = Modifier.padding(start = 14.dp).weight(1f))
-            Icon(painterResource(R.drawable.ic_chevron_right_20), null, tint = contentColor.copy(alpha = .72f),
-                modifier = Modifier.size(18.dp))
-        }
         ReadDivider(contentColor)
     }
     if (!state.onlyThisBook) PresetRestoreAllRow(
