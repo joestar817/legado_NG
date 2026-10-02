@@ -159,4 +159,28 @@ class BookReadStyleOverridesTest {
         assertEquals("G", result.value)
         assertEquals(ReadValueSource.PRESET, result.source)
     }
+
+    @Test
+    fun `legacy empty textFont is preserved as explicit system font`() {
+        // 旧数据里 textFont="" 表示「本书显式用系统字体」，不可当作缺失回落全局。
+        val legacy = ReadBookConfig.Config(textFont = "")
+        val context = BookReadStyleCompatibility.contextFor(
+            scope = ReadValueScope.DEFAULT,
+            overrides = null,
+            legacyConfig = legacy,
+            globalScriptFont = null,
+            globalDefaultFont = "A",
+        )
+        val result = resolver.resolve(context)
+        assertEquals("", result.value)
+        assertEquals(ReadValueSource.PRESET, result.source)
+    }
+
+    @Test
+    fun `legacy config gson round trip preserves empty textFont`() {
+        val json = io.legado.app.utils.GSON.toJson(ReadBookConfig.Config(textFont = ""))
+        val decoded = BookReadStyleSession.decode(json)
+        assertNotNull(decoded)
+        assertEquals("", decoded?.textFont)
+    }
 }

@@ -130,6 +130,13 @@ object ReadBookConfig {
         return configList.lastIndex
     }
 
+    /**
+     * 写入目的地审计（Phase 2c）：
+     * - 仅本书：写 bookStyle 副本（DB）。
+     * - 共享排版开：写当前预设，并同步覆写 [shareConfig]（见 setter）。
+     *   退役 shareLayout 时须删除该同步覆写，保证布局字段只写 [durConfig]。
+     * 颜色/背景读 [durConfig]，不受 shareLayout 影响。
+     */
     var durConfig
         get() = bookStyle.config ?: getConfig(styleSelect)
         set(value) {
@@ -138,6 +145,8 @@ object ReadBookConfig {
                 return
             }
             configList[styleSelect] = value
+            // Phase 2c 审计：此同步覆写是 shareLayout 写入耦合点。
+            // 退役 shareLayout 时必须移除，避免新稀疏写入被扩散为整份 shareConfig 覆写。
             if (shareLayout) {
                 shareConfig = value
             }
