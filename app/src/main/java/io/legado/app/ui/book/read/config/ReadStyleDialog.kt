@@ -210,6 +210,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
+        clearEditorThemeOverride()
         ReadBookConfig.save()
         (activity as ReadBookActivity).bottomDialog--
         if (openTipConfigAfterDismiss) {
@@ -231,6 +232,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     override fun onDestroyView() {
         backgroundColorPickerDialog?.dismiss()
         backgroundColorPickerDialog = null
+        // 旋转等场景不会走 onDismiss，这里兜底清除临时日/夜预览
+        clearEditorThemeOverride()
         super.onDestroyView()
     }
 
@@ -293,6 +296,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onCancelHighlightSelection = ::clearHighlightSelection,
         onConfirmHighlightSelection = ::confirmHighlightSelection,
         onBack = ::navigateBack,
+        onEditorThemeModeToggle = ::toggleEditorThemeMode,
         onPresetNameChanged = { value ->
             ReadBookConfig.durConfig.name = value
             updateEditorState {
@@ -677,7 +681,26 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         creatingPreset = isNew
         changeBgTextConfig(index)
         page = ReadStylePage.EDIT
+        ReadBookConfig.setNightThemeOverride(null)
         refreshUi()
+    }
+
+    private fun toggleEditorThemeMode() {
+        val currentNight = ReadBookConfig.isNightTheme
+        ReadBookConfig.setNightThemeOverride(!currentNight)
+        refreshUi()
+        postEditorThemePreviewChanged()
+    }
+
+    private fun clearEditorThemeOverride() {
+        if (ReadBookConfig.setNightThemeOverride(null)) {
+            postEditorThemePreviewChanged()
+        }
+    }
+
+    private fun postEditorThemePreviewChanged() {
+        postEvent(EventBus.UP_CONFIG, arrayListOf(0, 1, 2, 6, 9))
+        notifyFloatingAppearanceChanged()
     }
 
     private fun navigateTo(target: ReadStylePage) {
@@ -769,6 +792,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
             page == ReadStylePage.EDIT -> {
                 page = ReadStylePage.PRESET
+                clearEditorThemeOverride()
                 refreshUi()
             }
         }

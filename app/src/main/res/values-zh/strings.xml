@@ -2297,6 +2297,7 @@
     <string name="read_style_name">样式名称</string>
     <string name="read_style_mode_day">日间</string>
     <string name="read_style_mode_night">夜间</string>
+    <string name="read_style_toggle_theme_mode">切换日间/夜间主题</string>
     <string name="read_style_mode_eink">墨水</string>
     <string name="read_style_preview_title">第1章 凶案</string>
     <string name="read_style_preview_accent">姓名？</string>

@@ -466,13 +466,24 @@ object ReadBookConfig {
         PageAnim.coverPageAnim -> PageAnim.coverPageAnim
         else -> PageAnim.scrollPageAnim
     }
+    /** 编辑器临时日/夜预览覆盖；null = 跟随真实主题。不写入任何持久化配置。 */
+    private var nightThemeOverride: Boolean? = null
+
     var isNightTheme = appCtx.getPrefBoolean(PreferKey.readNightTheme, false)
+        get() = nightThemeOverride ?: field
         set(value) {
             field = value
             if (appCtx.getPrefBoolean(PreferKey.readNightTheme, false) != value) {
                 appCtx.putPrefBoolean(PreferKey.readNightTheme, value)
             }
         }
+
+    /** 设置夜间主题临时覆盖；传入 null 恢复真实主题。返回是否发生变化。 */
+    fun setNightThemeOverride(value: Boolean?): Boolean {
+        val changed = nightThemeOverride != value
+        nightThemeOverride = value
+        return changed
+    }
 
     fun currentThemeMode(): ReadThemeMode = resolveReadThemeMode(
         storedMode = appCtx.getPrefString(PreferKey.readThemeMode),

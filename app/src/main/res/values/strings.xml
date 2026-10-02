@@ -2397,6 +2397,7 @@
     <string name="read_style_name">Style name</string>
     <string name="read_style_mode_day">Day</string>
     <string name="read_style_mode_night">Night</string>
+    <string name="read_style_toggle_theme_mode">Toggle day/night theme</string>
     <string name="read_style_mode_eink">E-Ink</string>
     <string name="read_style_preview_title">Chapter 1 · The murder</string>
     <string name="read_style_preview_accent">Name?</string>
