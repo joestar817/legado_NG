@@ -2273,7 +2273,8 @@
     <string name="read_tip_position">%1$s · %2$s</string>
     <string name="read_tip_used_at">已用于%1$s</string>
     <string name="reading_presets">阅读预设</string>
-    <string name="read_style_only_this_book">预设仅用于本书</string>
+    <string name="read_style_only_this_book">自定义本书设置</string>
+    <string name="read_style_only_this_book_subtitle">改动只应用于本书，不随全局预设变化</string>
     <string name="read_style_this_book">本书</string>
     <string name="read_style_follow_global">跟随全局</string>
     <string name="create_style">＋ 新建</string>

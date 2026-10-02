@@ -328,7 +328,7 @@ internal fun ReadStyleScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(StandardPageHeight - (if (state.onlyThisBook) 155.6.dp else 0.dp)
-                            + (if (state.canUseBookStyle) 56.8.dp else 0.dp)
+                            + (if (state.canUseBookStyle) 62.8.dp else 0.dp)
                             + (if (state.isEpub) 56.8.dp else 0.dp)),
                 ) {
                     PresetPage(
@@ -534,6 +534,7 @@ private fun PresetPage(
     if (state.canUseBookStyle) {
         PresetSwitchRow(
             title = stringResource(R.string.read_style_only_this_book),
+            subtitle = stringResource(R.string.read_style_only_this_book_subtitle),
             iconRes = R.drawable.ic_bookshelf_dock_all,
             iconSize = 20.dp,
             checked = state.onlyThisBook,
@@ -721,11 +722,12 @@ private fun PresetSwitchRow(
     contentColor: Color,
     onCheckedChange: (Boolean) -> Unit,
     iconSize: Dp = 25.dp,
+    subtitle: String? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(if (subtitle == null) 56.dp else 62.dp)
             .clickable { onCheckedChange(!checked) }
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -738,12 +740,22 @@ private fun PresetSwitchRow(
                 tint = contentColor,
             )
         }
-        Text(
-            text = title,
+        Column(
             modifier = Modifier.padding(start = 14.dp).weight(1f),
-            color = contentColor,
-            fontSize = 15.sp,
-        )
+        ) {
+            Text(
+                text = title,
+                color = contentColor,
+                fontSize = 15.sp,
+            )
+            subtitle?.let {
+                Text(
+                    text = it,
+                    color = contentColor.copy(alpha = 0.62f),
+                    fontSize = 11.5.sp,
+                )
+            }
+        }
         NgSwitchControl(
             checked = checked,
             onCheckedChange = onCheckedChange,
