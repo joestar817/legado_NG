@@ -11,7 +11,10 @@ class ShareLayoutMigrationTest {
     @Test
     fun `merge writes shared typography into every preset keeping appearance`() {
         val presets = listOf(
-            ReadBookConfig.Config(name = "A", textSize = 16, textFont = "a.ttf", bgStr = "#111111"),
+            ReadBookConfig.Config(
+                name = "A", textSize = 16, textFont = "a.ttf", bgStr = "#111111",
+                highlightRules = arrayListOf(ReadHighlightRule(id = "legacy-rule-1")),
+            ),
             ReadBookConfig.Config(name = "B", textSize = 17, textFont = "b.ttf", bgStr = "#222222"),
         )
         val shared = ReadBookConfig.Config(textSize = 26, textFont = "shared.ttf", lineSpacingExtra = 19)
@@ -23,6 +26,8 @@ class ShareLayoutMigrationTest {
         assertEquals(19, merged[0].lineSpacingExtra)
         assertEquals("A", merged[0].name)
         assertEquals("#111111", merged[0].bgStr)
+        // copyForBook 会清空 highlightRules，迁移必须保留（legacy 规则随后迁入 ReadHighlightRuleStore）
+        assertEquals(listOf("legacy-rule-1"), merged[0].highlightRules.map { it.id })
 
         assertEquals(26, merged[1].textSize)
         assertEquals("shared.ttf", merged[1].textFont)

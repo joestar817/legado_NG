@@ -1390,8 +1390,12 @@ object ReadBookConfig {
 /**
  * 把 shareConfig 的排版字段并入每个预设，保留各预设自己的外观（颜色/背景）。
  * 与 [ReadBookConfig.Config.copyForBook] 的语义一致：layout 取 shareConfig，外观取预设。
+ * 注意：copyForBook 会清空 highlightRules（为本书副本语义设计），迁移必须保留——
+ * init 随后会把各预设的 legacy 高亮规则统一迁入 ReadHighlightRuleStore，清空即丢数据。
  */
 internal fun mergeSharedLayoutIntoPresets(
     presets: List<ReadBookConfig.Config>,
     shareConfig: ReadBookConfig.Config,
-): List<ReadBookConfig.Config> = presets.map { it.copyForBook(shareConfig) }
+): List<ReadBookConfig.Config> = presets.map { preset ->
+    preset.copyForBook(shareConfig).copy(highlightRules = preset.highlightRules)
+}
