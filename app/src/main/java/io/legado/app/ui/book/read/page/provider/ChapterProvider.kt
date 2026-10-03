@@ -186,6 +186,9 @@ object ChapterProvider {
      */
     fun upStyle() {
         typeface = getTypeface(ReadBookConfig.textFont)
+        // 正文字体实例已更换：清空 styled-range 缓存，避免空 path（=跟随正文字体）
+        // 的缓存条目继续返回旧实例（StyledTypefaceCache 以 path 为键，空 path 条目固化了旧 typeface）。
+        StyledTypefaceCache.clear()
         getPaints(typeface).let {
             titlePaint = it.first
             contentPaint = it.second
@@ -322,9 +325,12 @@ object ChapterProvider {
 
     fun resolveStyledTypeface(fontPath: String, fontWeight: Int, italic: Boolean): Typeface? {
         if (fontPath.isBlank() && fontWeight == 400 && !italic) return null
+        StyledTypefaceCache.get(fontPath, fontWeight, italic)?.let { return it }
         val base = loadOptionalTypeface(fontPath) ?: if (fontPath.isBlank()) typeface else return null
         val weighted = applyFontWeight(base, fontWeight)
-        return if (italic) Typeface.create(weighted, Typeface.ITALIC) else weighted
+        val styled = if (italic) Typeface.create(weighted, Typeface.ITALIC) else weighted
+        StyledTypefaceCache.put(fontPath, fontWeight, italic, styled)
+        return styled
     }
 
     private fun applyTextShadow(paint: TextPaint) {
