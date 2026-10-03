@@ -94,6 +94,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var sessionSnapshot: ReadStyleSnapshot? = null
     private var sessionSnapshotJson: String = ""
     private var unsavedConfirmCancelled by mutableIntStateOf(0)
+    private var unsavedConfirmShowing = false
     private val configFileName = "readConfig.zip"
     private val selectExportDocument = registerForActivityResult(
         CreateDocumentContract("application/zip")
@@ -492,6 +493,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onDiscard = ::discardChanges,
         onResetBookCustomization = ::resetBookCustomization,
         onResetBookFontOverride = ::resetBookFontOverride,
+        onDismissRequest = ::requestDismiss,
     )
 
     private fun updateAdjustState(transform: ReadStyleUiState.() -> ReadStyleUiState) {
@@ -578,18 +580,27 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun showUnsavedConfirm() {
+        if (unsavedConfirmShowing) return
+        unsavedConfirmShowing = true
         showReadUnsavedConfirmDialog(
             context = requireContext(),
             title = getString(R.string.read_style_unsaved_changes),
             keepLabel = getString(R.string.read_style_keep_and_close),
             discardLabel = getString(R.string.read_style_discard_and_close),
             cancelLabel = getString(R.string.read_style_keep_editing),
-            onKeep = { dismissAllowingStateLoss() },
+            onKeep = {
+                unsavedConfirmShowing = false
+                dismissAllowingStateLoss()
+            },
             onDiscard = {
+                unsavedConfirmShowing = false
                 discardChanges()
                 dismissAllowingStateLoss()
             },
-            onCancelled = { unsavedConfirmCancelled++ },
+            onCancelled = {
+                unsavedConfirmShowing = false
+                unsavedConfirmCancelled++
+            },
         )
     }
 

@@ -267,6 +267,7 @@ internal data class ReadStyleActions(
     val onDiscard: () -> Unit,
     val onResetBookCustomization: () -> Unit,
     val onResetBookFontOverride: () -> Unit,
+    val onDismissRequest: () -> Unit,
 )
 
 @Composable
@@ -284,10 +285,12 @@ internal fun ReadStyleScreen(
         ReadStylePage.ADJUST,
         ReadStylePage.HIGHLIGHT,
     )
-    BackHandler(
-        enabled = page !in rootPages || state.highlightSelectionMode != HighlightSelectionMode.NONE,
-    ) {
-        actions.onBack()
+    BackHandler(enabled = true) {
+        if (page in rootPages && state.highlightSelectionMode == HighlightSelectionMode.NONE) {
+            actions.onDismissRequest()
+        } else {
+            actions.onBack()
+        }
     }
     NgGlassSurface(
         modifier = Modifier
