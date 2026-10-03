@@ -607,14 +607,6 @@ private fun PresetPage(
     }
     if (!state.onlyThisBook) {
         PresetSwitchRow(
-            title = stringResource(R.string.share_layout),
-            iconRes = R.drawable.ic_ai_capability_text,
-            checked = state.shareLayout,
-            contentColor = contentColor,
-            onCheckedChange = actions.onShareLayoutChanged,
-        )
-        ReadDivider(contentColor)
-        PresetSwitchRow(
             title = stringResource(R.string.read_style_global_follow_app_color),
             iconRes = R.drawable.ic_cfg_theme,
             checked = state.globalFloatingFollowApp,
