@@ -5,11 +5,12 @@ import io.legado.app.data.entities.Book
 /**
  * Phase 2d：本书稀疏覆盖写入层。
  *
- * Gate B（物化基准）：
+ * Gate B（物化基准，修订版）：
  * - [materializePinnedBaseIfNeeded]：首次成功提交本书编辑时，把 legacy 整份拷贝转成显式 pinned
- *   basePreset；**persist 成功后才清除 independentReadStyle**（事务性保留、成功后立即退役）。
- * - [materializeFollowGlobal]：用户选择跟随全局时不生成 pinned base，同样退役 legacy。
- * - 不变量：物化成功后 independentReadStyle == null；effective(before) == effective(after)。
+ *   basePreset；**legacy 保留为隐式全量基准**——在稀疏模型覆盖全部属性之前 legacy 不能退役，
+ *   否则重启后 onlyThisBook=false、非字体属性（颜色/背景/间距）全部丢失。
+ * - [materializeFollowGlobal]：用户选择跟随全局时不生成 pinned base，legacy 同样保留。
+ * - 显式退役推迟到 Phase 5 归一化。
  *
  * Gate A（重置语义）：
  * - [resetAll] 同时清 independentOverrides 与 independentReadStyle，绝不等价于只清 sparse
@@ -42,9 +43,11 @@ internal class BookReadStyleOverridesStore(
             ),
         )
         val json = BookReadStyleCompatibility.toJson(overrides)
-        persist(owner.bookUrl, json, null)
+        // Gate B（修订）：物化显式 pinned 基准，legacy 保留为隐式全量基准。
+        // 在稀疏模型覆盖全部属性之前，legacy 不能退役——否则重启后 onlyThisBook=false、
+        // 非字体属性（颜色/背景/间距）全部丢失。
+        persist(owner.bookUrl, json, owner.config.independentReadStyle)
         owner.config.independentOverrides = json
-        owner.config.independentReadStyle = null
         return overrides
     }
 
@@ -53,9 +56,9 @@ internal class BookReadStyleOverridesStore(
             basePreset = BookBasePreset(mode = BookBasePreset.MODE_FOLLOW_GLOBAL),
         )
         val json = BookReadStyleCompatibility.toJson(overrides)
-        persist(owner.bookUrl, json, null)
+        // follow_global 只表达「基准不 pin」，非字体属性仍需 legacy 承载，同样保留。
+        persist(owner.bookUrl, json, owner.config.independentReadStyle)
         owner.config.independentOverrides = json
-        owner.config.independentReadStyle = null
         return overrides
     }
 
@@ -64,10 +67,10 @@ internal class BookReadStyleOverridesStore(
         val existing = current(owner) ?: BookReadStyleOverrides()
         val newFont = (existing.font ?: SparseFontOverrides()).copy(default = value)
         val newOverrides = existing.copy(font = if (newFont.isEmpty()) null else newFont)
-        val json = BookReadStyleCompatibility.toJson(newOverrides)
+        val json = if (newOverrides.isEmpty()) null else BookReadStyleCompatibility.toJson(newOverrides)
         persist(owner.bookUrl, json, owner.config.independentReadStyle)
         owner.config.independentOverrides = json
-        return newOverrides
+        return newOverrides.takeUnless { json == null }
     }
 
     fun resetAll(owner: Book) {

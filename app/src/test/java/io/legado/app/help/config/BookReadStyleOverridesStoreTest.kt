@@ -29,15 +29,22 @@ class BookReadStyleOverridesStoreTest {
     }
 
     @Test
-    fun `materialization is transactional and retires legacy after success`() {
-        val owner = legacyBook("B")
+    fun `materialization keeps legacy as implicit full base`() {
+        val owner = legacyBook("B").apply {
+            config.independentReadStyle = GSON.toJson(
+                ReadBookConfig.Config(textFont = "B", textSize = 22, bgStr = "#112233")
+            )
+        }
         val before = store.effectiveDefaultFont(owner, globalFont = "A")
         assertEquals("B", before.value)
         assertEquals(ReadValueSource.PRESET, before.source)
 
         val overrides = store.materializePinnedBaseIfNeeded(owner)
         assertTrue(overrides != null)
-        assertNull(owner.config.independentReadStyle)
+        // 修订后的 Gate B：legacy 保留为隐式全量基准，非字体属性（textSize/bgStr）仍由 legacy 承载
+        val legacy = BookReadStyleSession.decode(owner.config.independentReadStyle)
+        assertEquals(22, legacy?.textSize)
+        assertEquals("#112233", legacy?.bgStr)
         assertEquals(ReadBasePresetMode.PINNED, overrides?.basePreset?.toReadBasePreset()?.mode)
         assertEquals("B", overrides?.basePreset?.snapshot?.defaultFont)
 
@@ -81,10 +88,10 @@ class BookReadStyleOverridesStoreTest {
     }
 
     @Test
-    fun `follow global materialization retires legacy and follows global preset`() {
+    fun `follow global materialization keeps legacy and follows global preset`() {
         val owner = legacyBook("B")
         store.materializeFollowGlobal(owner)
-        assertNull(owner.config.independentReadStyle)
+        assertTrue(owner.config.independentReadStyle != null)
         val effective = store.effectiveDefaultFont(owner, globalFont = "A")
         assertEquals("A", effective.value)
         assertEquals(ReadValueSource.PRESET, effective.source)
