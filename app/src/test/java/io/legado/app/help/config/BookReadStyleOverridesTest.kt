@@ -183,4 +183,22 @@ class BookReadStyleOverridesTest {
         assertNotNull(decoded)
         assertEquals("", decoded?.textFont)
     }
+
+    @Test
+    fun `withScope writes only the target script font`() {
+        val fonts = SparseFontOverrides(default = "A", cjk = "C")
+        val updated = fonts.withScope(ReadValueScope.CJK, "D")
+        assertEquals("D", updated.cjk)
+        assertEquals("A", updated.default)
+        assertNull(updated.latin)
+        assertNull(updated.other)
+    }
+
+    @Test
+    fun `withScope null clears the target script font`() {
+        val fonts = SparseFontOverrides(default = "A", cjk = "C")
+        val updated = fonts.withScope(ReadValueScope.DEFAULT, null)
+        assertNull(updated.default)
+        assertEquals("C", updated.cjk)
+    }
 }

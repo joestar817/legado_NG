@@ -60,6 +60,13 @@ data class SparseFontOverrides(
         ReadValueScope.CJK -> cjk
         ReadValueScope.OTHER -> other
     }
+
+    fun withScope(scope: ReadValueScope, value: String?): SparseFontOverrides = when (scope) {
+        ReadValueScope.DEFAULT -> copy(default = value)
+        ReadValueScope.LATIN -> copy(latin = value)
+        ReadValueScope.CJK -> copy(cjk = value)
+        ReadValueScope.OTHER -> copy(other = value)
+    }
 }
 
 object BookReadStyleCompatibility {
