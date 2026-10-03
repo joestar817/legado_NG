@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.ComponentDialog
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -92,6 +93,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var openTipConfigAfterDismiss = false
     private var sessionSnapshot: ReadStyleSnapshot? = null
     private var sessionSnapshotJson: String = ""
+    private var unsavedConfirmCancelled by mutableIntStateOf(0)
     private val configFileName = "readConfig.zip"
     private val selectExportDocument = registerForActivityResult(
         CreateDocumentContract("application/zip")
@@ -184,7 +186,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                         ),
                         updateSystemBars = false,
                     ) {
-                        NgDismissibleDrawer(onDismiss = { requestDismiss() }) {
+                        NgDismissibleDrawer(
+                            onDismiss = { requestDismiss() },
+                            resetSignal = unsavedConfirmCancelled,
+                        ) {
                             ReadStyleScreen(
                                 page = page,
                                 state = state,
@@ -578,12 +583,13 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             title = getString(R.string.read_style_unsaved_changes),
             keepLabel = getString(R.string.read_style_keep_and_close),
             discardLabel = getString(R.string.read_style_discard_and_close),
-            cancelLabel = getString(R.string.cancel),
+            cancelLabel = getString(R.string.read_style_keep_editing),
             onKeep = { dismissAllowingStateLoss() },
             onDiscard = {
                 discardChanges()
                 dismissAllowingStateLoss()
             },
+            onCancelled = { unsavedConfirmCancelled++ },
         )
     }
 

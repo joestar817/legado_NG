@@ -121,6 +121,46 @@ internal fun showReadConfirmDialog(
     }
 }
 
+/**
+ * 未保存确认框的动作路由：保证三个按钮互斥、且每个动作只生效一次。
+ * - [keep] / [discard]：先关闭确认框，再执行保留/放弃。
+ * - [cancel]：只关闭确认框并通知 [onCancelled]（抽屉复位、继续编辑），不回滚、不关闭配置界面。
+ * - [outsideDismiss]：点外部/返回关闭 = 取消；已点击过按钮时不再触发。
+ */
+internal class ReadUnsavedConfirmRouter(
+    private val dismiss: () -> Unit,
+    private val onKeep: () -> Unit,
+    private val onDiscard: () -> Unit,
+    private val onCancelled: (() -> Unit)?,
+) {
+    private var actionTaken = false
+
+    fun keep() {
+        if (actionTaken) return
+        actionTaken = true
+        dismiss()
+        onKeep()
+    }
+
+    fun discard() {
+        if (actionTaken) return
+        actionTaken = true
+        dismiss()
+        onDiscard()
+    }
+
+    fun cancel() {
+        if (actionTaken) return
+        actionTaken = true
+        dismiss()
+        onCancelled?.invoke()
+    }
+
+    fun outsideDismiss() {
+        if (!actionTaken) onCancelled?.invoke()
+    }
+}
+
 internal fun showReadUnsavedConfirmDialog(
     context: Context,
     title: String,
@@ -129,38 +169,30 @@ internal fun showReadUnsavedConfirmDialog(
     cancelLabel: String,
     onKeep: () -> Unit,
     onDiscard: () -> Unit,
+    onCancelled: (() -> Unit)? = null,
     themeSnapshot: NgThemeSnapshot? = null,
 ): ComponentDialog {
-    var actionTaken = false
+    var router: ReadUnsavedConfirmRouter? = null
     return showReadComposeDialog(
         context = context,
-        onDismiss = {
-            // 未点击任何按钮即关闭（点外部/返回）= 取消，不执行保留或放弃
-            if (!actionTaken) {
-                // no-op：等同取消
-            }
-        },
+        onDismiss = { router?.outsideDismiss() },
         themeSnapshot = themeSnapshot ?: ReadDrawerStyle.themeSnapshot(context),
     ) { dismiss ->
+        val current = ReadUnsavedConfirmRouter(
+            dismiss = dismiss,
+            onKeep = onKeep,
+            onDiscard = onDiscard,
+            onCancelled = onCancelled,
+        )
+        router = current
         ReadUnsavedConfirmDialogContent(
             title = title,
             keepLabel = keepLabel,
             discardLabel = discardLabel,
             cancelLabel = cancelLabel,
-            onKeep = {
-                actionTaken = true
-                dismiss()
-                onKeep()
-            },
-            onDiscard = {
-                actionTaken = true
-                dismiss()
-                onDiscard()
-            },
-            onCancel = {
-                actionTaken = true
-                dismiss()
-            },
+            onKeep = current::keep,
+            onDiscard = current::discard,
+            onCancel = current::cancel,
         )
     }
 }

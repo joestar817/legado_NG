@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -33,13 +34,27 @@ internal fun shouldDismissDrawer(distance: Float, height: Float, velocity: Float
 
 /** 给固定贴底窗口补充关闭手势，不改变材质、几何或保存语义。 */
 @Composable
-fun NgDismissibleDrawer(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+fun NgDismissibleDrawer(
+    onDismiss: () -> Unit,
+    resetSignal: Int = 0,
+    content: @Composable () -> Unit,
+) {
     val density = LocalDensity.current.density
     val latestDismiss by rememberUpdatedState(onDismiss)
     var distance by remember { mutableFloatStateOf(0f) }
     var height by remember { mutableIntStateOf(1) }
     var settling by remember { mutableStateOf(false) }
     var dismissed by remember { mutableStateOf(false) }
+
+    // 确认框被取消（继续编辑）时复位抽屉：内容回屏内、可再次拖拽，
+    // 避免 dismissed=true 的抽屉停留在屏外，让「取消」看起来和「放弃并关闭」一样。
+    LaunchedEffect(resetSignal) {
+        if (resetSignal > 0) {
+            settling = false
+            dismissed = false
+            distance = 0f
+        }
+    }
 
     fun drag(delta: Float): Float {
         if (settling || dismissed) return 0f
