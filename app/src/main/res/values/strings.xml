@@ -2379,6 +2379,13 @@
     <string name="reading_presets">Reading presets</string>
     <string name="read_style_only_this_book">Customize for this book</string>
     <string name="read_style_only_this_book_subtitle">Changes apply only to this book and won\'t follow the global preset</string>
+    <string name="read_style_book_font">Book font</string>
+    <string name="read_style_source_global">Global</string>
+    <string name="read_style_source_preset">Pinned preset</string>
+    <string name="read_style_source_this_book">This book</string>
+    <string name="read_style_reset_book_customization">Reset all book customization</string>
+    <string name="read_style_reset_book_customization_done">Book settings reset</string>
+    <string name="read_style_reset_book_font">Reset book font</string>
     <string name="read_style_this_book">This book</string>
     <string name="read_style_follow_global">Use global</string>
     <string name="create_style">＋ New</string>

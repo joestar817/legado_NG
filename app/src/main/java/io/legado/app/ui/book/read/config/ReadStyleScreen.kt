@@ -190,6 +190,8 @@ internal data class ReadStyleUiState(
     val editorInitialBackgroundName: String?,
     val editorInitialBackground: ImageBitmap?,
     val hasUnsavedChanges: Boolean = false,
+    val bookFont: String = "",
+    val bookFontSource: String = "",
 )
 
 internal data class ReadStyleActions(
@@ -263,6 +265,8 @@ internal data class ReadStyleActions(
     val onReorderHighlights: (List<ReadHighlightRule>) -> Unit,
     val onDone: () -> Unit,
     val onDiscard: () -> Unit,
+    val onResetBookCustomization: () -> Unit,
+    val onResetBookFontOverride: () -> Unit,
 )
 
 @Composable
@@ -543,6 +547,50 @@ private fun PresetPage(
             contentColor = contentColor,
             onCheckedChange = actions.onOnlyThisBookChanged,
         )
+        ReadDivider(contentColor)
+    }
+    if (state.onlyThisBook) {
+        Row(
+            Modifier.fillMaxWidth().height(56.dp)
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.read_style_book_font),
+                color = contentColor,
+                fontSize = 15.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = state.bookFont + if (state.bookFontSource.isNotBlank()) " · " + state.bookFontSource else "",
+                color = contentColor.copy(alpha = 0.72f),
+                fontSize = 13.sp,
+            )
+            if (state.bookFontSource == stringResource(R.string.read_style_source_this_book)) {
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_restore),
+                    contentDescription = stringResource(R.string.read_style_reset_book_font),
+                    tint = contentColor,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clickable(role = Role.Button, onClick = actions.onResetBookFontOverride),
+                )
+            }
+        }
+        ReadDivider(contentColor)
+        Row(
+            Modifier.fillMaxWidth().height(56.dp)
+                .clickable(role = Role.Button, onClick = actions.onResetBookCustomization)
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.read_style_reset_book_customization),
+                color = contentColor,
+                fontSize = 15.sp,
+            )
+        }
         ReadDivider(contentColor)
     }
     if (state.isEpub) {

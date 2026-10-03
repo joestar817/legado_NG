@@ -2279,6 +2279,13 @@
     <string name="reading_presets">阅读预设</string>
     <string name="read_style_only_this_book">自定义本书设置</string>
     <string name="read_style_only_this_book_subtitle">改动只应用于本书，不随全局预设变化</string>
+    <string name="read_style_book_font">本书字体</string>
+    <string name="read_style_source_global">全局</string>
+    <string name="read_style_source_preset">固定基准</string>
+    <string name="read_style_source_this_book">本书</string>
+    <string name="read_style_reset_book_customization">重置本书全部自定义</string>
+    <string name="read_style_reset_book_customization_done">已重置本书设置</string>
+    <string name="read_style_reset_book_font">重置本书字体</string>
     <string name="read_style_this_book">本书</string>
     <string name="read_style_follow_global">跟随全局</string>
     <string name="create_style">＋ 新建</string>

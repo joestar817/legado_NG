@@ -31,6 +31,7 @@ import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadPresetPreferences
+import io.legado.app.help.config.ReadValueSource
 import io.legado.app.help.config.ReadStylePackageManager
 import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.help.config.ReadHighlightRulePackageManager
@@ -484,6 +485,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         },
         onDone = { dismissAllowingStateLoss() },
         onDiscard = ::discardChanges,
+        onResetBookCustomization = ::resetBookCustomization,
+        onResetBookFontOverride = ::resetBookFontOverride,
     )
 
     private fun updateAdjustState(transform: ReadStyleUiState.() -> ReadStyleUiState) {
@@ -668,6 +671,16 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             editorInitialBackgroundName = null,
             editorInitialBackground = null,
             hasUnsavedChanges = computeUnsaved(),
+            bookFont = if (ReadBookConfig.onlyThisBook) ReadBookConfig.textFont else "",
+            bookFontSource = if (ReadBookConfig.onlyThisBook) {
+                val resolved = ReadBookConfig.bookFontOverrideSource(config.textFont)
+                when (resolved.source) {
+                    ReadValueSource.THIS_BOOK -> getString(R.string.read_style_source_this_book)
+                    ReadValueSource.PRESET -> getString(R.string.read_style_source_preset)
+                    ReadValueSource.GLOBAL -> getString(R.string.read_style_source_global)
+                    else -> ""
+                }
+            } else "",
         )
     }
 
@@ -708,6 +721,21 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun postEditorThemePreviewChanged() {
         postEvent(EventBus.UP_CONFIG, arrayListOf(0, 1, 2, 6, 9))
         notifyFloatingAppearanceChanged()
+    }
+
+    private fun resetBookCustomization() {
+        ReadBookConfig.resetBookCustomization()
+        editorBackgroundCache = null
+        ReadFloatingAppearanceState.refreshFromConfig()
+        refreshUi()
+        notifyPresetRestored()
+        toastOnUi(R.string.read_style_reset_book_customization_done)
+    }
+
+    private fun resetBookFontOverride() {
+        ReadBookConfig.clearBookFontOverride()
+        refreshUi()
+        postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
     }
 
     private fun navigateTo(target: ReadStylePage) {

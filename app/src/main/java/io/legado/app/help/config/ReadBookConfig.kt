@@ -129,6 +129,10 @@ object ReadBookConfig {
 
     fun bookFontOverride(): String? = bookOverridesStore.current(boundBook)?.font?.default
 
+    fun clearBookFontOverride() {
+        bookOverridesStore.writeDefaultFont(boundBook, null)
+    }
+
     fun bookFontOverrideSource(globalFont: String): ResolvedReadValue =
         bookOverridesStore.effectiveDefaultFont(boundBook, globalFont)
 
