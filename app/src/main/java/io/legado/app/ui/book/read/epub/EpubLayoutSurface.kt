@@ -40,6 +40,14 @@ internal class EpubLayoutSurface(
     private var onViewportRequired: ((Boolean) -> Unit)? = null,
 ) : FrameLayout(context), Closeable {
     private val gateway = EpubResourceGateway(publication, readerRuntime = true)
+    init {
+        if (EpubScriptFontPoc.ENABLED) {
+            gateway.setPocFonts(
+                EpubScriptFontPoc.bytes(context, EpubScriptFontPoc.LATIN_ASSET),
+                EpubScriptFontPoc.bytes(context, EpubScriptFontPoc.CJK_ASSET),
+            )
+        }
+    }
     // Android 14's UiModeManager callback can retain the Context that created it.
     // This process-wide service must not retain an EPUB Activity or preparation window.
     val webView = WebView(object : ContextWrapper(context) {
@@ -312,6 +320,10 @@ internal class EpubLayoutSurface(
         listOf("readerStyle", "readerDefaults").forEach { key ->
             options.optJSONObject(key)?.optJSONObject("title")?.takeIf { it.optBoolean("hasFont") }
                 ?.put("fontUrl", gateway.titleFontUrl())
+        }
+        if (EpubScriptFontPoc.ENABLED) {
+            options.put("pocLatinFontUrl", gateway.pocLatinFontUrl())
+            options.put("pocCjkFontUrl", gateway.pocCjkFontUrl())
         }
         webView.evaluateJavascript(EpubWebViewCapabilities.CHECK) { supported ->
             if (closed || revision.toString() != token) return@evaluateJavascript
