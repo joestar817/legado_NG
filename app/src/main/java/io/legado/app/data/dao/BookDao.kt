@@ -29,6 +29,15 @@ interface BookDao {
         updateReadStyleConfig(bookUrl, config)
     }
 
+    /** Phase 2d：事务性写入稀疏覆盖与 legacy 字段（物化/重置共用）。 */
+    @Transaction
+    fun saveBookStyleOverrides(bookUrl: String, overrides: String?, legacy: String?) {
+        val config = getBook(bookUrl)?.config ?: return
+        config.independentOverrides = overrides
+        config.independentReadStyle = legacy
+        updateReadStyleConfig(bookUrl, config)
+    }
+
     @Query("SELECT readConfig FROM books WHERE readConfig LIKE '%\"independentReadStyle\"%'")
     @TypeConverters(Book.Converters::class)
     fun independentReadConfigs(): List<Book.ReadConfig>

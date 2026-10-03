@@ -96,11 +96,41 @@ object ReadBookConfig {
                 .onFailure { AppLog.put("保存本书预设失败", it) }
         }
     }
+    private var boundBook: Book = Book(bookUrl = "")
+    private val bookOverridesStore = BookReadStyleOverridesStore { bookUrl, overrides, legacy ->
+        globalExecutor.execute {
+            runCatching { appDb.bookDao.saveBookStyleOverrides(bookUrl, overrides, legacy) }
+                .onFailure { AppLog.put("保存本书覆盖失败", it) }
+        }
+    }
     val onlyThisBook: Boolean get() = bookStyle.config != null
     val canUseBookStyle: Boolean get() = bookStyle.isBound
     val floatingColorManagedGlobally: Boolean get() = !onlyThisBook && readFloatingFollowAppGlobally
 
-    fun bindBook(book: Book): Boolean = bookStyle.bind(book)
+    fun bindBook(book: Book): Boolean {
+        boundBook = book
+        return bookStyle.bind(book)
+    }
+
+    /** Phase 2d Gate B：首次成功提交本书编辑时物化基准（legacy → 显式 pinned basePreset）。 */
+    fun materializeBookBasePresetIfNeeded() {
+        bookOverridesStore.materializePinnedBaseIfNeeded(boundBook)
+    }
+
+    fun materializeBookFollowGlobal() {
+        bookOverridesStore.materializeFollowGlobal(boundBook)
+    }
+
+    /** Phase 2d Gate A：同时清 independentOverrides 与 independentReadStyle。 */
+    fun resetBookCustomization() {
+        bookOverridesStore.resetAll(boundBook)
+        bookStyle.followGlobal()
+    }
+
+    fun bookFontOverride(): String? = bookOverridesStore.current(boundBook)?.font?.default
+
+    fun bookFontOverrideSource(globalFont: String): ResolvedReadValue =
+        bookOverridesStore.effectiveDefaultFont(boundBook, globalFont)
 
     fun saveBookStyle(book: Book) = bookStyle.saveFor(book)
 
@@ -559,9 +589,18 @@ object ReadBookConfig {
         }
 
     var textFont: String
-        get() = config.textFont
+        get() = if (onlyThisBook) {
+            bookOverridesStore.current(boundBook)?.font?.default ?: config.textFont
+        } else {
+            config.textFont
+        }
         set(value) {
-            config.textFont = value
+            if (onlyThisBook) {
+                // 稀疏写入：直接更新 independentOverrides，不经过 config getter/durConfig setter
+                bookOverridesStore.writeDefaultFont(boundBook, value)
+            } else {
+                config.textFont = value
+            }
         }
 
     var titleFont: String

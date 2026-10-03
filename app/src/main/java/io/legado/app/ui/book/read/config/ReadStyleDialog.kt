@@ -267,7 +267,14 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onRestoreAllPresets = ::confirmRestoreAllPresets,
         onOpenEpubSettings = { showEpubSettings = true },
         onOnlyThisBookChanged = { enabled ->
-            ReadBookConfig.setOnlyThisBook(enabled)
+            if (enabled) {
+                // Gate B：开启即首次提交，物化 legacy → 显式 pinned basePreset
+                ReadBookConfig.setOnlyThisBook(true)
+                ReadBookConfig.materializeBookBasePresetIfNeeded()
+            } else {
+                // Gate A：关闭 = 重置本书全部自定义（同时清 overrides 与 legacy）
+                ReadBookConfig.resetBookCustomization()
+            }
             editorBackgroundCache = null
             ReadFloatingAppearanceState.refreshFromConfig()
             refreshUi()
