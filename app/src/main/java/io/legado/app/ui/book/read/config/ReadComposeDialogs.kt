@@ -238,7 +238,7 @@ internal fun ReadUnsavedConfirmDialogContent(
                 text = keepLabel,
                 onClick = onKeep,
                 modifier = Modifier.weight(1f),
-                variant = NgButtonVariant.PRIMARY,
+                variant = NgButtonVariant.SUCCESS,
             )
         }
     }

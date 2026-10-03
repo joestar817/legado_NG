@@ -122,6 +122,31 @@ fun NgButton(
             content = content
         )
 
+        NgButtonVariant.SUCCESS -> Button(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            shape = shape,
+            contentPadding = contentPadding,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (NgTheme.snapshot.isEInk) {
+                    Color(colors.surfaceContainerHigh)
+                } else if (NgTheme.snapshot.isDark) {
+                    Color(0xFF81C784)
+                } else {
+                    Color(0xFF2E7D32)
+                },
+                contentColor = if (NgTheme.snapshot.isEInk) {
+                    Color(colors.onSurface)
+                } else if (NgTheme.snapshot.isDark) {
+                    Color(0xFF0B3D0B)
+                } else {
+                    Color.White
+                }
+            ),
+            content = content
+        )
+
         NgButtonVariant.ON_IMAGE -> Button(
             onClick = onClick,
             modifier = modifier,

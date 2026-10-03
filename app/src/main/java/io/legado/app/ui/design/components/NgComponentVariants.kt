@@ -15,6 +15,7 @@ enum class NgButtonVariant {
     NEUTRAL,
     OUTLINE,
     DANGER,
+    SUCCESS,
     ON_IMAGE
 }
 
