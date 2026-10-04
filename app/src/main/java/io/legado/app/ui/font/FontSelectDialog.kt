@@ -188,7 +188,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
                     .height(48.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                ReadConfigDialogTitle(getString(R.string.body_font))
+                ReadConfigDialogTitle(callBack?.fontTitle?.takeIf { it.isNotBlank() } ?: getString(R.string.body_font))
             }
             Spacer(Modifier.height(8.dp))
             ReadConfigDock(
@@ -410,13 +410,16 @@ class FontSelectDialog : BaseComposeDialogFragment() {
     private fun selectCustomFont(item: FileDoc) {
         selectedFontPath = item.toString()
         callBack?.selectFont(selectedFontPath)
+        dismissAllowingStateLoss()
     }
 
     private fun selectSystemFont(index: Int) {
         selectedSystemFont = index
         selectedFontPath = ""
-        AppConfig.systemTypefaces = index
+        // 只有正文字体对话框才更新全局系统字体偏好；脚本字体对话框选系统字体 = 清除该脚本覆盖。
+        if (callBack?.isBodyFontDialog != false) AppConfig.systemTypefaces = index
         callBack?.selectFont("")
+        dismissAllowingStateLoss()
     }
 
     private fun currentFontName(): String? {
@@ -432,5 +435,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
     interface CallBack {
         fun selectFont(path: String)
         val curFontPath: String
+        val fontTitle: String get() = ""
+        val isBodyFontDialog: Boolean get() = true
     }
 }

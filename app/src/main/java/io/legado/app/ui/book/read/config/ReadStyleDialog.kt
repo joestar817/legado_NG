@@ -1747,6 +1747,17 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             ?: pendingScriptFontScope?.let { ReadBookConfig.scriptFont(it).value }
             ?: ReadBookConfig.textFont
 
+    override val fontTitle: String
+        get() = when (val scope = pendingEditorScriptFontScope ?: pendingScriptFontScope) {
+            null -> getString(R.string.body_font)
+            ReadValueScope.LATIN -> getString(R.string.read_style_script_latin)
+            ReadValueScope.CJK -> getString(R.string.read_style_script_cjk)
+            else -> getString(R.string.read_style_script_other)
+        }
+
+    override val isBodyFontDialog: Boolean
+        get() = pendingEditorScriptFontScope == null && pendingScriptFontScope == null
+
     override fun selectFont(path: String) {
         ScriptFontDebug.d(
             "selectFont path=${ScriptFontDebug.short(path)} " +
