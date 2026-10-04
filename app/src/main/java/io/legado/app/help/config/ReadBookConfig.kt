@@ -177,6 +177,26 @@ object ReadBookConfig {
         return value.takeIf { it.isNotBlank() && it != default }
     }
 
+    /**
+     * Phase 3 Language fonts UI：写入脚本字体。
+     * 仅本书 → 本书稀疏 override；全局 → ReadScriptTypographyStore。
+     * UI 层负责在写后 postEvent(UP_CONFIG, 1,2,5) 触发 ChapterProvider 刷新字体表。
+     */
+    fun writeScriptFont(scope: ReadValueScope, value: String?) {
+        if (onlyThisBook) {
+            bookOverridesStore.writeScope(boundBook, scope, value)
+        } else {
+            ReadScriptTypographyStore.setFont(scope, value)
+        }
+    }
+
+    /** 该 scope 是否有可清除的显式脚本字体覆盖（↺ 是否可见）。 */
+    fun hasScriptFontOverride(scope: ReadValueScope): Boolean = if (onlyThisBook) {
+        bookOverridesStore.current(boundBook)?.font?.forScope(scope) != null
+    } else {
+        ReadScriptTypographyStore.font(scope) != null
+    }
+
     fun saveBookStyle(book: Book) = bookStyle.saveFor(book)
 
     fun setOnlyThisBook(enabled: Boolean) {

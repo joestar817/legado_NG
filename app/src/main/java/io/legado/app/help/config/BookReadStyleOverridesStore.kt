@@ -62,10 +62,14 @@ internal class BookReadStyleOverridesStore(
         return overrides
     }
 
-    fun writeDefaultFont(owner: Book, value: String?): BookReadStyleOverrides? {
+    fun writeDefaultFont(owner: Book, value: String?): BookReadStyleOverrides? =
+        writeScope(owner, ReadValueScope.DEFAULT, value)
+
+    /** Phase 3：写单脚本维度的本书字体 override（DEFAULT/LATIN/CJK/OTHER）。 */
+    fun writeScope(owner: Book, scope: ReadValueScope, value: String?): BookReadStyleOverrides? {
         materializePinnedBaseIfNeeded(owner)
         val existing = current(owner) ?: BookReadStyleOverrides()
-        val newFont = (existing.font ?: SparseFontOverrides()).copy(default = value)
+        val newFont = (existing.font ?: SparseFontOverrides()).withScope(scope, value)
         val newOverrides = existing.copy(font = if (newFont.isEmpty()) null else newFont)
         val json = if (newOverrides.isEmpty()) null else BookReadStyleCompatibility.toJson(newOverrides)
         persist(owner.bookUrl, json, owner.config.independentReadStyle)

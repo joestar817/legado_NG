@@ -64,6 +64,17 @@ class BookReadStyleOverridesStoreTest {
     }
 
     @Test
+    fun `write scope font stores single script dimension and clears it`() {
+        val owner = legacyBook("B")
+        store.materializePinnedBaseIfNeeded(owner)
+        store.writeScope(owner, ReadValueScope.CJK, "CJK.ttf")
+        assertEquals("CJK.ttf", store.current(owner)?.font?.forScope(ReadValueScope.CJK))
+        assertNull(store.current(owner)?.font?.forScope(ReadValueScope.LATIN))
+        store.writeScope(owner, ReadValueScope.CJK, null)
+        assertNull(store.current(owner)?.font?.forScope(ReadValueScope.CJK))
+    }
+
+    @Test
     fun `property reset falls back to pinned base`() {
         val owner = legacyBook("B")
         store.materializePinnedBaseIfNeeded(owner)

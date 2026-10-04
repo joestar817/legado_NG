@@ -2380,6 +2380,13 @@
     <string name="read_style_only_this_book">Customize for this book</string>
     <string name="read_style_only_this_book_subtitle">Changes apply only to this book and won\'t follow the global preset</string>
     <string name="read_style_book_font">Book font</string>
+    <string name="read_style_language_fonts">Language fonts</string>
+    <string name="read_style_script_latin">Latin</string>
+    <string name="read_style_script_cjk">CJK</string>
+    <string name="read_style_script_other">Other</string>
+    <string name="read_style_follow_default">Follow default</string>
+    <string name="read_style_source_publisher">Publisher</string>
+    <string name="read_style_reset_font">Reset font</string>
     <string name="read_style_source_global">Global</string>
     <string name="read_style_source_preset">Pinned preset</string>
     <string name="read_style_source_this_book">This book</string>

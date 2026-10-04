@@ -70,6 +70,8 @@ import io.legado.app.R
 import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.help.config.ReadFloatingAppearanceConfig
 import io.legado.app.help.config.ReadFloatingColorStyle
+import io.legado.app.help.config.ReadValueScope
+import io.legado.app.help.config.ReadValueSource
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassSurface
@@ -104,6 +106,7 @@ internal enum class ReadStylePage {
     HIGHLIGHT_TEXT_COLOR,
     HIGHLIGHT_BACKGROUND_COLOR,
     HIGHLIGHT_UNDERLINE_COLOR,
+    LANGUAGE_FONTS,
 }
 
 internal enum class HighlightSelectionMode {
@@ -192,6 +195,16 @@ internal data class ReadStyleUiState(
     val hasUnsavedChanges: Boolean = false,
     val bookFont: String = "",
     val bookFontSource: String = "",
+    val languageFonts: List<ReadScriptFontUi> = emptyList(),
+)
+
+/** Language fonts 三行（Latin/CJK/Other）的 UI 状态。 */
+internal data class ReadScriptFontUi(
+    val scope: ReadValueScope,
+    val label: String,
+    val font: String,
+    val source: ReadValueSource,
+    val canReset: Boolean,
 )
 
 internal data class ReadStyleActions(
@@ -268,6 +281,9 @@ internal data class ReadStyleActions(
     val onResetBookCustomization: () -> Unit,
     val onResetBookFontOverride: () -> Unit,
     val onDismissRequest: () -> Unit,
+    val onOpenLanguageFonts: () -> Unit,
+    val onSelectScriptFont: (ReadValueScope) -> Unit,
+    val onResetScriptFont: (ReadValueScope) -> Unit,
 )
 
 @Composable
@@ -359,6 +375,19 @@ internal fun ReadStyleScreen(
                         contentColor = contentColor,
                         accentColor = indicatorColor,
                         selectedContentColor = selectedContentColor,
+                        actions = actions,
+                    )
+                }
+
+                ReadStylePage.LANGUAGE_FONTS -> Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(StandardPageHeight)
+                        .padding(top = 8.dp),
+                ) {
+                    LanguageFontsPage(
+                        state = state,
+                        contentColor = contentColor,
                         actions = actions,
                     )
                 }
@@ -596,6 +625,17 @@ private fun PresetPage(
         }
         ReadDivider(contentColor)
     }
+    Row(Modifier.fillMaxWidth().height(56.dp)
+        .clickable(role = Role.Button, onClick = actions.onOpenLanguageFonts)
+        .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(R.drawable.ic_ai_capability_text), null, tint = contentColor, modifier = Modifier.size(25.dp))
+        Text(stringResource(R.string.read_style_language_fonts), color = contentColor, fontSize = 15.sp,
+            modifier = Modifier.padding(start = 14.dp).weight(1f))
+        Icon(painterResource(R.drawable.ic_chevron_right_20), null, tint = contentColor.copy(alpha = .72f),
+            modifier = Modifier.size(18.dp))
+    }
+    ReadDivider(contentColor)
     if (state.isEpub) {
         Row(Modifier.fillMaxWidth().height(56.dp)
             .clickable(role = Role.Button, onClick = actions.onOpenEpubSettings).padding(horizontal = 20.dp),
@@ -622,6 +662,84 @@ private fun PresetPage(
         contentColor = contentColor,
         onClick = actions.onRestoreAllPresets,
     )
+}
+
+@Composable
+private fun LanguageFontsPage(
+    state: ReadStyleUiState,
+    contentColor: Color,
+    actions: ReadStyleActions,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_arrow_back),
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier
+                .size(28.dp)
+                .clickable(role = Role.Button, onClick = actions.onBack),
+        )
+        Text(
+            text = stringResource(R.string.read_style_language_fonts),
+            color = contentColor,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 8.dp),
+        )
+    }
+    ReadDivider(contentColor)
+    state.languageFonts.forEach { item ->
+        Row(
+            Modifier.fillMaxWidth().height(56.dp)
+                .clickable(role = Role.Button, onClick = { actions.onSelectScriptFont(item.scope) })
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = item.label,
+                color = contentColor,
+                fontSize = 15.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = item.font.ifBlank { stringResource(R.string.read_style_follow_default) } +
+                    if (item.source != ReadValueSource.PLATFORM) {
+                        " · " + stringResource(
+                            when (item.source) {
+                                ReadValueSource.THIS_BOOK -> R.string.read_style_source_this_book
+                                ReadValueSource.PRESET -> R.string.read_style_source_preset
+                                ReadValueSource.GLOBAL -> R.string.read_style_source_global
+                                ReadValueSource.PUBLISHER -> R.string.read_style_source_publisher
+                                ReadValueSource.PLATFORM -> R.string.read_style_source_global
+                            }
+                        )
+                    } else "",
+                color = contentColor.copy(alpha = 0.72f),
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1.4f, fill = false),
+            )
+            if (item.canReset) {
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_restore),
+                    contentDescription = stringResource(R.string.read_style_reset_font),
+                    tint = contentColor,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clickable(role = Role.Button, onClick = { actions.onResetScriptFont(item.scope) }),
+                )
+            }
+        }
+        ReadDivider(contentColor)
+    }
 }
 
 @Composable

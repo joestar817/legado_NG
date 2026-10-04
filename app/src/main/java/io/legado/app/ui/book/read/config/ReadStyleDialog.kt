@@ -33,6 +33,7 @@ import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadPresetPreferences
+import io.legado.app.help.config.ReadValueScope
 import io.legado.app.help.config.ReadValueSource
 import io.legado.app.help.config.ReadStylePackageManager
 import io.legado.app.help.config.ReadHighlightRule
@@ -96,6 +97,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var sessionSnapshotJson: String = ""
     private var unsavedConfirmCancelled by mutableIntStateOf(0)
     private var unsavedConfirmShowing = false
+    private var pendingScriptFontScope by mutableStateOf<ReadValueScope?>(null)
     private val configFileName = "readConfig.zip"
     private val selectExportDocument = registerForActivityResult(
         CreateDocumentContract("application/zip")
@@ -495,6 +497,9 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onResetBookCustomization = ::resetBookCustomization,
         onResetBookFontOverride = ::resetBookFontOverride,
         onDismissRequest = ::requestDismiss,
+        onOpenLanguageFonts = ::openLanguageFonts,
+        onSelectScriptFont = ::selectScriptFont,
+        onResetScriptFont = ::resetScriptFont,
     )
 
     private fun updateAdjustState(transform: ReadStyleUiState.() -> ReadStyleUiState) {
@@ -699,6 +704,26 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                     else -> ""
                 }
             } else "",
+            languageFonts = listOf(
+                ReadValueScope.LATIN,
+                ReadValueScope.CJK,
+                ReadValueScope.OTHER,
+            ).map { scope ->
+                val resolved = ReadBookConfig.scriptFont(scope)
+                ReadScriptFontUi(
+                    scope = scope,
+                    label = getString(
+                        when (scope) {
+                            ReadValueScope.LATIN -> R.string.read_style_script_latin
+                            ReadValueScope.CJK -> R.string.read_style_script_cjk
+                            else -> R.string.read_style_script_other
+                        }
+                    ),
+                    font = resolved.value,
+                    source = resolved.source,
+                    canReset = ReadBookConfig.hasScriptFontOverride(scope),
+                )
+            },
         )
     }
 
@@ -753,6 +778,23 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun resetBookFontOverride() {
         ReadBookConfig.clearBookFontOverride()
         refreshUi()
+        postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
+    }
+
+    private fun openLanguageFonts() {
+        page = ReadStylePage.LANGUAGE_FONTS
+        refreshUi()
+    }
+
+    private fun selectScriptFont(scope: ReadValueScope) {
+        pendingScriptFontScope = scope
+        showDialogFragment<FontSelectDialog>()
+    }
+
+    private fun resetScriptFont(scope: ReadValueScope) {
+        ReadBookConfig.writeScriptFont(scope, null)
+        refreshUi()
+        // 硬性要求：全局脚本字体写入后必须刷新字体表；本书覆盖路径同样刷新（幂等）。
         postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
     }
 
@@ -846,6 +888,11 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             page == ReadStylePage.EDIT -> {
                 page = ReadStylePage.PRESET
                 clearEditorThemeOverride()
+                refreshUi()
+            }
+
+            page == ReadStylePage.LANGUAGE_FONTS -> {
+                page = ReadStylePage.PRESET
                 refreshUi()
             }
         }
@@ -1648,9 +1695,19 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     override val curFontPath: String
-        get() = ReadBookConfig.textFont
+        get() = pendingScriptFontScope?.let { ReadBookConfig.scriptFont(it).value }
+            ?: ReadBookConfig.textFont
 
     override fun selectFont(path: String) {
+        val scope = pendingScriptFontScope
+        if (scope != null) {
+            pendingScriptFontScope = null
+            ReadBookConfig.writeScriptFont(scope, path)
+            // 硬性要求：全局脚本字体写入后必须刷新字体表（UP_CONFIG → ChapterProvider.upStyle）。
+            postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
+            refreshUi()
+            return
+        }
         if (path != ReadBookConfig.textFont || path.isEmpty()) {
             ReadBookConfig.textFont = path
             postEvent(EventBus.UP_CONFIG, arrayListOf(2, 5))

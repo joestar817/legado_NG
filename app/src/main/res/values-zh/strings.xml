@@ -2280,6 +2280,13 @@
     <string name="read_style_only_this_book">自定义本书设置</string>
     <string name="read_style_only_this_book_subtitle">改动只应用于本书，不随全局预设变化</string>
     <string name="read_style_book_font">本书字体</string>
+    <string name="read_style_language_fonts">语言字体</string>
+    <string name="read_style_script_latin">拉丁字母</string>
+    <string name="read_style_script_cjk">中日韩</string>
+    <string name="read_style_script_other">其他文字</string>
+    <string name="read_style_follow_default">跟随默认</string>
+    <string name="read_style_source_publisher">原书</string>
+    <string name="read_style_reset_font">重置字体</string>
     <string name="read_style_source_global">全局</string>
     <string name="read_style_source_preset">固定基准</string>
     <string name="read_style_source_this_book">本书</string>
