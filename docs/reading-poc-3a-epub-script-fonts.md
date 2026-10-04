@@ -147,4 +147,4 @@ P3: 中文，with ASCII、「引号」与 123 —— dash — test   （中性�
 - `document.fonts.check()` 按 unicode-range 判定、**不看 cmap 覆盖**——不是判别证据（空 family 也返回 true）；判别用 faces 列表 + 光栅签名。
 - 光栅签名法：canvas 绘制同一文本，本 PoC 的 cjk.ttf（Noto 子集）= 1580 px，系统 Noto CJK 回退 = 1575 px；宽度相同（同字库 advance），像素差异证明文件不同——两个独立 WebView 均复现 1580，删除 face 后变 1575。
 
-**遗留状态**：PoC 脚手架已删除（`82b4ae817`，2026-10-04）：`EpubScriptFontPoc.kt`、`poc-fonts/`、`reader.js` 的 PoC 痕迹（`loadPocScriptFonts`/`__ngPocProbe`/`readerFamily()` 前置）、`scripts/fixtures/poc-mixed-epub/` 全部移除。生产接线（`ReadScriptTypographyStore` → reader.js 的 `FontFace` 注入）为 Phase 3 剩余项。
+**遗留状态**：PoC 脚手架已删除（`82b4ae817`，2026-10-04）：`EpubScriptFontPoc.kt`、`poc-fonts/`、`reader.js` 的 PoC 痕迹（`loadPocScriptFonts`/`__ngPocProbe`/`readerFamily()` 前置）、`scripts/fixtures/poc-mixed-epub/` 全部移除。生产接线已完成（`cde21bd08`，2026-10-04）：`EpubLayoutController.scriptFontSources()` 取有效脚本字体 → `EpubResourceGateway` per-scope 同域供流 → `EpubLayoutSurface.configure()` 注入 `scriptFonts` URL → `reader.js` 注册 `NGScriptFont` 三个带 unicode-range 的 `FontFace` 并并入字体等待链。已知边界沿用：CSS per-glyph 匹配上下文无关，U+2013–2029 等半角标点落 Latin face。
