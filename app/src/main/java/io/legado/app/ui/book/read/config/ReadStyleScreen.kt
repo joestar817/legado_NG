@@ -196,6 +196,7 @@ internal data class ReadStyleUiState(
     val bookFont: String = "",
     val bookFontSource: String = "",
     val languageFonts: List<ReadScriptFontUi> = emptyList(),
+    val editorScriptFonts: List<ReadScriptFontUi> = emptyList(),
 )
 
 /** Language fonts 三行（Latin/CJK/Other）的 UI 状态。 */
@@ -284,6 +285,8 @@ internal data class ReadStyleActions(
     val onOpenLanguageFonts: () -> Unit,
     val onSelectScriptFont: (ReadValueScope) -> Unit,
     val onResetScriptFont: (ReadValueScope) -> Unit,
+    val onSelectEditorScriptFont: (ReadValueScope) -> Unit,
+    val onResetEditorScriptFont: (ReadValueScope) -> Unit,
 )
 
 @Composable
@@ -696,6 +699,14 @@ private fun LanguageFontsPage(
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(start = 8.dp),
         )
+        Text(
+            text = stringResource(R.string.read_style_language_fonts_subtitle),
+            color = contentColor.copy(alpha = 0.62f),
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 12.dp),
+        )
     }
     ReadDivider(contentColor)
     state.languageFonts.forEach { item ->
@@ -1081,6 +1092,49 @@ private fun EditorPage(
                     color = contentColor,
                     fontSize = 15.sp,
                 )
+            }
+            item {
+                ReadDivider(contentColor, horizontalPadding = 0.dp)
+                EditorSectionLabel(stringResource(R.string.read_style_language_fonts), accentColor)
+                state.editorScriptFonts.forEach { script ->
+                    Row(
+                        Modifier.fillMaxWidth().height(52.dp)
+                            .clickable(role = Role.Button) { actions.onSelectEditorScriptFont(script.scope) },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = script.label,
+                            color = contentColor,
+                            fontSize = 15.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = if (script.font.isBlank()) {
+                                stringResource(R.string.read_style_follow_global)
+                            } else {
+                                fontDisplayName(script.font) + " · " +
+                                    stringResource(R.string.read_style_source_preset_scripts)
+                            },
+                            color = contentColor.copy(alpha = 0.72f),
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1.4f, fill = false),
+                        )
+                        if (script.canReset) {
+                            Spacer(Modifier.width(10.dp))
+                            Icon(
+                                painter = painterResource(R.drawable.ic_restore),
+                                contentDescription = stringResource(R.string.read_style_reset_font),
+                                tint = contentColor,
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clickable(role = Role.Button) { actions.onResetEditorScriptFont(script.scope) },
+                            )
+                        }
+                    }
+                }
+                ReadDivider(contentColor, horizontalPadding = 0.dp)
             }
             item {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {

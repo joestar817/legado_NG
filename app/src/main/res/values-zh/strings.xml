@@ -2285,6 +2285,8 @@
     <string name="read_style_script_cjk">中日韩</string>
     <string name="read_style_script_other">其他文字</string>
     <string name="read_style_follow_preset">跟随预设</string>
+    <string name="read_style_source_preset_scripts">本预设</string>
+    <string name="read_style_language_fonts_subtitle">新预设或未自定义的预设会继承这些字体</string>
     <string name="read_style_source_publisher">原书</string>
     <string name="read_style_reset_font">重置字体</string>
     <string name="font_dialog_drag_hint">拖动可移动</string>

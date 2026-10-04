@@ -194,6 +194,21 @@ object ReadBookConfig {
         }
     }
 
+    /**
+     * Phase 3 预设编辑器：把脚本字体写进当前预设（durConfig 会话拷贝）。
+     * 仅本书模式下仍写本书 override；否则写 `durConfig.scriptFonts`，随预设保存/导入导出。
+     */
+    fun setEditorScriptFont(scope: ReadValueScope, value: String?) {
+        val normalized = value?.takeIf { it.isNotBlank() }
+        if (onlyThisBook) {
+            bookOverridesStore.writeScope(boundBook, scope, normalized)
+        } else {
+            val existing = durConfig.scriptFonts ?: SparseFontOverrides()
+            val updated = existing.withScope(scope, normalized)
+            durConfig.scriptFonts = updated.takeUnless { it.isEmpty() }
+        }
+    }
+
     /** 该 scope 是否有可清除的显式脚本字体覆盖（↺ 是否可见）。 */
     fun hasScriptFontOverride(scope: ReadValueScope): Boolean = if (onlyThisBook) {
         bookOverridesStore.current(boundBook)?.font?.forScope(scope) != null

@@ -98,6 +98,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var unsavedConfirmCancelled by mutableIntStateOf(0)
     private var unsavedConfirmShowing = false
     private var pendingScriptFontScope by mutableStateOf<ReadValueScope?>(null)
+    private var pendingEditorScriptFontScope by mutableStateOf<ReadValueScope?>(null)
     private val configFileName = "readConfig.zip"
     private val selectExportDocument = registerForActivityResult(
         CreateDocumentContract("application/zip")
@@ -232,11 +233,16 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        return object : ComponentDialog(requireContext(), theme) {
-            override fun cancel() {
+        val dialog = object : ComponentDialog(requireContext(), theme) {
+            @Suppress("OVERRIDE_DEPRECATION")
+            override fun onBackPressed() {
                 requestDismiss()
             }
         }
+        // Compose 的 NgDismissibleDrawer 会接管下滑返回，此处只需禁用 ComponentDialog 默认的点外部 cancel，
+        // 将按键 back 交给 requestDismiss 统一调度（含未保存提示）
+        dialog.setCanceledOnTouchOutside(false)
+        return dialog
     }
 
     override fun onDestroyView() {
@@ -500,6 +506,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onOpenLanguageFonts = ::openLanguageFonts,
         onSelectScriptFont = ::selectScriptFont,
         onResetScriptFont = ::resetScriptFont,
+        onSelectEditorScriptFont = ::selectEditorScriptFont,
+        onResetEditorScriptFont = ::resetEditorScriptFont,
     )
 
     private fun updateAdjustState(transform: ReadStyleUiState.() -> ReadStyleUiState) {
@@ -724,6 +732,26 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                     canReset = ReadBookConfig.hasScriptFontOverride(scope),
                 )
             },
+            editorScriptFonts = listOf(
+                ReadValueScope.LATIN,
+                ReadValueScope.CJK,
+                ReadValueScope.OTHER,
+            ).map { scope ->
+                val presetFont = ReadBookConfig.durConfig.scriptFonts?.forScope(scope).orEmpty()
+                ReadScriptFontUi(
+                    scope = scope,
+                    label = getString(
+                        when (scope) {
+                            ReadValueScope.LATIN -> R.string.read_style_script_latin
+                            ReadValueScope.CJK -> R.string.read_style_script_cjk
+                            else -> R.string.read_style_script_other
+                        }
+                    ),
+                    font = presetFont,
+                    source = if (presetFont.isBlank()) ReadValueSource.PLATFORM else ReadValueSource.PRESET,
+                    canReset = presetFont.isNotBlank(),
+                )
+            },
         )
     }
 
@@ -795,6 +823,17 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         ReadBookConfig.writeScriptFont(scope, null)
         refreshUi()
         // 硬性要求：全局脚本字体写入后必须刷新字体表；本书覆盖路径同样刷新（幂等）。
+        postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
+    }
+
+    private fun selectEditorScriptFont(scope: ReadValueScope) {
+        pendingEditorScriptFontScope = scope
+        showDialogFragment<FontSelectDialog>()
+    }
+
+    private fun resetEditorScriptFont(scope: ReadValueScope) {
+        ReadBookConfig.setEditorScriptFont(scope, null)
+        refreshUi()
         postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
     }
 
@@ -1695,10 +1734,19 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     override val curFontPath: String
-        get() = pendingScriptFontScope?.let { ReadBookConfig.scriptFont(it).value }
+        get() = pendingEditorScriptFontScope?.let { ReadBookConfig.scriptFont(it).value }
+            ?: pendingScriptFontScope?.let { ReadBookConfig.scriptFont(it).value }
             ?: ReadBookConfig.textFont
 
     override fun selectFont(path: String) {
+        val editorScope = pendingEditorScriptFontScope
+        if (editorScope != null) {
+            pendingEditorScriptFontScope = null
+            ReadBookConfig.setEditorScriptFont(editorScope, path)
+            postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
+            refreshUi()
+            return
+        }
         val scope = pendingScriptFontScope
         if (scope != null) {
             pendingScriptFontScope = null
