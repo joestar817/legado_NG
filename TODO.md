@@ -36,9 +36,12 @@
 
 1. [x] **字体缓存**（§3.7-5，已落地 `5940d4fa8`）：`StyledTypefaceCache`（`(path, weight, italic)` 键的 typeface LruCache）接入 `ChapterProvider.resolveStyledTypeface`。
 2. [x] **脚本数据模型**（已落地 `ffa538ce9`）：`ReadScriptTypographyStore`（`global.typography.scripts`，形状复用 `SparseFontOverrides`，pref `readScriptTypography`）；book 级 override 同构（Phase 2b）。myreader 映射桥接随语言映射分支合并时实现。
-3. **Language fonts UI**：Typography → Language fonts；Phase 3 只做字体（字重/字距等留 Phase 4）。
+3. [x] **Language fonts UI 已落地**（`6d0f15fa8` + `253495cb8` + `e19e76dfe` + `778184c84`）：全局页=兜底（副标题）；预设编辑器=预设覆盖；本书模式=本书覆盖。三处均复用 `FontSelectDialog`，写后 `UP_CONFIG(1,2,5)` 刷新字体表。
 4. [x] **TXT PoC 已落地并真机 PASS**（`5e4a67a6e`，`ENABLED=false` 休眠，2026-10-04 模拟器验收：逐脚本切换/中性继承/段首回落/Other 回落/无 tofu；`poc-mixed.txt` fixture 在 `scripts/fixtures/poc-mixed-epub/`）：`ReadScriptClassifierContract` 生产分类器 + `TxtScriptFontPoc` ReadCharStyle 叠加。已知限制：行高由正文字体决定，显著更高的脚本字体可能裁切。
-5. [ ] **TXT 生产化已落地**（`87d6d57c4`）：`ReadBookConfig.scriptFont/scriptFontPath/hasScriptTypography` 接 `EffectiveReadValueResolverContract`；`ScriptFontStyleResolver` 生产叠加（fontProvider 注入，9 条契约测试）。EPUB 生产化待做：3A 已验证路径（`readerFamily()` 前置带 unicode-range 的 `FontFace` + `EpubResourceGateway` 同域服务）。
+5. [x] **TXT 生产化**（`87d6d57c4` + `3ea1fcaa4`）：`ReadBookConfig.scriptFont/scriptFontPath/hasScriptTypography` 接 `EffectiveReadValueResolverContract`；`ScriptFontStyleResolver` 生产叠加（fontProvider 注入，11 条契约测试）。
+6. [x] **预设级脚本字体**（`37deb1872` + `fc0e2bca3`）：`Config.scriptFonts` + `ReadValueContext.presetScriptFont` 层；契约测试 5 条。
+7. [x] **EPUB 生产化**（`cde21bd08`）：`EpubResourceGateway` per-scope 字体 + `reader.js` `NGScriptFont` FontFace（unicode-range），并入字体等待链。已知边界：CSS per-glyph 上下文无关（U+2013–2029 落 Latin face）。
+8. [ ] **（可选/可延后）主脚本检测 + 默认预设推荐**：`BookPrimaryScript` + 内置三预设；见 `docs/typography-placement-proposal.md` Phase 5。
 
 **PoC 脚手架清理标记**（已完成 `82b4ae817`，两套脚手架全删）：
 - [x] `EpubScriptFontPoc.kt`、`poc-fonts/`、`reader.js` 三处 PoC 痕迹、`scripts/fixtures/poc-mixed-epub/` 全部删除；
