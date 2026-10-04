@@ -153,11 +153,12 @@ object ReadBookConfig {
         !ReadScriptTypographyStore.load().isEmpty() ||
             bookOverridesStore.current(boundBook)?.font?.isEmpty() == false ||
             bookOverridesStore.current(boundBook)?.basePreset?.snapshot?.scriptFonts?.isNotEmpty() == true ||
-            getConfig(styleSelect).scriptFonts?.isEmpty() == false
+            durConfig.scriptFonts?.isEmpty() == false
 
     /** 解析某脚本维度的有效字体（value + source），走冻结的 EffectiveReadValueResolverContract。 */
     fun scriptFont(scope: ReadValueScope): ResolvedReadValue {
-        val selectedPreset = getConfig(styleSelect)
+        // 仅本书模式下，"选中预设" 就是本书自己的 config（durConfig），而不是 styleSelect 指向的全局预设。
+        val selectedPreset = durConfig
         val overrides = bookOverridesStore.current(boundBook)
         val legacy = bookOverridesStore.legacy(boundBook)
         // DEFAULT 桶的最终回落：pinned 书 = 本书基准 textFont；其余 = 选中预设 textFont。
