@@ -8,7 +8,7 @@ import org.junit.Test
  */
 class ReadScriptClassifierTest {
 
-    private val classifier: ReadScriptClassifier = ReferenceScriptClassifier
+    private val classifier: ReadScriptClassifier = ReadScriptClassifierContract
 
     @Test
     fun `han is cjk`() {
@@ -60,33 +60,5 @@ class ReadScriptClassifierTest {
         assertEquals(ReadValueScope.OTHER, classifier.classify('α'.code, previousStrong = null)) // Greek
         assertEquals(ReadValueScope.OTHER, classifier.classify('Ж'.code, previousStrong = null)) // Cyrillic
         assertEquals(ReadValueScope.OTHER, classifier.classify('ก'.code, previousStrong = null)) // Thai
-    }
-}
-
-/**
- * 契约参考实现：按 §3.7-2 的规则机械实现。
- * Phase 3 生产实现（含性能优化）必须通过同一组测试。
- */
-private object ReferenceScriptClassifier : ReadScriptClassifier {
-    override fun classify(codePoint: Int, previousStrong: ReadValueScope?): ReadValueScope {
-        // 全角形式先归 CJK（按计划：U+3000–303F、U+FF00–FFEF）
-        if (codePoint in 0x3000..0x303F || codePoint in 0xFF00..0xFFEF) {
-            return ReadValueScope.CJK
-        }
-        val script = Character.UnicodeScript.of(codePoint)
-        return when (script) {
-            Character.UnicodeScript.HAN,
-            Character.UnicodeScript.HIRAGANA,
-            Character.UnicodeScript.KATAKANA,
-            Character.UnicodeScript.HANGUL,
-            -> ReadValueScope.CJK
-
-            Character.UnicodeScript.LATIN -> ReadValueScope.LATIN
-            Character.UnicodeScript.COMMON,
-            Character.UnicodeScript.INHERITED,
-            -> previousStrong ?: ReadValueScope.DEFAULT
-
-            else -> ReadValueScope.OTHER
-        }
     }
 }
