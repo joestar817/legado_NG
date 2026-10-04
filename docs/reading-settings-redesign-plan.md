@@ -112,6 +112,8 @@ resolved EPUB rule[property] == override
     → 走上面的 App 解析路径
 ```
 
+EPUB Publisher 字体与 App 脚本字体是独立闸门，不在同一条 inheritance chain 内。详见 `docs/typography-placement-proposal.md` §9 的优先级边界图。
+
 ### 3.2 本书覆盖语义
 
 - `book.overrides` 只存**被改动的字段**；字段缺失 = 继承。
@@ -509,7 +511,7 @@ Phase 5  清理 / 退役 legacy
 - [ ] **（可选/可延后）书籍主脚本检测 + 默认预设推荐**：`BookPrimaryScript`（LATIN/CJK/OTHER/MIXED/UNKNOWN）；内置 `Latin Reading` / `CJK Reading` / `Other Reading` 三个普通预设；打开新书时按主脚本推荐默认预设。不影响核心解析链，可独立交付。
 - [x] **TXT PoC（5e4a67a6e，ENABLED=false 休眠，2026-10-04 真机 PASS）**：脚本分类生产实现 `ReadScriptClassifierContract`（测试切到生产对象）+ `TxtScriptFontPoc` 在 `highlightMatcher.match` 后叠加脚本字体 ReadCharStyle，走既有 `remeasureHighlightFonts` / `TextColumn.draw` 链路。真机验收（模拟器，`poc-mixed.txt`）：P1 逐脚本切换、P3 中性继承（`123`/`——` 随 CJK）、P4 段首数字回落正文字体、P5 Greek(Other) 回落、无 tofu；ENABLED=false 与基线一致。已知限制同行内高亮：行高由正文字体决定，显著更高的脚本字体可能裁切。
 - [x] **TXT 生产化（87d6d57c4 + 3ea1fcaa4，2026-10-04 验收通过）**：`ReadBookConfig.scriptFont/scriptFontPath/hasScriptTypography` 接 `EffectiveReadValueResolverContract`；`ScriptFontStyleResolver`（fontProvider 注入，纯函数）生产叠加——CJK/Latin/Other 三 scope 全部接通、中性继承、高亮字体优先、空 provider 零分配；`ChapterProvider` 在 `upStyle()` 刷新点一次性解析 `scriptFontTable`，段落布局只做 O(1) 查表（热路径零 JSON 解析）；`ScriptFontStyleResolverTest` 11 条契约。PoC 两套脚手架已删（`82b4ae817`）。
-- [ ] **EPUB 生产化挂接点**（3A 已验证路径）：注册带 `unicode-range` 的 `FontFace` 划脚本边界（避免共享标点 U+2013–2029 被 Latin 字体抢占），在 `readerFamily()`（`assets/epub/reader.js:83`）前置；字体字节经 `EpubResourceGateway` 同域服务，无需改分页/测量。（PoC 脚手架已删，只剩生产接线）
+- [x] **EPUB 生产化（cde21bd08）**：`EpubLayoutController.scriptFontSources()` 取 `ReadBookConfig.scriptFontPath(scope)`（latin/cjk/other），与正文字体同路径读字节；`EpubResourceGateway` 新增 per-scope 字体路径/修订/服务；`EpubLayoutSurface.configure()` 注入 `scriptFonts` 同域 URL；`reader.js` 新增 `loadScriptFonts`（`NGScriptFont` family + unicode-range：CJK 含 Hangul，Latin/Other 显式区段，避免无 range face 抢占全部码点），并入 `loadReaderFont` 等待点，`readerFamily()` 前置 `NGScriptFont`。已知边界沿用 3A：CSS per-glyph 上下文无关（U+2013–2029 落 Latin face）。
 - [ ] 不做 Latin×Day/Night 组合；不实现 fallback chain。
 
 验收：CJK/Latin/Other 字体可全局、预设、本书三级覆盖；PoC 证明渲染路径可行；UI 不暴露“渲染器还不消费”的假开关；除字体外的排版属性未新增脚本维度。
