@@ -33,6 +33,7 @@ import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadHighlightRuleStore
 import io.legado.app.help.config.ThemeConfig
+import io.legado.app.help.config.resolveRestoredReadThemeMode
 import io.legado.app.model.VideoPlay.VIDEO_PREF_NAME
 import io.legado.app.model.BookCover
 import io.legado.app.model.localBook.LocalBook
@@ -51,6 +52,7 @@ import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.getSharedPreferences
 import io.legado.app.utils.isContentScheme
+import io.legado.app.utils.putPrefString
 import io.legado.app.utils.isJsonArray
 import io.legado.app.utils.openInputStream
 import io.legado.app.utils.toastOnUi
@@ -388,6 +390,15 @@ object Restore {
             readBodyToLh = appCtx.getPrefBoolean(PreferKey.readBodyToLh, true)
             useZhLayout = appCtx.getPrefBoolean(PreferKey.useZhLayout)
             isNightTheme = appCtx.getPrefBoolean(PreferKey.readNightTheme, false)
+            // Decision A：备份负载不含 readThemeMode（BackupConfig.shouldRestorePreference 排除），
+            // 缺失 = 非 override = 跟随系统；存在则保留所存值。不修改备份负载、不随未来全局默认值漂移。
+            val restoredReadThemeMode = appCtx.getPrefString(PreferKey.readThemeMode)
+            if (restoredReadThemeMode.isNullOrBlank()) {
+                appCtx.putPrefString(
+                    PreferKey.readThemeMode,
+                    resolveRestoredReadThemeMode(restoredReadThemeMode),
+                )
+            }
             autoReadSpeed = appCtx.getPrefInt(
                 PreferKey.autoReadSpeed,
                 ReadBookConfig.defaultAutoReadSpeed,

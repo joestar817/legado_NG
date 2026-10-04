@@ -1,6 +1,9 @@
 package io.legado.app.help.storage
 
 import io.legado.app.constant.PreferKey
+import io.legado.app.help.config.ReadThemeMode
+import io.legado.app.help.config.resolveRestoredReadThemeMode
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -83,4 +86,34 @@ class BackupRestorePolicyTest {
             )
         )
     }
+
+    // region Decision A：恢复期回填 readThemeMode
+
+    @Test
+    fun `missing readThemeMode restores to follow system`() {
+        assertEquals(
+            ReadThemeMode.FOLLOW_SYSTEM.storageValue,
+            resolveRestoredReadThemeMode(null),
+        )
+        assertEquals(
+            ReadThemeMode.FOLLOW_SYSTEM.storageValue,
+            resolveRestoredReadThemeMode(""),
+        )
+    }
+
+    @Test
+    fun `present readThemeMode is preserved`() {
+        assertEquals("day", resolveRestoredReadThemeMode("day"))
+        assertEquals("night", resolveRestoredReadThemeMode("night"))
+        assertEquals("follow", resolveRestoredReadThemeMode("follow"))
+    }
+
+    @Test
+    fun `readThemeMode stays outside backup payload`() {
+        // Decision A：缺失→FOLLOW_SYSTEM 的前提是负载里没有这个字段；schema/格式不变。
+        assertFalse(BackupRestorePolicy.shouldRestorePreference(PreferKey.readThemeMode, isMd3Backup = false))
+        assertFalse(BackupRestorePolicy.shouldRestorePreference(PreferKey.readThemeMode, isMd3Backup = true))
+    }
+
+    // endregion
 }

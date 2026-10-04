@@ -79,6 +79,14 @@ internal fun resolveReadThemeMode(
 ): ReadThemeMode = ReadThemeMode.fromStorage(storedMode)
     ?: if (legacyNightTheme) ReadThemeMode.NIGHT else ReadThemeMode.DAY
 
+/**
+ * Decision A（恢复期回填）：`readThemeMode` 不在备份负载内（BackupConfig 排除）。
+ * 缺失 = 非 override = 跟随系统；存在则保留所存值。与未来全局默认值无关——
+ * 未来即使 resolveReadThemeMode 的缺省回落改变，旧备份的缺失字段仍恢复为 FOLLOW_SYSTEM。
+ */
+internal fun resolveRestoredReadThemeMode(storedMode: String?): String =
+    storedMode?.takeIf { it.isNotBlank() } ?: ReadThemeMode.FOLLOW_SYSTEM.storageValue
+
 @Suppress("ConstPropertyName")
 @Keep
 object ReadBookConfig {
