@@ -292,6 +292,10 @@ internal class EpubLayoutSurface(
         gateway.setTitleFont(bytes)
     }
 
+    fun scriptFont(scope: String, bytes: ByteArray?) {
+        gateway.setScriptFont(scope, bytes)
+    }
+
     fun refreshViewport() { if (loaded) configure() }
 
     private fun configure() {
@@ -313,6 +317,10 @@ internal class EpubLayoutSurface(
             options.optJSONObject(key)?.optJSONObject("title")?.takeIf { it.optBoolean("hasFont") }
                 ?.put("fontUrl", gateway.titleFontUrl())
         }
+        val scriptFonts = listOf("latin", "cjk", "other").mapNotNull { scope ->
+            gateway.scriptFontUrl(scope)?.let { scope to it }
+        }.toMap()
+        if (scriptFonts.isNotEmpty()) options.put("scriptFonts", JSONObject(scriptFonts))
         webView.evaluateJavascript(EpubWebViewCapabilities.CHECK) { supported ->
             if (closed || revision.toString() != token) return@evaluateJavascript
             if (supported != "true") {

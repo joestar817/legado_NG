@@ -31,6 +31,13 @@ internal class EpubResourceGateway(
     private val titleFontPath = "__ng_reader_${UUID.randomUUID()}/title-font"
     @Volatile private var titleFont: ByteArray? = null
     @Volatile private var titleFontRevision = 0L
+    private val scriptFontPaths = mapOf(
+        "latin" to "__ng_reader_${UUID.randomUUID()}/script-font/latin",
+        "cjk" to "__ng_reader_${UUID.randomUUID()}/script-font/cjk",
+        "other" to "__ng_reader_${UUID.randomUUID()}/script-font/other",
+    )
+    @Volatile private var scriptFonts: Map<String, ByteArray> = emptyMap()
+    @Volatile private var scriptFontRevisions: Map<String, Long> = emptyMap()
     @Volatile private var styleFonts: Map<String, ByteArray> = emptyMap()
     @Volatile private var nineSlices: Map<String, EpubNineSliceImage> = emptyMap()
     @Volatile private var backgrounds: Map<String, EpubBackgroundImage> = emptyMap()
@@ -60,6 +67,19 @@ internal class EpubResourceGateway(
         if (titleFont !== bytes) { titleFont = bytes; titleFontRevision++ }
     }
     fun titleFontUrl(): String = "$origin/$titleFontPath?revision=$titleFontRevision"
+
+    fun setScriptFont(scope: String, bytes: ByteArray?) {
+        val previous = scriptFonts[scope]
+        if (previous === bytes) return
+        scriptFonts = if (bytes == null) scriptFonts - scope else scriptFonts + (scope to bytes)
+        scriptFontRevisions = scriptFontRevisions + (scope to (scriptFontRevisions[scope] ?: 0L) + 1)
+    }
+
+    fun scriptFontUrl(scope: String): String? {
+        val bytes = scriptFonts[scope] ?: return null
+        val revision = scriptFontRevisions[scope] ?: 0L
+        return "$origin/${scriptFontPaths[scope]}?revision=$revision"
+    }
 
     fun contentUrl(): String = "$origin/$contentPath"
 
@@ -170,6 +190,12 @@ internal class EpubResourceGateway(
         if (!mainFrame && link.path == titleFontPath) {
             return titleFont?.let { bytes(it, "application/octet-stream", method) } ?: error(404, "Not Found")
         }
+        if (!mainFrame) {
+            scriptFontPaths.entries.firstOrNull { it.value == link.path }?.let { (scope, _) ->
+                return scriptFonts[scope]?.let { bytes(it, "application/octet-stream", method) }
+                    ?: error(404, "Not Found")
+            }
+        }
         if (!mainFrame && link.path == contentPath && current != null) {
             return bytes(current.data, "application/json", method)
         }
@@ -224,7 +250,7 @@ internal class EpubResourceGateway(
         ByteArrayInputStream(if (method == "HEAD") ByteArray(0) else data),
     )
 
-    override fun close() { closed = true; documentPath = null; content = null; documentContents = emptyMap(); readerFont = null; titleFont = null; styleFonts = emptyMap(); nineSlices = emptyMap(); backgrounds = emptyMap() }
+    override fun close() { closed = true; documentPath = null; content = null; documentContents = emptyMap(); readerFont = null; titleFont = null; scriptFonts = emptyMap(); scriptFontRevisions = emptyMap(); styleFonts = emptyMap(); nineSlices = emptyMap(); backgrounds = emptyMap() }
 
     private fun error(status: Int, reason: String) = EpubWebResponse(
         status, reason, "text/plain", responseHeaders + ("Content-Length" to "0"), ByteArrayInputStream(ByteArray(0)),
