@@ -2384,7 +2384,7 @@
     <string name="read_style_script_latin">Latin</string>
     <string name="read_style_script_cjk">CJK</string>
     <string name="read_style_script_other">Other</string>
-    <string name="read_style_follow_default">Follow default</string>
+    <string name="read_style_follow_preset">Follow preset</string>
     <string name="read_style_source_publisher">Publisher</string>
     <string name="read_style_reset_font">Reset font</string>
     <string name="font_dialog_drag_hint">Drag to move</string>

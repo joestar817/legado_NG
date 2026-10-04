@@ -183,10 +183,11 @@ object ReadBookConfig {
      * UI 层负责在写后 postEvent(UP_CONFIG, 1,2,5) 触发 ChapterProvider 刷新字体表。
      */
     fun writeScriptFont(scope: ReadValueScope, value: String?) {
+        val normalized = value?.takeIf { it.isNotBlank() }
         if (onlyThisBook) {
-            bookOverridesStore.writeScope(boundBook, scope, value)
+            bookOverridesStore.writeScope(boundBook, scope, normalized)
         } else {
-            ReadScriptTypographyStore.setFont(scope, value)
+            ReadScriptTypographyStore.setFont(scope, normalized)
         }
     }
 

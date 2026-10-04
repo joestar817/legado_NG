@@ -712,7 +712,7 @@ private fun LanguageFontsPage(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = fontDisplayName(item.font).ifBlank { stringResource(R.string.read_style_follow_default) } +
+                text = fontDisplayName(item.font).ifBlank { stringResource(R.string.read_style_follow_preset) } +
                     if (item.source != ReadValueSource.PLATFORM) {
                         " · " + stringResource(
                             when (item.source) {

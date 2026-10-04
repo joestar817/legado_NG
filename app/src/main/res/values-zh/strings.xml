@@ -2284,7 +2284,7 @@
     <string name="read_style_script_latin">拉丁字母</string>
     <string name="read_style_script_cjk">中日韩</string>
     <string name="read_style_script_other">其他文字</string>
-    <string name="read_style_follow_default">跟随默认</string>
+    <string name="read_style_follow_preset">跟随预设</string>
     <string name="read_style_source_publisher">原书</string>
     <string name="read_style_reset_font">重置字体</string>
     <string name="font_dialog_drag_hint">拖动可移动</string>
