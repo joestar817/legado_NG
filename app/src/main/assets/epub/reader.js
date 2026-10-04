@@ -81,29 +81,7 @@
         title: { family: 'NGTitleFont', url: null, face: null, failed: false }
     };
     function readerFamily(reader) {
-        return (window.__ngPocScriptFontsReady ? 'NGReaderPoC,' : '') +
-            (reader.hasFont ? 'NGReaderFont,' : '') + (reader.fontFamily || 'sans-serif');
-    }
-    async function loadPocScriptFonts(value) {
-        if (!value.pocLatinFontUrl || !value.pocCjkFontUrl) return;
-        try {
-            // 同一 logical family；base 无 unicode-range（基础 face），CJK 带区段。
-            var base = new FontFace('NGReaderPoC', 'url("' + value.pocLatinFontUrl + '")');
-            var cjk = new FontFace('NGReaderPoC', 'url("' + value.pocCjkFontUrl + '")', {
-                unicodeRange: 'U+3000-303F,U+3040-309F,U+30A0-30FF,' +
-                    'U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF'
-            });
-            await Promise.all([base.load(), cjk.load()]);
-        } catch (e) {
-            // PoC 字体缺失/损坏（404、OTS 拒绝）：静默回落现有 NGReaderFont 链，
-            // 绝不能让 PoC 把 configureLayout 打进 error 态。
-            return;
-        }
-        // 重叠区段（base 覆盖全部码点）按 CSS 级联「后注册者赢」：先 base 后 CJK。
-        // PoC 验证项 R1：实证本 WebView 的顺序敏感性；若相反则翻转并记录。
-        document.fonts.add(base);
-        document.fonts.add(cjk);
-        window.__ngPocScriptFontsReady = true;
+        return (reader.hasFont ? 'NGReaderFont,' : '') + (reader.fontFamily || 'sans-serif');
     }
     async function loadReaderFont(kind, requested, mine) {
         var cached = readerFonts[kind], face = null, failed = false;
@@ -1396,8 +1374,6 @@
             if (mine !== generation) return;
             if (await loadReaderFont('title', !value.fixed && (value.features || {}).title === false && (reader.title || {}).fontUrl, mine)) fontWarnings.push('title');
             if (mine !== generation) return;
-            await loadPocScriptFonts(value);
-            if (mine !== generation) return;
 
             if (body !== root) {
                 var viewport = originalViewport || document.querySelector('meta[name="viewport"]');
@@ -1648,42 +1624,6 @@
             }
         } catch (error) { if (mine === generation) state = { status: 'error', token: value.token, error: String(error) }; }
     }
-    window.__ngPocProbe = function () {
-        var faces = [];
-        document.fonts.forEach(function (face) {
-            if (face.family === 'NGReaderPoC') {
-                faces.push({ family: face.family, unicodeRange: face.unicodeRange || '', status: face.status });
-            }
-        });
-        var canvas = document.createElement('canvas');
-        canvas.width = 640; canvas.height = 64;
-        var ctx = canvas.getContext('2d');
-        function measure(text) {
-            ctx.font = '32px NGReaderPoC';
-            var width = ctx.measureText(text).width;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#000';
-            ctx.fillText(text, 4, 48);
-            var data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-            var pixels = 0;
-            for (var i = 3; i < data.length; i += 4) if (data[i] > 0) pixels++;
-            return { width: width, pixels: pixels };
-        }
-        return JSON.stringify({
-            ready: !!window.__ngPocScriptFontsReady,
-            faces: faces,
-            check: {
-                latin: document.fonts.check('16px NGReaderPoC', 'A'),
-                han: document.fonts.check('16px NGReaderPoC', '你'),
-                kana: document.fonts.check('16px NGReaderPoC', 'こ')
-            },
-            metrics: {
-                latin: measure('HelloWorld'),
-                han: measure('你好世界'),
-                serifLatin: (function () { ctx.font = '32px serif'; return ctx.measureText('HelloWorld').width; })()
-            }
-        });
-    };
     window.__ngEpub = Object.freeze({ configure: configure, updateStyles: updateStyles, move: move, interact: interact, pauseMedia: pauseMedia,
         setLinkHandler: function (handler) { linkHandler = typeof handler === 'function' ? handler : null; },
         cancelConfiguration: cancelConfiguration,

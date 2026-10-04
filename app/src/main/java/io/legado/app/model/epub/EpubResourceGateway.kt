@@ -31,10 +31,6 @@ internal class EpubResourceGateway(
     private val titleFontPath = "__ng_reader_${UUID.randomUUID()}/title-font"
     @Volatile private var titleFont: ByteArray? = null
     @Volatile private var titleFontRevision = 0L
-    private val pocLatinFontPath = "__ng_reader_${UUID.randomUUID()}/poc_latin_font"
-    @Volatile private var pocLatinFont: ByteArray? = null
-    private val pocCjkFontPath = "__ng_reader_${UUID.randomUUID()}/poc_cjk_font"
-    @Volatile private var pocCjkFont: ByteArray? = null
     @Volatile private var styleFonts: Map<String, ByteArray> = emptyMap()
     @Volatile private var nineSlices: Map<String, EpubNineSliceImage> = emptyMap()
     @Volatile private var backgrounds: Map<String, EpubBackgroundImage> = emptyMap()
@@ -64,13 +60,6 @@ internal class EpubResourceGateway(
         if (titleFont !== bytes) { titleFont = bytes; titleFontRevision++ }
     }
     fun titleFontUrl(): String = "$origin/$titleFontPath?revision=$titleFontRevision"
-
-    fun setPocFonts(latin: ByteArray?, cjk: ByteArray?) {
-        pocLatinFont = latin
-        pocCjkFont = cjk
-    }
-    fun pocLatinFontUrl(): String = "$origin/$pocLatinFontPath"
-    fun pocCjkFontUrl(): String = "$origin/$pocCjkFontPath"
 
     fun contentUrl(): String = "$origin/$contentPath"
 
@@ -178,12 +167,6 @@ internal class EpubResourceGateway(
         if (!mainFrame && link.path == readerFontPath) {
             return readerFont?.let { bytes(it, "application/octet-stream", method) } ?: error(404, "Not Found")
         }
-        if (!mainFrame && link.path == pocLatinFontPath) {
-            return pocLatinFont?.let { bytes(it, "application/octet-stream", method) } ?: error(404, "Not Found")
-        }
-        if (!mainFrame && link.path == pocCjkFontPath) {
-            return pocCjkFont?.let { bytes(it, "application/octet-stream", method) } ?: error(404, "Not Found")
-        }
         if (!mainFrame && link.path == titleFontPath) {
             return titleFont?.let { bytes(it, "application/octet-stream", method) } ?: error(404, "Not Found")
         }
@@ -241,7 +224,7 @@ internal class EpubResourceGateway(
         ByteArrayInputStream(if (method == "HEAD") ByteArray(0) else data),
     )
 
-    override fun close() { closed = true; documentPath = null; content = null; documentContents = emptyMap(); readerFont = null; titleFont = null; pocLatinFont = null; pocCjkFont = null; styleFonts = emptyMap(); nineSlices = emptyMap(); backgrounds = emptyMap() }
+    override fun close() { closed = true; documentPath = null; content = null; documentContents = emptyMap(); readerFont = null; titleFont = null; styleFonts = emptyMap(); nineSlices = emptyMap(); backgrounds = emptyMap() }
 
     private fun error(status: Int, reason: String) = EpubWebResponse(
         status, reason, "text/plain", responseHeaders + ("Content-Length" to "0"), ByteArrayInputStream(ByteArray(0)),
