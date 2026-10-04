@@ -422,7 +422,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             refreshFullLineUnderlineState()
         },
         onFontWeight = ::showFontWeightSetting,
-        onFont = { showDialogFragment<FontSelectDialog>() },
+        onFont = ::selectBodyFont,
         onIndent = ::showParagraphIndentSetting,
         onChineseConverter = ::showChineseConverterSetting,
         onPadding = {
@@ -815,7 +815,14 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun selectScriptFont(scope: ReadValueScope) {
+        pendingEditorScriptFontScope = null
         pendingScriptFontScope = scope
+        showDialogFragment<FontSelectDialog>()
+    }
+
+    private fun selectBodyFont() {
+        pendingScriptFontScope = null
+        pendingEditorScriptFontScope = null
         showDialogFragment<FontSelectDialog>()
     }
 
@@ -827,6 +834,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun selectEditorScriptFont(scope: ReadValueScope) {
+        pendingScriptFontScope = null
         pendingEditorScriptFontScope = scope
         showDialogFragment<FontSelectDialog>()
     }
