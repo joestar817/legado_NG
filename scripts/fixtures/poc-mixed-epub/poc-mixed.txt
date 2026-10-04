@@ -1,0 +1,5 @@
+P1: Hello World 你好世界 こんにちは
+P2: A 你好 B 世界 C こんにちは D
+P3: 中文，with ASCII、「引号」与 123 —— dash — test
+P4: 12 起始数字 neutral at start
+P5: Greek αβγ Other script 中文

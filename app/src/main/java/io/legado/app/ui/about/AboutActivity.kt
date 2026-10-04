@@ -51,7 +51,7 @@ class AboutActivity : BaseActivity<ActivityAboutBinding>() {
         binding.composeView.setContent {
             NgAppTheme {
                 AboutScreen(
-                    versionName = appInfo.versionName,
+                    versionName = "${appInfo.versionName}-${appInfo.versionCode}",
                     onContributorsClick = { openUrl(R.string.contributors_url) },
                     onCheckUpdateClick = ::checkUpdate,
                     onCheckUpdateLongClick = if (BuildConfig.DEBUG) ::showLatestRelease else null,
