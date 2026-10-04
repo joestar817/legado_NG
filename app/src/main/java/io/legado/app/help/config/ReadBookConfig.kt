@@ -145,23 +145,26 @@ object ReadBookConfig {
         bookOverridesStore.effectiveDefaultFont(boundBook, globalFont)
 
     /**
-     * Phase 3 TXT 生产化：是否有任何脚本字体配置（全局 scripts 或本书 font override）。
+     * Phase 3 TXT 生产化：是否有任何脚本字体配置。
+     * 覆盖：全局 scripts、本书 font override、本书 pinned 快照 scripts、选中预设 scripts。
      * 无配置时渲染层零改动（直接返回 highlight 样式）。
-     * 注：basePreset 快照的 scriptFonts 当前恒 emptyMap；未来允许写入时须一并计入。
      */
     fun hasScriptTypography(): Boolean =
         !ReadScriptTypographyStore.load().isEmpty() ||
-            bookOverridesStore.current(boundBook)?.font?.isEmpty() == false
+            bookOverridesStore.current(boundBook)?.font?.isEmpty() == false ||
+            bookOverridesStore.current(boundBook)?.basePreset?.snapshot?.scriptFonts?.isNotEmpty() == true ||
+            getConfig(styleSelect).scriptFonts?.isEmpty() == false
 
     /** 解析某脚本维度的有效字体（value + source），走冻结的 EffectiveReadValueResolverContract。 */
     fun scriptFont(scope: ReadValueScope): ResolvedReadValue {
-        val globalDefaultFont = getConfig(styleSelect).textFont
+        val selectedPreset = getConfig(styleSelect)
         val context = BookReadStyleCompatibility.contextFor(
             scope = scope,
             overrides = bookOverridesStore.current(boundBook),
             legacyConfig = bookOverridesStore.legacy(boundBook),
+            presetScriptFont = selectedPreset.scriptFonts?.forScope(scope),
             globalScriptFont = ReadScriptTypographyStore.font(scope),
-            globalDefaultFont = globalDefaultFont,
+            globalDefaultFont = selectedPreset.textFont,
             platformFont = "",
         )
         return EffectiveReadValueResolverContract.resolve(context)
@@ -970,6 +973,7 @@ object ReadBookConfig {
         private var pageAnim: Int = PageAnim.simulationPageAnim,//翻页动画
         private var pageAnimEInk: Int = 4,
         var textFont: String = "",//字体
+        @SerializedName("scriptFonts") var scriptFonts: SparseFontOverrides? = null,//预设级脚本字体覆盖
         @SerializedName("titleFont") var titleFont: String = "",//标题字体
         @SerializedName("headerFont") var headerFont: String = "",//页眉字体
         @SerializedName("footerFont") var footerFont: String = "",//页脚字体

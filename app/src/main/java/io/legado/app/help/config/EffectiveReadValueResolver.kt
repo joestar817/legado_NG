@@ -63,6 +63,8 @@ data class ReadValueContext(
     val bookScriptFont: String? = null,
     val bookDefaultFont: String? = null,
     val basePreset: ReadBasePreset? = null,
+    /** 选中预设的脚本字体覆盖（preset.scripts[scope]），介于 basePreset 与 global 之间。 */
+    val presetScriptFont: String? = null,
     val globalScriptFont: String? = null,
     val globalDefaultFont: String? = null,
     /** 平台兜底字体。非空，由类型保证解析是全函数。 */
@@ -109,6 +111,9 @@ object EffectiveReadValueResolverContract : EffectiveReadValueResolver {
                 }
             }
         }
+
+        // 2b. 选中预设的脚本字体覆盖（preset.scripts[scope]）
+        context.presetScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
 
         // 3. 全局脚本档案 → 4. 全局 default → 5. platform（非空兜底，全函数）
         context.globalScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.GLOBAL, scope) }

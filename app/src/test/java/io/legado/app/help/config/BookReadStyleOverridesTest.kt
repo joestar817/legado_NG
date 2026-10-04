@@ -201,4 +201,69 @@ class BookReadStyleOverridesTest {
         assertNull(updated.default)
         assertEquals("C", updated.cjk)
     }
+
+    // region Phase 3 预设级脚本字体（typography-placement-proposal.md）
+
+    @Test
+    fun `preset script font beats global script font`() {
+        val context = BookReadStyleCompatibility.contextFor(
+            scope = ReadValueScope.CJK,
+            overrides = null,
+            legacyConfig = null,
+            presetScriptFont = "PresetCJK",
+            globalScriptFont = "GlobalCJK",
+            globalDefaultFont = "A",
+        )
+        val result = resolver.resolve(context)
+        assertEquals("PresetCJK", result.value)
+        assertEquals(ReadValueSource.PRESET, result.source)
+    }
+
+    @Test
+    fun `book override beats preset script font`() {
+        val overrides = BookReadStyleOverrides(font = SparseFontOverrides(cjk = "BookCJK"))
+        val context = BookReadStyleCompatibility.contextFor(
+            scope = ReadValueScope.CJK,
+            overrides = overrides,
+            legacyConfig = null,
+            presetScriptFont = "PresetCJK",
+            globalScriptFont = "GlobalCJK",
+            globalDefaultFont = "A",
+        )
+        val result = resolver.resolve(context)
+        assertEquals("BookCJK", result.value)
+        assertEquals(ReadValueSource.THIS_BOOK, result.source)
+    }
+
+    @Test
+    fun `absent preset script falls back to global script`() {
+        val context = BookReadStyleCompatibility.contextFor(
+            scope = ReadValueScope.OTHER,
+            overrides = null,
+            legacyConfig = null,
+            presetScriptFont = null,
+            globalScriptFont = "GlobalOther",
+            globalDefaultFont = "A",
+        )
+        val result = resolver.resolve(context)
+        assertEquals("GlobalOther", result.value)
+        assertEquals(ReadValueSource.GLOBAL, result.source)
+    }
+
+    @Test
+    fun `config scriptFonts json round trip`() {
+        val config = ReadBookConfig.Config(
+            textFont = "Body",
+            scriptFonts = SparseFontOverrides(latin = "L", cjk = "C"),
+        )
+        val json = io.legado.app.utils.GSON.toJson(config)
+        val decoded = BookReadStyleSession.decode(json)
+        assertNotNull(decoded)
+        assertEquals("Body", decoded?.textFont)
+        assertEquals("L", decoded?.scriptFonts?.latin)
+        assertEquals("C", decoded?.scriptFonts?.cjk)
+        assertNull(decoded?.scriptFonts?.other)
+    }
+
+    // endregion
 }
