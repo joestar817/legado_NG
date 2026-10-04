@@ -265,5 +265,30 @@ class BookReadStyleOverridesTest {
         assertNull(decoded?.scriptFonts?.other)
     }
 
+    @Test
+    fun `one book three scopes resolve from different layers`() {
+        // fixture：Book CJK + Preset Latin + Global Other 同时作用于同一本书。
+        val overrides = BookReadStyleOverrides(font = SparseFontOverrides(cjk = "BookCJK"))
+        fun resolve(scope: ReadValueScope) = resolver.resolve(
+            BookReadStyleCompatibility.contextFor(
+                scope = scope,
+                overrides = overrides,
+                legacyConfig = null,
+                presetScriptFont = if (scope == ReadValueScope.LATIN) "PresetLatin" else null,
+                globalScriptFont = if (scope == ReadValueScope.OTHER) "GlobalOther" else null,
+                globalDefaultFont = "Default",
+            )
+        )
+        val cjk = resolve(ReadValueScope.CJK)
+        assertEquals("BookCJK", cjk.value)
+        assertEquals(ReadValueSource.THIS_BOOK, cjk.source)
+        val latin = resolve(ReadValueScope.LATIN)
+        assertEquals("PresetLatin", latin.value)
+        assertEquals(ReadValueSource.PRESET, latin.source)
+        val other = resolve(ReadValueScope.OTHER)
+        assertEquals("GlobalOther", other.value)
+        assertEquals(ReadValueSource.GLOBAL, other.source)
+    }
+
     // endregion
 }
