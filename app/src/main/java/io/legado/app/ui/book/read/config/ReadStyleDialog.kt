@@ -34,6 +34,7 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadPresetPreferences
 import io.legado.app.help.config.ReadValueScope
+import io.legado.app.help.config.ScriptFontDebug
 import io.legado.app.help.config.ReadValueSource
 import io.legado.app.help.config.ReadStylePackageManager
 import io.legado.app.help.config.ReadHighlightRule
@@ -1747,6 +1748,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             ?: ReadBookConfig.textFont
 
     override fun selectFont(path: String) {
+        ScriptFontDebug.d(
+            "selectFont path=${ScriptFontDebug.short(path)} " +
+                "editorScope=$pendingEditorScriptFontScope scriptScope=$pendingScriptFontScope",
+        )
         val editorScope = pendingEditorScriptFontScope
         if (editorScope != null) {
             pendingEditorScriptFontScope = null

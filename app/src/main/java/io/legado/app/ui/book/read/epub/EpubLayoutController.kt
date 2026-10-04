@@ -15,6 +15,7 @@ import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadValueScope
+import io.legado.app.help.config.ScriptFontDebug
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.EpubLayoutPreferences
 import io.legado.app.service.BaseReadAloudService
@@ -1145,7 +1146,9 @@ internal class EpubLayoutController(
         "other" to ReadValueScope.OTHER,
     ).mapNotNull { (key, scope) ->
         ReadBookConfig.scriptFontPath(scope)?.takeIf { it.isNotBlank() }?.let { key to it }
-    }.toMap()
+    }.toMap().also {
+        ScriptFontDebug.d("scriptFontSources=${it.mapValues { e -> ScriptFontDebug.short(e.value) }}")
+    }
 
     fun restyle() {
         cancelTurn()
@@ -1171,6 +1174,9 @@ internal class EpubLayoutController(
                 titleFontBytes = titleFont
                 scriptFontPaths = scriptPaths
                 scriptFontBytes = scripts
+                ScriptFontDebug.d(
+                    "restyle applied scriptFonts=${scripts.mapValues { ScriptFontDebug.short(it.value.size.toString()) }}",
+                )
                 surface?.readerFont(font)
                 surface?.titleFont(titleFont)
                 listOf("latin", "cjk", "other").forEach { scope ->

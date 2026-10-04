@@ -15,6 +15,7 @@ import io.legado.app.help.book.BookContent
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadValueScope
+import io.legado.app.help.config.ScriptFontDebug
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.utils.RealPathUtil
@@ -172,6 +173,10 @@ object ChapterProvider {
         } else {
             emptyMap()
         }
+        ScriptFontDebug.d(
+            "refreshScriptFontTable hasScriptTypography=${ReadBookConfig.hasScriptTypography()} " +
+                "table=${scriptFontTable.mapValues { ScriptFontDebug.short(it.value) }}",
+        )
     }
 
     init {
