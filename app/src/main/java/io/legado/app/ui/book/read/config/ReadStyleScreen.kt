@@ -350,11 +350,7 @@ internal fun ReadStyleScreen(
 
             when (page) {
                 ReadStylePage.PRESET -> Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(StandardPageHeight - (if (state.onlyThisBook) 155.6.dp else 0.dp)
-                            + (if (state.canUseBookStyle) 62.8.dp else 0.dp)
-                            + (if (state.isEpub) 56.8.dp else 0.dp)),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     PresetPage(
                         state = state,
