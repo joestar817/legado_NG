@@ -42,7 +42,8 @@ class BookReadStyleOverridesTest {
     }
 
     @Test
-    fun `book default override wins over global script`() {
+    fun `book default override does not shadow script bucket`() {
+        // 稀疏继承：本书 default 只做 DEFAULT 基准，不拦 CJK 脚本桶。
         val overrides = BookReadStyleOverrides(font = SparseFontOverrides(default = "X"))
         val context = BookReadStyleCompatibility.contextFor(
             scope = ReadValueScope.CJK,
@@ -52,8 +53,8 @@ class BookReadStyleOverridesTest {
             globalDefaultFont = "A",
         )
         val result = resolver.resolve(context)
-        assertEquals("X", result.value)
-        assertEquals(ReadValueSource.THIS_BOOK, result.source)
+        assertEquals("C", result.value)
+        assertEquals(ReadValueSource.GLOBAL, result.source)
     }
 
     @Test
@@ -86,7 +87,7 @@ class BookReadStyleOverridesTest {
     }
 
     @Test
-    fun `follow global base resolves current preset with preset source`() {
+    fun `follow global base falls through to global default`() {
         val overrides = BookReadStyleOverrides(
             basePreset = BookBasePreset(mode = BookBasePreset.MODE_FOLLOW_GLOBAL),
         )
@@ -99,7 +100,7 @@ class BookReadStyleOverridesTest {
         )
         val result = resolver.resolve(context)
         assertEquals("B", result.value)
-        assertEquals(ReadValueSource.PRESET, result.source)
+        assertEquals(ReadValueSource.GLOBAL, result.source)
     }
 
     @Test
@@ -136,8 +137,9 @@ class BookReadStyleOverridesTest {
                 globalDefaultFont = "A",
             )
         )
-        assertEquals("LegacyFont", latin.value)
-        assertEquals(ReadValueSource.PRESET, latin.source)
+        // 稀疏继承：Latin 桶未被本书覆盖，继续落到全局脚本档案（DEFAULT 桶仍为 LegacyFont）。
+        assertEquals("C", latin.value)
+        assertEquals(ReadValueSource.GLOBAL, latin.source)
     }
 
     @Test
@@ -157,7 +159,7 @@ class BookReadStyleOverridesTest {
             )
         )
         assertEquals("G", result.value)
-        assertEquals(ReadValueSource.PRESET, result.source)
+        assertEquals(ReadValueSource.GLOBAL, result.source)
     }
 
     @Test

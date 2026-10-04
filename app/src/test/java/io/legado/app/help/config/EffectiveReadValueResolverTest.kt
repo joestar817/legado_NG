@@ -65,9 +65,8 @@ class EffectiveReadValueResolverTest {
     }
 
     @Test
-    fun `18 book default override wins over global script font`() {
-        // 用户给本书设了 default 字体 X（未动脚本维度）→ 应压过全局 CJK 档案，
-        // 否则混排书里本书字体会神秘失效。
+    fun `18 book default override does not shadow script bucket`() {
+        // 稀疏继承：本书 default 是 DEFAULT 基准桶，不拦 CJK 脚本桶；CJK 继续落到全局脚本档案。
         val result = resolver.resolve(
             ReadValueContext(
                 scope = ReadValueScope.CJK,
@@ -75,7 +74,7 @@ class EffectiveReadValueResolverTest {
                 globalScriptFont = "C",
             )
         )
-        assertEquals(ResolvedReadValue("X", ReadValueSource.THIS_BOOK, ReadValueScope.CJK), result)
+        assertEquals(ResolvedReadValue("C", ReadValueSource.GLOBAL, ReadValueScope.CJK), result)
     }
 
     // endregion
@@ -314,8 +313,8 @@ class EffectiveReadValueResolverTest {
     }
 
     @Test
-    fun `15 follow global base follows current global preset with preset source`() {
-        // 值相同但来源标签不同是有意的：告诉用户「本书跟随预设」（§3.7-1）。
+    fun `15 follow global base falls through to global default`() {
+        // FOLLOW_GLOBAL 是透明层：继续向下走预设/全局脚本/全局默认，来源如实标注。
         val result = resolver.resolve(
             ReadValueContext(
                 scope = ReadValueScope.DEFAULT,
@@ -323,7 +322,7 @@ class EffectiveReadValueResolverTest {
                 globalDefaultFont = "B",
             )
         )
-        assertEquals(ResolvedReadValue("B", ReadValueSource.PRESET, ReadValueScope.DEFAULT), result)
+        assertEquals(ResolvedReadValue("B", ReadValueSource.GLOBAL, ReadValueScope.DEFAULT), result)
     }
 
     @Test

@@ -158,13 +158,21 @@ object ReadBookConfig {
     /** 解析某脚本维度的有效字体（value + source），走冻结的 EffectiveReadValueResolverContract。 */
     fun scriptFont(scope: ReadValueScope): ResolvedReadValue {
         val selectedPreset = getConfig(styleSelect)
+        val overrides = bookOverridesStore.current(boundBook)
+        val legacy = bookOverridesStore.legacy(boundBook)
+        // DEFAULT 桶的最终回落：pinned 书 = 本书基准 textFont；其余 = 选中预设 textFont。
+        val pinnedBookDefault = if (
+            overrides?.basePreset?.mode == BookBasePreset.MODE_PINNED ||
+            (overrides == null && legacy != null)
+        ) legacy?.textFont else null
+        val globalDefaultFont = pinnedBookDefault ?: selectedPreset.textFont
         val context = BookReadStyleCompatibility.contextFor(
             scope = scope,
-            overrides = bookOverridesStore.current(boundBook),
-            legacyConfig = bookOverridesStore.legacy(boundBook),
+            overrides = overrides,
+            legacyConfig = legacy,
             presetScriptFont = selectedPreset.scriptFonts?.forScope(scope),
             globalScriptFont = ReadScriptTypographyStore.font(scope),
-            globalDefaultFont = selectedPreset.textFont,
+            globalDefaultFont = globalDefaultFont,
             platformFont = "",
         )
         return EffectiveReadValueResolverContract.resolve(context)

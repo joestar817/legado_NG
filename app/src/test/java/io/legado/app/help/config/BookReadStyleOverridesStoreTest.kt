@@ -105,7 +105,7 @@ class BookReadStyleOverridesStoreTest {
         assertTrue(owner.config.independentReadStyle != null)
         val effective = store.effectiveDefaultFont(owner, globalFont = "A")
         assertEquals("A", effective.value)
-        assertEquals(ReadValueSource.PRESET, effective.source)
+        assertEquals(ReadValueSource.GLOBAL, effective.source)
     }
 
     @Test

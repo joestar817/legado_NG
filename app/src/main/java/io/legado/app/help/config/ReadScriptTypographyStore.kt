@@ -28,7 +28,8 @@ object ReadScriptTypographyStore {
     fun font(scope: ReadValueScope): String? = load().forScope(scope)
 
     fun setFont(scope: ReadValueScope, value: String?) {
-        save(load().withScope(scope, value))
+        // 空白视为未设置（稀疏继承语义），避免持久化出 "" 假覆盖。
+        save(load().withScope(scope, value?.takeIf { it.isNotBlank() }))
     }
 
     fun clear() = appCtx.putPrefString(PREF_KEY, null)

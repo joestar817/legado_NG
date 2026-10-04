@@ -93,8 +93,10 @@ object EffectiveReadValueResolverContract : EffectiveReadValueResolver {
 
         // 1a. 本书脚本级稀疏 override
         context.bookScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.THIS_BOOK, scope) }
-        // 1b. 本书默认级稀疏 override（压过全局脚本档案）
-        context.bookDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.THIS_BOOK, scope) }
+        // 1b. 本书默认级稀疏 override 只作用于 DEFAULT 维度（稀疏继承：default 是基准桶，不拦脚本桶）
+        if (scope == ReadValueScope.DEFAULT) {
+            context.bookDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.THIS_BOOK, scope) }
+        }
 
         // 2. 本书基准预设（pinned 快照，或 follow_global 当前预设）
         context.basePreset?.let { preset ->
@@ -102,13 +104,13 @@ object EffectiveReadValueResolverContract : EffectiveReadValueResolver {
                 ReadBasePresetMode.PINNED -> {
                     val snapshot = requireNotNull(preset.snapshot)
                     snapshot.scriptFonts[scope]?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
-                    snapshot.defaultFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
+                    // 基准 defaultFont 只做 DEFAULT 维度的回落；脚本维度继续向下找预设/全局脚本字体。
+                    if (scope == ReadValueScope.DEFAULT) {
+                        snapshot.defaultFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
+                    }
                 }
 
-                ReadBasePresetMode.FOLLOW_GLOBAL -> {
-                    context.globalScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
-                    context.globalDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
-                }
+                ReadBasePresetMode.FOLLOW_GLOBAL -> Unit
             }
         }
 
