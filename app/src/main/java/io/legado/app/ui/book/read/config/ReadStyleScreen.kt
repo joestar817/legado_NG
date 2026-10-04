@@ -594,9 +594,12 @@ private fun PresetPage(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = state.bookFont + if (state.bookFontSource.isNotBlank()) " · " + state.bookFontSource else "",
+                text = fontDisplayName(state.bookFont) +
+                    if (state.bookFontSource.isNotBlank()) " · " + state.bookFontSource else "",
                 color = contentColor.copy(alpha = 0.72f),
                 fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             if (state.bookFontSource == stringResource(R.string.read_style_source_this_book)) {
                 Spacer(Modifier.width(10.dp))
@@ -664,6 +667,11 @@ private fun PresetPage(
     )
 }
 
+/** 字体路径 → 显示名（content:// 解码后取最后一段）。 */
+private fun fontDisplayName(path: String): String = runCatching {
+    java.net.URLDecoder.decode(path, "utf-8")
+}.getOrDefault(path).substringAfterLast('/').ifBlank { path }
+
 @Composable
 private fun LanguageFontsPage(
     state: ReadStyleUiState,
@@ -708,7 +716,7 @@ private fun LanguageFontsPage(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = item.font.ifBlank { stringResource(R.string.read_style_follow_default) } +
+                text = fontDisplayName(item.font).ifBlank { stringResource(R.string.read_style_follow_default) } +
                     if (item.source != ReadValueSource.PLATFORM) {
                         " · " + stringResource(
                             when (item.source) {

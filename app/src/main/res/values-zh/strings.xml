@@ -2287,6 +2287,7 @@
     <string name="read_style_follow_default">跟随默认</string>
     <string name="read_style_source_publisher">原书</string>
     <string name="read_style_reset_font">重置字体</string>
+    <string name="font_dialog_drag_hint">拖动可移动</string>
     <string name="read_style_source_global">全局</string>
     <string name="read_style_source_preset">固定基准</string>
     <string name="read_style_source_this_book">本书</string>

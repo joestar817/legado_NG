@@ -2387,6 +2387,7 @@
     <string name="read_style_follow_default">Follow default</string>
     <string name="read_style_source_publisher">Publisher</string>
     <string name="read_style_reset_font">Reset font</string>
+    <string name="font_dialog_drag_hint">Drag to move</string>
     <string name="read_style_source_global">Global</string>
     <string name="read_style_source_preset">Pinned preset</string>
     <string name="read_style_source_this_book">This book</string>
