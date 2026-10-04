@@ -21,8 +21,11 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.toColorInt
+import androidx.lifecycle.lifecycleScope
 import com.github.liuyueyi.quick.transfer.constants.TransType
 import com.google.gson.Gson
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import com.google.gson.reflect.TypeToken
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
@@ -32,6 +35,7 @@ import io.legado.app.help.DefaultData
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.EpubScriptFontHealth
 import io.legado.app.help.config.ReadPresetPreferences
 import io.legado.app.help.config.ReadValueScope
 import io.legado.app.help.config.ScriptFontDebug
@@ -100,6 +104,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var unsavedConfirmShowing = false
     private var pendingScriptFontScope by mutableStateOf<ReadValueScope?>(null)
     private var pendingEditorScriptFontScope by mutableStateOf<ReadValueScope?>(null)
+    private var currentPage: ReadStylePage = ReadStylePage.PRESET
     private val configFileName = "readConfig.zip"
     private val selectExportDocument = registerForActivityResult(
         CreateDocumentContract("application/zip")
@@ -176,6 +181,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             }.getOrNull()
         }
         refreshUi()
+        // EPUB 可见 surface 报告脚本字体加载失败时，实时刷新 Language fonts 删除线。
+        lifecycleScope.launch {
+            EpubScriptFontHealth.failedScopes.collect { refreshUi() }
+        }
         composeView.apply {
             setViewCompositionStrategy(
                 ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
@@ -499,7 +508,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 applyHighlightRules(rules)
             }
         },
-        onDone = { dismissAllowingStateLoss() },
+        onDone = ::commitDone,
         onDiscard = ::discardChanges,
         onResetBookCustomization = ::resetBookCustomization,
         onResetBookFontOverride = ::resetBookFontOverride,
@@ -558,6 +567,26 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun computeUnsaved(): Boolean = sessionSnapshot != null && currentSnapshotJson() != sessionSnapshotJson
+
+    private fun commitDone() {
+        // EPUB 渲染失败的脚本字体视为不可用：保存时恢复为跟随预设，忽略本次选择。
+        if (EpubScriptFontHealth.failedScopes.value.isNotEmpty()) {
+            val editorPage = currentPage.isEditorPage()
+            EpubScriptFontHealth.failedScopes.value.forEach { scopeName ->
+                ReadValueScope.entries.firstOrNull { it.name.equals(scopeName, ignoreCase = true) }?.let { scope ->
+                    if (editorPage) {
+                        ReadBookConfig.setEditorScriptFont(scope, null)
+                    } else {
+                        ReadBookConfig.writeScriptFont(scope, null)
+                    }
+                    ScriptFontDebug.d("commitDone clearing failed scope=$scopeName editorPage=$editorPage")
+                }
+            }
+            EpubScriptFontHealth.clear()
+            refreshUi()
+        }
+        dismissAllowingStateLoss()
+    }
 
     private fun discardChanges() {
         val snapshot = sessionSnapshot ?: sessionSnapshotJson.takeIf { it.isNotBlank() }?.let {
@@ -719,6 +748,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 ReadValueScope.OTHER,
             ).map { scope ->
                 val resolved = ReadBookConfig.scriptFont(scope)
+                val hasThisLayerOverride = ReadBookConfig.hasScriptFontOverride(scope)
+                val hasPresetOverride = ReadBookConfig.durConfig.scriptFonts?.forScope(scope) != null
                 ReadScriptFontUi(
                     scope = scope,
                     label = getString(
@@ -730,7 +761,9 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                     ),
                     font = resolved.value,
                     source = resolved.source,
-                    canReset = ReadBookConfig.hasScriptFontOverride(scope),
+                    canReset = hasThisLayerOverride,
+                    isInherited = !hasThisLayerOverride && !hasPresetOverride,
+                    unavailable = EpubScriptFontHealth.isFailed(scope.name.lowercase()),
                 )
             },
             editorScriptFonts = listOf(
@@ -771,6 +804,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     private fun openEditor(index: Int, isNew: Boolean = false) {
         creatingPreset = isNew
+        currentPage = ReadStylePage.EDIT
         changeBgTextConfig(index)
         page = ReadStylePage.EDIT
         ReadBookConfig.setNightThemeOverride(null)
@@ -811,6 +845,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun openLanguageFonts() {
+        currentPage = ReadStylePage.LANGUAGE_FONTS
         page = ReadStylePage.LANGUAGE_FONTS
         refreshUi()
     }
@@ -818,6 +853,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun selectScriptFont(scope: ReadValueScope) {
         pendingEditorScriptFontScope = null
         pendingScriptFontScope = scope
+        EpubScriptFontHealth.report(scope.name.lowercase(), false)
         showDialogFragment<FontSelectDialog>()
     }
 
@@ -829,6 +865,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     private fun resetScriptFont(scope: ReadValueScope) {
         ReadBookConfig.writeScriptFont(scope, null)
+        EpubScriptFontHealth.report(scope.name.lowercase(), false)
         refreshUi()
         // 硬性要求：全局脚本字体写入后必须刷新字体表；本书覆盖路径同样刷新（幂等）。
         postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
@@ -837,6 +874,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun selectEditorScriptFont(scope: ReadValueScope) {
         pendingScriptFontScope = null
         pendingEditorScriptFontScope = scope
+        EpubScriptFontHealth.report(scope.name.lowercase(), false)
         showDialogFragment<FontSelectDialog>()
     }
 
@@ -847,6 +885,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun navigateTo(target: ReadStylePage) {
+        currentPage = target
         if (target != ReadStylePage.HIGHLIGHT && highlightSelectionMode != HighlightSelectionMode.NONE) {
             clearHighlightSelection(refresh = false)
         }

@@ -24,6 +24,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import io.legado.app.help.config.EpubScriptFontHealth
 import io.legado.app.help.config.ScriptFontDebug
 import io.legado.app.model.epub.EpubResourceGateway
 import io.legado.app.model.epub.EpubResourceLink
@@ -40,6 +41,7 @@ internal class EpubLayoutSurface(
     private var onReady: (JSONObject) -> Unit,
     private var onError: (String) -> Unit,
     private var onViewportRequired: ((Boolean) -> Unit)? = null,
+    private val reportFontHealth: Boolean = false,
 ) : FrameLayout(context), Closeable {
     private val gateway = EpubResourceGateway(publication, readerRuntime = true)
     // Android 14's UiModeManager callback can retain the Context that created it.
@@ -554,6 +556,14 @@ internal class EpubLayoutSurface(
                         }
                         val ready = {
                             if (!closed && revision.toString() == token) {
+                                if (reportFontHealth) {
+                                    val failures = report.optJSONArray("scriptFontFailures")?.let { arr ->
+                                        (0 until arr.length()).mapNotNull { arr.optString(it) }.toSet()
+                                    } ?: emptySet()
+                                    listOf("latin", "cjk", "other").forEach { scope ->
+                                        EpubScriptFontHealth.report(scope, scope in failures)
+                                    }
+                                }
                                 publishState(report)
                             }
                         }

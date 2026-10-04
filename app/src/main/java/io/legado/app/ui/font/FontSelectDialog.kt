@@ -51,6 +51,7 @@ import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.config.ReadConfigDialogSurface
 import io.legado.app.ui.book.read.config.ReadConfigDialogTitle
@@ -416,9 +417,14 @@ class FontSelectDialog : BaseComposeDialogFragment() {
     private fun selectSystemFont(index: Int) {
         selectedSystemFont = index
         selectedFontPath = ""
-        // 只有正文字体对话框才更新全局系统字体偏好；脚本字体对话框选系统字体 = 清除该脚本覆盖。
-        if (callBack?.isBodyFontDialog != false) AppConfig.systemTypefaces = index
-        callBack?.selectFont("")
+        // 正文字体对话框：更新全局系统字体偏好并清空正文字体；
+        // 脚本字体对话框：写入 system:index 标记，保持「该脚本用系统衬线/等宽」的选择。
+        if (callBack?.isBodyFontDialog != false) {
+            AppConfig.systemTypefaces = index
+            callBack?.selectFont("")
+        } else {
+            callBack?.selectFont(ReadBookConfig.systemFontValue(index))
+        }
         dismissAllowingStateLoss()
     }
 

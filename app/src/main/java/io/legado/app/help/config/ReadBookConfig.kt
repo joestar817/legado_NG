@@ -190,13 +190,32 @@ object ReadBookConfig {
 
     /**
      * 渲染层用的脚本字体路径：与 effective default 不同才返回（相同即无需按字换字体）。
-     * 空白/null 表示该维度不换字体。
+     * 空白/null 表示该维度不换字体。系统字体标记（system:0/1/2）映射到系统字体文件，
+     * 使 TXT（native typeface）与 EPUB（FontFace 字节）都能消费。
      */
     fun scriptFontPath(scope: ReadValueScope): String? {
         val default = scriptFont(ReadValueScope.DEFAULT).value
         val value = scriptFont(scope).value
-        return value.takeIf { it.isNotBlank() && it != default }
+        val defaultFile = systemFontFile(default) ?: default
+        val valueFile = systemFontFile(value) ?: value
+        return valueFile.takeIf { it.isNotBlank() && it != defaultFile }
     }
+
+    /** 系统字体标记：system:0=默认，system:1=衬线，system:2=等宽。 */
+    fun systemFontValue(index: Int): String = "system:$index"
+
+    fun isSystemFont(value: String?): Boolean = value?.startsWith("system:") == true
+
+    private val systemFontFiles = mapOf(
+        0 to "/system/fonts/Roboto-Regular.ttf",
+        1 to "/system/fonts/NotoSerif-Regular.ttf",
+        2 to "/system/fonts/DroidSansMono.ttf",
+    )
+
+    private fun systemFontFile(value: String?): String? = value
+        ?.removePrefix("system:")
+        ?.toIntOrNull()
+        ?.let { systemFontFiles[it] }
 
     /**
      * Phase 3 Language fonts UI：写入脚本字体。

@@ -114,11 +114,14 @@
     }
     async function loadScriptFonts(value, mine) {
         var fonts = value && value.scriptFonts;
+        window.__ngScriptFontFailures = window.__ngScriptFontFailures || {};
         if (!fonts) return;
         var next = [];
         ['latin', 'cjk', 'other'].forEach(function (scope) {
             if (fonts[scope]) {
                 next.push({ scope: scope, url: new URL(fonts[scope], document.baseURI).href });
+            } else {
+                delete window.__ngScriptFontFailures[scope];
             }
         });
         if (!next.length) return;
@@ -131,8 +134,10 @@
                     unicodeRange: scriptFontRange(item.scope)
                 });
                 await face.load();
+                delete window.__ngScriptFontFailures[item.scope];
             } catch (e) {
                 face = null;
+                window.__ngScriptFontFailures[item.scope] = true;
                 console.log('NG: face load failed scope=' + item.scope + ' err=' + (e && e.message) + ' url=' + item.url.slice(0, 140));
             }
             if (mine !== generation) return;
@@ -1693,5 +1698,6 @@
             hideFooter: !!state.cover || bleedRects.some(function (r) { return visible(r) && r.sides.includes('bottom') && r.bottom > viewportHeight - (inset.bottom || 0); }),
             media: mediaState(), location: sourceLocation(), textLength: sourceText.length, chapterBoundaries: chapterBoundaries,
             galleryIndexes: galleries.map(function (gallery) { return galleryIndexes.get(gallery.element) || 0; }),
+            scriptFontFailures: Object.keys(window.__ngScriptFontFailures || {}),
             bleedRects: bleedRects }); } });
 })(window);

@@ -13,6 +13,7 @@ import io.legado.app.data.entities.Bookmark
 import io.legado.app.data.appDb
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isEpub
+import io.legado.app.help.config.EpubScriptFontHealth
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadValueScope
 import io.legado.app.help.config.ScriptFontDebug
@@ -316,7 +317,7 @@ internal class EpubLayoutController(
         }
         next = openingPreview()?.take(bookUrl, publication)?.also {
             it.adopt(onReady, onFailure, requestViewport)
-        } ?: EpubLayoutSurface(host.context, publication, onReady, onFailure, requestViewport)
+        } ?: EpubLayoutSurface(host.context, publication, onReady, onFailure, requestViewport, reportFontHealth = true)
         surface = next
         next.readerFont(readerFontBytes)
         next.titleFont(titleFontBytes)
@@ -1593,6 +1594,7 @@ internal class EpubLayoutController(
         titleFontPath = ""
         scriptFontBytes = emptyMap()
         scriptFontPaths = emptyMap()
+        EpubScriptFontHealth.clear()
         documents = emptyList()
         active = false
     }

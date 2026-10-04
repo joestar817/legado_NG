@@ -63,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -206,6 +207,10 @@ internal data class ReadScriptFontUi(
     val font: String,
     val source: ReadValueSource,
     val canReset: Boolean,
+    /** 当前脚本维度没有任何显式覆盖（本书/全局/预设脚本字体），实际值来自默认桶回落。 */
+    val isInherited: Boolean = false,
+    /** EPUB WebView 加载该字体失败（如 OTS 拒绝），行显示删除线，Done 时恢复跟随预设。 */
+    val unavailable: Boolean = false,
 )
 
 internal data class ReadStyleActions(
@@ -666,10 +671,15 @@ private fun PresetPage(
     )
 }
 
-/** 字体路径 → 显示名（content:// 解码后取最后一段）。 */
-private fun fontDisplayName(path: String): String = runCatching {
-    java.net.URLDecoder.decode(path, "utf-8")
-}.getOrDefault(path).substringAfterLast('/').ifBlank { path }
+/** 字体路径 → 显示名（content:// 解码后取最后一段；系统字体标记映射到名称）。 */
+private fun fontDisplayName(path: String): String = when (path) {
+    "system:0" -> "系统默认字体"
+    "system:1" -> "系统衬线字体"
+    "system:2" -> "系统等宽字体"
+    else -> runCatching {
+        java.net.URLDecoder.decode(path, "utf-8")
+    }.getOrDefault(path).substringAfterLast('/').ifBlank { path }
+}
 
 @Composable
 private fun LanguageFontsPage(
@@ -723,8 +733,10 @@ private fun LanguageFontsPage(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = fontDisplayName(item.font).ifBlank { stringResource(R.string.read_style_follow_preset) } +
-                    if (item.source != ReadValueSource.PLATFORM) {
+                text = if (item.isInherited) {
+                    stringResource(R.string.read_style_follow_preset)
+                } else {
+                    fontDisplayName(item.font).ifBlank { item.font } +
                         " · " + stringResource(
                             when (item.source) {
                                 ReadValueSource.THIS_BOOK -> R.string.read_style_source_this_book
@@ -734,11 +746,12 @@ private fun LanguageFontsPage(
                                 ReadValueSource.PLATFORM -> R.string.read_style_source_global
                             }
                         )
-                    } else "",
+                },
                 color = contentColor.copy(alpha = 0.72f),
                 fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                textDecoration = if (item.unavailable) TextDecoration.LineThrough else TextDecoration.None,
                 modifier = Modifier.weight(1.4f, fill = false),
             )
             if (item.canReset) {
