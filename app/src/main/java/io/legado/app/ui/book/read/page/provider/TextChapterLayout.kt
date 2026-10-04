@@ -959,7 +959,13 @@ class TextChapterLayout(
         srcList: LinkedList<String>? = null,
         clickList: LinkedList<String?>?
     ) {
-        val charStyles = highlightMatcher.match(text, isTitle)
+        val charStyles = if (ReadBookConfig.hasScriptTypography()) {
+            ScriptFontStyleResolver.overlay(text, highlightMatcher.match(text, isTitle)) {
+                ReadBookConfig.scriptFontPath(it)
+            }
+        } else {
+            highlightMatcher.match(text, isTitle)
+        }
         val widthsArray = allocateFloatArray(text.length)
         textPaint.getTextWidthsCompat(text, widthsArray, reviewCharWidth)
         remeasureHighlightFonts(text, charStyles, textPaint, widthsArray)

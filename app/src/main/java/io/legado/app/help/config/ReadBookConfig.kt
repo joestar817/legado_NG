@@ -144,6 +144,38 @@ object ReadBookConfig {
     fun bookFontOverrideSource(globalFont: String): ResolvedReadValue =
         bookOverridesStore.effectiveDefaultFont(boundBook, globalFont)
 
+    /**
+     * Phase 3 TXT 生产化：是否有任何脚本字体配置（全局 scripts 或本书 font override）。
+     * 无配置时渲染层零改动（直接返回 highlight 样式）。
+     */
+    fun hasScriptTypography(): Boolean =
+        !ReadScriptTypographyStore.load().isEmpty() ||
+            bookOverridesStore.current(boundBook)?.font?.isEmpty() == false
+
+    /** 解析某脚本维度的有效字体（value + source），走冻结的 EffectiveReadValueResolverContract。 */
+    fun scriptFont(scope: ReadValueScope): ResolvedReadValue {
+        val globalDefaultFont = getConfig(styleSelect).textFont
+        val context = BookReadStyleCompatibility.contextFor(
+            scope = scope,
+            overrides = bookOverridesStore.current(boundBook),
+            legacyConfig = bookOverridesStore.legacy(boundBook),
+            globalScriptFont = ReadScriptTypographyStore.font(scope),
+            globalDefaultFont = globalDefaultFont,
+            platformFont = "",
+        )
+        return EffectiveReadValueResolverContract.resolve(context)
+    }
+
+    /**
+     * 渲染层用的脚本字体路径：与 effective default 不同才返回（相同即无需按字换字体）。
+     * 空白/null 表示该维度不换字体。
+     */
+    fun scriptFontPath(scope: ReadValueScope): String? {
+        val default = scriptFont(ReadValueScope.DEFAULT).value
+        val value = scriptFont(scope).value
+        return value?.takeIf { it.isNotBlank() && it != default }
+    }
+
     fun saveBookStyle(book: Book) = bookStyle.saveFor(book)
 
     fun setOnlyThisBook(enabled: Boolean) {
