@@ -3,7 +3,7 @@
 > 状态：v2 核心模型（预设/全局/本书/脚本/EPUB 闸门）维持已批准；**v2.1 白盒评审（2026-10）重开的 6 项契约已在 §3.7 决议**（重点：`basePreset` 默认 = 固定基准预设，`follow_global` 为显式选择）。Phase 0 契约测试按 §3.7 冻结后即可解封；Phase 1 UI 工作仍须在契约测试通过后开始。
 > ① 本书基准预设 `basePreset`；② 脚本分类与中性字符策略；③ 脚本维度仅限正文 `textFont` 的范围声明；④ EPUB `Publisher` 来源的级联 caveat 与 UI 呈现；⑤ 字体加载缓存前置；⑥ myreader 语言映射桥接语义。
 > Phase 0 契约测试暂缓定稿，待 §3.7 决议后一并冻结；Phase 1 UI 工作仍须在契约测试通过后开始。
-> 关联文档：`docs/reading-display-settings.md`（现状分析）
+> 关联文档：`docs/reading-display-settings.md`（现状分析）、`docs/typography-placement-proposal.md`（Language fonts 最终归属：preset + global fallback + book override）
 > 范围：阅读样式/预设、本书覆盖、共享排版、语言（CJK/Latin/Other）字体、EPUB 排版优先级、调整页、导航与保存语义
 
 ## 1. 背景与目标
@@ -89,6 +89,8 @@ CJK · This book
 book.overrides[scope][property]        → 有则用之（source = ThisBook）     # 本书脚本级覆盖
 book.overrides[default][property]      → 有则用之（source = ThisBook）     # 本书默认级覆盖；压过全局脚本档案
 book.basePreset(scope, property)       → pinned 快照或 follow_global 当前预设（source = Preset）
+  ├─ preset.scripts[scope]             → 有则用之（source = Preset）       # 预设级脚本字体覆盖
+  └─ preset.default[property]          → 有则用之（source = Preset）       # 预设默认字体
 global.scripts[scope][property]        → 有则用之（source = Global）
 global.default[property]               → 用之（source = Global）
 platform fallback                      → 最后兜底（source = Platform，非空）
@@ -96,6 +98,8 @@ platform fallback                      → 最后兜底（source = Platform，�
 
 - `book.basePreset` 对每个 `(scope, property)` 先查它自己的脚本档案，再查它自己的 default（预设内部层级 = 脚本档案 → default）。
 - `follow_global` 模式：`book.basePreset` 解析到当前全局预设（仍记 `source = Preset`，UI 可显示 `Preset: Default`）。
+- 预设脚本字体为**稀疏覆盖**：`null`/absent 表示该维度继承全局，有值则表示本预设显式覆盖。
+- 详细设计见 `docs/typography-placement-proposal.md`。
 
 EPUB 属性：
 
@@ -248,7 +252,8 @@ EPUB / Custom         any        any         any         per-rule
    - **决议：开启「自定义本书设置」时，默认把当前预设保存为不可变快照基准（pinned snapshot，或等价版本化引用）**，不是只存 `presetId` 引用——后者在用户继续编辑该预设时会再次改变本书基准，重蹈旧模型覆辙。保留旧 `copyForBook` 的隔离语义：用户自定义过这本书后，全局切换/编辑预设不会静默改变本书外观。
    - `follow_global` 是**显式选择**，通过「恢复跟随全局当前预设」入口启用；不随自定义动作隐式产生。
    - **来源标签语义**：同一全局值，书带 `follow_global` 基准时 `source=Preset`（告诉用户“本书跟随预设”），无基准时 `source=Global`——值相同、标签不同，是有意区分（契约测试 15 钉死）。
-   - 解析顺序：`book.overrides[scope] → book.overrides[default] → book.basePreset → global.scripts → global.default → platform`。
+   - 解析顺序：`book.overrides[scope] → book.overrides[default] → book.basePreset → preset.scripts → global.scripts → global.default → platform`。
+   - **预设脚本字体**：`ReadPresetSnapshot.scriptFonts` 在 Phase 0 已预留，当前恒为 `emptyMap`；按 `docs/typography-placement-proposal.md` 决策，预设开始承载 `Latin/CJK/Other` 稀疏脚本字体覆盖，缺省即继承全局。
    - 旧 `independentReadStyle` 整份拷贝在语义上等价于「固定的 legacy 快照基准 + 空 overrides」，迁移期先作为 `LegacyBookStyle` 兼容层，不 diff；契约上 source 记 `Preset`（与 Phase 5 归一化终态一致，不单列 LEGACY 来源）。
 2. **脚本分类与中性字符**：分类单位是**字符**（`Character.UnicodeScript`），不是整书语言检测。
    - CJK = Han / Hiragana / Katakana / Hangul + 全角形式（U+3000–303F、FF00–FFEF）；
@@ -286,7 +291,12 @@ global:
 book:
   basePreset:                   # v2.1：自定义本书时默认 pinned 快照；follow_global 为显式选择
     mode: pinned | follow_global
-    snapshot: { ... }           # 仅 pinned 模式；不可变预设快照（或等价版本化引用）
+    snapshot:                   # 仅 pinned 模式；不可变预设快照（或等价版本化引用）
+      default: { font, size, weight, ... }
+      scripts:                 # 稀疏：null = 继承 global；有值 = 本预设覆盖
+        latin: { font: null }
+        cjk:   { font: null }
+        other: { font: null }
   overrides:                   # 只存被改动的字段
     appearance:
       day:   { bg: ... }       # 属性级稀疏覆盖，绝不做整份 appearance 拷贝
@@ -492,15 +502,17 @@ Phase 5  清理 / 退役 legacy
 - [x] **3A EPUB PoC（PASS，2026-10-03）**：same-family + unicode-range 路径验证通过（A–H + R1 + negative 全过，见 `docs/reading-poc-3a-epub-script-fonts.md` §5）。结论：WebView 渲染层可按脚本选字体，模型/UI 可以继续。
 - [x] **字体缓存先行**：以 `(path, weight, italic)` 为键的 typeface LruCache（`StyledTypefaceCache` + `KeyedTypefaceCache`，接入 `ChapterProvider.resolveStyledTypeface`；`StyledTypefaceCacheTest` 5 条契约）。（§3.7-5）
 - [x] `global.typography.scripts{latin,cjk,other}` + book 级同名 override。（`ReadScriptTypographyStore`：形状复用 `SparseFontOverrides`（与 book 级同构），pref `readScriptTypography` 持久化；`withScope` 写入单脚本维度。渲染接线随 TXT/EPUB 生产化挂接）
+- [x] **预设级脚本字体（37deb1872 + 778184c84）**：`ReadBookConfig.Config` 增加 `scriptFonts: SparseFontOverrides?`；`ReadPresetSnapshot.scriptFonts` 从 legacy/预设构造非空 map；`ReadValueContext` 新增 `presetScriptFont` 层（basePreset 之后、global 之前，source=PRESET）；`hasScriptTypography()` 计入 basePreset 快照 + 选中预设 scripts；契约测试新增「预设脚本字体」4 条（预设>全局、本书>预设、缺省回落全局、JSON round-trip）。（详见 `docs/typography-placement-proposal.md`）
 - [ ] 语言预设映射桥接/迁入，预设级映射退役。（myreader 的 `ReadStyleLanguageMap` 不在 favorite，桥接随语言映射分支合并时实现；迁移只取被绑定预设的 `textFont` 写入 `global.typography.scripts.*.font`）
-- [ ] UI：Typography → Language fonts。
+- [x] UI：Typography → Language fonts。结构为：全局页 = 全局兜底（副标题「新预设或未自定义的预设会继承这些字体」）；预设编辑器 = 预设覆盖（EDIT 页 Language fonts 三行，跟随全局/本预设）；本书模式 = 本书覆盖（`writeScriptFont` 路由）。
 - [ ] **Phase 3 只做字体**：字重、字距等其他排版属性保持全局/default，推迟到 Phase 4 随生产级脚本渲染一起做。Phase 3 的目的单一化：`script detection → script profile → font selection → mixed-script PoC`。
+- [ ] **（可选/可延后）书籍主脚本检测 + 默认预设推荐**：`BookPrimaryScript`（LATIN/CJK/OTHER/MIXED/UNKNOWN）；内置 `Latin Reading` / `CJK Reading` / `Other Reading` 三个普通预设；打开新书时按主脚本推荐默认预设。不影响核心解析链，可独立交付。
 - [x] **TXT PoC（5e4a67a6e，ENABLED=false 休眠，2026-10-04 真机 PASS）**：脚本分类生产实现 `ReadScriptClassifierContract`（测试切到生产对象）+ `TxtScriptFontPoc` 在 `highlightMatcher.match` 后叠加脚本字体 ReadCharStyle，走既有 `remeasureHighlightFonts` / `TextColumn.draw` 链路。真机验收（模拟器，`poc-mixed.txt`）：P1 逐脚本切换、P3 中性继承（`123`/`——` 随 CJK）、P4 段首数字回落正文字体、P5 Greek(Other) 回落、无 tofu；ENABLED=false 与基线一致。已知限制同行内高亮：行高由正文字体决定，显著更高的脚本字体可能裁切。
 - [x] **TXT 生产化（87d6d57c4 + 3ea1fcaa4，2026-10-04 验收通过）**：`ReadBookConfig.scriptFont/scriptFontPath/hasScriptTypography` 接 `EffectiveReadValueResolverContract`；`ScriptFontStyleResolver`（fontProvider 注入，纯函数）生产叠加——CJK/Latin/Other 三 scope 全部接通、中性继承、高亮字体优先、空 provider 零分配；`ChapterProvider` 在 `upStyle()` 刷新点一次性解析 `scriptFontTable`，段落布局只做 O(1) 查表（热路径零 JSON 解析）；`ScriptFontStyleResolverTest` 11 条契约。PoC 两套脚手架已删（`82b4ae817`）。
 - [ ] **EPUB 生产化挂接点**（3A 已验证路径）：注册带 `unicode-range` 的 `FontFace` 划脚本边界（避免共享标点 U+2013–2029 被 Latin 字体抢占），在 `readerFamily()`（`assets/epub/reader.js:83`）前置；字体字节经 `EpubResourceGateway` 同域服务，无需改分页/测量。（PoC 脚手架已删，只剩生产接线）
 - [ ] 不做 Latin×Day/Night 组合；不实现 fallback chain。
 
-验收：CJK/Latin/Other 字体可全局与本书两级覆盖；PoC 证明渲染路径可行；UI 不暴露“渲染器还不消费”的假开关；除字体外的排版属性未新增脚本维度。
+验收：CJK/Latin/Other 字体可全局、预设、本书三级覆盖；PoC 证明渲染路径可行；UI 不暴露“渲染器还不消费”的假开关；除字体外的排版属性未新增脚本维度。
 
 ### Phase 4 — 生产级脚本感知渲染
 
