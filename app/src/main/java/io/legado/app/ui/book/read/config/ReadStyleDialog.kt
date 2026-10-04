@@ -1,5 +1,6 @@
 package io.legado.app.ui.book.read.config
 
+import android.app.Dialog
 import android.content.DialogInterface
 import android.graphics.Typeface
 import android.net.Uri
@@ -228,11 +229,11 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         }
     }
 
-    override fun onCancel(dialog: DialogInterface) {
-        if (computeUnsaved()) {
-            showUnsavedConfirm()
-        } else {
-            super.onCancel(dialog)
+    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
+        return object : ComponentDialog(requireContext(), theme) {
+            override fun cancel() {
+                requestDismiss()
+            }
         }
     }
 
