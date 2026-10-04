@@ -959,9 +959,9 @@ class TextChapterLayout(
         srcList: LinkedList<String>? = null,
         clickList: LinkedList<String?>?
     ) {
-        val charStyles = if (ReadBookConfig.hasScriptTypography()) {
+        val charStyles = if (ChapterProvider.hasScriptTypography()) {
             ScriptFontStyleResolver.overlay(text, highlightMatcher.match(text, isTitle)) {
-                ReadBookConfig.scriptFontPath(it)
+                ChapterProvider.scriptFontPath(it)
             }
         } else {
             highlightMatcher.match(text, isTitle)

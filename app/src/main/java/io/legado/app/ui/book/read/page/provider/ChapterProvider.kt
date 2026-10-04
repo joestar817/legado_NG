@@ -14,6 +14,7 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.help.book.BookContent
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadValueScope
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.utils.RealPathUtil
@@ -151,6 +152,28 @@ object ChapterProvider {
 
     private var upViewSizeRunnable: Runnable? = null
 
+    /**
+     * Phase 3 TXT 生产化：脚本字体有效表。
+     * 在样式刷新点（[upStyle]）一次性解析，段落布局只做 O(1) 查表；
+     * 绝不在布局热路径做 JSON 解析（global scripts pref / 本书 overrides / legacy Config）。
+     */
+    @Volatile
+    private var scriptFontTable: Map<ReadValueScope, String> = emptyMap()
+
+    fun hasScriptTypography(): Boolean = scriptFontTable.isNotEmpty()
+
+    fun scriptFontPath(scope: ReadValueScope): String? = scriptFontTable[scope]
+
+    private fun refreshScriptFontTable() {
+        scriptFontTable = if (ReadBookConfig.hasScriptTypography()) {
+            ReadValueScope.entries.mapNotNull { scope ->
+                ReadBookConfig.scriptFontPath(scope)?.let { scope to it }
+            }.toMap()
+        } else {
+            emptyMap()
+        }
+    }
+
     init {
         upStyle()
     }
@@ -189,6 +212,7 @@ object ChapterProvider {
         // 正文字体实例已更换：清空 styled-range 缓存，避免空 path（=跟随正文字体）
         // 的缓存条目继续返回旧实例（StyledTypefaceCache 以 path 为键，空 path 条目固化了旧 typeface）。
         StyledTypefaceCache.clear()
+        refreshScriptFontTable()
         getPaints(typeface).let {
             titlePaint = it.first
             contentPaint = it.second

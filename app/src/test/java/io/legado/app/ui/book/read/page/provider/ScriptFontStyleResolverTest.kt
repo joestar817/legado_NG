@@ -14,11 +14,13 @@ class ScriptFontStyleResolverTest {
     private fun provider(
         cjk: String? = "/fonts/cjk.ttf",
         latin: String? = "/fonts/latin.ttf",
+        other: String? = null,
     ): (ReadValueScope) -> String? = { scope ->
         when (scope) {
             ReadValueScope.CJK -> cjk
             ReadValueScope.LATIN -> latin
-            else -> null
+            ReadValueScope.OTHER -> other
+            ReadValueScope.DEFAULT -> null
         }
     }
 
@@ -87,6 +89,20 @@ class ScriptFontStyleResolverTest {
     fun `single script configured only overlays that script`() {
         val result = ScriptFontStyleResolver.overlay("A你", null, provider(cjk = null))!!
         assertEquals("/fonts/latin.ttf", result[0]?.fontPath)
+        assertNull(result[1])
+    }
+
+    @Test
+    fun `other script configured hits other font`() {
+        val result = ScriptFontStyleResolver.overlay("αβ", null, provider(other = "/fonts/other.ttf"))!!
+        assertEquals("/fonts/other.ttf", result[0]?.fontPath)
+        assertEquals("/fonts/other.ttf", result[1]?.fontPath)
+    }
+
+    @Test
+    fun `other script unconfigured falls back to body font`() {
+        val result = ScriptFontStyleResolver.overlay("αβ", null, provider())!!
+        assertNull(result[0])
         assertNull(result[1])
     }
 }

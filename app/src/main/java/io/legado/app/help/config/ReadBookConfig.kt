@@ -147,6 +147,7 @@ object ReadBookConfig {
     /**
      * Phase 3 TXT 生产化：是否有任何脚本字体配置（全局 scripts 或本书 font override）。
      * 无配置时渲染层零改动（直接返回 highlight 样式）。
+     * 注：basePreset 快照的 scriptFonts 当前恒 emptyMap；未来允许写入时须一并计入。
      */
     fun hasScriptTypography(): Boolean =
         !ReadScriptTypographyStore.load().isEmpty() ||
@@ -173,7 +174,7 @@ object ReadBookConfig {
     fun scriptFontPath(scope: ReadValueScope): String? {
         val default = scriptFont(ReadValueScope.DEFAULT).value
         val value = scriptFont(scope).value
-        return value?.takeIf { it.isNotBlank() && it != default }
+        return value.takeIf { it.isNotBlank() && it != default }
     }
 
     fun saveBookStyle(book: Book) = bookStyle.saveFor(book)

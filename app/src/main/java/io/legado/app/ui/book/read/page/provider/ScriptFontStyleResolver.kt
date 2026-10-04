@@ -9,8 +9,8 @@ import io.legado.app.help.config.ReadValueScope
  * 纯函数，字体来源通过 [fontProvider] 注入（生产环境 = ReadBookConfig.scriptFontPath），
  * JVM 测试直接注入 lambda。规则与已验收的 PoC 一致：
  * - 已有高亮字体样式（fontPath / 字重 / 斜体非默认）的字符保持原样式；
- * - CJK / Latin 命中且字体与 effective default 不同 → 写 ReadCharStyle(fontPath)；
- * - 中性字符继承前一个强脚本；DEFAULT / OTHER 不叠加；
+ * - CJK / Latin / Other 命中且字体与 effective default 不同 → 写 ReadCharStyle(fontPath)；
+ * - 中性字符继承前一个强脚本；DEFAULT 不叠加；Other 命中即换字体但不更新强脚本；
  * - provider 全部返回 null 时原样返回输入数组（零分配）。
  */
 object ScriptFontStyleResolver {
@@ -22,7 +22,8 @@ object ScriptFontStyleResolver {
     ): Array<ReadCharStyle?>? {
         val cjk = fontProvider(ReadValueScope.CJK)
         val latin = fontProvider(ReadValueScope.LATIN)
-        if (cjk == null && latin == null) return styles
+        val other = fontProvider(ReadValueScope.OTHER)
+        if (cjk == null && latin == null && other == null) return styles
         val result = styles?.copyOf() ?: arrayOfNulls(text.length)
         var previousStrong: ReadValueScope? = null
         var index = 0
@@ -46,9 +47,11 @@ object ScriptFontStyleResolver {
                         latin
                     }
 
-                    ReadValueScope.DEFAULT,
-                    ReadValueScope.OTHER,
-                    -> null
+                    // OTHER 是真实脚本桶：命中即换字体，但不更新 previousStrong
+                    //（Other 不算强脚本，后续中性字符仍继承最近的 CJK/Latin）。
+                    ReadValueScope.OTHER -> other
+
+                    ReadValueScope.DEFAULT -> null
                 }
                 if (font != null) {
                     for (unit in index until (index + charCount).coerceAtMost(result.size)) {
