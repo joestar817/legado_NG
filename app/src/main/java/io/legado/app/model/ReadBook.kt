@@ -22,6 +22,7 @@ import io.legado.app.help.book.simulatedTotalChapterNum
 import io.legado.app.help.book.update
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadStyleLanguageBinder
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.globalExecutor
 import io.legado.app.model.localBook.TextFile
@@ -195,11 +196,21 @@ object ReadBook : CoroutineScope by MainScope() {
         val oldIndex = ReadBookConfig.styleSelect
         val bookStyleChanged = ReadBookConfig.bindBook(book)
         ReadBookConfig.isComic = book.isImage
-        if (oldIndex != ReadBookConfig.styleSelect || bookStyleChanged) {
+        val languageStyleChanged = ReadStyleLanguageBinder.apply(book)
+        if (oldIndex != ReadBookConfig.styleSelect || bookStyleChanged || languageStyleChanged) {
             postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
             if (AppConfig.readBarStyleFollowPage) {
                 postEvent(EventBus.UPDATE_READ_ACTION_BAR, true)
             }
+        }
+    }
+
+    private fun applyLanguageStyleFromContent(book: Book, chapter: BookChapter, content: String) {
+        if (this.book?.bookUrl != book.bookUrl) return
+        if (chapter.index != durChapterIndex) return
+        val sample = content.take(2000)
+        if (ReadStyleLanguageBinder.apply(book, sample)) {
+            ChapterProvider.upStyle()
         }
     }
 
@@ -822,6 +833,7 @@ object ReadBook : CoroutineScope by MainScope() {
         }
         chapterLoadingJobs[chapter.index]?.cancel()
         val job = Coroutine.async(this, start = CoroutineStart.LAZY) {
+            applyLanguageStyleFromContent(book, chapter, content)
             val startup = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("content-prepare-${chapter.index}") else null
             val contentProcessor = ContentProcessor.get(book.name, book.origin)
             val displayTitle = chapter.getDisplayTitle(
@@ -919,6 +931,7 @@ object ReadBook : CoroutineScope by MainScope() {
             return
         }
         kotlin.runCatching {
+            applyLanguageStyleFromContent(book, chapter, content)
             val contentProcessor = ContentProcessor.get(book.name, book.origin)
             val displayTitle = chapter.getDisplayTitle(
                 contentProcessor.getTitleReplaceRules(),

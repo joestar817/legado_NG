@@ -278,11 +278,11 @@ EPUB / Custom         any        any         any         per-rule
    - Neutral（Common/Inherited：半角标点、数字、空白）继承前一强脚本字符的字体，段首中性字符用 default 字体；
    - Other = 其余。
    - 已冻结为 `ReadScriptClassifier` 契约 + `ReadScriptClassifierTest`（Han/假名/谚文/全角、Latin、Neutral 继承、段首中性→DEFAULT、Greek/Cyrillic/Thai→Other）。
-   myreader 的 `BookLanguageDetector`（整书语言检测）**不参与**新模型，仅在迁移时用。
+   myreader 的 `BookLanguageDetector`（整书语言检测）**不参与字符级字体解析**；开书时选用哪套预设见 `docs/reading-settings-global-tab-plan.md`（新书预设）。
 3. **脚本维度只覆盖正文 `textFont`**：`titleFont` / `headerFont` / `footerFont` 不加脚本维度（标题通常单一语言；EPUB 标题走独立 `NGTitleFont`，`applyHeaderStyle` 耦合不变）。
 4. **EPUB `Publisher` 来源的级联 caveat**：尊重原书时 App 仍注入零优先级默认表（`:where(html)`，`assets/epub/reader.js:1345-1357`），原书未声明样式的元素仍落回 App 字体。`source = Publisher` 的契约含义 = 「原书有声明的元素 publisher 赢」；契约测试按属性级闸门断言，渲染层按元素级级联实现。「原书字体 = 尊重」时，Language fonts 行须显示 Publisher 来源与「当前由原书 CSS 生效」提示。
 5. **字体加载缓存前置（已完成 `24cc33f29`）**：已落地以 `(path, weight, italic, mtime)` 为键的 typeface LruCache（`StyledTypefaceCache`），普通文件路径并入 `File.lastModified()`，同路径文件被外部覆盖后自动失效；`content://` / `assets://` 豁免。接入 `ChapterProvider.resolveStyledTypeface`；`StyledTypefaceCacheTest` 8 条契约。
-6. **myreader 语言映射桥接语义**：旧模型是 `script → 预设名` 绑定（`ReadStyleLanguageMap`，携带颜色/排版整套），新模型是 `script → 字体属性`。迁移只取被绑定预设的 `textFont` 写入 `global.typography.scripts.*.font`，其余属性不迁移（给用户的可见说明）；旧绑定数据保留一个版本期可回滚。
+6. **整书语言 → 预设（新书预设）**：`ReadStyleLanguageMap` 是 `中文/西文/其他 → 预设名`，用来 **选哪一套阅读预设**，不是把预设的 `textFont` 写进 `global.typography.scripts`。字符级脚本字体仍走 book/preset/global 解析链。已在默认 Tab 落地，见 `docs/reading-settings-global-tab-plan.md`。
 
 ## 4. 目标数据模型
 
@@ -459,7 +459,7 @@ Language fonts                   >
 - `readConfig.json` → `global`（preset 列表保留原结构）。
 - `shareReadConfig.json` + `shareLayout=true` → 把 shareConfig 排版字段作为 `global.typography` 来源，关闭 shareLayout（Phase 2 内完成）。
 - `EpubLayoutPreferences` → `book.epub.rules`（存储位置可不变，仅入口与展示变化）。
-- 语言预设映射（myreader 分支）→ `global.typography.scripts` + book override（Phase 3 桥接兼容）。
+- 语言→预设映射（`pr/reading-settings` 的 `ReadStyleLanguageMap`）→ 默认 Tab「新书预设」，**不要**折进 `global.typography.scripts`（那是脚本字体兜底）。见 `docs/reading-settings-global-tab-plan.md`。
 
 ## 7. 分阶段实施计划
 
@@ -487,7 +487,7 @@ Phase 5  清理 / 退役 legacy
 - [x] 冻结 EPUB 三态语义与迁移映射（3.3）及迁移不变量（3.5）。
 - [x] 明确 `Done` / `Discard` / `←` 的保存语义（第 8 节）。
 - [x] 冻结 §3.7 前 5 项：basePreset 解析顺序、脚本分类与中性字符表、脚本维度范围（仅 `textFont`）、Publisher 级联 caveat、字体缓存前置。
-- [ ] 冻结 §3.7 第 6 项 **myreader 语言映射桥接**：契约已设计，测试用例待语言映射分支合并时补入。
+- [x] 冻结 §3.7 第 6 项 **新书预设**（整书语言→预设名）：`ReadStyleLanguagePolicy`；**不是**把映射写成脚本字体。
 - [x] 契约测试增补（除 myreader 外）：混合文本 `English 中文 日本語`；中性字符边界（`中文，with ASCII、「引号」与 123`）；`basePreset` 三态（固定预设默认 / follow_global 显式 / LegacyBookStyle 快照）的切换语义。
 - [x] 解析器接口与测试骨架先行，生产实现已落地（Phase 2）。
 
@@ -521,10 +521,10 @@ Phase 5  清理 / 退役 legacy
 - [x] **字体缓存先行**：以 `(path, weight, italic, mtime)` 为键的 typeface LruCache（`StyledTypefaceCache` + `KeyedTypefaceCache`，接入 `ChapterProvider.resolveStyledTypeface`；`StyledTypefaceCacheTest` 8 条契约）。（§3.7-5）
 - [x] `global.typography.scripts{latin,cjk,other}` + book 级同名 override。（`ReadScriptTypographyStore`：形状复用 `SparseFontOverrides`（与 book 级同构），pref `readScriptTypography` 持久化；`withScope` 写入单脚本维度。渲染接线随 TXT/EPUB 生产化挂接）
 - [x] **预设级脚本字体（37deb1872 + 778184c84）**：`ReadBookConfig.Config` 增加 `scriptFonts: SparseFontOverrides?`；`ReadPresetSnapshot.scriptFonts` 从 legacy/预设构造非空 map；`ReadValueContext` 新增 `presetScriptFont` 层（basePreset 之后、global 之前，source=PRESET）；`hasScriptTypography()` 计入 basePreset 快照 + 选中预设 scripts；契约测试新增「预设脚本字体」4 条（预设>全局、本书>预设、缺省回落全局、JSON round-trip）。（详见 `docs/typography-placement-proposal.md`）
-- [ ] 语言预设映射桥接/迁入，预设级映射退役。（myreader 的 `ReadStyleLanguageMap` 不在 favorite，桥接随语言映射分支合并时实现；迁移只取被绑定预设的 `textFont` 写入 `global.typography.scripts.*.font`）——**待分支合并**。
+- [x] **新书预设**（`ReadStyleLanguageMap`）：整书语言→已有预设名；remembered `readStyleName` 优先。**不要**把映射的 `textFont` 写入 `global.typography.scripts`。见 `docs/reading-settings-global-tab-plan.md`。
 - [x] UI：Typography → Language fonts。结构为：全局页 = 全局兜底（副标题「新预设或未自定义的预设会继承这些字体」）；预设编辑器 = 预设覆盖（EDIT 页 Language fonts 三行，跟随全局/本预设）；本书模式 = 本书覆盖（`writeScriptFont` 路由）。
 - [x] **Phase 3 只做字体**：字重、字距等其他排版属性保持全局/default，未新增脚本维度。Phase 3 目标已达成：`script detection → script profile → font selection → mixed-script PoC`。
-- [ ] **（可选/可延后）书籍主脚本检测 + 默认预设推荐**：`BookPrimaryScript`（LATIN/CJK/OTHER/MIXED/UNKNOWN）；内置 `Latin Reading` / `CJK Reading` / `Other Reading` 三个普通预设；打开新书时按主脚本推荐默认预设。不影响核心解析链，可独立交付——**backlog**。
+- [ ] **（可选/可延后）内置 Latin/CJK/Other 三套命名预设**：与「新书预设」（映射到**已有**预设）不是同一件事。检测器为 `BookScriptClass` = Cjk/Latin/Other，未知为 `null`，**没有 MIXED**。
 - [x] **TXT PoC（5e4a67a6e，ENABLED=false 休眠，2026-10-04 真机 PASS）**：脚本分类生产实现 `ReadScriptClassifierContract`（测试切到生产对象）+ `TxtScriptFontPoc` 在 `highlightMatcher.match` 后叠加脚本字体 ReadCharStyle，走既有 `remeasureHighlightFonts` / `TextColumn.draw` 链路。真机验收（模拟器，`poc-mixed.txt`）：P1 逐脚本切换、P3 中性继承（`123`/`——` 随 CJK）、P4 段首数字回落正文字体、P5 Greek(Other) 回落、无 tofu；ENABLED=false 与基线一致。已知限制同行内高亮：行高由正文字体决定，显著更高的脚本字体可能裁切。
 - [x] **TXT 生产化（87d6d57c4 + 3ea1fcaa4，2026-10-04 验收通过）**：`ReadBookConfig.scriptFont/scriptFontPath/hasScriptTypography` 接 `EffectiveReadValueResolverContract`；`ScriptFontStyleResolver`（fontProvider 注入，纯函数）生产叠加——CJK/Latin/Other 三 scope 全部接通、中性继承、高亮字体优先、空 provider 零分配；`ChapterProvider` 在 `upStyle()` 刷新点一次性解析 `scriptFontTable`，段落布局只做 O(1) 查表（热路径零 JSON 解析）；`ScriptFontStyleResolverTest` 11 条契约。PoC 两套脚手架已删（`82b4ae817`）。
 - [x] **EPUB 生产化（cde21bd08）**：`EpubLayoutController.scriptFontSources()` 取 `ReadBookConfig.scriptFontPath(scope)`（latin/cjk/other），与正文字体同路径读字节；`EpubResourceGateway` 新增 per-scope 字体路径/修订/服务；`EpubLayoutSurface.configure()` 注入 `scriptFonts` 同域 URL；`reader.js` 新增 `loadScriptFonts`（`NGScriptFont` family + unicode-range：CJK 含 Hangul，Latin/Other 显式区段，避免无 range face 抢占全部码点），并入 `loadReaderFont` 等待点，`readerFamily()` 前置 `NGScriptFont`。已知边界沿用 3A：CSS per-glyph 上下文无关（U+2013–2029 落 Latin face）。
@@ -532,7 +532,7 @@ Phase 5  清理 / 退役 legacy
 
 验收：CJK/Latin/Other 字体可全局、预设、本书三级覆盖；PoC 证明渲染路径可行；UI 不暴露“渲染器还不消费”的假开关；除字体外的排版属性未新增脚本维度。
 **状态（2026-10-04）：核心项已全部达成**（全局 `778184c84` 兜底语义、预设 `37deb1872`/`778184c84`、本书 `6d0f15fa8`、TXT `87d6d57c4`+`3ea1fcaa4`、EPUB `cde21bd08`）。
-**Phase 3 收尾（2026-10-05）**：调试插桩清理（`de1627979`）、字体缓存 mtime（`24cc33f29`）、EPUB 字体已知限制文档化（`b3087a858`，见 `docs/epub-typography-limitations.md`）。剩余：myreader 语言映射桥接（随分支合并）+ 可选 Phase 5（主脚本检测与默认预设推荐，只推荐预设、不直接选字体）。
+**Phase 3 收尾（2026-10-05）**：调试插桩清理（`de1627979`）、字体缓存 mtime（`24cc33f29`）、EPUB 字体已知限制文档化（`b3087a858`）。新书预设 + 默认 Tab 已落地（`docs/reading-settings-global-tab-plan.md`）。
 
 ### Phase 4 — 生产级脚本感知渲染
 
@@ -572,7 +572,7 @@ Phase 5  清理 / 退役 legacy
 5. **手势/外部关闭**：无未保存改动直接关闭；有未保存改动弹“保留 / 放弃”确认，避免误触提交。**v2 不提供“记住选择”**——保持显式确认，避免隐藏行为造成后续误丢数据（后续可作为独立 UX 增强评估）。
 6. **破坏性操作**（恢复默认/删除预设）：二次确认 → 立即落盘 → toast 反馈，与普通编辑区分。
 7. **取色器/表单统一二选一**：推荐“即时应用 + ↺ 重置”；确需显式 Save 的复杂表单则“保存=提交，关闭=放弃 + 脏数据确认”。
-8. **全局开关不属于编辑会话**：预设页的「共享排版」「跟随应用颜色」「全局色彩风格」是开关即生效的全局设置，不进 Done/Discard 会话快照，不参与 ● Unsaved 判定（Phase 1-1 实施注记）。
+8. **全局开关不属于编辑会话**：`readFloatingFollowAppGlobally`（默认 Tab「浮动窗跟随 App」）与新书预设映射即改即存，不进 Done/Discard。自定义本书时该开位置灰。`shareLayout` 已从 UI 移除。
 9. **本书稀疏覆盖进入会话快照（Phase 3）**：`independentOverrides` 仍即改即存，但打开抽屉时写入 `ReadStyleSnapshot.bookOverridesJson`；`Discard` 在 `onlyThisBook` 模式下按该 JSON 回滚，并参与 ● Unsaved 判定。全局开关（§8.8）仍不进快照。
 
 ## 9. 风险与未决问题

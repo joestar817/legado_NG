@@ -1,6 +1,7 @@
 package io.legado.app.help.config
 
 import io.legado.app.data.entities.Book
+import io.legado.app.help.storage.Md3BackupCompatibility
 import io.legado.app.utils.GSON
 import org.junit.Assert.*
 import org.junit.Test
@@ -80,8 +81,8 @@ class BookReadStyleSessionTest {
         val owner = book("a")
         session.bind(owner)
         session.use(ReadBookConfig.Config(textSize = 32, textFont = "book-font.ttf", bgType = 0, bgStr = "#112233"))
-        val serializedBookConfig = GSON.toJson(owner.config)
-        val restored = GSON.fromJson(serializedBookConfig, Book.ReadConfig::class.java)
+        val serializedBookConfig = Md3BackupCompatibility.bookGson.toJson(owner.config)
+        val restored = Md3BackupCompatibility.bookGson.fromJson(serializedBookConfig, Book.ReadConfig::class.java)
         val restarted = BookReadStyleSession { _, _ -> fail("Reading must not overwrite stored config") }
         restarted.bind(book("a", restored.independentReadStyle))
         assertEquals(32, restarted.config!!.textSize)
@@ -135,9 +136,14 @@ class BookReadStyleSessionTest {
     }
 
     @Test fun oldBookWithoutFieldStaysGlobalAndLanguageExperimentIsNotMigrated() {
-        val old = GSON.fromJson("""{"reverseToc":true,"scriptClass":"latin","readStyleName":"English"}""", Book.ReadConfig::class.java)
+        val old = Md3BackupCompatibility.bookGson.fromJson(
+            """{"reverseToc":true,"scriptClass":"latin","readStyleName":"English"}""",
+            Book.ReadConfig::class.java,
+        )
         assertNull(old.independentReadStyle)
         assertTrue(old.reverseToc)
+        assertEquals("latin", old.scriptClass)
+        assertEquals("English", old.readStyleName)
     }
 
     @Test(expected = IllegalArgumentException::class)

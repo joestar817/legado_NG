@@ -3,7 +3,7 @@
 > 状态：**已决策并实施（Phase 1–4），Phase 3 已硬化（2026-10-05）**。  
 > 决策名：**Language-aware preset + sparse per-script inheritance**。  
 > 配套实现：presets 内的 `scriptFonts`、全局/本书 override、TXT/EPUB 渲染接线、字体缓存 mtime、调试插桩清理、EPUB 已知限制文档化（`docs/epub-typography-limitations.md`）。  
-> 剩余 backlog：myreader 语言映射桥接（随分支合并）、可选 Phase 5（书籍主脚本检测 + 默认预设推荐）。
+> 剩余 backlog：可选三套命名预设模板（与映射到已有预设不是同一件事）。新书预设 + 默认 Tab 见 `docs/reading-settings-global-tab-plan.md`。
 
 ## 实施状态
 
@@ -13,7 +13,7 @@
 | Phase 2 预设编辑器 UI | [x] | `778184c84` |
 | Phase 3 全局兜底页语义 | [x] | `778184c84`（副标题） |
 | Phase 4 本书级 UI | [x] | `6d0f15fa8`（本书/预设/全局/原书来源） |
-| Phase 5 主脚本检测 + 默认预设 | [ ] 可选/可延后 | backlog TODO #8 |
+| Phase 5 主脚本检测 + 默认预设 | [x] 新书预设（Cjk/Latin/Other，无 MIXED） | `docs/reading-settings-global-tab-plan.md` |
 
 ## 1. 问题与现状
 
@@ -55,11 +55,13 @@ This-book customization
 
  responsibility：**建议用哪个预设起步。**
 
-输出：
+输出（`pr/reading-settings` 的 `BookLanguageDetector` / `BookScriptClass`）：
 
 ```text
-LATIN / CJK / OTHER / MIXED / UNKNOWN
+Cjk / Latin / Other   或   null（未知，样本不足）
 ```
+
+**没有 MIXED。** 混排按阈值多半归 Cjk，否则 Other。
 
 来源优先级：
 
@@ -234,7 +236,7 @@ Other → DejaVu Sans     (global)
 ### Phase 2 — 预设编辑器 UI
 
 1. `EditorPage` 增加 **Language fonts** 区块（三行：Latin / CJK / Other）。
-2. 复用 `FontSelectDialog`，通过 `pendingScriptFontScope` 路由。
+2. 复用 `FontSelectDialog`：预设编辑器用 `pendingEditorScriptFontScope`，预设 Tab 语言字体页用 `pendingScriptFontScope`。二者必须互清，避免写错层。
 3. 每个维度显示来源：
    - 值 + 「跟随全局」
    - 值 + 「本预设」
@@ -251,12 +253,11 @@ Other → DejaVu Sans     (global)
 1. 在「自定义本书设置」模式下，Language fonts 三行编辑本书 override。
 2. 来源显示支持：本书 / 预设 / 全局。
 
-### Phase 5 — 书籍主脚本检测 + 默认预设（可选，可延后）
+### Phase 5 — 新书预设（已在默认 Tab 落地）
 
-1. 新增 `BookPrimaryScript` 检测逻辑。
-2. 内置 `Latin Reading`、`CJK Reading`、`Other Reading` 三个普通预设（或作为模板按需生成）。
-3. 打开新书时，若用户未手动选择预设，按主脚本推荐默认预设。
-4. 在设置中记录「CJK 书默认使用 CJK Reading」等偏好。
+整书语言只用来 **选已有预设**，不直接选字体。UI 与空状态以 `docs/reading-settings-global-tab-plan.md` 为准。
+
+不要再规划「内置 Latin Reading / CJK Reading / Other Reading 三套预设」作为默认方案——映射目标是用户已有的预设名。
 
 ## 7. 迁移策略
 

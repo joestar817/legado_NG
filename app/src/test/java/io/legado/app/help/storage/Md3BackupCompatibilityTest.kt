@@ -82,4 +82,16 @@ class Md3BackupCompatibilityTest {
         assertEquals(1, books.size)
         assertEquals(LocalDate.of(2026, 8, 4), books.single().readConfig?.startDate)
     }
+
+    @Test
+    fun bookGsonRoundTripsLocalDate() {
+        val book = Book(bookUrl = "book").apply {
+            config.startDate = LocalDate.of(2026, 8, 4)
+        }
+        val restored = Md3BackupCompatibility.bookGson.fromJson(
+            Md3BackupCompatibility.bookGson.toJson(book),
+            Book::class.java,
+        )
+        assertEquals(LocalDate.of(2026, 8, 4), restored.config.startDate)
+    }
 }
