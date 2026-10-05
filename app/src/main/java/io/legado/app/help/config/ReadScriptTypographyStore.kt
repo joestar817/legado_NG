@@ -32,5 +32,11 @@ object ReadScriptTypographyStore {
         save(load().withScope(scope, value?.takeIf { it.isNotBlank() }))
     }
 
+    fun snapshotJson(): String? = appCtx.getPrefString(PREF_KEY)
+
+    fun restoreSnapshot(json: String?) {
+        appCtx.putPrefString(PREF_KEY, json)
+    }
+
     fun clear() = appCtx.putPrefString(PREF_KEY, null)
 }

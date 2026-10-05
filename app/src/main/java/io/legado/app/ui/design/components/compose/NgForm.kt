@@ -1576,10 +1576,8 @@ fun NgFormActionButton(
         NgButtonVariant.DANGER -> Color(colors.error)
         NgButtonVariant.SUCCESS -> if (NgTheme.snapshot.isEInk) {
             Color(colors.surfaceContainerHigh)
-        } else if (NgTheme.snapshot.isDark) {
-            Color(0xFF81C784)
         } else {
-            Color(0xFF2E7D32)
+            colorResource(R.color.ng_success)
         }
         NgButtonVariant.ON_IMAGE -> Color.Black.copy(alpha = 0.56f)
         NgButtonVariant.OUTLINE -> if (surfaceCardAppearance) {
@@ -1596,8 +1594,6 @@ fun NgFormActionButton(
         NgButtonVariant.DANGER -> Color.White
         NgButtonVariant.SUCCESS -> if (NgTheme.snapshot.isEInk) {
             Color(colors.onSurface)
-        } else if (NgTheme.snapshot.isDark) {
-            Color(0xFF0B3D0B)
         } else {
             Color.White
         }

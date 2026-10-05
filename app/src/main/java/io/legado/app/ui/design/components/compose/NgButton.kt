@@ -19,9 +19,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import io.legado.app.R
 import io.legado.app.ui.design.components.NgButtonShapeVariant
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.theme.NgTheme
@@ -131,15 +133,11 @@ fun NgButton(
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (NgTheme.snapshot.isEInk) {
                     Color(colors.surfaceContainerHigh)
-                } else if (NgTheme.snapshot.isDark) {
-                    Color(0xFF81C784)
                 } else {
-                    Color(0xFF2E7D32)
+                    colorResource(R.color.ng_success)
                 },
                 contentColor = if (NgTheme.snapshot.isEInk) {
                     Color(colors.onSurface)
-                } else if (NgTheme.snapshot.isDark) {
-                    Color(0xFF0B3D0B)
                 } else {
                     Color.White
                 }

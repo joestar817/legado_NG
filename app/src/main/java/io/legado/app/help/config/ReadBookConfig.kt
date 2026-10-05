@@ -15,6 +15,7 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.help.DefaultData
+import io.legado.app.help.book.isEpub
 import io.legado.app.help.globalExecutor
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.utils.BitmapUtils
@@ -129,6 +130,10 @@ object ReadBookConfig {
         bookOverridesStore.materializeFollowGlobal(boundBook)
     }
 
+    fun bookFollowsGlobal(): Boolean =
+        onlyThisBook &&
+            bookOverridesStore.current(boundBook)?.basePreset?.mode == BookBasePreset.MODE_FOLLOW_GLOBAL
+
     /** Phase 2d Gate A：同时清 independentOverrides 与 independentReadStyle。 */
     fun resetBookCustomization() {
         bookOverridesStore.resetAll(boundBook)
@@ -149,18 +154,22 @@ object ReadBookConfig {
      * 覆盖：全局 scripts、本书 font override、本书 pinned 快照 scripts、选中预设 scripts。
      * 无配置时渲染层零改动（直接返回 highlight 样式）。
      */
-    fun hasScriptTypography(): Boolean =
-        !ReadScriptTypographyStore.load().isEmpty() ||
+    fun hasScriptTypography(): Boolean {
+        val bookLayer = onlyThisBook && (
             bookOverridesStore.current(boundBook)?.font?.isEmpty() == false ||
-            bookOverridesStore.current(boundBook)?.basePreset?.snapshot?.scriptFonts?.isNotEmpty() == true ||
+                bookOverridesStore.current(boundBook)?.basePreset?.snapshot?.scriptFonts?.isNotEmpty() == true
+            )
+        return !ReadScriptTypographyStore.load().isEmpty() ||
+            bookLayer ||
             durConfig.scriptFonts?.isEmpty() == false
+    }
 
     /** 解析某脚本维度的有效字体（value + source），走冻结的 EffectiveReadValueResolverContract。 */
     fun scriptFont(scope: ReadValueScope): ResolvedReadValue {
         // 仅本书模式下，"选中预设" 就是本书自己的 config（durConfig），而不是 styleSelect 指向的全局预设。
         val selectedPreset = durConfig
-        val overrides = bookOverridesStore.current(boundBook)
-        val legacy = bookOverridesStore.legacy(boundBook)
+        val overrides = if (onlyThisBook) bookOverridesStore.current(boundBook) else null
+        val legacy = if (onlyThisBook) bookOverridesStore.legacy(boundBook) else null
         // DEFAULT 桶的最终回落：pinned 书 = 本书基准 textFont；其余 = 选中预设 textFont。
         val pinnedBookDefault = if (
             overrides?.basePreset?.mode == BookBasePreset.MODE_PINNED ||
@@ -174,7 +183,7 @@ object ReadBookConfig {
             presetScriptFont = selectedPreset.scriptFonts?.forScope(scope),
             globalScriptFont = ReadScriptTypographyStore.font(scope),
             globalDefaultFont = globalDefaultFont,
-            platformFont = "",
+            epub = scriptTypographyEpubContext(),
         )
         val resolved = EffectiveReadValueResolverContract.resolve(context)
         ScriptFontDebug.d(
@@ -186,6 +195,16 @@ object ReadBookConfig {
                 "overrides=${overrides != null} legacy=${legacy != null}",
         )
         return resolved
+    }
+
+    private fun scriptTypographyEpubContext(): ReadEpubContext? {
+        val book = boundBook.takeIf { it.isEpub } ?: return null
+        val respectFont = EpubLayoutPreferences.read(book.bookUrl)["font"] == true
+        return if (respectFont) {
+            ReadEpubContext(rule = ReadEpubRule.RESPECT, publisherFont = "publisher")
+        } else {
+            null
+        }
     }
 
     /**
@@ -1129,6 +1148,7 @@ object ReadBookConfig {
             textAccentColor = textAccentColor,
             textAccentColorNight = textAccentColorNight,
             textAccentColorEInk = textAccentColorEInk,
+            scriptFonts = scriptFonts,
             readFloatingSeed = readFloatingSeed,
             readFloatingSeedNight = readFloatingSeedNight,
             readFloatingFollowAppNight = readFloatingFollowAppNight,

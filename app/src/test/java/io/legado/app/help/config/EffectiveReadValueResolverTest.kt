@@ -314,7 +314,7 @@ class EffectiveReadValueResolverTest {
 
     @Test
     fun `15 follow global base falls through to global default`() {
-        // FOLLOW_GLOBAL 是透明层：继续向下走预设/全局脚本/全局默认，来源如实标注。
+        // 契约 #15：follow_global 时值同全局当前预设，来源标 Preset。
         val result = resolver.resolve(
             ReadValueContext(
                 scope = ReadValueScope.DEFAULT,
@@ -322,7 +322,20 @@ class EffectiveReadValueResolverTest {
                 globalDefaultFont = "B",
             )
         )
-        assertEquals(ResolvedReadValue("B", ReadValueSource.GLOBAL, ReadValueScope.DEFAULT), result)
+        assertEquals(ResolvedReadValue("B", ReadValueSource.PRESET, ReadValueScope.DEFAULT), result)
+    }
+
+    @Test
+    fun `follow global still labels global script archive as global`() {
+        val result = resolver.resolve(
+            ReadValueContext(
+                scope = ReadValueScope.CJK,
+                basePreset = ReadBasePreset(mode = ReadBasePresetMode.FOLLOW_GLOBAL),
+                globalScriptFont = "C",
+                globalDefaultFont = "B",
+            )
+        )
+        assertEquals(ResolvedReadValue("C", ReadValueSource.GLOBAL, ReadValueScope.CJK), result)
     }
 
     @Test

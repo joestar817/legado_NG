@@ -2391,6 +2391,9 @@
     <string name="read_style_reset_font">Reset font</string>
     <string name="font_dialog_drag_hint">Drag to move</string>
     <string name="read_style_source_global">Global</string>
+    <string name="read_style_source_system">System</string>
+    <string name="read_style_publisher_css_active">Publisher CSS in effect</string>
+    <string name="read_style_restore_follow_global">Follow current preset</string>
     <string name="read_style_source_preset">Pinned preset</string>
     <string name="read_style_source_this_book">This book</string>
     <string name="read_style_reset_book_customization">Reset all book customization</string>

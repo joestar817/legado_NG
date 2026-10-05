@@ -100,7 +100,7 @@ class BookReadStyleOverridesTest {
         )
         val result = resolver.resolve(context)
         assertEquals("B", result.value)
-        assertEquals(ReadValueSource.GLOBAL, result.source)
+        assertEquals(ReadValueSource.PRESET, result.source)
     }
 
     @Test
@@ -159,7 +159,7 @@ class BookReadStyleOverridesTest {
             )
         )
         assertEquals("G", result.value)
-        assertEquals(ReadValueSource.GLOBAL, result.source)
+        assertEquals(ReadValueSource.PRESET, result.source)
     }
 
     @Test

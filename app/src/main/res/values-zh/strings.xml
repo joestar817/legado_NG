@@ -2291,6 +2291,9 @@
     <string name="read_style_reset_font">重置字体</string>
     <string name="font_dialog_drag_hint">拖动可移动</string>
     <string name="read_style_source_global">全局</string>
+    <string name="read_style_source_system">系统</string>
+    <string name="read_style_publisher_css_active">当前由原书 CSS 生效</string>
+    <string name="read_style_restore_follow_global">恢复跟随全局</string>
     <string name="read_style_source_preset">固定基准</string>
     <string name="read_style_source_this_book">本书</string>
     <string name="read_style_reset_book_customization">重置本书全部自定义</string>

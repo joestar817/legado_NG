@@ -75,6 +75,8 @@ import io.legado.app.help.config.ReadValueScope
 import io.legado.app.help.config.ReadValueSource
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.readFloatingGlassStyle
+import io.legado.app.ui.design.components.NgButtonVariant
+import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderStepButton
@@ -159,6 +161,7 @@ internal data class ReadStyleUiState(
     val highlightSummary: String,
     val isEpub: Boolean,
     val onlyThisBook: Boolean,
+    val followsGlobal: Boolean = false,
     val canUseBookStyle: Boolean,
     val shareLayout: Boolean,
     val globalFloatingFollowApp: Boolean,
@@ -286,6 +289,7 @@ internal data class ReadStyleActions(
     val onDiscard: () -> Unit,
     val onResetBookCustomization: () -> Unit,
     val onResetBookFontOverride: () -> Unit,
+    val onFollowGlobal: () -> Unit,
     val onDismissRequest: () -> Unit,
     val onOpenLanguageFonts: () -> Unit,
     val onSelectScriptFont: (ReadValueScope) -> Unit,
@@ -309,12 +313,8 @@ internal fun ReadStyleScreen(
         ReadStylePage.ADJUST,
         ReadStylePage.HIGHLIGHT,
     )
-    BackHandler(enabled = true) {
-        if (page in rootPages && state.highlightSelectionMode == HighlightSelectionMode.NONE) {
-            actions.onDismissRequest()
-        } else {
-            actions.onBack()
-        }
+    BackHandler(enabled = page !in rootPages || state.highlightSelectionMode != HighlightSelectionMode.NONE) {
+        actions.onBack()
     }
     NgGlassSurface(
         modifier = Modifier
@@ -496,25 +496,17 @@ private fun ReadStyleSessionBar(
         } else {
             Spacer(Modifier.weight(1f))
         }
-        Text(
+        NgFormActionButton(
             text = stringResource(R.string.read_style_discard_changes),
-            color = if (hasUnsavedChanges) contentColor else contentColor.copy(alpha = 0.38f),
-            fontSize = 14.sp,
-            modifier = Modifier
-                .clip(RoundedCornerShape(18.dp))
-                .clickable(enabled = hasUnsavedChanges, onClick = onDiscard)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+            onClick = onDiscard,
+            enabled = hasUnsavedChanges,
+            variant = NgButtonVariant.OUTLINE,
         )
         Spacer(Modifier.width(10.dp))
-        Text(
+        NgFormActionButton(
             text = stringResource(R.string.read_style_done),
-            color = Color(NgTheme.colors.onPrimary),
-            fontSize = 14.sp,
-            modifier = Modifier
-                .clip(RoundedCornerShape(18.dp))
-                .background(Color(NgTheme.colors.primary))
-                .clickable(onClick = onDone)
-                .padding(horizontal = 18.dp, vertical = 8.dp),
+            onClick = onDone,
+            variant = NgButtonVariant.PRIMARY,
         )
     }
 }
@@ -576,13 +568,27 @@ private fun PresetPage(
     if (state.canUseBookStyle) {
         PresetSwitchRow(
             title = stringResource(R.string.read_style_only_this_book),
-            subtitle = stringResource(R.string.read_style_only_this_book_subtitle),
             iconRes = R.drawable.ic_bookshelf_dock_all,
             iconSize = 20.dp,
             checked = state.onlyThisBook,
             contentColor = contentColor,
             onCheckedChange = actions.onOnlyThisBookChanged,
         )
+        ReadDivider(contentColor)
+    }
+    if (state.onlyThisBook && !state.followsGlobal) {
+        Row(
+            Modifier.fillMaxWidth().height(56.dp)
+                .clickable(role = Role.Button, onClick = actions.onFollowGlobal)
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.read_style_restore_follow_global),
+                color = contentColor,
+                fontSize = 15.sp,
+            )
+        }
         ReadDivider(contentColor)
     }
     if (state.onlyThisBook) {
@@ -696,7 +702,7 @@ private fun LanguageFontsPage(
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_arrow_back),
-            contentDescription = null,
+            contentDescription = stringResource(R.string.back),
             tint = contentColor,
             modifier = Modifier
                 .size(28.dp)
@@ -733,17 +739,23 @@ private fun LanguageFontsPage(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = if (item.isInherited) {
-                    stringResource(R.string.read_style_follow_preset)
-                } else {
-                    fontDisplayName(item.font).ifBlank { item.font } +
+                text = when {
+                    item.source == ReadValueSource.PUBLISHER ->
+                        stringResource(R.string.read_style_publisher_css_active)
+                    item.isInherited ->
+                        stringResource(R.string.read_style_follow_preset)
+                    else -> fontDisplayName(item.font).ifBlank { item.font } +
                         " · " + stringResource(
                             when (item.source) {
                                 ReadValueSource.THIS_BOOK -> R.string.read_style_source_this_book
-                                ReadValueSource.PRESET -> R.string.read_style_source_preset
+                                ReadValueSource.PRESET -> if (state.followsGlobal) {
+                                    R.string.read_style_follow_global
+                                } else {
+                                    R.string.read_style_source_preset
+                                }
                                 ReadValueSource.GLOBAL -> R.string.read_style_source_global
                                 ReadValueSource.PUBLISHER -> R.string.read_style_source_publisher
-                                ReadValueSource.PLATFORM -> R.string.read_style_source_global
+                                ReadValueSource.PLATFORM -> R.string.read_style_source_system
                             }
                         )
                 },

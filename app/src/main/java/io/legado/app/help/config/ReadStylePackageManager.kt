@@ -148,6 +148,19 @@ internal object ReadStylePackageManager {
             ).orEmpty()
             portableConfig.headerFont = copyResource(portableConfig.headerFont, "read_font_header", "页眉字体").orEmpty()
             portableConfig.footerFont = copyResource(portableConfig.footerFont, "read_font_footer", "页脚字体").orEmpty()
+            portableConfig.scriptFonts = portableConfig.scriptFonts?.let { fonts ->
+                fun copyScript(value: String?, prefix: String, label: String): String? {
+                    val source = value?.trim()?.takeIf(String::isNotEmpty) ?: return null
+                    if (source.startsWith("system:")) return source
+                    return copyResource(source, prefix, label)
+                }
+                SparseFontOverrides(
+                    default = copyScript(fonts.default, "read_font_script_default", "脚本默认字体"),
+                    latin = copyScript(fonts.latin, "read_font_script_latin", "拉丁脚本字体"),
+                    cjk = copyScript(fonts.cjk, "read_font_script_cjk", "CJK脚本字体"),
+                    other = copyScript(fonts.other, "read_font_script_other", "其他脚本字体"),
+                ).takeUnless { it.isEmpty() }
+            }
             portableConfig.highlightRules = ArrayList(
                 portableConfig.highlightRules.mapIndexed { index, rule ->
                     rule.copy(
@@ -312,6 +325,7 @@ internal object ReadStylePackageManager {
     ) {
         fun resolve(reference: String?, label: String): String? {
             val value = reference?.trim()?.takeIf(String::isNotEmpty) ?: return null
+            if (value.startsWith("system:")) return value
             if (value.startsWith("assets://")) {
                 val assetPath = value.removePrefix("assets://")
                 return runCatching {
@@ -351,6 +365,14 @@ internal object ReadStylePackageManager {
         config.titleFont = resolve(config.titleFont, "标题字体").orEmpty()
         config.headerFont = resolve(config.headerFont, "页眉字体").orEmpty()
         config.footerFont = resolve(config.footerFont, "页脚字体").orEmpty()
+        config.scriptFonts = config.scriptFonts?.let { fonts ->
+            SparseFontOverrides(
+                default = fonts.default?.let { resolve(it, "脚本默认字体") },
+                latin = fonts.latin?.let { resolve(it, "拉丁脚本字体") },
+                cjk = fonts.cjk?.let { resolve(it, "CJK脚本字体") },
+                other = fonts.other?.let { resolve(it, "其他脚本字体") },
+            ).takeUnless { it.isEmpty() }
+        }
 
         fun resolveBackground(type: Int, value: String, label: String): Pair<Int, String> {
             if (type != 2) return type to value
@@ -507,7 +529,8 @@ internal object ReadStylePackageManager {
         "name", "bgStr", "bgStrNight", "bgStrEInk", "bgAlpha", "bgType", "bgTypeNight",
         "bgTypeEInk", "darkStatusIcon", "darkStatusIconNight", "darkStatusIconEInk",
         "textColor", "textColorNight", "textColorEInk", "textAccentColor",
-        "textAccentColorNight", "textAccentColorEInk", "pageAnim", "pageAnimEInk", "textFont",
+        "textAccentColorNight", "textAccentColorEInk", "pageAnim", "pageAnimEInk",         "textFont",
+        "scriptFonts",
         "titleFont", "headerFont", "footerFont", "headerFontSize", "footerFontSize",
         "applyHeaderStyle", "textBold", "textSize", "textItalic", "textShadow", "shadowRadius",
         "shadowDx", "shadowDy", "shadowColor", "shadowColorN", "letterSpacing",

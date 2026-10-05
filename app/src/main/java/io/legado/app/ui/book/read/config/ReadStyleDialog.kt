@@ -41,6 +41,7 @@ import io.legado.app.help.config.ReadValueScope
 import io.legado.app.help.config.ScriptFontDebug
 import io.legado.app.help.config.ReadValueSource
 import io.legado.app.help.config.ReadStylePackageManager
+import io.legado.app.help.config.ReadScriptTypographyStore
 import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.help.config.ReadHighlightRulePackageManager
 import io.legado.app.help.config.ReadHighlightRuleStore
@@ -244,14 +245,12 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val dialog = object : ComponentDialog(requireContext(), theme) {
-            @Suppress("OVERRIDE_DEPRECATION")
-            override fun onBackPressed() {
+            override fun cancel() {
                 requestDismiss()
             }
         }
-        // Compose 的 NgDismissibleDrawer 会接管下滑返回，此处只需禁用 ComponentDialog 默认的点外部 cancel，
-        // 将按键 back 交给 requestDismiss 统一调度（含未保存提示）
-        dialog.setCanceledOnTouchOutside(false)
+        // cancel() 覆盖同时覆盖返回键与点外部；Compose BackHandler 只负责页内导航。
+        dialog.setCanceledOnTouchOutside(true)
         return dialog
     }
 
@@ -512,6 +511,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onDiscard = ::discardChanges,
         onResetBookCustomization = ::resetBookCustomization,
         onResetBookFontOverride = ::resetBookFontOverride,
+        onFollowGlobal = ::followGlobalPreset,
         onDismissRequest = ::requestDismiss,
         onOpenLanguageFonts = ::openLanguageFonts,
         onSelectScriptFont = ::selectScriptFont,
@@ -536,6 +536,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         val bookConfigJson: String?,
         val styleSelect: Int,
         val comicStyleSelect: Int,
+        val scriptTypographyJson: String? = null,
     )
 
     private fun captureSessionSnapshot() {
@@ -547,6 +548,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             bookConfigJson = if (ReadBookConfig.onlyThisBook) gson.toJson(ReadBookConfig.durConfig) else null,
             styleSelect = ReadBookConfig.styleSelect,
             comicStyleSelect = ReadBookConfig.comicStyleSelect,
+            scriptTypographyJson = ReadScriptTypographyStore.snapshotJson(),
         )
         sessionSnapshot = snapshot
         sessionSnapshotJson = gson.toJson(snapshot)
@@ -562,6 +564,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 bookConfigJson = if (ReadBookConfig.onlyThisBook) gson.toJson(ReadBookConfig.durConfig) else null,
                 styleSelect = ReadBookConfig.styleSelect,
                 comicStyleSelect = ReadBookConfig.comicStyleSelect,
+                scriptTypographyJson = ReadScriptTypographyStore.snapshotJson(),
             )
         )
     }
@@ -571,7 +574,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun commitDone() {
         // EPUB 渲染失败的脚本字体视为不可用：保存时恢复为跟随预设，忽略本次选择。
         if (EpubScriptFontHealth.failedScopes.value.isNotEmpty()) {
-            val editorPage = currentPage.isEditorPage()
+            val editorPage = page.isEditorPage()
             EpubScriptFontHealth.failedScopes.value.forEach { scopeName ->
                 ReadValueScope.entries.firstOrNull { it.name.equals(scopeName, ignoreCase = true) }?.let { scope ->
                     if (editorPage) {
@@ -602,17 +605,19 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 ReadBookConfig.durConfig = gson.fromJson(it, ReadBookConfig.Config::class.java)
             }
         } else {
-            if (ReadBookConfig.onlyThisBook) ReadBookConfig.setOnlyThisBook(false)
+            if (ReadBookConfig.onlyThisBook) ReadBookConfig.resetBookCustomization()
             ReadBookConfig.configList.clear()
             ReadBookConfig.configList.addAll(configList)
             ReadBookConfig.shareConfig = shareConfig
         }
         ReadBookConfig.styleSelect = snapshot.styleSelect
         ReadBookConfig.comicStyleSelect = snapshot.comicStyleSelect
+        ReadScriptTypographyStore.restoreSnapshot(snapshot.scriptTypographyJson)
         editorBackgroundCache = null
         ReadFloatingAppearanceState.refreshFromConfig()
         refreshUi()
         notifyPresetRestored()
+        postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
     }
 
     private fun requestDismiss() {
@@ -737,11 +742,17 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 val resolved = ReadBookConfig.bookFontOverrideSource(config.textFont)
                 when (resolved.source) {
                     ReadValueSource.THIS_BOOK -> getString(R.string.read_style_source_this_book)
-                    ReadValueSource.PRESET -> getString(R.string.read_style_source_preset)
+                    ReadValueSource.PRESET -> if (ReadBookConfig.bookFollowsGlobal()) {
+                        getString(R.string.read_style_follow_global)
+                    } else {
+                        getString(R.string.read_style_source_preset)
+                    }
                     ReadValueSource.GLOBAL -> getString(R.string.read_style_source_global)
+                    ReadValueSource.PLATFORM -> getString(R.string.read_style_source_system)
                     else -> ""
                 }
             } else "",
+            followsGlobal = ReadBookConfig.bookFollowsGlobal(),
             languageFonts = listOf(
                 ReadValueScope.LATIN,
                 ReadValueScope.CJK,
@@ -762,7 +773,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                     font = resolved.value,
                     source = resolved.source,
                     canReset = hasThisLayerOverride,
-                    isInherited = !hasThisLayerOverride && !hasPresetOverride,
+                    isInherited = resolved.source != ReadValueSource.PUBLISHER &&
+                        !hasThisLayerOverride && !hasPresetOverride,
                     unavailable = EpubScriptFontHealth.isFailed(scope.name.lowercase()),
                 )
             },
@@ -841,6 +853,15 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun resetBookFontOverride() {
         ReadBookConfig.clearBookFontOverride()
         refreshUi()
+        postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
+    }
+
+    private fun followGlobalPreset() {
+        ReadBookConfig.materializeBookFollowGlobal()
+        editorBackgroundCache = null
+        ReadFloatingAppearanceState.refreshFromConfig()
+        refreshUi()
+        notifyPresetRestored()
         postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
     }
 
@@ -983,6 +1004,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 refreshUi()
             }
         }
+        currentPage = page
     }
 
     private fun applyEditorTextColor(color: Int) {

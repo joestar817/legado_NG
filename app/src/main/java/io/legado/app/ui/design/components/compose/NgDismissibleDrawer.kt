@@ -50,6 +50,7 @@ fun NgDismissibleDrawer(
     // 避免 dismissed=true 的抽屉停留在屏外，让「取消」看起来和「放弃并关闭」一样。
     LaunchedEffect(resetSignal) {
         if (resetSignal > 0) {
+            if (distance > 0f) Animatable(distance).animateTo(0f, tween(160)) { distance = value }
             settling = false
             dismissed = false
             distance = 0f

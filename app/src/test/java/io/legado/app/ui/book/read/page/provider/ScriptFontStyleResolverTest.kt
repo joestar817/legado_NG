@@ -100,6 +100,14 @@ class ScriptFontStyleResolverTest {
     }
 
     @Test
+    fun `neutral after other inherits other font`() {
+        val result = ScriptFontStyleResolver.overlay("α 1", null, provider(other = "/fonts/other.ttf"))!!
+        assertEquals("/fonts/other.ttf", result[0]?.fontPath)
+        assertEquals("/fonts/other.ttf", result[1]?.fontPath)
+        assertEquals("/fonts/other.ttf", result[2]?.fontPath)
+    }
+
+    @Test
     fun `other script unconfigured falls back to body font`() {
         val result = ScriptFontStyleResolver.overlay("αβ", null, provider())!!
         assertNull(result[0])

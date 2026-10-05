@@ -2,6 +2,7 @@ package io.legado.app.help.config
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonArray
 import io.legado.app.constant.PreferKey
@@ -55,6 +56,34 @@ class ReadStylePackageManagerTest {
         assertArrayEquals(resources.getValue("assets://header.ttf"), File(imported.config.headerFont).readBytes())
         assertArrayEquals(resources.getValue("assets://footer.ttf"), File(imported.config.footerFont).readBytes())
         assertEquals(0.2f, imported.config.highlightRules.single().npLeft, 0f)
+    }
+
+    @Test
+    fun `scriptFonts are bundled and absolute paths are dropped on import`() {
+        val resources = mapOf("assets://latin.ttf" to byteArrayOf(4, 5))
+        val config = ReadBookConfig.Config(
+            bgType = 0,
+            bgTypeNight = 0,
+            bgTypeEInk = 0,
+            textFont = "assets://latin.ttf",
+            scriptFonts = SparseFontOverrides(latin = "assets://latin.ttf"),
+        )
+        val output = ByteArrayOutputStream()
+        ReadStylePackageManager.export(
+            config, output, File(temporaryFolder.root, "script-stage"),
+            { resources[it]?.inputStream() },
+        )
+        val imported = ReadStylePackageManager.import(
+            output.toByteArray().inputStream(), "script-fonts", temporaryFolder.newFolder(),
+        )
+        assertArrayEquals(resources.getValue("assets://latin.ttf"), File(imported.config.scriptFonts?.latin!!).readBytes())
+
+        val parent = temporaryFolder.newFolder("packages")
+        val zip = zipOf(
+            "readConfig.json" to """{"scriptFonts":{"latin":"/data/evil.ttf"}}""".toByteArray(),
+        )
+        val sneaky = ReadStylePackageManager.import(zip.inputStream(), "sneaky-scripts", parent)
+        assertNull(sneaky.config.scriptFonts?.latin)
     }
 
     @Test

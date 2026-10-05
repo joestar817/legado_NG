@@ -106,6 +106,12 @@
     }
 
     var scriptFontFacesState = [];
+    function clearScriptFonts() {
+        scriptFontFacesState.forEach(function (face) { document.fonts.delete(face); });
+        scriptFontFacesState = [];
+        window.__ngScriptFontsReady = false;
+        window.__ngScriptFontFailures = {};
+    }
     function scriptFontRange(scope) {
         if (scope === 'cjk') return 'U+3000-303F,U+3040-309F,U+30A0-30FF,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF,U+AC00-D7AF';
         if (scope === 'latin') return 'U+0000-02FF,U+1E00-1EFF,U+2000-206F';
@@ -115,7 +121,10 @@
     async function loadScriptFonts(value, mine) {
         var fonts = value && value.scriptFonts;
         window.__ngScriptFontFailures = window.__ngScriptFontFailures || {};
-        if (!fonts) return;
+        if (!fonts) {
+            clearScriptFonts();
+            return;
+        }
         var next = [];
         ['latin', 'cjk', 'other'].forEach(function (scope) {
             if (fonts[scope]) {
@@ -124,7 +133,10 @@
                 delete window.__ngScriptFontFailures[scope];
             }
         });
-        if (!next.length) return;
+        if (!next.length) {
+            clearScriptFonts();
+            return;
+        }
         var fresh = [];
         for (var i = 0; i < next.length; i++) {
             var item = next[i];

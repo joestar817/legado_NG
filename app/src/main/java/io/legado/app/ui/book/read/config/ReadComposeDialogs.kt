@@ -157,7 +157,10 @@ internal class ReadUnsavedConfirmRouter(
     }
 
     fun outsideDismiss() {
-        if (!actionTaken) onCancelled?.invoke()
+        if (!actionTaken) {
+            actionTaken = true
+            onCancelled?.invoke()
+        }
     }
 }
 

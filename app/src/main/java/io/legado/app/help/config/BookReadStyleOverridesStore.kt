@@ -37,7 +37,7 @@ internal class BookReadStyleOverridesStore(
             basePreset = BookBasePreset(
                 mode = BookBasePreset.MODE_PINNED,
                 snapshot = ReadPresetSnapshot(
-                    scriptFonts = emptyMap(),
+                    scriptFonts = legacyConfig.scriptFonts?.toScriptFontMap() ?: emptyMap(),
                     defaultFont = legacyConfig.textFont,
                 ),
             ),
@@ -52,7 +52,7 @@ internal class BookReadStyleOverridesStore(
     }
 
     fun materializeFollowGlobal(owner: Book): BookReadStyleOverrides {
-        val overrides = BookReadStyleOverrides(
+        val overrides = (current(owner) ?: BookReadStyleOverrides()).copy(
             basePreset = BookBasePreset(mode = BookBasePreset.MODE_FOLLOW_GLOBAL),
         )
         val json = BookReadStyleCompatibility.toJson(overrides)

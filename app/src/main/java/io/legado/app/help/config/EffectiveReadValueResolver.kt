@@ -110,6 +110,7 @@ object EffectiveReadValueResolverContract : EffectiveReadValueResolver {
                     }
                 }
 
+                // follow_global：当前预设层标 Preset；全局脚本档案仍是 Global。
                 ReadBasePresetMode.FOLLOW_GLOBAL -> Unit
             }
         }
@@ -117,9 +118,16 @@ object EffectiveReadValueResolverContract : EffectiveReadValueResolver {
         // 2b. 选中预设的脚本字体覆盖（preset.scripts[scope]）
         context.presetScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.PRESET, scope) }
 
-        // 3. 全局脚本档案 → 4. 全局 default → 5. platform（非空兜底，全函数）
+        // 3. 全局脚本档案 → 4. 全局/当前预设 default → 5. platform（非空兜底，全函数）
         context.globalScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.GLOBAL, scope) }
-        context.globalDefaultFont?.let { return ResolvedReadValue(it, ReadValueSource.GLOBAL, scope) }
+        context.globalDefaultFont?.let {
+            val source = if (context.basePreset?.mode == ReadBasePresetMode.FOLLOW_GLOBAL) {
+                ReadValueSource.PRESET
+            } else {
+                ReadValueSource.GLOBAL
+            }
+            return ResolvedReadValue(it, source, scope)
+        }
         return ResolvedReadValue(context.platformFont, ReadValueSource.PLATFORM, scope)
     }
 }
