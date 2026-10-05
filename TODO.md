@@ -53,6 +53,16 @@
 - [x] 三向确认弹窗 neutral 按钮措辞：「取消 / Cancel」→「继续编辑 / Keep editing」（新增 `R.string.read_style_keep_editing`，`ReadStyleDialog.showUnsavedConfirm` 改用；全局 `R.string.cancel` 不动）。
 - [x] Cancel 与 Discard 表现相同的复现路径：两个根因——(1) `NgDismissibleDrawer` 下拉后 `dismissed=true` 未复位（已修 `resetSignal`）；(2) 系统返回键路径 `Dialog.cancel()` 先无条件 `dismiss()`、`onCancel` 后到，确认框弹在已关闭的抽屉上（已修：root 页 `BackHandler` 全拦截 → `requestDismiss()`，不再让 `Dialog.cancel()` 触发；`unsavedConfirmShowing` 防重入）。按钮措辞改「继续编辑 / Keep editing」+ `ReadUnsavedConfirmRouter` + 5 条语义契约。
 
-## Phase 3 should-fix（下轮处理，非阻塞）
+## Phase 3 should-fix（2026-10-05 已处理）
 
-- [x] 字体缓存键并入 mtime（已落地）：`styledTypefaceCacheKey` 并入 `File(path).lastModified()`；content:// 与 assets:// 豁免。测试：同路径改 mtime → 不同键/不同缓存条目；content/assets 键 mtime=null。
+- [x] 字体缓存键并入 mtime（`24cc33f29`）：`styledTypefaceCacheKey` 并入 `File(path).lastModified()`；content:// 与 assets:// 豁免。测试：同路径改 mtime → 不同键/不同缓存条目；content/assets 键 mtime=null。
+
+## Phase 3 收尾（2026-10-05）
+
+- [x] **调试插桩清理**（`de1627979`）：删除 `ScriptFontDebug.kt` 与全部 `ScriptFontDebug.d(`/`console.log('NG: …')` 调用点、`EpubLayoutSurface.onConsoleMessage` 桥；保留 `__ngScriptFontFailures` → `EpubScriptFontHealth`（删除线/Done 恢复）生产链路。
+- [x] **EPUB 排版字体已知限制文档化**（`b3087a858`）：`docs/epub-typography-limitations.md`——unicode-range 码点级/上下文无关、`document.fonts.check()` 非 cmap 证据、Publisher 胜出前提、系统字体注入限制、OTS 拒绝个案与兜底。
+
+## 剩余 backlog（Phase 3 后的停靠点）
+
+- [ ] **myreader 语言映射桥接**：随语言映射分支合并时，把旧 language→font 映射迁入 `ReadScriptTypographyStore` + `preset.scriptFonts`，并补迁移/兼容测试（当前不做投机实现）。
+- [ ] **（可选 Phase 5）主脚本检测 + 默认预设推荐**：`BookPrimaryScript` → 推荐预设 → 用户确认 → `EffectiveReadValueResolver`；不变式：只推荐预设，绝不直接选字体。
