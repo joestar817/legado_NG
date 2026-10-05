@@ -83,6 +83,16 @@ internal class BookReadStyleOverridesStore(
         owner.config.independentReadStyle = null
     }
 
+    /** 会话快照：原始 independentOverrides JSON，避免 round-trip 改变键序。 */
+    fun snapshotJson(owner: Book): String? = owner.config.independentOverrides
+
+    /** Discard：按打开抽屉时的 JSON 写回本书稀疏覆盖，legacy 保持现状。 */
+    fun restoreSnapshot(owner: Book, overridesJson: String?) {
+        if (owner.config.independentOverrides == overridesJson) return
+        persist(owner.bookUrl, overridesJson, owner.config.independentReadStyle)
+        owner.config.independentOverrides = overridesJson
+    }
+
     fun effectiveDefaultFont(
         owner: Book,
         globalFont: String,

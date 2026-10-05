@@ -140,6 +140,12 @@ object ReadBookConfig {
         bookStyle.followGlobal()
     }
 
+    fun snapshotBookOverridesJson(): String? = bookOverridesStore.snapshotJson(boundBook)
+
+    fun restoreBookOverridesSnapshot(json: String?) {
+        bookOverridesStore.restoreSnapshot(boundBook, json)
+    }
+
     fun bookFontOverride(): String? = bookOverridesStore.current(boundBook)?.font?.default
 
     fun clearBookFontOverride() {

@@ -537,6 +537,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         val styleSelect: Int,
         val comicStyleSelect: Int,
         val scriptTypographyJson: String? = null,
+        val bookOverridesJson: String? = null,
     )
 
     private fun captureSessionSnapshot() {
@@ -549,6 +550,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             styleSelect = ReadBookConfig.styleSelect,
             comicStyleSelect = ReadBookConfig.comicStyleSelect,
             scriptTypographyJson = ReadScriptTypographyStore.snapshotJson(),
+            bookOverridesJson = ReadBookConfig.snapshotBookOverridesJson(),
         )
         sessionSnapshot = snapshot
         sessionSnapshotJson = gson.toJson(snapshot)
@@ -565,6 +567,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 styleSelect = ReadBookConfig.styleSelect,
                 comicStyleSelect = ReadBookConfig.comicStyleSelect,
                 scriptTypographyJson = ReadScriptTypographyStore.snapshotJson(),
+                bookOverridesJson = ReadBookConfig.snapshotBookOverridesJson(),
             )
         )
     }
@@ -604,6 +607,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             snapshot.bookConfigJson?.let {
                 ReadBookConfig.durConfig = gson.fromJson(it, ReadBookConfig.Config::class.java)
             }
+            ReadBookConfig.restoreBookOverridesSnapshot(snapshot.bookOverridesJson)
         } else {
             if (ReadBookConfig.onlyThisBook) ReadBookConfig.resetBookCustomization()
             ReadBookConfig.configList.clear()

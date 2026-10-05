@@ -134,6 +134,30 @@ class BookReadStyleOverridesStoreTest {
     }
 
     @Test
+    fun `restore snapshot rolls back book script font overrides`() {
+        val owner = legacyBook("B")
+        store.materializePinnedBaseIfNeeded(owner)
+        store.writeScope(owner, ReadValueScope.CJK, "CJK.ttf")
+        val snapshot = store.snapshotJson(owner)
+        store.writeScope(owner, ReadValueScope.LATIN, "Latin.ttf")
+        assertEquals("Latin.ttf", store.current(owner)?.font?.forScope(ReadValueScope.LATIN))
+        store.restoreSnapshot(owner, snapshot)
+        assertEquals("CJK.ttf", store.current(owner)?.font?.forScope(ReadValueScope.CJK))
+        assertNull(store.current(owner)?.font?.forScope(ReadValueScope.LATIN))
+        assertEquals(snapshot, stored[owner.bookUrl]?.first)
+    }
+
+    @Test
+    fun `restore snapshot to null clears overrides written this session`() {
+        val owner = Book(bookUrl = "a")
+        assertNull(store.snapshotJson(owner))
+        store.writeScope(owner, ReadValueScope.OTHER, "Other.ttf")
+        store.restoreSnapshot(owner, null)
+        assertNull(owner.config.independentOverrides)
+        assertNull(store.current(owner)?.font?.forScope(ReadValueScope.OTHER))
+    }
+
+    @Test
     fun `no legacy and no overrides writes sparse font directly`() {
         val owner = Book(bookUrl = "a")
         store.writeDefaultFont(owner, "X")
