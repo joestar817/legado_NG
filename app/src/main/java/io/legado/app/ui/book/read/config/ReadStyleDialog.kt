@@ -514,8 +514,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         },
         onDone = ::commitDone,
         onDiscard = ::discardChanges,
-        onResetBookFontOverride = ::resetBookFontOverride,
-        onFollowGlobal = ::followGlobalPreset,
         onDismissRequest = ::requestDismiss,
         onOpenLanguageFonts = ::openLanguageFonts,
         onSelectScriptFont = ::selectScriptFont,
@@ -857,21 +855,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         notifyFloatingAppearanceChanged()
     }
 
-    private fun resetBookFontOverride() {
-        ReadBookConfig.clearBookFontOverride()
-        refreshUi()
-        postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
-    }
-
-    private fun followGlobalPreset() {
-        ReadBookConfig.materializeBookFollowGlobal()
-        editorBackgroundCache = null
-        ReadFloatingAppearanceState.refreshFromConfig()
-        refreshUi()
-        notifyPresetRestored()
-        postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
-    }
-
     private fun openLanguageFonts() {
         currentPage = ReadStylePage.LANGUAGE_FONTS
         page = ReadStylePage.LANGUAGE_FONTS
@@ -1008,11 +991,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
             page == ReadStylePage.LANGUAGE_FONTS -> {
                 page = ReadStylePage.PRESET
-                refreshUi()
-            }
-
-            page == ReadStylePage.NEW_BOOK_PRESET -> {
-                page = ReadStylePage.APP_DEFAULTS
                 refreshUi()
             }
         }
@@ -1855,6 +1833,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             ReadBookConfig.textFont = path
             postEvent(EventBus.UP_CONFIG, arrayListOf(2, 5))
         }
+        refreshUi()
     }
 }
 

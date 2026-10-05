@@ -8,6 +8,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -116,7 +119,6 @@ internal enum class ReadStylePage {
     HIGHLIGHT_UNDERLINE_COLOR,
     LANGUAGE_FONTS,
     APP_DEFAULTS,
-    NEW_BOOK_PRESET,
 }
 
 internal enum class HighlightSelectionMode {
@@ -300,8 +302,6 @@ internal data class ReadStyleActions(
     val onReorderHighlights: (List<ReadHighlightRule>) -> Unit,
     val onDone: () -> Unit,
     val onDiscard: () -> Unit,
-    val onResetBookFontOverride: () -> Unit,
-    val onFollowGlobal: () -> Unit,
     val onDismissRequest: () -> Unit,
     val onOpenLanguageFonts: () -> Unit,
     val onSelectScriptFont: (ReadValueScope) -> Unit,
@@ -420,19 +420,6 @@ internal fun ReadStyleScreen(
                         .padding(top = 8.dp),
                 ) {
                     DefaultsPage(
-                        state = state,
-                        contentColor = contentColor,
-                        actions = actions,
-                    )
-                }
-
-                ReadStylePage.NEW_BOOK_PRESET -> Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(StandardPageHeight)
-                        .padding(top = 8.dp),
-                ) {
-                    NewBookPresetPage(
                         state = state,
                         contentColor = contentColor,
                         accentColor = indicatorColor,
@@ -618,55 +605,6 @@ private fun PresetPage(
             contentColor = contentColor,
             onCheckedChange = actions.onOnlyThisBookChanged,
         )
-        ReadDivider(contentColor)
-    }
-    if (state.onlyThisBook && !state.followsGlobal) {
-        Row(
-            Modifier.fillMaxWidth().height(56.dp)
-                .clickable(role = Role.Button, onClick = actions.onFollowGlobal)
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.read_style_restore_follow_global),
-                color = contentColor,
-                fontSize = 15.sp,
-            )
-        }
-        ReadDivider(contentColor)
-    }
-    if (state.onlyThisBook) {
-        Row(
-            Modifier.fillMaxWidth().height(56.dp)
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.read_style_book_font),
-                color = contentColor,
-                fontSize = 15.sp,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = fontDisplayName(state.bookFont) +
-                    if (state.bookFontSource.isNotBlank()) " · " + state.bookFontSource else "",
-                color = contentColor.copy(alpha = 0.72f),
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (state.bookFontSource == stringResource(R.string.read_style_source_this_book)) {
-                Spacer(Modifier.width(10.dp))
-                Icon(
-                    painter = painterResource(R.drawable.ic_restore),
-                    contentDescription = stringResource(R.string.read_style_reset_book_font),
-                    tint = contentColor,
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clickable(role = Role.Button, onClick = actions.onResetBookFontOverride),
-                )
-            }
-        }
         ReadDivider(contentColor)
     }
     Row(Modifier.fillMaxWidth().height(56.dp)
@@ -901,13 +839,15 @@ private fun PresetManagementDock(
             onClick = onExport,
             modifier = Modifier.weight(1f),
         )
-        PresetAction(
-            iconRes = if (onlyThisBook) R.drawable.ic_restore else R.drawable.ic_book_info_delete,
-            label = stringResource(if (onlyThisBook) R.string.read_style_follow_global else R.string.delete),
-            contentColor = contentColor,
-            onClick = onDelete,
-            modifier = Modifier.weight(1f),
-        )
+        if (!onlyThisBook) {
+            PresetAction(
+                iconRes = R.drawable.ic_book_info_delete,
+                label = stringResource(R.string.delete),
+                contentColor = contentColor,
+                onClick = onDelete,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -1033,155 +973,87 @@ private fun PresetRestoreAllRow(
 private fun DefaultsPage(
     state: ReadStyleUiState,
     contentColor: Color,
-    actions: ReadStyleActions,
-) {
-    val followEnabled = !state.onlyThisBook
-    Text(
-        text = stringResource(R.string.read_style_defaults_section_floating),
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
-        color = contentColor.copy(alpha = 0.62f),
-        fontSize = 12.sp,
-    )
-    PresetSwitchRow(
-        title = stringResource(R.string.read_style_floating_follow_app),
-        iconRes = R.drawable.ic_cfg_theme,
-        checked = state.floatingFollowAppPref,
-        contentColor = contentColor,
-        onCheckedChange = actions.onGlobalFloatingFollowAppChanged,
-        subtitle = stringResource(
-            if (followEnabled) {
-                R.string.read_style_floating_follow_app_summary
-            } else {
-                R.string.read_style_floating_follow_app_book_locked
-            }
-        ),
-        enabled = followEnabled,
-    )
-    ReadDivider(contentColor)
-    Text(
-        text = stringResource(R.string.read_style_defaults_section_new_book),
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
-        color = contentColor.copy(alpha = 0.62f),
-        fontSize = 12.sp,
-    )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clickable(role = Role.Button) {
-                actions.onPageSelected(ReadStylePage.NEW_BOOK_PRESET)
-            }
-            .padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_translate),
-            contentDescription = null,
-            tint = contentColor,
-            modifier = Modifier.size(25.dp),
-        )
-        Text(
-            text = stringResource(R.string.read_style_new_book_preset),
-            color = contentColor,
-            fontSize = 15.sp,
-            modifier = Modifier.padding(start = 14.dp).weight(1f),
-        )
-        Icon(
-            painter = painterResource(R.drawable.ic_chevron_right_20),
-            contentDescription = null,
-            tint = contentColor.copy(alpha = 0.72f),
-            modifier = Modifier.size(18.dp),
-        )
-    }
-    ReadDivider(contentColor)
-}
-
-@Composable
-private fun NewBookPresetPage(
-    state: ReadStyleUiState,
-    contentColor: Color,
     accentColor: Color,
     actions: ReadStyleActions,
 ) {
+    val followEnabled = !state.onlyThisBook
     val useCurrent = stringResource(R.string.read_style_use_current_preset)
     val options = remember(state.presets, useCurrent) {
         listOf(null to useCurrent) + state.presets.filter { it.index >= 0 }.map { preset ->
             preset.name to preset.name.ifBlank { useCurrent }
         }
     }
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .verticalScroll(rememberScrollState()),
     ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_arrow_back),
-            contentDescription = stringResource(R.string.back),
-            tint = contentColor,
-            modifier = Modifier
-                .size(28.dp)
-                .clickable(role = Role.Button, onClick = actions.onBack),
+        PresetSwitchRow(
+            title = stringResource(R.string.read_style_floating_follow_app),
+            iconRes = R.drawable.ic_cfg_theme,
+            checked = state.floatingFollowAppPref,
+            contentColor = contentColor,
+            onCheckedChange = actions.onGlobalFloatingFollowAppChanged,
+            subtitle = stringResource(
+                if (followEnabled) {
+                    R.string.read_style_floating_follow_app_summary
+                } else {
+                    R.string.read_style_floating_follow_app_book_locked
+                }
+            ),
+            enabled = followEnabled,
         )
-        Text(
-            text = stringResource(R.string.read_style_new_book_preset),
-            modifier = Modifier.padding(start = 8.dp),
-            color = contentColor,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-        )
-    }
-    Text(
-        text = stringResource(R.string.read_style_new_book_preset_summary),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
-        color = contentColor.copy(alpha = 0.62f),
-        fontSize = 12.sp,
-    )
-    val detectedLabel = when (state.detectedScriptClass) {
-        BookScriptClass.Cjk.storageValue -> stringResource(R.string.read_style_new_book_cjk)
-        BookScriptClass.Latin.storageValue -> stringResource(R.string.read_style_new_book_latin)
-        BookScriptClass.Other.storageValue -> stringResource(R.string.read_style_new_book_other)
-        else -> null
-    }
-    if (detectedLabel != null) {
-        Text(
-            text = stringResource(R.string.read_style_language_detected, detectedLabel),
+        ReadDivider(contentColor)
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
-            color = contentColor.copy(alpha = 0.62f),
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+                .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.read_style_new_book_preset),
+                color = contentColor.copy(alpha = 0.62f),
+                fontSize = 12.sp,
+            )
+            Text(
+                text = stringResource(R.string.read_style_new_book_preset_summary),
+                modifier = Modifier.padding(start = 8.dp).weight(1f),
+                color = contentColor.copy(alpha = 0.46f),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        NewBookPresetRow(
+            title = stringResource(R.string.read_style_new_book_cjk),
+            selectedName = state.languagePresetCjk,
+            options = options,
+            contentColor = contentColor,
+            accentColor = accentColor,
+            detected = state.detectedScriptClass == BookScriptClass.Cjk.storageValue,
+            onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Cjk, it) },
+        )
+        ReadDivider(contentColor)
+        NewBookPresetRow(
+            title = stringResource(R.string.read_style_new_book_latin),
+            selectedName = state.languagePresetLatin,
+            options = options,
+            contentColor = contentColor,
+            accentColor = accentColor,
+            detected = state.detectedScriptClass == BookScriptClass.Latin.storageValue,
+            onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Latin, it) },
+        )
+        ReadDivider(contentColor)
+        NewBookPresetRow(
+            title = stringResource(R.string.read_style_new_book_other),
+            selectedName = state.languagePresetOther,
+            options = options,
+            contentColor = contentColor,
+            accentColor = accentColor,
+            detected = state.detectedScriptClass == BookScriptClass.Other.storageValue,
+            onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Other, it) },
         )
     }
-    NewBookPresetRow(
-        title = stringResource(R.string.read_style_new_book_cjk),
-        selectedName = state.languagePresetCjk,
-        options = options,
-        contentColor = contentColor,
-        accentColor = accentColor,
-        onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Cjk, it) },
-    )
-    NewBookPresetRow(
-        title = stringResource(R.string.read_style_new_book_latin),
-        selectedName = state.languagePresetLatin,
-        options = options,
-        contentColor = contentColor,
-        accentColor = accentColor,
-        onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Latin, it) },
-    )
-    NewBookPresetRow(
-        title = stringResource(R.string.read_style_new_book_other),
-        selectedName = state.languagePresetOther,
-        options = options,
-        contentColor = contentColor,
-        accentColor = accentColor,
-        onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Other, it) },
-    )
 }
 
 @Composable
@@ -1191,6 +1063,7 @@ private fun NewBookPresetRow(
     options: List<Pair<String?, String>>,
     contentColor: Color,
     accentColor: Color,
+    detected: Boolean = false,
     onSelected: (String?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -1200,29 +1073,42 @@ private fun NewBookPresetRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp)
+            .clickable(role = Role.Button) { expanded = true }
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = title,
             modifier = Modifier.weight(1f),
-            color = contentColor,
+            color = if (detected) accentColor else contentColor,
             fontSize = 15.sp,
+            fontWeight = if (detected) FontWeight.Medium else FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        if (detected) {
+            Text(
+                text = stringResource(R.string.read_style_this_book),
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(accentColor.copy(alpha = 0.18f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                color = accentColor,
+                fontSize = 11.sp,
+                maxLines = 1,
+            )
+        }
         Box(
             modifier = Modifier.wrapContentWidth(),
             contentAlignment = Alignment.CenterEnd,
         ) {
             Row(
-                modifier = Modifier
-                    .height(52.dp)
-                    .clickable(role = Role.Button) { expanded = true },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = selectedLabel,
+                    modifier = Modifier.widthIn(max = 148.dp),
                     color = contentColor.copy(alpha = 0.68f),
                     fontSize = 13.sp,
                     maxLines = 1,

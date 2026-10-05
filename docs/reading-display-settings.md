@@ -45,6 +45,8 @@ flowchart LR
 └──────────────────────────────────────────────┘
 ```
 
+透过抽屉看正文的 **面板透明度** 滑条（建议放在放弃/完成上方，且不要接到浮动外观）见 [docs/color-picker-tabs-note.md](color-picker-tabs-note.md) §4（仅笔记）。
+
 **预设页（PRESET）**
 
 ```
@@ -111,6 +113,8 @@ flowchart LR
 │  [■]   #3E3D3B   ← 预览色块 + ARGB/Hex 输入框  │
 └──────────────────────────────────────────────┘
 ```
+
+相对祖先 jaredrummler HSV 对话框的精度差距、以及用 Tab 并列 **色板 / 色轮**、透明度滑条和字/底预览盒的备选，见 [docs/color-picker-tabs-note.md](color-picker-tabs-note.md)（**仅笔记，定稿前不实现**）。
 
 **EPUB 排版面板（`EpubLayoutSheet`，三态档案）**
 
