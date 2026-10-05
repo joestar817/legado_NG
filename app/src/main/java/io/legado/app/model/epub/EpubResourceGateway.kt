@@ -7,7 +7,6 @@ import java.io.InputStream
 import java.net.URI
 import java.net.URLEncoder
 import java.util.UUID
-import io.legado.app.help.config.ScriptFontDebug
 
 /** Pure request router, never a network client. The owner must separately close the publication. */
 internal class EpubResourceGateway(
@@ -190,13 +189,6 @@ internal class EpubResourceGateway(
         }
         if (!mainFrame && link.path == titleFontPath) {
             return titleFont?.let { bytes(it, "application/octet-stream", method) } ?: error(404, "Not Found")
-        }
-        if (!mainFrame && link.path.contains("script-font")) {
-            ScriptFontDebug.d(
-                "gateway script-font request path=${link.path} hit=" +
-                    scriptFontPaths.entries.firstOrNull { it.value == link.path }?.key +
-                    " bytes=" + scriptFonts.entries.firstOrNull { (key, _) -> scriptFontPaths[key] == link.path }?.value?.size,
-            )
         }
         if (!mainFrame) {
             scriptFontPaths.entries.firstOrNull { it.value == link.path }?.let { (scope, _) ->

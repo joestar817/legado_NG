@@ -101,7 +101,6 @@
         if (cached.face) document.fonts.delete(cached.face);
         cached.url = requested; cached.face = face; cached.failed = failed;
         if (face) document.fonts.add(face);
-        if (failed) console.log('NG: reader font load failed kind=' + kind + ' url=' + (requested || '').slice(0, 140));
         return failed;
     }
 
@@ -150,7 +149,6 @@
             } catch (e) {
                 face = null;
                 window.__ngScriptFontFailures[item.scope] = true;
-                console.log('NG: face load failed scope=' + item.scope + ' err=' + (e && e.message) + ' url=' + item.url.slice(0, 140));
             }
             if (mine !== generation) return;
             if (face) { document.fonts.add(face); fresh.push(face); }
@@ -1406,7 +1404,6 @@
             if (mine !== generation) return;
             await loadScriptFonts(value, mine);
             if (mine !== generation) return;
-            console.log('NG: after loadScriptFonts ready=' + !!window.__ngScriptFontsReady + ' faces=' + scriptFontFacesState.length + ' hasUrls=' + !!(value && value.scriptFonts && Object.keys(value.scriptFonts).length));
             galleries.forEach(function (g) { g.controls.remove(); }); galleries = [];
             restore(root, originalRoot); if (body !== root) restore(body, originalBody);
             // Reader defaults fill gaps in the book CSS. Zero specificity and insertion before
@@ -1422,7 +1419,6 @@
                     ';font-weight:' + (defaults.weight || 400) + ';font-style:' + (defaults.italic ? 'oblique' : 'normal') +
                     ';text-shadow:' + readerShadow(defaults) +
                     ';line-height:' + (defaults.lineHeight > 0 && defaults.fontSize > 0 ? defaults.lineHeight / defaults.fontSize : 'normal') + '}';
-                console.log('NG: defaults family=' + readerFamily(defaults) + ' ready=' + !!window.__ngScriptFontsReady + ' faces=' + scriptFontFacesState.length);
                 document.head.insertBefore(defaultsSheet, document.head.firstChild);
             }
             adjusted.forEach(function (value, el) { restore(el, value); }); adjusted.clear();

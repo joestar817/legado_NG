@@ -38,7 +38,6 @@ import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.EpubScriptFontHealth
 import io.legado.app.help.config.ReadPresetPreferences
 import io.legado.app.help.config.ReadValueScope
-import io.legado.app.help.config.ScriptFontDebug
 import io.legado.app.help.config.ReadValueSource
 import io.legado.app.help.config.ReadStylePackageManager
 import io.legado.app.help.config.ReadScriptTypographyStore
@@ -584,7 +583,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                     } else {
                         ReadBookConfig.writeScriptFont(scope, null)
                     }
-                    ScriptFontDebug.d("commitDone clearing failed scope=$scopeName editorPage=$editorPage")
                 }
             }
             EpubScriptFontHealth.clear()
@@ -1814,10 +1812,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         get() = pendingEditorScriptFontScope == null && pendingScriptFontScope == null
 
     override fun selectFont(path: String) {
-        ScriptFontDebug.d(
-            "selectFont path=${ScriptFontDebug.short(path)} " +
-                "editorScope=$pendingEditorScriptFontScope scriptScope=$pendingScriptFontScope",
-        )
         val editorScope = pendingEditorScriptFontScope
         if (editorScope != null) {
             pendingEditorScriptFontScope = null

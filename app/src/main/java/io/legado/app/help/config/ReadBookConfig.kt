@@ -192,14 +192,6 @@ object ReadBookConfig {
             epub = scriptTypographyEpubContext(),
         )
         val resolved = EffectiveReadValueResolverContract.resolve(context)
-        ScriptFontDebug.d(
-            "scriptFont scope=$scope value=${ScriptFontDebug.short(resolved.value)} source=${resolved.source} " +
-                "onlyThisBook=$onlyThisBook durConfig.name=${selectedPreset.name} " +
-                "durConfig.textFont=${ScriptFontDebug.short(selectedPreset.textFont)} " +
-                "durConfig.scripts[scope]=${ScriptFontDebug.short(selectedPreset.scriptFonts?.forScope(scope))} " +
-                "global.scripts[scope]=${ScriptFontDebug.short(ReadScriptTypographyStore.font(scope))} " +
-                "overrides=${overrides != null} legacy=${legacy != null}",
-        )
         return resolved
     }
 
@@ -248,10 +240,6 @@ object ReadBookConfig {
      * UI 层负责在写后 postEvent(UP_CONFIG, 1,2,5) 触发 ChapterProvider 刷新字体表。
      */
     fun writeScriptFont(scope: ReadValueScope, value: String?) {
-        ScriptFontDebug.d(
-            "writeScriptFont scope=$scope value=${ScriptFontDebug.short(value)} " +
-                "onlyThisBook=$onlyThisBook styleSelect=$styleSelect",
-        )
         val normalized = value?.takeIf { it.isNotBlank() }
         if (onlyThisBook) {
             bookOverridesStore.writeScope(boundBook, scope, normalized)
@@ -265,10 +253,6 @@ object ReadBookConfig {
      * 仅本书模式下仍写本书 override；否则写 `durConfig.scriptFonts`，随预设保存/导入导出。
      */
     fun setEditorScriptFont(scope: ReadValueScope, value: String?) {
-        ScriptFontDebug.d(
-            "setEditorScriptFont scope=$scope value=${ScriptFontDebug.short(value)} " +
-                "onlyThisBook=$onlyThisBook durConfig.name=${durConfig.name}",
-        )
         val normalized = value?.takeIf { it.isNotBlank() }
         if (onlyThisBook) {
             bookOverridesStore.writeScope(boundBook, scope, normalized)

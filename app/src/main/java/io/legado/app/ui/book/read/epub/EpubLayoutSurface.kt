@@ -15,7 +15,6 @@ import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
-import android.webkit.ConsoleMessage
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -25,7 +24,6 @@ import android.widget.FrameLayout
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import io.legado.app.help.config.EpubScriptFontHealth
-import io.legado.app.help.config.ScriptFontDebug
 import io.legado.app.model.epub.EpubResourceGateway
 import io.legado.app.model.epub.EpubResourceLink
 import io.legado.app.model.epub.EpubPublicationSession
@@ -113,13 +111,6 @@ internal class EpubLayoutSurface(
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) = request.deny()
-            // 调试插桩：把 WebView console 转进 ScriptFontDbg（会话结束后删除）。
-            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                if (message.message().startsWith("NG:")) {
-                    ScriptFontDebug.d("webview ${message.message()} ${message.sourceId()}:${message.lineNumber()}")
-                }
-                return false
-            }
         }
         webView.webViewClient = object : WebViewClient() {
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
