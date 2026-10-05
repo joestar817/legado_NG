@@ -509,7 +509,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         },
         onDone = ::commitDone,
         onDiscard = ::discardChanges,
-        onResetBookCustomization = ::resetBookCustomization,
         onResetBookFontOverride = ::resetBookFontOverride,
         onFollowGlobal = ::followGlobalPreset,
         onDismissRequest = ::requestDismiss,
@@ -843,15 +842,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun postEditorThemePreviewChanged() {
         postEvent(EventBus.UP_CONFIG, arrayListOf(0, 1, 2, 6, 9))
         notifyFloatingAppearanceChanged()
-    }
-
-    private fun resetBookCustomization() {
-        ReadBookConfig.resetBookCustomization()
-        editorBackgroundCache = null
-        ReadFloatingAppearanceState.refreshFromConfig()
-        refreshUi()
-        notifyPresetRestored()
-        toastOnUi(R.string.read_style_reset_book_customization_done)
     }
 
     private fun resetBookFontOverride() {

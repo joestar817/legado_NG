@@ -2296,8 +2296,6 @@
     <string name="read_style_restore_follow_global">恢复跟随全局</string>
     <string name="read_style_source_preset">固定基准</string>
     <string name="read_style_source_this_book">本书</string>
-    <string name="read_style_reset_book_customization">重置本书全部自定义</string>
-    <string name="read_style_reset_book_customization_done">已重置本书设置</string>
     <string name="read_style_reset_book_font">重置本书字体</string>
     <string name="read_style_this_book">本书</string>
     <string name="read_style_follow_global">跟随全局</string>

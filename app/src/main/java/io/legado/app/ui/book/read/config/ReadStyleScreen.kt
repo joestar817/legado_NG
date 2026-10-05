@@ -288,7 +288,6 @@ internal data class ReadStyleActions(
     val onReorderHighlights: (List<ReadHighlightRule>) -> Unit,
     val onDone: () -> Unit,
     val onDiscard: () -> Unit,
-    val onResetBookCustomization: () -> Unit,
     val onResetBookFontOverride: () -> Unit,
     val onFollowGlobal: () -> Unit,
     val onDismissRequest: () -> Unit,
@@ -623,19 +622,6 @@ private fun PresetPage(
                         .clickable(role = Role.Button, onClick = actions.onResetBookFontOverride),
                 )
             }
-        }
-        ReadDivider(contentColor)
-        Row(
-            Modifier.fillMaxWidth().height(56.dp)
-                .clickable(role = Role.Button, onClick = actions.onResetBookCustomization)
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.read_style_reset_book_customization),
-                color = contentColor,
-                fontSize = 15.sp,
-            )
         }
         ReadDivider(contentColor)
     }

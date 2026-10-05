@@ -2396,8 +2396,6 @@
     <string name="read_style_restore_follow_global">Follow current preset</string>
     <string name="read_style_source_preset">Pinned preset</string>
     <string name="read_style_source_this_book">This book</string>
-    <string name="read_style_reset_book_customization">Reset all book customization</string>
-    <string name="read_style_reset_book_customization_done">Book settings reset</string>
     <string name="read_style_reset_book_font">Reset book font</string>
     <string name="read_style_this_book">This book</string>
     <string name="read_style_follow_global">Use global</string>
