@@ -1,8 +1,9 @@
 # Typography（Language fonts）归属设计
 
-> 状态：**已决策并实施（Phase 1–4）**。日期：2026-10-04。  
+> 状态：**已决策并实施（Phase 1–4），Phase 3 已硬化（2026-10-05）**。  
 > 决策名：**Language-aware preset + sparse per-script inheritance**。  
-> 配套实现：Phase 3 后续（presets 内的 scriptFonts + 书籍主脚本检测 + 默认预设推荐）。
+> 配套实现：presets 内的 `scriptFonts`、全局/本书 override、TXT/EPUB 渲染接线、字体缓存 mtime、调试插桩清理、EPUB 已知限制文档化（`docs/epub-typography-limitations.md`）。  
+> 剩余 backlog：myreader 语言映射桥接（随分支合并）、可选 Phase 5（书籍主脚本检测 + 默认预设推荐）。
 
 ## 实施状态
 
@@ -16,13 +17,14 @@
 
 ## 1. 问题与现状
 
-当前实现（Phase 3）：
+当前实现（Phase 3 已硬化）：
 
-- 三行脚本字体写在 **全局** pref `readScriptTypography`（`global.typography.scripts.*`）；
-- 开了「自定义本书设置」的书可写 **本书级** override；
-- 预设只保存一个基准字体 `textFont`，不保存脚本字体。
+- 三行脚本字体写在 **全局** pref `readScriptTypography`（`global.typography.scripts.*`），作为兜底；
+- 预设已可独立配置 `Latin / CJK / Other` 脚本字体（`ReadBookConfig.Config.scriptFonts`），未设置时继承全局；
+- 开了「自定义本书设置」的书可写 **本书级** override（`BookReadStyleOverrides.font`）；
+- 渲染层：TXT 走 `ScriptFontStyleResolver` 叠加 `ReadCharStyle`；EPUB 走 `NGScriptFont` + unicode-range。
 
-问题：预设是用户「整套排版风格」的载体，但脚本字体游离在预设之外。用户的核心场景是「中英文书各一套预设，切预设即切换全部排版」——现在切预设只切换基准字体，脚本字体不动。
+已解决的问题：预设现在能承载完整排版风格，切换预设会同时切换基准字体与脚本字体。
 
 ## 2. 最终决策
 
@@ -161,7 +163,9 @@ GLOBAL default font (textFont)
 PLATFORM fallback
 ```
 
-用 `Latin / CJK / Other` 分别走同一条链。`EffectiveReadValueResolverContract` 已经预留预设层（`ReadPresetSnapshot.scriptFonts`），只需开始写入非空 map。
+用 `Latin / CJK / Other` 分别走同一条链。`EffectiveReadValueResolverContract` 已完整实现预设层（`ReadPresetSnapshot.scriptFonts` / `ReadValueContext.presetScriptFont`）。
+
+> 重要不变量：本书的 **default** 字体覆盖（`bookDefaultFont` / `SparseFontOverrides.default`）**只作用于 DEFAULT 维度**，不拦截 LATIN/CJK/OTHER 脚本桶。脚本维度未被覆盖时继续向下找预设/全局脚本字体，而不是被本书默认字体挡住。
 
 ### 4.1 示例
 

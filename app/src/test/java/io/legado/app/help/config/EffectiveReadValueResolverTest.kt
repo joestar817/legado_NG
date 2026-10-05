@@ -339,6 +339,21 @@ class EffectiveReadValueResolverTest {
     }
 
     @Test
+    fun `follow global script fallback to global default stays global`() {
+        val follow = ReadBasePreset(mode = ReadBasePresetMode.FOLLOW_GLOBAL)
+        for (scope in listOf(ReadValueScope.LATIN, ReadValueScope.CJK, ReadValueScope.OTHER)) {
+            val result = resolver.resolve(
+                ReadValueContext(
+                    scope = scope,
+                    basePreset = follow,
+                    globalDefaultFont = "B",
+                )
+            )
+            assertEquals(ResolvedReadValue("B", ReadValueSource.GLOBAL, scope), result)
+        }
+    }
+
+    @Test
     fun `17 pinned preset own script font resolves before its default`() {
         val result = resolver.resolve(
             ReadValueContext(

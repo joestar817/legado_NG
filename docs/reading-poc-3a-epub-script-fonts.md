@@ -1,9 +1,10 @@
 # Phase 3A PoC：EPUB 脚本字体渲染路径（same-family + unicode-range）
 
-> 状态：**PASS（2026-10-03，Pixel_Tablet 模拟器 Android 35 真机验收通过）**，详见文末「验收记录」。
+> 状态：**PASS（2026-10-03，Pixel_Tablet 模拟器 Android 35 真机验收通过）**；生产接线已完成（`cde21bd08`），PoC 脚手架已删除（`82b4ae817`）。
 > 目标严格限定为**证明 EPUB 多字体渲染路径可行**——不建全局模型、不加持久化字段、不做 UI、不改 8-flag 契约。
-> 依据：docs/reading-settings-redesign-plan.md §3.7（脚本分类）、Phase 3 挂接点注记。
+> 依据：`docs/reading-settings-redesign-plan.md` §3.7（脚本分类）、Phase 3 挂接点注记。
 > 决策门：PASS → 字体缓存 → 脚本数据模型 → UI → TXT PoC；FAIL → 回炉 EPUB 渲染架构，不进 UI/model。
+> 已知限制与后续边界见 `docs/epub-typography-limitations.md`。
 
 ## 1. 现状挂接点（已白盒核实）
 

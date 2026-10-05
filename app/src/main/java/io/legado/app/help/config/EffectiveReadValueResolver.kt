@@ -9,12 +9,25 @@ package io.legado.app.help.config
  * value 建模为 String 字体标识；Phase 3 之前不扩展其他属性。
  *
  * 解析顺序（非 EPUB，或 EPUB 规则为 override / respect 但原书未声明该属性）：
- *   book.overrides[scope]       -> ThisBook   （本书脚本级覆盖）
- *   book.overrides[default]     -> ThisBook   （本书默认级覆盖；压过全局脚本档案）
- *   book.basePreset(scope)      -> Preset     （pinned 快照，或 follow_global 当前预设）
- *   global.scripts[scope]       -> Global
- *   global.default              -> Global
+ *
+ * DEFAULT 维度：
+ *   book.overrides[scope]       -> ThisBook   （本书 DEFAULT 覆盖）
+ *   book.overrides[default]     -> ThisBook   （本书 default 字体覆盖）
+ *   book.basePreset.default     -> Preset     （pinned 快照 defaultFont）
+ *   FOLLOW_GLOBAL + global.default -> Preset  （当前预设 textFont；值同全局、标签有意不同）
+ *   global.default              -> Global     （无 follow_global 基准时）
  *   platform fallback           -> Platform   （非空，保证解析是全函数）
+ *
+ * LATIN/CJK/OTHER 维度：
+ *   book.overrides[scope]       -> ThisBook   （本书脚本级覆盖）
+ *   book.basePreset.scripts[scope] -> Preset  （pinned 快照脚本字体；FOLLOW_GLOBAL 为透明层）
+ *   preset.scripts[scope]       -> Preset     （选中预设的脚本字体覆盖）
+ *   global.scripts[scope]       -> Global
+ *   global.default              -> Global     （含 FOLLOW_GLOBAL 回落到 global.default）
+ *   platform fallback           -> Platform   （非空，保证解析是全函数）
+ *
+ * 关键不变量：本书 default 字体只作用于 DEFAULT 维度，不拦截 LATIN/CJK/OTHER 脚本桶。
+ * follow_global：DEFAULT 的 global.default 标 Preset；脚本桶来源如实标 Global。
  *
  * EPUB 规则为 respect 且原书声明了该属性：publisher 值直接胜出（source = Publisher）。
  */
@@ -110,7 +123,7 @@ object EffectiveReadValueResolverContract : EffectiveReadValueResolver {
                     }
                 }
 
-                // follow_global：当前预设层标 Preset；全局脚本档案仍是 Global。
+                // follow_global：DEFAULT 落到 global.default 标 Preset；脚本桶仍标 Global。
                 ReadBasePresetMode.FOLLOW_GLOBAL -> Unit
             }
         }
@@ -121,11 +134,9 @@ object EffectiveReadValueResolverContract : EffectiveReadValueResolver {
         // 3. 全局脚本档案 → 4. 全局/当前预设 default → 5. platform（非空兜底，全函数）
         context.globalScriptFont?.let { return ResolvedReadValue(it, ReadValueSource.GLOBAL, scope) }
         context.globalDefaultFont?.let {
-            val source = if (context.basePreset?.mode == ReadBasePresetMode.FOLLOW_GLOBAL) {
-                ReadValueSource.PRESET
-            } else {
-                ReadValueSource.GLOBAL
-            }
+            val followGlobalDefault = scope == ReadValueScope.DEFAULT &&
+                context.basePreset?.mode == ReadBasePresetMode.FOLLOW_GLOBAL
+            val source = if (followGlobalDefault) ReadValueSource.PRESET else ReadValueSource.GLOBAL
             return ResolvedReadValue(it, source, scope)
         }
         return ResolvedReadValue(context.platformFont, ReadValueSource.PLATFORM, scope)

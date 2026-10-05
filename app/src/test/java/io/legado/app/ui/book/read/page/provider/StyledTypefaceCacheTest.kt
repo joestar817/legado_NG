@@ -7,7 +7,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * §3.7-5 字体缓存契约：(path, weight, italic) 键维度 + LRU 淘汰 + 只缓存成功值。
+ * §3.7-5 字体缓存契约：(path, weight, italic, mtime) 键维度 + LRU 淘汰 + 只缓存成功值。
  * 用 String 值在 JVM 上验证 KeyedTypefaceCache（androidx.collection.LruCache 为纯 Java 实现）。
  */
 class StyledTypefaceCacheTest {

@@ -307,7 +307,7 @@ flowchart LR
 | App 主题模式「常规模式」(`AppConfig.themeMode`) | 整个 App 界面（书架、设置、弹窗） | UI 深浅色 |
 | 阅读主题模式「跟随系统」(`ReadBookConfig.readThemeMode`) | 阅读页文字/背景配色 | 用预设的日/夜变体 |
 
-两者互相独立；阅读页只看后者。若 `readThemeMode` 缺失（例如恢复备份后，该 pref 不随备份恢复），会回落为「日间」而不是跟随系统。
+两者互相独立；阅读页只看后者。若 `readThemeMode` 缺失（例如恢复备份后，该 pref 不随备份恢复），**按 2026-10-04 决策 A 回落为 `FOLLOW_SYSTEM`**，而不是「日间」；未来全局默认值变化不会影响旧备份的恢复结果。详见 `docs/reading-settings-redesign-plan.md` §3.5 与 `BackupRestorePolicyTest`。
 
 ## 5. EPUB 排版优先级（最后一层闸门）
 
@@ -375,11 +375,11 @@ flowchart TD
 ## 8. 容易混淆的点
 
 - **Color preset 的“颜色” ≠ EPUB 优先级的“color”**：前者是预设里存的颜色值；后者是“是否用原书文字颜色”的开关。
-- **仅本书开关复制的是整份 Config**（颜色/字体/调整/背景/浮动外观），但 EPUB 优先级开关和高亮规则不跟着复制——EPUB 优先级是并行的按书设置，高亮规则是全局共享。
+- **仅本书开关会生成当前预设的独立副本**（`independentReadStyle` / `durConfig`）作为显示基准，颜色/字体/调整/背景/浮动外观初始来自该副本；同时本书修改按属性写入 `independentOverrides`（稀疏覆盖），不扩散为整份拷贝。EPUB 优先级开关和高亮规则不跟着复制——EPUB 优先级是并行的按书设置，高亮规则是全局共享。
 - **Adjustment 不是独立层**：它直接改动当前生效对象（本书副本 / shareConfig / 当前预设），改完即持久化到对应位置；不存在一个悬浮的“调整层”。
 - **shareLayout 只共享排版字段**：颜色/背景仍来自当前预设或本书副本。
 - **“跟随应用颜色”只影响浮动栏取色**：不影响正文文字/背景颜色；它是预设页的全局开关，仅本书开启时隐藏并失效。
 - **日/夜变体属于同一个 Config**：切日/夜不会切换预设，只在同一预设内部选择字段集。
 - **“跟随系统”只切日/夜变体**：它不选预设、不改任何字段值；App 主题的「常规模式」与阅读的「跟随系统」是两套独立设置。
-- **readThemeMode 缺失时回落为「日间」**：恢复备份后该 pref 不恢复，阅读页可能一直用日间变体。
+- **readThemeMode 缺失时回落为 `FOLLOW_SYSTEM`**：恢复备份后该 pref 不恢复时，阅读页会跟随系统日/夜模式，而不是固定为日间。
 - **`epubLayout.*` 会随备份走 OTHER 模块**（`BackupModules.kt:46-68`），key 为 bookUrl 的 sha256，恢复后仅匹配同 bookUrl 的书。
