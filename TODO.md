@@ -55,4 +55,4 @@
 
 ## Phase 3 should-fix（下轮处理，非阻塞）
 
-- [ ] 字体缓存键并入 `File(path).lastModified()`：同路径字体文件被外部覆盖时，当前键（仅 path）会返回旧字形（Glide mtime 签名同款教训）。content:// 与 assets:// 豁免（assets 不可变、content:// 无法廉价 stat，文档注明）。
+- [x] 字体缓存键并入 mtime（已落地）：`styledTypefaceCacheKey` 并入 `File(path).lastModified()`；content:// 与 assets:// 豁免。测试：同路径改 mtime → 不同键/不同缓存条目；content/assets 键 mtime=null。

@@ -1,8 +1,10 @@
 package io.legado.app.ui.book.read.page.provider
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.io.File
 
 /**
  * §3.7-5 字体缓存契约：(path, weight, italic) 键维度 + LRU 淘汰 + 只缓存成功值。
@@ -64,5 +66,52 @@ class StyledTypefaceCacheTest {
         cache.clear()
         assertEquals(0, cache.size())
         assertNull(cache.get(StyledTypefaceCacheKey("/fonts/a.ttf", 400, false)))
+    }
+
+    @Test
+    fun `file path key includes file mtime`() {
+        val file = File.createTempFile("styled-font", ".ttf")
+        try {
+            file.setLastModified(1000L)
+            val key = styledTypefaceCacheKey(file.absolutePath, 400, false)
+            assertEquals(1000L, key.mtime)
+            assertEquals(file.absolutePath, key.path)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `same path changed mtime yields different keys and cache entries`() {
+        val file = File.createTempFile("styled-font", ".ttf")
+        try {
+            file.setLastModified(1000L)
+            val before = styledTypefaceCacheKey(file.absolutePath, 400, false)
+            file.setLastModified(2000L)
+            val after = styledTypefaceCacheKey(file.absolutePath, 400, false)
+            assertNotEquals(before, after)
+
+            // 同路径外部覆盖后，旧条目不得命中（不返回旧 Typeface）。
+            val cache = KeyedTypefaceCache<String>(maxEntries = 4)
+            cache.put(before, "old-typeface")
+            cache.put(after, "new-typeface")
+            assertEquals("old-typeface", cache.get(before))
+            assertEquals("new-typeface", cache.get(after))
+            assertEquals(2, cache.size())
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `content and assets paths are exempt from mtime`() {
+        assertEquals(
+            null,
+            styledTypefaceCacheKey("content://com.android.providers/fonts/a.ttf", 400, false).mtime,
+        )
+        assertEquals(
+            null,
+            styledTypefaceCacheKey("assets://fonts/a.ttf", 400, false).mtime,
+        )
     }
 }
