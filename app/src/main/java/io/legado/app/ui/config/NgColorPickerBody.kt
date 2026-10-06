@@ -89,6 +89,7 @@ import io.legado.app.ui.design.theme.SwatchMatrix
 import io.legado.app.ui.design.theme.formatNgColor
 import io.legado.app.ui.design.theme.AI_THEME_SYSTEM_PROMPT
 import io.legado.app.ui.design.theme.buildAiThemeUserPrompt
+import io.legado.app.ui.design.theme.readerUiLanguageTagForAiTheme
 import io.legado.app.ui.design.theme.parseAiPaperLooks
 import io.legado.app.ui.design.theme.parseCommittedNgColor
 import io.legado.app.utils.getPrefInt
@@ -798,7 +799,12 @@ internal fun NgAiThemePane(
                             ),
                             AiMessage(
                                 AiMessage.Role.USER,
-                                buildAiThemeUserPrompt(preference, isNight, isEink),
+                                buildAiThemeUserPrompt(
+                                    preference,
+                                    isNight,
+                                    isEink,
+                                    readerUiLanguageTagForAiTheme(context),
+                                ),
                             ),
                         ),
                         params = AiTextParams(

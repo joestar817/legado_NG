@@ -124,11 +124,27 @@ class PaperSenseGeneratorTest {
     }
 
     @Test
-    fun buildAiThemeUserPromptNamesCurrentMode() {
-        assertTrue(buildAiThemeUserPrompt("warm ivory", isNight = false, isEink = false).contains("CURRENT_MODE: day"))
-        assertTrue(buildAiThemeUserPrompt("dim", isNight = true, isEink = false).contains("CURRENT_MODE: night"))
-        assertTrue(buildAiThemeUserPrompt("eink", isNight = true, isEink = true).contains("CURRENT_MODE: eink"))
-        assertTrue(buildAiThemeUserPrompt("  less blue  ", isNight = false, isEink = false).contains("less blue"))
+    fun buildAiThemeUserPromptNamesCurrentModeAndUiLanguage() {
+        assertTrue(
+            buildAiThemeUserPrompt("warm ivory", isNight = false, isEink = false, uiLanguageTag = "en")
+                .contains("CURRENT_MODE: day"),
+        )
+        assertTrue(
+            buildAiThemeUserPrompt("dim", isNight = true, isEink = false, uiLanguageTag = "en")
+                .contains("CURRENT_MODE: night"),
+        )
+        assertTrue(
+            buildAiThemeUserPrompt("eink", isNight = true, isEink = true, uiLanguageTag = "en")
+                .contains("CURRENT_MODE: eink"),
+        )
+        assertTrue(
+            buildAiThemeUserPrompt("  less blue  ", isNight = false, isEink = false, uiLanguageTag = "en")
+                .contains("less blue"),
+        )
+        assertTrue(
+            buildAiThemeUserPrompt("暖纸", isNight = false, isEink = false, uiLanguageTag = "zh-CN")
+                .startsWith("UI_LANGUAGE: zh-CN"),
+        )
     }
 
     @Test

@@ -1,8 +1,14 @@
 package io.legado.app.ui.design.theme
 
+import android.content.Context
+import android.os.Build
 import androidx.annotation.ColorInt
 import com.google.gson.annotations.SerializedName
+import io.legado.app.constant.PreferKey
 import io.legado.app.utils.GSON
+import io.legado.app.utils.getPrefString
+import io.legado.app.utils.sysConfiguration
+import java.util.Locale
 import kotlin.random.Random
 
 enum class NgColorPickerTab {
@@ -152,7 +158,7 @@ internal const val AI_THEME_SYSTEM_PROMPT =
         "- Generate exactly 3 or 4 palettes.\n" +
         "- Each palette must contain:\n" +
         "{\n" +
-        "  \"name\": \"2-4 word descriptive name\",\n" +
+        "  \"name\": \"2-4 word descriptive name in UI_LANGUAGE\",\n" +
         "  \"bg\": \"#RRGGBB\",\n" +
         "  \"text\": \"#RRGGBB\",\n" +
         "  \"secondaryText\": \"#RRGGBB\",\n" +
@@ -200,19 +206,45 @@ internal const val AI_THEME_SYSTEM_PROMPT =
         "- Treat relative luminance and contrast ratio as authoritative.\n" +
         "- Do not use HSL lightness as a substitute for luminance.\n" +
         "- Before returning a palette, verify the contrast requirements for text against bg.\n" +
-        "- If a generated color fails, adjust it before returning the JSON."
+        "- If a generated color fails, adjust it before returning the JSON.\n\n" +
+        "8. CARD NAMES (name field)\n" +
+        "- Honor UI_LANGUAGE from the user message: write every palette name in that language.\n" +
+        "- Use 2-4 words, natural for readers of that language (not English unless UI_LANGUAGE is en).\n" +
+        "- User preference text may be any language; only the name field follows UI_LANGUAGE.\n" +
+        "- JSON keys and hex colors are unchanged."
+
+internal fun readerUiLanguageTagForAiTheme(context: Context): String {
+    val locale = when (context.getPrefString(PreferKey.language)) {
+        "zh" -> Locale.SIMPLIFIED_CHINESE
+        "en" -> Locale.ENGLISH
+        else -> systemLocaleForAiTheme()
+    }
+    return locale.toLanguageTag()
+}
+
+private fun systemLocaleForAiTheme(): Locale {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        return sysConfiguration.locales[0]
+    }
+    @Suppress("DEPRECATION")
+    return sysConfiguration.locale
+}
 
 internal fun buildAiThemeUserPrompt(
     preference: String,
     isNight: Boolean,
     isEink: Boolean,
+    uiLanguageTag: String,
 ): String {
     val mode = when {
         isEink -> "eink (positive polarity, paper-like day surface)"
         isNight -> "night"
         else -> "day"
     }
-    return "CURRENT_MODE: $mode\n\nUser preference:\n${preference.trim()}"
+    val language = uiLanguageTag.trim().ifBlank { Locale.getDefault().toLanguageTag() }
+    return "UI_LANGUAGE: $language\n" +
+        "CURRENT_MODE: $mode\n\n" +
+        "User preference:\n${preference.trim()}"
 }
 
 internal fun parseAiPaperLooks(
