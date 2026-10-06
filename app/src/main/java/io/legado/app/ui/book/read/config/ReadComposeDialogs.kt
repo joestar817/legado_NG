@@ -223,24 +223,24 @@ internal fun ReadUnsavedConfirmDialogContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             NgFormActionButton(
                 text = cancelLabel,
                 onClick = onCancel,
-                modifier = Modifier.weight(1f),
+                minimumWidth = 0.dp,
             )
             NgFormActionButton(
                 text = discardLabel,
                 onClick = onDiscard,
-                modifier = Modifier.weight(1f),
+                minimumWidth = 0.dp,
                 variant = NgButtonVariant.DANGER,
             )
             NgFormActionButton(
                 text = keepLabel,
                 onClick = onKeep,
-                modifier = Modifier.weight(1f),
+                minimumWidth = 0.dp,
                 variant = NgButtonVariant.SUCCESS,
             )
         }

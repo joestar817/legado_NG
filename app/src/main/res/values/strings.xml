@@ -2493,8 +2493,8 @@
     <string name="read_style_sheet_transparency">Sheet</string>
     <string name="read_style_discard_changes">Discard changes</string>
     <string name="read_style_unsaved_changes">Unsaved changes</string>
-    <string name="read_style_keep_and_close">Keep &amp; close</string>
-    <string name="read_style_discard_and_close">Discard &amp; close</string>
+    <string name="read_style_keep_and_close">Keep</string>
+    <string name="read_style_discard_and_close">Discard</string>
     <string name="read_style_keep_editing">Keep editing</string>
     <string name="read_highlight_rules">Highlight rules</string>
     <string name="read_highlight_summary">%1$d/%2$d enabled</string>

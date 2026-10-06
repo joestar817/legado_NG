@@ -109,6 +109,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var sessionSnapshotJson: String = ""
     private var unsavedConfirmCancelled by mutableIntStateOf(0)
     private var unsavedConfirmShowing = false
+    private var closing = false
     private var pendingScriptFontScope by mutableStateOf<ReadValueScope?>(null)
     private var pendingEditorScriptFontScope by mutableStateOf<ReadValueScope?>(null)
     private var currentPage: ReadStylePage = ReadStylePage.PRESET
@@ -252,7 +253,11 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val dialog = object : ComponentDialog(requireContext(), theme) {
             override fun cancel() {
-                requestDismiss()
+                if (closing) {
+                    super.cancel()
+                } else {
+                    requestDismiss()
+                }
             }
         }
         // cancel() 覆盖同时覆盖返回键与点外部；Compose BackHandler 只负责页内导航。
@@ -523,7 +528,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             }
         },
         onDone = ::commitDone,
-        onDiscard = ::discardChanges,
+        onDiscard = ::discardAndLeave,
         onDismissRequest = ::requestDismiss,
         onOpenLanguageFonts = ::openLanguageFonts,
         onSelectScriptFont = ::selectScriptFont,
@@ -600,10 +605,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         dismissAllowingStateLoss()
     }
 
-    private fun discardChanges() {
+    private fun discardChanges(): Boolean {
         val snapshot = sessionSnapshot ?: sessionSnapshotJson.takeIf { it.isNotBlank() }?.let {
             runCatching { Gson().fromJson(it, ReadStyleSnapshot::class.java) }.getOrNull()
-        } ?: return
+        } ?: return false
         val gson = Gson()
         val configListType = object : TypeToken<List<ReadBookConfig.Config>>() {}.type
         val configList: List<ReadBookConfig.Config> = gson.fromJson(snapshot.configListJson, configListType)
@@ -625,12 +630,22 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         ReadScriptTypographyStore.restoreSnapshot(snapshot.scriptTypographyJson)
         editorBackgroundCache = null
         ReadFloatingAppearanceState.refreshFromConfig()
-        refreshUi()
+        return true
+    }
+
+    private fun discardAndLeave() {
+        if (closing) return
+        if (!discardChanges()) return
+        closing = true
         notifyPresetRestored()
-        postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
+        dismissAllowingStateLoss()
     }
 
     private fun requestDismiss() {
+        if (closing) {
+            dismissAllowingStateLoss()
+            return
+        }
         if (computeUnsaved()) {
             showUnsavedConfirm()
         } else {
@@ -649,12 +664,12 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             cancelLabel = getString(R.string.read_style_keep_editing),
             onKeep = {
                 unsavedConfirmShowing = false
+                closing = true
                 dismissAllowingStateLoss()
             },
             onDiscard = {
                 unsavedConfirmShowing = false
-                discardChanges()
-                dismissAllowingStateLoss()
+                discardAndLeave()
             },
             onCancelled = {
                 unsavedConfirmShowing = false

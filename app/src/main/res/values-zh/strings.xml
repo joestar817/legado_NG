@@ -2393,8 +2393,8 @@
     <string name="read_style_sheet_transparency">面板</string>
     <string name="read_style_discard_changes">放弃修改</string>
     <string name="read_style_unsaved_changes">未保存的修改</string>
-    <string name="read_style_keep_and_close">保留并关闭</string>
-    <string name="read_style_discard_and_close">放弃并关闭</string>
+    <string name="read_style_keep_and_close">保留</string>
+    <string name="read_style_discard_and_close">放弃</string>
     <string name="read_style_keep_editing">继续编辑</string>
     <string name="read_highlight_rules">高亮规则</string>
     <string name="read_highlight_summary">%1$d/%2$d 启用</string>
