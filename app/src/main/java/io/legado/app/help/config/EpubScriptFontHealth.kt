@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 调试期之后仍需保留：EPUB WebView 报告各脚本字体 face 是否加载失败（如 OTS 拒绝）。
- * 只有可见 surface 上报；Language fonts 页据此画删除线，Done 时把失败项恢复为跟随预设。
+ * 只有可见 surface 上报；默认 Tab / 编辑预设的语言字体行据此画删除线，Done 时清掉失败项所属层。
  */
 object EpubScriptFontHealth {
     private val _failedScopes = MutableStateFlow<Set<String>>(emptySet())

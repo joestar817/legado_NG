@@ -134,9 +134,86 @@ internal data class AiPaperLookDto(
     @SerializedName("contrast") val contrast: Float? = null,
     @SerializedName("chroma") val chroma: Float? = null,
     @SerializedName("bg") val bg: String = "",
+    @SerializedName("text") val text: String = "",
     @SerializedName("fg") val fg: String = "",
+    @SerializedName("secondaryText") val secondaryText: String = "",
+    @SerializedName("highlight") val highlight: String = "",
     @SerializedName("accent") val accent: String = "",
 )
+
+internal const val AI_THEME_SYSTEM_PROMPT =
+    "You are an expert in reading ergonomics, accessibility, color science, " +
+        "and ebook reader UI design.\n\n" +
+        "Generate 3 to 4 distinct reading color palettes tailored to the user's " +
+        "intent. Prioritize comfortable long-form reading over visual novelty.\n\n" +
+        "Honor CURRENT_MODE from the user message; return palettes for that mode only.\n\n" +
+        "OUTPUT\n" +
+        "- Return a pure JSON array only. No markdown, no commentary.\n" +
+        "- Generate exactly 3 or 4 palettes.\n" +
+        "- Each palette must contain:\n" +
+        "{\n" +
+        "  \"name\": \"2-4 word descriptive name\",\n" +
+        "  \"bg\": \"#RRGGBB\",\n" +
+        "  \"text\": \"#RRGGBB\",\n" +
+        "  \"secondaryText\": \"#RRGGBB\",\n" +
+        "  \"highlight\": \"#RRGGBB\",\n" +
+        "  \"accent\": \"#RRGGBB\"\n" +
+        "}\n\n" +
+        "COLOR PRINCIPLES\n\n" +
+        "1. BODY READING COLORS\n" +
+        "- Contrast between bg and text must be at least 7:1.\n" +
+        "- Prefer approximately 8:1-12:1 for normal body text.\n" +
+        "- Contrast must be produced primarily through luminance, not hue.\n" +
+        "- Never use saturated red, green, or blue for body text.\n" +
+        "- secondaryText must remain clearly distinguishable from the background " +
+        "while being visually subordinate to body text.\n\n" +
+        "2. DAY PALETTES\n" +
+        "- Positive polarity: dark text on a light background.\n" +
+        "- Use soft off-white, ivory, cream, paper, or similarly light surfaces.\n" +
+        "- Avoid pure #FFFFFF and pure #000000.\n" +
+        "- Prefer low-to-moderate chroma backgrounds.\n" +
+        "- Warmth may vary between palettes.\n\n" +
+        "3. NIGHT PALETTES\n" +
+        "- Negative polarity: light text on a dark background.\n" +
+        "- Use deep charcoal, warm slate, bistre, or similarly dark surfaces.\n" +
+        "- Avoid pure #000000 and pure #FFFFFF.\n" +
+        "- Prefer warm or neutral light text rather than cold pure white.\n" +
+        "- Avoid bright saturated highlights.\n\n" +
+        "4. HIGHLIGHT\n" +
+        "- Must remain visually distinguishable from both bg and text.\n" +
+        "- Day mode: prefer muted amber, honey, ochre, or similarly warm tones.\n" +
+        "- Night mode: prefer dark amber, bronze, or muted warm tones.\n" +
+        "- Never use an extremely bright highlight that dominates the reading surface.\n\n" +
+        "5. ACCENT\n" +
+        "- Accent should express the palette's identity.\n" +
+        "- It may vary by palette family: natural, paper, sky, forest, lavender, ocean, etc.\n" +
+        "- If accent is used for readable UI text, it must satisfy the required " +
+        "text/background contrast.\n" +
+        "- Do not sacrifice body-text readability to make palettes visually distinctive.\n" +
+        "- Do not use hue+180 complementary accents.\n\n" +
+        "6. PALETTE DISTINCTIVENESS\n" +
+        "- The generated palettes must be meaningfully different.\n" +
+        "- Vary hue family, warmth, chroma, and accent character.\n" +
+        "- Do not generate four nearly identical beige/gray palettes.\n" +
+        "- Keep the reading surface ergonomically conservative even when the accent is more expressive.\n\n" +
+        "7. COLOR VALIDATION\n" +
+        "- Treat relative luminance and contrast ratio as authoritative.\n" +
+        "- Do not use HSL lightness as a substitute for luminance.\n" +
+        "- Before returning a palette, verify the contrast requirements for text against bg.\n" +
+        "- If a generated color fails, adjust it before returning the JSON."
+
+internal fun buildAiThemeUserPrompt(
+    preference: String,
+    isNight: Boolean,
+    isEink: Boolean,
+): String {
+    val mode = when {
+        isEink -> "eink (positive polarity, paper-like day surface)"
+        isNight -> "night"
+        else -> "day"
+    }
+    return "CURRENT_MODE: $mode\n\nUser preference:\n${preference.trim()}"
+}
 
 internal fun parseAiPaperLooks(
     raw: String,
@@ -148,35 +225,31 @@ internal fun parseAiPaperLooks(
         GSON.fromJson(json, Array<AiPaperLookDto>::class.java)
     }.getOrNull() ?: return emptyList()
     return dtos.mapNotNull { dto ->
-        val named = resolveAiSeed(dto)
-        if (named != null) {
-            SemanticPaletteEngine.lookFor(named, isNight, isEink, labelKey = named.id)
-        } else {
-            val background = parseNgColor(dto.bg) ?: return@mapNotNull null
-            val foreground = parseNgColor(dto.fg) ?: return@mapNotNull null
-            val accent = parseNgColor(dto.accent) ?: 0
+        val background = parseNgColor(dto.bg)
+        val foreground = parseNgColor(dto.text.ifBlank { dto.fg })
+        if (background != null && foreground != null) {
+            val label = dto.name.ifBlank { "generated" }
             PaperSenseGenerator.sanitize(
                 look = NgPaperLook(
-                    labelKey = dto.name.ifBlank { "generated" },
+                    labelKey = label,
                     background = background,
                     foreground = foreground,
-                    accent = accent,
-                    highlight = 0,
+                    accent = parseNgColor(dto.accent) ?: 0,
+                    highlight = parseNgColor(dto.highlight) ?: 0,
                     contrastRatio = 0.0,
                 ),
                 isNight = isNight,
                 isEink = isEink,
             )
+        } else {
+            val named = resolveAiSeed(dto) ?: return@mapNotNull null
+            SemanticPaletteEngine.lookFor(named, isNight, isEink, labelKey = named.id)
         }
     }
 }
 
 private fun resolveAiSeed(dto: AiPaperLookDto): ReadingPaletteSeed? {
-    val base = ReadingPaletteCatalog.seed(dto.id)
-        ?: ReadingPaletteCatalog.seeds.firstOrNull { seed ->
-            dto.name.contains(seed.id, ignoreCase = true)
-        }
-        ?: return null
+    val base = ReadingPaletteCatalog.seed(dto.id) ?: return null
     return base.copy(
         targetHue = dto.hue ?: base.targetHue,
         warmth = dto.warmth ?: base.warmth,

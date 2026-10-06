@@ -96,6 +96,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var backgroundColorPickerDialog: ComponentDialog? = null
     private var editingHighlightIndex: Int? = null
     private var creatingPreset = false
+    private var colorSessionAppearance: ReadBookConfig.Config? = null
     private var highlightDraft: ReadHighlightRule? = null
     private var highlightSelectionMode = HighlightSelectionMode.NONE
     private var selectedHighlightIds: Set<String> = emptySet()
@@ -588,14 +589,9 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun commitDone() {
         // EPUB 渲染失败的脚本字体视为不可用：保存时恢复为跟随预设，忽略本次选择。
         if (EpubScriptFontHealth.failedScopes.value.isNotEmpty()) {
-            val editorPage = page.isEditorPage()
             EpubScriptFontHealth.failedScopes.value.forEach { scopeName ->
                 ReadValueScope.entries.firstOrNull { it.name.equals(scopeName, ignoreCase = true) }?.let { scope ->
-                    if (editorPage) {
-                        ReadBookConfig.setEditorScriptFont(scope, null)
-                    } else {
-                        ReadBookConfig.writeScriptFont(scope, null)
-                    }
+                    ReadBookConfig.revertFailedScriptFont(scope)
                 }
             }
             EpubScriptFontHealth.clear()
@@ -668,6 +664,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun refreshUi() {
+        val previous = screenState
         val config = ReadBookConfig.durConfig
         val name = config.name.ifBlank { getString(R.string.text) }
         val mode = if (ReadBookConfig.isNightTheme) 1 else 0
@@ -752,11 +749,15 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             fullLineUnderline = currentFullLineUnderlineState(),
             highlightDraft = highlightDraft,
             editingHighlightIndex = editingHighlightIndex,
-            editorInitialColor = null,
-            editorInitialColorWasUnset = false,
-            editorInitialBackgroundType = null,
-            editorInitialBackgroundName = null,
-            editorInitialBackground = null,
+            editorInitialColor = previous?.editorInitialColor,
+            editorInitialColorWasUnset = previous?.editorInitialColorWasUnset ?: false,
+            editorInitialTextColor = previous?.editorInitialTextColor,
+            editorInitialBackgroundColor = previous?.editorInitialBackgroundColor,
+            editorInitialHighlightColor = previous?.editorInitialHighlightColor,
+            editorInitialTextAccentColor = previous?.editorInitialTextAccentColor,
+            editorInitialBackgroundType = previous?.editorInitialBackgroundType,
+            editorInitialBackgroundName = previous?.editorInitialBackgroundName,
+            editorInitialBackground = previous?.editorInitialBackground,
             hasUnsavedChanges = computeUnsaved(),
             bookFont = if (ReadBookConfig.onlyThisBook) ReadBookConfig.textFont else "",
             bookFontSource = if (ReadBookConfig.onlyThisBook) {
@@ -779,9 +780,9 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 ReadValueScope.CJK,
                 ReadValueScope.OTHER,
             ).map { scope ->
-                val resolved = ReadBookConfig.scriptFont(scope)
-                val hasThisLayerOverride = ReadBookConfig.hasScriptFontOverride(scope)
-                val hasPresetOverride = ReadBookConfig.durConfig.scriptFonts?.forScope(scope) != null
+                val globalFont = ReadScriptTypographyStore.font(scope).orEmpty()
+                val failed = EpubScriptFontHealth.isFailed(scope.name.lowercase())
+                val effective = ReadBookConfig.scriptFont(scope).value
                 ReadScriptFontUi(
                     scope = scope,
                     label = getString(
@@ -791,12 +792,14 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                             else -> R.string.read_style_script_other
                         }
                     ),
-                    font = resolved.value,
-                    source = resolved.source,
-                    canReset = hasThisLayerOverride,
-                    isInherited = resolved.source != ReadValueSource.PUBLISHER &&
-                        !hasThisLayerOverride && !hasPresetOverride,
-                    unavailable = EpubScriptFontHealth.isFailed(scope.name.lowercase()),
+                    font = globalFont,
+                    source = if (globalFont.isBlank()) {
+                        ReadValueSource.PLATFORM
+                    } else {
+                        ReadValueSource.GLOBAL
+                    },
+                    canReset = globalFont.isNotBlank(),
+                    unavailable = failed && globalFont.isNotBlank() && globalFont == effective,
                 )
             },
             editorScriptFonts = listOf(
@@ -805,6 +808,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 ReadValueScope.OTHER,
             ).map { scope ->
                 val presetFont = ReadBookConfig.durConfig.scriptFonts?.forScope(scope).orEmpty()
+                val failed = EpubScriptFontHealth.isFailed(scope.name.lowercase())
+                val effective = ReadBookConfig.scriptFont(scope).value
                 ReadScriptFontUi(
                     scope = scope,
                     label = getString(
@@ -817,6 +822,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                     font = presetFont,
                     source = if (presetFont.isBlank()) ReadValueSource.PLATFORM else ReadValueSource.PRESET,
                     canReset = presetFont.isNotBlank(),
+                    unavailable = failed && presetFont.isNotBlank() && presetFont == effective,
                 )
             },
         )
@@ -913,6 +919,9 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         if (target.isColorClusterPage() || target == ReadStylePage.EDIT_AI_THEME) {
             val state = screenState ?: return
             val fromSession = page.isColorClusterPage() || page == ReadStylePage.EDIT_AI_THEME
+            if (!fromSession) {
+                colorSessionAppearance = ReadBookConfig.durConfig.copy()
+            }
             val textSnap = if (fromSession) {
                 state.editorInitialTextColor ?: state.editorTextColor
             } else {
@@ -1058,7 +1067,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             }
 
             page == ReadStylePage.LANGUAGE_FONTS -> {
-                page = ReadStylePage.PRESET
+                page = ReadStylePage.APP_DEFAULTS
                 refreshUi()
             }
         }
@@ -1183,6 +1192,18 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     private fun resetEditorColor() {
         val state = screenState ?: return
+        if (page == ReadStylePage.EDIT_AI_THEME) {
+            val backup = colorSessionAppearance
+            if (backup != null) {
+                ReadBookConfig.durConfig.restoreAppearanceFrom(backup)
+            } else {
+                restoreEditorAppearanceFromInitials(state)
+            }
+            refreshUi()
+            postEditorBackgroundChanged()
+            postEditorTextColorChanged()
+            return
+        }
         val initialColor = state.editorInitialColor ?: return
         when (page) {
             ReadStylePage.EDIT_TEXT_COLOR -> applyEditorTextColor(initialColor)
@@ -1205,7 +1226,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             }
             ReadStylePage.EDIT_ACCENT_COLOR -> applyEditorAccentColor(initialColor)
             ReadStylePage.EDIT_HIGHLIGHT_COLOR -> applyEditorHighlightColor(initialColor)
-            ReadStylePage.EDIT_AI_THEME -> restoreEditorAppearanceFromInitials(state)
             ReadStylePage.EDIT_UNDERLINE_COLOR -> {
                 ReadBookConfig.config.setCurUnderlineColor(initialColor)
                 refreshFullLineUnderlineState()

@@ -2316,6 +2316,7 @@
     <string name="ng_paper_sync_background">Apply matching paper colors</string>
     <string name="ng_paper_refresh">Refresh looks</string>
     <string name="ng_paper_generate">Generate</string>
+    <string name="ng_paper_generate_empty">Could not generate palettes. Try a different description.</string>
     <string name="ng_paper_query_hint">Warm paper, night, less blue</string>
     <string name="ng_paper_preview_sample">Heaven and earth, dark and yellow.</string>
     <string name="ng_paper_d1">Warm paper</string>

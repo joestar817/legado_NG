@@ -68,6 +68,7 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.help.ai.AiManager
 import io.legado.app.help.ai.AiMessage
 import io.legado.app.help.ai.AiTextParams
+import io.legado.app.help.config.AiThemeDeckStore
 import io.legado.app.ui.design.components.compose.NgFlatActionRail
 import io.legado.app.ui.design.components.compose.NgFlatActionRailItem
 import io.legado.app.ui.design.components.compose.NgFlatActionRailVariant
@@ -83,13 +84,15 @@ import io.legado.app.ui.design.theme.NgColorPickerSlot
 import io.legado.app.ui.design.theme.NgColorPickerTab
 import io.legado.app.ui.design.theme.NgPaperLook
 import io.legado.app.ui.design.theme.NgTheme
-import io.legado.app.ui.design.theme.PaperSenseGenerator
 import io.legado.app.ui.design.theme.ReadingPaletteCatalog
 import io.legado.app.ui.design.theme.SwatchMatrix
 import io.legado.app.ui.design.theme.formatNgColor
+import io.legado.app.ui.design.theme.AI_THEME_SYSTEM_PROMPT
+import io.legado.app.ui.design.theme.buildAiThemeUserPrompt
 import io.legado.app.ui.design.theme.parseAiPaperLooks
 import io.legado.app.ui.design.theme.parseCommittedNgColor
 import io.legado.app.utils.getPrefInt
+import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.putPrefInt
 import io.legado.app.utils.putPrefString
@@ -772,28 +775,73 @@ internal fun NgAiThemePane(
     val colors = NgTheme.colors
     val scope = rememberCoroutineScope()
     var looks by remember(isNight, isEink) {
-        mutableStateOf(
-            PaperSenseGenerator.generate(
-                isNight = isNight,
-                isEink = isEink,
-                seedIds = ReadingPaletteCatalog.enabledIds(),
-            )
-        )
+        mutableStateOf(loadAiThemeDeck(isNight, isEink))
     }
     var query by remember { mutableStateOf("") }
     var generating by remember { mutableStateOf(false) }
     val assistant = remember { AiAssistantConfigUi.selectedModel() }
+    val context = LocalContext.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    fun requestGenerate() {
+        val preference = query.trim()
+        if (assistant == null || preference.isBlank() || generating) return
+        generating = true
+        keyboard?.hide()
+        scope.launch {
+            val outcome = runCatching {
+                withContext(Dispatchers.IO) {
+                    val result = AiManager.generateText(
+                        messages = listOf(
+                            AiMessage(
+                                AiMessage.Role.SYSTEM,
+                                AI_THEME_SYSTEM_PROMPT,
+                            ),
+                            AiMessage(
+                                AiMessage.Role.USER,
+                                buildAiThemeUserPrompt(preference, isNight, isEink),
+                            ),
+                        ),
+                        params = AiTextParams(
+                            temperature = 0.5f,
+                            maxTokens = 2048,
+                            jsonResponse = true,
+                            disableThinking = true,
+                        ),
+                        providerId = assistant.provider.id,
+                        modelId = assistant.model.id,
+                    )
+                    parseAiPaperLooks(result.content, isNight, isEink)
+                }
+            }
+            val next = outcome.getOrNull().orEmpty()
+            if (next.isNotEmpty()) {
+                looks = AiThemeDeckStore.appendGenerated(isNight, isEink, looks, next)
+            } else {
+                val err = outcome.exceptionOrNull()?.localizedMessage
+                context.toastOnUi(err ?: context.getString(R.string.ng_paper_generate_empty))
+            }
+            generating = false
+        }
+    }
     Column(
-        modifier = modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.fillMaxHeight(),
     ) {
-        looks.forEach { look ->
-            NgPaperLookRow(
-                look = look,
-                onClick = { onSelectLook(look) },
-            )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            looks.forEach { look ->
+                NgPaperLookRow(
+                    look = look,
+                    onClick = { onSelectLook(look) },
+                )
+            }
         }
         if (assistant != null) {
+            Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom,
@@ -803,6 +851,8 @@ internal fun NgAiThemePane(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { requestGenerate() }),
                 )
                 Spacer(Modifier.width(8.dp))
                 Box(
@@ -810,36 +860,11 @@ internal fun NgAiThemePane(
                         .height(48.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(Color(colors.primary).copy(alpha = if (generating) 0.4f else 1f))
-                        .clickable(enabled = query.isNotBlank() && !generating, role = Role.Button) {
-                            generating = true
-                            val prompt = query.trim()
-                            scope.launch {
-                                val next = runCatching {
-                                    withContext(Dispatchers.IO) {
-                                        val result = AiManager.generateText(
-                                            messages = listOf(
-                                                AiMessage(
-                                                    AiMessage.Role.SYSTEM,
-                                                    AI_THEME_SYSTEM_PROMPT,
-                                                ),
-                                                AiMessage(AiMessage.Role.USER, prompt),
-                                            ),
-                                            params = AiTextParams(
-                                                temperature = 0.5f,
-                                                maxTokens = 400,
-                                                jsonResponse = true,
-                                                disableThinking = true,
-                                            ),
-                                            providerId = assistant.provider.id,
-                                            modelId = assistant.model.id,
-                                        )
-                                        parseAiPaperLooks(result.content, isNight, isEink)
-                                    }
-                                }.getOrNull().orEmpty()
-                                if (next.isNotEmpty()) looks = next
-                                generating = false
-                            }
-                        }
+                        .clickable(
+                            enabled = query.isNotBlank() && !generating,
+                            role = Role.Button,
+                            onClick = { requestGenerate() },
+                        )
                         .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -903,11 +928,13 @@ private fun NgPaperLookRow(
     }
 }
 
-private const val AI_THEME_SYSTEM_PROMPT =
-    "Return JSON only: [{\"id\":\"natural|paper|ink|mist|forest|midnight\"," +
-        "\"hue\":75,\"warmth\":0.4,\"contrast\":0.5,\"chroma\":0.02}] " +
-        "for 3 to 5 ebook paper looks. Adjust seed bias only; do not output raw hex. " +
-        "No fonts, no commentary."
+private fun loadAiThemeDeck(isNight: Boolean, isEink: Boolean): List<NgPaperLook> {
+    val saved = AiThemeDeckStore.loadDeck(isNight, isEink)
+    if (saved.isNotEmpty()) return saved
+    val seed = AiThemeDeckStore.defaultSeedDeck(isNight, isEink)
+    AiThemeDeckStore.saveDeck(isNight, isEink, seed)
+    return seed
+}
 
 private fun hsvToArgb(alpha: Int, hsv: FloatArray): Int {
     return (AndroidColor.HSVToColor(hsv) and 0x00FFFFFF) or ((alpha and 0xFF) shl 24)

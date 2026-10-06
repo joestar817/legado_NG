@@ -736,17 +736,6 @@ private fun PresetPage(
         )
         ReadDivider(contentColor)
     }
-    Row(Modifier.fillMaxWidth().height(56.dp)
-        .clickable(role = Role.Button, onClick = actions.onOpenLanguageFonts)
-        .padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Icon(painterResource(R.drawable.ic_ai_capability_text), null, tint = contentColor, modifier = Modifier.size(25.dp))
-        Text(stringResource(R.string.read_style_language_fonts), color = contentColor, fontSize = 15.sp,
-            modifier = Modifier.padding(start = 14.dp).weight(1f))
-        Icon(painterResource(R.drawable.ic_chevron_right_20), null, tint = contentColor.copy(alpha = .72f),
-            modifier = Modifier.size(18.dp))
-    }
-    ReadDivider(contentColor)
     if (state.isEpub) {
         Row(Modifier.fillMaxWidth().height(56.dp)
             .clickable(role = Role.Button, onClick = actions.onOpenEpubSettings).padding(horizontal = 20.dp),
@@ -829,25 +818,11 @@ private fun LanguageFontsPage(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = when {
-                    item.source == ReadValueSource.PUBLISHER ->
-                        stringResource(R.string.read_style_publisher_css_active)
-                    item.isInherited ->
-                        stringResource(R.string.read_style_follow_preset)
-                    else -> fontDisplayName(item.font).ifBlank { item.font } +
-                        " · " + stringResource(
-                            when (item.source) {
-                                ReadValueSource.THIS_BOOK -> R.string.read_style_source_this_book
-                                ReadValueSource.PRESET -> if (state.followsGlobal) {
-                                    R.string.read_style_follow_global
-                                } else {
-                                    R.string.read_style_source_preset
-                                }
-                                ReadValueSource.GLOBAL -> R.string.read_style_source_global
-                                ReadValueSource.PUBLISHER -> R.string.read_style_source_publisher
-                                ReadValueSource.PLATFORM -> R.string.read_style_source_system
-                            }
-                        )
+                text = if (item.font.isBlank()) {
+                    stringResource(R.string.read_style_source_system)
+                } else {
+                    fontDisplayName(item.font) + " · " +
+                        stringResource(R.string.read_style_source_global)
                 },
                 color = contentColor.copy(alpha = 0.72f),
                 fontSize = 13.sp,
@@ -1132,6 +1107,34 @@ private fun DefaultsPage(
             ),
             enabled = followEnabled,
         )
+        ReadDivider(contentColor)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clickable(role = Role.Button, onClick = actions.onOpenLanguageFonts)
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_ai_capability_text),
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(25.dp),
+            )
+            Text(
+                text = stringResource(R.string.read_style_language_fonts),
+                color = contentColor,
+                fontSize = 15.sp,
+                modifier = Modifier.padding(start = 14.dp).weight(1f),
+            )
+            Icon(
+                painter = painterResource(R.drawable.ic_chevron_right_20),
+                contentDescription = null,
+                tint = contentColor.copy(alpha = 0.72f),
+                modifier = Modifier.size(18.dp),
+            )
+        }
         ReadDivider(contentColor)
         Row(
             modifier = Modifier
@@ -1462,6 +1465,11 @@ private fun EditorPage(
                             fontSize = 13.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            textDecoration = if (script.unavailable) {
+                                TextDecoration.LineThrough
+                            } else {
+                                TextDecoration.None
+                            },
                             modifier = Modifier.weight(1.4f, fill = false),
                         )
                         if (script.canReset) {

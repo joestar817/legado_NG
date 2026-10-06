@@ -2216,6 +2216,7 @@
     <string name="ng_paper_sync_background">同步应用配套纸底</string>
     <string name="ng_paper_refresh">换一组</string>
     <string name="ng_paper_generate">生成</string>
+    <string name="ng_paper_generate_empty">未能生成配色，请换个描述再试</string>
     <string name="ng_paper_query_hint">暖纸、夜里、少蓝</string>
     <string name="ng_paper_preview_sample">天地玄黄，宇宙洪荒。</string>
     <string name="ng_paper_d1">米白经典</string>

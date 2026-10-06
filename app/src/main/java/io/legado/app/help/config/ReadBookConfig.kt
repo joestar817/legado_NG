@@ -235,17 +235,12 @@ object ReadBookConfig {
         ?.let { systemFontFiles[it] }
 
     /**
-     * Phase 3 Language fonts UI：写入脚本字体。
-     * 仅本书 → 本书稀疏 override；全局 → ReadScriptTypographyStore。
+     * 默认 Tab「语言字体」：始终写入全局兜底 [ReadScriptTypographyStore]。
+     * 本书脚本覆盖走 [setEditorScriptFont]（仅本书时 writeScope）。
      * UI 层负责在写后 postEvent(UP_CONFIG, 1,2,5) 触发 ChapterProvider 刷新字体表。
      */
     fun writeScriptFont(scope: ReadValueScope, value: String?) {
-        val normalized = value?.takeIf { it.isNotBlank() }
-        if (onlyThisBook) {
-            bookOverridesStore.writeScope(boundBook, scope, normalized)
-        } else {
-            ReadScriptTypographyStore.setFont(scope, normalized)
-        }
+        ReadScriptTypographyStore.setFont(scope, value?.takeIf { it.isNotBlank() })
     }
 
     /**
@@ -263,11 +258,18 @@ object ReadBookConfig {
         }
     }
 
-    /** 该 scope 是否有可清除的显式脚本字体覆盖（↺ 是否可见）。 */
-    fun hasScriptFontOverride(scope: ReadValueScope): Boolean = if (onlyThisBook) {
-        bookOverridesStore.current(boundBook)?.font?.forScope(scope) != null
-    } else {
-        ReadScriptTypographyStore.font(scope) != null
+    /**
+     * EPUB 加载失败的脚本字体：清掉真正提供该字的那一层，而不是看当前所在页。
+     * 本书覆盖 → 预设 scriptFonts → 全局兜底。
+     */
+    fun revertFailedScriptFont(scope: ReadValueScope) {
+        val bookOwned = onlyThisBook &&
+            bookOverridesStore.current(boundBook)?.font?.forScope(scope) != null
+        val presetOwned = durConfig.scriptFonts?.forScope(scope) != null
+        when {
+            bookOwned || presetOwned -> setEditorScriptFont(scope, null)
+            else -> writeScriptFont(scope, null)
+        }
     }
 
     fun saveBookStyle(book: Book) = bookStyle.saveFor(book)
@@ -1321,6 +1323,27 @@ object ReadBookConfig {
             highlightColor = dayHighlight
             highlightColorNight = nightHighlight
             highlightColorEInk = einkHighlight
+        }
+
+        internal fun restoreAppearanceFrom(source: Config) {
+            readPaletteId = source.readPaletteId
+            bgType = source.bgType
+            bgStr = source.bgStr
+            bgTypeNight = source.bgTypeNight
+            bgStrNight = source.bgStrNight
+            bgTypeEInk = source.bgTypeEInk
+            bgStrEInk = source.bgStrEInk
+            textColor = source.textColor
+            textColorNight = source.textColorNight
+            textColorEInk = source.textColorEInk
+            textAccentColor = source.textAccentColor
+            textAccentColorNight = source.textAccentColorNight
+            textAccentColorEInk = source.textAccentColorEInk
+            highlightColor = source.highlightColor
+            highlightColorNight = source.highlightColorNight
+            highlightColorEInk = source.highlightColorEInk
+            initColorInt()
+            initAccentColorInt()
         }
 
         fun curShadowColor(): Int {
