@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -39,9 +40,11 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,8 +64,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isFinite
@@ -75,8 +81,13 @@ import io.legado.app.ui.design.components.compose.NgFlatActionRail
 import io.legado.app.ui.design.components.compose.NgFlatActionRailItem
 import io.legado.app.ui.design.components.compose.NgFlatActionRailVariant
 import io.legado.app.ui.design.components.compose.NgFormField
+import io.legado.app.ui.design.components.compose.NgSegmentedDock
+import io.legado.app.ui.design.components.compose.defaultDockSurfaceColor
+import io.legado.app.ui.design.theme.NgColorMath
+import io.legado.app.ui.design.theme.NgColorPickerSlot
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgTopBarTextMode
+import io.legado.app.ui.design.theme.SwatchMatrix
 import io.legado.app.ui.design.theme.formatNgColor
 import io.legado.app.ui.design.theme.parseNgColor
 import kotlin.math.floor
@@ -99,19 +110,14 @@ internal fun NgColorPickerSheet(
     if (!show) return
 
     var currentColor by remember { mutableIntStateOf(initialColor) }
-    var hexInput by remember { mutableStateOf(formatNgColor(initialColor)) }
-    var isHexInputError by remember { mutableStateOf(false) }
     var topBarTextMode by remember { mutableStateOf(initialTopBarTextMode) }
 
     LaunchedEffect(initialColor, initialTopBarTextMode) {
         currentColor = initialColor
-        hexInput = formatNgColor(initialColor)
-        isHexInputError = false
         topBarTextMode = initialTopBarTextMode
     }
 
-    val parsed = parseNgColor(hexInput)
-    val drawerHeightFraction = if (initialTopBarTextMode == null) 0.50f else 0.60f
+    val drawerHeightFraction = 0.72f
     val baseSnapshot = NgTheme.snapshot
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -133,7 +139,6 @@ internal fun NgColorPickerSheet(
                 modifier = Modifier
                     .fillMaxSize()
                     .navigationBarsPadding()
-                    .verticalScroll(rememberScrollState())
                     .padding(start = 20.dp, top = 14.dp, end = 20.dp, bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -146,8 +151,6 @@ internal fun NgColorPickerSheet(
                         NgPickerActionButton(
                             onClick = {
                                 currentColor = resetColor
-                                hexInput = formatNgColor(resetColor)
-                                isHexInputError = false
                             },
                             contentDescription = stringResource(R.string.ng_reset_color)
                         ) {
@@ -172,85 +175,24 @@ internal fun NgColorPickerSheet(
                             onSelectionConfirmed(currentColor, topBarTextMode)
                             onDismissRequest()
                         },
-                        enabled = parsed != null && !isHexInputError,
+                        enabled = true,
                         contentDescription = stringResource(R.string.ng_apply_color),
                         touchSize = 48.dp
                     )
                 }
 
                 Spacer(Modifier.height(10.dp))
-                val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                    //横向时色板按宽度比例会被拉得过高，封顶为屏幕高度的 30%；
-                    //保底 200dp 在矮屏上可能超过 30%，由外层 verticalScroll 兜底可达。
-                    val paletteHeight = minOf(
-                        maxWidth / 1.85f,
-                        (screenHeight * 0.30f).coerceAtLeast(200.dp),
-                    )
-                    NgColorPalette(
-                        color = currentColor,
-                        onColorChanged = { selected ->
-                            currentColor = selected
-                            hexInput = formatNgColor(selected)
-                            isHexInputError = false
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(paletteHeight),
-                    )
-                }
-                if (showAlphaSlider) {
-                    Spacer(Modifier.height(10.dp))
-                    NgAlphaSlider(
-                        color = currentColor,
-                        onAlphaChanged = { alpha ->
-                            currentColor = (currentColor and 0x00FFFFFF) or (alpha shl 24)
-                            hexInput = formatNgColor(currentColor)
-                            isHexInputError = false
-                        }
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color(currentColor), RoundedCornerShape(14.dp))
-                            .border(
-                                1.dp,
-                                Color(snapshot.colors.outlineVariant),
-                                RoundedCornerShape(14.dp)
-                            )
-                    )
-                    Spacer(Modifier.size(12.dp))
-                    NgFormField(
-                        label = stringResource(R.string.ng_color_value),
-                        value = hexInput,
-                        onValueChange = { value ->
-                            hexInput = normalizeHexInput(value)
-                            val color = parseNgColor(hexInput)
-                            if (color != null) {
-                                currentColor = color
-                                isHexInputError = false
-                            } else {
-                                isHexInputError = hexInput.isNotBlank()
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        isError = isHexInputError,
-                        supportingText = if (isHexInputError) {
-                            stringResource(R.string.ng_color_value_hint)
-                        } else {
-                            null
-                        },
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters
-                        )
-                    )
-                }
+                NgColorPickerContent(
+                    color = currentColor,
+                    onPreviewColor = { currentColor = it },
+                    onCommitColor = { currentColor = it },
+                    counterpartBackground = snapshot.colors.surface,
+                    counterpartForeground = snapshot.colors.onSurface,
+                    showAlphaSlider = showAlphaSlider,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                )
                 if (topBarTextMode != null) {
                     Spacer(Modifier.height(14.dp))
                     NgTopBarTextModeSelector(
@@ -266,148 +208,241 @@ internal fun NgColorPickerSheet(
 /**
  * 嵌入现有 NG 容器的颜色编辑页，不创建新的 Dialog 或 BottomSheet。
  */
+internal data class NgColorPickerTitleNav(
+    val canGoPrevious: Boolean,
+    val canGoNext: Boolean,
+    val onPrevious: () -> Unit,
+    val onNext: () -> Unit,
+)
+
+internal data class NgColorPickerClusterNav(
+    val labels: List<String>,
+    val selectedIndex: Int,
+    val onSelected: (Int) -> Unit,
+)
+
 @Composable
 internal fun NgInlineColorPicker(
     title: String,
     initialColor: Int,
     onBack: () -> Unit,
     onColorChanged: (Int) -> Unit,
+    onColorPreviewed: ((Int) -> Unit)? = null,
     onReset: () -> Unit,
+    counterpartBackground: Int = 0xFFFAF9F5.toInt(),
+    counterpartForeground: Int = 0xFF333333.toInt(),
+    counterpartHighlight: Int = 0xFFFDF3B8.toInt(),
+    slot: NgColorPickerSlot = NgColorPickerSlot.GENERIC,
+    showAlphaSlider: Boolean = false,
+    titleNav: NgColorPickerTitleNav? = null,
+    clusterNav: NgColorPickerClusterNav? = null,
+    dockContentColor: Color = Color.Unspecified,
+    dockSelectedContainerColor: Color = Color.Unspecified,
+    dockSelectedContentColor: Color = Color.Unspecified,
+    dockSurfaceColor: Color = Color.Unspecified,
 ) {
     var currentColor by remember { mutableIntStateOf(initialColor) }
-    var hexInput by remember { mutableStateOf(formatNgColor(initialColor)) }
-    var isHexInputError by remember { mutableStateOf(false) }
 
     LaunchedEffect(initialColor) {
         currentColor = initialColor
-        hexInput = formatNgColor(initialColor)
-        isHexInputError = false
+    }
+
+    fun flattenSession(next: Int): Int = when (slot) {
+        NgColorPickerSlot.TEXT -> NgColorMath.flatten(next, counterpartBackground)
+        NgColorPickerSlot.BACKGROUND -> NgColorMath.opaque(next)
+        else -> next
+    }
+
+    fun persistSession(next: Int) {
+        val flattened = flattenSession(next)
+        currentColor = flattened
+        onColorChanged(flattened)
     }
 
     val colors = NgTheme.colors
+    val tabContent = if (dockContentColor == Color.Unspecified) {
+        Color(colors.onSurface)
+    } else {
+        dockContentColor
+    }
+    val tabSelectedContainer = if (dockSelectedContainerColor == Color.Unspecified) {
+        Color(colors.primary)
+    } else {
+        dockSelectedContainerColor
+    }
+    val tabSelectedContent = if (dockSelectedContentColor == Color.Unspecified) {
+        Color(colors.onPrimary)
+    } else {
+        dockSelectedContentColor
+    }
+    val tabSurface = if (dockSurfaceColor == Color.Unspecified) {
+        defaultDockSurfaceColor()
+    } else {
+        dockSurfaceColor
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val boundedHeight = maxHeight.isFinite
+        val fillHeight = constraints.hasFixedHeight
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            NgPickerActionButton(
+                onClick = {
+                    persistSession(currentColor)
+                    onBack()
+                },
+                contentDescription = stringResource(R.string.back),
             ) {
-                NgPickerActionButton(
-                    onClick = onBack,
-                    contentDescription = stringResource(R.string.back),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = Color(colors.onSurface),
-                    )
-                }
-                Text(
-                    text = title,
-                    color = Color(colors.onSurface),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                NgPickerActionButton(
-                    onClick = onReset,
-                    contentDescription = stringResource(R.string.ng_reset_color),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Restore,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = Color(colors.onSurface),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            if (boundedHeight) {
-                BoxWithConstraints(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = false),
-                ) {
-                    //横屏宽度大时按 1.85 比例算出的色板会过高；用权重取到标题行与
-                    //输入行之外的真实剩余高度封顶，保证底部 ARGB 输入框始终可见。
-                    val paletteHeight = minOf(
-                        maxWidth / 1.85f,
-                        maxHeight,
-                    ).coerceAtLeast(140.dp)
-                    NgColorPalette(
-                        color = currentColor,
-                        onColorChanged = { selected ->
-                            currentColor = selected
-                            hexInput = formatNgColor(selected)
-                            isHexInputError = false
-                            onColorChanged(selected)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(paletteHeight),
-                    )
-                }
-            } else {
-                NgColorPalette(
-                    color = currentColor,
-                    onColorChanged = { selected ->
-                        currentColor = selected
-                        hexInput = formatNgColor(selected)
-                        isHexInputError = false
-                        onColorChanged(selected)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1.85f),
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = Color(colors.onSurface),
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(Color(currentColor), RoundedCornerShape(14.dp))
-                        .border(
-                            1.dp,
-                            Color(colors.outlineVariant),
-                            RoundedCornerShape(14.dp),
-                        ),
-                )
-                Spacer(Modifier.size(12.dp))
-                NgFormField(
-                    label = stringResource(R.string.ng_color_value),
-                    value = hexInput,
-                    onValueChange = { value ->
-                        hexInput = normalizeHexInput(value)
-                        val color = parseNgColor(hexInput)
-                        if (color != null) {
-                            currentColor = color
-                            isHexInputError = false
-                            onColorChanged(color)
-                        } else {
-                            isHexInputError = hexInput.isNotBlank()
+            if (clusterNav != null) {
+                NgSegmentedDock(
+                    labels = clusterNav.labels,
+                    selectedIndex = clusterNav.selectedIndex,
+                    onSelected = { index ->
+                        if (index != clusterNav.selectedIndex) {
+                            persistSession(currentColor)
+                            clusterNav.onSelected(index)
                         }
                     },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 4.dp),
+                    contentColor = tabContent,
+                    selectedContainerColor = tabSelectedContainer,
+                    selectedContentColor = tabSelectedContent,
+                    dockSurfaceColor = tabSurface,
+                    height = 32.dp,
+                    fontSize = 13.sp,
+                )
+            } else {
+                NgColorPickerTitle(
+                    title = title,
+                    titleNav = titleNav,
                     modifier = Modifier.weight(1f),
-                    isError = isHexInputError,
-                    supportingText = if (isHexInputError) {
-                        stringResource(R.string.ng_color_value_hint)
-                    } else {
-                        null
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Characters,
-                    ),
                 )
             }
+            NgPickerActionButton(
+                onClick = onReset,
+                contentDescription = stringResource(R.string.ng_reset_color),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Restore,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = Color(colors.onSurface),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        NgColorPickerContent(
+            color = currentColor,
+            onPreviewColor = { next ->
+                currentColor = next
+                onColorPreviewed?.invoke(flattenSession(next))
+            },
+            onCommitColor = { persistSession(it) },
+            counterpartBackground = counterpartBackground,
+            counterpartForeground = counterpartForeground,
+            counterpartHighlight = counterpartHighlight,
+            slot = slot,
+            showAlphaSlider = showAlphaSlider,
+            dockContentColor = dockContentColor,
+            dockSelectedContainerColor = dockSelectedContainerColor,
+            dockSelectedContentColor = dockSelectedContentColor,
+            dockSurfaceColor = dockSurfaceColor,
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (fillHeight) Modifier.weight(1f) else Modifier),
+        )
+        }
+    }
+}
+
+@Composable
+private fun NgColorPickerTitle(
+    title: String,
+    titleNav: NgColorPickerTitleNav?,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NgTheme.colors
+    val titleColor = Color(colors.onSurface)
+    val cueColor = titleColor.copy(alpha = 0.42f)
+    val dragDistance = remember { mutableFloatStateOf(0f) }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (titleNav == null) {
+                    Modifier
+                } else {
+                    Modifier.pointerInput(titleNav) {
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                val distance = dragDistance.floatValue
+                                dragDistance.floatValue = 0f
+                                when {
+                                    distance > 56f && titleNav.canGoPrevious -> titleNav.onPrevious()
+                                    distance < -56f && titleNav.canGoNext -> titleNav.onNext()
+                                }
+                            },
+                            onDragCancel = { dragDistance.floatValue = 0f },
+                            onHorizontalDrag = { change, amount ->
+                                change.consume()
+                                dragDistance.floatValue += amount
+                            },
+                        )
+                    }
+                },
+            ),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (titleNav?.canGoPrevious == true) {
+            Text(
+                text = "< ",
+                color = cueColor,
+                fontSize = 18.sp,
+                modifier = Modifier.clickable(
+                    role = Role.Button,
+                    onClickLabel = stringResource(R.string.ng_picker_title_previous),
+                    onClick = titleNav.onPrevious,
+                ),
+            )
+        }
+        Text(
+            text = title,
+            color = titleColor,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+        if (titleNav?.canGoNext == true) {
+            Text(
+                text = " >",
+                color = cueColor,
+                fontSize = 18.sp,
+                modifier = Modifier.clickable(
+                    role = Role.Button,
+                    onClickLabel = stringResource(R.string.ng_picker_title_next),
+                    onClick = titleNav.onNext,
+                ),
+            )
         }
     }
 }
@@ -493,36 +528,34 @@ private fun NgPickerActionButton(
 internal fun NgColorPalette(
     color: Int,
     onColorChanged: (Int) -> Unit,
+    onChangeFinished: (() -> Unit)? = null,
+    familyId: String = SwatchMatrix.SPECTRUM_ID,
     modifier: Modifier = Modifier,
 ) {
-    val rows = 8
-    val hueColumns = 12
-    val columns = hueColumns + 1
+    val rows = SwatchMatrix.ROWS
+    val columns = SwatchMatrix.COLS
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val alpha = color ushr 24 and 0xFF
     val outlineColor = Color(NgTheme.colors.outlineVariant)
-    val palette = remember(alpha) {
-        buildList {
-            repeat(rows) { row ->
-                repeat(columns) { column ->
-                    add(paletteColor(row, column, rows, hueColumns, alpha))
-                }
-            }
-        }
-    }
+    val palette = remember(familyId, alpha) { SwatchMatrix.cells(familyId, alpha) }
+
+    val latestOnColorChanged = rememberUpdatedState(onColorChanged)
+    val latestOnChangeFinished = rememberUpdatedState(onChangeFinished)
 
     Canvas(
         modifier = modifier
             .clip(RoundedCornerShape(22.dp))
             .onSizeChanged { canvasSize = it }
-            .pointerInput(alpha, canvasSize) {
+            .pointerInput(familyId, alpha, canvasSize) {
+                var lastColor = color
                 fun select(offset: Offset) {
                     if (canvasSize.width <= 0 || canvasSize.height <= 0) return
                     val column = floor(offset.x / canvasSize.width * columns)
                         .toInt().coerceIn(0, columns - 1)
                     val row = floor(offset.y / canvasSize.height * rows)
                         .toInt().coerceIn(0, rows - 1)
-                    onColorChanged(palette[row * columns + column])
+                    lastColor = palette[row * columns + column]
+                    latestOnColorChanged.value(lastColor)
                 }
                 awaitEachGesture {
                     val down = awaitFirstDown()
@@ -534,6 +567,7 @@ internal fun NgColorPalette(
                             change.consume()
                         }
                     } while (event.changes.any { it.pressed })
+                    latestOnChangeFinished.value?.invoke()
                 }
             }
     ) {
@@ -556,36 +590,11 @@ internal fun NgColorPalette(
     }
 }
 
-private fun paletteColor(
-    row: Int,
-    column: Int,
-    rows: Int,
-    hueColumns: Int,
-    alpha: Int
-): Int {
-    if (column == hueColumns) {
-        val value = 1f - row.toFloat() / (rows - 1)
-        val channel = (value * 255).roundToInt().coerceIn(0, 255)
-        return AndroidColor.argb(alpha, channel, channel, channel)
-    }
-    val hue = column * (360f / hueColumns)
-    val saturation = when (row) {
-        0 -> 0.12f
-        1 -> 0.36f
-        2 -> 0.62f
-        else -> 0.92f
-    }
-    val value = when (row) {
-        0, 1, 2 -> 1f
-        else -> 1f - (row - 2) * 0.145f
-    }.coerceAtLeast(0.20f)
-    return AndroidColor.HSVToColor(alpha, floatArrayOf(hue, saturation, value))
-}
-
 @Composable
-private fun NgAlphaSlider(
+internal fun NgAlphaSlider(
     color: Int,
-    onAlphaChanged: (Int) -> Unit
+    onAlphaChanged: (Int) -> Unit,
+    onChangeFinished: (() -> Unit)? = null,
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val alpha = color ushr 24 and 0xFF
@@ -593,6 +602,8 @@ private fun NgAlphaSlider(
     val outlineColor = Color(NgTheme.colors.outline)
     val outlineVariantColor = Color(NgTheme.colors.outlineVariant)
     val thumbColor = Color(NgTheme.colors.surface)
+    val latestOnAlphaChanged = rememberUpdatedState(onAlphaChanged)
+    val latestOnChangeFinished = rememberUpdatedState(onChangeFinished)
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -606,7 +617,7 @@ private fun NgAlphaSlider(
                         .coerceAtLeast(1f)
                     val progress = ((offset.x - thumbRadius) / usableWidth)
                         .coerceIn(0f, 1f)
-                    onAlphaChanged((progress * 255f).roundToInt())
+                    latestOnAlphaChanged.value((progress * 255f).roundToInt())
                 }
                 awaitEachGesture {
                     val down = awaitFirstDown()
@@ -618,6 +629,7 @@ private fun NgAlphaSlider(
                             change.consume()
                         }
                     } while (event.changes.any { it.pressed })
+                    latestOnChangeFinished.value?.invoke()
                 }
             }
     ) {
@@ -691,10 +703,9 @@ private fun NgAlphaSlider(
 }
 
 internal fun normalizeHexInput(input: String): String {
-    val trimmed = input.trim().uppercase()
-    return if (trimmed.startsWith("#")) {
-        "#${trimmed.removePrefix("#")}"
-    } else {
-        trimmed
-    }
+    val body = input.trim().uppercase()
+        .removePrefix("#")
+        .filter { it in "0123456789ABCDEF" }
+        .take(8)
+    return "#$body"
 }

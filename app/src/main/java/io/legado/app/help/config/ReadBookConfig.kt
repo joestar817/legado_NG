@@ -1049,6 +1049,10 @@ object ReadBookConfig {
         private var textAccentColor: String = "#E53935",//白天强调文字颜色
         private var textAccentColorNight: String = "#FE4D55",//夜间强调文字颜色
         private var textAccentColorEInk: String = "#000000",
+        @SerializedName("highlightColor") var highlightColor: Int = 0,
+        @SerializedName("highlightColorNight") var highlightColorNight: Int = 0,
+        @SerializedName("highlightColorEInk") var highlightColorEInk: Int = 0,
+        @SerializedName("readPaletteId") var readPaletteId: String? = null,
         private var pageAnim: Int = PageAnim.simulationPageAnim,//翻页动画
         private var pageAnimEInk: Int = 4,
         var textFont: String = "",//字体
@@ -1148,6 +1152,10 @@ object ReadBookConfig {
             textAccentColor = textAccentColor,
             textAccentColorNight = textAccentColorNight,
             textAccentColorEInk = textAccentColorEInk,
+            highlightColor = highlightColor,
+            highlightColorNight = highlightColorNight,
+            highlightColorEInk = highlightColorEInk,
+            readPaletteId = readPaletteId,
             scriptFonts = scriptFonts,
             readFloatingSeed = readFloatingSeed,
             readFloatingSeedNight = readFloatingSeedNight,
@@ -1255,6 +1263,64 @@ object ReadBookConfig {
                 ReadBookConfig.isNightTheme -> textAccentColorIntNight
                 else -> textAccentColorInt
             }
+        }
+
+        fun setCurHighlightColor(color: Int) {
+            when {
+                AppConfig.isEInkMode -> highlightColorEInk = color
+                ReadBookConfig.isNightTheme -> highlightColorNight = color
+                else -> highlightColor = color
+            }
+        }
+
+        fun curHighlightColor(): Int = when {
+            AppConfig.isEInkMode ->
+                highlightColorEInk.takeIf { it != 0 } ?: DEFAULT_HIGHLIGHT_EINK
+            ReadBookConfig.isNightTheme ->
+                highlightColorNight.takeIf { it != 0 } ?: DEFAULT_HIGHLIGHT_NIGHT
+            else -> highlightColor.takeIf { it != 0 } ?: DEFAULT_HIGHLIGHT_DAY
+        }
+
+        internal fun writePaletteAppearance(
+            paletteId: String,
+            dayBackground: Int,
+            dayText: Int,
+            dayAccent: Int,
+            dayHighlight: Int,
+            nightBackground: Int,
+            nightText: Int,
+            nightAccent: Int,
+            nightHighlight: Int,
+            einkBackground: Int,
+            einkText: Int,
+            einkAccent: Int,
+            einkHighlight: Int,
+        ) {
+            readPaletteId = paletteId
+            fun asHex(color: Int) = "#${color.hexString}"
+            bgType = 0
+            bgStr = asHex(dayBackground)
+            bgTypeNight = 0
+            bgStrNight = asHex(nightBackground)
+            bgTypeEInk = 0
+            bgStrEInk = asHex(einkBackground)
+            textColor = asHex(dayText)
+            textColorInt = dayText
+            textColorNight = asHex(nightText)
+            textColorIntNight = nightText
+            textColorEInk = asHex(einkText)
+            textColorIntEInk = einkText
+            initColorInt = true
+            textAccentColor = asHex(dayAccent)
+            textAccentColorInt = dayAccent
+            textAccentColorNight = asHex(nightAccent)
+            textAccentColorIntNight = nightAccent
+            textAccentColorEInk = asHex(einkAccent)
+            textAccentColorIntEInk = einkAccent
+            initAccentColorInt = true
+            highlightColor = dayHighlight
+            highlightColorNight = nightHighlight
+            highlightColorEInk = einkHighlight
         }
 
         fun curShadowColor(): Int {
@@ -1488,6 +1554,9 @@ object ReadBookConfig {
             "textAccentColorInt" to textAccentColorInt,
             "textAccentColorIntNight" to textAccentColorIntNight,
             "textAccentColorIntEInk" to textAccentColorIntEInk,
+            "highlightColor" to highlightColor,
+            "highlightColorNight" to highlightColorNight,
+            "highlightColorEInk" to highlightColorEInk,
             "pageAnim" to pageAnim,
             "pageAnimEInk" to pageAnimEInk,
             "textFont" to textFont,
@@ -1528,6 +1597,12 @@ object ReadBookConfig {
             "showHeaderBackButton" to showHeaderBackButton,
             "footerMode" to footerMode
         )
+
+        companion object {
+            val DEFAULT_HIGHLIGHT_DAY = 0xFFFDF3B8.toInt()
+            val DEFAULT_HIGHLIGHT_NIGHT = 0xFF4A3F1E.toInt()
+            val DEFAULT_HIGHLIGHT_EINK = 0xFFD6D6D6.toInt()
+        }
 
     }
 

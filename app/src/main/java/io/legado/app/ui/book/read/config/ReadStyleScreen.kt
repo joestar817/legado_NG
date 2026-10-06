@@ -3,11 +3,14 @@ package io.legado.app.ui.book.read.config
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -38,8 +41,10 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -48,6 +53,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,15 +62,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -82,23 +97,36 @@ import io.legado.app.help.config.ReadFloatingColorStyle
 import io.legado.app.help.config.ReadValueScope
 import io.legado.app.help.config.ReadValueSource
 import io.legado.app.ui.book.read.ReadDrawerStyle
+import io.legado.app.ui.book.read.ReadFloatingAppearanceState
 import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgSegmentedDock
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderStepButton
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.components.compose.NgSwitchActionGroup
 import io.legado.app.ui.design.components.compose.ngSliderStepValue
-import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.config.NgAiThemePane
+import io.legado.app.ui.config.NgColorPickerClusterNav
 import io.legado.app.ui.config.NgInlineColorPicker
+import io.legado.app.ui.config.NgThemeSheetActionButton
+import io.legado.app.ui.design.theme.NgTheme
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private val StandardPageHeight = 336.dp
 private val EditorPageHeight = 500.dp
+private val ColorSessionPages = setOf(
+    ReadStylePage.EDIT_TEXT_COLOR,
+    ReadStylePage.EDIT_BACKGROUND_COLOR,
+    ReadStylePage.EDIT_HIGHLIGHT_COLOR,
+    ReadStylePage.EDIT_AI_THEME,
+)
+private const val SheetTransparencyMinPercent = 0
+private const val SheetTransparencyMaxPercent = 72
 private val PresetVisibleHorizontalInset = 6.dp
 private val BackgroundTileSpacing = 6.dp
 
@@ -108,7 +136,9 @@ internal enum class ReadStylePage {
     EDIT,
     EDIT_TEXT_COLOR,
     EDIT_BACKGROUND_COLOR,
+    EDIT_HIGHLIGHT_COLOR,
     EDIT_ACCENT_COLOR,
+    EDIT_AI_THEME,
     EDIT_UNDERLINE,
     EDIT_UNDERLINE_COLOR,
     HIGHLIGHT,
@@ -196,6 +226,7 @@ internal data class ReadStyleUiState(
     val editorTextColor: Int,
     val editorBackgroundColor: Int,
     val editorTextAccentColor: Int,
+    val editorHighlightColor: Int,
     val editorBackgroundAlpha: Int,
     val editorFloatingColorSeed: Int,
     val editorFloatingColorFromBackground: Boolean,
@@ -207,6 +238,10 @@ internal data class ReadStyleUiState(
     val editingHighlightIndex: Int?,
     val editorInitialColor: Int?,
     val editorInitialColorWasUnset: Boolean,
+    val editorInitialTextColor: Int? = null,
+    val editorInitialBackgroundColor: Int? = null,
+    val editorInitialHighlightColor: Int? = null,
+    val editorInitialTextAccentColor: Int? = null,
     val editorInitialBackgroundType: Int?,
     val editorInitialBackgroundName: String?,
     val editorInitialBackground: ImageBitmap?,
@@ -259,6 +294,11 @@ internal data class ReadStyleActions(
     val onTextColorChanged: (Int) -> Unit,
     val onBackgroundColorChanged: (Int) -> Unit,
     val onTextAccentColorChanged: (Int) -> Unit,
+    val onHighlightColorChanged: (Int) -> Unit,
+    val onTextColorPreviewed: (Int) -> Unit,
+    val onBackgroundColorPreviewed: (Int) -> Unit,
+    val onHighlightColorPreviewed: (Int) -> Unit,
+    val onPaperLookApplied: (io.legado.app.ui.design.theme.NgPaperLook) -> Unit,
     val onResetEditorColor: () -> Unit,
     val onBackgroundAlphaChanged: (Int) -> Unit,
     val onSelectBackgroundImage: () -> Unit,
@@ -329,12 +369,20 @@ internal fun ReadStyleScreen(
     BackHandler(enabled = page !in rootPages || state.highlightSelectionMode != HighlightSelectionMode.NONE) {
         actions.onBack()
     }
+    var sheetTransparency by remember {
+        mutableIntStateOf(
+            ReadFloatingAppearanceState.transparencyPercent.coerceIn(
+                SheetTransparencyMinPercent,
+                SheetTransparencyMaxPercent,
+            )
+        )
+    }
     NgGlassSurface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 8.dp),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        style = readFloatingGlassStyle(),
+        style = readFloatingGlassStyle(transparencyPercent = sheetTransparency),
     ) {
         Column(
             modifier = Modifier
@@ -450,9 +498,17 @@ internal fun ReadStyleScreen(
 
                 ReadStylePage.EDIT_TEXT_COLOR,
                 ReadStylePage.EDIT_BACKGROUND_COLOR,
+                ReadStylePage.EDIT_HIGHLIGHT_COLOR,
                 ReadStylePage.EDIT_ACCENT_COLOR -> EditorColorPage(
                     page = page,
                     state = state,
+                    actions = actions,
+                    contentColor = contentColor,
+                    selectedContainerColor = indicatorColor,
+                    selectedContentColor = selectedContentColor,
+                )
+
+                ReadStylePage.EDIT_AI_THEME -> EditorAiThemePage(
                     actions = actions,
                 )
 
@@ -494,12 +550,21 @@ internal fun ReadStyleScreen(
                 )
             }
 
-            ReadStyleSessionBar(
-                hasUnsavedChanges = state.hasUnsavedChanges,
-                contentColor = contentColor,
-                onDiscard = actions.onDiscard,
-                onDone = actions.onDone,
-            )
+            if (!NgTheme.snapshot.isEInk) {
+                SheetTransparencySlider(
+                    value = sheetTransparency,
+                    contentColor = contentColor,
+                    onValueChanged = { sheetTransparency = it },
+                )
+            }
+            if (page !in ColorSessionPages) {
+                ReadStyleSessionBar(
+                    hasUnsavedChanges = state.hasUnsavedChanges,
+                    contentColor = contentColor,
+                    onDiscard = actions.onDiscard,
+                    onDone = actions.onDone,
+                )
+            }
         }
     }
 }
@@ -538,6 +603,70 @@ private fun ReadStyleSessionBar(
             text = stringResource(R.string.read_style_done),
             onClick = onDone,
             variant = NgButtonVariant.PRIMARY,
+        )
+    }
+}
+
+@Composable
+private fun SheetTransparencySlider(
+    value: Int,
+    contentColor: Color,
+    onValueChanged: (Int) -> Unit,
+) {
+    val label = stringResource(R.string.read_style_sheet_transparency)
+    val min = SheetTransparencyMinPercent.toFloat()
+    val max = SheetTransparencyMaxPercent.toFloat()
+    val range = min..max
+    val current = value.toFloat().coerceIn(range)
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(12.dp)
+            .padding(horizontal = 20.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = label
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    current = current,
+                    range = range,
+                    steps = SheetTransparencyMaxPercent - SheetTransparencyMinPercent - 1,
+                )
+                setProgress { target ->
+                    onValueChanged(target.toInt().coerceIn(SheetTransparencyMinPercent, SheetTransparencyMaxPercent))
+                    true
+                }
+            }
+            .pointerInput(Unit) {
+                fun emit(x: Float) {
+                    val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
+                    val next = (min + (max - min) * fraction).toInt()
+                    onValueChanged(next.coerceIn(SheetTransparencyMinPercent, SheetTransparencyMaxPercent))
+                }
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    emit(down.position.x)
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.firstOrNull()?.let { change ->
+                            if (change.pressed) emit(change.position.x)
+                            change.consume()
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            },
+    ) {
+        val trackHeight = 1.dp.toPx()
+        val y = (size.height - trackHeight) / 2f
+        val fraction = ((current - min) / (max - min)).coerceIn(0f, 1f)
+        val thumbX = size.width * fraction
+        drawRect(
+            color = contentColor.copy(alpha = 0.06f),
+            topLeft = Offset(0f, y),
+            size = Size(size.width, trackHeight),
+        )
+        drawCircle(
+            color = contentColor.copy(alpha = 0.10f),
+            radius = 2.dp.toPx(),
+            center = Offset(thumbX, size.height / 2f),
         )
     }
 }
@@ -1216,25 +1345,24 @@ private fun EditorPage(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     EditorColorTile(
-                        label = stringResource(R.string.read_style_color_text_short),
-                        color = Color(state.editorTextColor),
+                        label = stringResource(R.string.read_style_color_manual),
+                        color = Color(state.editorBackgroundColor),
                         contentColor = contentColor,
                         onClick = { actions.onPageSelected(ReadStylePage.EDIT_TEXT_COLOR) },
                         modifier = Modifier.weight(1f),
+                        swatches = listOf(
+                            Color(state.editorTextColor),
+                            Color(state.editorBackgroundColor),
+                            Color(state.editorHighlightColor),
+                        ),
                     )
                     EditorColorTile(
-                        label = stringResource(R.string.read_style_color_background_short),
-                        color = Color(state.editorBackgroundColor),
-                        contentColor = contentColor,
-                        onClick = { actions.onPageSelected(ReadStylePage.EDIT_BACKGROUND_COLOR) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    EditorColorTile(
-                        label = stringResource(R.string.read_style_color_accent_short),
+                        label = stringResource(R.string.read_style_color_ai),
                         color = Color(state.editorTextAccentColor),
                         contentColor = contentColor,
-                        onClick = { actions.onPageSelected(ReadStylePage.EDIT_ACCENT_COLOR) },
+                        onClick = { actions.onPageSelected(ReadStylePage.EDIT_AI_THEME) },
                         modifier = Modifier.weight(1f),
+                        showSwatch = false,
                     )
                 }
                 Spacer(Modifier.height(14.dp))
@@ -1272,6 +1400,43 @@ private fun EditorPage(
                 )
             }
             item {
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val tileWidth = (maxWidth - 25.dp) / 5f
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(84.dp),
+                        horizontalArrangement = Arrangement.spacedBy(BackgroundTileSpacing),
+                    ) {
+                        item(key = "custom") {
+                            EditorBackgroundTile(
+                                label = stringResource(R.string.select_image),
+                                background = null,
+                                selected = false,
+                                accentColor = indicatorColor,
+                                contentColor = contentColor,
+                                tileWidth = tileWidth,
+                                onClick = actions.onSelectBackgroundImage,
+                            )
+                        }
+                        items(
+                            items = state.editorBackgrounds,
+                            key = { item -> "${item.type}:${item.name}" },
+                        ) { item ->
+                            EditorBackgroundTile(
+                                label = item.label,
+                                background = item.background,
+                                selected = state.editorBackgroundType == item.type &&
+                                    state.editorBackgroundName == item.name,
+                                accentColor = indicatorColor,
+                                contentColor = contentColor,
+                                tileWidth = tileWidth,
+                                onClick = { actions.onSelectBackground(item.type, item.name) },
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
                 ReadDivider(contentColor, horizontalPadding = 0.dp)
                 EditorSectionLabel(stringResource(R.string.read_style_language_fonts), accentColor)
                 state.editorScriptFonts.forEach { script ->
@@ -1312,46 +1477,6 @@ private fun EditorPage(
                         }
                     }
                 }
-                ReadDivider(contentColor, horizontalPadding = 0.dp)
-            }
-            item {
-                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                    val tileWidth = (maxWidth - 25.dp) / 5f
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(84.dp),
-                        horizontalArrangement = Arrangement.spacedBy(BackgroundTileSpacing),
-                    ) {
-                        item(key = "custom") {
-                            EditorBackgroundTile(
-                                label = stringResource(R.string.select_image),
-                                background = null,
-                                selected = false,
-                                accentColor = indicatorColor,
-                                contentColor = contentColor,
-                                tileWidth = tileWidth,
-                                onClick = actions.onSelectBackgroundImage,
-                            )
-                        }
-                        items(
-                            items = state.editorBackgrounds,
-                            key = { item -> "${item.type}:${item.name}" },
-                        ) { item ->
-                            EditorBackgroundTile(
-                                label = item.label,
-                                background = item.background,
-                                selected = state.editorBackgroundType == item.type &&
-                                    state.editorBackgroundName == item.name,
-                                accentColor = indicatorColor,
-                                contentColor = contentColor,
-                                tileWidth = tileWidth,
-                                onClick = { actions.onSelectBackground(item.type, item.name) },
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
                 ReadDivider(contentColor, horizontalPadding = 0.dp)
                 EditorSectionLabel(
                     stringResource(R.string.read_style_floating_section),
@@ -1785,6 +1910,8 @@ private fun EditorColorTile(
     contentColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    showSwatch: Boolean = true,
+    swatches: List<Color> = emptyList(),
 ) {
     val shape = RoundedCornerShape(10.dp)
     Row(
@@ -1797,13 +1924,27 @@ private fun EditorColorTile(
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(color)
-                .border(0.7.dp, contentColor.copy(alpha = 0.18f), CircleShape),
-        )
+        if (swatches.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy((-4).dp)) {
+                swatches.take(3).forEach { swatch ->
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(swatch)
+                            .border(0.7.dp, contentColor.copy(alpha = 0.18f), CircleShape),
+                    )
+                }
+            }
+        } else if (showSwatch) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(color)
+                    .border(0.7.dp, contentColor.copy(alpha = 0.18f), CircleShape),
+            )
+        }
         Text(
             text = label,
             modifier = Modifier.padding(start = 8.dp).weight(1f),
@@ -1900,28 +2041,61 @@ private fun EditorColorPage(
     page: ReadStylePage,
     state: ReadStyleUiState,
     actions: ReadStyleActions,
+    contentColor: Color,
+    selectedContainerColor: Color,
+    selectedContentColor: Color,
 ) {
+    val swipePages = listOf(
+        ReadStylePage.EDIT_TEXT_COLOR,
+        ReadStylePage.EDIT_BACKGROUND_COLOR,
+        ReadStylePage.EDIT_HIGHLIGHT_COLOR,
+    )
+    val swipeIndex = swipePages.indexOf(page)
     val title: String
     val currentColor: Int
     val onColorChanged: (Int) -> Unit
+    val onColorPreviewed: (Int) -> Unit
     when (page) {
         ReadStylePage.EDIT_TEXT_COLOR -> {
-            title = stringResource(R.string.text_color)
+            title = stringResource(R.string.read_style_color_text_short)
             currentColor = state.editorTextColor
             onColorChanged = actions.onTextColorChanged
+            onColorPreviewed = actions.onTextColorPreviewed
         }
 
         ReadStylePage.EDIT_BACKGROUND_COLOR -> {
-            title = stringResource(R.string.bg_color)
+            title = stringResource(R.string.read_style_color_background_short)
             currentColor = state.editorBackgroundColor
             onColorChanged = actions.onBackgroundColorChanged
+            onColorPreviewed = actions.onBackgroundColorPreviewed
+        }
+
+        ReadStylePage.EDIT_HIGHLIGHT_COLOR -> {
+            title = stringResource(R.string.read_style_color_highlight_short)
+            currentColor = state.editorHighlightColor
+            onColorChanged = actions.onHighlightColorChanged
+            onColorPreviewed = actions.onHighlightColorPreviewed
         }
 
         else -> {
             title = stringResource(R.string.text_accent_color)
             currentColor = state.editorTextAccentColor
             onColorChanged = actions.onTextAccentColorChanged
+            onColorPreviewed = actions.onTextAccentColorChanged
         }
+    }
+    val clusterNav = if (swipeIndex >= 0) {
+        NgColorPickerClusterNav(
+            labels = listOf(
+                stringResource(R.string.read_style_color_text_short),
+                stringResource(R.string.read_style_color_background_short),
+                stringResource(R.string.read_style_color_highlight_short),
+            ),
+            selectedIndex = swipeIndex,
+            onSelected = { index -> actions.onPageSelected(swipePages[index]) },
+        )
+    } else {
+        null
     }
     Column(
         modifier = Modifier
@@ -1929,12 +2103,100 @@ private fun EditorColorPage(
             .height(EditorPageHeight)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        NgInlineColorPicker(
-            title = title,
-            initialColor = state.editorInitialColor ?: currentColor,
-            onBack = actions.onBack,
-            onColorChanged = onColorChanged,
-            onReset = actions.onResetEditorColor,
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
+            key(page) {
+                NgInlineColorPicker(
+                    title = title,
+                    initialColor = currentColor,
+                    onBack = actions.onBack,
+                    onColorChanged = onColorChanged,
+                    onColorPreviewed = onColorPreviewed,
+                    onReset = actions.onResetEditorColor,
+                    counterpartBackground = state.editorBackgroundColor,
+                    counterpartForeground = state.editorTextColor,
+                    counterpartHighlight = state.editorHighlightColor,
+                    slot = when (page) {
+                        ReadStylePage.EDIT_BACKGROUND_COLOR ->
+                            io.legado.app.ui.design.theme.NgColorPickerSlot.BACKGROUND
+                        ReadStylePage.EDIT_TEXT_COLOR ->
+                            io.legado.app.ui.design.theme.NgColorPickerSlot.TEXT
+                        ReadStylePage.EDIT_HIGHLIGHT_COLOR ->
+                            io.legado.app.ui.design.theme.NgColorPickerSlot.HIGHLIGHT
+                        else -> io.legado.app.ui.design.theme.NgColorPickerSlot.ACCENT
+                    },
+                    clusterNav = clusterNav,
+                    dockContentColor = contentColor,
+                    dockSelectedContainerColor = selectedContainerColor,
+                    dockSelectedContentColor = selectedContentColor,
+                    dockSurfaceColor = ReadDrawerStyle.dockSurfaceColor(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorAiThemePage(
+    actions: ReadStyleActions,
+) {
+    val colors = NgTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(EditorPageHeight)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            NgThemeSheetActionButton(
+                onClick = actions.onBack,
+                contentDescription = stringResource(R.string.back),
+                touchSize = 48.dp,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = Color(colors.onSurface),
+                )
+            }
+            Text(
+                text = stringResource(R.string.ng_picker_ai_theme),
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                color = Color(colors.onSurface),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+            )
+            NgThemeSheetActionButton(
+                onClick = actions.onResetEditorColor,
+                contentDescription = stringResource(R.string.ng_reset_color),
+                touchSize = 48.dp,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Restore,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = Color(colors.onSurface),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        NgAiThemePane(
+            isNight = io.legado.app.help.config.ReadBookConfig.isNightTheme,
+            isEink = io.legado.app.help.config.AppConfig.isEInkMode,
+            onSelectLook = actions.onPaperLookApplied,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
         )
     }
 }
@@ -2572,43 +2834,18 @@ private fun ReadStyleDock(
     height: Dp = 40.dp,
     fontSize: androidx.compose.ui.unit.TextUnit = 15.sp,
 ) {
-    val shape = RoundedCornerShape(12.dp)
-    val dockSurfaceColor = ReadDrawerStyle.dockSurfaceColor()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(height)
-            .clip(shape)
-            .background(dockSurfaceColor)
-            .padding(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        labels.forEachIndexed { index, label ->
-            val selected = index == selectedIndex.coerceIn(labels.indices)
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(10.dp))
-                    .then(
-                        if (selected) Modifier.background(selectedContainerColor)
-                        else Modifier
-                    )
-                    .clickable(role = Role.Tab) { onSelected(index) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    color = if (selected) selectedContentColor else contentColor,
-                    fontSize = fontSize,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
+    NgSegmentedDock(
+        labels = labels,
+        selectedIndex = selectedIndex,
+        onSelected = onSelected,
+        modifier = modifier,
+        contentColor = contentColor,
+        selectedContainerColor = selectedContainerColor,
+        selectedContentColor = selectedContentColor,
+        dockSurfaceColor = ReadDrawerStyle.dockSurfaceColor(),
+        height = height,
+        fontSize = fontSize,
+    )
 }
 
 @Composable

@@ -45,7 +45,7 @@ flowchart LR
 └──────────────────────────────────────────────┘
 ```
 
-透过抽屉看正文的 **面板透明度** 滑条（建议放在放弃/完成上方，且不要接到浮动外观）见 [docs/color-picker-tabs-note.md](color-picker-tabs-note.md) §4（仅笔记）。
+透过抽屉看正文的 **面板** 滑条在放弃/完成上方（session-only，不接浮动外观）。
 
 **预设页（PRESET）**
 
@@ -114,7 +114,7 @@ flowchart LR
 └──────────────────────────────────────────────┘
 ```
 
-相对祖先 jaredrummler HSV 对话框的精度差距、以及用 Tab 并列 **色板 / 色轮**、透明度滑条和字/底预览盒的备选，见 [docs/color-picker-tabs-note.md](color-picker-tabs-note.md)（**仅笔记，定稿前不实现**）。
+相对祖先 jaredrummler 的精度差距、三通道 **色板 / 色轮 / 连续** 与配色入口的 **手动 | AI**（先公式随机再短句；VDT+WCAG 闸门；标题可滑文字→背景→高亮），见 [docs/color-picker-tabs-note.md](color-picker-tabs-note.md)。
 
 **EPUB 排版面板（`EpubLayoutSheet`，三态档案）**
 

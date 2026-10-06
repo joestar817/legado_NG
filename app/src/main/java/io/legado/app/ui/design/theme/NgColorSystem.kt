@@ -191,3 +191,13 @@ fun parseNgColor(value: String): Int? {
     }
     return normalized.toLongOrNull(16)?.toInt()
 }
+
+/** ARGB (#AARRGGBB) is complete; RGB (#RRGGBB) only when [allowRgb] is set (IME/blur). */
+fun parseCommittedNgColor(value: String, allowRgb: Boolean = false): Int? {
+    val raw = value.trim().removePrefix("#")
+    return when {
+        raw.length == 8 -> parseNgColor(value)
+        allowRgb && raw.length == 6 -> parseNgColor(value)
+        else -> null
+    }
+}

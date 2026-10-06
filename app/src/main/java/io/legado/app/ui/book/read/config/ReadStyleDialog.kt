@@ -62,6 +62,10 @@ import io.legado.app.utils.BitmapUtils
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.externalFiles
+import io.legado.app.ui.design.theme.ReadingDisplayMode
+import io.legado.app.ui.design.theme.ReadingPaletteCatalog
+import io.legado.app.ui.design.theme.ReadingPaletteSeed
+import io.legado.app.ui.design.theme.SemanticPaletteEngine
 import io.legado.app.utils.hexString
 import io.legado.app.utils.inputStream
 import io.legado.app.utils.longToast
@@ -346,6 +350,11 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onTextColorChanged = ::applyEditorTextColor,
         onBackgroundColorChanged = ::applyEditorBackgroundColor,
         onTextAccentColorChanged = ::applyEditorAccentColor,
+        onHighlightColorChanged = ::applyEditorHighlightColor,
+        onTextColorPreviewed = { applyEditorTextColor(it, notifyReader = false) },
+        onBackgroundColorPreviewed = { applyEditorBackgroundColor(it, notifyReader = false) },
+        onHighlightColorPreviewed = { applyEditorHighlightColor(it, notifyReader = false) },
+        onPaperLookApplied = ::applyPaperLook,
         onResetEditorColor = ::resetEditorColor,
         onBackgroundAlphaChanged = { alpha ->
             val safeAlpha = alpha.coerceIn(0, 100)
@@ -733,6 +742,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             editorTextColor = config.curTextColor(),
             editorBackgroundColor = backgroundColor,
             editorTextAccentColor = config.curTextAccentColor(),
+            editorHighlightColor = config.curHighlightColor(),
             editorBackgroundAlpha = ReadBookConfig.bgAlpha.coerceIn(0, 100),
             editorFloatingColorSeed = effectiveFloatingColor.seed,
             editorFloatingColorFromBackground = !effectiveFloatingColor.followsApplication,
@@ -900,6 +910,62 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         if (target != ReadStylePage.HIGHLIGHT && highlightSelectionMode != HighlightSelectionMode.NONE) {
             clearHighlightSelection(refresh = false)
         }
+        if (target.isColorClusterPage() || target == ReadStylePage.EDIT_AI_THEME) {
+            val state = screenState ?: return
+            val fromSession = page.isColorClusterPage() || page == ReadStylePage.EDIT_AI_THEME
+            val textSnap = if (fromSession) {
+                state.editorInitialTextColor ?: state.editorTextColor
+            } else {
+                state.editorTextColor
+            }
+            val backgroundSnap = if (fromSession) {
+                state.editorInitialBackgroundColor ?: state.editorBackgroundColor
+            } else {
+                state.editorBackgroundColor
+            }
+            val highlightSnap = if (fromSession) {
+                state.editorInitialHighlightColor ?: state.editorHighlightColor
+            } else {
+                state.editorHighlightColor
+            }
+            val accentSnap = if (fromSession) {
+                state.editorInitialTextAccentColor ?: state.editorTextAccentColor
+            } else {
+                state.editorTextAccentColor
+            }
+            val initialForPage = when (target) {
+                ReadStylePage.EDIT_TEXT_COLOR -> textSnap
+                ReadStylePage.EDIT_BACKGROUND_COLOR -> backgroundSnap
+                ReadStylePage.EDIT_HIGHLIGHT_COLOR -> highlightSnap
+                else -> accentSnap
+            }
+            screenState = state.copy(
+                editorInitialColor = initialForPage,
+                editorInitialColorWasUnset = false,
+                editorInitialTextColor = textSnap,
+                editorInitialBackgroundColor = backgroundSnap,
+                editorInitialHighlightColor = highlightSnap,
+                editorInitialTextAccentColor = accentSnap,
+                editorInitialBackgroundType = if (fromSession) {
+                    state.editorInitialBackgroundType
+                } else {
+                    state.editorBackgroundType
+                },
+                editorInitialBackgroundName = if (fromSession) {
+                    state.editorInitialBackgroundName
+                } else {
+                    state.editorBackgroundName
+                },
+                editorInitialBackground = if (fromSession) {
+                    state.editorInitialBackground
+                } else {
+                    state.editorPreviewBackground
+                },
+            )
+            currentPage = target
+            page = target
+            return
+        }
         if (target.isAnyColorEditorPage()) {
             val state = screenState ?: return
             val initialNullableColor = when (target) {
@@ -965,6 +1031,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 clearEditorColorInitialState()
             }
 
+            page == ReadStylePage.EDIT_AI_THEME -> page = ReadStylePage.EDIT
+
             page == ReadStylePage.EDIT_UNDERLINE_COLOR -> {
                 page = ReadStylePage.EDIT_UNDERLINE
                 clearEditorColorInitialState()
@@ -997,19 +1065,88 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         currentPage = page
     }
 
-    private fun applyEditorTextColor(color: Int) {
+    private fun applyEditorTextColor(color: Int, notifyReader: Boolean = true) {
+        ReadBookConfig.durConfig.readPaletteId = null
+        ReadBookConfig.durConfig.setCurTextColor(color)
+        updateEditorState { copy(editorTextColor = color) }
+        if (notifyReader) postEditorTextColorChanged()
+    }
+
+    private fun applyEditorAccentColor(color: Int, notifyReader: Boolean = true) {
+        ReadBookConfig.durConfig.readPaletteId = null
+        ReadBookConfig.durConfig.setCurTextAccentColor(color)
+        updateEditorState { copy(editorTextAccentColor = color) }
+        if (notifyReader) postEditorTextColorChanged()
+    }
+
+    private fun applyEditorHighlightColor(color: Int, notifyReader: Boolean = true) {
+        ReadBookConfig.durConfig.readPaletteId = null
+        ReadBookConfig.durConfig.setCurHighlightColor(color)
+        updateEditorState { copy(editorHighlightColor = color) }
+        if (notifyReader) postEditorTextColorChanged()
+    }
+
+    private fun applyPaperLook(look: io.legado.app.ui.design.theme.NgPaperLook) {
+        val seed = look.seed
+        if (seed != null) {
+            applyPaletteSeed(seed)
+            return
+        }
+        applyEditorBackgroundColor(look.background, clearPalette = true)
+        applyEditorTextColorKeepingPalette(look.foreground)
+        applyEditorAccentKeepingPalette(look.accent)
+        applyEditorHighlightKeepingPalette(look.highlight)
+        ReadBookConfig.durConfig.readPaletteId = null
+    }
+
+    private fun applyPaletteSeed(seed: ReadingPaletteSeed) {
+        val paletteId = ReadingPaletteCatalog.baseId(seed.id) ?: seed.id
+        val day = SemanticPaletteEngine.deriveTokens(seed, ReadingDisplayMode.LIGHT)
+        val night = SemanticPaletteEngine.deriveTokens(seed, ReadingDisplayMode.DARK)
+        val eink = SemanticPaletteEngine.deriveTokens(seed, ReadingDisplayMode.EINK)
+        ReadBookConfig.durConfig.writePaletteAppearance(
+            paletteId = paletteId,
+            dayBackground = day.background,
+            dayText = day.text,
+            dayAccent = day.accent,
+            dayHighlight = day.highlightBg,
+            nightBackground = night.background,
+            nightText = night.text,
+            nightAccent = night.accent,
+            nightHighlight = night.highlightBg,
+            einkBackground = eink.background,
+            einkText = eink.text,
+            einkAccent = eink.accent,
+            einkHighlight = eink.highlightBg,
+        )
+        ReadingPaletteCatalog.enable(paletteId)
+        refreshUi()
+        postEditorBackgroundChanged()
+        postEditorTextColorChanged()
+    }
+
+    private fun applyEditorTextColorKeepingPalette(color: Int) {
         ReadBookConfig.durConfig.setCurTextColor(color)
         updateEditorState { copy(editorTextColor = color) }
         postEditorTextColorChanged()
     }
 
-    private fun applyEditorAccentColor(color: Int) {
+    private fun applyEditorAccentKeepingPalette(color: Int) {
         ReadBookConfig.durConfig.setCurTextAccentColor(color)
         updateEditorState { copy(editorTextAccentColor = color) }
-        postEditorTextColorChanged()
     }
 
-    private fun applyEditorBackgroundColor(color: Int) {
+    private fun applyEditorHighlightKeepingPalette(color: Int) {
+        ReadBookConfig.durConfig.setCurHighlightColor(color)
+        updateEditorState { copy(editorHighlightColor = color) }
+    }
+
+    private fun applyEditorBackgroundColor(
+        color: Int,
+        clearPalette: Boolean = true,
+        notifyReader: Boolean = true,
+    ) {
+        if (clearPalette) ReadBookConfig.durConfig.readPaletteId = null
         ReadBookConfig.durConfig.setCurBg(0, "#${color.hexString}")
         updateEditorState {
             copy(
@@ -1019,7 +1156,29 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 editorBackgroundColor = color,
             )
         }
-        postEditorBackgroundChanged()
+        if (notifyReader) postEditorBackgroundChanged()
+    }
+
+    private fun restoreEditorAppearanceFromInitials(state: ReadStyleUiState) {
+        val initialType = state.editorInitialBackgroundType ?: 0
+        val initialName = state.editorInitialBackgroundName.orEmpty()
+        val initialBg = state.editorInitialBackgroundColor
+        if (initialType == 0 && initialBg != null) {
+            applyEditorBackgroundColor(initialBg)
+        } else if (initialType != 0) {
+            ReadBookConfig.durConfig.setCurBg(initialType, initialName)
+            updateEditorState {
+                copy(
+                    editorPreviewBackground = state.editorInitialBackground,
+                    editorBackgroundType = initialType,
+                    editorBackgroundName = initialName,
+                )
+            }
+            postEditorBackgroundChanged()
+        }
+        state.editorInitialTextColor?.let(::applyEditorTextColor)
+        state.editorInitialTextAccentColor?.let(::applyEditorAccentColor)
+        state.editorInitialHighlightColor?.let(::applyEditorHighlightColor)
     }
 
     private fun resetEditorColor() {
@@ -1045,6 +1204,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 }
             }
             ReadStylePage.EDIT_ACCENT_COLOR -> applyEditorAccentColor(initialColor)
+            ReadStylePage.EDIT_HIGHLIGHT_COLOR -> applyEditorHighlightColor(initialColor)
+            ReadStylePage.EDIT_AI_THEME -> restoreEditorAppearanceFromInitials(state)
             ReadStylePage.EDIT_UNDERLINE_COLOR -> {
                 ReadBookConfig.config.setCurUnderlineColor(initialColor)
                 refreshFullLineUnderlineState()
@@ -1075,6 +1236,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             copy(
                 editorInitialColor = null,
                 editorInitialColorWasUnset = false,
+                editorInitialTextColor = null,
+                editorInitialBackgroundColor = null,
+                editorInitialHighlightColor = null,
+                editorInitialTextAccentColor = null,
                 editorInitialBackgroundType = null,
                 editorInitialBackgroundName = null,
                 editorInitialBackground = null,
@@ -1837,9 +2002,18 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 }
 
+private fun ReadStylePage.isColorClusterPage(): Boolean = when (this) {
+    ReadStylePage.EDIT_TEXT_COLOR,
+    ReadStylePage.EDIT_BACKGROUND_COLOR,
+    ReadStylePage.EDIT_HIGHLIGHT_COLOR -> true
+
+    else -> false
+}
+
 private fun ReadStylePage.isPresetColorEditorPage(): Boolean = when (this) {
     ReadStylePage.EDIT_TEXT_COLOR,
     ReadStylePage.EDIT_BACKGROUND_COLOR,
+    ReadStylePage.EDIT_HIGHLIGHT_COLOR,
     ReadStylePage.EDIT_ACCENT_COLOR -> true
 
     else -> false
@@ -1858,5 +2032,8 @@ private fun ReadStylePage.isAnyColorEditorPage(): Boolean =
         this == ReadStylePage.EDIT_UNDERLINE_COLOR
 
 private fun ReadStylePage.isEditorPage(): Boolean =
-    this == ReadStylePage.EDIT || isPresetColorEditorPage() ||
-        this == ReadStylePage.EDIT_UNDERLINE || this == ReadStylePage.EDIT_UNDERLINE_COLOR
+    this == ReadStylePage.EDIT ||
+        this == ReadStylePage.EDIT_AI_THEME ||
+        isPresetColorEditorPage() ||
+        this == ReadStylePage.EDIT_UNDERLINE ||
+        this == ReadStylePage.EDIT_UNDERLINE_COLOR

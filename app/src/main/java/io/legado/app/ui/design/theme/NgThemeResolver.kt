@@ -33,10 +33,12 @@ import io.legado.app.lib.theme.accentColor
 import io.legado.app.lib.theme.backgroundColor
 import io.legado.app.lib.theme.bottomBackground
 import io.legado.app.lib.theme.primaryColor
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import java.util.Locale
 
 data class NgLegacyThemeInput(
     @ColorInt val primaryColor: Int,
@@ -499,6 +501,96 @@ internal object NgColorMath {
         val darker = min(luminance(first), luminance(second))
         return (lighter + 0.05) / (darker + 0.05)
     }
+
+    fun relativeLuminance(@ColorInt color: Int): Double = luminance(opaque(color))
+
+    /** Source-over: opaque FG·α + BG·(1−α). */
+    fun flatten(@ColorInt foreground: Int, @ColorInt background: Int): Int {
+        val amount = alpha(foreground) / 255f
+        if (amount >= 0.999f) return opaque(foreground)
+        if (amount <= 0.001f) return opaque(background)
+        return opaque(blend(opaque(background), opaque(foreground), amount))
+    }
+
+    fun displayedContrast(@ColorInt foreground: Int, @ColorInt background: Int): Double =
+        contrastRatio(flatten(foreground, background), opaque(background))
+
+    fun wcagGrade(ratio: Double): String = when {
+        ratio >= 7.0 -> "AAA"
+        ratio >= 4.5 -> "AA"
+        else -> "—"
+    }
+
+    fun wcagContrastLabel(ratio: Double): String =
+        "WCAG %.1f:1  %s".format(Locale.US, ratio, wcagGrade(ratio))
+
+    fun withHctTone(@ColorInt color: Int, tone: Double): Int {
+        val source = Hct.fromInt(opaque(color))
+        val next = Hct.from(source.hue, source.chroma, tone.coerceIn(0.0, 100.0)).toInt()
+        return withAlpha(next, alpha(color) / 255f)
+    }
+
+    /**
+     * Keep hue/chroma; walk HCT tone until stacked contrast sits in
+     * [minContrast, maxContrast]. Night text is also clamped away from paper-white.
+     */
+    fun fixForegroundContrast(
+        @ColorInt foreground: Int,
+        @ColorInt background: Int,
+        minContrast: Double,
+        maxContrast: Double,
+        isNight: Boolean,
+    ): Int {
+        val bg = opaque(background)
+        val initial = displayedContrast(foreground, bg)
+        if (initial in minContrast..maxContrast && nightForegroundOk(foreground, bg, isNight)) {
+            return foreground
+        }
+        val positivePolarity = relativeLuminance(bg) > 0.4
+        val minTone = if (positivePolarity) 8.0 else 48.0
+        val maxTone = when {
+            isNight && positivePolarity -> 45.0
+            isNight -> 82.0
+            positivePolarity -> 40.0
+            else -> 96.0
+        }
+        val target = (minContrast + min(maxContrast, minContrast * 1.5)) / 2.0
+        var best = foreground
+        var bestScore = Double.MAX_VALUE
+        var tone = minTone
+        while (tone <= maxTone + 0.001) {
+            val candidate = withHctTone(foreground, tone)
+            val ratio = displayedContrast(candidate, bg)
+            if (nightForegroundOk(candidate, bg, isNight)) {
+                val bandPenalty = when {
+                    ratio in minContrast..maxContrast -> 0.0
+                    ratio >= 4.5 -> 20.0
+                    else -> 100.0
+                }
+                val score = abs(ratio - target) + bandPenalty
+                if (score < bestScore) {
+                    bestScore = score
+                    best = candidate
+                }
+            }
+            tone += 2.0
+        }
+        return best
+    }
+
+    private fun nightForegroundOk(
+        @ColorInt foreground: Int,
+        @ColorInt background: Int,
+        isNight: Boolean,
+    ): Boolean {
+        if (!isNight) return true
+        val luminance = relativeLuminance(flatten(foreground, background))
+        return luminance in NIGHT_FG_LUMINANCE
+    }
+
+    private const val NIGHT_FG_LUMINANCE_MIN = 0.38
+    private const val NIGHT_FG_LUMINANCE_MAX = 0.72
+    private val NIGHT_FG_LUMINANCE = NIGHT_FG_LUMINANCE_MIN..NIGHT_FG_LUMINANCE_MAX
 
     private fun luminance(@ColorInt color: Int): Double {
         fun channel(value: Int): Double {

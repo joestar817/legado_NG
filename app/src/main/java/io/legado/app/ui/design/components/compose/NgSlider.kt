@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -110,6 +111,8 @@ fun NgSlider(
     emphasizedValue: Float? = null,
     variant: NgSliderVariant = NgSliderVariant.CONTINUOUS,
     enabled: Boolean = true,
+    trackBrush: Brush? = null,
+    thumbColor: Color? = null,
     onValueChangeFinished: (() -> Unit)? = null
 ) {
     require(valueRange.start < valueRange.endInclusive) {
@@ -123,9 +126,11 @@ fun NgSlider(
     val currentOnValueChange = rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished = rememberUpdatedState(onValueChangeFinished)
     val compact = variant == NgSliderVariant.COMPACT
-    val thumbSize = when (variant) {
-        NgSliderVariant.COMPACT -> 6.dp
-        NgSliderVariant.INLINE -> 10.dp
+    val gradientTrack = trackBrush != null
+    val thumbSize = when {
+        gradientTrack -> 11.dp
+        variant == NgSliderVariant.COMPACT -> 6.dp
+        variant == NgSliderVariant.INLINE -> 10.dp
         else -> 12.dp
     }
     fun snapToStep(rawValue: Float): Float {
@@ -144,7 +149,14 @@ fun NgSlider(
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (compact) 36.dp else if (variant == NgSliderVariant.INLINE) 40.dp else 48.dp)
+            .height(
+                when {
+                    gradientTrack -> 36.dp
+                    compact -> 36.dp
+                    variant == NgSliderVariant.INLINE -> 40.dp
+                    else -> 48.dp
+                }
+            )
             .semantics {
                 progressBarRangeInfo = ProgressBarRangeInfo(
                     current = currentValue,
@@ -162,7 +174,7 @@ fun NgSlider(
                     }
                 }
             }
-            .pointerInput(enabled, valueRange, steps, visualSteps, variant) {
+            .pointerInput(enabled, valueRange, steps, visualSteps, variant, gradientTrack) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -193,11 +205,12 @@ fun NgSlider(
     ) {
         val thumbRadius = thumbSize.toPx()
         val innerThumbRadius = if (variant == NgSliderVariant.INLINE) 6.dp.toPx() else 8.dp.toPx()
-        val trackHeight = when (variant) {
-            NgSliderVariant.CONTINUOUS -> 6.dp.toPx()
-            NgSliderVariant.INLINE -> 5.dp.toPx()
-            NgSliderVariant.DISCRETE -> 10.dp.toPx()
-            NgSliderVariant.COMPACT -> 2.dp.toPx()
+        val trackHeight = when {
+            gradientTrack -> 14.dp.toPx()
+            variant == NgSliderVariant.CONTINUOUS -> 6.dp.toPx()
+            variant == NgSliderVariant.INLINE -> 5.dp.toPx()
+            variant == NgSliderVariant.DISCRETE -> 10.dp.toPx()
+            else -> 2.dp.toPx()
         }
         val trackStart = thumbRadius
         val trackWidth = (size.width - thumbRadius * 2f).coerceAtLeast(0f)
@@ -214,25 +227,43 @@ fun NgSlider(
         val primary = Color(colors.primary).copy(alpha = enabledAlpha)
         val inactive = Color(colors.primary).copy(alpha = 0.16f * enabledAlpha)
         val thumbSurface = Color(colors.surface).copy(alpha = enabledAlpha)
+        val gradient = trackBrush
 
-        drawRoundRect(
-            color = inactive,
-            topLeft = Offset(visibleTrackStart, trackTop),
-            size = Size(visibleTrackWidth, trackHeight),
-            cornerRadius = CornerRadius(trackRadius)
-        )
-        drawRoundRect(
-            color = primary,
-            topLeft = Offset(visibleTrackStart, trackTop),
-            size = Size(
-                width = (thumbX + trackRadius - visibleTrackStart)
-                    .coerceIn(0f, visibleTrackWidth),
-                height = trackHeight
-            ),
-            cornerRadius = CornerRadius(trackRadius)
-        )
+        if (gradient != null) {
+            drawRoundRect(
+                brush = gradient,
+                topLeft = Offset(visibleTrackStart, trackTop),
+                size = Size(visibleTrackWidth, trackHeight),
+                cornerRadius = CornerRadius(trackRadius),
+                alpha = enabledAlpha
+            )
+            drawRoundRect(
+                color = Color.Black.copy(alpha = 0.20f * enabledAlpha),
+                topLeft = Offset(visibleTrackStart, trackTop),
+                size = Size(visibleTrackWidth, trackHeight),
+                cornerRadius = CornerRadius(trackRadius),
+                style = Stroke(width = 1.dp.toPx())
+            )
+        } else {
+            drawRoundRect(
+                color = inactive,
+                topLeft = Offset(visibleTrackStart, trackTop),
+                size = Size(visibleTrackWidth, trackHeight),
+                cornerRadius = CornerRadius(trackRadius)
+            )
+            drawRoundRect(
+                color = primary,
+                topLeft = Offset(visibleTrackStart, trackTop),
+                size = Size(
+                    width = (thumbX + trackRadius - visibleTrackStart)
+                        .coerceIn(0f, visibleTrackWidth),
+                    height = trackHeight
+                ),
+                cornerRadius = CornerRadius(trackRadius)
+            )
+        }
 
-        if (variant == NgSliderVariant.DISCRETE) {
+        if (variant == NgSliderVariant.DISCRETE && !gradientTrack) {
             val tickCount = visualSteps + 2
             repeat(tickCount) { index ->
                 val tickFraction = index.toFloat() / (tickCount - 1)
@@ -258,27 +289,46 @@ fun NgSlider(
             }
         }
 
-        if (compact) {
+        val thumbCenter = Offset(thumbX, size.height / 2f)
+        if (gradientTrack) {
+            val fill = (thumbColor ?: primary).copy(alpha = enabledAlpha)
+            drawCircle(
+                color = Color.White.copy(alpha = enabledAlpha),
+                radius = thumbRadius,
+                center = thumbCenter
+            )
+            drawCircle(
+                color = Color.Black.copy(alpha = 0.20f * enabledAlpha),
+                radius = thumbRadius,
+                center = thumbCenter,
+                style = Stroke(width = 1.5.dp.toPx())
+            )
+            drawCircle(
+                color = fill,
+                radius = thumbRadius - 2.5.dp.toPx(),
+                center = thumbCenter
+            )
+        } else if (compact) {
             drawCircle(
                 color = primary,
                 radius = thumbRadius,
-                center = Offset(thumbX, size.height / 2f)
+                center = thumbCenter
             )
         } else {
             drawCircle(
                 color = thumbSurface,
                 radius = thumbRadius,
-                center = Offset(thumbX, size.height / 2f)
+                center = thumbCenter
             )
             drawCircle(
                 color = primary,
                 radius = innerThumbRadius,
-                center = Offset(thumbX, size.height / 2f)
+                center = thumbCenter
             )
             drawCircle(
                 color = primary.copy(alpha = 0.42f * enabledAlpha),
                 radius = thumbRadius,
-                center = Offset(thumbX, size.height / 2f),
+                center = thumbCenter,
                 style = Stroke(width = 1.dp.toPx())
             )
         }

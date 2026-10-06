@@ -17,7 +17,6 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.association.OpenUrlConfirmActivity
-import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.page.api.ReaderSelection
 import io.legado.app.ui.book.read.page.delegate.PageDelegate
 import io.legado.app.ui.book.read.page.entities.TextLine
@@ -51,7 +50,7 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
     var selectAble = AppConfig.textSelectAble
     val selectedPaint by lazy {
         Paint().apply {
-            // 普通选字使用弱化的强调色，进入划线后由会话状态清空。
+            // 普通选字使用预设高亮色的半透明叠加。
             color = selectionHighlightColor(context)
             style = Paint.Style.FILL
         }
@@ -73,6 +72,14 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                 }
             }
         }
+        invalidate()
+    }
+
+    fun refreshSelectionHighlight() {
+        if (selectionHighlightTransparent) return
+        val color = selectionHighlightColor(context)
+        if (selectedPaint.color == color) return
+        selectedPaint.color = color
         invalidate()
     }
     private val visibleRect = ChapterProvider.visibleRect
@@ -1237,7 +1244,10 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
 
     companion object {
         internal fun selectionHighlightColor(context: Context): Int =
-            ColorUtils.withAlpha(ReadDrawerStyle.indicatorColor(context), SELECTION_OVERLAY_ALPHA)
+            ColorUtils.withAlpha(
+                ReadBookConfig.durConfig.curHighlightColor(),
+                SELECTION_OVERLAY_ALPHA,
+            )
 
         private val renderThread by lazy {
             Executors.newSingleThreadExecutor {

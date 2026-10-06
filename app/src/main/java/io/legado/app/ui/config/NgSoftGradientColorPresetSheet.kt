@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,17 +46,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.NgSoftGradientColorMode
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientTheme
@@ -65,9 +71,13 @@ import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
 import io.legado.app.ui.design.components.compose.NgFormField
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
+import io.legado.app.ui.design.components.compose.defaultDockSurfaceColor
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.SwatchMatrix
 import io.legado.app.ui.design.theme.formatNgColor
-import io.legado.app.ui.design.theme.parseNgColor
+import io.legado.app.ui.design.theme.parseCommittedNgColor
+import io.legado.app.utils.getPrefString
+import io.legado.app.utils.putPrefString
 
 /** 柔光色调选择；复用配色预设抽屉的四列网格规格。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -202,6 +212,32 @@ private fun NgSoftGradientCustomColorContent(
         mutableStateOf(formatNgColor(initialOpaqueColor))
     }
     var isHexInputError by remember(initialOpaqueColor) { mutableStateOf(false) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
+    var swatchFamily by remember {
+        val saved = context.getPrefString(PreferKey.ngColorSwatchFamily).orEmpty()
+        mutableStateOf(
+            if (saved in SwatchMatrix.optionIds) saved else SwatchMatrix.SPECTRUM_ID
+        )
+    }
+
+    fun submitHex(allowRgb: Boolean): Boolean {
+        val parsed = parseCommittedNgColor(hexInput, allowRgb = allowRgb)
+        if (parsed != null) {
+            currentColor = parsed or AndroidColor.BLACK
+            hexInput = formatNgColor(currentColor)
+            isHexInputError = false
+            onValidColorChanged(currentColor)
+            return true
+        }
+        if (allowRgb) {
+            hexInput = formatNgColor(currentColor)
+            isHexInputError = false
+        } else {
+            isHexInputError = hexInput.trim().removePrefix("#").length == 7
+        }
+        return false
+    }
 
     Column(
         modifier = Modifier
@@ -210,8 +246,20 @@ private fun NgSoftGradientCustomColorContent(
             .padding(start = 4.dp, top = 12.dp, end = 4.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        NgSwatchFamilyBar(
+            selectedId = swatchFamily,
+            onSelected = { id ->
+                swatchFamily = id
+                context.putPrefString(PreferKey.ngColorSwatchFamily, id)
+            },
+            contentColor = Color(NgTheme.colors.onSurface),
+            selectedContainerColor = Color(NgTheme.colors.primary),
+            selectedContentColor = Color(NgTheme.colors.onPrimary),
+            dockSurfaceColor = defaultDockSurfaceColor(),
+        )
         NgColorPalette(
             color = currentColor,
+            familyId = swatchFamily,
             onColorChanged = { selected ->
                 currentColor = selected or AndroidColor.BLACK
                 hexInput = formatNgColor(currentColor)
@@ -242,15 +290,7 @@ private fun NgSoftGradientCustomColorContent(
                 value = hexInput,
                 onValueChange = { value ->
                     hexInput = normalizeHexInput(value)
-                    val parsed = parseNgColor(hexInput)
-                    if (parsed != null) {
-                        currentColor = parsed or AndroidColor.BLACK
-                        isHexInputError = false
-                        onValidColorChanged(currentColor)
-                    } else {
-                        isHexInputError = hexInput.isNotBlank()
-                        onValidColorChanged(null)
-                    }
+                    submitHex(allowRgb = false)
                 },
                 modifier = Modifier.weight(1f),
                 isError = isHexInputError,
@@ -261,7 +301,15 @@ private fun NgSoftGradientCustomColorContent(
                 },
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
+                    imeAction = ImeAction.Done,
                 ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        submitHex(allowRgb = true)
+                        keyboardController?.hide()
+                    },
+                ),
+                onFocusLost = { submitHex(allowRgb = true) },
             )
         }
     }

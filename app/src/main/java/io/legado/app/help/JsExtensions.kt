@@ -1436,6 +1436,8 @@ interface JsExtensions : JsEncodeUtils {
 
     fun getReadBookConfigMap(): Map<String, Any> {
         return ReadBookConfig.durConfig.toMap()
+            .mapNotNull { (key, value) -> value?.let { key to it } }
+            .toMap()
     }
 
     /**

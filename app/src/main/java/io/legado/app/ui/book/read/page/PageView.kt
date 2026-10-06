@@ -108,6 +108,7 @@ class PageView(context: Context) : FrameLayout(context) {
 
     fun upStyle() = binding.run {
         upTipStyle()
+        contentTextView.refreshSelectionHighlight()
         ReadBookConfig.let {
             val textColor = it.textColor
             val tipDividerColor = with(ReadTipConfig) {
