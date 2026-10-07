@@ -25,23 +25,20 @@ internal data class NgDrawerSemanticColors(
 /**
  * 全局 NG 抽屉自己的大面积材质色板。
  *
- * 抽屉继续只消费当前 NG 主题的承载色与 [NgColorScheme.surfaceTint]，但不复用阅读
- * 浮窗偏轻薄的 RGB 混色曲线。这里在 HCT 中保留主题色相，以受控的色度和明度变化
- * 提高暖色、冷色在大面积抽屉上的一致表现；100% 仍是安全的浓郁材质，不会退化成
- * 整面原始主色。
+ * 日间沿用 [NgColorScheme.surfaceTint] 的受控染色；夜间保留主题容器自己的色相，
+ * 只用明度区分承载层级，避免把强调色铺成大面积底色。阅读浮窗仍使用自己的色板。
  */
 internal object NgDrawerPalette {
 
     private const val OPAQUE_WHITE = -0x1
     private const val DARK_CONTENT_CARD_LIFT = 0.12f
+    private const val DARK_CONTENT_CARD_TONE_GAP = 4.0
     private const val TEXT_MIN_CONTRAST = 4.5
     private const val CONTROL_MIN_CONTRAST = 3.0
     private const val CONTROL_MAX_CONTRAST = 4.2
 
     private const val LIGHT_TOP_CHROMA_CAP = 32.0
     private const val LIGHT_BOTTOM_CHROMA_CAP = 42.0
-    private const val DARK_TOP_CHROMA_CAP = 24.0
-    private const val DARK_BOTTOM_CHROMA_CAP = 32.0
 
     private const val TOP_CHROMA_REACH = 0.68
     private const val BOTTOM_CHROMA_REACH = 0.86
@@ -82,7 +79,7 @@ internal object NgDrawerPalette {
             if (snapshot.isDark) 0.16f else 0.24f,
         )
         val strength = NgDrawerAppearanceConfig.strengthFraction(primaryStrengthPercent)
-        if (snapshot.isEInk || strength == 0.0) {
+        if (snapshot.isEInk || snapshot.isDark || strength == 0.0) {
             return NgDrawerSurfaceColors(
                 top = neutralTop,
                 bottom = colors.drawerContainer,
@@ -95,11 +92,7 @@ internal object NgDrawerPalette {
                 seed = seed,
                 strength = strength,
                 chromaReach = TOP_CHROMA_REACH,
-                chromaCap = if (snapshot.isDark) {
-                    DARK_TOP_CHROMA_CAP
-                } else {
-                    LIGHT_TOP_CHROMA_CAP
-                },
+                chromaCap = LIGHT_TOP_CHROMA_CAP,
                 toneReach = TOP_TONE_REACH,
                 hueShiftReach = TOP_HUE_SHIFT_REACH,
             ),
@@ -108,11 +101,7 @@ internal object NgDrawerPalette {
                 seed = seed,
                 strength = strength,
                 chromaReach = BOTTOM_CHROMA_REACH,
-                chromaCap = if (snapshot.isDark) {
-                    DARK_BOTTOM_CHROMA_CAP
-                } else {
-                    LIGHT_BOTTOM_CHROMA_CAP
-                },
+                chromaCap = LIGHT_BOTTOM_CHROMA_CAP,
                 toneReach = BOTTOM_TONE_REACH,
                 hueShiftReach = BOTTOM_HUE_SHIFT_REACH,
             ),
@@ -193,7 +182,7 @@ internal object NgDrawerPalette {
         contentCardContainer = null,
     )
 
-    /** 日间白卡在夜间抽屉中的轻量、同色相承载面。 */
+    /** 日间白卡、夜间主题容器；显式自定义底色仍按所选颜色派生。 */
     fun applyAdaptiveContentCardRoles(
         snapshot: NgThemeSnapshot,
         primaryStrengthPercent: Int,
@@ -224,12 +213,18 @@ internal object NgDrawerPalette {
                 else NgColorMath.blend(background, 0xFF000000.toInt(), 0.08f)
         }
         if (!snapshot.isDark) return OPAQUE_WHITE
-        val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent, backgroundColor)
-        return NgColorMath.blend(
-            surfaces.bottom,
-            OPAQUE_WHITE,
-            DARK_CONTENT_CARD_LIFT,
-        )
+        val cardColor = NgColorMath.opaque(snapshot.colors.cardContainer)
+        val card = Hct.fromInt(cardColor)
+        val drawer = Hct.fromInt(NgColorMath.opaque(snapshot.colors.drawerContainer))
+        val minimumTone = (drawer.tone + DARK_CONTENT_CARD_TONE_GAP).coerceAtMost(100.0)
+        val red = (cardColor ushr 16) and 0xFF
+        val green = (cardColor ushr 8) and 0xFF
+        val blue = cardColor and 0xFF
+        // RGB 灰阶的 HCT 色度并非严格为零，提亮时显式保灰，避免出现轻微色偏。
+        val chroma = if (red == green && green == blue) 0.0 else card.chroma
+        // 已有足够层次时保留原色；否则只抬明度，不混白或向强调色偏移。
+        return if (card.tone >= minimumTone) cardColor
+            else Hct.from(card.hue, chroma, minimumTone).toInt()
     }
 
     private fun applyResolvedSemanticRoles(

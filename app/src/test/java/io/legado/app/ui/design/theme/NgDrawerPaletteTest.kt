@@ -79,7 +79,7 @@ class NgDrawerPaletteTest {
     }
 
     @Test
-    fun `adaptive content cards stay white by day and become lifted tinted surfaces at night`() {
+    fun `adaptive content cards stay white by day and lift theme containers at night`() {
         listOf(0xFFF78E66.toInt(), 0xFF00838F.toInt()).forEach { seed ->
             val light = snapshot(seed = seed, isDark = false)
             val lightResult = NgDrawerPalette.applyAdaptiveContentCardRoles(light, 100)
@@ -97,6 +97,79 @@ class NgDrawerPaletteTest {
                 assertTrue(NgColorMath.contrastRatio(result.colors.primary, card) >= 3.0)
             }
         }
+    }
+
+    @Test
+    fun `night containers keep their own hue across unrelated accents and strengths`() {
+        val containers = listOf(
+            0xFF12314D.toInt(), // 夏日童趣
+            0xFF263440.toInt(), // 秋山书意
+            0xFF253953.toInt(), // 绘本书屋
+            0xFF2A2B2F.toInt(), // 动态场景
+            0xFF3C2F29.toInt(), // 暖色容器
+            0xFF28382D.toInt(), // 绿色容器
+            0xFF353044.toInt(), // 紫色容器
+            0xFF262626.toInt(), // 灰阶
+        )
+        val accents = listOf(0xFFF3B953, 0xFF5CCBFF, 0xFFB1D18A, 0xFFFFB0CA)
+        containers.forEach { container ->
+            val base = snapshot(seed = accents.first().toInt(), isDark = true).let {
+                it.copy(colors = it.colors.copy(
+                    surface = container,
+                    drawerContainer = container,
+                    cardContainer = container,
+                ))
+            }
+            val expectedCard = NgDrawerPalette.resolveAdaptiveContentCardColor(base, 0)
+            val original = Hct.fromInt(container)
+            val lifted = Hct.fromInt(expectedCard)
+            assertTrue(lifted.tone - original.tone in 3.5..4.5)
+            // 低色度下的色相角对 8-bit RGB 舍入敏感，只对有明显色相的容器检查角度。
+            if (original.chroma > 10.0) {
+                assertTrue(hueDistance(original.hue, lifted.hue) < 5.0)
+            }
+            if (container == 0xFF262626.toInt()) {
+                assertEquals((expectedCard ushr 16) and 0xFF, (expectedCard ushr 8) and 0xFF)
+                assertEquals((expectedCard ushr 8) and 0xFF, expectedCard and 0xFF)
+            }
+            accents.forEach { accent ->
+                val themed = base.copy(colors = base.colors.copy(
+                    primary = accent.toInt(),
+                    surfaceTint = accent.toInt(),
+                ))
+                listOf(0, 30, 100).forEach { strength ->
+                    val surfaces = NgDrawerPalette.resolveSurfaceColors(themed, strength)
+                    assertEquals(container, surfaces.top)
+                    assertEquals(container, surfaces.bottom)
+                    val result = NgDrawerPalette.applyAdaptiveContentCardRoles(themed, strength)
+                    assertEquals(expectedCard, result.colors.cardContainer)
+                    listOf(surfaces.top, surfaces.bottom, expectedCard).forEach { background ->
+                        assertTrue(NgColorMath.contrastRatio(result.colors.onSurface, background) >= 4.5)
+                        assertTrue(NgColorMath.contrastRatio(result.colors.onSurfaceVariant, background) >= 4.5)
+                        assertTrue(NgColorMath.contrastRatio(result.colors.primary, background) >= 3.0)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `night cards retain distinct theme roles and preserve already elevated colors`() {
+        val base = snapshot(seed = 0xFFF3B953.toInt(), isDark = true)
+        // 自动色板的卡片角色可能比抽屉更暗，不能直接沿用而丢失层次。
+        val low = base.copy(colors = base.colors.copy(
+            drawerContainer = 0xFF29252D.toInt(),
+            cardContainer = 0xFF17131B.toInt(),
+        ))
+        val resolved = Hct.fromInt(NgDrawerPalette.resolveAdaptiveContentCardColor(low, 30))
+        assertTrue(resolved.tone > Hct.fromInt(low.colors.drawerContainer).tone + 3.5)
+        assertTrue(hueDistance(resolved.hue, Hct.fromInt(low.colors.cardContainer).hue) < 8.0)
+
+        val highColor = 0xFF485365.toInt()
+        val elevated = low.copy(colors = low.colors.copy(cardContainer = highColor))
+        assertEquals(highColor, NgDrawerPalette.resolveAdaptiveContentCardColor(elevated, 30))
+        val eink = elevated.copy(isEInk = true)
+        assertEquals(0xFFFFFFFF.toInt(), NgDrawerPalette.resolveAdaptiveContentCardColor(eink, 30))
     }
 
     @Test
