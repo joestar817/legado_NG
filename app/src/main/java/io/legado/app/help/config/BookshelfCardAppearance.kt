@@ -27,8 +27,8 @@ data class BookshelfCardStyle(
 }
 
 data class BookshelfCardAppearance(
-    val day: BookshelfCardStyle = BookshelfCardStyle(BookshelfCardMaterial.SOLID),
-    val night: BookshelfCardStyle = BookshelfCardStyle(BookshelfCardMaterial.TRANSPARENT),
+    val day: BookshelfCardStyle = BookshelfCardStyle(BookshelfCardMaterial.LIQUID),
+    val night: BookshelfCardStyle = BookshelfCardStyle(BookshelfCardMaterial.LIQUID),
 ) {
     fun forNight(isNight: Boolean) = if (isNight) night else day
     fun updated(isNight: Boolean, style: BookshelfCardStyle) =
@@ -45,8 +45,8 @@ object BookshelfCardAppearanceStore {
             liquidPercent = prefs.getInt("bookshelfCard_${mode}_liquid", 40).coerceIn(0, 100),
         )
         return BookshelfCardAppearance(
-            readStyle("day", BookshelfCardMaterial.SOLID),
-            readStyle("night", BookshelfCardMaterial.TRANSPARENT),
+            readStyle("day", BookshelfCardMaterial.LIQUID),
+            readStyle("night", BookshelfCardMaterial.LIQUID),
         )
     }
 

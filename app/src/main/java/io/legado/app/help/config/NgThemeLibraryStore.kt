@@ -747,7 +747,7 @@ internal object NgBuiltInThemes {
         backgroundPath = "${CARTOON_BACKGROUND_PREFIX}cats/poster.webp",
     )
 
-    val defaultTheme = autumn
+    val defaultTheme = storybook
 
     val all = listOf(summer, autumn, storybook)
 

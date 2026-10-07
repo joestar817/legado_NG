@@ -7,10 +7,10 @@ class BookshelfCardAppearanceTest {
     @Test
     fun dayAndNightKeepIndependentMaterials() {
         val initial = BookshelfCardAppearance()
-        assertEquals(BookshelfCardMaterial.SOLID, initial.forNight(false).material)
-        assertEquals(BookshelfCardMaterial.TRANSPARENT, initial.forNight(true).material)
-        val changed = initial.updated(false, initial.day.copy(material = BookshelfCardMaterial.LIQUID))
-        assertEquals(BookshelfCardMaterial.LIQUID, changed.day.material)
+        assertEquals(BookshelfCardMaterial.LIQUID, initial.forNight(false).material)
+        assertEquals(BookshelfCardMaterial.LIQUID, initial.forNight(true).material)
+        val changed = initial.updated(false, initial.day.copy(material = BookshelfCardMaterial.SOLID))
+        assertEquals(BookshelfCardMaterial.SOLID, changed.day.material)
         assertEquals(initial.night, changed.night)
     }
 

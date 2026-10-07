@@ -108,6 +108,7 @@ class NgBuiltInThemePresetTest {
             ),
             NgBuiltInThemes.all.map { it.id },
         )
+        assertEquals(NgBuiltInThemes.storybook, NgBuiltInThemes.defaultTheme)
         assertEquals(
             listOf(expected, expected),
             listOf(
@@ -265,7 +266,6 @@ class NgBuiltInThemePresetTest {
             autumn.barProfile,
         )
         assertTrue(autumn in NgBuiltInThemes.all)
-        assertEquals(autumn, NgBuiltInThemes.defaultTheme)
     }
 
     @Test
