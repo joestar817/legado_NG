@@ -22,6 +22,7 @@ import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.ui.book.read.page.ContentTextView
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
+import io.legado.app.ui.book.read.page.provider.LatinOpticalScaleRuntime
 import io.legado.app.ui.book.read.page.provider.ReadNoteMarkerStyle
 import io.legado.app.ui.book.read.page.api.ReaderSelectionSource
 import io.legado.app.ui.book.read.page.api.ReaderSelection
@@ -702,11 +703,13 @@ internal class EpubLayoutController(
                 for (i in 0 until ranges.length()) put(ranges.getJSONObject(i))
             } })
         } }
-        return value.put("highlights", highlights).put("noteMarkers", notes).put("titleSegmentsByDocument", titleSegments)
+        value.put("highlights", highlights).put("noteMarkers", notes).put("titleSegmentsByDocument", titleSegments)
             .put("titleSegments", titleSegments.optJSONArray(documentIndex.toString()))
             .put("noteMarkerStyle", if (notes.length() > 0) noteMarker.style() ?: JSONObject.NULL else JSONObject.NULL)
             .put("selectionTransparent", selectionTransparent)
             .put("selectionColor", EpubCharStyles.cssColor(ContentTextView.selectionHighlightColor(host.context)))
+        LatinOpticalScaleRuntime.epubSizeAdjust(boundBook)?.let { value.put("latinSizeAdjust", it.toDouble()) }
+        return value
     }
 
     fun setSelectionEnabled(enabled: Boolean) {

@@ -219,6 +219,13 @@ object ReadBookConfig {
         return valueFile.takeIf { it.isNotBlank() && it != defaultFile }
     }
 
+    /** Latin / CJK run 实际绑定的字体文件。未单独换字时等于正文字体。 */
+    fun boundScriptFace(scope: ReadValueScope): String {
+        scriptFontPath(scope)?.takeIf { it.isNotBlank() }?.let { return it }
+        val raw = scriptFont(ReadValueScope.DEFAULT).value
+        return systemFontFile(raw) ?: raw
+    }
+
     /** 系统字体标记：system:0=默认，system:1=衬线，system:2=等宽。 */
     fun systemFontValue(index: Int): String = "system:$index"
 

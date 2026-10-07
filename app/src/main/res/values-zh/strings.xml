@@ -2314,6 +2314,9 @@
     <string name="read_style_follow_preset">跟随预设</string>
     <string name="read_style_source_preset_scripts">本预设</string>
     <string name="read_style_language_fonts_subtitle">新预设或未自定义的预设会继承这些字体</string>
+    <string name="read_style_latin_scale">西文比例</string>
+    <string name="read_style_latin_scale_auto">自动</string>
+    <string name="read_style_latin_scale_summary">中文书里的西文光学比例，不改变字号和行距</string>
     <string name="read_style_source_publisher">原书</string>
     <string name="read_style_reset_font">重置字体</string>
     <string name="font_dialog_drag_hint">拖动可移动</string>

@@ -78,6 +78,7 @@ class BackupRestorePolicyTest {
             PreferKey.readStyleSelect,
             PreferKey.comicStyleSelect,
             PreferKey.readStyleLanguageMap,
+            PreferKey.readLatinOpticalScale,
             PreferKey.shareLayout,
             PreferKey.showBrightnessView,
             PreferKey.brightnessVwPos

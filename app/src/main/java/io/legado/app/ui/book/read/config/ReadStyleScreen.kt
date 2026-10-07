@@ -94,6 +94,7 @@ import io.legado.app.help.book.BookScriptClass
 import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.help.config.ReadFloatingAppearanceConfig
 import io.legado.app.help.config.ReadFloatingColorStyle
+import io.legado.app.help.config.LatinOpticalScale
 import io.legado.app.help.config.ReadValueScope
 import io.legado.app.help.config.ReadValueSource
 import io.legado.app.ui.book.read.ReadDrawerStyle
@@ -109,6 +110,7 @@ import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.components.compose.NgSwitchActionGroup
 import io.legado.app.ui.design.components.compose.ngSliderStepValue
+import kotlin.math.roundToInt
 import io.legado.app.ui.config.NgAiThemePane
 import io.legado.app.ui.config.NgColorPickerClusterNav
 import io.legado.app.ui.config.NgInlineColorPicker
@@ -252,6 +254,8 @@ internal data class ReadStyleUiState(
     val bookFontSource: String = "",
     val languageFonts: List<ReadScriptFontUi> = emptyList(),
     val editorScriptFonts: List<ReadScriptFontUi> = emptyList(),
+    /** null 表示自动。手动值已钳在 0.80–1.20。 */
+    val latinScale: Float? = null,
 )
 
 /** Language fonts 三行（Latin/CJK/Other）的 UI 状态。 */
@@ -352,6 +356,9 @@ internal data class ReadStyleActions(
     val onResetScriptFont: (ReadValueScope) -> Unit,
     val onSelectEditorScriptFont: (ReadValueScope) -> Unit,
     val onResetEditorScriptFont: (ReadValueScope) -> Unit,
+    val onLatinScaleChanged: (Float) -> Unit,
+    val onLatinScaleChangeFinished: () -> Unit,
+    val onLatinScaleReset: () -> Unit,
 )
 
 @Composable
@@ -801,30 +808,126 @@ private fun LanguageFontsPage(
     contentColor: Color,
     actions: ReadStyleActions,
 ) {
-    StyleSubpageHeader(
-        title = stringResource(R.string.read_style_language_fonts),
-        subtitle = stringResource(R.string.read_style_language_fonts_subtitle),
-        contentColor = contentColor,
-        onBack = actions.onBack,
-    )
-    ReadDivider(contentColor)
-    state.languageFonts.forEach { item ->
-        LabeledValueRow(
-            label = item.label,
-            value = if (item.font.isBlank()) {
-                stringResource(R.string.read_style_source_system)
-            } else {
-                fontDisplayName(item.font) + " · " +
-                    stringResource(R.string.read_style_source_global)
-            },
+    Column(Modifier.fillMaxWidth().fillMaxHeight()) {
+        StyleSubpageHeader(
+            title = stringResource(R.string.read_style_language_fonts),
+            subtitle = stringResource(R.string.read_style_language_fonts_subtitle),
             contentColor = contentColor,
-            unavailable = item.unavailable,
-            canReset = item.canReset,
-            resetDescription = stringResource(R.string.read_style_reset_font),
-            onClick = { actions.onSelectScriptFont(item.scope) },
-            onReset = { actions.onResetScriptFont(item.scope) },
+            onBack = actions.onBack,
         )
         ReadDivider(contentColor)
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            state.languageFonts.forEach { item ->
+                LabeledValueRow(
+                    label = item.label,
+                    value = if (item.font.isBlank()) {
+                        stringResource(R.string.read_style_source_system)
+                    } else {
+                        fontDisplayName(item.font) + " · " +
+                            stringResource(R.string.read_style_source_global)
+                    },
+                    contentColor = contentColor,
+                    unavailable = item.unavailable,
+                    canReset = item.canReset,
+                    resetDescription = stringResource(R.string.read_style_reset_font),
+                    onClick = { actions.onSelectScriptFont(item.scope) },
+                    onReset = { actions.onResetScriptFont(item.scope) },
+                )
+                ReadDivider(contentColor)
+            }
+            LatinScaleSection(state.latinScale, contentColor, actions)
+        }
+    }
+}
+
+@Composable
+private fun LatinScaleSection(
+    latinScale: Float?,
+    contentColor: Color,
+    actions: ReadStyleActions,
+) {
+    val autoLabel = stringResource(R.string.read_style_latin_scale_auto)
+    val value = latinScale ?: 1f
+    val valueText = latinScale?.let { "${(it * 100).roundToInt()}%" } ?: autoLabel
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.read_style_latin_scale),
+                    color = contentColor,
+                    fontSize = 15.sp,
+                )
+                Text(
+                    text = stringResource(R.string.read_style_latin_scale_summary),
+                    color = contentColor.copy(alpha = 0.62f),
+                    fontSize = 11.5.sp,
+                )
+            }
+            Text(
+                text = valueText,
+                color = contentColor.copy(alpha = 0.72f),
+                fontSize = 13.sp,
+            )
+            if (latinScale != null) {
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_restore),
+                    contentDescription = autoLabel,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clickable(role = Role.Button, onClick = actions.onLatinScaleReset),
+                    tint = contentColor,
+                )
+            }
+        }
+        val range = LatinOpticalScale.MIN..LatinOpticalScale.MAX
+        val steps = 39
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NgSliderStepButton(
+                iconRes = R.drawable.ic_reduce,
+                contentDescription = stringResource(R.string.reduce),
+                enabled = value > range.start,
+                onClick = {
+                    actions.onLatinScaleChanged(ngSliderStepValue(value, range, steps, -1))
+                    actions.onLatinScaleChangeFinished()
+                },
+                tint = contentColor,
+            )
+            NgSlider(
+                value = value.coerceIn(range),
+                onValueChange = actions.onLatinScaleChanged,
+                onValueChangeFinished = actions.onLatinScaleChangeFinished,
+                valueRange = range,
+                steps = steps,
+                variant = NgSliderVariant.COMPACT,
+                modifier = Modifier.weight(1f),
+            )
+            NgSliderStepButton(
+                iconRes = R.drawable.ic_add,
+                contentDescription = stringResource(R.string.plus),
+                enabled = value < range.endInclusive,
+                onClick = {
+                    actions.onLatinScaleChanged(ngSliderStepValue(value, range, steps, 1))
+                    actions.onLatinScaleChangeFinished()
+                },
+                tint = contentColor,
+            )
+        }
     }
 }
 

@@ -13,6 +13,8 @@ data class ReadCharStyle(
     val bgImageFit: Int = 0,
     val bgImageScale: Float = 1f,
     val fontPath: String = "",
+    /** Latin run 的光学比例。1 表示不缩放。不参与行高。 */
+    val latinScale: Float = 1f,
     val fontWeight: Int = 400,
     val isItalic: Boolean = false,
     val npLeft: Float = 0.1f,

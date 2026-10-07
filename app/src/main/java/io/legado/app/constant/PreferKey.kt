@@ -196,6 +196,7 @@ object PreferKey {
     const val comicStyleSelect = "comicStyleSelect"
     const val readStyleSelect = "readStyleSelect"
     const val readStyleLanguageMap = "readStyleLanguageMap"
+    const val readLatinOpticalScale = "readLatinOpticalScale"
     const val readNightTheme = "readNightTheme"
     const val readThemeMode = "readThemeMode.v1"
     const val systemTypefaces = "system_typefaces"

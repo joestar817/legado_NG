@@ -141,14 +141,28 @@
             var item = next[i];
             var face;
             try {
-                face = new FontFace('NGScriptFont', 'url(' + JSON.stringify(item.url) + ')', {
-                    unicodeRange: scriptFontRange(item.scope)
-                });
+                var descriptors = { unicodeRange: scriptFontRange(item.scope) };
+                // 只做光学缩放。不写 ascent/descent，避免改行盒。
+                if (item.scope === 'latin' && value && typeof value.latinSizeAdjust === 'number' &&
+                    isFinite(value.latinSizeAdjust) && Math.abs(value.latinSizeAdjust - 1) >= 0.001) {
+                    descriptors.sizeAdjust = (Math.round(value.latinSizeAdjust * 1000) / 10) + '%';
+                }
+                face = new FontFace('NGScriptFont', 'url(' + JSON.stringify(item.url) + ')', descriptors);
                 await face.load();
                 delete window.__ngScriptFontFailures[item.scope];
             } catch (e) {
                 face = null;
-                window.__ngScriptFontFailures[item.scope] = true;
+                if (descriptors && descriptors.sizeAdjust) {
+                    try {
+                        delete descriptors.sizeAdjust;
+                        face = new FontFace('NGScriptFont', 'url(' + JSON.stringify(item.url) + ')', descriptors);
+                        await face.load();
+                        delete window.__ngScriptFontFailures[item.scope];
+                    } catch (ignored) {
+                        face = null;
+                    }
+                }
+                if (!face) window.__ngScriptFontFailures[item.scope] = true;
             }
             if (mine !== generation) return;
             if (face) { document.fonts.add(face); fresh.push(face); }

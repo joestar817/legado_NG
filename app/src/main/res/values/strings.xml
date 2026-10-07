@@ -2414,6 +2414,9 @@
     <string name="read_style_follow_preset">Follow preset</string>
     <string name="read_style_source_preset_scripts">This preset</string>
     <string name="read_style_language_fonts_subtitle">New or uncustomized presets inherit these fonts</string>
+    <string name="read_style_latin_scale">Latin ratio</string>
+    <string name="read_style_latin_scale_auto">Auto</string>
+    <string name="read_style_latin_scale_summary">Optical size of Latin text in Chinese books. Font size and line spacing stay the same</string>
     <string name="read_style_source_publisher">Publisher</string>
     <string name="read_style_reset_font">Reset font</string>
     <string name="font_dialog_drag_hint">Drag to move</string>

@@ -65,6 +65,8 @@ data class TextColumn(
             set(basePaint)
             color = textColor
             textLine.titleTextSize?.let { textSize = it }
+            val latinScale = readStyle?.latinScale ?: 1f
+            if (latinScale != 1f) textSize *= latinScale
             readStyle?.let { style ->
                 ChapterProvider.resolveStyledTypeface(
                     style.fontPath,
