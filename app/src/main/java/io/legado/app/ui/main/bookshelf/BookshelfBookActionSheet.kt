@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
@@ -320,7 +321,7 @@ class BookshelfBookActionSheet(
             NgThemedActionIcon(
                 kind = action.iconKind,
                 contentDescription = stringResource(action.titleRes),
-                modifier = Modifier.size(24.dp),
+                modifier = actionIconModifier(action.iconKind),
             )
             Spacer(Modifier.height(5.dp))
             Text(
@@ -388,7 +389,7 @@ class BookshelfBookActionSheet(
             NgThemedActionIcon(
                 kind = iconKind,
                 contentDescription = title,
-                modifier = Modifier.size(24.dp),
+                modifier = actionIconModifier(iconKind),
                 tone = NgThemedActionIconTone.MUTED,
             )
             Spacer(Modifier.width(15.dp))
@@ -423,6 +424,24 @@ class BookshelfBookActionSheet(
                 )
             }
         }
+    }
+
+    // 保留 24dp 布局槽，只校正本抽屉中不同图形的留白；主题色叠层同步缩放。
+    private fun actionIconModifier(kind: NgThemedActionIconKind): Modifier {
+        val opticalScale = when (kind) {
+            NgThemedActionIconKind.CONTENTS,
+            NgThemedActionIconKind.SIMULATED_READING,
+            NgThemedActionIconKind.MOVE_TO_GROUP -> 1f
+            NgThemedActionIconKind.DOWNLOAD -> 1.18f
+            NgThemedActionIconKind.CHANGE_SOURCE -> 1.10f
+            NgThemedActionIconKind.LISTEN -> 1.06f
+            NgThemedActionIconKind.BOOK_SCAN -> 0.91f
+            NgThemedActionIconKind.CHARACTER_PROFILE -> 1.20f
+            NgThemedActionIconKind.REFRESH -> 1f
+            NgThemedActionIconKind.EXPORT,
+            NgThemedActionIconKind.CLEAR_CACHE -> 0.87f
+        }
+        return Modifier.size(24.dp).scale(opticalScale)
     }
 
     @Composable
