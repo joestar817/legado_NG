@@ -140,6 +140,7 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                         onAutoRefreshChanged = ::setAutoRefresh,
                         onOnlyUpdateReadChanged = ::setOnlyUpdateRead,
                         onDefaultToReadChanged = ::setDefaultToRead,
+                        onShowHomeChanged = ::setShowHome,
                         onShowDiscoveryChanged = ::setShowDiscovery,
                         onShowRssChanged = ::setShowRss,
                         onDefaultHomePageSelected = ::setDefaultHomePage,
@@ -272,9 +273,10 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
             autoRefresh = AppConfig.autoRefreshBook,
             onlyUpdateRead = AppConfig.onlyUpdateRead,
             defaultToRead = getPrefBoolean(PreferKey.defaultToRead, false),
+            showHome = AppConfig.showHome,
             showDiscovery = AppConfig.showDiscovery,
             showRss = AppConfig.showRSS,
-            defaultHomePage = AppConfig.defaultHomePage ?: "bookshelf",
+            defaultHomePage = AppConfig.defaultHomePage ?: "home",
             fontScaleSummary = getString(
                 R.string.font_scale_summary,
                 AppContextWrapper.getFontScale(requireContext())
@@ -531,6 +533,12 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
     private fun setDefaultToRead(enabled: Boolean) {
         putPrefBoolean(PreferKey.defaultToRead, enabled)
         screenState = screenState.copy(defaultToRead = enabled)
+    }
+
+    private fun setShowHome(enabled: Boolean) {
+        putPrefBoolean(PreferKey.showHome, enabled)
+        screenState = screenState.copy(showHome = enabled)
+        postEvent(EventBus.NOTIFY_MAIN, true)
     }
 
     private fun setShowDiscovery(enabled: Boolean) {

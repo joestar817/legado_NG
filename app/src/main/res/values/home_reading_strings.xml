@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_reading_view_all">View all records</string>
+    <string name="home_reading_total_time">Total time</string>
+    <string name="home_reading_recorded">Recorded</string>
+    <string name="home_reading_hours">hours</string>
+    <string name="home_reading_books">books</string>
+    <string name="home_reading_duration">%1$s hours</string>
+    <string name="home_reading_no_records">No records yet</string>
+    <string name="home_reading_loading">Loading</string>
+    <string name="home_reading_load_failed">Unable to load</string>
+</resources>

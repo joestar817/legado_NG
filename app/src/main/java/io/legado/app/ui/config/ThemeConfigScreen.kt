@@ -108,9 +108,10 @@ internal data class ThemeConfigScreenState(
     val autoRefresh: Boolean = false,
     val onlyUpdateRead: Boolean = false,
     val defaultToRead: Boolean = false,
+    val showHome: Boolean = true,
     val showDiscovery: Boolean = true,
     val showRss: Boolean = true,
-    val defaultHomePage: String = "bookshelf",
+    val defaultHomePage: String = "home",
     val fontScaleSummary: String = "",
     val dayBackgroundSummary: String = "",
     val nightBackgroundSummary: String = ""
@@ -159,6 +160,7 @@ internal fun ThemeConfigScreen(
     onAutoRefreshChanged: (Boolean) -> Unit,
     onOnlyUpdateReadChanged: (Boolean) -> Unit,
     onDefaultToReadChanged: (Boolean) -> Unit,
+    onShowHomeChanged: (Boolean) -> Unit,
     onShowDiscoveryChanged: (Boolean) -> Unit,
     onShowRssChanged: (Boolean) -> Unit,
     onDefaultHomePageSelected: (String) -> Unit,
@@ -794,6 +796,11 @@ internal fun ThemeConfigScreen(
                     onCheckedChange = onDefaultToReadChanged
                 )
                 InterfaceSwitchSettingItem(
+                    title = stringResource(R.string.show_home),
+                    checked = state.showHome,
+                    onCheckedChange = onShowHomeChanged
+                )
+                InterfaceSwitchSettingItem(
                     title = stringResource(R.string.show_discovery),
                     checked = state.showDiscovery,
                     onCheckedChange = onShowDiscoveryChanged
@@ -805,6 +812,7 @@ internal fun ThemeConfigScreen(
                 )
                 DefaultHomePageSettingItem(
                     selectedValue = state.defaultHomePage,
+                    showHome = state.showHome,
                     onValueSelected = onDefaultHomePageSelected
                 )
             }
@@ -898,15 +906,18 @@ private fun InterfaceSwitchSettingItem(
 @Composable
 private fun DefaultHomePageSettingItem(
     selectedValue: String,
+    showHome: Boolean,
     onValueSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val options = listOf(
+    val allOptions = listOf(
+        "home" to stringResource(R.string.home_title),
         "bookshelf" to stringResource(R.string.bookshelf),
         "explore" to stringResource(R.string.discovery),
         "rss" to stringResource(R.string.rss),
         "my" to stringResource(R.string.my)
     )
+    val options = allOptions.filter { showHome || it.first != "home" }
     val selectedLabel = options.firstOrNull { it.first == selectedValue }?.second
         ?: stringResource(R.string.bookshelf)
     NgSettingsItem(

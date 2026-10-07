@@ -9,6 +9,25 @@ import org.junit.Test
 class ListeningCapsulePolicyTest {
 
     @Test
+    fun aHomeWidgetSuppressesOnlyTheMainCapsuleWithoutChangingOtherHostRules() {
+        assertFalse(ListeningCapsulePolicy.shouldAttach(
+            ListeningCapsuleHost.MAIN, showOnMain = true, suppressOnMain = true,
+        ))
+        assertTrue(ListeningCapsulePolicy.shouldAttach(
+            ListeningCapsuleHost.MAIN, showOnMain = true, suppressOnMain = false,
+        ))
+        assertFalse(ListeningCapsulePolicy.shouldAttach(
+            ListeningCapsuleHost.MAIN, showOnMain = false, suppressOnMain = false,
+        ))
+        assertTrue(ListeningCapsulePolicy.shouldAttach(
+            ListeningCapsuleHost.READER, showOnMain = false, suppressOnMain = true,
+        ))
+        assertFalse(ListeningCapsulePolicy.shouldAttach(
+            ListeningCapsuleHost.OTHER, showOnMain = true, suppressOnMain = false,
+        ))
+    }
+
+    @Test
     fun readerIgnoresMainPagePreferenceAndOtherPagesNeverAttach() {
         assertTrue(
             ListeningCapsulePolicy.shouldAttach(

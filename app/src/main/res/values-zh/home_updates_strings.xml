@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_updates_date">%1$d月%2$d日</string>
+    <string name="home_updates_summary">%1$d月%2$d日 · 发现%3$d本更新</string>
+    <string name="home_updates_count_compact">%1$d本更新</string>
+    <string name="home_updates_chapter_count">更新%1$d章</string>
+    <string name="home_updates_updated">已更新</string>
+    <string name="home_updates_loading">正在读取今日书讯</string>
+    <string name="home_updates_empty">暂无更新</string>
+    <string name="home_updates_retry">读取失败 · 重试</string>
+    <string name="home_updates_page">%1$d/%2$d</string>
+    <string name="home_updates_open_book">继续阅读</string>
+    <string name="home_updates_refresh">检查更新</string>
+    <string name="home_updates_checking">检查中</string>
+    <string name="home_updates_not_checked">尚未检查</string>
+    <string name="home_updates_last_checked">上次检查 %1$s</string>
+    <string name="home_updates_last_checked_label">上次检查</string>
+</resources>

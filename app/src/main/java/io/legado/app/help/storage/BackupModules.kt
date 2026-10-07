@@ -62,7 +62,8 @@ internal object BackupModules {
             key.startsWith("bookshelf") || key == PreferKey.themeMode ||
             key == PreferKey.hideNavigationBar || key == PreferKey.hideSystemNavigationBar ||
             key == PreferKey.fontScale || key.startsWith("explore") || key == PreferKey.defaultHomePage ||
-            key == PreferKey.dThemeName || key == PreferKey.dNThemeName || key == PreferKey.showDiscovery -> BackupModule.APPEARANCE
+            key == PreferKey.dThemeName || key == PreferKey.dNThemeName ||
+            key == PreferKey.showHome || key == PreferKey.showDiscovery -> BackupModule.APPEARANCE
         key.startsWith("rss", true) || key == PreferKey.showRss -> BackupModule.RSS
         else -> BackupModule.OTHER
     }

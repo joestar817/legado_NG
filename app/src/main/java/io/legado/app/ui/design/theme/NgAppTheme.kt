@@ -5,11 +5,13 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
@@ -88,6 +90,40 @@ object NgTheme {
         @Composable
         @ReadOnlyComposable
         get() = visualSystem == NgVisualSystem.LIQUID_GLASS && !snapshot.isEInk
+}
+
+/** Captures already resolved locals for display-only content without another theme subscription. */
+@Immutable
+class NgThemeContext internal constructor(
+    internal val snapshot: NgThemeSnapshot,
+    internal val visualSystem: NgVisualSystem,
+    internal val colorScheme: ColorScheme,
+    internal val typography: Typography,
+    internal val shapes: Shapes,
+)
+
+@Composable
+fun rememberNgThemeContext(): NgThemeContext {
+    val snapshot = NgTheme.snapshot
+    val visualSystem = NgTheme.visualSystem
+    val colorScheme = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
+    val shapes = MaterialTheme.shapes
+    return remember(snapshot, visualSystem, colorScheme, typography, shapes) {
+        NgThemeContext(snapshot, visualSystem, colorScheme, typography, shapes)
+    }
+}
+
+/** Keeps captured content colors and fonts while the surrounding drawer retains its own roles. */
+@Composable
+fun NgThemeContextProvider(context: NgThemeContext, content: @Composable () -> Unit) {
+    CompositionLocalProvider(
+        LocalNgThemeSnapshot provides context.snapshot,
+        LocalNgVisualSystem provides context.visualSystem,
+    ) {
+        MaterialTheme(colorScheme = context.colorScheme, typography = context.typography,
+            shapes = context.shapes, content = content)
+    }
 }
 
 @Composable

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="home_calendar_weekdays">
+        <item>Mon</item>
+        <item>Tue</item>
+        <item>Wed</item>
+        <item>Thu</item>
+        <item>Fri</item>
+        <item>Sat</item>
+        <item>Sun</item>
+    </string-array>
+    <string name="home_widget_calendar">Reading calendar</string>
+    <string name="home_calendar_month">%1$d / %2$d</string>
+    <string name="home_calendar_today">Today</string>
+    <string name="home_calendar_previous_month">Previous month</string>
+    <string name="home_calendar_next_month">Next month</string>
+    <string name="home_calendar_choose_month">Choose month</string>
+    <string name="home_calendar_previous_year">Previous year</string>
+    <string name="home_calendar_next_year">Next year</string>
+    <string name="home_calendar_month_number">%1$d</string>
+    <string name="home_calendar_minutes">%1$dm</string>
+    <string name="home_calendar_under_minute">&lt;1m</string>
+    <string name="home_calendar_hours_minutes">%1$dh %2$dm</string>
+    <string name="home_calendar_month_total">Month</string>
+    <string name="home_calendar_reading_days">Read %1$s days</string>
+    <string name="home_calendar_unknown">No daily record</string>
+    <string name="home_calendar_future">Future date</string>
+    <string name="home_calendar_retry">Could not load · Retry</string>
+</resources>

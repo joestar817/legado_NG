@@ -15,7 +15,9 @@ internal data class NgThemeNavigationIcons(
     private val exploreBitmap: Bitmap,
     private val rssBitmap: Bitmap,
     private val myBitmap: Bitmap,
+    private val homeBitmap: Bitmap?,
 ) {
+    fun home(context: Context): Drawable? = homeBitmap?.asDrawable(context)
     fun bookshelf(context: Context): Drawable = bookshelfBitmap.asDrawable(context)
     fun explore(context: Context): Drawable = exploreBitmap.asDrawable(context)
     fun rss(context: Context): Drawable = rssBitmap.asDrawable(context)
@@ -28,7 +30,7 @@ internal data class NgThemeNavigationIcons(
 /**
  * 运行时只消费 NG 已经定义清楚的主题包资源。
  *
- * 导航图标必须四项齐全且都能解码才整体启用，避免默认可着色图标与社区彩色图标混用。
+ * 原有四项导航图标必须齐全且都能解码才整体启用；首页图标独立可选。
  */
 internal object NgThemeRuntimeAssets {
 
@@ -55,7 +57,8 @@ internal object NgThemeRuntimeAssets {
             ?: return null
         val my = loadBitmap(theme.resolvePackageAsset(navigation.my), targetSize)
             ?: return null
-        return NgThemeNavigationIcons(bookshelf, explore, rss, my)
+        val home = loadBitmap(theme.resolvePackageAsset(navigation.home), targetSize)
+        return NgThemeNavigationIcons(bookshelf, explore, rss, my, home)
     }
 
     fun appTypeface(context: Context): Typeface? {

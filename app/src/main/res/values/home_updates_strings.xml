@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_updates_date">%1$d/%2$d</string>
+    <string name="home_updates_summary">%1$d/%2$d · Updates found in %3$d books</string>
+    <string name="home_updates_count_compact">Updated books: %1$d</string>
+    <string name="home_updates_chapter_count">%1$d new chapters</string>
+    <string name="home_updates_updated">Updated</string>
+    <string name="home_updates_loading">Loading today’s updates</string>
+    <string name="home_updates_empty">No updates yet</string>
+    <string name="home_updates_retry">Could not refresh · Retry</string>
+    <string name="home_updates_page">%1$d/%2$d</string>
+    <string name="home_updates_open_book">Continue reading</string>
+    <string name="home_updates_refresh">Check for updates</string>
+    <string name="home_updates_checking">Checking</string>
+    <string name="home_updates_not_checked">Not checked yet</string>
+    <string name="home_updates_last_checked">Last checked %1$s</string>
+    <string name="home_updates_last_checked_label">Last checked</string>
+</resources>

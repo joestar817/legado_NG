@@ -55,6 +55,7 @@ import io.legado.app.ui.association.ImportBookSourceDialog
 import io.legado.app.ui.association.ImportReplaceRuleDialog
 import io.legado.app.ui.association.ImportRssSourceDialog
 import io.legado.app.ui.book.read.ReadBookActivity
+import io.legado.app.ui.book.read.aloud.ReadAloudMiniPlayer
 import io.legado.app.ui.config.AiChatActivity
 import io.legado.app.ui.design.components.view.NgFloatingTabItem
 import io.legado.app.ui.design.components.view.NgFloatingTabBarVariant
@@ -62,6 +63,7 @@ import io.legado.app.ui.main.bookshelf.BaseBookshelfFragment
 import io.legado.app.ui.main.chatentry.ChatPetViewModel
 import io.legado.app.ui.main.bookshelf.style1.BookshelfFragment1
 import io.legado.app.ui.main.explore.ExploreFragment
+import io.legado.app.ui.main.home.HomeFragment
 import io.legado.app.ui.main.my.MyFragment
 import io.legado.app.ui.main.rss.RssFragment
 import io.legado.app.ui.widget.dialog.TextDialog
@@ -100,11 +102,12 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     override val binding by viewBinding(ActivityMainBinding::inflate)
     override val viewModel by viewModels<MainViewModel>()
     private val chatPetViewModel by viewModels<ChatPetViewModel>()
-    private val idBookshelf = 0
+    private val idHome = MainPageIds.HOME
+    private val idBookshelf = MainPageIds.BOOKSHELF
     private val idBookshelf1 = 11
-    private val idExplore = 1
-    private val idRss = 2
-    private val idMy = 3
+    private val idExplore = MainPageIds.EXPLORE
+    private val idRss = MainPageIds.RSS
+    private val idMy = MainPageIds.MY
     private var exitTime: Long = 0
     private var bookshelfReselected: Long = 0
     private var exploreReselected: Long = 0
@@ -120,11 +123,24 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     private var shelfSwipeCancelled = false
     private var shelfSwipeMode = BookshelfSwipeMode.MAIN_PAGES
     private val fragmentMap = hashMapOf<Int, Fragment>()
-    private var bottomMenuCount = 4
+    private var realPositions = MainPageIds.visible(
+        AppConfig.showDiscovery,
+        AppConfig.showRSS,
+        AppConfig.showHome
+    )
+    private var bottomMenuCount = realPositions.size
     private val EXIT_INTERVAL = 2000L
     private val AI_CHAT_SWIPE_START_RATIO = 0.5f
     private val AI_CHAT_SWIPE_DISTANCE_DP = 120
-    private val realPositions = arrayOf(idBookshelf, idExplore, idRss, idMy)
+    private val isBookshelfPage: Boolean
+        get() = realPositions.getOrNull(pagePosition) == idBookshelf
+    internal val hidesHomeListeningCapsule: Boolean
+        get() = realPositions.getOrNull(pagePosition) == idHome &&
+            (fragmentMap[idHome] as? HomeFragment)?.hasListeningWidget == true
+
+    internal fun refreshHomeListeningCapsule() {
+        ReadAloudMiniPlayer.refreshMainVisibility(this)
+    }
     private val adapter by lazy {
         TabFragmentPageAdapter(supportFragmentManager)
     }
@@ -141,14 +157,15 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         upHomePage()
         openLastReadBookAfterStartup(savedInstanceState)
         onBackPressedDispatcher.addCallback(this) {
+            if (realPositions.getOrNull(pagePosition) == idHome &&
+                (fragmentMap[idHome] as? HomeFragment)?.back() == true
+            ) return@addCallback
+            if (isBookshelfPage &&
+                (fragmentMap[idBookshelf1] as? BookshelfFragment1)?.back() == true
+            ) return@addCallback
             if (pagePosition != 0) {
                 binding.viewPagerMain.currentItem = 0
                 return@addCallback
-            }
-            (fragmentMap[getFragmentId(0)] as? BookshelfFragment1)?.let {
-                if (it.back()) {
-                    return@addCallback
-                }
             }
             if (System.currentTimeMillis() - exitTime > EXIT_INTERVAL) {
                 toastOnUi(R.string.double_click_exit)
@@ -235,7 +252,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 shelfSwipeStartY = event.rawY
                 val bounds = Rect()
                 val content = binding.root.findViewById<View>(R.id.bookshelf_content_panel)
-                shelfSwipeEligible = pagePosition == 0 && shelfSwipeMode != BookshelfSwipeMode.MAIN_PAGES &&
+                shelfSwipeEligible = isBookshelfPage && shelfSwipeMode != BookshelfSwipeMode.MAIN_PAGES &&
                     content?.getGlobalVisibleRect(bounds) == true && bounds.contains(event.rawX.toInt(), event.rawY.toInt()) &&
                     !isTouchInsideBookshelfFloatingDock(event) &&
                     !isTouchInsideView(event, binding.floatingBottomNavigation) &&
@@ -311,7 +328,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 aiChatSwipeStartY = event.rawY
                 val startLimit = window.decorView.width * AI_CHAT_SWIPE_START_RATIO
                 aiChatSwipeStartedOnBookshelf = AiConfig.bookshelfSwipeEnabled &&
-                        pagePosition == 0 &&
+                        isBookshelfPage &&
                         event.rawX <= startLimit &&
                         allowsBookshelfAiSwipe(BookshelfGestureConfig.mode,
                             (fragmentMap[idBookshelf1] as? BookshelfFragment1)?.canSwipeGroup(-1) == true) &&
@@ -357,8 +374,13 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     override fun onNavigationItemSelected(item: MenuItem): Boolean = binding.run {
         when (item.itemId) {
+            R.id.menu_home ->
+                viewPagerMain.setCurrentItem(
+                    MainPageIds.defaultPosition("home", realPositions), false
+                )
+
             R.id.menu_bookshelf ->
-                viewPagerMain.setCurrentItem(0, false)
+                viewPagerMain.setCurrentItem(realPositions.indexOf(idBookshelf), false)
 
             R.id.menu_discovery ->
                 viewPagerMain.setCurrentItem(realPositions.indexOf(idExplore), false)
@@ -374,6 +396,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     override fun onNavigationItemReselected(item: MenuItem) {
         val pageId = when (item.itemId) {
+            R.id.menu_home -> idHome
             R.id.menu_bookshelf -> idBookshelf
             R.id.menu_discovery -> idExplore
             R.id.menu_rss -> idRss
@@ -385,11 +408,12 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     private fun handleNavigationReselected(pageId: Int) {
         when (pageId) {
+            idHome -> (fragmentMap[idHome] as? HomeFragment)?.gotoTop()
             idBookshelf -> {
                 if (System.currentTimeMillis() - bookshelfReselected > 300) {
                     bookshelfReselected = System.currentTimeMillis()
                 } else {
-                    (fragmentMap[getFragmentId(0)] as? BaseBookshelfFragment)?.gotoTop()
+                    (fragmentMap[idBookshelf1] as? BaseBookshelfFragment)?.gotoTop()
                 }
             }
 
@@ -424,7 +448,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         updateFloatingBottomMenu()
         updateBottomNavigationStyle()
         fabAiChat.setOnClickListener {
-            if (pagePosition == 0) {
+            if (isBookshelfPage) {
                 startBookshelfGenericAiChat()
             } else {
                 startActivity<AiChatActivity>()
@@ -433,7 +457,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         aiChatPet.setOnClickListener {
             aiChatPet.setHostActive(false)
             aiChatPet.visibility = View.GONE
-            if (pagePosition == 0) startBookshelfGenericAiChat() else startActivity<AiChatActivity>()
+            if (isBookshelfPage) startBookshelfGenericAiChat() else startActivity<AiChatActivity>()
         }
         aiChatPet.onAssetLoadFailed = { toastOnUi(R.string.ai_chat_entry_load_failed) }
         refreshAiChatFab()
@@ -585,7 +609,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
      * 如果重启太快fragment不会重建,这里更新一下书架的排序
      */
     override fun recreate() {
-        (fragmentMap[getFragmentId(0)] as? BaseBookshelfFragment)?.run {
+        (fragmentMap[idBookshelf1] as? BaseBookshelfFragment)?.run {
             upSort()
         }
         super.recreate()
@@ -595,7 +619,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         viewModel.onUpBooksLiveData.observe(this) {
             bookshelfBadgeCount = it
             if (onUpBooksBadgeView == null) {
-                onUpBooksBadgeView = binding.bottomNavigationView.addBadgeView(0)
+                onUpBooksBadgeView = binding.bottomNavigationView.addBadgeView(1)
             }
             onUpBooksBadgeView!!.setBadgeCount(it)
             updateFloatingBottomMenu()
@@ -622,26 +646,23 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     }
 
     private fun upBottomMenu() {
+        val previousPageId = realPositions.getOrNull(pagePosition)
         val showDiscovery = AppConfig.showDiscovery
         val showRss = AppConfig.showRSS
+        val showHome = AppConfig.showHome
         binding.bottomNavigationView.menu.let { menu ->
+            menu.findItem(R.id.menu_home).isVisible = showHome
             menu.findItem(R.id.menu_discovery).isVisible = showDiscovery
             menu.findItem(R.id.menu_rss).isVisible = showRss
         }
-        var index = 0
-        if (showDiscovery) {
-            index++
-            realPositions[index] = idExplore
-        }
-        if (showRss) {
-            index++
-            realPositions[index] = idRss
-        }
-        index++
-        realPositions[index] = idMy
-        bottomMenuCount = index + 1
+        realPositions = MainPageIds.visible(showDiscovery, showRss, showHome)
+        bottomMenuCount = realPositions.size
+        val restoredPosition = MainPageIds.preservePosition(previousPageId, realPositions)
+        pagePosition = restoredPosition
         updateFloatingBottomMenu()
         adapter.notifyDataSetChanged()
+        binding.viewPagerMain.setCurrentItem(restoredPosition, false)
+        syncPageSelection(restoredPosition)
     }
 
     private fun updateFloatingBottomMenu() = binding.run {
@@ -651,10 +672,20 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             bottomNavigationIconTintCaptured = true
         }
         val themedIcons = NgThemeRuntimeAssets.navigationIcons(this@MainActivity)
+        val themedHomeIcon = themedIcons?.home(this@MainActivity)
         val themedIconSizeDp = if (themedIcons == null) 24 else 40
         updateStandardBottomNavigationIcons(themedIcons)
         val items = (0 until bottomMenuCount).map { position ->
             when (realPositions[position]) {
+                idHome -> NgFloatingTabItem(
+                    iconRes = R.drawable.ic_bottom_home_e,
+                    selectedIconRes = R.drawable.ic_bottom_home_s,
+                    iconDrawable = themedHomeIcon,
+                    tintIcon = themedHomeIcon == null,
+                    iconSizeDp = themedIconSizeDp,
+                    scaleIconToFit = themedIcons != null && themedHomeIcon == null,
+                    contentDescription = getString(R.string.home_title),
+                )
                 idBookshelf -> NgFloatingTabItem(
                     iconRes = R.drawable.ic_bottom_books_e,
                     selectedIconRes = R.drawable.ic_bottom_books_s,
@@ -721,6 +752,10 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 ?: getDrawable(R.drawable.ic_bottom_rss_feed)
             menu.findItem(R.id.menu_my_config).icon = themedIcons?.my(this@MainActivity)
                 ?: getDrawable(R.drawable.ic_bottom_person)
+            menu.findItem(R.id.menu_home).icon = themedIcons?.home(this@MainActivity)
+                ?: getDrawable(R.drawable.ic_bottom_home)?.apply {
+                    setTintList(defaultBottomNavigationIconTint)
+                }
         }
 
     private fun updateBottomNavigationStyle() = binding.run {
@@ -778,17 +813,18 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     }
 
     private fun upHomePage() {
-        when (AppConfig.defaultHomePage) {
-            "bookshelf" -> {}
-            "explore" -> if (AppConfig.showDiscovery) {
-                binding.viewPagerMain.setCurrentItem(realPositions.indexOf(idExplore), false)
-            }
+        val position = MainPageIds.defaultPosition(AppConfig.defaultHomePage, realPositions)
+        binding.viewPagerMain.setCurrentItem(position, false)
+        syncPageSelection(position)
+    }
 
-            "rss" -> if (AppConfig.showRSS) {
-                binding.viewPagerMain.setCurrentItem(realPositions.indexOf(idRss), false)
-            }
-
-            "my" -> binding.viewPagerMain.setCurrentItem(realPositions.indexOf(idMy), false)
+    private fun syncPageSelection(position: Int) {
+        pagePosition = position
+        refreshHomeListeningCapsule()
+        binding.bottomNavigationView.menu.findItem(getMenuItemId(realPositions[position])).isChecked = true
+        binding.floatingBottomNavigation.select(position, notify = false)
+        if (mainPagerScrollState == ViewPager.SCROLL_STATE_IDLE) {
+            bindFloatingBottomBackdropToCurrentPage()
         }
     }
 
@@ -798,6 +834,14 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             return idBookshelf1
         }
         return id
+    }
+
+    private fun getMenuItemId(pageId: Int): Int = when (pageId) {
+        idHome -> R.id.menu_home
+        idBookshelf -> R.id.menu_bookshelf
+        idExplore -> R.id.menu_discovery
+        idRss -> R.id.menu_rss
+        else -> R.id.menu_my_config
     }
 
     private inner class PageChangeCallback : ViewPager.SimpleOnPageChangeListener() {
@@ -814,12 +858,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         }
 
         override fun onPageSelected(position: Int) {
-            pagePosition = position
-            binding.bottomNavigationView.menu[realPositions[position]].isChecked = true
-            binding.floatingBottomNavigation.select(position, notify = false)
-            if (mainPagerScrollState == ViewPager.SCROLL_STATE_IDLE) {
-                bindFloatingBottomBackdropToCurrentPage()
-            }
+            syncPageSelection(position)
         }
 
     }
@@ -835,8 +874,10 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         override fun getItemPosition(any: Any): Int {
             val position = (any as MainFragmentInterface).position
                 ?: return POSITION_NONE
+            if (position !in realPositions.indices) return POSITION_NONE
             val fragmentId = getId(position)
-            if ((fragmentId == idBookshelf1 && any is BookshelfFragment1)
+            if ((fragmentId == idHome && any is HomeFragment)
+                || (fragmentId == idBookshelf1 && any is BookshelfFragment1)
                 || (fragmentId == idExplore && any is ExploreFragment)
                 || (fragmentId == idRss && any is RssFragment)
                 || (fragmentId == idMy && any is MyFragment)
@@ -848,6 +889,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
         override fun getItem(position: Int): Fragment {
             return when (getId(position)) {
+                idHome -> HomeFragment(position)
                 idBookshelf1 -> BookshelfFragment1(position)
                 idExplore -> ExploreFragment(position)
                 idRss -> RssFragment(position)
@@ -873,6 +915,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                         mainPagerScrollState == ViewPager.SCROLL_STATE_IDLE
                     ) {
                         bindFloatingBottomBackdropToCurrentPage()
+                        refreshHomeListeningCapsule()
                     }
                 }
             }

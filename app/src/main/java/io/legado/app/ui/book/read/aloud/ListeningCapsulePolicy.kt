@@ -13,9 +13,13 @@ internal enum class ListeningPlayback {
 
 internal object ListeningCapsulePolicy {
 
-    fun shouldAttach(host: ListeningCapsuleHost, showOnMain: Boolean): Boolean {
+    fun shouldAttach(
+        host: ListeningCapsuleHost,
+        showOnMain: Boolean,
+        suppressOnMain: Boolean = false,
+    ): Boolean {
         return host == ListeningCapsuleHost.READER ||
-            host == ListeningCapsuleHost.MAIN && showOnMain
+            host == ListeningCapsuleHost.MAIN && showOnMain && !suppressOnMain
     }
 
     fun resolvePlayback(

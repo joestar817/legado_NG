@@ -39,7 +39,8 @@ data class NgFloatingTabItem(
     val tintIcon: Boolean = true,
     val iconSizeDp: Int = 24,
     val count: Int? = null,
-    val contentDescription: CharSequence? = text
+    val contentDescription: CharSequence? = text,
+    val scaleIconToFit: Boolean = false,
 )
 
 enum class NgFloatingTabBarVariant {
@@ -173,7 +174,11 @@ class NgFloatingTabBar @JvmOverloads constructor(
         val icon = initialIcon?.let { drawable ->
             AppCompatImageView(context).apply {
                 setImageDrawable(drawable.newDrawable())
-                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                scaleType = if (item.scaleIconToFit) {
+                    ImageView.ScaleType.FIT_CENTER
+                } else {
+                    ImageView.ScaleType.CENTER_INSIDE
+                }
             }
         }
         val label = labelText.takeIf { it.isNotEmpty() }?.let { text ->

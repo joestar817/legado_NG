@@ -52,6 +52,8 @@ import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.main.MainActivity
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.startActivity
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.WeakHashMap
 import kotlin.math.abs
 
@@ -106,6 +108,8 @@ object ReadAloudMiniPlayer {
     private var readerAutoDockPending = false
     private var bookshelfAutoDockPending = false
     private var preferredMainPlayback: ListeningPlayback? = null
+    private val mainPlaybackChanges = MutableStateFlow(0L)
+    internal val mainPlaybackUpdates = mainPlaybackChanges.asStateFlow()
 
     fun attach(activity: Activity) {
         if (!shouldShowOn(activity)) {
@@ -173,6 +177,8 @@ object ReadAloudMiniPlayer {
     }
 
     fun refresh(activity: Activity) {
+        // Keep home content informed even when the floating capsule is hidden or absent.
+        if (activity is MainActivity) mainPlaybackChanges.value += 1
         val content = activity.findViewById<FrameLayout>(android.R.id.content) ?: return
         val view = content.findViewById<View>(TAG_ID) ?: return
         val launchPending = launchPendingStates[view] == true
@@ -236,8 +242,24 @@ object ReadAloudMiniPlayer {
         return ListeningCapsulePolicy.shouldAttach(
             host = capsuleHost(activity),
             showOnMain = AppConfig.showListeningCapsuleOnMain,
+            suppressOnMain = activity is MainActivity && activity.hidesHomeListeningCapsule,
         )
     }
+
+    internal fun refreshMainVisibility(activity: MainActivity) {
+        val content = activity.findViewById<FrameLayout>(android.R.id.content) ?: return
+        if (shouldShowOn(activity) && content.findViewById<View>(TAG_ID) == null) {
+            attach(activity)
+        } else {
+            refresh(activity)
+        }
+    }
+
+    internal fun currentMainPlayback(): ListeningPlayback? = resolvePlayback(ListeningCapsuleHost.MAIN)
+
+    internal fun openMainPlayer(activity: MainActivity) = openActivePlayer(activity)
+
+    internal fun toggleMainPlayback(activity: MainActivity) = toggleActivePlayback(activity)
 
     fun onReadAloudStateChanged(activity: Activity, state: Int) {
         when {
@@ -281,8 +303,12 @@ object ReadAloudMiniPlayer {
     }
 
     private fun activePlayback(activity: Activity): ListeningPlayback? {
+        return resolvePlayback(capsuleHost(activity))
+    }
+
+    private fun resolvePlayback(host: ListeningCapsuleHost): ListeningPlayback? {
         return ListeningCapsulePolicy.resolvePlayback(
-            host = capsuleHost(activity),
+            host = host,
             readAloudRunning = BaseReadAloudService.isRun,
             readAloudPlaying = BaseReadAloudService.isPlay(),
             audioRunning = AudioPlayService.isRun,

@@ -567,6 +567,9 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
                 }
             }
         }
+    val showHome: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.showHome, true)
+
 
     var saveTabPosition: Int
         get() = appCtx.getPrefInt(PreferKey.saveTabPosition, 0)
@@ -966,7 +969,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
 
     val autoCheckNewBackup get() = appCtx.getPrefBoolean(PreferKey.autoCheckNewBackup, true)
 
-    val defaultHomePage get() = appCtx.getPrefString(PreferKey.defaultHomePage, "bookshelf")
+    val defaultHomePage get() = appCtx.getPrefString(PreferKey.defaultHomePage, "home")
 
     val updateToVariant get() = appCtx.getPrefString(PreferKey.updateToVariant, "default_version")
 

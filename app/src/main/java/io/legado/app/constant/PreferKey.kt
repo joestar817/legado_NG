@@ -86,6 +86,7 @@ object PreferKey {
     const val readAloudPlayerShowSubtitle = "readAloudPlayerShowSubtitle"
     const val prevKeys = "prevKeyCodes"
     const val nextKeys = "nextKeyCodes"
+    const val showHome = "showHome"
     const val showDiscovery = "showDiscovery"
     const val exploreLayoutMode = "exploreLayoutMode"
     const val exploreShowLayoutMode = "exploreShowLayoutMode"

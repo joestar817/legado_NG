@@ -1149,8 +1149,7 @@ private fun PlayerDockIconAction(
 }
 
 @Composable
-internal fun ListeningLoadingBars() {
-    val contentColor = Color(NgTheme.colors.onSurface)
+internal fun ListeningLoadingBars(contentColor: Color = Color(NgTheme.colors.onSurface)) {
     val transition = rememberInfiniteTransition(label = "readAloudLoading")
     val phase by transition.animateFloat(
         initialValue = 0f,

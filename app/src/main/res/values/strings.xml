@@ -1052,7 +1052,7 @@
     <string name="book_type_image">Image</string>
     <string name="book_type_video">Video</string>
     <string name="book_cover_local_image">Local image</string>
-    <string name="ps_default_read">Use Bookshelf as start page</string>
+    <string name="ps_default_read">Otherwise open the default homepage</string>
     <string name="pt_default_read">Auto jump to Recent list</string>
     <string name="replace_scope">Replacement object. Book name or source url is available</string>
     <string name="menu_action_group">Groups</string>
@@ -1776,6 +1776,7 @@
     <string name="hide">Hide</string>
     <string name="hide_when_status_bar_show">Hide when status bar show</string>
     <string name="reverse_toc">Reverse toc</string>
+    <string name="show_home">Show Home</string>
     <string name="show_discovery">Show Discovery</string>
     <string name="style">Style</string>
     <string name="export_file_name">Export file name</string>

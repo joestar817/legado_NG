@@ -1048,7 +1048,7 @@
     <string name="book_type_image">图片</string>
     <string name="book_type_video">视频</string>
     <string name="book_cover_local_image">本地图片</string>
-    <string name="ps_default_read">默认打开书架</string>
+    <string name="ps_default_read">未跳转时打开默认主页</string>
     <string name="pt_default_read">自动跳转最近阅读</string>
     <string name="replace_scope">替换范围，选填书名或者书源 URL</string>
     <string name="menu_action_group">分组</string>
@@ -1787,6 +1787,7 @@
     <string name="hide">隐藏</string>
     <string name="hide_when_status_bar_show">状态栏显示时隐藏</string>
     <string name="reverse_toc">反转目录</string>
+    <string name="show_home">显示首页</string>
     <string name="show_discovery">显示发现</string>
     <string name="style">样式</string>
     <string name="export_file_name">导出文件名</string>
