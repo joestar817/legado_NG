@@ -33,4 +33,7 @@ interface RssReadRecordDao {
     @Query("delete from rssReadRecords where origin = :origin")
     fun deleteRecordsByOrigin(origin: String)
 
+    @Query("delete from rssReadRecords where origin = :origin and record = :record")
+    fun deleteRecord(origin: String, record: String): Int
+
 }

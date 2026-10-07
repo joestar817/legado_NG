@@ -75,6 +75,32 @@ object McpInternalToolCatalog {
             )
         ),
         module(
+            id = "explore",
+            title = "发现",
+            capability("explore.query", "浏览发现", "查询发现书源、分类、分页书单与详情",
+                "explore_source_list", "book_source_explore_kinds_get", "explore_books", "explore_book_info"),
+            writeCapability("explore.manage", "管理发现", "独立启停发现入口",
+                "explore_source_set_enabled")
+        ),
+        module(
+            id = "rss",
+            title = "订阅",
+            capability("rss.sources", "查询订阅源", "查询、统计、导出订阅源和读取分类",
+                "rss_source_list", "rss_source_stats_get", "rss_source_get", "rss_source_export", "rss_source_categories"),
+            writeCapability("rss.manage_sources", "管理订阅源", "编辑、导入、删除和启停订阅源",
+                "rss_source_save", "rss_source_import", "rss_source_delete", "rss_source_set_enabled"),
+            capability("rss.debug", "调试订阅源", "运行原生规则调试，支持临时规则",
+                "rss_source_debug"),
+            capability("rss.read", "读取订阅文章", "分类和搜索分页、缓存文章与正文读取",
+                "rss_articles_fetch", "rss_article_list", "rss_article_get", "rss_article_content_get"),
+            capability("rss.library", "查询订阅收藏与历史", "读取收藏、阅读记录和规则订阅",
+                "rss_star_list", "rss_star_get", "rss_read_record_list", "rss_read_record_get",
+                "rss_rule_subscription_list", "rss_rule_subscription_get"),
+            writeCapability("rss.manage_library", "管理订阅收藏与历史", "保存或删除收藏、阅读记录和规则订阅",
+                "rss_star_save", "rss_star_delete", "rss_read_record_save", "rss_read_record_delete",
+                "rss_rule_subscription_save", "rss_rule_subscription_delete", "rss_rule_subscription_refresh")
+        ),
+        module(
             id = "bookshelf",
             title = "书架",
             capability(
@@ -234,6 +260,8 @@ object McpInternalToolCatalog {
                 "ai_chat_conversation_list",
                 "ai_chat_conversation_get"
             ),
+            capability("ai.model_cache", "查询模型缓存", "读取已保存的模型列表",
+                "ai_model_cache_list"),
             internalWriteCapability(
                 id = "ai.memory",
                 title = "管理 AI 记忆",
@@ -366,6 +394,14 @@ object McpInternalToolCatalog {
     )
 
     private val appWriteToolNames = setOf(
+        "explore_source_set_enabled",
+        "rss_source_save",
+        "rss_source_import",
+        "rss_source_set_enabled",
+        "rss_star_save",
+        "rss_read_record_save",
+        "rss_rule_subscription_save",
+        "rss_rule_subscription_refresh",
         "book_source_save",
         "book_source_set_enabled",
         "bookshelf_book_upsert",
@@ -389,6 +425,10 @@ object McpInternalToolCatalog {
     )
 
     private val destructiveToolNames = setOf(
+        "rss_source_delete",
+        "rss_star_delete",
+        "rss_read_record_delete",
+        "rss_rule_subscription_delete",
         "book_source_delete",
         "bookshelf_book_delete",
         "bookshelf_group_delete",

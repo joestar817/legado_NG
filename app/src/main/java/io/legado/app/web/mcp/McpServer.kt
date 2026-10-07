@@ -21,6 +21,7 @@ import io.legado.app.help.ai.AiProviderStore
 import io.legado.app.help.ai.AiTtsStoryboardHelper
 import io.legado.app.help.http.NetworkLog
 import io.legado.app.help.source.exploreKinds
+import io.legado.app.help.source.clearExploreKindsCache
 import io.legado.app.help.source.renderRole
 import io.legado.app.model.Debug
 import io.legado.app.model.jsSource.isJsSource
@@ -45,6 +46,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
 
 object McpServer {
 
@@ -82,7 +84,7 @@ object McpServer {
     private const val MAX_BOOK_SOURCE_LIMIT = 300
     private const val DEFAULT_SEARCH_RESULT_LIMIT = 50
     private const val MAX_SEARCH_RESULT_LIMIT = 200
-    private val debugRunLock = Any()
+    private val debugRunLock = ReentrantLock()
     private val aiChatMessageListType = object : TypeToken<List<AiChatMessageSnapshot>>() {}.type
 
     fun isEnabled(): Boolean = BuildConfig.DEBUG || appCtx.getPrefBoolean(PreferKey.mcpService, false)
@@ -274,6 +276,7 @@ object McpServer {
                 description = "Run BookSource.exploreKinds() in the app and return the parsed ExploreKind objects with the same render roles used by the Explore UI.",
                 properties = mapOf(
                     "url" to stringSchema("BookSource.bookSourceUrl"),
+                    "refresh" to mapOf("type" to "boolean", "description" to "Refresh cached categories, default false"),
                     "timeout_seconds" to mapOf(
                         "type" to "number",
                         "default" to 30
@@ -571,7 +574,8 @@ object McpServer {
                 description = "Clear the in-memory app debug log window.",
                 properties = emptyMap()
             )
-        ) + BookshelfMcpTools.tools() + SettingsMcpTools.tools() + AgentMemoryMcpTools.tools()
+        ) + BookshelfMcpTools.tools() + SettingsMcpTools.tools() + AgentMemoryMcpTools.tools() +
+            ExploreMcpTools.tools() + RssSourceMcpTools.tools() + RssContentMcpTools.tools()
     }
 
     private fun tool(
@@ -612,7 +616,10 @@ object McpServer {
                 "description" to "Minimal BookSource JSON schema for MCP clients",
                 "mimeType" to "application/schema+json"
             )
-        ) + BookshelfMcpTools.resources() + SettingsMcpTools.resources()
+        ) + BookshelfMcpTools.resources() + SettingsMcpTools.resources() + listOf(
+            mapOf("uri" to "legado://schema/discovery-subscription", "name" to "discovery-subscription",
+                "description" to "Discovery and RSS tool schemas and source fields", "mimeType" to "application/json")
+        )
     }
 
     private fun readResource(params: JsonObject?): Map<String, Any> {
@@ -621,6 +628,14 @@ object McpServer {
         val text = when (uri) {
             "legado://api/mcp" -> GSON.toJson(apiSummary())
             "legado://schema/book-source" -> GSON.toJson(bookSourceSchema())
+            "legado://schema/discovery-subscription" -> GSON.toJson(mapOf(
+                "tools" to (ExploreMcpTools.tools() + RssSourceMcpTools.tools() + RssContentMcpTools.tools()),
+                "rss_source_fields" to RssSourceMcpTools.sourceFields,
+                "notes" to listOf("Reads do not mark articles read or add books to the shelf.",
+                    "Source scripts may perform network requests and update their own caches/cookies.",
+                    "Native login, CAPTCHA, discovery action buttons and WebView execution remain in the App UI.",
+                    "Remote page and local offset are separate. A nonempty discovery page does not prove that another page exists.")
+            ))
             else -> BookshelfMcpTools.readResource(uri)
                 ?: SettingsMcpTools.readResource(uri)
                 ?: throw IllegalArgumentException("Unknown resource: $uri")
@@ -679,6 +694,7 @@ object McpServer {
             "book_source_delete" -> deleteBookSources(arguments)
             "book_source_set_enabled" -> setBookSourcesEnabled(arguments)
             "book_source_debug" -> runBookSourceDebug(arguments)
+            "rss_source_debug" -> runRssSourceDebug(arguments)
             "book_search" -> runBookSearch(arguments)
             "bookshelf_search" -> runBookSearch(arguments)
             "network_log_list" -> listNetworkLogs(arguments)
@@ -694,6 +710,9 @@ object McpServer {
             else -> BookshelfMcpTools.call(name, arguments)
                 ?: SettingsMcpTools.call(name, arguments)
                 ?: AgentMemoryMcpTools.call(name, arguments, executionContext)
+                ?: ExploreMcpTools.call(name, arguments)
+                ?: RssSourceMcpTools.call(name, arguments)
+                ?: RssContentMcpTools.call(name, arguments)
                 ?: throw IllegalArgumentException("Unknown tool: $name")
         }
         val text = GSON.toJson(result)
@@ -756,6 +775,61 @@ object McpServer {
         )
     }
 
+    private fun runRssSourceDebug(arguments: JsonObject): Map<String, Any?> {
+        return try {
+            McpModuleSupport.validate("rss_source_debug", arguments, RssSourceMcpTools.tools())
+            val stored = RssSourceMcpTools.source(arguments)
+            val source = arguments.get("source_override")?.let {
+                require(it.isJsonObject) { "source_override must be an object" }
+                RssSourceMcpTools.mergeSource(it.asJsonObject, stored)
+            } ?: stored
+            val key = with(McpModuleSupport) { arguments.string("key") }
+            val seconds = with(McpModuleSupport) { arguments.int("timeout_seconds", 30, 1, 120) }
+            val logs = Collections.synchronizedList(mutableListOf<String>())
+            val latch = CountDownLatch(1)
+            val failed = AtomicBoolean(false)
+            val truncated = AtomicBoolean(false)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds.toLong())
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val callback = object : Debug.Callback {
+                override fun printLog(state: Int, msg: String) {
+                    if (state !in arrayOf(10, 20, 30, 40)) synchronized(logs) {
+                        if (logs.size < 100) logs.add(msg.take(4096)) else truncated.set(true)
+                        if (msg.length > 4096) truncated.set(true)
+                    }
+                    if (state == -1) failed.set(true)
+                    if (state == -1 || state == 1000) latch.countDown()
+                }
+            }
+            try {
+                check(debugRunLock.tryLock()) { "Another MCP debugger is active; finish it first" }
+                try {
+                    require(Debug.callback == null) { "Another native debugger is active; finish it first" }
+                    Debug.callback = callback
+                    try {
+                        if (key.isNullOrBlank()) {
+                            runBlocking(Dispatchers.IO) { withTimeout(seconds * 1000L) { Debug.startDebug(scope, source) } }
+                        } else Debug.startDebug(scope, source, key)
+                        latch.await((deadline - System.nanoTime()).coerceAtLeast(0), TimeUnit.NANOSECONDS)
+                    } finally {
+                        // Do not cancel a UI debugger that took ownership during this request.
+                        if (Debug.callback === callback) Debug.cancelDebug(true)
+                    }
+                } finally {
+                    debugRunLock.unlock()
+                }
+            } finally {
+                scope.cancel()
+            }
+            val done = latch.count == 0L
+            val error = when { !done -> "Subscription debug timed out"; failed.get() -> "Subscription debug failed; see logs"; else -> null }
+            McpModuleSupport.result("rss_source_debug", mapOf("done" to done, "failed" to failed.get(),
+                "logs" to synchronized(logs) { logs.toList() }, "logs_truncated" to truncated.get()), error)
+        } catch (e: Exception) {
+            McpModuleSupport.result("rss_source_debug", null, e.localizedMessage ?: e.javaClass.simpleName)
+        }
+    }
+
     private fun runBookSourceDebug(arguments: JsonObject): Map<String, Any?> {
         val tag = arguments.get("tag").asRequiredString("tag")
         val key = arguments.get("key").asRequiredString("key")
@@ -805,13 +879,23 @@ object McpServer {
                 }
             }
         }
-        synchronized(debugRunLock) {
-            Debug.callback = callback
-            Debug.startDebug(scope, source, transformedKey)
-            latch.await((timeoutSeconds * 1000).toLong(), TimeUnit.MILLISECONDS)
-            Debug.cancelDebug(true)
+        try {
+            check(debugRunLock.tryLock()) { "Another MCP debugger is active; finish it first" }
+            try {
+                require(Debug.callback == null) { "Another native debugger is active; finish it first" }
+                Debug.callback = callback
+                try {
+                    Debug.startDebug(scope, source, transformedKey)
+                    latch.await((timeoutSeconds * 1000).toLong(), TimeUnit.MILLISECONDS)
+                } finally {
+                    if (Debug.callback === callback) Debug.cancelDebug(true)
+                }
+            } finally {
+                debugRunLock.unlock()
+            }
+        } finally {
+            scope.cancel()
         }
-        scope.cancel()
         val done = latch.count == 0L
         return toolResult(
             ok = done,
@@ -1021,6 +1105,7 @@ object McpServer {
         val result = runCatching {
             runBlocking(Dispatchers.IO) {
                 withTimeout((timeoutSeconds * 1000).toLong()) {
+                    if (with(McpModuleSupport) { arguments.bool("refresh", false)!! }) source.clearExploreKindsCache()
                     source.exploreKinds()
                 }
             }
@@ -1036,9 +1121,11 @@ object McpServer {
                 ),
                 warnings = listOf(result.exceptionOrNull()?.localizedMessage ?: "解析发现分类失败")
             )
+        val categoryError = kinds.firstOrNull { it.title.startsWith("ERROR:") }
         return toolResult(
-            ok = true,
+            ok = categoryError == null,
             upstreamEndpoint = "native://bookSourceExploreKinds",
+            warnings = listOfNotNull(categoryError?.title),
             normalizedData = mapOf(
                 "bookSourceUrl" to source.bookSourceUrl,
                 "bookSourceName" to source.bookSourceName,

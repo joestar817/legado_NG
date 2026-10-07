@@ -1184,3 +1184,92 @@ MCP stream is not supported in this version
 ```
 
 处理：先调用 `tools/list` 确认工具名。
+
+## 发现与订阅 MCP（2026-10-07）
+
+发现、订阅现在复用 App 的 `WebBook`、`Rss`、`SourceHelp`、`RuleUpdate` 与原有 Room 数据。
+完整参数可通过 `tools/list` 和 `legado://schema/discovery-subscription` 读取。
+该资源同时列出 `RssSource` 可编辑字段名与类型，客户端不需要猜测字段。
+
+| 流程 | 工具 |
+|---|---|
+| 发现源及独立启停 | `explore_source_list`、`explore_source_set_enabled` |
+| 发现分类 | 复用 `book_source_explore_kinds_get`，新增 `refresh`；解析错误返回失败 |
+| 发现书单与详情 | `explore_books`、`explore_book_info` |
+| 订阅源查询 | `rss_source_list`、`rss_source_stats_get`、`rss_source_get` |
+| 订阅源维护 | `rss_source_save`、`rss_source_import`、`rss_source_export`、`rss_source_delete`、`rss_source_set_enabled` |
+| 订阅分类与调试 | `rss_source_categories`、`rss_source_debug` |
+| 订阅文章 | `rss_articles_fetch`、`rss_article_list`、`rss_article_get`、`rss_article_content_get` |
+| 收藏 | `rss_star_list`、`rss_star_get`、`rss_star_save`、`rss_star_delete` |
+| 阅读记录 | `rss_read_record_list`、`rss_read_record_get`、`rss_read_record_save`、`rss_read_record_delete` |
+| 规则订阅 | `rss_rule_subscription_list`、`rss_rule_subscription_get`、`rss_rule_subscription_save`、`rss_rule_subscription_refresh`、`rss_rule_subscription_delete` |
+
+### 分页与解析
+
+- 列表的 `offset/limit` 是本次结果内的分页，默认 50 条，最大 200 条。`next_offset` 为空或缺省表示本次结果已读完。
+- `explore_books.page`、`rss_articles_fetch.page` 是远程页码，从 1 开始。重复远程请求可能遇到站点内容变化，不提供跨请求快照。
+- 发现分类通过 `category_index` 选择，或者明确传 `explore_url`，二者互斥。文本输入、选择器和动作按钮不能当作分类打开。
+- 发现返回非空页时只给出 `next_page_candidate`，不把它当作下一页一定存在的证明。
+- 订阅下一页使用响应的 `next_page_url` 作为下一次 `sort_url`，页码加一，并保持 `sort` 和搜索 `key`。`PAGE` 规则允许 URL 不变而页码递增。
+- 订阅搜索仍走 `rss_articles_fetch`，传 `key` 后使用源的 `searchUrl`；没有搜索能力时明确失败。
+- 网络解析默认 30 秒，可设置 `timeout_seconds`（1–120 秒）；底层源脚本和网络实现仍负责响应协程取消。
+
+### 编辑与导入
+
+`rss_source_save` 的 `source` 对象必须有 `sourceUrl`。新建还需要 `sourceName`；更新仅覆盖传入字段，保留未传字段，允许将可空规则显式设为 `null`。未知字段和错误类型被拒绝。
+
+```json
+{"name":"rss_source_save","arguments":{"source":{"sourceUrl":"https://example.org/feed","sourceName":"示例订阅","ruleContent":"body@html"}}}
+```
+
+`sourceUrl` 是身份；不同 URL 会被视作另一个源，接口不执行隐式改名迁移。`sourceGroup`、`customOrder` 等可以通过局部保存编辑。保存后清理该源相关分类、JS 库和并发限制缓存。
+
+`rss_source_import` 接收 1–200 个完整源对象，总 JSON 文本上限 400 万字符。先校验整批，重复身份或非法字段导致整批失败。默认跳过已存在源；`overwrite=true` 时替换完整定义，保留已有 `customOrder`。导入沿用 `SourceHelp` 的源过滤，并返回实际导入和跳过的 URL；不会静默宣称全部成功。导出返回 JSON 对象，不写设备文件。
+
+删除订阅源沿用 App 的清理语义：删除源、缓存文章与源变量；保留收藏和历史。收藏、历史删除均要求精确身份，不提供隐式全量清空。
+
+### 文章、收藏与历史
+
+`rss_articles_fetch` 返回完整 `articles` 对象，但不写文章缓存。后续读取正文、收藏或保存阅读记录时，可以原样传 `article` 对象与 `source_url`；不要省略规则解析需要的 `variable`。
+
+缓存文章通过 `source_url + link + sort` 定位；`sort` 可以是空字符串。收藏按原模型使用 `source_url + link`。由于原阅读记录表以链接为主键，保存时如果链接属于另一个源则拒绝覆盖。
+
+正文优先使用文章已有 `description`，否则运行源的 `ruleContent`；`refresh=true` 可以强制重跑正文规则。正文使用 `offset/max_chars` 分段返回，默认 16000 字符，最大 65536。纯网页／WebView 内容返回 `requires_ui=true`，不把未执行的网页内容当作解析结果。
+
+正文位置和长度使用 UTF-16 单位，分段会对齐完整字符，避免 emoji／扩展汉字被切成问号。起点落在代理对内部时，响应 `offset` 会报告对齐后的起点；`max_chars=1` 遇到双单位字符会完整返回该字符。继续读取应使用响应的 `next_offset`。
+
+读取正文不会自动标记已读、添加收藏或加入书架。实际源脚本仍可能进行网络请求、更新 Cookie 或源自身缓存，与 App 内解析边界一致。
+
+### 调试与规则订阅
+
+`rss_source_debug` 复用原生调试器。`key` 可为 `分类名::URL`、文章 URL 或搜索词，省略则调试首分类。`source_override` 是仅供本次调试的局部覆盖，不保存源定义。最多返回 100 条日志，每条最多 4096 字符，并提供截断标记；原生失败与超时均返回失败。已有调试会话占用时拒绝启动，书源与订阅源 MCP 共用调试锁。
+
+规则订阅类型遵循实际界面：0 为书源，1 为订阅源，2 为替换规则。保存按订阅 URL 定位、保留未传字段，由 App 管理 ID。`rss_rule_subscription_refresh` 复用原更新器，默认遵守更新间隔，`force=true` 可跳过间隔；是否直接写入规则由已保存的 `silentUpdate` 决定。非静默更新返回 `pending_rules` 预览，客户端再按用户选择导入。此工具会更新检查时间，属于需确认的写操作。
+
+### 内置 AI 与验证
+
+能力目录新增“发现”“订阅”模块，读取与维护能力分开。保存、导入、启停、收藏、阅读记录和规则订阅更新均进入既有写操作确认流程，删除为破坏性操作。原来遗漏的发现分类读取、模型缓存读取也已加入能力目录。外部 HTTP 仍保持原有开发调试通道约定。
+
+只读检查脚本（WSL，端点替换为实际地址）：
+
+```bash
+python3 scripts/test_mcp_discovery_subscription.py --endpoint http://127.0.0.1:14324/mcp
+```
+
+脚本检查工具／资源注册、列表、精确导出和非法参数，不保存、导入、删除或刷新设备数据。源局部编辑和确认分级另有 JVM 回归用例；是否已执行应以本次验证记录为准。
+
+完整设备测试由 `scripts/test_mcp_discovery_subscription_full.py` 提供。它在本机启动仅监听回环地址的测试站点，经 ADB reverse 让 Android 使用真实 HTTP、规则解析、Room 与调试器执行测试；只有显式传入 `--write-fixtures` 才运行。临时源／收藏／历史／规则订阅使用唯一标记，异常也进入清理流程，输出目录保留 `fixtures.json` 恢复清单、调用记录和前后快照。
+
+以下为 Windows PowerShell 示例，执行前确认两个端口没有占用，且设备已打开 App：
+
+```powershell
+adb -s emulator-5554 forward tcp:14324 tcp:1124
+adb -s emulator-5554 reverse tcp:18761 tcp:18761
+python scripts/test_mcp_discovery_subscription_full.py --write-fixtures --output .agent/mcp-full-test/manual
+adb -s emulator-5554 forward --remove tcp:14324
+adb -s emulator-5554 reverse --remove tcp:18761
+```
+
+2026-10-07 的修复版验证：42 项 MCP JVM 测试通过；完整设备回归23组场景、283次RPC调用通过，31个新增工具均有成功调用；旧接口脚本17项执行通过、6项跳过。外网抽测的源社区、天天看书、NASA RSS另有原生解析／源脚本失败，未混入上述通过统计。完整记录位于本地 `.agent/mcp-full-test/REPORT.md`；这些结果不代表任意第三方源均可用。
+
+登录、验证码、发现中的 UI 动作脚本和完整 WebView 运行继续由现有 App 页面承载；这批工具不模拟点击或创建第二套页面业务。
