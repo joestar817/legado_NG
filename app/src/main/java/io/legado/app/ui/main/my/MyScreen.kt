@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -141,7 +140,7 @@ internal fun MyScreen(
         MyTopBar(transparent = transparentTopBar)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = 16.dp, bottom = bottomInset),
+            contentPadding = PaddingValues(bottom = bottomInset),
         ) {
             myMenuItems(primaryItems, onAction)
             item(key = "settings_section") { MySectionLabel(R.string.setting) }
@@ -169,19 +168,9 @@ private fun MyTopBar(transparent: Boolean) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
+                .height(15.dp)
                 .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Text(
-                text = stringResource(R.string.my),
-                color = Color(NgTheme.colors.onTopBar),
-                fontSize = 20.sp,
-                lineHeight = 24.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-            )
-        }
+        )
         if (isEInk) {
             HorizontalDivider(
                 color = Color(NgTheme.colors.outline),
