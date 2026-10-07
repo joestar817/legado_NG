@@ -1,6 +1,7 @@
 package io.legado.app.help.config
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -112,5 +113,16 @@ class EpubFormattingProfileTest {
                 EpubFormattingProfileContract.respectFlagsFor(profile.profile, flags),
             )
         }
+    }
+
+    @Test
+    fun `missing epub preference overrides the book`() {
+        val flags = EpubLayoutPreferences.decode(null)
+        assertEquals(8, flags.size)
+        assertFalse(flags.values.any { it })
+        assertEquals(
+            EpubPublisherProfile.OVERRIDE,
+            EpubFormattingProfileContract.resolve(flags.values.toList()).profile,
+        )
     }
 }

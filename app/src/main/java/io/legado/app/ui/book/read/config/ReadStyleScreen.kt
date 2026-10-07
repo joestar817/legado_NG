@@ -148,6 +148,7 @@ internal enum class ReadStylePage {
     HIGHLIGHT_BACKGROUND_COLOR,
     HIGHLIGHT_UNDERLINE_COLOR,
     LANGUAGE_FONTS,
+    NEW_BOOK_PRESET,
     APP_DEFAULTS,
 }
 
@@ -344,6 +345,7 @@ internal data class ReadStyleActions(
     val onDiscard: () -> Unit,
     val onDismissRequest: () -> Unit,
     val onOpenLanguageFonts: () -> Unit,
+    val onOpenNewBookPreset: () -> Unit,
     val onSelectScriptFont: (ReadValueScope) -> Unit,
     val onResetScriptFont: (ReadValueScope) -> Unit,
     val onSelectEditorScriptFont: (ReadValueScope) -> Unit,
@@ -461,6 +463,20 @@ internal fun ReadStyleScreen(
                     )
                 }
 
+                ReadStylePage.NEW_BOOK_PRESET -> Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(StandardPageHeight)
+                        .padding(top = 8.dp),
+                ) {
+                    NewBookPresetPage(
+                        state = state,
+                        contentColor = contentColor,
+                        accentColor = indicatorColor,
+                        actions = actions,
+                    )
+                }
+
                 ReadStylePage.APP_DEFAULTS -> Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -470,7 +486,6 @@ internal fun ReadStyleScreen(
                     DefaultsPage(
                         state = state,
                         contentColor = contentColor,
-                        accentColor = indicatorColor,
                         actions = actions,
                     )
                 }
@@ -770,79 +785,29 @@ private fun LanguageFontsPage(
     contentColor: Color,
     actions: ReadStyleActions,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_arrow_back),
-            contentDescription = stringResource(R.string.back),
-            tint = contentColor,
-            modifier = Modifier
-                .size(28.dp)
-                .clickable(role = Role.Button, onClick = actions.onBack),
-        )
-        Text(
-            text = stringResource(R.string.read_style_language_fonts),
-            color = contentColor,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(start = 8.dp),
-        )
-        Text(
-            text = stringResource(R.string.read_style_language_fonts_subtitle),
-            color = contentColor.copy(alpha = 0.62f),
-            fontSize = 12.sp,
-            maxLines = 1,
-            modifier = Modifier
-                .padding(start = 12.dp)
-                .weight(1f, fill = false)
-                .basicMarquee(),
-        )
-    }
+    StyleSubpageHeader(
+        title = stringResource(R.string.read_style_language_fonts),
+        subtitle = stringResource(R.string.read_style_language_fonts_subtitle),
+        contentColor = contentColor,
+        onBack = actions.onBack,
+    )
     ReadDivider(contentColor)
     state.languageFonts.forEach { item ->
-        Row(
-            Modifier.fillMaxWidth().height(56.dp)
-                .clickable(role = Role.Button, onClick = { actions.onSelectScriptFont(item.scope) })
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = item.label,
-                color = contentColor,
-                fontSize = 15.sp,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = if (item.font.isBlank()) {
-                    stringResource(R.string.read_style_source_system)
-                } else {
-                    fontDisplayName(item.font) + " · " +
-                        stringResource(R.string.read_style_source_global)
-                },
-                color = contentColor.copy(alpha = 0.72f),
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textDecoration = if (item.unavailable) TextDecoration.LineThrough else TextDecoration.None,
-                modifier = Modifier.weight(1.4f, fill = false),
-            )
-            if (item.canReset) {
-                Spacer(Modifier.width(10.dp))
-                Icon(
-                    painter = painterResource(R.drawable.ic_restore),
-                    contentDescription = stringResource(R.string.read_style_reset_font),
-                    tint = contentColor,
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clickable(role = Role.Button, onClick = { actions.onResetScriptFont(item.scope) }),
-                )
-            }
-        }
+        LabeledValueRow(
+            label = item.label,
+            value = if (item.font.isBlank()) {
+                stringResource(R.string.read_style_source_system)
+            } else {
+                fontDisplayName(item.font) + " · " +
+                    stringResource(R.string.read_style_source_global)
+            },
+            contentColor = contentColor,
+            unavailable = item.unavailable,
+            canReset = item.canReset,
+            resetDescription = stringResource(R.string.read_style_reset_font),
+            onClick = { actions.onSelectScriptFont(item.scope) },
+            onReset = { actions.onResetScriptFont(item.scope) },
+        )
         ReadDivider(contentColor)
     }
 }
@@ -1077,115 +1042,93 @@ private fun PresetRestoreAllRow(
 private fun DefaultsPage(
     state: ReadStyleUiState,
     contentColor: Color,
+    actions: ReadStyleActions,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            EditorSectionLabel(
+                stringResource(R.string.read_style_floating_section),
+                Color(NgTheme.colors.primary),
+            )
+            EditorFloatingSection(
+                state = state,
+                contentColor = contentColor,
+                accentColor = Color(NgTheme.colors.primary),
+                indicatorColor = Color(NgTheme.colors.primary),
+                actions = actions,
+            )
+        }
+        ReadDivider(contentColor)
+        DefaultsLinkRow(
+            title = stringResource(R.string.read_style_language_fonts),
+            iconRes = R.drawable.ic_ai_capability_text,
+            contentColor = contentColor,
+            onClick = actions.onOpenLanguageFonts,
+        )
+        ReadDivider(contentColor)
+        DefaultsLinkRow(
+            title = stringResource(R.string.read_style_new_book_preset),
+            iconRes = R.drawable.ic_book_info_read,
+            contentColor = contentColor,
+            onClick = actions.onOpenNewBookPreset,
+        )
+    }
+}
+
+@Composable
+private fun NewBookPresetPage(
+    state: ReadStyleUiState,
+    contentColor: Color,
     accentColor: Color,
     actions: ReadStyleActions,
 ) {
-    val followEnabled = !state.onlyThisBook
     val useCurrent = stringResource(R.string.read_style_use_current_preset)
     val options = remember(state.presets, useCurrent) {
         listOf(null to useCurrent) + state.presets.filter { it.index >= 0 }.map { preset ->
             preset.name to preset.name.ifBlank { useCurrent }
         }
     }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
-    ) {
-        PresetSwitchRow(
-            title = stringResource(R.string.read_style_floating_follow_app),
-            iconRes = R.drawable.ic_cfg_theme,
-            checked = state.floatingFollowAppPref,
-            contentColor = contentColor,
-            onCheckedChange = actions.onGlobalFloatingFollowAppChanged,
-            subtitle = stringResource(
-                if (followEnabled) {
-                    R.string.read_style_floating_follow_app_summary
-                } else {
-                    R.string.read_style_floating_follow_app_book_locked
-                }
-            ),
-            enabled = followEnabled,
-        )
-        ReadDivider(contentColor)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .clickable(role = Role.Button, onClick = actions.onOpenLanguageFonts)
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_ai_capability_text),
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(25.dp),
-            )
-            Text(
-                text = stringResource(R.string.read_style_language_fonts),
-                color = contentColor,
-                fontSize = 15.sp,
-                modifier = Modifier.padding(start = 14.dp).weight(1f),
-            )
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_right_20),
-                contentDescription = null,
-                tint = contentColor.copy(alpha = 0.72f),
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        ReadDivider(contentColor)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.read_style_new_book_preset),
-                color = contentColor.copy(alpha = 0.62f),
-                fontSize = 12.sp,
-            )
-            Text(
-                text = stringResource(R.string.read_style_new_book_preset_summary),
-                modifier = Modifier.padding(start = 8.dp).weight(1f),
-                color = contentColor.copy(alpha = 0.46f),
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        NewBookPresetRow(
-            title = stringResource(R.string.read_style_new_book_cjk),
-            selectedName = state.languagePresetCjk,
-            options = options,
-            contentColor = contentColor,
-            accentColor = accentColor,
-            detected = state.detectedScriptClass == BookScriptClass.Cjk.storageValue,
-            onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Cjk, it) },
-        )
-        ReadDivider(contentColor)
-        NewBookPresetRow(
-            title = stringResource(R.string.read_style_new_book_latin),
-            selectedName = state.languagePresetLatin,
-            options = options,
-            contentColor = contentColor,
-            accentColor = accentColor,
-            detected = state.detectedScriptClass == BookScriptClass.Latin.storageValue,
-            onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Latin, it) },
-        )
-        ReadDivider(contentColor)
-        NewBookPresetRow(
-            title = stringResource(R.string.read_style_new_book_other),
-            selectedName = state.languagePresetOther,
-            options = options,
-            contentColor = contentColor,
-            accentColor = accentColor,
-            detected = state.detectedScriptClass == BookScriptClass.Other.storageValue,
-            onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Other, it) },
-        )
-    }
+    StyleSubpageHeader(
+        title = stringResource(R.string.read_style_new_book_preset),
+        subtitle = stringResource(R.string.read_style_new_book_preset_summary),
+        contentColor = contentColor,
+        onBack = actions.onBack,
+    )
+    ReadDivider(contentColor)
+    NewBookPresetRow(
+        title = stringResource(R.string.read_style_new_book_cjk),
+        selectedName = state.languagePresetCjk,
+        options = options,
+        contentColor = contentColor,
+        accentColor = accentColor,
+        detected = state.detectedScriptClass == BookScriptClass.Cjk.storageValue,
+        onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Cjk, it) },
+    )
+    ReadDivider(contentColor)
+    NewBookPresetRow(
+        title = stringResource(R.string.read_style_new_book_latin),
+        selectedName = state.languagePresetLatin,
+        options = options,
+        contentColor = contentColor,
+        accentColor = accentColor,
+        detected = state.detectedScriptClass == BookScriptClass.Latin.storageValue,
+        onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Latin, it) },
+    )
+    ReadDivider(contentColor)
+    NewBookPresetRow(
+        title = stringResource(R.string.read_style_new_book_other),
+        selectedName = state.languagePresetOther,
+        options = options,
+        contentColor = contentColor,
+        accentColor = accentColor,
+        detected = state.detectedScriptClass == BookScriptClass.Other.storageValue,
+        onSelected = { actions.onLanguagePresetChanged(BookScriptClass.Other, it) },
+    )
+    ReadDivider(contentColor)
 }
 
 @Composable
@@ -1201,87 +1144,172 @@ private fun NewBookPresetRow(
     var expanded by remember { mutableStateOf(false) }
     val selectedLabel = options.firstOrNull { it.first == selectedName }?.second
         ?: options.first().second
+    Box(modifier = Modifier.fillMaxWidth()) {
+        LabeledValueRow(
+            label = title,
+            value = selectedLabel,
+            contentColor = contentColor,
+            labelColor = if (detected) accentColor else contentColor,
+            canReset = selectedName != null,
+            resetDescription = stringResource(R.string.read_style_use_current_preset),
+            onClick = { expanded = true },
+            onReset = { onSelected(null) },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = label,
+                            color = if (value == selectedName) accentColor else contentColor,
+                            fontSize = 14.sp,
+                            fontWeight = if (value == selectedName) {
+                                FontWeight.Medium
+                            } else {
+                                FontWeight.Normal
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelected(value)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultsLinkRow(
+    title: String,
+    iconRes: Int,
+    contentColor: Color,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .clickable(role = Role.Button) { expanded = true }
+            .height(56.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(25.dp),
+        )
+        Text(
+            text = title,
+            color = contentColor,
+            fontSize = 15.sp,
+            modifier = Modifier.padding(start = 14.dp).weight(1f),
+        )
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_right_20),
+            contentDescription = null,
+            tint = contentColor.copy(alpha = 0.72f),
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
+private fun StyleSubpageHeader(
+    title: String,
+    subtitle: String,
+    contentColor: Color,
+    onBack: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_arrow_back),
+            contentDescription = stringResource(R.string.back),
+            tint = contentColor,
+            modifier = Modifier
+                .size(28.dp)
+                .clickable(role = Role.Button, onClick = onBack),
+        )
+        Text(
+            text = title,
+            color = contentColor,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 8.dp),
+        )
+        Text(
+            text = subtitle,
+            color = contentColor.copy(alpha = 0.62f),
+            fontSize = 12.sp,
+            maxLines = 1,
+            modifier = Modifier
+                .padding(start = 12.dp)
+                .weight(1f, fill = false)
+                .basicMarquee(),
+        )
+    }
+}
+
+@Composable
+private fun LabeledValueRow(
+    label: String,
+    value: String,
+    contentColor: Color,
+    labelColor: Color = contentColor,
+    unavailable: Boolean = false,
+    canReset: Boolean = false,
+    resetDescription: String = "",
+    onClick: () -> Unit,
+    onReset: () -> Unit = {},
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            color = if (detected) accentColor else contentColor,
+            text = label,
+            color = labelColor,
             fontSize = 15.sp,
-            fontWeight = if (detected) FontWeight.Medium else FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
-        if (detected) {
-            Text(
-                text = stringResource(R.string.read_style_this_book),
+        Text(
+            text = value,
+            color = contentColor.copy(alpha = 0.72f),
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textDecoration = if (unavailable) TextDecoration.LineThrough else TextDecoration.None,
+            modifier = Modifier.weight(1.4f, fill = false),
+        )
+        if (canReset) {
+            Spacer(Modifier.width(10.dp))
+            Icon(
+                painter = painterResource(R.drawable.ic_restore),
+                contentDescription = resetDescription,
+                tint = contentColor,
                 modifier = Modifier
-                    .padding(end = 8.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(accentColor.copy(alpha = 0.18f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                color = accentColor,
-                fontSize = 11.sp,
-                maxLines = 1,
+                    .size(22.dp)
+                    .clickable(role = Role.Button, onClick = onReset),
             )
-        }
-        Box(
-            modifier = Modifier.wrapContentWidth(),
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = selectedLabel,
-                    modifier = Modifier.widthIn(max = 148.dp),
-                    color = contentColor.copy(alpha = 0.68f),
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Icon(
-                    painter = painterResource(R.drawable.ic_chevron_right_20),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(start = 2.dp)
-                        .size(18.dp),
-                    tint = contentColor.copy(alpha = 0.72f),
-                )
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                options.forEach { (value, label) ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = label,
-                                color = if (value == selectedName) accentColor else contentColor,
-                                fontSize = 14.sp,
-                                fontWeight = if (value == selectedName) {
-                                    FontWeight.Medium
-                                } else {
-                                    FontWeight.Normal
-                                },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                        onClick = {
-                            expanded = false
-                            onSelected(value)
-                        },
-                    )
-                }
-            }
         }
     }
 }
@@ -1486,19 +1514,6 @@ private fun EditorPage(
                     }
                 }
                 ReadDivider(contentColor, horizontalPadding = 0.dp)
-                EditorSectionLabel(
-                    stringResource(R.string.read_style_floating_section),
-                    accentColor,
-                )
-                EditorFloatingSection(
-                    state = state,
-                    contentColor = contentColor,
-                    accentColor = accentColor,
-                    indicatorColor = indicatorColor,
-                    actions = actions,
-                )
-                Spacer(Modifier.height(8.dp))
-                ReadDivider(contentColor, horizontalPadding = 0.dp)
                 EditorNavigationRow(
                     title = stringResource(R.string.read_style_restore_current),
                     summary = stringResource(
@@ -1684,8 +1699,7 @@ private fun EditorFloatingSection(
 ) {
     val selectedContentColor = Color(NgTheme.colors.onPrimary)
     val sourceShape = RoundedCornerShape(10.dp)
-    val globallyFollowsApplication = state.globalFloatingFollowApp
-    val fromBackground = !globallyFollowsApplication && state.editorFloatingColorFromBackground
+    val fromBackground = state.editorFloatingColorFromBackground
     val hasSample = state.editorFloatingColorSeed != 0
     val displayedColor = if (hasSample) {
         state.editorFloatingColorSeed
@@ -1714,7 +1728,6 @@ private fun EditorFloatingSection(
             selectedContentColor = selectedContentColor,
             onClick = { actions.onFloatingColorSourceChanged(false) },
             modifier = Modifier.weight(1f),
-            enabled = !globallyFollowsApplication,
         )
         FloatingSourceOption(
             label = stringResource(R.string.read_style_floating_color_background),
@@ -1724,24 +1737,11 @@ private fun EditorFloatingSection(
             selectedContentColor = selectedContentColor,
             onClick = { actions.onFloatingColorSourceChanged(true) },
             modifier = Modifier.weight(1f),
-            enabled = !globallyFollowsApplication,
-        )
-    }
-
-    if (globallyFollowsApplication) {
-        Text(
-            text = stringResource(R.string.read_style_global_follow_app_color_managed),
-            modifier = Modifier.padding(top = 6.dp),
-            color = contentColor.copy(alpha = 0.62f),
-            fontSize = 11.sp,
         )
     }
 
     Text(
-        text = stringResource(
-            if (globallyFollowsApplication) R.string.read_style_global_color_style
-            else R.string.read_style_floating_color_style
-        ),
+        text = stringResource(R.string.read_style_floating_color_style),
         modifier = Modifier.padding(top = 12.dp, bottom = 7.dp),
         color = contentColor,
         fontSize = 15.sp,

@@ -58,6 +58,10 @@ class BackupRestorePolicyTest {
         listOf(
             PreferKey.readFloatingFollowAppGlobally,
             PreferKey.readFloatingGlobalColorStyle,
+            PreferKey.readFloatingGlobalTransparency,
+            PreferKey.readFloatingGlobalPrimaryStrength,
+            PreferKey.readFloatingGlobalSeed,
+            PreferKey.readFloatingGlobalSeedNight,
         ).forEach { key ->
             assertTrue(BackupRestorePolicy.shouldRestorePreference(key, isMd3Backup = false))
         }

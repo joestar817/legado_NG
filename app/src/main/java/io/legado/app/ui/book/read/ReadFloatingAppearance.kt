@@ -12,10 +12,10 @@ import io.legado.app.ui.design.components.compose.NgGlassStyle
 internal object ReadFloatingAppearanceState {
 
     private val transparencyState = mutableIntStateOf(
-        ReadBookConfig.durConfig.curReadFloatingTransparency()
+        ReadBookConfig.readFloatingGlobalTransparency
     )
     private val primaryStrengthState = mutableIntStateOf(
-        ReadBookConfig.durConfig.curReadFloatingPrimaryStrength()
+        ReadBookConfig.readFloatingGlobalPrimaryStrength
     )
     private val colorStyleState = mutableStateOf(
         ReadBookConfig.effectiveReadFloatingColor().colorStyle
@@ -46,8 +46,8 @@ internal object ReadFloatingAppearanceState {
 
     fun refreshFromConfig() {
         update(
-            transparencyPercent = ReadBookConfig.durConfig.curReadFloatingTransparency(),
-            primaryStrengthPercent = ReadBookConfig.durConfig.curReadFloatingPrimaryStrength(),
+            transparencyPercent = ReadBookConfig.readFloatingGlobalTransparency,
+            primaryStrengthPercent = ReadBookConfig.readFloatingGlobalPrimaryStrength,
             colorStyle = ReadBookConfig.effectiveReadFloatingColor().colorStyle,
         )
     }

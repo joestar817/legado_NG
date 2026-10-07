@@ -46,6 +46,12 @@ internal object ReadPresetPreferences {
         PreferKey.clickActionTL to 2, PreferKey.clickActionTC to 2, PreferKey.clickActionTR to 1,
         PreferKey.clickActionML to 2, PreferKey.clickActionMC to 0, PreferKey.clickActionMR to 1,
         PreferKey.clickActionBL to 2, PreferKey.clickActionBC to 1, PreferKey.clickActionBR to 1,
+        PreferKey.readFloatingGlobalTransparency to ReadFloatingAppearanceConfig.DEFAULT_TRANSPARENCY_PERCENT,
+        PreferKey.readFloatingGlobalPrimaryStrength to ReadFloatingAppearanceConfig.DEFAULT_PRIMARY_STRENGTH_PERCENT,
+    )
+    private val colorInts = linkedMapOf(
+        PreferKey.readFloatingGlobalSeed to 0,
+        PreferKey.readFloatingGlobalSeedNight to 0,
     )
     private val allowedStrings = mapOf(
         PreferKey.screenOrientation to setOf("0", "1", "2", "3", "4", "5"),
@@ -56,12 +62,13 @@ internal object ReadPresetPreferences {
         PreferKey.readFloatingGlobalColorStyle to ReadFloatingColorStyle.entries.map { it.storageValue }.toSet(),
     )
 
-    val preferenceKeys: Set<String> get() = booleans.keys + strings.keys + integers.keys
+    val preferenceKeys: Set<String> get() = booleans.keys + strings.keys + integers.keys + colorInts.keys
 
     fun capture(): JsonObject = JsonObject().apply {
         booleans.forEach { (key, default) -> addProperty(key, appCtx.getPrefBoolean(key, default)) }
         strings.forEach { (key, default) -> addProperty(key, appCtx.getPrefString(key, default)) }
         integers.forEach { (key, default) -> addProperty(key, appCtx.getPrefInt(key, default)) }
+        colorInts.forEach { (key, default) -> addProperty(key, appCtx.getPrefInt(key, default)) }
         add("toolbarOrder", JsonArray().apply { TextSelectionActionOrder.load().forEach { add(it.key) } })
         add("toolbarDisabled", JsonArray().apply { TextSelectionActionOrder.disabledKeys().forEach { add(it) } })
     }
@@ -76,6 +83,9 @@ internal object ReadPresetPreferences {
         integers.keys.forEach { key -> settings.get(key)?.let {
             require(it.isJsonPrimitive && it.asJsonPrimitive.isNumber && it.asString.toIntOrNull()?.let { n -> n in 0..100 } == true) { "阅读设置数值错误: $key" }
         } }
+        colorInts.keys.forEach { key -> settings.get(key)?.let {
+            require(it.isJsonPrimitive && it.asJsonPrimitive.isNumber) { "阅读设置颜色错误: $key" }
+        } }
         listOf("toolbarOrder", "toolbarDisabled").forEach { key -> settings.get(key)?.let { values ->
             require(values.isJsonArray && values.asJsonArray.size() <= 64 && values.asJsonArray.all {
                 it.isJsonPrimitive && it.asJsonPrimitive.isString && it.asString.length <= 64
@@ -88,6 +98,7 @@ internal object ReadPresetPreferences {
         booleans.keys.forEach { key -> settings.get(key)?.let { appCtx.putPrefBoolean(key, it.asBoolean) } }
         strings.keys.forEach { key -> settings.get(key)?.let { appCtx.putPrefString(key, it.asString) } }
         integers.keys.forEach { key -> settings.get(key)?.let { appCtx.putPrefInt(key, it.asInt) } }
+        colorInts.keys.forEach { key -> settings.get(key)?.let { appCtx.putPrefInt(key, it.asInt) } }
         if (settings.has("toolbarOrder") || settings.has("toolbarDisabled")) {
             val order = settings.getAsJsonArray("toolbarOrder")?.mapNotNull { key ->
                 TextSelectionBuiltInAction.entries.find { it.key == key.asString }

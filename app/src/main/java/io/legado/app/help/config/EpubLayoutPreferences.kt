@@ -21,7 +21,8 @@ internal object EpubLayoutPreferences {
 
     fun decode(value: String?): Map<String, Boolean> {
         val json = value?.let { runCatching { JSONObject(it) }.getOrNull() }
-        return (listOf(PUBLISHER) + features.keys).associateWith { json?.optBoolean(it, true) ?: true }
+        // 未写过偏好时按「覆盖原书」：八项均为 false。已保存的 true 仍表示尊重原书。
+        return (listOf(PUBLISHER) + features.keys).associateWith { json?.optBoolean(it, false) ?: false }
     }
 
     fun read(bookUrl: String?, context: Context = appCtx): Map<String, Boolean> =
