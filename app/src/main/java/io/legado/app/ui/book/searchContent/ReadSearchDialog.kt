@@ -267,7 +267,7 @@ class ReadSearchDialog : BottomSheetDialogFragment() {
         ) ?: return
         sheet.setBackgroundColor(AndroidColor.TRANSPARENT)
         sheet.layoutParams = sheet.layoutParams.apply {
-            height = (resources.displayMetrics.heightPixels * 0.82f).toInt()
+            height = (resources.displayMetrics.heightPixels * 0.80f).toInt()
         }
         BottomSheetBehavior.from(sheet).apply {
             // Compose统一处理整组内容的下拉，避免与章节快速定位拖动竞争。

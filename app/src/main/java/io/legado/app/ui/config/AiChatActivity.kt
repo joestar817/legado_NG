@@ -7565,7 +7565,7 @@ private fun AiChatMcpCapabilitySheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.68f),
+                .fillMaxHeight(0.70f),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             Column(

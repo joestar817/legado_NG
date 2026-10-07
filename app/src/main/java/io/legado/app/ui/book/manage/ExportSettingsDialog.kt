@@ -135,7 +135,7 @@ class ExportSettingsDialog : BottomSheetDialogFragment() {
 
     companion object {
         private const val ARG_SELECTED_COUNT = "selectedCount"
-        private const val SHEET_HEIGHT_RATIO = 0.72f
+        private const val SHEET_HEIGHT_RATIO = 0.70f
 
         fun show(manager: FragmentManager, selectedCount: Int) {
             ExportSettingsDialog().apply {

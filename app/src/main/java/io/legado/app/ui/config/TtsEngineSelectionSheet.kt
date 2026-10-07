@@ -92,7 +92,7 @@ internal fun TtsEngineSelectionDrawerContent(
     onSelect: (TtsEngineSetting) -> Unit,
     onClear: (() -> Unit)? = null,
 ) {
-    val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.68f).dp
+    val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.70f).dp
     var query by remember { mutableStateOf("") }
     var searchExpanded by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }

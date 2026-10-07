@@ -53,6 +53,6 @@ class ChangeBookSourceDrawer() : ChangeBookSourceDialog() {
     }
 
     private companion object {
-        const val SHEET_HEIGHT_RATIO = 0.92f
+        const val SHEET_HEIGHT_RATIO = 0.90f
     }
 }

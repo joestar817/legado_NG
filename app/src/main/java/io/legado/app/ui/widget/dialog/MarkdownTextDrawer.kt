@@ -424,4 +424,4 @@ private fun Spanned.withoutItalic(): Spanned {
     return spannable
 }
 
-private const val MARKDOWN_DRAWER_HEIGHT_RATIO = 0.82f
+private const val MARKDOWN_DRAWER_HEIGHT_RATIO = 0.80f

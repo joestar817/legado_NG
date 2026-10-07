@@ -363,7 +363,7 @@ private fun AudioMoreSheet(
     onOpenMotion: () -> Unit,
     onAction: (AudioPlayMoreAction) -> Unit,
 ) {
-    val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.62f).dp
+    val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.60f).dp
     var wakeLock by remember(wakeLockEnabled) { mutableStateOf(wakeLockEnabled) }
     NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
         Column(

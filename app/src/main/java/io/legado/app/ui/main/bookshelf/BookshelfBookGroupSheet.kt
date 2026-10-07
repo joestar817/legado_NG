@@ -170,7 +170,7 @@ class BookshelfBookGroupSheet private constructor(
         onGroupClick: (Long) -> Unit,
     ) {
         var createGroupDialogVisible by rememberSaveable { mutableStateOf(false) }
-        val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.58f).dp
+        val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.60f).dp
         val newGroupTitle = stringResource(R.string.bookshelf_new_group)
         val items = listOf(
             NgCompactDrawerSelectionItem(

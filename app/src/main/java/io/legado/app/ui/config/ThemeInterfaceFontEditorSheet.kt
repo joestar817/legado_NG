@@ -179,14 +179,28 @@ internal fun ThemeInterfaceFontEditorSheet(onDismissRequest: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                NgFloatingTabBar(
-                    items = listOf(NgFloatingTabSpec(text = stringResource(R.string.font_mode_system)),
-                        NgFloatingTabSpec(text = stringResource(R.string.font_mode_custom))),
-                    selectedIndex = if (customTab) 1 else 0,
-                    onTabSelected = { if (!saving) customTab = it == 1 }, modifier = Modifier.fillMaxWidth(),
-                    size = NgFloatingTabBarSize.COMPACT,
-                )
-                Spacer(Modifier.height(8.dp))
+                TabRow(
+                    selectedTabIndex = if (customTab) 1 else 0,
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = Color.Transparent,
+                    contentColor = Color(NgTheme.colors.primary),
+                ) {
+                    listOf(R.string.font_mode_system, R.string.font_mode_custom).forEachIndexed { index, label ->
+                        val selected = index == (if (customTab) 1 else 0)
+                        Tab(
+                            selected = selected,
+                            onClick = { if (!saving) customTab = index == 1 },
+                            text = {
+                                Text(
+                                    text = stringResource(label),
+                                    color = Color(if (selected) NgTheme.colors.primary else NgTheme.colors.onSurface),
+                                    fontSize = 14.sp,
+                                )
+                            },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
                 error?.let { Text(it, color = Color(NgTheme.colors.error), fontSize = 12.sp) }
                 val rows = if (!customTab) NgInterfaceFontStore.systemChoices.mapIndexed { i, value -> InterfaceFontEntry(value, names[i]) }
                     else entries.let { files ->

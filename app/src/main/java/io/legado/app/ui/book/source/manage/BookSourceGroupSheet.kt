@@ -143,7 +143,7 @@ internal class BookSourceAddGroupSheet(
         onGroupClick: (String) -> Unit,
     ) {
         var createGroupDialogVisible by rememberSaveable { mutableStateOf(false) }
-        val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.58f).dp
+        val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.60f).dp
         val items = listOf(
             NgCompactDrawerSelectionItem(
                 iconRes = R.drawable.ic_add,

@@ -56,7 +56,7 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
     private fun updateWindowHeight() {
         dialog?.window?.setLayout(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            if (toolbarEditorVisible) (resources.displayMetrics.heightPixels * 0.76f).toInt()
+            if (toolbarEditorVisible) (resources.displayMetrics.heightPixels * 0.75f).toInt()
             else READ_MORE_CONFIG_WINDOW_HEIGHT_DP.dpToPx(),
         )
     }

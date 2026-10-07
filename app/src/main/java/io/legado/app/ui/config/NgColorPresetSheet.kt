@@ -76,7 +76,7 @@ internal fun NgColorPresetSheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.62f),
+                .fillMaxHeight(0.60f),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             Column(

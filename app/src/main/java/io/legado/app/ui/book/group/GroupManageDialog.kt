@@ -77,7 +77,7 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 
-private const val GROUP_SHEET_MAX_HEIGHT_RATIO = 0.82f
+private const val GROUP_SHEET_MAX_HEIGHT_RATIO = 0.80f
 
 /** 书籍分组管理 NG 抽屉。管理、编辑和新建均在同一个抽屉内完成。 */
 class GroupManageDialog : BottomSheetDialogFragment() {

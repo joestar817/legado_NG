@@ -84,7 +84,7 @@ internal fun AiChatModelSheet(onChanged: () -> Unit, onDismiss: () -> Unit) {
         shape = RectangleShape,
     ) {
         NgBottomDrawerSurface(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.88f),
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.90f),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             AiModelSelectionSheet(

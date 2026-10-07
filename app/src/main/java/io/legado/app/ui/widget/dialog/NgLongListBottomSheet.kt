@@ -31,7 +31,7 @@ class NgLongListBottomSheet(
     title: CharSequence? = null,
     private val showSearch: Boolean = true,
     private val showCloseButton: Boolean = false,
-    private val heightRatio: Float = 0.88f,
+    private val heightRatio: Float = 0.90f,
     private val compact: Boolean = false,
     private val searchInitiallyVisible: Boolean = !compact,
     private val showCompactSearchAction: Boolean = compact,

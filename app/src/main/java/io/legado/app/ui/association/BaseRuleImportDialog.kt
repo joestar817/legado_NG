@@ -91,7 +91,7 @@ import io.legado.app.ui.widget.dialog.CodeDialog
 import io.legado.app.utils.showDialogFragment
 import kotlinx.coroutines.launch
 
-private const val RULE_IMPORT_SHEET_HEIGHT_RATIO = 0.88f
+private const val RULE_IMPORT_SHEET_HEIGHT_RATIO = 0.90f
 private val RuleImportRowMinHeight = 54.dp
 
 enum class RuleImportState(

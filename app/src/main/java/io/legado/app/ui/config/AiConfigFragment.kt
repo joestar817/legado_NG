@@ -2091,7 +2091,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             ) ?: return@setOnShowListener
             sheet.setBackgroundColor(Color.TRANSPARENT)
             sheet.layoutParams = sheet.layoutParams.apply {
-                height = (resources.displayMetrics.heightPixels * 0.88f).toInt()
+                height = (resources.displayMetrics.heightPixels * 0.90f).toInt()
             }
             BottomSheetBehavior.from(sheet).apply {
                 skipCollapsed = true

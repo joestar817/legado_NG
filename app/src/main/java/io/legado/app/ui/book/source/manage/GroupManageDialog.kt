@@ -70,7 +70,7 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 
-private const val SOURCE_GROUP_SHEET_MAX_HEIGHT_RATIO = 0.82f
+private const val SOURCE_GROUP_SHEET_MAX_HEIGHT_RATIO = 0.80f
 private val SourceGroupRowHeight = 56.dp
 
 /** 书源分组管理抽屉，只承载新建、编辑和删除。 */

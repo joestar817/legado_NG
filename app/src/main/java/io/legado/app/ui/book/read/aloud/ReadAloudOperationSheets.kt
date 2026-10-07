@@ -312,7 +312,7 @@ private fun ReadAloudModeSheetContent(
             NgBottomDrawerSurface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = (screenHeightDp * 0.82f).dp),
+                    .heightIn(max = (screenHeightDp * 0.80f).dp),
             ) {
                 Column(
                     modifier = Modifier
@@ -917,7 +917,7 @@ private fun ReadAloudMoreSheetContent(
     onClearCache: () -> Unit,
     onStop: () -> Unit,
 ) {
-    val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.86f).dp
+    val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
     NgBottomDrawerSurface(
         modifier = Modifier
             .fillMaxWidth()

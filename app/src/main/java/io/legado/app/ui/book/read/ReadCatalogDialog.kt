@@ -308,7 +308,7 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
         ) ?: return
         sheet.setBackgroundColor(AndroidColor.TRANSPARENT)
         sheet.layoutParams = sheet.layoutParams.apply {
-            height = (resources.displayMetrics.heightPixels * 0.82f).toInt()
+            height = (resources.displayMetrics.heightPixels * 0.80f).toInt()
         }
         BottomSheetBehavior.from(sheet).apply {
             skipCollapsed = true
@@ -668,7 +668,7 @@ private fun ReadCatalogPanel(
 
     if (visualStyle == CatalogDrawerVisualStyle.READING_COMPACT_SIDE) {
         val drawerState = rememberDrawerState(initialValue = DrawerValue.Open)
-        val sideWidth = (LocalConfiguration.current.screenWidthDp.dp * 0.76f)
+        val sideWidth = (LocalConfiguration.current.screenWidthDp.dp * 0.75f)
             .coerceAtMost(420.dp)
         val compactMenuWidth = if (selectedTab == CatalogTab.Bookmarks) {
             bookmarkMenuWidth.coerceAtMost(sideWidth - 24.dp)

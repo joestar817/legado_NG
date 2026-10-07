@@ -71,7 +71,7 @@ internal fun LauncherIconSelectionSheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.48f),
+                .fillMaxHeight(0.50f),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             Column(

@@ -260,7 +260,7 @@ class CrashLogsDialog : BottomSheetDialogFragment() {
     }
 
     private companion object {
-        const val SHEET_HEIGHT_RATIO = 0.82f
+        const val SHEET_HEIGHT_RATIO = 0.80f
     }
 }
 

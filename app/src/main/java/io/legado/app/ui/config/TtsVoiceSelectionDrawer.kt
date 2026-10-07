@@ -191,7 +191,7 @@ internal fun TtsVoiceSelectionDrawerContent(
     refreshing: Boolean = false,
     onRefresh: (() -> Unit)? = null,
 ) {
-    val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
+    val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.90f).dp
     var query by remember { mutableStateOf("") }
     var selectedLanguages by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selectedGenders by remember { mutableStateOf<Set<String>>(emptySet()) }

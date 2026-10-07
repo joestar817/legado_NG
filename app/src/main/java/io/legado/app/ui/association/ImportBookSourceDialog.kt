@@ -106,7 +106,7 @@ import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val BOOK_SOURCE_IMPORT_SHEET_HEIGHT_RATIO = 0.88f
+private const val BOOK_SOURCE_IMPORT_SHEET_HEIGHT_RATIO = 0.90f
 private val BookSourceImportRowMinHeight = 54.dp
 
 /** 导入书源抽屉，保留原选择、覆盖策略、分组与源码编辑语义。 */

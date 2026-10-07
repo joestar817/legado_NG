@@ -62,7 +62,7 @@ internal fun ThemeFontScaleEditorSheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.28f),
+                .fillMaxHeight(0.30f),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             val snapshot = NgTheme.snapshot

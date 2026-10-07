@@ -187,7 +187,7 @@ class SourcePickerDialog : BottomSheetDialogFragment() {
     }
 
     private companion object {
-        const val SHEET_HEIGHT_RATIO = 0.88f
+        const val SHEET_HEIGHT_RATIO = 0.90f
     }
 }
 

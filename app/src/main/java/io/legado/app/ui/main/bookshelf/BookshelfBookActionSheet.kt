@@ -138,7 +138,7 @@ class BookshelfBookActionSheet(
 
     @Composable
     private fun SheetContent() {
-        val maxContentHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
+        val maxContentHeight = (LocalConfiguration.current.screenHeightDp * 0.90f).dp
         NgBottomDrawerSurface(
             modifier = Modifier.fillMaxWidth(),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,

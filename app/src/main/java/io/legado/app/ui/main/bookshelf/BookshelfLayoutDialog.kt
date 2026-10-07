@@ -267,7 +267,7 @@ private fun BookshelfLayoutSheet(
     var settings by rememberSaveable(stateSaver = bookshelfSettingsSaver) { mutableStateOf(BookshelfSettingsDraft()) }
     val profile = profiles[selectedMode]
     var showGridBackground by rememberSaveable { mutableStateOf(AppConfig.bookshelfGridBackground) }
-    val maxDrawerHeight = (LocalConfiguration.current.screenHeightDp * 0.86f).dp
+    val maxDrawerHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
     val mainSelection = selectedMode.value
     val isGridBooks = selectedMode == BookshelfLayoutMode.GRID ||
         selectedMode == BookshelfLayoutMode.GROUP_GRID

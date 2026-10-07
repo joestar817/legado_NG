@@ -227,7 +227,7 @@ private fun NgCoverAlbumSelectionSheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.52f),
+                .fillMaxHeight(0.50f),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             val snapshot = NgTheme.snapshot
