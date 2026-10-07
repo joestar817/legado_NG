@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.util.DisplayMetrics
 import androidx.annotation.Keep
+import androidx.annotation.WorkerThread
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.graphics.toColorInt
 import io.legado.app.R
@@ -335,6 +336,26 @@ object ThemeConfig {
             }
     }
 
+    /** Resolve the current wallpaper for bounded async consumers, without decoding/copying it. */
+    @WorkerThread
+    internal fun drawerBackgroundImagePath(context: Context, isDark: Boolean): String? {
+        val mode = NgThemeModeStore.current(context)
+        if (mode == NgThemePresentationMode.SOFT_GRADIENT || mode == NgThemePresentationMode.EINK) return null
+        val preferenceKey = if (isDark) PreferKey.bgImageN else PreferKey.bgImage
+        val path = if (mode == NgThemePresentationMode.DYNAMIC_SCENE) {
+            val scene = NgDynamicSceneTheme.theme(context)
+            (if (isDark) scene.darkBackground else scene.lightBackground).path
+        } else context.getPrefString(preferenceKey)
+        if (path.isNullOrBlank()) return null
+        return when {
+            path.startsWith(ASSET_BACKGROUND_PREFIX) -> "file:///android_asset/" +
+                resolveBundledBackgroundAssetPath(path.removePrefix(ASSET_BACKGROUND_PREFIX))
+            path.startsWith("http") -> cachedBackgroundPath(context, path, preferenceKey)
+                .takeIf { File(it).isFile }
+            else -> path
+        }
+    }
+
     @Synchronized
     fun getBgImage(context: Context, metrics: DisplayMetrics): Drawable? {
         val presentationMode = NgThemeModeStore.current(context)
@@ -587,8 +608,16 @@ object ThemeConfig {
     /**
      * 新主题管理一次应用完整的日间／夜间颜色和背景，不改变顶部主题模式。
      */
-    internal fun applyManagedTheme(context: Context, theme: NgManagedTheme): Boolean {
+    internal fun applyManagedTheme(
+        context: Context,
+        theme: NgManagedTheme,
+        preparedDrawer: NgPreparedDrawerProfile? = null,
+    ): Boolean {
+        var drawerSettings = preparedDrawer
         return runCatching {
+            if (drawerSettings == null) {
+                drawerSettings = theme.drawerProfile?.let { NgDrawerProfileStore.prepare(context, it) }
+            }
             fun materialize(background: NgThemeBackground, preferenceKey: String): String? {
                 val path = background.path?.takeIf(String::isNotBlank) ?: return null
                 return if (path.startsWith(ASSET_BACKGROUND_PREFIX)) {
@@ -666,13 +695,14 @@ object ThemeConfig {
                     context.putPrefBoolean(PreferKey.coverShowAuthorN, it)
                 }
             }
+            drawerSettings?.let { NgDrawerProfileStore.commit(context, it) }
             BookCover.upDefaultCover()
             postEvent(EventBus.RECREATE, "")
             true
         }.getOrElse { error ->
             AppLog.put("设置主题出错\n$error", error, true)
             false
-        }
+        }.also { drawerSettings?.discard() }
     }
 
     internal fun repairReinstalledThemeBackgrounds(

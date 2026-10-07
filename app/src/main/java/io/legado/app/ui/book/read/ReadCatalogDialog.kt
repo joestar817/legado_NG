@@ -119,6 +119,7 @@ import io.legado.app.model.ReadBook
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgSideDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerDefaults
+import io.legado.app.ui.design.components.compose.rememberNgDrawerThemeProfile
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgBookCover
 import io.legado.app.ui.design.components.compose.NgGlassSurface
@@ -128,6 +129,7 @@ import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgDrawerOptionMenuItem
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.design.theme.NgDrawerPalette
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
 import io.legado.app.utils.observeEvent
@@ -591,12 +593,28 @@ private fun ReadCatalogPanel(
         outline?.let { visibleCatalogRows(it, collapsedVolumes, descending) }
     }
     var visibleChapterCount by remember(chapterCount) { mutableStateOf(chapterCount) }
-    val contentColor = Color(NgTheme.colors.onSurface)
-    val mutedColor = Color(NgTheme.colors.onSurfaceVariant)
-    val accentColor = Color(NgTheme.colors.primary)
-    val selectedContentColor = Color(NgTheme.colors.onPrimary)
+    val drawerThemeProfile = when (visualStyle) {
+        CatalogDrawerVisualStyle.READING_ORIGINAL -> null
+        CatalogDrawerVisualStyle.READING_COMPACT_SIDE -> rememberReadDrawerThemeProfile()
+        CatalogDrawerVisualStyle.LISTENING -> rememberNgDrawerThemeProfile()
+    }
+    val baseSnapshot = NgTheme.snapshot
+    val drawerAppearance = NgDrawerDefaults.rememberAppearance()
+    val primaryStrength = drawerAppearance.primaryStrengthPercent
+    val drawerColors = remember(baseSnapshot, drawerThemeProfile, primaryStrength) {
+        val backgroundColor = drawerThemeProfile
+            ?.takeIf { !baseSnapshot.isEInk && it.source == "custom_color" }
+            ?.forNight(baseSnapshot.isDark)?.backgroundColor
+        if (backgroundColor == null) baseSnapshot.colors else NgDrawerPalette.applyAdaptiveContentCardRoles(
+            baseSnapshot, primaryStrength, backgroundColor,
+        ).colors
+    }
+    val contentColor = Color(drawerColors.onSurface)
+    val mutedColor = Color(drawerColors.onSurfaceVariant)
+    val accentColor = Color(drawerColors.primary)
+    val selectedContentColor = Color(drawerColors.onPrimary)
     val dockColor = if (NgTheme.snapshot.isDark || NgTheme.snapshot.isEInk) {
-        Color(NgTheme.colors.surfaceContainerLow)
+        Color(drawerColors.surfaceContainerLow)
     } else {
         contentColor.copy(alpha = 0.025f)
     }
@@ -683,9 +701,10 @@ private fun ReadCatalogPanel(
             drawerContent = {
                 NgSideDrawerSurface(
                     modifier = Modifier.fillMaxHeight().width(sideWidth),
-                    appearance = NgDrawerDefaults.currentAppearance().copy(transparencyPercent = 0),
+                    appearance = drawerAppearance.copy(transparencyPercent = 0),
                     shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
                     contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+                    themeProfile = drawerThemeProfile,
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize()
@@ -1253,7 +1272,7 @@ private fun ReadCatalogPanel(
             content()
         }
     } else {
-        NgBottomDrawerSurface(modifier = Modifier.fillMaxSize()) {
+        NgBottomDrawerSurface(modifier = Modifier.fillMaxSize(), themeProfile = drawerThemeProfile) {
             content()
         }
     }

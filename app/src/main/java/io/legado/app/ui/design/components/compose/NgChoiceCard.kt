@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,14 +37,15 @@ import io.legado.app.ui.design.theme.NgTheme
 enum class NgChoiceCardVariant {
     HORIZONTAL,
     FORMAT,
+    TEXT,
 }
 
 /** NG 并列单选卡，适用于格式、模式等少量互斥选项。 */
 @Composable
 fun NgChoiceCard(
     title: String,
-    summary: String,
-    @DrawableRes iconRes: Int,
+    summary: String = "",
+    @DrawableRes iconRes: Int? = null,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -51,10 +53,13 @@ fun NgChoiceCard(
 ) {
     val colors = NgTheme.colors
     val isFormatCard = variant == NgChoiceCardVariant.FORMAT
+    val isTextCard = variant == NgChoiceCardVariant.TEXT
     val shape = RoundedCornerShape(
         if (isFormatCard) NgTheme.shapes.largeDp.dp else NgTheme.shapes.mediumDp.dp
     )
     val containerColor = when {
+        isTextCard && selected -> Color(colors.selectedContainer)
+        isTextCard -> ngDrawerContentCardColor()
         !isFormatCard -> Color(colors.cardContainer).copy(
             alpha = NgTheme.effects.containerAlpha
         )
@@ -63,7 +68,7 @@ fun NgChoiceCard(
     Surface(
         onClick = onClick,
         modifier = modifier
-            .heightIn(min = if (isFormatCard) 88.dp else 82.dp)
+            .heightIn(min = if (isTextCard) 60.dp else if (isFormatCard) 88.dp else 82.dp)
             .semantics {
                 role = Role.RadioButton
                 this.selected = selected
@@ -77,20 +82,22 @@ fun NgChoiceCard(
                 alpha = if (selected) 0.9f else 0.22f
             )
         ),
-        shadowElevation = NgTheme.effects.cardElevationDp.dp,
+        shadowElevation = if (isTextCard) 0.dp else NgTheme.effects.cardElevationDp.dp,
     ) {
-        if (isFormatCard) {
+        if (isTextCard) {
+            NgTextChoiceCardContent(title = title, selected = selected)
+        } else if (isFormatCard) {
             NgFormatChoiceCardContent(
                 title = title,
                 summary = summary,
-                iconRes = iconRes,
+                iconRes = requireNotNull(iconRes),
                 selected = selected,
             )
         } else {
             NgHorizontalChoiceCardContent(
                 title = title,
                 summary = summary,
-                iconRes = iconRes,
+                iconRes = requireNotNull(iconRes),
                 selected = selected,
             )
         }
@@ -226,6 +233,42 @@ private fun NgFormatChoiceCardContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+@Composable
+private fun NgTextChoiceCardContent(title: String, selected: Boolean) {
+    val colors = NgTheme.colors
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.padding(end = 20.dp),
+            color = Color(if (selected) colors.primary else colors.onSurface),
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+        )
+        if (selected) {
+            Surface(
+                modifier = Modifier.align(Alignment.CenterEnd).size(16.dp),
+                shape = CircleShape,
+                color = Color(colors.primary),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_check),
+                    contentDescription = null,
+                    modifier = Modifier.padding(3.dp),
+                    tint = Color.White,
+                )
+            }
         }
     }
 }

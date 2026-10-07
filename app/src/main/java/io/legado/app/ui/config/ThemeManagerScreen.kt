@@ -108,6 +108,8 @@ internal fun ThemeManagerScreen(
     onSelectBackground: (Boolean) -> Unit,
     onBackgroundBlurChanged: (Boolean, Int) -> Unit,
     onClearBackground: (Boolean) -> Unit,
+    onSelectDrawerImage: (Boolean) -> Unit,
+    savingTheme: Boolean,
     onSaveTheme: () -> Unit,
     onThemeExport: (NgManagedTheme) -> Unit,
     onThemeDelete: (NgManagedTheme) -> Unit,
@@ -204,6 +206,8 @@ internal fun ThemeManagerScreen(
             onDismissRequest = onDismissThemeEditor,
             onThemeChanged = onDraftThemeChanged,
             onEditBackground = { backgroundActionsDark = it },
+            onSelectDrawerImage = onSelectDrawerImage,
+            savingTheme = savingTheme,
             onSave = onSaveTheme,
             onExport = { onThemeExport(draftTheme) }
         )
@@ -461,6 +465,8 @@ private fun NgThemeEditorSheet(
     onDismissRequest: () -> Unit,
     onThemeChanged: (NgManagedTheme) -> Unit,
     onEditBackground: (Boolean) -> Unit,
+    onSelectDrawerImage: (Boolean) -> Unit,
+    savingTheme: Boolean,
     onSave: () -> Unit,
     onExport: () -> Unit
 ) {
@@ -488,12 +494,13 @@ private fun NgThemeEditorSheet(
             ) {
                 NgLongDrawerHeader(
                     title = stringResource(R.string.ng_theme_edit),
+                    statusText = if (savingTheme) stringResource(R.string.ng_drawer_theme_saving) else null,
                     secondaryActionIconRes = R.drawable.ic_share,
                     secondaryActionContentDescription = stringResource(R.string.share),
-                    onSecondaryActionClick = onExport,
+                    onSecondaryActionClick = if (savingTheme) null else onExport,
                     actionIconRes = R.drawable.ic_save,
                     actionContentDescription = stringResource(R.string.save),
-                    onActionClick = onSave,
+                    onActionClick = if (savingTheme) null else onSave,
                     centerTitle = true,
                 )
                 Box(modifier = Modifier.weight(1f)) {
@@ -501,7 +508,8 @@ private fun NgThemeEditorSheet(
                         theme = draftTheme,
                         copyOnSave = copyOnSave,
                         onThemeChanged = onThemeChanged,
-                        onEditBackground = onEditBackground
+                        onEditBackground = onEditBackground,
+                        onSelectDrawerImage = onSelectDrawerImage,
                     )
                 }
             }

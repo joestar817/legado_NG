@@ -79,6 +79,41 @@ class BackupResourcesTest {
         assertEquals("resolved:image", result.getAsJsonArray("lightImages")[0].asString)
     }
 
+    @Test fun drawerImagesAreCollectedAndRestoredWithoutChangingThemeValues() {
+        val theme = JsonParser.parseString("""{
+            "name":"backup-resource://keep-name",
+            "drawerProfile":{
+                "source":"custom_image",
+                "light":{"imagePath":"/pictures/day.webp"},
+                "dark":{"imagePath":"/pictures/night.webp","backgroundColor":-16049873}
+            }
+        }""").asJsonObject
+        val copied = mutableListOf<String>()
+        BackupResources.collectThemeDrawerImages(theme) { path ->
+            copied += path
+            "backup-resource://resources/${path.substringAfterLast('/')}"
+        }
+        assertEquals(listOf("/pictures/day.webp", "/pictures/night.webp"), copied)
+        val restored = BackupResources.transform(theme) { path ->
+            path.replace("backup-resource://", "/restored/")
+        }.asJsonObject
+        val profile = restored.getAsJsonObject("drawerProfile")
+        assertEquals("/restored/resources/day.webp", profile.getAsJsonObject("light").get("imagePath").asString)
+        assertEquals("/restored/resources/night.webp", profile.getAsJsonObject("dark").get("imagePath").asString)
+        assertEquals("custom_image", profile.get("source").asString)
+        assertEquals(-16049873, profile.getAsJsonObject("dark").get("backgroundColor").asInt)
+        assertEquals("backup-resource://keep-name", restored.get("name").asString)
+    }
+
+    @Test fun absentOrEmptyDrawerImagesDoNotAddBackupResources() {
+        listOf("{}", """{"drawerProfile":null}""",
+            """{"drawerProfile":{"light":{"imagePath":null},"dark":{"imagePath":""}}}""").forEach { raw ->
+            val theme = JsonParser.parseString(raw).asJsonObject
+            BackupResources.collectThemeDrawerImages(theme) { error("No image should be copied") }
+            assertEquals(JsonParser.parseString(raw), theme)
+        }
+    }
+
     @Test fun extractionPreservesNestedResourceBytes() {
         val output = ByteArrayOutputStream()
         ZipOutputStream(output).use {

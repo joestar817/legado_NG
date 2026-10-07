@@ -141,7 +141,7 @@ internal fun ThemeInterfaceFontEditorSheet(onDismissRequest: () -> Unit) {
     ) {
         NgBottomDrawerSurface(
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.40f),
-            contentCardStyle = NgDrawerContentCardStyle.LEGACY,
+            contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             val color = Color(NgTheme.colors.onSurface)
             Column(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
@@ -225,8 +225,8 @@ internal fun ThemeInterfaceFontEditorSheet(onDismissRequest: () -> Unit) {
                         NgManagementListCard(
                             title = font.name,
                             selected = choice == font.uri,
-                            containerColor = Color.White,
-                            titleColor = Color(0xFF202124),
+                            containerColor = ngDrawerContentCardColor(),
+                            titleColor = Color(NgTheme.colors.onSurface),
                             titleFontFamily = displayedFontFamily,
                             size = NgManagementListCardSize.COMPACT_SINGLE_LINE,
                             onClick = if (saving) null else ({
@@ -239,7 +239,7 @@ internal fun ThemeInterfaceFontEditorSheet(onDismissRequest: () -> Unit) {
                                 error = null
                             }),
                         ) {
-                            Text("Aa", color = Color(0xFF202124), fontSize = 20.sp,
+                            Text("Aa", color = Color(NgTheme.colors.onSurface), fontSize = 20.sp,
                                 fontFamily = displayedFontFamily)
                         }
                     }

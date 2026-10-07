@@ -134,13 +134,15 @@ fun NgFormPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(ngDrawerContentCardColor())
-            .border(
-                width = 0.6.dp,
-                color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
+            .ngDrawerImageContentCardShadow(
                 shape = shape,
-            ),
+                fallback = BorderStroke(
+                    0.6.dp,
+                    Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
+                ),
+            )
+            .clip(shape)
+            .background(ngDrawerContentCardColor()),
         content = content,
     )
 }
@@ -270,7 +272,12 @@ fun NgFormInlineTextRow(
     }
 }
 
-/** 分组内打开独立页面或弹层的紧凑当前值行。 */
+enum class NgFormNavigationRowVariant {
+    REGULAR,
+    MEDIA,
+}
+
+/** 分组内打开独立页面或弹层的当前值行，MEDIA 可在值前展示缩略图。 */
 @Composable
 fun NgFormNavigationRow(
     title: String,
@@ -279,12 +286,15 @@ fun NgFormNavigationRow(
     arrowIcon: Painter,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    variant: NgFormNavigationRowVariant = NgFormNavigationRowVariant.REGULAR,
+    valueContent: (@Composable () -> Unit)? = null,
 ) {
     val contentAlpha = if (enabled) 1f else 0.45f
+    val isMediaRow = variant == NgFormNavigationRowVariant.MEDIA
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(if (isMediaRow) 80.dp else 44.dp)
             .clickable(enabled = enabled, onClick = onClick)
             .semantics {
                 role = Role.Button
@@ -303,9 +313,15 @@ fun NgFormNavigationRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        if (valueContent != null) {
+            valueContent()
+            Spacer(Modifier.width(8.dp))
+        }
         Text(
             text = value,
-            color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = contentAlpha),
+            color = Color(
+                if (isMediaRow) NgTheme.colors.primary else NgTheme.colors.onSurfaceVariant
+            ).copy(alpha = contentAlpha),
             fontSize = 13.sp,
             lineHeight = 16.sp,
             maxLines = 1,
@@ -1582,8 +1598,8 @@ fun NgFormActionButton(
         }
     }
     val contentColor = when (variant) {
-        NgButtonVariant.PRIMARY -> Color.White
-        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> Color.White
+        NgButtonVariant.PRIMARY -> ngDrawerPrimaryContentColor()
+        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> ngDrawerPrimaryContentColor()
         NgButtonVariant.TONAL,
         NgButtonVariant.NEUTRAL -> Color(colors.onSurface)
         NgButtonVariant.DANGER -> Color.White

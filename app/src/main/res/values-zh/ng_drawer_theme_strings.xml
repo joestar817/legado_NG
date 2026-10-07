@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ng_drawer_background_source">背景来源</string>
+    <string name="ng_drawer_background_theme_color">使用主题颜色</string>
+    <string name="ng_drawer_background_custom_color">自定义颜色</string>
+    <string name="ng_drawer_background_theme_image">使用主题背景图片</string>
+    <string name="ng_drawer_background_custom_image">自定义背景图片</string>
+    <string name="ng_drawer_background_day_color">日间颜色</string>
+    <string name="ng_drawer_background_night_color">夜间颜色</string>
+    <string name="ng_drawer_background_day_image">日间图片</string>
+    <string name="ng_drawer_background_night_image">夜间图片</string>
+    <string name="ng_drawer_background_choose">选择</string>
+    <string name="ng_drawer_background_change">更换</string>
+    <string name="ng_drawer_theme_saving">保存中…</string>
+    <string name="ng_drawer_theme_save_failed">保存失败：%1$s</string>
+    <string name="ng_drawer_theme_apply_failed">未能应用主题，请重试</string>
+</resources>

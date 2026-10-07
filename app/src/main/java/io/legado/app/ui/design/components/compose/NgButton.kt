@@ -51,7 +51,7 @@ fun NgButton(
             contentPadding = contentPadding,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(colors.primary),
-                contentColor = Color.White
+                contentColor = ngDrawerPrimaryContentColor()
             ),
             content = content
         )
@@ -64,7 +64,7 @@ fun NgButton(
             contentPadding = contentPadding,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(colors.primary),
-                contentColor = Color.White
+                contentColor = ngDrawerPrimaryContentColor()
             ),
             content = content
         )

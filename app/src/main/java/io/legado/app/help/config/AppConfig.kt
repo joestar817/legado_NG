@@ -324,62 +324,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             )
         }
 
-    var ngDrawerTransparency: Int
-        get() = NgDrawerAppearanceConfig.normalizePercent(
-            appCtx.getPrefInt(
-                PreferKey.ngDrawerTransparency,
-                NgDrawerAppearanceConfig.DEFAULT_TRANSPARENCY_PERCENT
-            )
-        )
-        set(value) {
-            appCtx.putPrefInt(
-                PreferKey.ngDrawerTransparency,
-                NgDrawerAppearanceConfig.normalizePercent(value)
-            )
-        }
-
-    var ngDrawerPrimaryStrength: Int
-        get() = NgDrawerAppearanceConfig.normalizePercent(
-            appCtx.getPrefInt(
-                PreferKey.ngDrawerPrimaryStrength,
-                NgDrawerAppearanceConfig.DEFAULT_PRIMARY_STRENGTH_PERCENT
-            )
-        )
-        set(value) {
-            appCtx.putPrefInt(
-                PreferKey.ngDrawerPrimaryStrength,
-                NgDrawerAppearanceConfig.normalizePercent(value)
-            )
-        }
-
-    var ngDrawerHorizontalMarginDp: Int
-        get() = NgDrawerAppearanceConfig.normalizeHorizontalMarginDp(
-            appCtx.getPrefInt(
-                PreferKey.ngDrawerHorizontalMarginDp,
-                NgDrawerAppearanceConfig.DEFAULT_HORIZONTAL_MARGIN_DP
-            )
-        )
-        set(value) {
-            appCtx.putPrefInt(
-                PreferKey.ngDrawerHorizontalMarginDp,
-                NgDrawerAppearanceConfig.normalizeHorizontalMarginDp(value)
-            )
-        }
-
-    var ngDrawerCornerRadiusDp: Int
-        get() = NgDrawerAppearanceConfig.normalizeCornerRadiusDp(
-            appCtx.getPrefInt(
-                PreferKey.ngDrawerCornerRadiusDp,
-                NgDrawerAppearanceConfig.DEFAULT_CORNER_RADIUS_DP
-            )
-        )
-        set(value) {
-            appCtx.putPrefInt(
-                PreferKey.ngDrawerCornerRadiusDp,
-                NgDrawerAppearanceConfig.normalizeCornerRadiusDp(value)
-            )
-        }
-
     val screenOrientation: String?
         get() = appCtx.getPrefString(PreferKey.screenOrientation)
 
@@ -567,9 +511,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
                 }
             }
         }
-    val showHome: Boolean
-        get() = appCtx.getPrefBoolean(PreferKey.showHome, true)
-
 
     var saveTabPosition: Int
         get() = appCtx.getPrefInt(PreferKey.saveTabPosition, 0)
@@ -625,6 +566,9 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         set(value) {
             appCtx.putPrefString(PreferKey.defaultFilePicker, value)
         }
+
+    val showHome: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.showHome, true)
 
     val showDiscovery: Boolean
         get() = appCtx.getPrefBoolean(PreferKey.showDiscovery, true)
@@ -826,7 +770,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         get() = appCtx.getPrefString(PreferKey.defaultNarratorTtsEngineId)
         set(value) {
             appCtx.putPrefString(PreferKey.defaultNarratorTtsEngineId, value)
-            DailyReadingTracker.setEnabled(value)
         }
 
     var defaultNarratorTtsVoiceId: String?
@@ -880,6 +823,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     var enableReadRecord: Boolean
         get() = appCtx.getPrefBoolean(PreferKey.enableReadRecord, true)
         set(value) {
+            DailyReadingTracker.setEnabled(value)
             appCtx.putPrefBoolean(PreferKey.enableReadRecord, value)
         }
 

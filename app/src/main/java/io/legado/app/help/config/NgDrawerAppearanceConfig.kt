@@ -3,9 +3,9 @@ package io.legado.app.help.config
 import kotlin.math.roundToInt
 
 /**
- * 全局 NG 抽屉的用户外观参数。
+ * NG 抽屉的内部默认材质与几何规则。
  *
- * 颜色始终来自当前 NG 主题；这里仅保存用户对材质强度与几何形态的选择。
+ * 背景来源由独立设置管理；这里的参数不再作为用户偏好保存。
  */
 object NgDrawerAppearanceConfig {
 
@@ -21,15 +21,9 @@ object NgDrawerAppearanceConfig {
     const val MIN_HORIZONTAL_MARGIN_DP = 0
     const val MAX_HORIZONTAL_MARGIN_DP = 32
     const val HORIZONTAL_MARGIN_STEP_DP = 2
-    const val HORIZONTAL_MARGIN_SLIDER_STEPS =
-        (MAX_HORIZONTAL_MARGIN_DP - MIN_HORIZONTAL_MARGIN_DP) /
-            HORIZONTAL_MARGIN_STEP_DP - 1
     const val MIN_CORNER_RADIUS_DP = 0
     const val MAX_CORNER_RADIUS_DP = 40
     const val CORNER_RADIUS_STEP_DP = 2
-    const val CORNER_RADIUS_SLIDER_STEPS =
-        (MAX_CORNER_RADIUS_DP - MIN_CORNER_RADIUS_DP) /
-            CORNER_RADIUS_STEP_DP - 1
 
     fun normalizePercent(value: Int): Int = value.coerceIn(MIN_PERCENT, MAX_PERCENT)
 

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.annotation.Keep
 import com.google.gson.annotations.SerializedName
 import io.legado.app.constant.PreferKey
+import io.legado.app.constant.AppLog
 import io.legado.app.ui.design.theme.NgColorGenerationMode
 import io.legado.app.ui.design.theme.NgColorMath
 import io.legado.app.ui.design.theme.NgColorSpec
@@ -18,6 +19,10 @@ import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.statusBarHeight
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -190,6 +195,8 @@ internal data class NgManagedTheme(
     val ownedCoverAlbumIds: List<String>? = null,
     @SerializedName("sceneProfile")
     val sceneProfile: NgThemeSceneProfile? = null,
+    @SerializedName("drawerProfile")
+    val drawerProfile: NgThemeDrawerProfile? = null,
 ) {
     fun normalized(): NgManagedTheme = copy(
         schemaVersion = NG_MANAGED_THEME_SCHEMA_VERSION,
@@ -208,6 +215,7 @@ internal data class NgManagedTheme(
             .distinct()
             .takeIf { it.isNotEmpty() },
         sceneProfile = sceneProfile?.normalized()?.takeIf { it.sceneType() != null },
+        drawerProfile = drawerProfile?.normalized(),
     )
 
     fun resolvePackageAsset(relativePath: String?): File? {
@@ -357,6 +365,7 @@ internal object NgThemeLibraryStore {
             packageRootPath = active?.packageRootPath,
             resourceProfile = active?.resourceProfile ?: NgThemeResourceProfile(),
             ownedCoverAlbumIds = active?.ownedCoverAlbumIds,
+            drawerProfile = NgDrawerProfileStore.snapshot(context),
             coverProfile = NgThemeCoverProfile(
                 applyAlbumSelection = true,
                 albumId = NgCoverAlbumStore.current(context).selectedAlbumId,
@@ -374,6 +383,11 @@ internal object NgThemeLibraryStore {
         context: Context,
         profile: NgThemeBarProfile?
     ): NgThemeBarProfile = profile.withFallback(currentBarProfile(context))
+
+    fun editableDrawerProfile(
+        context: Context,
+        profile: NgThemeDrawerProfile?,
+    ): NgThemeDrawerProfile = (profile ?: NgDrawerProfileStore.snapshot(context)).normalized()
 
     fun currentThemeName(context: Context): String {
         val state = current(context)
@@ -397,9 +411,11 @@ internal object NgThemeLibraryStore {
 
     fun addOrReplace(context: Context, theme: NgManagedTheme): NgManagedTheme = synchronized(lock) {
         ensureInitialized(context)
-        val normalized = theme.normalized()
-        require(normalized.id.isNotEmpty() && normalized.name.isNotEmpty()) { "主题数据不完整" }
-        require(!normalized.isBuiltIn) { "内置主题不能被覆盖" }
+        val candidate = theme.normalized()
+        require(candidate.id.isNotEmpty() && candidate.name.isNotEmpty()) { "主题数据不完整" }
+        require(!candidate.isBuiltIn) { "内置主题不能被覆盖" }
+        val prepared = NgThemeDrawerAssets.prepare(context, candidate)
+        val normalized = prepared.theme
         val current = mutableState.value
         val replacedIds = current.savedThemes
             .filter { it.id == normalized.id || it.name.equals(normalized.name, true) }
@@ -408,8 +424,19 @@ internal object NgThemeLibraryStore {
             addAll(current.savedThemes.filterNot { it.id in replacedIds })
             add(normalized)
         }.sortedBy { it.name.lowercase() }
-        persistThemes(context, updated)
+        try {
+            persistThemes(context, updated)
+        } catch (error: Throwable) {
+            prepared.discard()
+            throw error
+        }
         mutableState.value = current.copy(savedThemes = updated)
+        NgThemeDrawerAssets.discardDrafts(context, candidate.drawerProfile)
+        NgThemeDrawerAssets.removeUnreferenced(
+            context,
+            current.savedThemes.filter { it.id in replacedIds },
+            updated,
+        )
         normalized
     }
 
@@ -444,6 +471,7 @@ internal object NgThemeLibraryStore {
         mutableState.value = NgThemeLibraryState(updated, nextActive)
         val orphanedAlbumIds = orphanedCoverAlbumIds(removed, updated)
         NgCoverAlbumStore.removeImported(context, orphanedAlbumIds)
+        NgThemeDrawerAssets.removeUnreferenced(context, listOf(removed), updated)
         removed.packageRootPath
             ?.takeIf { root -> updated.none { it.packageRootPath == root } }
             ?.let { deleteOwnedPackageRoot(context, it) }
@@ -485,7 +513,32 @@ internal object NgThemeLibraryStore {
         true
     }
 
-    fun apply(context: Context, theme: NgManagedTheme): Boolean {
+    /** User-confirmed theme application finishes resource preparation before Main-thread apply. */
+    suspend fun applyAsync(context: Context, theme: NgManagedTheme): Boolean {
+        val applicationContext = context.applicationContext
+        var prepared: NgPreparedDrawerProfile? = null
+        return try {
+            withContext(NonCancellable) {
+                prepared = withContext(Dispatchers.IO) {
+                    theme.drawerProfile?.let { NgDrawerProfileStore.prepare(applicationContext, it) }
+                }
+                withContext(Dispatchers.Main.immediate) { apply(applicationContext, theme, prepared) }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            AppLog.put("设置主题出错\n$error", error, true)
+            false
+        } finally {
+            prepared?.discard()
+        }
+    }
+
+    fun apply(
+        context: Context,
+        theme: NgManagedTheme,
+        preparedDrawer: NgPreparedDrawerProfile? = null,
+    ): Boolean {
         val previousActiveId = synchronized(lock) {
             ensureInitialized(context)
             val previous = mutableState.value.activeThemeId
@@ -493,7 +546,7 @@ internal object NgThemeLibraryStore {
             mutableState.value = mutableState.value.copy(activeThemeId = theme.id)
             previous
         }
-        if (ThemeConfig.applyManagedTheme(context, theme)) return true
+        if (ThemeConfig.applyManagedTheme(context, theme, preparedDrawer)) return true
         synchronized(lock) {
             persistActive(context, previousActiveId)
             mutableState.value = mutableState.value.copy(activeThemeId = previousActiveId)
@@ -659,6 +712,27 @@ internal object NgBuiltInThemes {
         ),
     )
 
+    val storybook = NgManagedTheme(
+        id = "builtin.ng.storybook_house",
+        name = "绘本书屋",
+        colors = summer.colors.copy(
+            darkSeed = 0xFFF3B953.toInt(),
+            manualDark = NgManualColorSet(
+                primary = 0xFFF3B953.toInt(),
+                secondary = 0xFF253953.toInt(),
+                primaryText = 0xFFFFF1D2.toInt(),
+                secondaryText = 0xFFADC3E1.toInt(),
+                background = 0xFF0B192F.toInt(),
+                labelContainer = 0xFF253953.toInt(),
+            ),
+            darkTopBarTextMode = NgTopBarTextMode.LIGHT,
+        ),
+        lightBackground = NgThemeBackground("${BACKGROUND_PREFIX}reading_ng_storybook_house.webp"),
+        darkBackground = NgThemeBackground("${BACKGROUND_PREFIX}reading_ng_storybook_house_dark.webp"),
+        barProfile = standardFloatingBarProfile,
+        drawerProfile = NgThemeDrawerProfile(source = "theme_image"),
+    )
+
     val sakura = dynamicTheme(
         id = "builtin.ng.sakura",
         name = "湖畔樱花",
@@ -675,7 +749,7 @@ internal object NgBuiltInThemes {
 
     val defaultTheme = autumn
 
-    val all = listOf(summer, autumn)
+    val all = listOf(summer, autumn, storybook)
 
     private fun dynamicTheme(
         id: String,

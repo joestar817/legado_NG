@@ -277,6 +277,7 @@ fun NgVisualSurface(
     liquidBackdrop: NgLiquidGlassBackdrop? = LocalNgLiquidGlassBackdrop.current,
     viewBackdropSource: View? = null,
     transparentBackdrop: (@Composable BoxScope.() -> Unit)? = null,
+    surfaceDecoration: (@Composable BoxScope.() -> Unit)? = null,
     materialViewport: NgGlassMaterialViewport? = null,
     visualSystemOverride: NgVisualSystem? = null,
     liquidSpecOverride: NgLiquidGlassSpec? = null,
@@ -302,6 +303,7 @@ fun NgVisualSurface(
             style = style,
             contentPadding = contentPadding,
             backdrop = transparentBackdrop,
+            surfaceDecoration = surfaceDecoration,
             materialViewport = materialViewport,
             content = content,
         )
@@ -334,6 +336,7 @@ fun NgVisualSurface(
             style = liquidStyle,
             spec = spec,
             contentPadding = contentPadding,
+            surfaceDecoration = surfaceDecoration,
             content = content,
         )
     } else {
@@ -347,6 +350,7 @@ fun NgVisualSurface(
             style = liquidStyle,
             spec = spec,
             contentPadding = contentPadding,
+            surfaceDecoration = surfaceDecoration,
             content = content,
         )
     }
@@ -361,6 +365,7 @@ private fun NgLiquidGlassSurface(
     style: NgGlassStyle,
     spec: NgLiquidGlassSpec,
     contentPadding: PaddingValues,
+    surfaceDecoration: (@Composable BoxScope.() -> Unit)?,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
@@ -391,6 +396,9 @@ private fun NgLiquidGlassSurface(
                     .matchParentSize()
                     .ngGlassLayer(shape, style, materialViewport = null),
             )
+            if (surfaceDecoration != null) {
+                Box(Modifier.matchParentSize().clip(shape), content = surfaceDecoration)
+            }
             Column(
                 modifier = Modifier.padding(contentPadding),
                 content = content,
@@ -410,6 +418,7 @@ private fun NgViewLiquidGlassSurface(
     style: NgGlassStyle,
     spec: NgLiquidGlassSpec,
     contentPadding: PaddingValues,
+    surfaceDecoration: (@Composable BoxScope.() -> Unit)?,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val segmented = shape as? NgSegmentedGlassShape
@@ -453,6 +462,9 @@ private fun NgViewLiquidGlassSurface(
                     .matchParentSize()
                     .ngGlassLayer(shape, style, materialViewport = null),
             )
+            if (surfaceDecoration != null) {
+                Box(Modifier.matchParentSize().clip(shape), content = surfaceDecoration)
+            }
             Column(
                 modifier = Modifier.then(contentShape?.let { Modifier.clip(it) } ?: Modifier)
                     .padding(contentPadding),

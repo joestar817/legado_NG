@@ -58,8 +58,10 @@ internal fun ThemeEditScreen(
     theme: NgManagedTheme,
     copyOnSave: Boolean,
     onThemeChanged: (NgManagedTheme) -> Unit,
-    onEditBackground: (Boolean) -> Unit
+    onEditBackground: (Boolean) -> Unit,
+    onSelectDrawerImage: (Boolean) -> Unit,
 ) {
+    var drawerExpanded by rememberSaveable { mutableStateOf(false) }
     ThemeColorConfigScreen(
         colors = theme.colors,
         onColorsChanged = { onThemeChanged(theme.copy(colors = it)) },
@@ -92,6 +94,24 @@ internal fun ThemeEditScreen(
                         background = theme.darkBackground,
                         onClick = { onEditBackground(true) }
                     )
+                }
+            }
+            item(key = "theme-drawers") {
+                NgFormGroup(title = stringResource(R.string.ng_drawer_appearance)) {
+                    ThemeCompactExpandableRow(
+                        title = stringResource(R.string.ng_drawer_background_source),
+                        summary = ngDrawerBackgroundSourceName(theme.drawerProfile?.source ?: "theme_color"),
+                        expanded = drawerExpanded,
+                        onExpandedChange = { drawerExpanded = it },
+                    ) {
+                        NgDrawerBackgroundSettingsContent(
+                            profile = theme.drawerProfile,
+                            colors = theme.colors,
+                            onProfileChanged = { onThemeChanged(theme.copy(drawerProfile = it)) },
+                            onProfileChangeFinished = {},
+                            onSelectImage = onSelectDrawerImage,
+                        )
+                    }
                 }
             }
             item(key = "theme-bars") {

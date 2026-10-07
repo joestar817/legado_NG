@@ -313,14 +313,7 @@
     <string name="ng_visual_system">Component material</string>
     <string name="ng_visual_system_transparent_glass">Transparent glass</string>
     <string name="ng_visual_system_liquid_glass">Liquid glass</string>
-    <string name="ng_drawer_appearance">Drawer appearance</string>
-    <string name="ng_drawer_appearance_summary">Transparency %1$d%% · Primary %2$d%% · Margin %3$ddp · Radius %4$ddp</string>
-    <string name="ng_drawer_transparency">Transparency</string>
-    <string name="ng_drawer_primary_strength">Primary color strength</string>
-    <string name="ng_drawer_horizontal_margin">Drawer margin</string>
-    <string name="ng_drawer_corner_radius">Corner radius</string>
-    <string name="ng_drawer_percent_value">%1$d%%</string>
-    <string name="ng_drawer_dp_value">%1$ddp</string>
+    <string name="ng_drawer_appearance">Drawer background</string>
     <string name="theme_setting_s">Some settings related to interface or color</string>
     <string name="other_setting">Other settings</string>
     <string name="other_setting_s">Some function-related settings</string>

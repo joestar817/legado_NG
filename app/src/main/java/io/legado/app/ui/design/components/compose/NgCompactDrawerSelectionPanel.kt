@@ -79,10 +79,12 @@ fun NgCompactDrawerPanel(
     scrollState: ScrollState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val shape = RoundedCornerShape(NgTheme.shapes.largeDp.dp)
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(NgTheme.shapes.largeDp.dp))
+            .ngDrawerImageContentCardShadow(shape)
+            .clip(shape)
             .background(ngDrawerContentCardColor())
             .then(
                 if (scrollState != null) {

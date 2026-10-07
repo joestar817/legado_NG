@@ -88,7 +88,7 @@ class NgBuiltInThemePresetTest {
     }
 
     @Test
-    fun `managed theme library exposes completed seasons in calendar order`() {
+    fun `managed theme library exposes completed seasons and storybook preset`() {
         val expected = NgThemeBarProfile(
             useFloatingBottomBar = true,
             floatingBottomBarBottomDistancePx = 40,
@@ -104,6 +104,7 @@ class NgBuiltInThemePresetTest {
             listOf(
                 "builtin.ng.summer_childhood",
                 "builtin.ng.autumn_mountains",
+                "builtin.ng.storybook_house",
             ),
             NgBuiltInThemes.all.map { it.id },
         )

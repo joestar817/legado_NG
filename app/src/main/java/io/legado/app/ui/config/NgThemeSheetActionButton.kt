@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import io.legado.app.ui.design.components.compose.ngDrawerThemedActionContainerColor
 import io.legado.app.ui.design.theme.NgTheme
 
 private val NgThemeSheetActionContainerColor = Color(0x88FFFFF9)
@@ -35,6 +36,7 @@ internal fun NgThemeSheetActionButton(
     touchSize: Dp = 44.dp,
     content: @Composable () -> Unit
 ) {
+    val containerColor = ngDrawerThemedActionContainerColor(NgThemeSheetActionContainerColor)
     Box(
         modifier = modifier
             .size(touchSize)
@@ -48,11 +50,11 @@ internal fun NgThemeSheetActionButton(
                 .size(36.dp)
                 .clip(CircleShape)
                 .background(
-                    NgThemeSheetActionContainerColor.copy(
+                    containerColor.copy(
                         alpha = if (enabled) {
-                            NgThemeSheetActionContainerColor.alpha
+                            containerColor.alpha
                         } else {
-                            NgThemeSheetActionContainerColor.alpha * 0.45f
+                            containerColor.alpha * 0.45f
                         }
                     )
                 ),

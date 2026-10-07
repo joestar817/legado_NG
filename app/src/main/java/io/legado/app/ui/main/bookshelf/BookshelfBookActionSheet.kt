@@ -61,6 +61,7 @@ import io.legado.app.ui.design.components.compose.NgThemedActionIcon
 import io.legado.app.ui.design.components.compose.NgThemedActionIconKind
 import io.legado.app.ui.design.components.compose.NgThemedActionIconTone
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
+import io.legado.app.ui.design.components.compose.ngDrawerImageContentCardShadow
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.showWithAppNavigationBarVisibility
@@ -430,6 +431,7 @@ class BookshelfBookActionSheet(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
+                .ngDrawerImageContentCardShadow(RoundedCornerShape(NgTheme.shapes.largeDp.dp))
                 .clickable { dismissThen { callback.onDelete(book) } },
             color = ngDrawerContentCardColor(),
             shape = RoundedCornerShape(NgTheme.shapes.largeDp.dp),

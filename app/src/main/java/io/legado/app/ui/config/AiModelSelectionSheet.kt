@@ -51,6 +51,9 @@ import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSearchBarVariant
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
+import io.legado.app.ui.design.components.compose.ngDrawerPrimaryTextColor
+import io.legado.app.ui.design.components.compose.ngDrawerSecondaryTextColor
+import io.legado.app.ui.design.components.compose.ngDrawerThemedContainerColor
 import io.legado.app.ui.design.theme.NgTheme
 
 @Immutable
@@ -184,7 +187,7 @@ internal fun AiModelSelectionSheet(
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = 4.dp),
-                color = colorResource(R.color.ng_on_surface),
+                color = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
                 fontSize = 17.sp,
                 lineHeight = 21.sp,
                 letterSpacing = 0.sp,
@@ -213,7 +216,7 @@ internal fun AiModelSelectionSheet(
                         painter = painterResource(R.drawable.ic_refresh_black_24dp),
                         contentDescription = stringResource(R.string.ai_refresh_all_models),
                         modifier = Modifier.size(22.dp),
-                        tint = colorResource(R.color.ng_on_surface),
+                        tint = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
                     )
                 }
             }
@@ -243,7 +246,7 @@ internal fun AiModelSelectionSheet(
                     painter = painterResource(R.drawable.ic_ai_locate_selected),
                     contentDescription = stringResource(R.string.ai_locate_selected_model),
                     modifier = Modifier.size(22.dp),
-                    tint = colorResource(R.color.ng_on_surface).copy(
+                    tint = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)).copy(
                         alpha = if (selectedFullIndex != null) 1f else 0.35f
                     ),
                 )
@@ -266,7 +269,7 @@ internal fun AiModelSelectionSheet(
                     tint = if (filterActive) {
                         Color(NgTheme.colors.primary)
                     } else {
-                        colorResource(R.color.ng_on_surface)
+                        ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface))
                     },
                 )
             }
@@ -279,7 +282,7 @@ internal fun AiModelSelectionSheet(
                     .fillMaxWidth()
                     .padding(bottom = 10.dp)
                     .clip(RoundedCornerShape(18.dp))
-                    .background(colorResource(R.color.ng_settings_group))
+                    .background(ngDrawerThemedContainerColor(colorResource(R.color.ng_settings_group)))
                     .padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 10.dp),
             ) {
                 NgSearchBar(
@@ -409,7 +412,7 @@ internal fun AiModelSelectionSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 44.dp),
-                        color = colorResource(R.color.ng_on_surface_variant),
+                        color = ngDrawerSecondaryTextColor(colorResource(R.color.ng_on_surface_variant)),
                         fontSize = 15.sp,
                         lineHeight = 18.sp,
                         letterSpacing = 0.sp,
@@ -510,7 +513,7 @@ private fun AiModelSelectionCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = model.name,
-                    color = colorResource(R.color.ng_on_surface),
+                    color = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
                     fontSize = 16.sp,
                     lineHeight = 19.sp,
                     letterSpacing = 0.sp,
@@ -580,7 +583,7 @@ private fun AiFollowAssistantModelCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = label,
-                    color = colorResource(R.color.ng_on_surface),
+                    color = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
                     fontSize = 16.sp,
                     lineHeight = 19.sp,
                     letterSpacing = 0.sp,
@@ -591,7 +594,7 @@ private fun AiFollowAssistantModelCard(
                 Text(
                     text = summary,
                     modifier = Modifier.padding(top = 4.dp),
-                    color = colorResource(R.color.ng_on_surface_variant),
+                    color = ngDrawerSecondaryTextColor(colorResource(R.color.ng_on_surface_variant)),
                     fontSize = 13.sp,
                     lineHeight = 16.sp,
                     letterSpacing = 0.sp,

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.data.entities.Book
 import io.legado.app.help.config.EpubLayoutPreferences
+import io.legado.app.ui.book.read.rememberReadDrawerThemeProfile
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerDefaults
 import io.legado.app.ui.design.theme.NgTheme
@@ -30,7 +31,7 @@ internal fun EpubLayoutSheet(
     onDismiss: () -> Unit,
 ) {
     val maxHeight = minOf(READ_MORE_CONFIG_WINDOW_HEIGHT_DP.dp, LocalConfiguration.current.screenHeightDp.dp)
-    val appearance = NgDrawerDefaults.currentAppearance().copy(horizontalMarginDp = 0, cornerRadiusDp = 20)
+    val appearance = NgDrawerDefaults.rememberAppearance().copy(horizontalMarginDp = 0, cornerRadiusDp = 20)
     var choices by remember(book.bookUrl) { mutableStateOf(EpubLayoutPreferences.read(book.bookUrl)) }
     fun change(key: String, value: Boolean) {
         EpubLayoutPreferences.set(book.bookUrl, key, value)
@@ -47,6 +48,7 @@ internal fun EpubLayoutSheet(
         NgBottomDrawerSurface(
             modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(top = 8.dp),
             appearance = appearance,
+            themeProfile = rememberReadDrawerThemeProfile(),
         ) {
             val contentColor = Color(NgTheme.colors.onSurface)
             Column(

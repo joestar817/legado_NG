@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.colorResource
@@ -58,6 +59,7 @@ import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
+import io.legado.app.ui.design.components.compose.ngDrawerPrimaryTextColor
 import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgLazyListFastScrollerVariant
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
@@ -66,7 +68,6 @@ import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgInterfaceFontMarkwonPlugin
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.widget.text.ScrollTextView
-import io.legado.app.utils.getCompatColor
 import io.legado.app.utils.setMarkdown
 import io.legado.app.utils.showDialogFragment
 import io.noties.markwon.Markwon
@@ -217,6 +218,7 @@ private fun MarkdownTextContentLayout(
     showDrawerHandle: Boolean,
     modifier: Modifier,
 ) {
+    val textColor = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface))
     val scrollViewRef = remember { arrayOfNulls<ScrollTextView>(1) }
     var scrollFraction by remember { mutableFloatStateOf(0f) }
     var canScroll by remember { mutableStateOf(false) }
@@ -265,7 +267,7 @@ private fun MarkdownTextContentLayout(
                 .fillMaxWidth()
                 .weight(1f),
             color = ngDrawerContentCardColor(),
-            contentColor = colorResource(R.color.ng_on_surface),
+            contentColor = textColor,
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(
                 width = if (NgTheme.snapshot.isEInk) 1.dp else 0.6.dp,
@@ -286,7 +288,7 @@ private fun MarkdownTextContentLayout(
                                 endPadding,
                                 contentPadding,
                             )
-                            setTextColor(context.getCompatColor(R.color.ng_on_surface))
+                            setTextColor(textColor.toArgb())
                             setTextIsSelectable(true)
                             setBackgroundColor(AndroidColor.TRANSPARENT)
                             isVerticalScrollBarEnabled = false
@@ -304,6 +306,7 @@ private fun MarkdownTextContentLayout(
                     },
                     modifier = Modifier.fillMaxSize(),
                     update = { textView ->
+                        textView.setTextColor(textColor.toArgb())
                         renderedMarkdown?.let { rendered ->
                             if (textView.tag !== rendered.content) {
                                 textView.setMarkdown(

@@ -15,6 +15,8 @@ import io.legado.app.base.BaseFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.help.config.NgManagedTheme
 import io.legado.app.help.config.NgThemeLibraryStore
+import io.legado.app.help.config.NgThemeDrawerAssets
+import io.legado.app.help.config.NgThemeDrawerProfile
 import io.legado.app.help.config.NgThemePackageManager
 import io.legado.app.help.config.isBuiltIn
 import io.legado.app.model.BookCover
@@ -27,6 +29,8 @@ import io.legado.app.utils.postEvent
 import io.legado.app.utils.CreateDocumentContract
 import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.toastOnUi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -35,10 +39,16 @@ import java.util.UUID
 
 class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
 
-    private var pendingExportTheme: NgManagedTheme? = null
+    private var pendingExportPackagePath: String? = null
+    private var preparingExport by mutableStateOf(false)
     private var originalEditTheme by mutableStateOf<NgManagedTheme?>(null)
     private var draftEditTheme by mutableStateOf<NgManagedTheme?>(null)
     private var pendingDarkBackground: Boolean? = null
+    private var editingSession: String? = null
+    private var pendingDrawerImage: Pair<String, Boolean>? = null
+    private var savingTheme by mutableStateOf(false)
+    private var applyingTheme = false
+    private var copyingDrawerImage by mutableStateOf(false)
     private var pendingMd3ImportUri: Uri? = null
     private var md3ImportDraft by mutableStateOf<Md3ThemeImportDraft?>(null)
     private var md3ImportInstalling by mutableStateOf(false)
@@ -46,13 +56,29 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     private val exportTheme = registerForActivityResult(
         CreateDocumentContract("application/zip")
     ) { uri ->
-        val theme = pendingExportTheme
-        pendingExportTheme = null
-        if (uri == null || theme == null) return@registerForActivityResult
-        viewLifecycleOwner.lifecycleScope.launch {
-            NgThemePackageManager.exportTheme(requireContext(), theme, uri)
-                .onSuccess { toastOnUi(R.string.ng_theme_export_success) }
-                .onFailure { toastOnUi(getString(R.string.ng_theme_export_failed, it.message.orEmpty())) }
+        val path = pendingExportPackagePath
+        pendingExportPackagePath = null
+        val context = requireContext().applicationContext
+        if (uri == null || path == null) {
+            discardExportPackage(context, path)
+            return@registerForActivityResult
+        }
+        lifecycleScope.launch {
+            try {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    val source = frozenExportPackage(context, path) ?: error("主题包已失效")
+                    val output = context.contentResolver.openOutputStream(uri)
+                        ?: error("无法写入主题包")
+                    output.use { target -> source.inputStream().use { it.copyTo(target) } }
+                }
+                toastOnUi(R.string.ng_theme_export_success)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                toastOnUi(context.getString(R.string.ng_theme_export_failed, error.message.orEmpty()))
+            } finally {
+                discardExportPackage(context, path)
+            }
         }
     }
 
@@ -91,9 +117,50 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
         }
     }
 
+    private val selectDrawerImage = registerForActivityResult(SelectFileContract()) { uri ->
+        val pending = pendingDrawerImage
+        pendingDrawerImage = null
+        if (uri == null || pending == null || pending.first != editingSession) return@registerForActivityResult
+        val context = requireContext().applicationContext
+        copyingDrawerImage = true
+        viewLifecycleOwner.lifecycleScope.launch {
+            var copiedPath: String? = null
+            try {
+                val path = NgThemeDrawerAssets.copyDraft(context, uri)
+                copiedPath = path
+                val current = draftEditTheme
+                if (editingSession == pending.first && current != null) {
+                    val profile = current.drawerProfile ?: NgThemeDrawerProfile()
+                    val oldPath = profile.forNight(pending.second).imagePath
+                    draftEditTheme = current.copy(drawerProfile = profile.updated(
+                        pending.second, profile.forNight(pending.second).copy(imagePath = path),
+                    ).copy(source = "custom_image"))
+                    copiedPath = null
+                    if (oldPath != path && draftEditTheme?.drawerProfile?.light?.imagePath != oldPath &&
+                        draftEditTheme?.drawerProfile?.dark?.imagePath != oldPath) {
+                        NgThemeDrawerAssets.discardDraft(context, oldPath)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (editingSession == pending.first) {
+                    toastOnUi(getString(R.string.ng_theme_background_copy_failed, error.message.orEmpty()))
+                }
+            } finally {
+                NgThemeDrawerAssets.discardDraft(context, copiedPath)
+                if (editingSession == pending.first) copyingDrawerImage = false
+            }
+        }
+    }
+
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         activity?.setTitle(R.string.ng_theme_management)
         setSharedTitleBarVisible(false)
+        if (pendingExportPackagePath == null) {
+            pendingExportPackagePath = savedInstanceState?.getString(PENDING_EXPORT_PACKAGE)
+                ?.takeIf { frozenExportPackage(requireContext(), it) != null }
+        }
         (view as ComposeView).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
@@ -107,12 +174,12 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                         onBack = { requireActivity().onBackPressedDispatcher.onBackPressed() },
                         onSaveCurrent = ::saveCurrentTheme,
                         onImportPackage = ::importThemePackage,
-                        onThemeSelected = { NgThemeLibraryStore.apply(requireContext(), it) },
-                        onThemeEdit = ::editTheme,
+                        onThemeSelected = ::selectTheme,
+                        onThemeEdit = { editTheme(it) },
                         editingTheme = originalEditTheme,
                         draftTheme = draftEditTheme,
                         onDismissThemeEditor = ::dismissThemeEditor,
-                        onDraftThemeChanged = { draftEditTheme = it },
+                        onDraftThemeChanged = ::updateThemeDraft,
                         onSelectBackground = ::selectThemeBackground,
                         onBackgroundBlurChanged = { dark, blur ->
                             updateBackground(dark) { it.copy(blur = blur) }
@@ -120,6 +187,8 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                         onClearBackground = { dark ->
                             updateBackground(dark) { it.copy(path = null) }
                         },
+                        onSelectDrawerImage = ::selectThemeDrawerImage,
+                        savingTheme = savingTheme || copyingDrawerImage || preparingExport,
                         onSaveTheme = ::saveEditedTheme,
                         onThemeExport = ::requestExport,
                         onThemeDelete = ::deleteTheme,
@@ -148,7 +217,32 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     private fun saveCurrentTheme(name: String) {
-        NgThemeLibraryStore.saveCurrent(requireContext(), name)
+        val context = requireContext().applicationContext
+        lifecycleScope.launch {
+            runCatching {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    NgThemeLibraryStore.saveCurrent(context, name)
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                toastOnUi(context.getString(R.string.ng_drawer_theme_save_failed, error.message.orEmpty()))
+            }
+        }
+    }
+
+    private fun selectTheme(theme: NgManagedTheme) {
+        if (applyingTheme || savingTheme || preparingExport) return
+        val context = requireContext().applicationContext
+        applyingTheme = true
+        lifecycleScope.launch {
+            try {
+                if (!NgThemeLibraryStore.applyAsync(context, theme)) {
+                    toastOnUi(R.string.ng_drawer_theme_apply_failed)
+                }
+            } finally {
+                applyingTheme = false
+            }
+        }
     }
 
     private fun importThemePackage() {
@@ -160,8 +254,11 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     private suspend fun importNativeTheme(uri: Uri) {
         NgThemePackageManager.importTheme(requireContext(), uri)
             .onSuccess { theme ->
-                NgThemeLibraryStore.apply(requireContext(), theme)
-                toastOnUi(getString(R.string.ng_theme_import_success, theme.name))
+                if (NgThemeLibraryStore.applyAsync(requireContext().applicationContext, theme)) {
+                    toastOnUi(getString(R.string.ng_theme_import_success, theme.name))
+                } else {
+                    toastOnUi(R.string.ng_drawer_theme_apply_failed)
+                }
             }
             .onFailure { toastOnUi(getString(R.string.ng_theme_import_failed, it.message.orEmpty())) }
     }
@@ -191,21 +288,41 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     private fun editTheme(theme: NgManagedTheme) {
+        if (savingTheme || copyingDrawerImage || preparingExport) return
+        NgThemeDrawerAssets.discardDrafts(requireContext(), draftEditTheme?.drawerProfile)
+        editingSession = UUID.randomUUID().toString()
         val editableBarProfile = NgThemeLibraryStore.editableBarProfile(
             requireContext(),
             theme.barProfile,
         )
         originalEditTheme = theme
-        draftEditTheme = theme.copy(barProfile = editableBarProfile)
+        draftEditTheme = theme.copy(
+            barProfile = editableBarProfile,
+            drawerProfile = NgThemeLibraryStore.editableDrawerProfile(requireContext(), theme.drawerProfile),
+        )
+    }
+
+    private fun updateThemeDraft(theme: NgManagedTheme) {
+        if (savingTheme || copyingDrawerImage || preparingExport) return
+        val oldSource = draftEditTheme?.drawerProfile?.source ?: "theme_color"
+        val newSource = theme.drawerProfile?.source ?: "theme_color"
+        if (newSource != oldSource && newSource != "custom_image") pendingDrawerImage = null
+        draftEditTheme = theme
     }
 
     private fun dismissThemeEditor() {
+        if (savingTheme || preparingExport) return
+        NgThemeDrawerAssets.discardDrafts(requireContext(), draftEditTheme?.drawerProfile)
         originalEditTheme = null
         draftEditTheme = null
         pendingDarkBackground = null
+        pendingDrawerImage = null
+        editingSession = null
+        copyingDrawerImage = false
     }
 
     private fun saveEditedTheme() {
+        if (savingTheme || copyingDrawerImage || preparingExport) return
         val context = requireContext()
         val original = originalEditTheme ?: return
         val draft = draftEditTheme?.normalized() ?: return
@@ -229,23 +346,65 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
             toastOnUi(R.string.ng_theme_name_conflict)
             return
         }
-        val saved = NgThemeLibraryStore.addOrReplace(
-            context,
-            draft.copy(
-                id = if (builtIn) "local.${UUID.randomUUID()}" else original.id,
-                name = targetName
-            )
-        )
-        val wasActive = NgThemeLibraryStore.current(context).activeThemeId == original.id
-        dismissThemeEditor()
-        if (wasActive && !builtIn) {
-            view?.post { NgThemeLibraryStore.apply(context, saved) }
-        } else {
-            toastOnUi(R.string.ng_theme_saved_success)
+        val applyAfterSave = NgThemeLibraryStore.current(context).activeThemeId == original.id && !builtIn
+        val session = editingSession
+        val applicationContext = context.applicationContext
+        savingTheme = true
+        lifecycleScope.launch {
+            var storedTheme: NgManagedTheme? = null
+            try {
+                val (saved, applied) = withContext(NonCancellable) {
+                    val stored = withContext(Dispatchers.IO) {
+                        NgThemeLibraryStore.addOrReplace(
+                            applicationContext,
+                            draft.copy(
+                                id = if (builtIn) "local.${UUID.randomUUID()}" else original.id,
+                                name = targetName,
+                            ),
+                        )
+                    }
+                    storedTheme = stored
+                    stored to (!applyAfterSave || NgThemeLibraryStore.applyAsync(applicationContext, stored))
+                }
+                if (editingSession != session) return@launch
+                if (!applied) {
+                    // The theme is saved, so retry against its materialized images and identity.
+                    originalEditTheme = saved
+                    draftEditTheme = saved
+                    toastOnUi(R.string.ng_drawer_theme_apply_failed)
+                    return@launch
+                }
+                savingTheme = false
+                dismissThemeEditor()
+                if (!applyAfterSave) toastOnUi(R.string.ng_theme_saved_success)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (editingSession == session) {
+                    storedTheme?.let {
+                        originalEditTheme = it
+                        draftEditTheme = it
+                    }
+                    toastOnUi(getString(R.string.ng_drawer_theme_save_failed, error.message.orEmpty()))
+                }
+            } finally {
+                if (editingSession != session || storedTheme != null) {
+                    NgThemeDrawerAssets.discardDrafts(applicationContext, draft.drawerProfile)
+                }
+                savingTheme = false
+            }
         }
     }
 
+    private fun selectThemeDrawerImage(dark: Boolean) {
+        if (savingTheme || copyingDrawerImage || preparingExport) return
+        val session = editingSession ?: return
+        pendingDrawerImage = session to dark
+        selectDrawerImage.launch(arrayOf("image/*"))
+    }
+
     private fun selectThemeBackground(dark: Boolean) {
+        if (savingTheme || copyingDrawerImage || preparingExport) return
         pendingDarkBackground = dark
         selectBackground.launch(arrayOf("image/*"))
     }
@@ -291,11 +450,62 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     private fun requestExport(theme: NgManagedTheme) {
-        pendingExportTheme = theme
-        exportTheme.launch("${theme.name.normalizeFileName()}.ngtheme")
+        if (savingTheme || copyingDrawerImage || preparingExport || pendingExportPackagePath != null) return
+        val context = requireContext().applicationContext
+        val session = editingSession
+        preparingExport = true
+        lifecycleScope.launch {
+            var frozenPath: String? = null
+            try {
+                // Pin all draft resources into a complete package before opening the system picker.
+                val frozen = withContext(NonCancellable + Dispatchers.IO) {
+                    val root = File(context.cacheDir, EXPORT_DRAFT_DIR).apply { mkdirs() }
+                    val target = File(root, "${UUID.randomUUID()}.ngtheme")
+                    frozenPath = target.absolutePath
+                    try {
+                        NgThemePackageManager.exportTheme(context, theme, Uri.fromFile(target)).getOrThrow()
+                        target
+                    } catch (error: Throwable) {
+                        target.delete()
+                        throw error
+                    }
+                }
+                frozenPath = frozen.absolutePath
+                if (!isAdded || view == null) return@launch
+                pendingExportPackagePath = frozenPath
+                exportTheme.launch("${theme.name.normalizeFileName()}.ngtheme")
+                frozenPath = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                pendingExportPackagePath = null
+                toastOnUi(context.getString(R.string.ng_theme_export_failed, error.message.orEmpty()))
+            } finally {
+                discardExportPackage(context, frozenPath)
+                if (editingSession != session) {
+                    NgThemeDrawerAssets.discardDrafts(context, theme.drawerProfile)
+                }
+                preparingExport = false
+            }
+        }
+    }
+
+    private fun frozenExportPackage(context: android.content.Context, path: String): File? = runCatching {
+        val root = File(context.cacheDir, EXPORT_DRAFT_DIR).canonicalFile
+        File(path).canonicalFile.takeIf { it.parentFile == root && it.isFile }
+    }.getOrNull()
+
+    private fun discardExportPackage(context: android.content.Context, path: String?) {
+        path?.let { frozenExportPackage(context, it)?.delete() }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(PENDING_EXPORT_PACKAGE, pendingExportPackagePath)
+        super.onSaveInstanceState(outState)
     }
 
     private fun deleteTheme(theme: NgManagedTheme) {
+        if (savingTheme || preparingExport) return
         runCatching { NgThemeLibraryStore.remove(requireContext(), theme.id) }
             .onSuccess { removed ->
                 if (removed != null) {
@@ -307,12 +517,32 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     override fun onDestroyView() {
+        if (!savingTheme && !preparingExport) {
+            context?.let { NgThemeDrawerAssets.discardDrafts(it, draftEditTheme?.drawerProfile) }
+        }
+        originalEditTheme = null
+        draftEditTheme = null
+        editingSession = null
+        pendingDrawerImage = null
+        pendingDarkBackground = null
+        copyingDrawerImage = false
         setSharedTitleBarVisible(true)
         super.onDestroyView()
     }
 
+    override fun onDestroy() {
+        if (activity?.isChangingConfigurations != true) {
+            context?.let { discardExportPackage(it, pendingExportPackagePath) }
+            pendingExportPackagePath = null
+        }
+        super.onDestroy()
+    }
+
     private companion object {
-        const val BACKGROUND_DIR = "ng_theme_backgrounds"
-        const val MAX_BACKGROUND_BYTES = 32L * 1024 * 1024
+        private const val PENDING_EXPORT_PACKAGE = "pendingExportPackage"
+        private const val EXPORT_DRAFT_DIR = "ng_theme_export_drafts"
+
+        private const val BACKGROUND_DIR = "ng_theme_backgrounds"
+        private const val MAX_BACKGROUND_BYTES = 32L * 1024 * 1024
     }
 }

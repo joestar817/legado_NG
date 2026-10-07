@@ -248,6 +248,8 @@ import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgSearchBar
 import io.legado.app.ui.design.components.compose.NgSideDrawerSurface
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
+import io.legado.app.ui.design.components.compose.ngDrawerPrimaryTextColor
+import io.legado.app.ui.design.components.compose.ngDrawerSecondaryTextColor
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeGradientBackground
@@ -3370,12 +3372,12 @@ private fun DrawerBottomActionButton(
 
 @Composable
 private fun drawerPrimaryContentColor(): Color {
-    return Color(NgTheme.colors.primary)
+    return ngDrawerPrimaryTextColor(Color(NgTheme.colors.primary))
 }
 
 @Composable
 private fun drawerSecondaryContentColor(): Color {
-    return Color(NgTheme.colors.primary).copy(alpha = 0.78f)
+    return ngDrawerSecondaryTextColor(Color(NgTheme.colors.primary).copy(alpha = 0.78f))
 }
 
 @Composable

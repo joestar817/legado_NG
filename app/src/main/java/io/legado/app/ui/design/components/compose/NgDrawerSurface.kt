@@ -2,7 +2,9 @@ package io.legado.app.ui.design.components.compose
 
 import android.content.Context
 import androidx.annotation.ColorInt
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,8 +17,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,16 +31,19 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
-import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgDrawerAppearanceConfig
+import io.legado.app.help.config.NgThemeDrawerProfile
+import io.legado.app.help.config.NgDrawerProfileStore
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgDrawerPalette
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
+import io.legado.app.ui.design.theme.NgThemeSnapshot
 
 enum class NgDrawerDragHandleVariant {
     STANDARD,
@@ -49,6 +59,90 @@ private val LocalNgDrawerContentCardStyle = staticCompositionLocalOf {
     NgDrawerContentCardStyle.LEGACY
 }
 
+private val LocalNgDrawerHasThemeProfile = staticCompositionLocalOf { false }
+private val LocalNgDrawerHasBackgroundImage = compositionLocalOf { false }
+
+/** Observe current drawer settings; theme previews may explicitly override this profile. */
+@Composable
+fun rememberNgDrawerThemeProfile(): NgThemeDrawerProfile? {
+    val context = LocalContext.current
+    val state by remember(context) { NgDrawerProfileStore.observe(context) }.collectAsState()
+    return state.profile
+}
+
+/** Reusable by reader-owned drawer hosts without changing their geometry or floating tools. */
+@Composable
+internal fun NgDrawerThemeProvider(
+    snapshot: NgThemeSnapshot,
+    contentCardStyle: NgDrawerContentCardStyle,
+    hasThemeProfile: Boolean,
+    hasBackgroundImage: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val effectiveCardStyle = if (hasThemeProfile) NgDrawerContentCardStyle.ADAPTIVE else contentCardStyle
+    NgAppTheme(snapshot = snapshot, updateSystemBars = false) {
+        CompositionLocalProvider(
+            LocalNgDrawerContentCardStyle provides effectiveCardStyle,
+            LocalNgDrawerHasThemeProfile provides hasThemeProfile,
+            LocalNgDrawerHasBackgroundImage provides hasBackgroundImage,
+            content = content,
+        )
+    }
+}
+
+/** Keep an opted-in content card opaque only while a drawer image is displayed. */
+@Composable
+internal fun ngDrawerImageContentCardColor(fallback: Color): Color =
+    if (LocalNgDrawerHasBackgroundImage.current) fallback.copy(alpha = 1f) else fallback
+
+/** Place before clipping so the image-backed card casts a soft, borderless shadow. */
+@Composable
+internal fun Modifier.ngDrawerImageContentCardShadow(
+    shape: Shape,
+    fallback: BorderStroke? = null,
+): Modifier = if (LocalNgDrawerHasBackgroundImage.current) {
+    shadow(
+        elevation = 4.dp,
+        shape = shape,
+        clip = false,
+        ambientColor = Color.Black.copy(alpha = 0.12f),
+        spotColor = Color.Black.copy(alpha = 0.18f),
+    )
+} else if (fallback != null) {
+    border(fallback, shape)
+} else this
+
+/** Only theme-owned drawer controls use their paired onPrimary role. */
+@Composable
+internal fun ngDrawerPrimaryContentColor(): Color = if (LocalNgDrawerHasThemeProfile.current) {
+    Color(NgTheme.colors.onPrimary)
+} else Color.White
+
+@Composable
+internal fun ngDrawerThemedActionContainerColor(fallback: Color): Color =
+    if (LocalNgDrawerHasThemeProfile.current) Color(NgTheme.colors.cardContainer) else fallback
+
+/** Explicit fallbacks preserve established colors outside theme-owned drawers. */
+@Composable
+internal fun ngDrawerPrimaryTextColor(fallback: Color): Color =
+    if (LocalNgDrawerHasThemeProfile.current) Color(NgTheme.colors.onSurface) else fallback
+
+@Composable
+internal fun ngDrawerSecondaryTextColor(fallback: Color): Color =
+    if (LocalNgDrawerHasThemeProfile.current) Color(NgTheme.colors.onSurfaceVariant) else fallback
+
+@Composable
+internal fun ngDrawerAccentColor(fallback: Color): Color =
+    if (LocalNgDrawerHasThemeProfile.current) Color(NgTheme.colors.primary) else fallback
+
+@Composable
+internal fun ngDrawerThemedContainerColor(fallback: Color): Color =
+    if (LocalNgDrawerHasThemeProfile.current) Color(NgTheme.colors.cardContainer) else fallback
+
+@Composable
+internal fun ngDrawerThemedOutlineColor(fallback: Color): Color =
+    if (LocalNgDrawerHasThemeProfile.current) Color(NgTheme.colors.outlineVariant) else fallback
+
 /** 当前全局 NG 抽屉的外观快照。 */
 @Immutable
 data class NgDrawerAppearance(
@@ -61,44 +155,61 @@ data class NgDrawerAppearance(
 object NgDrawerDefaults {
 
     fun currentAppearance(): NgDrawerAppearance = NgDrawerAppearance(
-        transparencyPercent = AppConfig.ngDrawerTransparency,
-        primaryStrengthPercent = AppConfig.ngDrawerPrimaryStrength,
-        horizontalMarginDp = AppConfig.ngDrawerHorizontalMarginDp,
-        cornerRadiusDp = AppConfig.ngDrawerCornerRadiusDp,
+        transparencyPercent = NgDrawerAppearanceConfig.DEFAULT_TRANSPARENCY_PERCENT,
+        primaryStrengthPercent = NgDrawerAppearanceConfig.DEFAULT_PRIMARY_STRENGTH_PERCENT,
+        horizontalMarginDp = NgDrawerAppearanceConfig.DEFAULT_HORIZONTAL_MARGIN_DP,
+        cornerRadiusDp = NgDrawerAppearanceConfig.DEFAULT_CORNER_RADIUS_DP,
     )
 
     @Composable
-    fun style(appearance: NgDrawerAppearance): NgGlassStyle =
-        NgGlassDefaults.drawerStyle(
-            transparencyPercent = appearance.transparencyPercent,
-            primaryStrengthPercent = appearance.primaryStrengthPercent,
-        )
+    fun rememberAppearance(): NgDrawerAppearance = remember { currentAppearance() }
+
+    @Composable
+    fun style(
+        appearance: NgDrawerAppearance,
+        backgroundColor: Int? = null,
+    ): NgGlassStyle = NgGlassDefaults.drawerStyle(
+        transparencyPercent = appearance.transparencyPercent,
+        primaryStrengthPercent = appearance.primaryStrengthPercent,
+        backgroundColor = backgroundColor,
+    )
 
     @ColorInt
-    fun adaptiveContentCardColor(context: Context): Int =
-        NgDrawerPalette.resolveAdaptiveContentCardColor(
-            snapshot = NgThemeResolver.resolve(context),
+    fun adaptiveContentCardColor(context: Context): Int {
+        val snapshot = NgThemeResolver.resolve(context)
+        return NgDrawerPalette.resolveAdaptiveContentCardColor(
+            snapshot = snapshot,
             primaryStrengthPercent = NgDrawerAppearanceConfig.normalizePercent(
                 currentAppearance().primaryStrengthPercent
             ),
+            backgroundColor = NgDrawerProfileStore.current(context)
+                ?.takeIf { it.source == "custom_color" }?.forNight(snapshot.isDark)?.backgroundColor,
         )
+    }
 }
 
 /**
  * 全局 NG 底部抽屉的公共承载面。
  *
- * 它只消费当前主题语义色，不嵌入主题背景图。边距为 0 时与屏幕等宽；边距大于 0
- * 时抽屉成为独立圆角承载面。业务页面只负责标题、筛选区和内容结构。
+ * 当前设置仅选择背景来源，自定义颜色之外的内容颜色沿用自动语义。
+ * 主题保存并应用同一设置。图片固定在外壳，不参与内容测量或滚动。
  */
 @Composable
 fun NgBottomDrawerSurface(
     modifier: Modifier = Modifier,
-    appearance: NgDrawerAppearance = NgDrawerDefaults.currentAppearance(),
+    appearance: NgDrawerAppearance = NgDrawerDefaults.rememberAppearance(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
     contentCardStyle: NgDrawerContentCardStyle = NgDrawerContentCardStyle.LEGACY,
+    themeProfile: NgThemeDrawerProfile? = rememberNgDrawerThemeProfile(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val baseSnapshot = NgTheme.snapshot
+    val backgroundColor = remember(themeProfile, baseSnapshot.isDark, baseSnapshot.isEInk) {
+        themeProfile?.takeIf { !baseSnapshot.isEInk && it.source == "custom_color" }
+            ?.forNight(baseSnapshot.isDark)?.backgroundColor
+    }
+    val imageSource = rememberNgDrawerImageSource(themeProfile)
+    val imageReady = remember(imageSource) { mutableStateOf(false) }
     val normalized = remember(appearance) { appearance.normalized() }
     val radius = normalized.cornerRadiusDp.dp
     val shape = if (normalized.horizontalMarginDp == 0) {
@@ -110,36 +221,51 @@ fun NgBottomDrawerSurface(
         baseSnapshot,
         normalized.primaryStrengthPercent,
         contentCardStyle,
+        backgroundColor,
     ) {
         when (contentCardStyle) {
             NgDrawerContentCardStyle.LEGACY -> NgDrawerPalette.applySemanticRoles(
                 snapshot = baseSnapshot,
                 primaryStrengthPercent = normalized.primaryStrengthPercent,
+                backgroundColor = backgroundColor,
             )
 
             NgDrawerContentCardStyle.ADAPTIVE ->
                 NgDrawerPalette.applyAdaptiveContentCardRoles(
                     snapshot = baseSnapshot,
                     primaryStrengthPercent = normalized.primaryStrengthPercent,
+                    backgroundColor = backgroundColor,
                 )
         }
     }
-    NgAppTheme(
+    // Resolve the material from the original snapshot, before installing local content roles.
+    val customGlassStyle = backgroundColor?.let { NgDrawerDefaults.style(normalized, it) }
+    NgDrawerThemeProvider(
         snapshot = semanticSnapshot,
-        updateSystemBars = false,
+        contentCardStyle = contentCardStyle,
+        hasThemeProfile = backgroundColor != null,
+        hasBackgroundImage = imageReady.value,
     ) {
-        CompositionLocalProvider(LocalNgDrawerContentCardStyle provides contentCardStyle) {
-            val nestedScrollInteropConnection = rememberNestedScrollInteropConnection()
-            NgGlassSurface(
-                modifier = modifier
-                    .padding(horizontal = normalized.horizontalMarginDp.dp)
-                    .nestedScroll(nestedScrollInteropConnection),
-                shape = shape,
-                style = NgDrawerDefaults.style(normalized),
-                contentPadding = contentPadding,
-                content = content,
-            )
-        }
+        val nestedScrollInteropConnection = rememberNestedScrollInteropConnection()
+        NgGlassSurface(
+            modifier = modifier
+                .padding(horizontal = normalized.horizontalMarginDp.dp)
+                .nestedScroll(nestedScrollInteropConnection),
+            shape = shape,
+            style = customGlassStyle ?: NgDrawerDefaults.style(normalized),
+            surfaceDecoration = imageSource?.let { source ->
+                {
+                    NgDrawerBackdrop(
+                        imagePath = source.path,
+                        cacheKey = source.cacheKey,
+                        modifier = Modifier.matchParentSize(),
+                        onImageReadyChanged = { imageReady.value = it },
+                    )
+                }
+            },
+            contentPadding = contentPadding,
+            content = content,
+        )
     }
 }
 
@@ -154,18 +280,25 @@ fun ngDrawerContentCardColor(): Color = when (LocalNgDrawerContentCardStyle.curr
  * 全局 NG 侧边抽屉承载面。
  *
  * 颜色、透明度与主色浓度复用底部抽屉设置，并作为侧栏唯一背景层；几何由侧边
- * 业务结构显式提供，不消费全局边距或圆角参数，也不允许额外叠加背景 backdrop。
+ * 业务结构显式提供，不消费全局边距或圆角参数。图片共用同一受控背景层。
  */
 @Composable
 fun NgSideDrawerSurface(
     modifier: Modifier = Modifier,
-    appearance: NgDrawerAppearance = NgDrawerDefaults.currentAppearance(),
+    appearance: NgDrawerAppearance = NgDrawerDefaults.rememberAppearance(),
     shape: Shape = RectangleShape,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     contentCardStyle: NgDrawerContentCardStyle = NgDrawerContentCardStyle.LEGACY,
+    themeProfile: NgThemeDrawerProfile? = rememberNgDrawerThemeProfile(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val baseSnapshot = NgTheme.snapshot
+    val backgroundColor = remember(themeProfile, baseSnapshot.isDark, baseSnapshot.isEInk) {
+        themeProfile?.takeIf { !baseSnapshot.isEInk && it.source == "custom_color" }
+            ?.forNight(baseSnapshot.isDark)?.backgroundColor
+    }
+    val imageSource = rememberNgDrawerImageSource(themeProfile)
+    val imageReady = remember(imageSource) { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
     val normalized = remember(appearance) { appearance.normalized() }
     val materialViewport = remember(
@@ -181,34 +314,49 @@ fun NgSideDrawerSurface(
         baseSnapshot,
         normalized.primaryStrengthPercent,
         contentCardStyle,
+        backgroundColor,
     ) {
         when (contentCardStyle) {
             NgDrawerContentCardStyle.LEGACY -> NgDrawerPalette.applySemanticRoles(
                 snapshot = baseSnapshot,
                 primaryStrengthPercent = normalized.primaryStrengthPercent,
+                backgroundColor = backgroundColor,
             )
 
             NgDrawerContentCardStyle.ADAPTIVE ->
                 NgDrawerPalette.applyAdaptiveContentCardRoles(
                     snapshot = baseSnapshot,
                     primaryStrengthPercent = normalized.primaryStrengthPercent,
+                    backgroundColor = backgroundColor,
                 )
         }
     }
-    NgAppTheme(
+    // Resolve the material from the original snapshot, before installing local content roles.
+    val customGlassStyle = backgroundColor?.let { NgDrawerDefaults.style(normalized, it) }
+    NgDrawerThemeProvider(
         snapshot = semanticSnapshot,
-        updateSystemBars = false,
+        contentCardStyle = contentCardStyle,
+        hasThemeProfile = backgroundColor != null,
+        hasBackgroundImage = imageReady.value,
     ) {
-        CompositionLocalProvider(LocalNgDrawerContentCardStyle provides contentCardStyle) {
-            NgGlassSurface(
-                modifier = modifier,
-                shape = shape,
-                style = NgDrawerDefaults.style(normalized),
-                materialViewport = materialViewport,
-                contentPadding = contentPadding,
-                content = content,
-            )
-        }
+        NgGlassSurface(
+            modifier = modifier,
+            shape = shape,
+            style = customGlassStyle ?: NgDrawerDefaults.style(normalized),
+            surfaceDecoration = imageSource?.let { source ->
+                {
+                    NgDrawerBackdrop(
+                        imagePath = source.path,
+                        cacheKey = source.cacheKey,
+                        modifier = Modifier.matchParentSize(),
+                        onImageReadyChanged = { imageReady.value = it },
+                    )
+                }
+            },
+            materialViewport = materialViewport,
+            contentPadding = contentPadding,
+            content = content,
+        )
     }
 }
 

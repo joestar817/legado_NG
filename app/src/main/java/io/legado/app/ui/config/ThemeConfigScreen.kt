@@ -47,7 +47,7 @@ import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.NgDynamicSceneTheme
-import io.legado.app.help.config.NgDrawerAppearanceConfig
+import io.legado.app.help.config.NgThemeDrawerProfile
 import io.legado.app.help.config.NgInterfaceFontStore
 import io.legado.app.help.config.NgSoftGradientColorMode
 import io.legado.app.help.config.NgSoftGradientColorPreset
@@ -67,6 +67,7 @@ import io.legado.app.ui.design.components.compose.NgLauncherIcon
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsItem
 import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
+import io.legado.app.help.config.NgColorConfigStore
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
 
@@ -89,14 +90,7 @@ internal data class ThemeConfigScreenState(
     val floatingBottomBarBottomDistancePx: Int = 0,
     val floatingBottomBarTransparency: Int =
         FloatingBottomBarConfig.DEFAULT_TRANSPARENCY_PERCENT,
-    val drawerTransparency: Int =
-        NgDrawerAppearanceConfig.DEFAULT_TRANSPARENCY_PERCENT,
-    val drawerPrimaryStrength: Int =
-        NgDrawerAppearanceConfig.DEFAULT_PRIMARY_STRENGTH_PERCENT,
-    val drawerHorizontalMarginDp: Int =
-        NgDrawerAppearanceConfig.DEFAULT_HORIZONTAL_MARGIN_DP,
-    val drawerCornerRadiusDp: Int =
-        NgDrawerAppearanceConfig.DEFAULT_CORNER_RADIUS_DP,
+    val drawerProfile: NgThemeDrawerProfile = NgThemeDrawerProfile(),
     val bookshelfTopBarStyle: BookshelfTopBarStyle = BookshelfTopBarStyle.COMPACT_TOOLBAR,
     val bookshelfFloatingDockMinTopDistancePx: Int = 0,
     val bookshelfFloatingDockTopDistancePx: Int = 0,
@@ -141,14 +135,9 @@ internal fun ThemeConfigScreen(
     onFloatingBottomBarBottomDistanceChangeFinished: () -> Unit,
     onFloatingBottomBarTransparencyChanged: (Int) -> Unit,
     onFloatingBottomBarTransparencyChangeFinished: () -> Unit,
-    onDrawerTransparencyChanged: (Int) -> Unit,
-    onDrawerTransparencyChangeFinished: () -> Unit,
-    onDrawerPrimaryStrengthChanged: (Int) -> Unit,
-    onDrawerPrimaryStrengthChangeFinished: () -> Unit,
-    onDrawerHorizontalMarginChanged: (Int) -> Unit,
-    onDrawerHorizontalMarginChangeFinished: () -> Unit,
-    onDrawerCornerRadiusChanged: (Int) -> Unit,
-    onDrawerCornerRadiusChangeFinished: () -> Unit,
+    onDrawerProfileChanged: (NgThemeDrawerProfile) -> Unit,
+    onDrawerProfileChangeFinished: () -> Unit,
+    onSelectDrawerImage: (Boolean) -> Unit,
     onBookshelfTopBarStyleSelected: (BookshelfTopBarStyle) -> Unit,
     onBookshelfFloatingDockTopDistanceChanged: (Int) -> Unit,
     onBookshelfFloatingDockTopDistanceChangeFinished: () -> Unit,
@@ -171,6 +160,12 @@ internal fun ThemeConfigScreen(
     onOpenDayBackground: () -> Unit,
     onOpenNightBackground: () -> Unit
 ) {
+    val context = LocalContext.current
+    val drawerColors = when (state.presentationMode) {
+        NgThemePresentationMode.SOFT_GRADIENT -> NgSoftGradientTheme.colors(context)
+        NgThemePresentationMode.DYNAMIC_SCENE -> NgDynamicSceneTheme.colors(context)
+        else -> NgColorConfigStore.current(context)
+    }
     val showAppearance = section != ThemeConfigSection.INTERFACE
     val showInterface = section != ThemeConfigSection.APPEARANCE
     val selectedStandardMode = STANDARD_THEME_MODES
@@ -479,99 +474,17 @@ internal fun ThemeConfigScreen(
             }
                 NgExpandableSettingsItem(
                 title = stringResource(R.string.ng_drawer_appearance),
-                summary = stringResource(
-                    R.string.ng_drawer_appearance_summary,
-                    state.drawerTransparency,
-                    state.drawerPrimaryStrength,
-                    state.drawerHorizontalMarginDp,
-                    state.drawerCornerRadiusDp,
-                ),
+                summary = ngDrawerBackgroundSourceName(state.drawerProfile.source),
                 expanded = drawerAppearanceExpanded,
                 onExpandedChange = { drawerAppearanceExpanded = it },
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    NgDockSlider(
-                        title = stringResource(R.string.ng_drawer_transparency),
-                        valueText = stringResource(
-                            R.string.ng_drawer_percent_value,
-                            state.drawerTransparency,
-                        ),
-                        minimumText = stringResource(R.string.ng_drawer_percent_value, 0),
-                        maximumText = stringResource(R.string.ng_drawer_percent_value, 100),
-                        value = state.drawerTransparency.toFloat(),
-                        valueRange = NgDrawerAppearanceConfig.MIN_PERCENT.toFloat()..
-                            NgDrawerAppearanceConfig.MAX_PERCENT.toFloat(),
-                        onValueChange = { value ->
-                            onDrawerTransparencyChanged(value.roundToInt())
-                        },
-                        onValueChangeFinished = onDrawerTransparencyChangeFinished,
-                    )
-                    NgDockSlider(
-                        title = stringResource(R.string.ng_drawer_primary_strength),
-                        valueText = stringResource(
-                            R.string.ng_drawer_percent_value,
-                            state.drawerPrimaryStrength,
-                        ),
-                        minimumText = stringResource(R.string.ng_drawer_percent_value, 0),
-                        maximumText = stringResource(R.string.ng_drawer_percent_value, 100),
-                        value = state.drawerPrimaryStrength.toFloat(),
-                        valueRange = NgDrawerAppearanceConfig.MIN_PERCENT.toFloat()..
-                            NgDrawerAppearanceConfig.MAX_PERCENT.toFloat(),
-                        onValueChange = { value ->
-                            onDrawerPrimaryStrengthChanged(value.roundToInt())
-                        },
-                        onValueChangeFinished = onDrawerPrimaryStrengthChangeFinished,
-                    )
-                    NgDockSlider(
-                        title = stringResource(R.string.ng_drawer_horizontal_margin),
-                        valueText = stringResource(
-                            R.string.ng_drawer_dp_value,
-                            state.drawerHorizontalMarginDp,
-                        ),
-                        minimumText = stringResource(
-                            R.string.ng_drawer_dp_value,
-                            NgDrawerAppearanceConfig.MIN_HORIZONTAL_MARGIN_DP,
-                        ),
-                        maximumText = stringResource(
-                            R.string.ng_drawer_dp_value,
-                            NgDrawerAppearanceConfig.MAX_HORIZONTAL_MARGIN_DP,
-                        ),
-                        value = state.drawerHorizontalMarginDp.toFloat(),
-                        valueRange = NgDrawerAppearanceConfig.MIN_HORIZONTAL_MARGIN_DP.toFloat()..
-                            NgDrawerAppearanceConfig.MAX_HORIZONTAL_MARGIN_DP.toFloat(),
-                        steps = NgDrawerAppearanceConfig.HORIZONTAL_MARGIN_SLIDER_STEPS,
-                        onValueChange = { value ->
-                            onDrawerHorizontalMarginChanged(value.roundToInt())
-                        },
-                        onValueChangeFinished = onDrawerHorizontalMarginChangeFinished,
-                    )
-                    NgDockSlider(
-                        title = stringResource(R.string.ng_drawer_corner_radius),
-                        valueText = stringResource(
-                            R.string.ng_drawer_dp_value,
-                            state.drawerCornerRadiusDp,
-                        ),
-                        minimumText = stringResource(
-                            R.string.ng_drawer_dp_value,
-                            NgDrawerAppearanceConfig.MIN_CORNER_RADIUS_DP,
-                        ),
-                        maximumText = stringResource(
-                            R.string.ng_drawer_dp_value,
-                            NgDrawerAppearanceConfig.MAX_CORNER_RADIUS_DP,
-                        ),
-                        value = state.drawerCornerRadiusDp.toFloat(),
-                        valueRange = NgDrawerAppearanceConfig.MIN_CORNER_RADIUS_DP.toFloat()..
-                            NgDrawerAppearanceConfig.MAX_CORNER_RADIUS_DP.toFloat(),
-                        steps = NgDrawerAppearanceConfig.CORNER_RADIUS_SLIDER_STEPS,
-                        onValueChange = { value ->
-                            onDrawerCornerRadiusChanged(value.roundToInt())
-                        },
-                        onValueChangeFinished = onDrawerCornerRadiusChangeFinished,
-                    )
-                }
+                NgDrawerBackgroundSettingsContent(
+                    profile = state.drawerProfile,
+                    colors = drawerColors,
+                    onProfileChanged = onDrawerProfileChanged,
+                    onProfileChangeFinished = onDrawerProfileChangeFinished,
+                    onSelectImage = onSelectDrawerImage,
+                )
             }
                 NgExpandableSettingsItem(
                 title = stringResource(R.string.bookshelf_top_bar_style),

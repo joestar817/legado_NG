@@ -23,7 +23,9 @@ import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.NgDynamicSceneTheme
-import io.legado.app.help.config.NgDrawerAppearanceConfig
+import io.legado.app.help.config.NgDrawerProfileStore
+import io.legado.app.help.config.NgThemeDrawerAssets
+import io.legado.app.help.config.NgThemeDrawerProfile
 import io.legado.app.help.config.NgSoftGradientColorMode
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientLightFieldPreset
@@ -41,6 +43,7 @@ import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.MD5Utils
+import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.SelectImageContract
 import io.legado.app.utils.externalFiles
 import io.legado.app.utils.getPrefBoolean
@@ -58,9 +61,16 @@ import io.legado.app.utils.statusBarHeight
 import io.legado.app.utils.sysConfiguration
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.applyAppNavigationBarVisibility
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import splitties.init.appCtx
 import java.io.FileOutputStream
+import java.util.UUID
 import kotlin.math.roundToInt
 
 @Suppress("SameParameterValue")
@@ -72,6 +82,17 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
     private var launcherIconSelection by mutableStateOf<String?>(null)
     private var backgroundEditorState by mutableStateOf<ThemeBackgroundEditorState?>(null)
     private var fontScaleEditorState by mutableStateOf<ThemeFontScaleEditorState?>(null)
+    private var drawerViewActive = false
+    private var drawerRevision = 0L
+    private var drawerDirty = false
+    private var drawerWriterRunning = false
+    private var pendingDrawerCommit: DrawerProfileCommit? = null
+    private var committingDrawerCommit: DrawerProfileCommit? = null
+    private val drawerDraftImages = linkedSetOf<String>()
+    private var drawerImageRequest = 0L
+    private var pendingDrawerImageNight: Boolean? = null
+    private var pendingDrawerImageUri: String? = null
+    private var drawerImageCopyOwner: String? = null
 
     private val selectImage = registerForActivityResult(SelectImageContract()) {
         it.uri?.let { uri ->
@@ -87,9 +108,38 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
         }
     }
 
+    private val selectDrawerImage = registerForActivityResult(SelectFileContract()) { uri ->
+        val night = pendingDrawerImageNight
+        if (uri == null || night == null) {
+            pendingDrawerImageNight = null
+            pendingDrawerImageUri = null
+        } else {
+            pendingDrawerImageUri = uri.toString()
+            importDrawerImage(uri, night, drawerImageRequest)
+        }
+    }
+
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
+        drawerViewActive = true
+        if (savedInstanceState?.containsKey(DRAWER_IMAGE_NIGHT) == true) {
+            pendingDrawerImageNight = savedInstanceState.getBoolean(DRAWER_IMAGE_NIGHT)
+            pendingDrawerImageUri = savedInstanceState.getString(DRAWER_IMAGE_URI)
+            drawerImageRequest = savedInstanceState.getLong(DRAWER_IMAGE_REQUEST)
+        }
         activity?.setTitle(titleRes())
         refreshContent()
+        viewLifecycleOwner.lifecycleScope.launch {
+            NgDrawerProfileStore.observe(requireContext()).collect { drawer ->
+                if (!drawerDirty && !drawerWriterRunning) {
+                    screenState = screenState.copy(drawerProfile = drawer.snapshot())
+                }
+            }
+        }
+        val pendingUri = pendingDrawerImageUri
+        val pendingNight = pendingDrawerImageNight
+        if (pendingUri != null && pendingNight != null) {
+            importDrawerImage(Uri.parse(pendingUri), pendingNight, drawerImageRequest)
+        }
         (view as ComposeView).apply {
             setViewCompositionStrategy(
                 ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
@@ -117,14 +167,9 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                             ::setFloatingBottomBarTransparencyDraft,
                         onFloatingBottomBarTransparencyChangeFinished =
                             ::saveFloatingBottomBarTransparency,
-                        onDrawerTransparencyChanged = ::setDrawerTransparencyDraft,
-                        onDrawerTransparencyChangeFinished = ::saveDrawerTransparency,
-                        onDrawerPrimaryStrengthChanged = ::setDrawerPrimaryStrengthDraft,
-                        onDrawerPrimaryStrengthChangeFinished = ::saveDrawerPrimaryStrength,
-                        onDrawerHorizontalMarginChanged = ::setDrawerHorizontalMarginDraft,
-                        onDrawerHorizontalMarginChangeFinished = ::saveDrawerHorizontalMargin,
-                        onDrawerCornerRadiusChanged = ::setDrawerCornerRadiusDraft,
-                        onDrawerCornerRadiusChangeFinished = ::saveDrawerCornerRadius,
+                        onDrawerProfileChanged = ::setDrawerProfileDraft,
+                        onDrawerProfileChangeFinished = ::saveDrawerProfile,
+                        onSelectDrawerImage = ::selectCurrentDrawerImage,
                         onBookshelfTopBarStyleSelected = ::setBookshelfTopBarStyle,
                         onBookshelfFloatingDockTopDistanceChanged =
                             ::setBookshelfFloatingDockTopDistanceDraft,
@@ -251,10 +296,8 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                     density = displayMetrics.density
                 ),
             floatingBottomBarTransparency = AppConfig.floatingBottomBarTransparency,
-            drawerTransparency = AppConfig.ngDrawerTransparency,
-            drawerPrimaryStrength = AppConfig.ngDrawerPrimaryStrength,
-            drawerHorizontalMarginDp = AppConfig.ngDrawerHorizontalMarginDp,
-            drawerCornerRadiusDp = AppConfig.ngDrawerCornerRadiusDp,
+            drawerProfile = if (drawerDirty || drawerWriterRunning) screenState.drawerProfile
+                else NgDrawerProfileStore.snapshot(requireContext()),
             bookshelfTopBarStyle = AppConfig.bookshelfTopBarStyle,
             bookshelfFloatingDockMinTopDistancePx =
                 BookshelfFloatingDockConfig.MIN_TOP_DISTANCE_PX,
@@ -437,45 +480,169 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
             screenState.floatingBottomBarTransparency
     }
 
-    private fun setDrawerTransparencyDraft(value: Int) {
-        val normalized = NgDrawerAppearanceConfig.normalizePercent(value)
-        if (normalized == screenState.drawerTransparency) return
-        screenState = screenState.copy(drawerTransparency = normalized)
+    private fun setDrawerProfileDraft(profile: NgThemeDrawerProfile) {
+        val normalized = profile.normalized()
+        if (normalized == screenState.drawerProfile) return
+        val pendingNight = pendingDrawerImageNight
+        if (pendingNight != null && normalized.source != "custom_image" &&
+            normalized.source != screenState.drawerProfile.source) {
+            drawerImageRequest += 1
+            pendingDrawerImageNight = null
+            pendingDrawerImageUri = null
+        }
+        drawerRevision += 1
+        drawerDirty = true
+        screenState = screenState.copy(drawerProfile = normalized)
     }
 
-    private fun saveDrawerTransparency() {
-        AppConfig.ngDrawerTransparency = screenState.drawerTransparency
+    private fun saveDrawerProfile() {
+        val context = requireContext().applicationContext
+        // A single writer retains only the latest confirmed change while IO is running.
+        pendingDrawerCommit = DrawerProfileCommit(drawerRevision, screenState.drawerProfile)
+        if (drawerWriterRunning) return
+        drawerWriterRunning = true
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                withContext(NonCancellable) {
+                    while (true) {
+                        val commit = pendingDrawerCommit ?: break
+                        pendingDrawerCommit = null
+                        committingDrawerCommit = commit
+                        try {
+                            val saved = withContext(Dispatchers.IO) {
+                                NgDrawerProfileStore.update(context, commit.profile)
+                            }
+                            // Store materializes and releases cache files. Remap only those paths,
+                            // even when newer background settings must not be overwritten.
+                            screenState = screenState.copy(drawerProfile = remapDrawerImages(
+                                screenState.drawerProfile, commit.profile, saved,
+                            ))
+                            pendingDrawerCommit = pendingDrawerCommit?.let { queued ->
+                                queued.copy(profile = remapDrawerImages(queued.profile, commit.profile, saved))
+                            }
+                            if (drawerRevision == commit.revision) {
+                                screenState = screenState.copy(drawerProfile = saved)
+                                drawerDirty = false
+                            }
+                        } catch (error: Exception) {
+                            toastOnUi(context.getString(R.string.ng_drawer_theme_save_failed, error.message.orEmpty()))
+                        } finally {
+                            committingDrawerCommit = null
+                            discardUnusedDrawerDraftImages(context)
+                        }
+                    }
+                }
+            } finally {
+                drawerWriterRunning = false
+                discardUnusedDrawerDraftImages(context)
+            }
+        }
     }
 
-    private fun setDrawerPrimaryStrengthDraft(value: Int) {
-        val normalized = NgDrawerAppearanceConfig.normalizePercent(value)
-        if (normalized == screenState.drawerPrimaryStrength) return
-        screenState = screenState.copy(drawerPrimaryStrength = normalized)
+    private fun remapDrawerImages(
+        value: NgThemeDrawerProfile,
+        source: NgThemeDrawerProfile,
+        saved: NgThemeDrawerProfile,
+    ): NgThemeDrawerProfile = value.copy(
+        light = if (source.light.imagePath != null && value.light.imagePath == source.light.imagePath) {
+            value.light.copy(imagePath = saved.light.imagePath)
+        } else value.light,
+        dark = if (source.dark.imagePath != null && value.dark.imagePath == source.dark.imagePath) {
+            value.dark.copy(imagePath = saved.dark.imagePath)
+        } else value.dark,
+    )
+
+    private fun selectCurrentDrawerImage(night: Boolean) {
+        drawerImageRequest += 1
+        pendingDrawerImageNight = night
+        pendingDrawerImageUri = null
+        selectDrawerImage.launch(arrayOf("image/*"))
     }
 
-    private fun saveDrawerPrimaryStrength() {
-        AppConfig.ngDrawerPrimaryStrength = screenState.drawerPrimaryStrength
+    private fun importDrawerImage(uri: Uri, night: Boolean, request: Long) {
+        if (drawerImageCopyOwner != null) return
+        val context = requireContext().applicationContext
+        val owner = UUID.randomUUID().toString()
+        drawerImageCopyOwner = owner
+        viewLifecycleOwner.lifecycleScope.launch {
+            var copiedPath: String? = null
+            try {
+                val path = NgThemeDrawerAssets.copyDraft(context, uri)
+                copiedPath = path
+                if (drawerViewActive && drawerImageCopyOwner == owner && drawerImageRequest == request) {
+                    drawerDraftImages += path
+                    // The chooser owns the target day, but other fields come from the latest draft.
+                    val current = screenState.drawerProfile
+                    setDrawerProfileDraft(current.updated(
+                        night, current.forNight(night).copy(imagePath = path),
+                    ).copy(source = "custom_image"))
+                    pendingDrawerImageNight = null
+                    pendingDrawerImageUri = null
+                    saveDrawerProfile()
+                    copiedPath = null
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (drawerImageCopyOwner == owner && drawerImageRequest == request) {
+                    pendingDrawerImageNight = null
+                    pendingDrawerImageUri = null
+                    toastOnUi(context.getString(R.string.ng_theme_background_copy_failed, error.message.orEmpty()))
+                }
+            } finally {
+                NgThemeDrawerAssets.discardDraft(context, copiedPath)
+                if (drawerImageCopyOwner == owner) {
+                    drawerImageCopyOwner = null
+                    val nextUri = pendingDrawerImageUri
+                    val nextNight = pendingDrawerImageNight
+                    if (drawerViewActive && nextUri != null && nextNight != null && drawerImageRequest != request) {
+                        importDrawerImage(Uri.parse(nextUri), nextNight, drawerImageRequest)
+                    }
+                }
+            }
+        }
     }
 
-    private fun setDrawerHorizontalMarginDraft(value: Int) {
-        val normalized = NgDrawerAppearanceConfig.normalizeHorizontalMarginDp(value)
-        if (normalized == screenState.drawerHorizontalMarginDp) return
-        screenState = screenState.copy(drawerHorizontalMarginDp = normalized)
+    private fun discardUnusedDrawerDraftImages(context: android.content.Context) {
+        val retained = buildSet {
+            if (drawerViewActive) addDrawerImagePaths(screenState.drawerProfile)
+            pendingDrawerCommit?.profile?.let { addDrawerImagePaths(it) }
+            committingDrawerCommit?.profile?.let { addDrawerImagePaths(it) }
+        }
+        val disposable = drawerDraftImages.filterNot { it in retained }
+        disposable.forEach { NgThemeDrawerAssets.discardDraft(context, it) }
+        drawerDraftImages.removeAll(disposable.toSet())
     }
 
-    private fun saveDrawerHorizontalMargin() {
-        AppConfig.ngDrawerHorizontalMarginDp = screenState.drawerHorizontalMarginDp
+    private fun MutableSet<String>.addDrawerImagePaths(profile: NgThemeDrawerProfile) {
+        profile.light.imagePath?.let { add(it) }
+        profile.dark.imagePath?.let { add(it) }
     }
 
-    private fun setDrawerCornerRadiusDraft(value: Int) {
-        val normalized = NgDrawerAppearanceConfig.normalizeCornerRadiusDp(value)
-        if (normalized == screenState.drawerCornerRadiusDp) return
-        screenState = screenState.copy(drawerCornerRadiusDp = normalized)
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingDrawerImageNight?.let { outState.putBoolean(DRAWER_IMAGE_NIGHT, it) }
+        outState.putString(DRAWER_IMAGE_URI, pendingDrawerImageUri)
+        outState.putLong(DRAWER_IMAGE_REQUEST, drawerImageRequest)
+        super.onSaveInstanceState(outState)
     }
 
-    private fun saveDrawerCornerRadius() {
-        AppConfig.ngDrawerCornerRadiusDp = screenState.drawerCornerRadiusDp
+    override fun onDestroyView() {
+        drawerViewActive = false
+        drawerImageCopyOwner = null
+        // View recreation preserves confirmed work, never an unconfirmed draft.
+        val confirmed = pendingDrawerCommit ?: committingDrawerCommit
+        if (confirmed != null) {
+            drawerRevision = confirmed.revision
+            screenState = screenState.copy(drawerProfile = confirmed.profile)
+        } else {
+            context?.let { screenState = screenState.copy(drawerProfile = NgDrawerProfileStore.snapshot(it)) }
+        }
+        drawerDirty = false
+        context?.let { discardUnusedDrawerDraftImages(it) }
+        super.onDestroyView()
     }
+
+    private data class DrawerProfileCommit(val revision: Long, val profile: NgThemeDrawerProfile)
 
     private fun setBookshelfTopBarStyle(style: BookshelfTopBarStyle) {
         if (style == screenState.bookshelfTopBarStyle) return
@@ -716,5 +883,8 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
 
     private companion object {
         const val DEFAULT_LAUNCHER_ICON = "ic_launcher"
+        const val DRAWER_IMAGE_NIGHT = "drawerImageNight"
+        const val DRAWER_IMAGE_URI = "drawerImageUri"
+        const val DRAWER_IMAGE_REQUEST = "drawerImageRequest"
     }
 }

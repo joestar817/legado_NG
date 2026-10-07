@@ -155,7 +155,13 @@ internal object BackupResources {
                         }
                     }
                 }
+                themes.forEach { collectThemeDrawerImages(it.asJsonObject, collector::copy) }
                 prefs["ngManagedThemes.v1"] = themes.toString()
+            }
+            (prefs[PreferKey.ngDrawerBackground] as? String)?.let { raw ->
+                val profile = JsonParser.parseString(raw).asJsonObject
+                collectDrawerProfileImages(profile, collector::copy)
+                prefs[PreferKey.ngDrawerBackground] = profile.toString()
             }
         }
         if (BackupModule.COVERS.id in modules) {
@@ -307,7 +313,8 @@ internal object BackupResources {
         val prefs = preferences.mapValues { (key, value) ->
             when {
                 value !is String -> value
-                key == "ngManagedThemes.v1" || key == "ngCoverAlbumLibrary.v1" ->
+                key == "ngManagedThemes.v1" || key == "ngCoverAlbumLibrary.v1" ||
+                    key == PreferKey.ngDrawerBackground ->
                     transform(JsonParser.parseString(value), ::resolve).toString()
                 key in setOf(PreferKey.bgImage, PreferKey.bgImageN, PreferKey.defaultCover,
                     PreferKey.defaultCoverDark, "ngInterfaceFont.file", "ngInterfaceFont.choice") -> resolve(value)
@@ -325,10 +332,24 @@ internal object BackupResources {
         return prefs
     }
 
+    internal fun collectThemeDrawerImages(theme: JsonObject, copy: (String) -> String) {
+        val profile = theme.get("drawerProfile")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+        collectDrawerProfileImages(profile, copy)
+    }
+
+    internal fun collectDrawerProfileImages(profile: JsonObject, copy: (String) -> String) {
+        listOf("light", "dark").forEach { mode ->
+            val style = profile.get(mode)?.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
+            style.get("imagePath")?.takeIf { !it.isJsonNull && it.asString.isNotBlank() }?.let { path ->
+                style.addProperty("imagePath", copy(path.asString))
+            }
+        }
+    }
+
     internal fun transform(value: JsonElement, replace: (String) -> String): JsonElement {
         val fields = setOf("bgStr", "bgStrNight", "bgStrEInk", "textFont", "titleFont", "headerFont",
             "footerFont", "bgImage", "fontPath", "backgroundImgPath", "customCoverUrl", "path",
-            "packageRootPath", "lightImages", "darkImages")
+            "packageRootPath", "lightImages", "darkImages", "imagePath")
         fun visit(node: JsonElement, field: String?): JsonElement = when {
             node.isJsonObject -> JsonObject().apply {
                 node.asJsonObject.entrySet().forEach { (key, child) -> add(key, visit(child, key)) }

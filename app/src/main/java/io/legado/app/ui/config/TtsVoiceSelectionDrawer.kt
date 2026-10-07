@@ -65,6 +65,7 @@ import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.lib.theme.accentColor
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
+import io.legado.app.ui.design.components.compose.ngDrawerAccentColor
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
 import io.legado.app.ui.design.components.compose.NgLazyListFastScrollerVariant
@@ -225,7 +226,6 @@ internal fun TtsVoiceSelectionDrawerContent(
     val selectedFullIndex = remember(state.groups) { state.selectedLazyItemIndex() }
     val hasIconTitleAction = titleAction?.iconRes != null
     val voiceCardShape = remember { RoundedCornerShape(18.dp) }
-    val selectionColor = Color(LocalContext.current.accentColor)
     LaunchedEffect(locateRequest) {
         if (locateRequest > 0) voiceListState.animateScrollToItem(locateTargetIndex)
     }
@@ -236,6 +236,7 @@ internal fun TtsVoiceSelectionDrawerContent(
             .height(drawerHeight),
         contentCardStyle = contentCardStyle,
     ) {
+        val selectionColor = ngDrawerAccentColor(Color(LocalContext.current.accentColor))
         Column(
             modifier = Modifier
                 .fillMaxSize()

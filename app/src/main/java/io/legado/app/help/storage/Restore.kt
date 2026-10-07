@@ -398,8 +398,10 @@ object Restore {
             )
         }
         if (modules != null) {
-            if (BackupModule.APPEARANCE.id in modules && !BackupConfig.ignoreThemeConfig)
+            if (BackupModule.APPEARANCE.id in modules && !BackupConfig.ignoreThemeConfig) {
                 io.legado.app.help.config.NgThemeLibraryStore.reloadAfterRestore(appCtx)
+                io.legado.app.help.config.NgDrawerProfileStore.reloadAfterRestore(appCtx)
+            }
             if (BackupModule.COVERS.id in modules && !BackupConfig.ignoreCoverConfig)
                 io.legado.app.help.config.NgCoverAlbumStore.reloadAfterRestore(appCtx)
         }

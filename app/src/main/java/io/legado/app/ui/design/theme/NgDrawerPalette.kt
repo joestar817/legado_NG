@@ -11,6 +11,8 @@ internal data class NgDrawerSurfaceColors(
     @param:ColorInt val bottom: Int,
 )
 
+internal data class NgDrawerImageMask(@param:ColorInt val color: Int, val alpha: Float)
+
 internal data class NgDrawerSemanticColors(
     @param:ColorInt val content: Int,
     @param:ColorInt val secondaryContent: Int,
@@ -62,8 +64,18 @@ internal object NgDrawerPalette {
     fun resolveSurfaceColors(
         snapshot: NgThemeSnapshot,
         primaryStrengthPercent: Int,
+        @ColorInt backgroundColor: Int? = null,
     ): NgDrawerSurfaceColors {
         val colors = snapshot.colors
+        if (!snapshot.isEInk && backgroundColor != null) {
+            val background = NgColorMath.opaque(backgroundColor)
+            val content = NgColorMath.contentColorFor(background)
+            return NgDrawerSurfaceColors(
+                top = NgColorMath.blend(background,
+                    if (NgColorMath.isLight(content)) 0xFF000000.toInt() else OPAQUE_WHITE, 0.035f),
+                bottom = background,
+            )
+        }
         val neutralTop = NgColorMath.blend(
             colors.drawerContainer,
             colors.surface,
@@ -110,8 +122,9 @@ internal object NgDrawerPalette {
     fun resolveSemanticColors(
         snapshot: NgThemeSnapshot,
         primaryStrengthPercent: Int,
+        @ColorInt backgroundColor: Int? = null,
     ): NgDrawerSemanticColors {
-        val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent)
+        val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent, backgroundColor)
         return resolveSemanticColors(
             snapshot = snapshot,
             primaryStrengthPercent = primaryStrengthPercent,
@@ -171,7 +184,10 @@ internal object NgDrawerPalette {
     fun applySemanticRoles(
         snapshot: NgThemeSnapshot,
         primaryStrengthPercent: Int,
-    ): NgThemeSnapshot = applySemanticRoles(
+        @ColorInt backgroundColor: Int? = null,
+    ): NgThemeSnapshot = if (backgroundColor != null && !snapshot.isEInk) {
+        applyBackgroundRoles(snapshot, primaryStrengthPercent, backgroundColor)
+    } else applyResolvedSemanticRoles(
         snapshot = snapshot,
         primaryStrengthPercent = primaryStrengthPercent,
         contentCardContainer = null,
@@ -181,7 +197,10 @@ internal object NgDrawerPalette {
     fun applyAdaptiveContentCardRoles(
         snapshot: NgThemeSnapshot,
         primaryStrengthPercent: Int,
-    ): NgThemeSnapshot = applySemanticRoles(
+        @ColorInt backgroundColor: Int? = null,
+    ): NgThemeSnapshot = if (backgroundColor != null && !snapshot.isEInk) {
+        applyBackgroundRoles(snapshot, primaryStrengthPercent, backgroundColor)
+    } else applyResolvedSemanticRoles(
         snapshot = snapshot,
         primaryStrengthPercent = primaryStrengthPercent,
         contentCardContainer = resolveAdaptiveContentCardColor(
@@ -194,9 +213,18 @@ internal object NgDrawerPalette {
     fun resolveAdaptiveContentCardColor(
         snapshot: NgThemeSnapshot,
         primaryStrengthPercent: Int,
+        @ColorInt backgroundColor: Int? = null,
     ): Int {
-        if (!snapshot.isDark || snapshot.isEInk) return OPAQUE_WHITE
-        val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent)
+        if (snapshot.isEInk) return OPAQUE_WHITE
+        if (backgroundColor != null) {
+            val background = NgColorMath.opaque(backgroundColor)
+            val content = NgColorMath.contentColorFor(background)
+            val lifted = NgColorMath.blend(background, OPAQUE_WHITE, DARK_CONTENT_CARD_LIFT)
+            return if (NgColorMath.contrastRatio(content, lifted) >= TEXT_MIN_CONTRAST) lifted
+                else NgColorMath.blend(background, 0xFF000000.toInt(), 0.08f)
+        }
+        if (!snapshot.isDark) return OPAQUE_WHITE
+        val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent, backgroundColor)
         return NgColorMath.blend(
             surfaces.bottom,
             OPAQUE_WHITE,
@@ -204,7 +232,7 @@ internal object NgDrawerPalette {
         )
     }
 
-    private fun applySemanticRoles(
+    private fun applyResolvedSemanticRoles(
         snapshot: NgThemeSnapshot,
         primaryStrengthPercent: Int,
         @ColorInt contentCardContainer: Int?,
@@ -245,6 +273,54 @@ internal object NgDrawerPalette {
                 cardContainer = contentCardContainer ?: colors.cardContainer,
                 selectedContainer = indicatorContainer,
             )
+        )
+    }
+
+    /** Only the background is customized; all content roles remain automatically readable. */
+    private fun applyBackgroundRoles(
+        snapshot: NgThemeSnapshot,
+        primaryStrengthPercent: Int,
+        @ColorInt backgroundColor: Int,
+    ): NgThemeSnapshot {
+        val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent, backgroundColor)
+        val card = resolveAdaptiveContentCardColor(snapshot, primaryStrengthPercent, backgroundColor)
+        val semantic = resolveSemanticColors(snapshot, primaryStrengthPercent,
+            intArrayOf(surfaces.top, surfaces.bottom, card))
+        val selected = NgColorMath.blend(surfaces.bottom, semantic.indicator,
+            if (snapshot.isDark) 0.28f else 0.14f)
+        return snapshot.copy(colors = snapshot.colors.copy(
+            primary = semantic.indicator,
+            onPrimary = NgColorMath.readableContentColor(semantic.indicator, surfaces.bottom),
+            primaryContainer = selected,
+            onPrimaryContainer = NgColorMath.readableContentColor(selected, semantic.content),
+            secondary = semantic.action,
+            surface = card,
+            surfaceVariant = card,
+            surfaceContainerLow = surfaces.top,
+            surfaceContainer = card,
+            surfaceContainerHigh = card,
+            onSurface = semantic.content,
+            onSurfaceVariant = semantic.secondaryContent,
+            onTopBar = semantic.content,
+            cardContainer = card,
+            dialogContainer = surfaces.bottom,
+            drawerContainer = surfaces.bottom,
+            inputContainer = card,
+            selectedContainer = selected,
+            outline = semantic.outline,
+            outlineVariant = NgColorMath.blend(surfaces.bottom, semantic.outline, 0.48f),
+        ))
+    }
+
+    /** A light neutral veil preserves the artwork; content cards own their opaque surfaces. */
+    fun resolveImageMask(snapshot: NgThemeSnapshot): NgDrawerImageMask {
+        val content = intArrayOf(snapshot.colors.onSurface, snapshot.colors.onSurfaceVariant)
+        val black = 0xFF000000.toInt()
+        fun contrast(background: Int) = content.minOf { NgColorMath.contrastRatio(it, background) }
+        val darkMask = contrast(black) >= contrast(OPAQUE_WHITE)
+        return NgDrawerImageMask(
+            color = if (darkMask) black else OPAQUE_WHITE,
+            alpha = if (darkMask) 0.18f else 0.12f,
         )
     }
 

@@ -21,7 +21,9 @@ private data class NgThemePackageManifest(
     @SerializedName("version") val version: Int,
     @SerializedName("theme") val theme: NgManagedTheme,
     @SerializedName("lightBackgroundAsset") val lightBackgroundAsset: String? = null,
-    @SerializedName("darkBackgroundAsset") val darkBackgroundAsset: String? = null
+    @SerializedName("darkBackgroundAsset") val darkBackgroundAsset: String? = null,
+    @SerializedName("lightDrawerImageAsset") val lightDrawerImageAsset: String? = null,
+    @SerializedName("darkDrawerImageAsset") val darkDrawerImageAsset: String? = null,
 )
 
 /** Reading NG 自有主题包；完整保留可选栏配置，MD3/旧 JSON 由兼容层按字段映射。 */
@@ -104,17 +106,23 @@ internal object NgThemePackageManager {
 
             val lightAsset = registerBackground(theme.lightBackground.path, "light")
             val darkAsset = registerBackground(theme.darkBackground.path, "dark")
+            val drawer = theme.drawerProfile?.normalized()
+            val lightDrawerAsset = registerBackground(drawer?.light?.imagePath, "drawer-light")
+            val darkDrawerAsset = registerBackground(drawer?.dark?.imagePath, "drawer-dark")
             val portableTheme = theme.copy(
                 packageRootPath = null,
                 lightBackground = theme.lightBackground.copy(path = null),
-                darkBackground = theme.darkBackground.copy(path = null)
+                darkBackground = theme.darkBackground.copy(path = null),
+                drawerProfile = drawer?.withoutImagePaths(),
             )
             val manifest = NgThemePackageManifest(
                 format = FORMAT,
                 version = VERSION,
                 theme = portableTheme,
                 lightBackgroundAsset = lightAsset,
-                darkBackgroundAsset = darkAsset
+                darkBackgroundAsset = darkAsset,
+                lightDrawerImageAsset = lightDrawerAsset,
+                darkDrawerImageAsset = darkDrawerAsset,
             )
             val output = context.contentResolver.openOutputStream(uri, "wt")
                 ?: error("无法创建主题包")
@@ -165,7 +173,8 @@ internal object NgThemePackageManager {
                         darkBackground = manifest.theme.darkBackground.copy(
                             path = resolveInstalledAsset(installedRoot, manifest.darkBackgroundAsset)
                         ),
-                        packageRootPath = installedRoot.absolutePath
+                        packageRootPath = installedRoot.absolutePath,
+                        drawerProfile = resolveInstalledDrawerProfile(installedRoot, manifest),
                     ).normalized()
                     NgThemeLibraryStore.addOrReplace(context, imported)
                 } catch (error: Throwable) {
@@ -200,6 +209,9 @@ internal object NgThemePackageManager {
 
             val lightAsset = registerBackground(definition.lightBackground.path, "light")
             val darkAsset = registerBackground(definition.darkBackground.path, "dark")
+            val drawer = definition.drawerProfile?.normalized()
+            val lightDrawerAsset = registerBackground(drawer?.light?.imagePath, "drawer-light")
+            val darkDrawerAsset = registerBackground(drawer?.dark?.imagePath, "drawer-dark")
             val manifest = NgThemePackageManifest(
                 format = FORMAT,
                 version = VERSION,
@@ -207,9 +219,12 @@ internal object NgThemePackageManager {
                     packageRootPath = null,
                     lightBackground = definition.lightBackground.copy(path = null),
                     darkBackground = definition.darkBackground.copy(path = null),
+                    drawerProfile = drawer?.withoutImagePaths(),
                 ),
                 lightBackgroundAsset = lightAsset,
                 darkBackgroundAsset = darkAsset,
+                lightDrawerImageAsset = lightDrawerAsset,
+                darkDrawerImageAsset = darkDrawerAsset,
             )
             stagingRoot.mkdirs()
             File(stagingRoot, MANIFEST_NAME).writeText(GSON.toJson(manifest))
@@ -259,6 +274,7 @@ internal object NgThemePackageManager {
                 path = resolveInstalledAsset(installedRoot, manifest.darkBackgroundAsset),
             ),
             packageRootPath = installedRoot.absolutePath,
+            drawerProfile = resolveInstalledDrawerProfile(installedRoot, manifest),
         ).normalized()
     }
 
@@ -303,12 +319,33 @@ internal object NgThemePackageManager {
 
     private fun resolveInstalledAsset(root: File, relativePath: String?): String? {
         relativePath ?: return null
+        require(isSafeThemeAssetPath(relativePath)) { "主题包包含非法资源路径" }
         val canonicalRoot = root.canonicalFile
         val file = File(canonicalRoot, relativePath).canonicalFile
         require(file.toPath().startsWith(canonicalRoot.toPath()) && file.isFile) {
             "主题包背景资源不存在"
         }
         return file.absolutePath
+    }
+
+    private fun NgThemeDrawerProfile.withoutImagePaths(): NgThemeDrawerProfile = copy(
+        light = light.copy(imagePath = null),
+        dark = dark.copy(imagePath = null),
+    )
+
+    private fun resolveInstalledDrawerProfile(
+        root: File,
+        manifest: NgThemePackageManifest,
+    ): NgThemeDrawerProfile? {
+        val profile = manifest.theme.drawerProfile?.normalized() ?: return null
+        fun resolve(path: String?): String? = resolveInstalledAsset(root, path)?.also {
+            NgThemeDrawerAssets.validateImage(File(it))
+        }
+        // Only manifest-owned package assets are accepted; embedded local paths are not trusted.
+        return profile.copy(
+            light = profile.light.copy(imagePath = resolve(manifest.lightDrawerImageAsset)),
+            dark = profile.dark.copy(imagePath = resolve(manifest.darkDrawerImageAsset)),
+        )
     }
 
     private fun openThemeAsset(context: Context, source: String) = when {
@@ -329,4 +366,9 @@ internal object NgThemePackageManager {
     }
 
     private data class ThemeAsset(val source: String, val entryName: String)
+}
+
+internal fun isSafeThemeAssetPath(path: String): Boolean {
+    if (path.isBlank() || path.startsWith('/') || ':' in path || '\\' in path) return false
+    return path.split('/').all { it.isNotEmpty() && it != "." && it != ".." }
 }

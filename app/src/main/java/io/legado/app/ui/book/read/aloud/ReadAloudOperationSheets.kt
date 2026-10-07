@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.View
 import androidx.activity.ComponentDialog
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -106,6 +107,8 @@ import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
+import io.legado.app.ui.design.components.compose.ngDrawerImageContentCardColor
+import io.legado.app.ui.design.components.compose.ngDrawerImageContentCardShadow
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.postEvent
@@ -923,6 +926,12 @@ private fun ReadAloudMoreSheetContent(
             .fillMaxWidth()
             .height(drawerHeight),
     ) {
+        val groupBackgroundColor = ngDrawerImageContentCardColor(
+            Color(NgTheme.colors.surface).copy(alpha = 0.84f)
+        )
+        val actionBackgroundColor = ngDrawerImageContentCardColor(
+            Color(NgTheme.colors.surface).copy(alpha = 0.82f)
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -939,6 +948,7 @@ private fun ReadAloudMoreSheetContent(
                 item {
                     ListeningSettingsGroup(
                         title = stringResource(R.string.listening_display_settings),
+                        backgroundColor = groupBackgroundColor,
                     ) {
                         NgFormSwitchSettingRow(
                             title = stringResource(R.string.listening_display_page_indicator),
@@ -971,7 +981,10 @@ private fun ReadAloudMoreSheetContent(
                     }
                 }
                 item {
-                    ListeningSettingsGroup(title = "播放设置") {
+                    ListeningSettingsGroup(
+                        title = "播放设置",
+                        backgroundColor = groupBackgroundColor,
+                    ) {
                         NgFormSwitchSettingRow(
                             title = "忽略音频焦点",
                             summary = "允许与其他应用同时播放",
@@ -1022,7 +1035,10 @@ private fun ReadAloudMoreSheetContent(
                     }
                 }
                 item {
-                    ListeningSettingsGroup(title = "朗读引擎") {
+                    ListeningSettingsGroup(
+                        title = "朗读引擎",
+                        backgroundColor = groupBackgroundColor,
+                    ) {
                         ListeningActionRow(
                             title = "朗读引擎管理",
                             summary = state.engineName,
@@ -1069,8 +1085,9 @@ private fun ReadAloudMoreSheetContent(
                         onClick = onOpenMotion,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .ngDrawerImageContentCardShadow(RoundedCornerShape(16.dp))
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color(NgTheme.colors.surface).copy(alpha = 0.82f)),
+                            .background(actionBackgroundColor),
                     )
                 }
                 item {
@@ -1086,8 +1103,9 @@ private fun ReadAloudMoreSheetContent(
                         onClick = onClearCache,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .ngDrawerImageContentCardShadow(RoundedCornerShape(16.dp))
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color(NgTheme.colors.surface).copy(alpha = 0.82f)),
+                            .background(actionBackgroundColor),
                     )
                 }
                 item {
@@ -1099,8 +1117,9 @@ private fun ReadAloudMoreSheetContent(
                         onClick = onStop,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .ngDrawerImageContentCardShadow(RoundedCornerShape(16.dp))
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color(NgTheme.colors.surface).copy(alpha = 0.82f)),
+                            .background(actionBackgroundColor),
                     )
                 }
             }
@@ -1434,6 +1453,7 @@ private fun VoiceTagChip(
 @Composable
 internal fun ListeningSettingsGroup(
     title: String?,
+    backgroundColor: Color = Color(NgTheme.colors.surface).copy(alpha = 0.84f),
     content: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1449,13 +1469,15 @@ internal fun ListeningSettingsGroup(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .ngDrawerImageContentCardShadow(
+                    shape = RoundedCornerShape(16.dp),
+                    fallback = BorderStroke(
+                        0.6.dp,
+                        Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
+                    ),
+                )
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color(NgTheme.colors.surface).copy(alpha = 0.84f))
-                .border(
-                    0.6.dp,
-                    Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
-                    RoundedCornerShape(16.dp),
-                ),
+                .background(backgroundColor),
         ) {
             content()
         }

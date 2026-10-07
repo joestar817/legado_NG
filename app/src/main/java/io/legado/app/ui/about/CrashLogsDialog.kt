@@ -63,6 +63,9 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
+import io.legado.app.ui.design.components.compose.ngDrawerPrimaryTextColor
+import io.legado.app.ui.design.components.compose.ngDrawerThemedContainerColor
+import io.legado.app.ui.design.components.compose.ngDrawerThemedOutlineColor
 import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.theme.NgAppTheme
@@ -296,12 +299,12 @@ private fun CrashLogsDrawerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                color = colorResource(R.color.ng_surface_panel),
-                contentColor = colorResource(R.color.ng_on_surface),
+                color = ngDrawerThemedContainerColor(colorResource(R.color.ng_surface_panel)),
+                contentColor = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
                 shape = RoundedCornerShape(18.dp),
                 border = BorderStroke(
                     width = if (NgTheme.snapshot.isEInk) 1.dp else 0.6.dp,
-                    color = colorResource(R.color.ng_card_stroke),
+                    color = ngDrawerThemedOutlineColor(colorResource(R.color.ng_card_stroke)),
                 ),
             ) {
                 when {
@@ -367,9 +370,9 @@ private fun CrashLogFileRow(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         color = ngDrawerContentCardColor(),
-        contentColor = colorResource(R.color.ng_on_surface),
+        contentColor = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
         shape = RoundedCornerShape(dimensionResource(R.dimen.ng_radius_m)),
-        border = BorderStroke(0.8.dp, colorResource(R.color.ng_card_stroke)),
+        border = BorderStroke(0.8.dp, ngDrawerThemedOutlineColor(colorResource(R.color.ng_card_stroke))),
     ) {
         MiddleEllipsisText(
             text = fileName,
@@ -387,7 +390,7 @@ private fun MiddleEllipsisText(
 ) {
     val style = TextStyle(
         fontFamily = NgTheme.fontFamily,
-        color = colorResource(R.color.ng_on_surface),
+        color = ngDrawerPrimaryTextColor(colorResource(R.color.ng_on_surface)),
         fontSize = 16.sp,
         lineHeight = 22.sp,
     )

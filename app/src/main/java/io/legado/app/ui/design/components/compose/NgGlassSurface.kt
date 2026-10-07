@@ -61,6 +61,7 @@ fun NgGlassSurface(
     role: NgMaterialRole = NgMaterialRole.SOFT_SURFACE,
     liquidCornerRadius: Dp? = null,
     viewBackdropSource: View? = null,
+    surfaceDecoration: (@Composable BoxScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     NgVisualSurface(
@@ -72,6 +73,7 @@ fun NgGlassSurface(
         contentPadding = contentPadding,
         viewBackdropSource = viewBackdropSource,
         transparentBackdrop = backdrop,
+        surfaceDecoration = surfaceDecoration,
         materialViewport = materialViewport,
         content = content,
     )
@@ -85,6 +87,7 @@ internal fun NgTransparentGlassSurface(
     contentPadding: PaddingValues,
     backdrop: (@Composable BoxScope.() -> Unit)?,
     materialViewport: NgGlassMaterialViewport?,
+    surfaceDecoration: (@Composable BoxScope.() -> Unit)?,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val segmented = shape as? NgSegmentedGlassShape
@@ -122,6 +125,10 @@ internal fun NgTransparentGlassSurface(
                     .matchParentSize()
                     .ngGlassLayer(shape, style, materialViewport)
             )
+
+            if (surfaceDecoration != null) {
+                Box(Modifier.matchParentSize().clip(shape), content = surfaceDecoration)
+            }
 
             Column(
                 modifier = Modifier.then(contentShape?.let { Modifier.clip(it) } ?: Modifier)
@@ -293,13 +300,15 @@ object NgGlassDefaults {
     fun drawerStyle(
         transparencyPercent: Int,
         primaryStrengthPercent: Int,
+        backgroundColor: Int? = null,
     ): NgGlassStyle {
         val snapshot = NgTheme.snapshot
-        return remember(snapshot, transparencyPercent, primaryStrengthPercent) {
+        return remember(snapshot, transparencyPercent, primaryStrengthPercent, backgroundColor) {
             resolveNgDrawerGlassStyle(
                 snapshot = snapshot,
                 transparencyPercent = transparencyPercent,
                 primaryStrengthPercent = primaryStrengthPercent,
+                backgroundColor = backgroundColor,
             )
         }
     }
@@ -502,6 +511,7 @@ internal fun resolveNgDrawerGlassStyle(
     snapshot: NgThemeSnapshot,
     transparencyPercent: Int,
     primaryStrengthPercent: Int,
+    backgroundColor: Int? = null,
 ): NgGlassStyle {
     if (snapshot.isEInk) {
         return resolveNgGlassStyle(snapshot, requestedContainerAlpha = 1f)
@@ -520,13 +530,19 @@ internal fun resolveNgDrawerGlassStyle(
     val surfaceColors = NgDrawerPalette.resolveSurfaceColors(
         snapshot = snapshot,
         primaryStrengthPercent = normalizedStrength,
+        backgroundColor = backgroundColor,
     )
     val semanticColors = NgDrawerPalette.resolveSemanticColors(
         snapshot = snapshot,
         primaryStrengthPercent = normalizedStrength,
+        backgroundColor = backgroundColor,
     )
     val highlightBase = if (snapshot.isDark) {
-        NgColorMath.blend(colors.surface, colors.onSurface, 0.46f)
+        NgColorMath.blend(
+            if (backgroundColor == null) colors.surface else surfaceColors.top,
+            if (backgroundColor == null) colors.onSurface else semanticColors.content,
+            0.46f,
+        )
     } else {
         0xFFFFFFFF.toInt()
     }
@@ -538,7 +554,8 @@ internal fun resolveNgDrawerGlassStyle(
         transparencyPercent = normalizedTransparency,
         defaultAlpha = if (snapshot.isDark) 0.80f else 0.76f,
     )
-    val strength = NgDrawerAppearanceConfig.strengthFraction(normalizedStrength).toFloat()
+    val strength = if (backgroundColor != null) 0f
+        else NgDrawerAppearanceConfig.strengthFraction(normalizedStrength).toFloat()
     val accentAlpha = (if (snapshot.isDark) 0.10f else 0.08f) * strength
     return base.copy(
         containerTop = Color(

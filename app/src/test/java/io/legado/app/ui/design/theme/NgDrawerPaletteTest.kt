@@ -99,6 +99,90 @@ class NgDrawerPaletteTest {
         }
     }
 
+    @Test
+    fun `custom backgrounds stay independent from primary strength and accent hue`() {
+        val background = 0xFF0B192F.toInt()
+        val gold = snapshot(seed = 0xFFF3B953.toInt(), isDark = true)
+        val red = snapshot(seed = 0xFFDA4040.toInt(), isDark = true)
+        val expected = NgDrawerPalette.resolveSurfaceColors(gold, 0, background)
+
+        listOf(0, 30, 100).forEach { strength ->
+            assertEquals(expected, NgDrawerPalette.resolveSurfaceColors(gold, strength, background))
+            assertEquals(expected, NgDrawerPalette.resolveSurfaceColors(red, strength, background))
+        }
+        assertEquals(0xFF0B192F.toInt(), expected.bottom)
+    }
+
+    @Test
+    fun `custom background derives readable cards and content without changing application colors`() {
+        val base = snapshot(seed = 0xFFF3B953.toInt(), isDark = true)
+        val background = 0xFF0B192F.toInt()
+        val result = NgDrawerPalette.applyAdaptiveContentCardRoles(base, 100, background)
+        val surfaces = NgDrawerPalette.resolveSurfaceColors(base, 100, background)
+
+        assertTrue(Hct.fromInt(result.colors.cardContainer).tone > Hct.fromInt(background).tone)
+        assertEquals(background, result.colors.onPrimary)
+        assertTrue(minContrast(result.colors.onSurface, surfaces) >= 4.5)
+        assertTrue(NgColorMath.contrastRatio(result.colors.onSurface, result.colors.cardContainer) >= 4.5)
+        assertTrue(NgColorMath.contrastRatio(result.colors.onSurfaceVariant, result.colors.cardContainer) >= 4.5)
+        assertTrue(NgColorMath.contrastRatio(result.colors.onPrimary, result.colors.primary) >= 4.5)
+        assertNotEquals(result.colors.cardContainer, base.colors.cardContainer)
+        assertEquals(base.colors.background, result.colors.background)
+    }
+
+    @Test
+    fun `eink ignores custom backgrounds`() {
+        val base = snapshot(seed = 0xFFF3B953.toInt(), isDark = true)
+        val eink = base.copy(isEInk = true)
+        val background = 0xFF0B192F.toInt()
+        assertEquals(
+            NgDrawerPalette.resolveSurfaceColors(eink, 30),
+            NgDrawerPalette.resolveSurfaceColors(eink, 30, background),
+        )
+        assertEquals(
+            NgDrawerPalette.applyAdaptiveContentCardRoles(eink, 30),
+            NgDrawerPalette.applyAdaptiveContentCardRoles(eink, 30, background),
+        )
+    }
+
+    @Test
+    fun `custom background readability follows the chosen color instead of the system night flag`() {
+        listOf(false, true).forEach { dark ->
+            listOf(0xFF101820.toInt(), 0xFF666666.toInt(), 0xFFF5F0E0.toInt()).forEach { background ->
+                val base = snapshot(seed = 0xFFF3B953.toInt(), isDark = dark)
+                val result = NgDrawerPalette.applyAdaptiveContentCardRoles(base, 30, background)
+                val surfaces = NgDrawerPalette.resolveSurfaceColors(base, 30, background)
+                assertTrue(minContrast(result.colors.onSurface, surfaces) >= 4.5)
+                assertTrue(NgColorMath.contrastRatio(result.colors.onSurface, result.colors.cardContainer) >= 4.5)
+                assertEquals(base.colors.background, result.colors.background)
+            }
+        }
+    }
+
+    @Test
+    fun `image veil keeps artwork visible without theme tint even when day and night are reversed`() {
+        listOf(false, true).forEach { dark ->
+            listOf(0xFF151515.toInt(), 0xFFF1F1F1.toInt()).forEach { text ->
+                val base = snapshot(seed = 0xFFF3B953.toInt(), isDark = dark)
+                val resolved = base.copy(colors = base.colors.copy(
+                    onSurface = text,
+                    onSurfaceVariant = text,
+                ))
+                val mask = NgDrawerPalette.resolveImageMask(resolved)
+                assertTrue("The background must retain at least 80% of its image", mask.alpha in 0f..0.20f)
+                assertEquals(
+                    if (NgColorMath.isLight(text)) 0xFF000000.toInt() else 0xFFFFFFFF.toInt(),
+                    mask.color,
+                )
+                listOf(0xFFFF0000.toInt(), 0xFF00FF00.toInt(), 0xFF0000FF.toInt()).forEach { background ->
+                    assertEquals(mask, NgDrawerPalette.resolveImageMask(
+                        resolved.copy(colors = resolved.colors.copy(background = background))
+                    ))
+                }
+            }
+        }
+    }
+
     private fun minContrast(
         foreground: Int,
         surfaces: NgDrawerSurfaceColors,
