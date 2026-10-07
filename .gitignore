@@ -32,4 +32,5 @@ AGENTS.md
 __pycache__/
 *.pyc
 /outputs/
+# 主干已有的 docs 继续跟踪。此目录里新加的文件只留在本地。
 /docs/
