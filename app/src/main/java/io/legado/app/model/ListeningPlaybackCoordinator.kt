@@ -32,13 +32,21 @@ internal fun requiredListeningPlaybackStop(
 
 object ListeningPlaybackCoordinator {
 
+    @Volatile
+    private var lastRequestedTarget: ListeningPlaybackTarget? = null
+
+    /** Prevent a late callback from a stopped source from replacing the new source's bookmark. */
+    internal fun isHistoryTarget(target: ListeningPlaybackTarget): Boolean = lastRequestedTarget == target
+
     fun beforeReadAloud() {
+        lastRequestedTarget = ListeningPlaybackTarget.READ_ALOUD
         if (requiredStop(ListeningPlaybackTarget.READ_ALOUD) == ListeningPlaybackStop.AUDIO) {
             AudioPlay.stop()
         }
     }
 
     fun beforeAudio(context: Context) {
+        lastRequestedTarget = ListeningPlaybackTarget.AUDIO
         if (requiredStop(ListeningPlaybackTarget.AUDIO) == ListeningPlaybackStop.READ_ALOUD) {
             ReadAloud.stop(context)
         }

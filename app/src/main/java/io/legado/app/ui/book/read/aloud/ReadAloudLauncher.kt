@@ -9,12 +9,15 @@ import io.legado.app.data.entities.Book
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isLocalModified
+import io.legado.app.help.tts.TtsEngineStore
+import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.model.SourceCallBack
 import io.legado.app.model.localBook.LocalBook
 import io.legado.app.model.webBook.WebBook
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.utils.startActivity
+import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.currentCoroutineContext
@@ -27,13 +30,28 @@ object ReadAloudLauncher {
     suspend fun prepareState(
         book: Book,
         inBookshelf: Boolean,
-        chapterChanged: Boolean
+        chapterChanged: Boolean,
+        restoreProgress: Boolean = false,
+        restoreChapterIndex: Int = book.durChapterIndex,
+        restorePosition: Int = book.durChapterPos,
+        restoreGuard: () -> Boolean = { true },
     ): Boolean {
         return withContext(IO) {
+            if (restoreProgress && !restoreGuard()) return@withContext false
             kotlin.runCatching {
                 ReadBook.inBookshelf = inBookshelf
                 ReadBook.chapterChanged = chapterChanged
-                initBookState(book)
+                if (restoreProgress) {
+                    // A listening bookmark may differ within the same chapter from reading progress.
+                    ReadBook.resetData(book)
+                    ReadBook.durChapterIndex = restoreChapterIndex
+                    ReadBook.durChapterPos = restorePosition
+                    ReadBook.clearTextChapter()
+                    ReadBook.upMsg(null)
+                    true
+                } else {
+                    initBookState(book)
+                }
             }.onFailure {
                 val msg = "初始化听书失败\n${it.localizedMessage}"
                 ReadBook.upMsg(msg)
@@ -49,7 +67,7 @@ object ReadAloudLauncher {
         ChapterProvider.upStyle()
     }
 
-    suspend fun loadCurrentChapter(context: Context): Boolean {
+    suspend fun loadCurrentChapter(context: Context, saveProgress: Boolean = true): Boolean {
         val book = ReadBook.book ?: run {
             ReadBook.upMsg("当前书籍为空")
             return false
@@ -83,7 +101,7 @@ object ReadAloudLauncher {
                         }
                     }
                 }
-                ReadBook.saveRead()
+                if (saveProgress) ReadBook.saveRead()
                 if (ReadBook.curTextChapter?.isCompleted != true) {
                     ReadBook.upMsg("加载正文失败")
                     return@withContext false
@@ -95,6 +113,46 @@ object ReadAloudLauncher {
                 AppLog.put(msg, it)
             }.getOrDefault(false)
         }
+    }
+
+    /** Dispatches the existing service without opening a player or changing the bookmark. */
+    internal suspend fun playPreparedHistory(
+        context: Context,
+        expectedBook: Book,
+        expectedChapterIndex: Int,
+        restoreGuard: () -> Boolean,
+    ): Boolean = withContext(Main.immediate) {
+        fun isCurrent(): Boolean = restoreGuard() &&
+            ReadBook.book === expectedBook && ReadBook.durChapterIndex == expectedChapterIndex
+
+        if (!isCurrent()) return@withContext false
+        val hasEnabledEngine = withContext(IO) { TtsEngineStore.hasEnabledEngine() }
+        if (!isCurrent()) return@withContext false
+        if (!hasEnabledEngine) {
+            context.toastOnUi("未启用朗读引擎")
+            return@withContext false
+        }
+
+        val loaded = loadCurrentChapter(context, saveProgress = false)
+        if (!isCurrent()) return@withContext false
+        val chapter = ReadBook.curTextChapter?.takeIf {
+            it.isCompleted && it.chapter.bookUrl == expectedBook.bookUrl &&
+                it.chapter.index == expectedChapterIndex
+        }
+        if (!loaded || chapter == null) {
+            context.toastOnUi(ReadBook.msg ?: "加载正文失败")
+            return@withContext false
+        }
+
+        withContext(IO) { ReadAloud.refreshReadAloudClass() }
+        if (!isCurrent() || ReadBook.curTextChapter !== chapter || !chapter.isCompleted ||
+            chapter.chapter.bookUrl != expectedBook.bookUrl || chapter.chapter.index != expectedChapterIndex
+        ) return@withContext false
+        val startPos = (ReadBook.durChapterPos - chapter.getReadLength(ReadBook.durPageIndex))
+            .coerceAtLeast(0)
+        ReadBook.readAloud(play = true, startPos = startPos, engineVerified = true)
+        // The service publishes preparation and real playback through its existing events.
+        true
     }
 
     @Suppress("DEPRECATION")

@@ -16,12 +16,14 @@ import io.legado.app.data.dao.AiSkillDao
 import io.legado.app.data.dao.BookChapterDao
 import io.legado.app.data.dao.BookCharacterDao
 import io.legado.app.data.dao.BookDao
+import io.legado.app.data.dao.BookUpdateDao
 import io.legado.app.data.dao.BookGroupDao
 import io.legado.app.data.dao.BookSourceDao
 import io.legado.app.data.dao.BookmarkDao
 import io.legado.app.data.dao.CacheDao
 import io.legado.app.data.dao.CookieDao
 import io.legado.app.data.dao.DictRuleDao
+import io.legado.app.data.dao.DailyReadingRecordDao
 import io.legado.app.data.dao.KeyboardAssistsDao
 import io.legado.app.data.dao.ReadRecordDao
 import io.legado.app.data.dao.ReplaceRuleDao
@@ -44,6 +46,7 @@ import io.legado.app.data.entities.AiChatConversation
 import io.legado.app.data.entities.AiChatMessageNode
 import io.legado.app.data.entities.AiSkill
 import io.legado.app.data.entities.Book
+import io.legado.app.data.entities.BookUpdate
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookCharacterProfile
@@ -57,6 +60,7 @@ import io.legado.app.data.entities.Bookmark
 import io.legado.app.data.entities.Cache
 import io.legado.app.data.entities.Cookie
 import io.legado.app.data.entities.DictRule
+import io.legado.app.data.entities.DailyReadingRecord
 import io.legado.app.data.entities.KeyboardAssist
 import io.legado.app.data.entities.ReadRecord
 import io.legado.app.data.entities.ReplaceRule
@@ -86,7 +90,7 @@ val appDb by lazy {
 }
 
 @Database(
-    version = 116,
+    version = 119,
     exportSchema = true,
     entities = [Book::class, BookGroup::class, BookSource::class, BookChapter::class,
         ReplaceRule::class, SearchBook::class, SearchKeyword::class, Cookie::class,
@@ -98,7 +102,7 @@ val appDb by lazy {
         AiChatConversation::class, AiChatMessageNode::class, AiSkill::class,
         AgentMemory::class, AgentToolResultArtifact::class,
         AgentToolExecutionIntent::class, AgentToolReceiptAcknowledgement::class,
-        TtsVoiceEntity::class, TtsEngineRuntimeEntity::class],
+        TtsVoiceEntity::class, TtsEngineRuntimeEntity::class, DailyReadingRecord::class, BookUpdate::class],
     views = [BookSourcePart::class],
     autoMigrations = [
         AutoMigration(from = 43, to = 44),
@@ -152,12 +156,16 @@ val appDb by lazy {
             from = 115,
             to = 116,
             spec = DatabaseMigrations.Migration_115_116::class
-        )
+        ),
+        AutoMigration(from = 116, to = 117),
+        AutoMigration(from = 117, to = 118),
+        AutoMigration(from = 118, to = 119),
     ]
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract val bookDao: BookDao
+    abstract val bookUpdateDao: BookUpdateDao
     abstract val bookCharacterDao: BookCharacterDao
     abstract val bookGroupDao: BookGroupDao
     abstract val bookSourceDao: BookSourceDao
@@ -173,6 +181,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract val cookieDao: CookieDao
     abstract val txtTocRuleDao: TxtTocRuleDao
     abstract val readRecordDao: ReadRecordDao
+    abstract val dailyReadingRecordDao: DailyReadingRecordDao
     abstract val cacheDao: CacheDao
     abstract val ruleSubDao: RuleSubDao
     abstract val dictRuleDao: DictRuleDao

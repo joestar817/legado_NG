@@ -13,9 +13,15 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
 import io.legado.app.help.book.getBookSource
+import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.removeType
 import io.legado.app.help.book.simulatedTotalChapterNum
 import io.legado.app.model.AudioPlay
+import io.legado.app.model.ListeningHistoryEntry
+import io.legado.app.model.ListeningHistorySource
+import io.legado.app.model.ListeningHistoryStore
+import io.legado.app.service.AudioPlayService
+import io.legado.app.service.BaseReadAloudService
 import io.legado.app.model.webBook.WebBook
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.toastOnUi
@@ -26,28 +32,72 @@ class AudioPlayViewModel(application: Application) : BaseViewModel(application) 
     val customBtnListData = MutableLiveData<Boolean>()
     var consumedAutoStartToken: String? = null
 
-    fun initData(intent: Intent, success: (() -> Unit)) = AudioPlay.apply {
+    fun initData(intent: Intent, success: (() -> Unit), onHistorySkipped: () -> Unit = {}) = AudioPlay.apply {
+        var historySkipped = false
+        var expectedHistory: ListeningHistoryEntry? = null
         execute {
-            inBookshelf = intent.getBooleanExtra("inBookshelf", true)
             val bookUrl = intent.getStringExtra("bookUrl") ?: book?.bookUrl ?: return@execute
+            val resumeChapter = intent.getIntExtra(AudioPlayActivity.EXTRA_RESUME_CHAPTER, -1)
+            val resumePosition = intent.getIntExtra(AudioPlayActivity.EXTRA_RESUME_POSITION, -1)
+            val restoreProgress = resumeChapter >= 0 && resumePosition >= 0
+            // Consume once: returning to this Activity must not seek back to the old bookmark.
+            intent.removeExtra(AudioPlayActivity.EXTRA_RESUME_CHAPTER)
+            intent.removeExtra(AudioPlayActivity.EXTRA_RESUME_POSITION)
+            if (restoreProgress) {
+                val expected = ListeningHistoryEntry(ListeningHistorySource.AUDIO, bookUrl, resumeChapter, resumePosition)
+                expectedHistory = expected
+                if (AudioPlayService.isRun || BaseReadAloudService.isRun ||
+                    ListeningHistoryStore.current.value != expected
+                ) {
+                    historySkipped = true
+                    return@execute
+                }
+            }
+            if (!restoreProgress) inBookshelf = intent.getBooleanExtra("inBookshelf", true)
             val targetBook = appDb.bookDao.getBook(bookUrl) ?: run {
+                if (restoreProgress) {
+                    historySkipped = true
+                    return@execute
+                }
                 inBookshelf = false
                 book?.also { appDb.bookDao.insert(it) } ?: return@execute
             }
-            initBook(targetBook)
+            if (restoreProgress && (!targetBook.isAudio || AudioPlayService.isRun ||
+                    BaseReadAloudService.isRun || ListeningHistoryStore.current.value != expectedHistory)
+            ) {
+                historySkipped = true
+                return@execute
+            }
+            if (restoreProgress) inBookshelf = intent.getBooleanExtra("inBookshelf", true)
+            initBook(targetBook, restoreProgress, resumeChapter, resumePosition)
         }.onSuccess {
-            success.invoke()
+            expectedHistory?.let { expected ->
+                if (AudioPlayService.isRun || BaseReadAloudService.isRun ||
+                    ListeningHistoryStore.current.value != expected || book?.bookUrl != expected.bookUrl
+                ) historySkipped = true
+            }
+            if (historySkipped) onHistorySkipped() else success.invoke()
         }.onFinally {
-            saveRead(true)
+            if (!historySkipped && expectedHistory == null) saveRead(true)
         }
     }
 
-    private suspend fun initBook(book: Book) {
+    private suspend fun initBook(
+        book: Book,
+        restoreProgress: Boolean = false,
+        resumeChapter: Int = book.durChapterIndex,
+        resumePosition: Int = book.durChapterPos,
+    ) {
         val isSameBook = AudioPlay.book?.bookUrl == book.bookUrl
-        if (isSameBook) {
+        if (isSameBook && !restoreProgress) {
             AudioPlay.upData(book)
         } else {
             AudioPlay.resetData(book)
+        }
+        if (restoreProgress) {
+            AudioPlay.durChapterIndex = resumeChapter
+            AudioPlay.durChapterPos = resumePosition
+            AudioPlay.upDurChapter()
         }
         customBtnListData.postValue(AudioPlay.bookSource?.customButton == true)
         titleData.postValue(book.name)

@@ -74,6 +74,7 @@ class AudioPlayActivity :
     private var playerThemeKey: String? = null
     private var adjustingProgress = false
     private var finishImmediately = false
+    private var historyRestoreSkipped = false
     private val drawerLaunchDebouncer = TtsSheetLaunchDebouncer()
 
     private val sourceEditResult =
@@ -135,7 +136,7 @@ class AudioPlayActivity :
     private fun initializeFromIntent(targetIntent: Intent) {
         val autoStart = consumeAutoStartRequest(targetIntent)
         uiState = uiState.copy(isLoading = autoStart)
-        viewModel.initData(targetIntent) {
+        viewModel.initData(targetIntent, success = {
             refreshStaticState()
             refreshListeningTheme(force = true)
             if (autoStart) {
@@ -143,7 +144,11 @@ class AudioPlayActivity :
             } else {
                 uiState = uiState.copy(isLoading = false)
             }
-        }
+        }, onHistorySkipped = {
+            historyRestoreSkipped = true
+            uiState = uiState.copy(isLoading = false)
+            finishImmediately()
+        })
     }
 
     private fun consumeAutoStartRequest(targetIntent: Intent): Boolean {
@@ -464,6 +469,11 @@ class AudioPlayActivity :
 
     override fun onDestroy() {
         playerThemeJob?.cancel()
+        if (historyRestoreSkipped) {
+            AudioPlay.detachActivity(this)
+            super.onDestroy()
+            return
+        }
         if (AudioPlay.status != Status.PLAY) {
             AudioPlay.stop()
         }
@@ -551,6 +561,8 @@ class AudioPlayActivity :
     companion object {
         const val EXTRA_AUTO_START = "audioAutoStart"
         const val EXTRA_AUTO_START_TOKEN = "audioAutoStartToken"
+        internal const val EXTRA_RESUME_CHAPTER = "audioResumeChapter"
+        internal const val EXTRA_RESUME_POSITION = "audioResumePosition"
 
         fun applyAutoStart(intent: Intent) {
             intent.putExtra(EXTRA_AUTO_START, true)

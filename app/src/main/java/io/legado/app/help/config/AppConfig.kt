@@ -6,6 +6,7 @@ import android.os.Build
 import io.legado.app.BuildConfig
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
+import io.legado.app.model.DailyReadingTracker
 import io.legado.app.utils.GSON
 import io.legado.app.utils.canvasrecorder.CanvasRecorderFactory
 import io.legado.app.utils.fromJsonObject
@@ -104,6 +105,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         when (key) {
+            PreferKey.enableReadRecord -> DailyReadingTracker.setEnabled(enableReadRecord)
             PreferKey.editFontScale -> editFontScale = appCtx.getPrefInt(PreferKey.editFontScale, 16)
             PreferKey.editNonPrintable -> editNonPrintable = appCtx.getPrefInt(PreferKey.editNonPrintable, 0)
             PreferKey.editAutoWrap -> editAutoWrap = appCtx.getPrefBoolean(PreferKey.editAutoWrap, true)
@@ -821,6 +823,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         get() = appCtx.getPrefString(PreferKey.defaultNarratorTtsEngineId)
         set(value) {
             appCtx.putPrefString(PreferKey.defaultNarratorTtsEngineId, value)
+            DailyReadingTracker.setEnabled(value)
         }
 
     var defaultNarratorTtsVoiceId: String?

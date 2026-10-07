@@ -13,6 +13,7 @@ import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.http.StrResponse
 import io.legado.app.help.source.getBookType
 import io.legado.app.model.Debug
+import io.legado.app.model.BookUpdateStore
 import io.legado.app.model.analyzeRule.AnalyzeRule
 import io.legado.app.model.analyzeRule.AnalyzeRule.Companion.setCoroutineContext
 import io.legado.app.model.analyzeRule.AnalyzeUrl
@@ -297,6 +298,21 @@ object WebBook {
         book: Book,
         runPerJs: Boolean = false,
         isFromBookInfo : Boolean = false
+    ): Result<List<BookChapter>> {
+        val baseline = BookUpdateStore.capture(book, bookSource.bookSourceUrl)
+        val result = getChapterListUnobservedAwait(bookSource, book, runPerJs, isFromBookInfo)
+        result.getOrNull()?.let { chapters ->
+            currentCoroutineContext().ensureActive()
+            BookUpdateStore.record(baseline, book, chapters.size)
+        }
+        return result
+    }
+
+    private suspend fun getChapterListUnobservedAwait(
+        bookSource: BookSource,
+        book: Book,
+        runPerJs: Boolean,
+        isFromBookInfo: Boolean,
     ): Result<List<BookChapter>> {
         if (bookSource.isJsSource()) {
             return JsSourceBook.getChapterListAwait(bookSource, book)

@@ -25,6 +25,19 @@ interface ReadRecordDao {
     @get:Query("select count(distinct bookName) from readRecord")
     val recordCount: Int
 
+    @get:Query("select coalesce(sum(readTime), 0) from readRecord")
+    val homeTotalReadTime: Long
+
+    @get:Query(
+        """
+        select bookName, sum(readTime) as readTime, max(lastRead) as lastRead
+        from readRecord
+        group by bookName
+        order by max(lastRead) desc, bookName collate localized, bookName
+        limit 3"""
+    )
+    val recentForHome: List<ReadRecordShow>
+
     @Query(
         """
         select bookName, sum(readTime) as readTime, max(lastRead) as lastRead 

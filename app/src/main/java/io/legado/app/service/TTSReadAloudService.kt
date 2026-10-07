@@ -16,6 +16,8 @@ import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.model.ReadAloud
+import io.legado.app.model.DailyReadingSource
+import io.legado.app.model.DailyReadingTracker
 import io.legado.app.model.ReadBook
 import io.legado.app.utils.GSON
 import io.legado.app.utils.LogUtils
@@ -38,6 +40,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
     private val ttsUtteranceListener = TTSUtteranceListener()
     private var speakJob: Coroutine<*>? = null
     private val utteranceGeneration = AtomicLong()
+    private var dailyReadingUtterance: String? = null
     private val TAG = "TTSReadAloudService"
 
     override fun onCreate() {
@@ -105,6 +108,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
             return
         }
         super.play()
+        dailyReadingUtterance = null
         MediaHelp.playSilentSound(this@TTSReadAloudService)
         speakJob?.cancel()
         val generation = utteranceGeneration.incrementAndGet()
@@ -170,7 +174,15 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
 
     private fun invalidateUtterances() {
         utteranceGeneration.incrementAndGet()
+        dailyReadingUtterance = null
+        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, false)
         speakJob?.cancel()
+    }
+
+    private fun finishDailyReadingUtterance(id: String?) {
+        if (id == null || id != dailyReadingUtterance) return
+        dailyReadingUtterance = null
+        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, false)
     }
 
     private fun withCurrentUtterance(id: String?, action: () -> Unit) {
@@ -256,6 +268,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
             withCurrentUtterance(s) {
                 LogUtils.d(TAG, "onStart nowSpeak:$nowSpeak pageIndex:$pageIndex utteranceId:$s")
                 if (!syncActualPlaybackState(isPlaying = true)) return@withCurrentUtterance
+                dailyReadingUtterance = s
                 textChapter?.let {
                     if (isReadAloudTextSilent()) {
                         nextParagraph()
@@ -273,8 +286,15 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
 
         override fun onDone(s: String) {
             withCurrentUtterance(s) {
+                finishDailyReadingUtterance(s)
                 LogUtils.d(TAG, "onDone utteranceId:$s")
                 nextParagraph()
+            }
+        }
+
+        override fun onStop(utteranceId: String?, interrupted: Boolean) {
+            withCurrentUtterance(utteranceId) {
+                finishDailyReadingUtterance(utteranceId)
             }
         }
 
@@ -299,6 +319,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
 
         override fun onError(utteranceId: String?, errorCode: Int) {
             withCurrentUtterance(utteranceId) {
+                finishDailyReadingUtterance(utteranceId)
                 LogUtils.d(
                     TAG,
                     "onError nowSpeak:$nowSpeak pageIndex:$pageIndex utteranceId:$utteranceId errorCode:$errorCode"
@@ -319,6 +340,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
         @Deprecated("Deprecated in Java")
         override fun onError(s: String) {
             withCurrentUtterance(s) {
+                finishDailyReadingUtterance(s)
                 LogUtils.d(TAG, "onError nowSpeak:$nowSpeak pageIndex:$pageIndex s:$s")
                 nextParagraph()
             }

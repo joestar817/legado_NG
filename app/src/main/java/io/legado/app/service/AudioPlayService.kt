@@ -39,6 +39,11 @@ import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.help.exoplayer.ExoPlayerHelper
 import io.legado.app.help.glide.ImageLoader
 import io.legado.app.model.AudioPlay
+import io.legado.app.model.DailyReadingSource
+import io.legado.app.model.DailyReadingTracker
+import io.legado.app.model.ListeningHistorySource
+import io.legado.app.model.ListeningHistoryStore
+import io.legado.app.model.ListeningPlaybackTarget
 import io.legado.app.model.ListeningPlaybackCoordinator
 import io.legado.app.receiver.MediaButtonReceiver
 import io.legado.app.ui.book.audio.AudioPlayActivity
@@ -124,11 +129,15 @@ class AudioPlayService : BaseService(),
     private var dsJob: Job? = null
     private var upNotificationJob: Coroutine<*>? = null
     private var upPlayProgressJob: Job? = null
+    private var historyBookUrl: String? = null
+    private var historyChapterIndex = -1
+    private var historyPlaybackConfirmed = false
     private var cover: Bitmap =
         BitmapFactory.decodeResource(appCtx.resources, R.drawable.icon_read_book)
 
     override fun onCreate() {
         super.onCreate()
+        DailyReadingTracker.register(DailyReadingSource.AUDIO, this)
         isRun = true
         exoPlayer.addListener(this)
         AudioPlay.registerService(this)
@@ -154,12 +163,14 @@ class AudioPlayService : BaseService(),
         intent?.action?.let { action ->
             when (action) {
                 IntentAction.play, IntentAction.playNew -> {
+                    flushListeningHistory()
+                    clearListeningHistorySession()
                     exoPlayer.stop()
                     upPlayProgressJob?.cancel()
                     pause = false
                     position = when (action) {
                         IntentAction.playNew -> 0
-                        else -> AudioPlay.book?.durChapterPos ?: 0
+                        else -> AudioPlay.durChapterPos
                     }
                     url = AudioPlay.durPlayUrl
                     if (playSpeed != 1f) {
@@ -170,6 +181,8 @@ class AudioPlayService : BaseService(),
                 }
 
                 IntentAction.stopPlay -> {
+                    flushListeningHistory()
+                    clearListeningHistorySession()
                     exoPlayer.stop()
                     upPlayProgressJob?.cancel()
                     AudioPlay.status = Status.STOP
@@ -197,6 +210,9 @@ class AudioPlayService : BaseService(),
     }
 
     override fun onDestroy() {
+        DailyReadingTracker.remove(DailyReadingSource.AUDIO, this)
+        flushListeningHistory()
+        clearListeningHistorySession()
         super.onDestroy()
         if (useWakeLock) {
             wakeLock.release()
@@ -232,6 +248,7 @@ class AudioPlayService : BaseService(),
         }
         ListeningPlaybackCoordinator.beforeAudio(this)
         val book = AudioPlay.book
+        val historyChapter = AudioPlay.durChapterIndex
         execute(context = Main) {
             AudioPlay.status = Status.STOP
             postEvent(EventBus.AUDIO_STATE, Status.STOP)
@@ -244,6 +261,9 @@ class AudioPlayService : BaseService(),
                 cacheKeys = AudioPlay.durAudioCacheKeys,
                 coroutineContext = coroutineContext,
             )
+            historyBookUrl = book?.bookUrl
+            historyChapterIndex = historyChapter
+            historyPlaybackConfirmed = false
             if (url.isJsonArray()) {
                 val mediaSource = ExoPlayerHelper.getMediaSource(mediaItems)
                 if (mediaSource ==  null) {
@@ -251,7 +271,6 @@ class AudioPlayService : BaseService(),
                     return@execute
                 }
                 exoPlayer.setMediaSource(mediaSource)
-                position = 0
             } else {
                 exoPlayer.setMediaItem(mediaItems.single())
             }
@@ -272,6 +291,7 @@ class AudioPlayService : BaseService(),
      * 暂停播放
      */
     private fun pause(abandonFocus: Boolean = true) {
+        DailyReadingTracker.setActive(DailyReadingSource.AUDIO, this, false, flush = true)
         if (useWakeLock) {
             wakeLock.release()
             wifiLock?.release()
@@ -283,6 +303,7 @@ class AudioPlayService : BaseService(),
             }
             upPlayProgressJob?.cancel()
             position = exoPlayer.currentPosition.toInt()
+            flushListeningHistory()
             if (exoPlayer.isPlaying) exoPlayer.pause()
             upMediaSessionPlaybackState(PlaybackStateCompat.STATE_PAUSED)
             AudioPlay.status = Status.PAUSE
@@ -353,6 +374,56 @@ class AudioPlayService : BaseService(),
     /**
      * 播放状态监控
      */
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        super.onIsPlayingChanged(isPlaying)
+        DailyReadingTracker.setActive(
+            DailyReadingSource.AUDIO, this,
+            isPlaying && !pause && isCurrentListeningHistorySession()
+        )
+        if (isPlaying && isCurrentListeningHistorySession()) {
+            historyPlaybackConfirmed = true
+            recordListeningHistory(claimSession = true)
+        } else if (!isPlaying) {
+            flushListeningHistory()
+        }
+    }
+
+    private fun isCurrentListeningHistorySession(): Boolean {
+        return historyBookUrl != null && historyBookUrl == AudioPlay.book?.bookUrl &&
+                historyChapterIndex == AudioPlay.durChapterIndex
+    }
+
+    private fun recordListeningHistory(claimSession: Boolean = false) {
+        if (!historyPlaybackConfirmed || !isCurrentListeningHistorySession() ||
+            !ListeningPlaybackCoordinator.isHistoryTarget(ListeningPlaybackTarget.AUDIO)
+        ) return
+        val bookUrl = historyBookUrl ?: return
+        val history = ListeningHistoryStore.current.value
+        if (!claimSession && (history == null ||
+                    history.source != ListeningHistorySource.AUDIO ||
+                    history.bookUrl != bookUrl || history.chapterIndex != historyChapterIndex)
+        ) return
+        ListeningHistoryStore.record(
+            ListeningHistorySource.AUDIO,
+            bookUrl,
+            historyChapterIndex,
+            exoPlayer.currentPosition.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt(),
+        )
+    }
+
+    private fun flushListeningHistory() {
+        if (!historyPlaybackConfirmed) return
+        recordListeningHistory()
+        ListeningHistoryStore.flush()
+    }
+
+    private fun clearListeningHistorySession() {
+        DailyReadingTracker.setActive(DailyReadingSource.AUDIO, this, false, flush = true)
+        historyBookUrl = null
+        historyChapterIndex = -1
+        historyPlaybackConfirmed = false
+    }
+
     override fun onPlaybackStateChanged(playbackState: Int) {
         super.onPlaybackStateChanged(playbackState)
         when (playbackState) {
@@ -466,6 +537,7 @@ class AudioPlayService : BaseService(),
                 val durP = exoPlayer.currentPosition
                 //更新buffer位置
                 AudioPlay.playPositionChanged(durP.toInt())
+                if (exoPlayer.isPlaying) recordListeningHistory()
                 postEvent(EventBus.AUDIO_BUFFER_PROGRESS, displayBufferedPosition().toInt())
                 postEvent(EventBus.AUDIO_PROGRESS, AudioPlay.durChapterPos)
                 postEvent(EventBus.AUDIO_SIZE, exoPlayer.duration.toInt())

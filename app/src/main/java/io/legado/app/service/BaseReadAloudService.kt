@@ -46,9 +46,14 @@ import io.legado.app.lib.permission.Permissions
 import io.legado.app.lib.permission.PermissionsCompat
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
+import io.legado.app.model.DailyReadingSource
+import io.legado.app.model.DailyReadingTracker
 import io.legado.app.model.ListeningPlaybackCoordinator
 import io.legado.app.receiver.MediaButtonReceiver
 import io.legado.app.ui.book.read.ReadBookActivity
+import io.legado.app.model.ListeningHistorySource
+import io.legado.app.model.ListeningHistoryStore
+import io.legado.app.model.ListeningPlaybackTarget
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.utils.LogUtils
 import io.legado.app.utils.activityPendingIntent
@@ -207,6 +212,7 @@ abstract class BaseReadAloudService : BaseService(),
     override fun onCreate() {
         super.onCreate()
         playbackStateOwner = this
+        DailyReadingTracker.register(DailyReadingSource.READ_ALOUD, this)
         actualPlaybackConfirmed = false
         preparationStage = PREPARATION_NONE
         ttsRouteWarning = null
@@ -253,6 +259,7 @@ abstract class BaseReadAloudService : BaseService(),
     }
 
     override fun onDestroy() {
+        DailyReadingTracker.remove(DailyReadingSource.READ_ALOUD, this)
         super.onDestroy()
         val ownsPlaybackState = playbackStateOwner === this
         if (useWakeLock) {
@@ -261,6 +268,7 @@ abstract class BaseReadAloudService : BaseService(),
         }
         unregisterReceiver(broadcastReceiver)
         if (ownsPlaybackState) {
+            ListeningHistoryStore.flush()
             isRun = false
             pause = true
             actualPlaybackConfirmed = false
@@ -510,6 +518,7 @@ abstract class BaseReadAloudService : BaseService(),
     @SuppressLint("WakelockTimeout")
     open fun play() {
         if (playbackStateOwner !== this) return
+        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, false)
         ListeningPlaybackCoordinator.beforeReadAloud()
         if (useWakeLock) {
             wakeLock.acquire()
@@ -539,11 +548,13 @@ abstract class BaseReadAloudService : BaseService(),
 
     @CallSuper
     open fun pauseReadAloud(abandonFocus: Boolean = true) {
+        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, false, flush = true)
         if (useWakeLock) {
             wakeLock.release()
             wifiLock?.release()
         }
         if (playbackStateOwner !== this) return
+        ListeningHistoryStore.flush()
         actualPlaybackConfirmed = false
         preparationStage = PREPARATION_NONE
         pause = true
@@ -584,12 +595,14 @@ abstract class BaseReadAloudService : BaseService(),
             actualPlaybackConfirmed = false
             return false
         }
+        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, isPlaying)
         val stateChanged = actualPlaybackConfirmed != isPlaying
         actualPlaybackConfirmed = isPlaying
         if (isPlaying) {
             preparationStage = PREPARATION_NONE
         }
         if (isPlaying && stateChanged) {
+            recordListeningProgress(ReadBook.durChapterPos, newPlayback = true)
             postEvent(EventBus.ALOUD_STATE, Status.PLAY)
         }
         return true
@@ -627,7 +640,24 @@ abstract class BaseReadAloudService : BaseService(),
         // 先同步共享位置，确保新打开的阅读页和播放器原文页首帧就使用真实播放段落。
         // 这也覆盖跳过章名时服务在界面收到下一次事件前已经推进到正文的场景。
         ReadBook.durChapterPos = progress
+        recordListeningProgress(progress)
         postEvent(EventBus.TTS_PROGRESS, progress)
+    }
+
+    private fun recordListeningProgress(position: Int, newPlayback: Boolean = false) {
+        if (!ownsPlaybackState() || !actualPlaybackConfirmed || pause ||
+            !ListeningPlaybackCoordinator.isHistoryTarget(ListeningPlaybackTarget.READ_ALOUD)
+        ) return
+        val book = ReadBook.book ?: return
+        val chapter = textChapter?.chapter ?: return
+        if (book.bookUrl != activeBookUrl || chapter.bookUrl != book.bookUrl ||
+            chapter.index != ReadBook.durChapterIndex
+        ) return
+        val previous = ListeningHistoryStore.current.value
+        if (!newPlayback && (previous?.source != ListeningHistorySource.READ_ALOUD ||
+            previous.bookUrl != book.bookUrl || previous.chapterIndex != chapter.index)
+        ) return
+        ListeningHistoryStore.record(ListeningHistorySource.READ_ALOUD, book.bookUrl, chapter.index, position)
     }
 
     internal fun upTtsBufferProgress(progress: Int) {

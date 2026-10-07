@@ -9,6 +9,10 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import io.legado.app.base.BaseService
+import io.legado.app.model.DailyReadingSource
+import io.legado.app.model.DailyReadingTracker
+import io.legado.app.ui.book.manga.ReadMangaActivity
+import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.utils.LogUtils
 import io.legado.app.utils.applyAppNavigationBarVisibility
 import io.legado.app.utils.completeAppNavigationBarVisibility
@@ -83,11 +87,17 @@ object LifecycleHelp : Application.ActivityLifecycleCallbacks {
 
     override fun onActivityPaused(activity: Activity) {
         LogUtils.d(TAG, "${activity::class.simpleName} onPause")
+        if (activity is ReadBookActivity || activity is ReadMangaActivity) {
+            DailyReadingTracker.remove(DailyReadingSource.PAGE, activity)
+        }
     }
 
     override fun onActivityResumed(activity: Activity) {
         LogUtils.d(TAG, "${activity::class.simpleName} onResume")
         activity.applyAppNavigationBarVisibility()
+        if (activity is ReadBookActivity || activity is ReadMangaActivity) {
+            DailyReadingTracker.pageResumed(activity)
+        }
     }
 
     override fun onActivityStarted(activity: Activity) {
@@ -96,6 +106,9 @@ object LifecycleHelp : Application.ActivityLifecycleCallbacks {
 
     override fun onActivityDestroyed(activity: Activity) {
         LogUtils.d(TAG, "${activity::class.simpleName} onDestroy")
+        if (activity is ReadBookActivity || activity is ReadMangaActivity) {
+            DailyReadingTracker.remove(DailyReadingSource.PAGE, activity)
+        }
         (activity as? FragmentActivity)?.supportFragmentManager
             ?.unregisterFragmentLifecycleCallbacks(fragmentLifecycleCallbacks)
         for (temp in activities) {

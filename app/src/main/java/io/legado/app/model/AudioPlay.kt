@@ -29,9 +29,16 @@ import io.legado.app.model.SourceCallBack
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.startService
 import io.legado.app.utils.toastOnUi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import splitties.init.appCtx
 import kotlin.text.trim
 
@@ -59,6 +66,8 @@ object AudioPlay : CoroutineScope by MainScope() {
 
     var playMode = PlayMode.LIST_END_STOP
     var status = Status.STOP
+    private val loadingState = MutableStateFlow(false)
+    internal val loading = loadingState.asStateFlow()
     private var activityContext: Context? = null
     private var serviceContext: Context? = null
     private val context: Context get() = activityContext ?: serviceContext ?: appCtx
@@ -77,6 +86,10 @@ object AudioPlay : CoroutineScope by MainScope() {
     var inBookshelf = false
     var bookSource: BookSource? = null
     val loadingChapters = arrayListOf<Int>()
+    private class LoadingChapterRequest(val owner: Any, val bookUrl: String?)
+    private val loadingChapterOwners = mutableMapOf<Int, LoadingChapterRequest>()
+    private var playbackRequestOwner: Any? = null
+    private var historyRequestOwner: Any? = null
     private val readRecord = ReadRecord()
     var readStartTime: Long = System.currentTimeMillis()
     val executor = globalExecutor
@@ -88,6 +101,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun upData(book: Book) {
+        invalidateHistoryRequest()
         AudioPlay.book = book
         chapterSize = appDb.bookChapterDao.getChapterCount(book.bookUrl)
         simulatedChapterSize = if (book.readSimulating()) {
@@ -108,6 +122,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun resetData(book: Book) {
+        invalidateHistoryRequest()
         stop()
         AudioPlay.book = book
         readRecord.bookName = book.name
@@ -149,21 +164,64 @@ object AudioPlay : CoroutineScope by MainScope() {
         }
     }
 
-    private fun addLoading(index: Int): Boolean {
+    private fun addLoading(index: Int, owner: Any, bookUrl: String?): Boolean {
         synchronized(this) {
-            if (loadingChapters.contains(index)) return false
+            if (loadingChapters.contains(index)) {
+                val existing = loadingChapterOwners[index]
+                if (existing != null && existing.bookUrl == bookUrl) {
+                    // Returning to a chapter reuses its in-flight request, including its owner.
+                    ownPlaybackRequest(existing.owner)
+                    upLoading(true)
+                    return false
+                }
+                loadingChapters.remove(index)
+            }
             loadingChapters.add(index)
+            loadingChapterOwners[index] = LoadingChapterRequest(owner, bookUrl)
+            ownPlaybackRequest(owner)
             return true
         }
     }
 
-    private fun removeLoading(index: Int) {
+    private fun removeLoading(index: Int, owner: Any) {
         synchronized(this) {
+            if (loadingChapterOwners[index]?.owner !== owner) return
+            loadingChapterOwners.remove(index)
             loadingChapters.remove(index)
         }
     }
 
+    private fun ownPlaybackRequest(owner: Any, history: Boolean = false) {
+        synchronized(this) {
+            playbackRequestOwner = owner
+            historyRequestOwner = owner.takeIf { history }
+        }
+    }
+
+    private fun ownsPlaybackRequest(owner: Any): Boolean = synchronized(this) {
+        playbackRequestOwner === owner
+    }
+
+    private fun clearLoadingForRequest(owner: Any) {
+        synchronized(this) {
+            if (playbackRequestOwner === owner) upLoading(false)
+        }
+    }
+
+    private fun invalidateHistoryRequest(expectedOwner: Any? = null) {
+        synchronized(this) {
+            val owner = historyRequestOwner ?: return
+            if (expectedOwner != null && owner !== expectedOwner) return
+            historyRequestOwner = null
+            if (playbackRequestOwner === owner) {
+                playbackRequestOwner = null
+                upLoading(false)
+            }
+        }
+    }
+
     fun loadOrUpPlayUrl() {
+        invalidateHistoryRequest()
         if (durPlayUrl.isEmpty()) {
             loadPlayUrl()
         } else {
@@ -178,6 +236,7 @@ object AudioPlay : CoroutineScope by MainScope() {
      * 保留 [durChapterIndex] 与 [durChapterPos]，避免通过重新选章才能恢复播放。
      */
     fun playFromSavedProgress(): Boolean {
+        invalidateHistoryRequest()
         val canReuseActivePlayback = AudioPlayService.isRun &&
                 durPlayUrl.isNotEmpty() &&
                 AudioPlayService.url == durPlayUrl
@@ -196,12 +255,66 @@ object AudioPlay : CoroutineScope by MainScope() {
         return false
     }
 
+    /** Restore an already initialized history bookmark without opening the player Activity. */
+    internal suspend fun playFromSavedProgress(restoreGuard: () -> Boolean): Boolean = withContext(Main) {
+        if (!restoreGuard()) return@withContext false
+        val targetBook = book ?: return@withContext false
+        val targetSource = bookSource ?: return@withContext false
+        val targetChapter = durChapter ?: return@withContext false
+        val targetIndex = durChapterIndex
+        if (targetChapter.bookUrl != targetBook.bookUrl || targetChapter.index != targetIndex ||
+            targetChapter.isVolume
+        ) return@withContext false
+        val owner = Any()
+        ownPlaybackRequest(owner, history = true)
+        upLoading(true)
+        var dispatched = false
+        try {
+            val playbackSource = withContext(IO) {
+                fetchPlaybackSource(targetSource, targetBook, targetChapter)
+            }
+            ensureActive()
+            if (!ownsPlaybackRequest(owner) || book !== targetBook || bookSource !== targetSource ||
+                durChapterIndex != targetIndex || !restoreGuard()
+            ) return@withContext false
+            val content = playbackSource.content.trim()
+            if (content.isEmpty()) {
+                appCtx.toastOnUi("未获取到资源链接")
+                return@withContext false
+            }
+            contentLoadFinish(targetChapter, playbackSource.copy(content = content))
+            dispatched = true
+            true
+        } finally {
+            if (!dispatched) invalidateHistoryRequest(owner)
+        }
+    }
+
+    private suspend fun fetchPlaybackSource(
+        bookSource: BookSource,
+        book: Book,
+        chapter: BookChapter,
+    ): CachedAudioChapter {
+        val cached = try {
+            AudioDownloadCache.getCachedChapter(bookSource, book, chapter)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        return cached ?: CachedAudioChapter(
+            content = WebBook.getContentAwait(bookSource, book, chapter),
+            cacheKeys = emptyList(),
+        )
+    }
+
     /**
      * 加载播放URL
      */
     private fun loadPlayUrl() {
         val index = durChapterIndex
-        if (addLoading(index)) {
+        val owner = Any()
+        if (addLoading(index, owner, book?.bookUrl)) {
             val book = book
             val bookSource = bookSource
             if (book != null && bookSource != null) {
@@ -209,27 +322,22 @@ object AudioPlay : CoroutineScope by MainScope() {
                 val chapter = durChapter
                 if (chapter == null) {
                     upLoading(false)
-                    removeLoading(index)
+                    removeLoading(index, owner)
                     return
                 }
                 if (chapter.isVolume) {
                     skipTo(index + 1)
-                    removeLoading(index)
+                    removeLoading(index, owner)
                     return
                 }
                 upLoading(true)
                 Coroutine.async(this) {
-                    runCatching {
-                        AudioDownloadCache.getCachedChapter(bookSource, book, chapter)
-                    }.getOrNull()
-                        ?: CachedAudioChapter(
-                            content = WebBook.getContentAwait(bookSource, book, chapter),
-                            cacheKeys = emptyList(),
-                        )
+                    fetchPlaybackSource(bookSource, book, chapter)
                 }.onSuccess { playbackSource ->
+                    if (!ownsPlaybackRequest(owner)) return@onSuccess
                     val content = playbackSource.content.trim()
                     if (content.isEmpty()) {
-                        upLoading(false)
+                        clearLoadingForRequest(owner)
                         appCtx.toastOnUi("未获取到资源链接")
                     } else {
                         contentLoadFinish(
@@ -238,18 +346,20 @@ object AudioPlay : CoroutineScope by MainScope() {
                         )
                     }
                 }.onError {
+                    if (it is CancellationException) throw it
+                    if (!ownsPlaybackRequest(owner)) return@onError
                     AppLog.put("获取资源链接出错\n$it", it, true)
-                    upLoading(false)
+                    clearLoadingForRequest(owner)
                 }.onCancel {
-                    upLoading(false)
-                    removeLoading(index)
+                    clearLoadingForRequest(owner)
+                    removeLoading(index, owner)
                 }.onFinally {
-                    callback?.upLyric(durLyric)
-                    removeLoading(index)
+                    if (ownsPlaybackRequest(owner)) callback?.upLyric(durLyric)
+                    removeLoading(index, owner)
                 }
             } else {
                 upLoading(false)
-                removeLoading(index)
+                removeLoading(index, owner)
                 appCtx.toastOnUi("book or source is null")
             }
         }
@@ -259,7 +369,7 @@ object AudioPlay : CoroutineScope by MainScope() {
      * 加载完成
      */
     private fun contentLoadFinish(chapter: BookChapter, playbackSource: CachedAudioChapter) {
-        if (chapter.index == book?.durChapterIndex) {
+        if (chapter.bookUrl == book?.bookUrl && chapter.index == durChapterIndex) {
             durPlayUrl = playbackSource.content
             durAudioCacheKeys = playbackSource.cacheKeys
             durLyric = chapter.getVariable("lyric")
@@ -316,6 +426,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun resume(context: Context) {
+        invalidateHistoryRequest()
         if (AudioPlayService.isRun) {
             context.startService<AudioPlayService> {
                 action = IntentAction.resume
@@ -324,6 +435,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun stop() {
+        invalidateHistoryRequest()
         if (AudioPlayService.isRun) {
             context.startService<AudioPlayService> {
                 action = IntentAction.stop
@@ -451,6 +563,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun stopPlay() {
+        invalidateHistoryRequest()
         if (AudioPlayService.isRun) {
             context.startService<AudioPlayService> {
                 action = IntentAction.stopPlay
@@ -506,6 +619,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun upLoading(loading: Boolean) {
+        loadingState.value = loading
         callback?.upLoading(loading)
     }
 
@@ -520,11 +634,15 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun unregister(context: Context) {
+        detachActivity(context)
+        coroutineContext.cancelChildren()
+    }
+
+    internal fun detachActivity(context: Context) {
         if (activityContext === context) {
             activityContext = null
             callback = null
         }
-        coroutineContext.cancelChildren()
     }
 
     fun registerService(context: Context) {
@@ -533,6 +651,7 @@ object AudioPlay : CoroutineScope by MainScope() {
 
     fun unregisterService() {
         serviceContext = null
+        loadingState.value = false
     }
 
     interface CallBack {
