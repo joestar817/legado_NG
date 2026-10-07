@@ -74,6 +74,7 @@ import io.legado.app.ui.design.components.compose.NgGlassStyle
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.utils.firstDisplayGrapheme
 
 internal data class BookshelfDockGroup(
     val groupId: Long,
@@ -334,7 +335,7 @@ private fun GroupIcon(group: BookshelfDockGroup, selected: Boolean) {
         )
     } else {
         Text(
-            text = group.name.firstOrNull()?.toString().orEmpty(),
+            text = remember(group.name) { group.name.firstDisplayGrapheme() },
             color = iconTint,
             fontSize = 18.sp,
             lineHeight = 22.sp,

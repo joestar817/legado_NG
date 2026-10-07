@@ -46,6 +46,7 @@ import io.legado.app.ui.design.components.compose.NgVisualOverlayDialog
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.ngBackdropPrimaryTextStyle
 import io.legado.app.utils.splitNotBlank
+import io.legado.app.utils.firstDisplayGrapheme
 
 internal data class ExploreSourceFolder(
     val title: String,
@@ -221,8 +222,10 @@ private fun ExploreSourceFolderPreviewCell(source: BookSourcePart?) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = source.bookSourceName.trim().firstOrNull()
-                ?.toString()?.uppercase() ?: "源",
+            text = remember(source.bookSourceName) {
+                source.bookSourceName.trim().firstDisplayGrapheme()
+                    .uppercase().ifEmpty { "源" }
+            },
             color = sourceTileContentColor(tileColor),
             fontSize = 9.sp,
             lineHeight = 9.sp,

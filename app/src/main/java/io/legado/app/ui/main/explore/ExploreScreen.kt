@@ -80,6 +80,7 @@ import io.legado.app.ui.design.theme.ngBackdropPrimaryTextStyle
 import io.legado.app.ui.design.theme.ngBackdropSecondaryTextStyle
 import io.legado.app.ui.login.SourceLoginJsExtensions
 import io.legado.app.utils.InfoMap
+import io.legado.app.utils.firstDisplayGrapheme
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -265,8 +266,10 @@ internal fun ExploreGridSourceItem(
                     )
                 } else {
                     Text(
-                        text = source.bookSourceName.trim().firstOrNull()
-                            ?.toString()?.uppercase() ?: "源",
+                        text = remember(source.bookSourceName) {
+                            source.bookSourceName.trim().firstDisplayGrapheme()
+                                .uppercase().ifEmpty { "源" }
+                        },
                         color = tileContentColor,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
