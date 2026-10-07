@@ -1457,6 +1457,7 @@ private fun EditorColorPage(
         NgInlineColorPicker(
             title = title,
             initialColor = state.editorInitialColor ?: currentColor,
+            backgroundRenderer = ::renderCurrentReadBackground,
             onBack = actions.onBack,
             onColorChanged = onColorChanged,
             onReset = actions.onResetEditorColor,

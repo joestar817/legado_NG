@@ -1559,6 +1559,7 @@ enum class NgFormActionButtonAppearance {
     SURFACE_CARD,
     SURFACE_CARD_BORDERLESS,
     DIALOG,
+    COLOR_PICKER_CONFIRM,
 }
 
 @Composable
@@ -1576,7 +1577,8 @@ fun NgFormActionButton(
 ) {
     val colors = NgTheme.colors
     val primary = Color(colors.primary)
-    val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
+    val colorPickerConfirm = appearance == NgFormActionButtonAppearance.COLOR_PICKER_CONFIRM
+    val shape = RoundedCornerShape(if (colorPickerConfirm) 13.dp else NgTheme.shapes.mediumDp.dp)
     val surfaceCardAppearance = appearance == NgFormActionButtonAppearance.DIALOG ||
         appearance == NgFormActionButtonAppearance.SURFACE_CARD ||
         appearance == NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS
@@ -1598,7 +1600,7 @@ fun NgFormActionButton(
         }
     }
     val contentColor = when (variant) {
-        NgButtonVariant.PRIMARY -> ngDrawerPrimaryContentColor()
+        NgButtonVariant.PRIMARY -> if (colorPickerConfirm) Color.White else ngDrawerPrimaryContentColor()
         NgButtonVariant.PRIMARY_LIGHT_CONTENT -> ngDrawerPrimaryContentColor()
         NgButtonVariant.TONAL,
         NgButtonVariant.NEUTRAL -> Color(colors.onSurface)
@@ -1637,7 +1639,8 @@ fun NgFormActionButton(
             text = text,
             fontSize = textSize,
             lineHeight = textLineHeight,
-            fontWeight = FontWeight.Normal,
+            fontWeight = if (colorPickerConfirm) FontWeight.Medium else FontWeight.Normal,
+            letterSpacing = if (colorPickerConfirm) 1.sp else TextUnit.Unspecified,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )

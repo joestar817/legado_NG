@@ -2,10 +2,7 @@ package io.legado.app.ui.config
 
 import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +32,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,7 +45,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,12 +56,11 @@ import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgFloatingTabBar
 import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
-import io.legado.app.ui.design.components.compose.NgFormField
+import io.legado.app.ui.design.components.NgButtonVariant
+import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.theme.NgTheme
-import io.legado.app.ui.design.theme.formatNgColor
-import io.legado.app.ui.design.theme.parseNgColor
 
 /** 柔光色调选择；复用配色预设抽屉的四列网格规格。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,9 +80,8 @@ internal fun NgSoftGradientColorPresetSheet(
             if (currentMode == NgSoftGradientColorMode.CUSTOM) CUSTOM_TAB else PRESET_TAB,
         )
     }
-    var pendingCustomColor by remember(customColor) {
-        mutableStateOf<Int?>(customColor or AndroidColor.BLACK)
-    }
+    val colorState = remember(customColor) { NgColorPickerState(customColor, forceOpaque = true) }
+    val takeColor = rememberNgColorEyedropper { colorState.sampleRgb(it) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -101,7 +94,7 @@ internal fun NgSoftGradientColorPresetSheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.60f),
+                .fillMaxHeight(if (selectedTab == CUSTOM_TAB) 0.90f else 0.60f),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             Column(
@@ -110,25 +103,17 @@ internal fun NgSoftGradientColorPresetSheet(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 6.dp),
             ) {
-                Box(modifier = Modifier.fillMaxWidth()) {
+                if (selectedTab == CUSTOM_TAB) {
+                    NgColorPickerHeader(
+                        title = stringResource(R.string.ng_soft_gradient_color),
+                        onPick = takeColor,
+                        onClose = onDismissRequest,
+                    )
+                } else {
                     NgLongDrawerHeader(
                         title = stringResource(R.string.ng_soft_gradient_color),
                         centerTitle = true,
                     )
-                    if (selectedTab == CUSTOM_TAB) {
-                        NgThemeSheetSaveButton(
-                            onClick = {
-                                pendingCustomColor?.let { color ->
-                                    onCustomColorSelected(color)
-                                    onDismissRequest()
-                                }
-                            },
-                            contentDescription = stringResource(R.string.ng_apply_color),
-                            modifier = Modifier.align(Alignment.BottomEnd),
-                            enabled = pendingCustomColor != null,
-                            touchSize = 42.dp,
-                        )
-                    }
                 }
                 NgFloatingTabBar(
                     items = listOf(
@@ -143,7 +128,7 @@ internal fun NgSoftGradientColorPresetSheet(
                     onTabSelected = { tab ->
                         selectedTab = tab
                         if (tab == CUSTOM_TAB) {
-                            pendingCustomColor = customColor or AndroidColor.BLACK
+                            colorState.reset(customColor)
                         }
                     },
                     modifier = Modifier
@@ -178,87 +163,29 @@ internal fun NgSoftGradientColorPresetSheet(
                         }
                     }
                 } else {
-                    NgSoftGradientCustomColorContent(
-                        initialColor = customColor,
-                        onValidColorChanged = { pendingCustomColor = it },
+                    Column(
+                        modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())
+                            .padding(horizontal = 4.dp, vertical = 12.dp),
+                    ) {
+                        NgColorPickerContent(
+                            state = colorState,
+                            originalColor = customColor or AndroidColor.BLACK,
+                            showAlphaSlider = false,
+                        )
+                    }
+                    NgFormActionButton(
+                        text = stringResource(R.string.confirm),
+                        onClick = {
+                            onCustomColorSelected(colorState.color)
+                            onDismissRequest()
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                        enabled = colorState.isInputValid,
+                        variant = NgButtonVariant.PRIMARY,
+                        buttonHeight = 44.dp,
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun NgSoftGradientCustomColorContent(
-    initialColor: Int,
-    onValidColorChanged: (Int?) -> Unit,
-) {
-    val initialOpaqueColor = initialColor or AndroidColor.BLACK
-    var currentColor by remember(initialOpaqueColor) {
-        mutableIntStateOf(initialOpaqueColor)
-    }
-    var hexInput by remember(initialOpaqueColor) {
-        mutableStateOf(formatNgColor(initialOpaqueColor))
-    }
-    var isHexInputError by remember(initialOpaqueColor) { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(start = 4.dp, top = 12.dp, end = 4.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        NgColorPalette(
-            color = currentColor,
-            onColorChanged = { selected ->
-                currentColor = selected or AndroidColor.BLACK
-                hexInput = formatNgColor(currentColor)
-                isHexInputError = false
-                onValidColorChanged(currentColor)
-            },
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(Color(currentColor), RoundedCornerShape(14.dp))
-                    .border(
-                        1.dp,
-                        Color(NgTheme.colors.outlineVariant),
-                        RoundedCornerShape(14.dp),
-                    ),
-            )
-            Spacer(Modifier.size(12.dp))
-            NgFormField(
-                label = stringResource(R.string.ng_color_value),
-                value = hexInput,
-                onValueChange = { value ->
-                    hexInput = normalizeHexInput(value)
-                    val parsed = parseNgColor(hexInput)
-                    if (parsed != null) {
-                        currentColor = parsed or AndroidColor.BLACK
-                        isHexInputError = false
-                        onValidColorChanged(currentColor)
-                    } else {
-                        isHexInputError = hexInput.isNotBlank()
-                        onValidColorChanged(null)
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                isError = isHexInputError,
-                supportingText = if (isHexInputError) {
-                    stringResource(R.string.ng_color_value_hint)
-                } else {
-                    null
-                },
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Characters,
-                ),
-            )
         }
     }
 }

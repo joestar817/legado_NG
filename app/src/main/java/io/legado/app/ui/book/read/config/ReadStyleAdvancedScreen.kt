@@ -775,6 +775,7 @@ internal fun AdvancedColorPage(
         NgInlineColorPicker(
             title = title,
             initialColor = initialColor,
+            backgroundRenderer = ::renderCurrentReadBackground,
             onBack = onBack,
             onColorChanged = onColorChanged,
             onReset = onReset,

@@ -161,6 +161,9 @@ class TipConfigDialog : BaseComposeDialogFragment() {
                         }
                     ),
                     initialColor = initialColorFor(target),
+                    backgroundRenderer = ::renderCurrentReadBackground,
+                    showAlphaSlider = false,
+                    forceOpaque = true,
                     onBack = { activePicker = null },
                     onColorChanged = { selected ->
                         applySelectedColor(target, selected or AndroidColor.BLACK)

@@ -119,21 +119,29 @@ internal fun renderCurrentReadBackground(width: Int, height: Int): Bitmap {
     val safeWidth = width.coerceAtLeast(1)
     val safeHeight = height.coerceAtLeast(1)
     val drawable = ReadBookConfig.durConfig.curBgDrawable(safeWidth, safeHeight)
-    val meanColor = when (drawable) {
-        is BitmapDrawable -> drawable.bitmap?.getMeanColor() ?: ReadBookConfig.bgMeanColor
-        is ColorDrawable -> drawable.color
-        else -> ReadBookConfig.bgMeanColor
-    }
-    return Bitmap.createBitmap(safeWidth, safeHeight, Bitmap.Config.ARGB_8888).also { target ->
-        val canvas = Canvas(target)
-        canvas.drawColor(meanColor)
+    var target: Bitmap? = null
+    try {
+        val meanColor = when (drawable) {
+            is BitmapDrawable -> drawable.bitmap?.getMeanColor() ?: ReadBookConfig.bgMeanColor
+            is ColorDrawable -> drawable.color
+            else -> ReadBookConfig.bgMeanColor
+        }
+        val rendered = Bitmap.createBitmap(safeWidth, safeHeight, Bitmap.Config.ARGB_8888)
+        target = rendered
+        val canvas = Canvas(rendered)
+        // Sampling is background-only even when the chosen reading color has zero alpha.
+        canvas.drawColor(meanColor or AndroidColor.BLACK)
         drawable.alpha = (ReadBookConfig.bgAlpha.coerceIn(0, 100) / 100f * 255).roundToInt()
         drawable.setBounds(0, 0, safeWidth, safeHeight)
         drawable.draw(canvas)
+        return rendered
+    } catch (error: Throwable) {
+        target?.recycle()
+        throw error
+    } finally {
+        // curBgDrawable creates an independent drawable; never recycle ReadBookConfig.bg.
         if (drawable is BitmapDrawable && drawable.bitmap !== target) {
-            drawable.bitmap?.let { source ->
-                if (!source.isRecycled) source.recycle()
-            }
+            drawable.bitmap?.takeUnless { it.isRecycled }?.recycle()
         }
     }
 }
