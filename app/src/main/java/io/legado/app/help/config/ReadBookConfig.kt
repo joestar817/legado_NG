@@ -721,7 +721,10 @@ object ReadBookConfig {
         val prefs = appCtx.defaultSharedPreferences
         if (prefs.contains(PreferKey.readFloatingGlobalTransparency)) return
         if (configList.isEmpty() && bookStyle.config == null) return
-        val preset = bookStyle.config ?: configList.getOrNull(styleSelect) ?: return
+        val preset = bookStyle.config
+            ?: configList.getOrNull(readStyleSelect)
+            ?: configList.firstOrNull()
+            ?: return
         appCtx.putPrefInt(
             PreferKey.readFloatingGlobalPrimaryStrength,
             preset.curReadFloatingPrimaryStrength(),
@@ -805,17 +808,15 @@ object ReadBookConfig {
 
     val config get() = bookStyle.config ?: durConfig
 
-    @Suppress("UNUSED_PARAMETER")
-    internal fun effectiveReadFloatingColor(
-        preset: Config = durConfig,
-    ): EffectiveReadFloatingColor {
+    internal fun effectiveReadFloatingColor(): EffectiveReadFloatingColor {
         migrateFloatingAppearanceIfNeeded()
+        val seed = currentGlobalFloatingSeed()
         return resolveEffectiveReadFloatingColor(
             isEInk = AppConfig.isEInkMode,
             globallyFollowsApplication = readFloatingFollowAppGlobally,
             globalColorStyle = readFloatingGlobalColorStyle,
-            presetSeed = currentGlobalFloatingSeed(),
-            presetFollowsApplication = currentGlobalFloatingSeed() == 0,
+            presetSeed = seed,
+            presetFollowsApplication = seed == 0,
             presetColorStyle = readFloatingGlobalColorStyle,
         )
     }

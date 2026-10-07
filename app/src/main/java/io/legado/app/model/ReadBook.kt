@@ -76,6 +76,8 @@ object ReadBook : CoroutineScope by MainScope() {
     var bookSource: BookSource? = null
     var msg: String? = null
     private val loadingChapters = arrayListOf<Int>()
+    /** 占住 [loadingChapters] 的那一次加载所属的排版代数。过期加载只能清自己的标记。 */
+    private val loadingStyleEpochs = hashMapOf<Int, Int>()
     private val loadEpoch = ReadBookLoadEpoch()
     /** 整章重排的代数。更新的重排使仍在排版的上一轮不再改页面。 */
     private var styleReloadEpoch = 0
@@ -128,6 +130,7 @@ object ReadBook : CoroutineScope by MainScope() {
         TextFile.clear()
         synchronized(this) {
             loadingChapters.clear()
+            loadingStyleEpochs.clear()
             downloadedChapters.clear()
             downloadFailChapters.clear()
         }
@@ -164,6 +167,7 @@ object ReadBook : CoroutineScope by MainScope() {
         upWebBook(book)
         synchronized(this) {
             loadingChapters.clear()
+            loadingStyleEpochs.clear()
             downloadedChapters.clear()
             downloadFailChapters.clear()
         }
@@ -260,9 +264,7 @@ object ReadBook : CoroutineScope by MainScope() {
         curTextChapter = null
         nextTextChapter = null
         synchronized(this) {
-            loadingChapters.removeAll {
-                it in durChapterIndex - 1..durChapterIndex + 1
-            }
+            discardLoadingAroundCurrentChapter()
         }
         callBack?.upContent()
         loadContent(resetPageOffset = resetPageOffset)
@@ -277,9 +279,7 @@ object ReadBook : CoroutineScope by MainScope() {
         curTextChapter = null
         nextTextChapter = null
         synchronized(this) {
-            loadingChapters.removeAll {
-                it in durChapterIndex - 1..durChapterIndex + 1
-            }
+            discardLoadingAroundCurrentChapter()
         }
         callBack?.upContentAwait()
         loadContentAwait(durChapterIndex, resetPageOffset = resetPageOffset)
@@ -666,7 +666,7 @@ object ReadBook : CoroutineScope by MainScope() {
             ensureLoadCurrent(book, generation)
             if (!isStyleReloadCurrent(epoch)) return@async
             val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index) ?: return@async
-            if (addLoading(index, book, generation)) {
+            if (addLoading(index, book, generation, epoch)) {
                 try {
                     startup?.mark("before-content")
                     val content = BookHelp.getContent(book, chapter)
@@ -674,17 +674,24 @@ object ReadBook : CoroutineScope by MainScope() {
                     ensureActive()
                     ensureLoadCurrent(book, generation)
                     if (!isStyleReloadCurrent(epoch)) {
-                        removeLoading(index, book, generation)
+                        removeOwnedLoading(index, book, generation, epoch)
                         return@async
                     }
                     if (content != null) {
                         contentLoadFinish(book, chapter, content, upContent, resetPageOffset,
                             success = success, generation = generation, styleEpoch = epoch)
                     } else {
-                        download(downloadScope, book, chapter, generation, resetPageOffset)
+                        download(
+                            downloadScope,
+                            book,
+                            chapter,
+                            generation,
+                            resetPageOffset,
+                            styleEpoch = epoch,
+                        )
                     }
                 } catch (e: Exception) {
-                    removeLoading(index, book, generation)
+                    removeOwnedLoading(index, book, generation, epoch)
                     throw e
                 }
             }
@@ -744,15 +751,18 @@ object ReadBook : CoroutineScope by MainScope() {
         chapter: BookChapter,
         generation: Long,
         resetPageOffset: Boolean,
-        semaphore: Semaphore? = null
+        semaphore: Semaphore? = null,
+        styleEpoch: Int = currentStyleReloadEpoch(),
     ) = withCurrentLoad(book, generation) {
         val source = bookSource
         if (source != null) {
+            // 网络正文晚到时按完成当下的排版代数绘制。同一次下载里后启动的加载会直接返回，
+            // 不能把启动时的代数传进完成回调，否则新的一轮会被当成过期而画不出来。
             CacheBook.getOrCreate(source, book).download(scope, chapter, semaphore, resetPageOffset, generation)
         } else {
             val msg = if (book.isLocal) "无内容" else "没有书源"
             contentLoadFinish(book, chapter, "加载正文失败\n$msg",
-                resetPageOffset = resetPageOffset, generation = generation)
+                resetPageOffset = resetPageOffset, generation = generation, styleEpoch = styleEpoch)
         }
     }
 
@@ -790,7 +800,7 @@ object ReadBook : CoroutineScope by MainScope() {
     @Synchronized
     internal fun resumePendingContent(book: Book, generation: Long, index: Int, resetPageOffset: Boolean) {
         if (!isLoadCurrent(book.bookUrl, generation)) return
-        loadingChapters.remove(index)
+        removeLoading(index)
         loadContent(index, resetPageOffset = resetPageOffset)
     }
 
@@ -805,21 +815,42 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     @Synchronized
-    private fun addLoading(index: Int, book: Book, generation: Long): Boolean {
+    private fun addLoading(
+        index: Int,
+        book: Book,
+        generation: Long,
+        styleEpoch: Int = currentStyleReloadEpoch(),
+    ): Boolean {
         ensureLoadCurrent(book, generation)
         if (loadingChapters.contains(index)) return false
         loadingChapters.add(index)
+        loadingStyleEpochs[index] = styleEpoch
         return true
     }
 
     @Synchronized
     private fun removeLoading(index: Int, book: Book, generation: Long) {
-        if (isLoadCurrent(book.bookUrl, generation)) loadingChapters.remove(index)
+        if (isLoadCurrent(book.bookUrl, generation)) removeLoading(index)
+    }
+
+    @Synchronized
+    private fun removeOwnedLoading(index: Int, book: Book, generation: Long, styleEpoch: Int) {
+        if (!isLoadCurrent(book.bookUrl, generation)) return
+        if (loadingStyleEpochs[index] != styleEpoch) return
+        removeLoading(index)
     }
 
     @Synchronized
     fun removeLoading(index: Int) {
         loadingChapters.remove(index)
+        loadingStyleEpochs.remove(index)
+    }
+
+    @Synchronized
+    private fun discardLoadingAroundCurrentChapter() {
+        val window = durChapterIndex - 1..durChapterIndex + 1
+        loadingChapters.removeAll { it in window }
+        loadingStyleEpochs.keys.removeAll { it in window }
     }
 
     /**
@@ -839,7 +870,11 @@ object ReadBook : CoroutineScope by MainScope() {
     ) {
         if (!isLoadCurrent(book.bookUrl, generation) || chapter.bookUrl != book.bookUrl) return
         val epoch = styleEpoch ?: currentStyleReloadEpoch()
-        if (!isStyleReloadCurrent(epoch)) return
+        if (!isStyleReloadCurrent(epoch)) {
+            // 跳章后，这一章可能已不在当前章附近，整轮重排不会清掉它的标记。
+            removeOwnedLoading(chapter.index, book, generation, epoch)
+            return
+        }
         removeLoading(chapter.index)
         if (canceled || chapter.index !in durChapterIndex - 1..durChapterIndex + 1) {
             return
@@ -1166,7 +1201,7 @@ object ReadBook : CoroutineScope by MainScope() {
     private fun bumpStyleReloadEpoch(): Int {
         styleReloadEpoch++
         clearExpiredChapterLoadingJob(true)
-        loadingChapters.removeAll { it in durChapterIndex - 1..durChapterIndex + 1 }
+        discardLoadingAroundCurrentChapter()
         return styleReloadEpoch
     }
 

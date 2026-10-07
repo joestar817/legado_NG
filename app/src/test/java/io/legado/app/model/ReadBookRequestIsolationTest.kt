@@ -24,9 +24,29 @@ class ReadBookRequestIsolationTest {
         get(ReadBook) as ReadBookLoadEpoch
     }
 
+    @Suppress("UNCHECKED_CAST")
+    private val loadingEpochs get() = ReadBook::class.java.getDeclaredField("loadingStyleEpochs").run {
+        isAccessible = true
+        get(ReadBook) as MutableMap<Int, Int>
+    }
+
+    private var styleEpoch: Int
+        get() = ReadBook::class.java.getDeclaredField("styleReloadEpoch").run {
+            isAccessible = true
+            getInt(ReadBook)
+        }
+        set(value) {
+            ReadBook::class.java.getDeclaredField("styleReloadEpoch").apply {
+                isAccessible = true
+                setInt(ReadBook, value)
+            }
+        }
+
     @After
     fun clearReader() {
         loading.clear()
+        loadingEpochs.clear()
+        styleEpoch = 0
         ReadBook.downloadedChapters.clear()
         ReadBook.downloadFailChapters.clear()
         ReadBook.book = null
@@ -46,6 +66,39 @@ class ReadBookRequestIsolationTest {
                 resetPageOffset = false, canceled = canceled, generation = generation)
             assertEquals(listOf(2), loading)
         }
+    }
+
+    @Test
+    fun staleStyleReloadReleasesOnlyItsOwnLoadingMarker() {
+        val book = Book(bookUrl = "book")
+        ReadBook.book = book
+        val generation = ReadBook.captureLoadGeneration(book.bookUrl)!!
+        styleEpoch = 2
+        loading.add(4)
+        loading.add(9)
+        loadingEpochs[4] = 1
+        loadingEpochs[9] = 2
+        ReadBook.contentLoadFinish(
+            book,
+            BookChapter(bookUrl = book.bookUrl, index = 4),
+            "stale",
+            resetPageOffset = false,
+            generation = generation,
+            styleEpoch = 1,
+        )
+        assertEquals(listOf(9), loading)
+        assertFalse(loadingEpochs.containsKey(4))
+        assertEquals(2, loadingEpochs[9])
+        ReadBook.contentLoadFinish(
+            book,
+            BookChapter(bookUrl = book.bookUrl, index = 9),
+            "newer",
+            resetPageOffset = false,
+            generation = generation,
+            styleEpoch = 1,
+        )
+        assertEquals(listOf(9), loading)
+        assertEquals(2, loadingEpochs[9])
     }
 
     @Test

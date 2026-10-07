@@ -2463,6 +2463,7 @@
     <string name="ng_picker_title_previous">Previous color</string>
     <string name="read_style_floating_color">Pick floating-window color</string>
     <string name="read_style_floating_section">Floating windows</string>
+    <string name="read_style_floating_section_subtitle">Shared by every preset</string>
     <string name="read_style_floating_color_follow">Follow app</string>
     <string name="read_style_floating_color_background">Pick from background</string>
     <string name="read_style_floating_color_style">Color style</string>

@@ -522,6 +522,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onDismissRequest = ::requestDismiss,
         onOpenLanguageFonts = ::openLanguageFonts,
         onOpenNewBookPreset = ::openNewBookPreset,
+        onOpenFloatingWindows = ::openFloatingWindows,
         onSelectScriptFont = ::selectScriptFont,
         onResetScriptFont = ::resetScriptFont,
         onSelectEditorScriptFont = ::selectEditorScriptFont,
@@ -692,7 +693,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             }.getOrNull()
         }
         val rules = currentRules()
-        val effectiveFloatingColor = ReadBookConfig.effectiveReadFloatingColor(config)
+        val effectiveFloatingColor = ReadBookConfig.effectiveReadFloatingColor()
         selectedHighlightIds = selectedHighlightIds.intersect(rules.mapTo(hashSetOf()) { it.id })
         val languageBindings = ReadStyleLanguageMap.current()
         screenState = ReadStyleUiState(
@@ -889,6 +890,12 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         refreshUi()
     }
 
+    private fun openFloatingWindows() {
+        currentPage = ReadStylePage.FLOATING_WINDOWS
+        page = ReadStylePage.FLOATING_WINDOWS
+        refreshUi()
+    }
+
     private fun selectScriptFont(scope: ReadValueScope) {
         pendingEditorScriptFontScope = null
         pendingScriptFontScope = scope
@@ -1078,7 +1085,9 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 refreshUi()
             }
 
-            page == ReadStylePage.LANGUAGE_FONTS || page == ReadStylePage.NEW_BOOK_PRESET -> {
+            page == ReadStylePage.LANGUAGE_FONTS ||
+                page == ReadStylePage.NEW_BOOK_PRESET ||
+                page == ReadStylePage.FLOATING_WINDOWS -> {
                 page = ReadStylePage.APP_DEFAULTS
                 refreshUi()
             }

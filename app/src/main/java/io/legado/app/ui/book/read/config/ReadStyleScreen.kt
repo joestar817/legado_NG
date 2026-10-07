@@ -149,6 +149,7 @@ internal enum class ReadStylePage {
     HIGHLIGHT_UNDERLINE_COLOR,
     LANGUAGE_FONTS,
     NEW_BOOK_PRESET,
+    FLOATING_WINDOWS,
     APP_DEFAULTS,
 }
 
@@ -346,6 +347,7 @@ internal data class ReadStyleActions(
     val onDismissRequest: () -> Unit,
     val onOpenLanguageFonts: () -> Unit,
     val onOpenNewBookPreset: () -> Unit,
+    val onOpenFloatingWindows: () -> Unit,
     val onSelectScriptFont: (ReadValueScope) -> Unit,
     val onResetScriptFont: (ReadValueScope) -> Unit,
     val onSelectEditorScriptFont: (ReadValueScope) -> Unit,
@@ -470,6 +472,20 @@ internal fun ReadStyleScreen(
                         .padding(top = 8.dp),
                 ) {
                     NewBookPresetPage(
+                        state = state,
+                        contentColor = contentColor,
+                        accentColor = indicatorColor,
+                        actions = actions,
+                    )
+                }
+
+                ReadStylePage.FLOATING_WINDOWS -> Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(StandardPageHeight)
+                        .padding(top = 8.dp),
+                ) {
+                    FloatingWindowsPage(
                         state = state,
                         contentColor = contentColor,
                         accentColor = indicatorColor,
@@ -629,6 +645,7 @@ private fun SheetTransparencySlider(
     onValueChanged: (Int) -> Unit,
 ) {
     val label = stringResource(R.string.read_style_sheet_transparency)
+    val movedThumbColor = Color(NgTheme.colors.error)
     val min = SheetTransparencyMinPercent.toFloat()
     val max = SheetTransparencyMaxPercent.toFloat()
     val range = min..max
@@ -678,8 +695,13 @@ private fun SheetTransparencySlider(
             topLeft = Offset(0f, y),
             size = Size(size.width, trackHeight),
         )
+        val thumbColor = if (value == SheetTransparencyMinPercent) {
+            contentColor.copy(alpha = 0.10f)
+        } else {
+            movedThumbColor
+        }
         drawCircle(
-            color = contentColor.copy(alpha = 0.10f),
+            color = thumbColor,
             radius = 2.dp.toPx(),
             center = Offset(thumbX, size.height / 2f),
         )
@@ -1049,19 +1071,12 @@ private fun DefaultsPage(
             .fillMaxWidth()
             .verticalScroll(rememberScrollState()),
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            EditorSectionLabel(
-                stringResource(R.string.read_style_floating_section),
-                Color(NgTheme.colors.primary),
-            )
-            EditorFloatingSection(
-                state = state,
-                contentColor = contentColor,
-                accentColor = Color(NgTheme.colors.primary),
-                indicatorColor = Color(NgTheme.colors.primary),
-                actions = actions,
-            )
-        }
+        DefaultsLinkRow(
+            title = stringResource(R.string.read_style_floating_section),
+            iconRes = R.drawable.ic_cfg_theme,
+            contentColor = contentColor,
+            onClick = actions.onOpenFloatingWindows,
+        )
         ReadDivider(contentColor)
         DefaultsLinkRow(
             title = stringResource(R.string.read_style_language_fonts),
@@ -1076,6 +1091,39 @@ private fun DefaultsPage(
             contentColor = contentColor,
             onClick = actions.onOpenNewBookPreset,
         )
+    }
+}
+
+@Composable
+private fun FloatingWindowsPage(
+    state: ReadStyleUiState,
+    contentColor: Color,
+    accentColor: Color,
+    actions: ReadStyleActions,
+) {
+    Column(Modifier.fillMaxWidth().fillMaxHeight()) {
+        StyleSubpageHeader(
+            title = stringResource(R.string.read_style_floating_section),
+            subtitle = stringResource(R.string.read_style_floating_section_subtitle),
+            contentColor = contentColor,
+            onBack = actions.onBack,
+        )
+        ReadDivider(contentColor)
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 12.dp),
+        ) {
+            EditorFloatingSection(
+                state = state,
+                contentColor = contentColor,
+                accentColor = accentColor,
+                indicatorColor = accentColor,
+                actions = actions,
+            )
+        }
     }
 }
 
@@ -1855,11 +1903,14 @@ private fun FloatingSourceOption(
     ) {
         Text(
             text = label,
+            modifier = Modifier.padding(horizontal = 4.dp),
             color = (if (selected) selectedContentColor else contentColor).copy(
                 alpha = if (enabled || selected) 1f else 0.42f
             ),
             fontSize = fontSize,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
