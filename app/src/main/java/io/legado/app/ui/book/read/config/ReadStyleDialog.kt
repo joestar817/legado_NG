@@ -178,6 +178,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
+        ReadBookConfig.explicitStyleSelection = true
         (activity as ReadBookActivity).bottomDialog++
         composeView = view as ComposeView
         composeView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
@@ -268,6 +269,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     override fun onDestroyView() {
         backgroundColorPickerDialog?.dismiss()
         backgroundColorPickerDialog = null
+        ReadBook.book?.let(ReadStyleLanguageBinder::rememberCurrentStyle)
+        ReadBookConfig.explicitStyleSelection = false
         // 旋转等场景不会走 onDismiss，这里兜底清除临时日/夜预览
         clearEditorThemeOverride()
         super.onDestroyView()

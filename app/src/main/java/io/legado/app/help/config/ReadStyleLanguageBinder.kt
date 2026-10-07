@@ -6,7 +6,9 @@ import io.legado.app.help.book.isImage
 
 object ReadStyleLanguageBinder {
     fun apply(book: Book, extraSample: String? = null): Boolean {
-        if (book.isImage || ReadBookConfig.onlyThisBook) return false
+        if (book.isImage || ReadBookConfig.onlyThisBook || ReadBookConfig.explicitStyleSelection) {
+            return false
+        }
         val names = ReadBookConfig.configList.map { it.name }
         if (names.isEmpty()) return false
         val currentName = ReadBookConfig.durConfig.name
@@ -37,9 +39,8 @@ object ReadStyleLanguageBinder {
     fun rememberCurrentStyle(book: Book) {
         if (book.isImage) return
         val name = ReadBookConfig.durConfig.name
-        if (book.config.readStyleName != name) {
-            book.config.readStyleName = name
-            book.save()
-        }
+        if (name.isBlank() || book.config.readStyleName == name) return
+        book.config.readStyleName = name
+        book.save()
     }
 }

@@ -373,14 +373,8 @@ internal fun ReadStyleScreen(
     BackHandler(enabled = page !in rootPages || state.highlightSelectionMode != HighlightSelectionMode.NONE) {
         actions.onBack()
     }
-    var sheetTransparency by remember {
-        mutableIntStateOf(
-            ReadFloatingAppearanceState.transparencyPercent.coerceIn(
-                SheetTransparencyMinPercent,
-                SheetTransparencyMaxPercent,
-            )
-        )
-    }
+    // 面板透明度只在这一次打开里有效。界面关掉后组合被销毁，下次从 0 再开始。
+    var sheetTransparency by remember { mutableIntStateOf(SheetTransparencyMinPercent) }
     NgGlassSurface(
         modifier = Modifier
             .fillMaxWidth()

@@ -361,11 +361,18 @@ object ReadBookConfig {
         configList.indexOfFirst { it.name == name }
 
     fun selectStyleByName(name: String): Boolean {
+        if (name.isBlank() || durConfig.name == name) return false
         val index = indexOfStyleName(name)
         if (index < 0 || index == styleSelect) return false
         styleSelect = index
         return true
     }
+
+    /**
+     * 阅读设置打开期间，正文加载不能按语言把选中项拽回旧预设。
+     * 新建预设的名字还是空的，空名或重名都会匹配到列表里第一项，把用户输入的名字写到正在用的预设上。
+     */
+    var explicitStyleSelection: Boolean = false
 
     fun initConfigs() {
         val configFile = File(configFilePath)
