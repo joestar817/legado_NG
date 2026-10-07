@@ -15,7 +15,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.help.ai.AiChatEntryStyle
-import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsIcon
 import io.legado.app.ui.design.components.compose.NgSettingsItem
@@ -25,8 +24,6 @@ internal data class AiConfigMenuScreenState(
     val providerSummary: String = "",
     val skillSummary: String = "",
     val chatEntryStyle: AiChatEntryStyle = AiChatEntryStyle.NONE,
-    val bookshelfSwipeEnabled: Boolean = true,
-    val bookshelfSwipeSummary: String = "",
     val purifySummary: String = "",
     val assistantSummary: String = "",
     val readAloudSummary: String = ""
@@ -37,7 +34,6 @@ internal fun AiConfigMenuScreen(
     state: AiConfigMenuScreenState,
     onOpenPage: (String) -> Unit,
     onChatEntryStyleChanged: (AiChatEntryStyle) -> Unit,
-    onBookshelfSwipeChanged: (Boolean) -> Unit,
 ) {
     var showChatEntryPicker by rememberSaveable { mutableStateOf(false) }
     Column(
@@ -65,15 +61,6 @@ internal fun AiConfigMenuScreen(
                 summary = stringResource(state.chatEntryStyle.titleRes),
                 iconRes = R.drawable.ic_ai_setting,
                 onClick = { showChatEntryPicker = true }
-            )
-            AiConfigMenuEntry(
-                title = stringResource(R.string.ai_bookshelf_swipe),
-                summary = state.bookshelfSwipeSummary,
-                iconRes = R.drawable.ic_ai,
-                trailing = NgSettingsTrailing.SWITCH,
-                checked = state.bookshelfSwipeEnabled,
-                onCheckedChange = onBookshelfSwipeChanged,
-                onClick = { onBookshelfSwipeChanged(!state.bookshelfSwipeEnabled) }
             )
             AiConfigMenuEntry(
                 title = stringResource(R.string.ai_purify),
@@ -116,20 +103,13 @@ private fun AiConfigMenuEntry(
     title: String,
     summary: String,
     @DrawableRes iconRes: Int,
-    trailing: NgSettingsTrailing = NgSettingsTrailing.CHEVRON,
-    checked: Boolean = false,
-    onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: () -> Unit
 ) {
     NgSettingsItem(
         title = title,
         summary = summary,
-        trailing = trailing,
-        checked = checked,
-        onCheckedChange = onCheckedChange,
         onClick = onClick,
         trailingSpacing = 0.dp,
-        showClickIndication = trailing != NgSettingsTrailing.SWITCH,
         leading = {
             NgSettingsIcon(
                 painter = painterResource(iconRes),

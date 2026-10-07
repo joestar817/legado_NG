@@ -427,9 +427,6 @@
     <string name="ai_chat_entry_gugugaga">咕咕嘎嘎</string>
     <string name="ai_chat_entry_blue_fish">蓝色大肥鱼</string>
     <string name="ai_pet_open_chat">Open AI chat</string>
-    <string name="ai_bookshelf_swipe">Swipe right on bookshelf for AI</string>
-    <string name="ai_bookshelf_swipe_summary_off">Off. Right swipe no longer opens AI.</string>
-    <string name="ai_bookshelf_swipe_summary_on">On. Right swipe opens AI chat.</string>
     <string name="ai_chat_input_hint">Message AI</string>
     <string name="ai_chat_model_required">Select a chat model in model settings first</string>
     <string name="ai_chat_openai_only">AI chat currently supports OpenAI-compatible providers only</string>
@@ -2539,9 +2536,6 @@
     <string name="bookshelf_swipe_main">Switch main pages</string>
     <string name="bookshelf_swipe_groups">Switch groups first</string>
     <string name="bookshelf_swipe_groups_summary">Switch main pages after the last group</string>
-    <string name="bookshelf_shortcuts">Shortcuts</string>
-    <string name="bookshelf_swipe_ai">Swipe right to open AI assistant</string>
-    <string name="bookshelf_swipe_ai_summary">When switching groups, swipe right from the first group</string>
     <string name="bookshelf_reminders">Bookshelf reminders</string>
     <string name="explore_show_categories">Show categories</string>
     <string name="explore_hide_categories">Hide categories</string>

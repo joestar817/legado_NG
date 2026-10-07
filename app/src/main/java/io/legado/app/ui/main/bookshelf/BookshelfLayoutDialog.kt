@@ -568,6 +568,6 @@ private val layoutProfilesSaver = listSaver<BookshelfLayoutProfiles, Any>(
 )
 
 private val bookshelfSettingsSaver = listSaver<BookshelfSettingsDraft, Any>(
-    save = { listOf(it.topStyle, it.searchPosition, it.topDistance, it.topTransparency, it.floatingBottom, it.bottomDistance, it.bottomTransparency, it.swipeMode, it.aiSwipe) },
-    restore = { BookshelfSettingsDraft(it[0] as Int, it[1] as Int, it[2] as Int, it[3] as Int, it[4] as Boolean, it[5] as Int, it[6] as Int, it[7] as Int, it[8] as Boolean) },
+    save = { listOf(it.topStyle, it.searchPosition, it.topDistance, it.topTransparency, it.floatingBottom, it.bottomDistance, it.bottomTransparency, it.swipeMode) },
+    restore = { BookshelfSettingsDraft(it[0] as Int, it[1] as Int, it[2] as Int, it[3] as Int, it[4] as Boolean, it[5] as Int, it[6] as Int, it[7] as Int) },
 )

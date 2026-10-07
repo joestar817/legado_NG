@@ -156,7 +156,6 @@ object PreferKey {
     const val aiMemory = "aiMemory"
     const val aiChatFab = "aiChatFab"
     const val aiChatEntryStyle = "aiChatEntryStyle"
-    const val aiBookshelfSwipe = "aiBookshelfSwipe"
     const val aiChatActiveSessionId = "aiChatActiveSessionId"
     const val aiPromptParagraphPurify = "aiPromptParagraphPurify"
     const val aiPromptRuleGenerate = "aiPromptRuleGenerate"

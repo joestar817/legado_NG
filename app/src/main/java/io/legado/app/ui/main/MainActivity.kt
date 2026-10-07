@@ -39,7 +39,6 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.BookshelfGestureConfig
 import io.legado.app.help.config.BookshelfSwipeMode
 import io.legado.app.help.config.resolveBookshelfSwipe
-import io.legado.app.help.config.allowsBookshelfAiSwipe
 import io.legado.app.help.config.FloatingBottomBarConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.config.NgThemeNavigationIcons
@@ -113,9 +112,6 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     private var exploreReselected: Long = 0
     private var pagePosition = 0
     private var mainPagerScrollState = ViewPager.SCROLL_STATE_IDLE
-    private var aiChatSwipeStartX = 0f
-    private var aiChatSwipeStartY = 0f
-    private var aiChatSwipeStartedOnBookshelf = false
     private var shelfSwipeEligible = false
     private var shelfSwipeAction = 0
     private var shelfSwipeStartX = 0f
@@ -130,8 +126,6 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     )
     private var bottomMenuCount = realPositions.size
     private val EXIT_INTERVAL = 2000L
-    private val AI_CHAT_SWIPE_START_RATIO = 0.5f
-    private val AI_CHAT_SWIPE_DISTANCE_DP = 120
     private val isBookshelfPage: Boolean
         get() = realPositions.getOrNull(pagePosition) == idBookshelf
     internal val hidesHomeListeningCapsule: Boolean
@@ -237,7 +231,6 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         val shelfHandled = handleBookshelfSwipe(ev)
-        handleAiChatSwipe(ev)
         return if (shelfHandled) true else super.dispatchTouchEvent(ev)
     }
 
@@ -265,7 +258,6 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 }
                 shelfSwipeEligible = false
                 shelfSwipeCancelled = true
-                resetAiChatSwipe()
             }
             MotionEvent.ACTION_MOVE -> if (shelfSwipeEligible && shelfSwipeAction == 0) {
                 if (shelfSwipeMode == BookshelfSwipeMode.GROUPS_FIRST &&
@@ -283,7 +275,6 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                     shelfSwipeAction = resolveBookshelfSwipe(shelfSwipeMode, direction, shelf?.canSwipeGroup(direction) == true)
                     shelfSwipeEligible = false
                     if (shelfSwipeAction != 0) {
-                        if (shelfSwipeAction != 2) resetAiChatSwipe()
                         // End the child's press and the outer pager's drag before claiming the gesture.
                         cancelShelfTouchTarget(event)
                     }
@@ -321,38 +312,6 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         }
     }
 
-    private fun handleAiChatSwipe(event: MotionEvent) {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                aiChatSwipeStartX = event.rawX
-                aiChatSwipeStartY = event.rawY
-                val startLimit = window.decorView.width * AI_CHAT_SWIPE_START_RATIO
-                aiChatSwipeStartedOnBookshelf = AiConfig.bookshelfSwipeEnabled &&
-                        isBookshelfPage &&
-                        event.rawX <= startLimit &&
-                        allowsBookshelfAiSwipe(BookshelfGestureConfig.mode,
-                            (fragmentMap[idBookshelf1] as? BookshelfFragment1)?.canSwipeGroup(-1) == true) &&
-                        !isTouchInsideBookshelfFloatingDock(event) &&
-                        !isTouchInsideChatEntry(event)
-            }
-
-            MotionEvent.ACTION_UP -> {
-                if (aiChatSwipeStartedOnBookshelf) {
-                    val dx = event.rawX - aiChatSwipeStartX
-                    val dy = event.rawY - aiChatSwipeStartY
-                    val isRightSwipe = dx >= AI_CHAT_SWIPE_DISTANCE_DP.dpToPx()
-                            && abs(dx) > abs(dy) * 1.8f
-                    if (isRightSwipe) {
-                        startBookshelfGenericAiChat()
-                    }
-                }
-                resetAiChatSwipe()
-            }
-
-            MotionEvent.ACTION_CANCEL -> resetAiChatSwipe()
-        }
-    }
-
     private fun isTouchInsideBookshelfFloatingDock(event: MotionEvent): Boolean {
         val floatingDock = binding.root.findViewById<View>(R.id.bookshelf_floating_dock)
             ?.takeIf { it.isShown }
@@ -364,12 +323,6 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             ?.getTag(R.id.bookshelf_floating_dock) as? Rect
             ?: return false
         return composeBounds.contains(event.rawX.toInt(), event.rawY.toInt())
-    }
-
-    private fun resetAiChatSwipe() {
-        aiChatSwipeStartX = 0f
-        aiChatSwipeStartY = 0f
-        aiChatSwipeStartedOnBookshelf = false
     }
 
     override fun onNavigationItemSelected(item: MenuItem): Boolean = binding.run {

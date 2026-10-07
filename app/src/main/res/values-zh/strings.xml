@@ -424,9 +424,6 @@
     <string name="ai_chat_entry_gugugaga">咕咕嘎嘎</string>
     <string name="ai_chat_entry_blue_fish">蓝色大肥鱼</string>
     <string name="ai_pet_open_chat">打开 AI 聊天</string>
-    <string name="ai_bookshelf_swipe">书架右滑进入 AI 助理</string>
-    <string name="ai_bookshelf_swipe_summary_off">已关闭，右滑不再进入</string>
-    <string name="ai_bookshelf_swipe_summary_on">已开启，右滑可进入聊天</string>
     <string name="ai_chat_input_hint">输入消息与 AI 聊天</string>
     <string name="ai_chat_model_required">请先在模型设置中选择聊天模型</string>
     <string name="ai_chat_openai_only">AI 聊天暂只支持 OpenAI 兼容提供商</string>
@@ -2441,9 +2438,6 @@
     <string name="bookshelf_swipe_main">切换主页面</string>
     <string name="bookshelf_swipe_groups">优先切换分组</string>
     <string name="bookshelf_swipe_groups_summary">滑到末组后切换主页面</string>
-    <string name="bookshelf_shortcuts">快捷入口</string>
-    <string name="bookshelf_swipe_ai">右滑进入 AI 助理</string>
-    <string name="bookshelf_swipe_ai_summary">切换分组时，仅首组右滑进入</string>
     <string name="bookshelf_reminders">书架提醒</string>
     <string name="explore_show_categories">展开分类</string>
     <string name="explore_hide_categories">收起分类</string>

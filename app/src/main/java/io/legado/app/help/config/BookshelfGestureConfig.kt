@@ -26,6 +26,3 @@ internal fun resolveBookshelfSwipe(mode: BookshelfSwipeMode, direction: Int, can
         BookshelfSwipeMode.GROUPS_FIRST -> if (canChangeGroup) direction else 0
         BookshelfSwipeMode.DISABLED -> 2
     }
-
-internal fun allowsBookshelfAiSwipe(mode: BookshelfSwipeMode, canGoToPreviousGroup: Boolean): Boolean =
-    mode != BookshelfSwipeMode.GROUPS_FIRST || !canGoToPreviousGroup

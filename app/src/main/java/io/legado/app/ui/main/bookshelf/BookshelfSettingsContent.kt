@@ -16,7 +16,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
-import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.config.*
 import io.legado.app.constant.PreferKey
 import io.legado.app.ui.design.components.compose.*
@@ -34,7 +33,6 @@ internal data class BookshelfSettingsDraft(
     val bottomDistance: Int = AppConfig.floatingBottomBarBottomDistancePx,
     val bottomTransparency: Int = AppConfig.floatingBottomBarTransparency,
     val swipeMode: Int = BookshelfGestureConfig.mode.value,
-    val aiSwipe: Boolean = AiConfig.bookshelfSwipeEnabled,
 ) {
     fun save(): Boolean {
         val old = BookshelfSettingsDraft()
@@ -46,8 +44,7 @@ internal data class BookshelfSettingsDraft(
         AppConfig.floatingBottomBarBottomDistancePx = bottomDistance
         AppConfig.floatingBottomBarTransparency = bottomTransparency
         BookshelfGestureConfig.mode = BookshelfSwipeMode.fromValue(swipeMode)
-        AiConfig.bookshelfSwipeEnabled = aiSwipe
-        return old.copy(swipeMode = swipeMode, aiSwipe = aiSwipe) != this
+        return old.copy(swipeMode = swipeMode) != this
     }
 }
 
@@ -126,14 +123,6 @@ internal fun BookshelfSettingsFields(
                         if (index != 2) NgFormGroupDivider()
                     }
                 }
-            }
-            NgFormGroup(stringResource(R.string.bookshelf_shortcuts)) {
-                NgFormSwitchSettingRow(
-                    title = stringResource(R.string.bookshelf_swipe_ai),
-                    summary = stringResource(R.string.bookshelf_swipe_ai_summary),
-                    checked = draft.aiSwipe,
-                    onCheckedChange = { onChange(draft.copy(aiSwipe = it)) },
-                )
             }
         }
     }
