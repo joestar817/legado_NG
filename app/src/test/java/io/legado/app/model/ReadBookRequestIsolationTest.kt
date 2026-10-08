@@ -2,6 +2,7 @@ package io.legado.app.model
 
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
+import io.legado.app.data.entities.BookProgress
 import io.legado.app.data.entities.BookSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -66,6 +67,57 @@ class ReadBookRequestIsolationTest {
         val current = ReadBook.captureLoadGeneration(book.bookUrl)!!
         ReadBook.recordDownload(book.bookUrl, current, 2, false)
         assertEquals(setOf(2), ReadBook.downloadedChapters)
+    }
+
+    @Test
+    fun unchangedReaderAcceptsProgressSyncEvenAfterSavingBookMetadata() {
+        val book = Book(bookUrl = "same")
+        ReadBook.book = book
+        val token = ReadBook.captureProgressSync(book)!!
+        book.durChapterTime = 123L
+        book.durChapterTitle = "saved title"
+        assertTrue(ReadBook.isProgressSyncCurrent(token))
+    }
+
+    @Test
+    fun progressSyncCannotBeCapturedForAnotherBookInstance() {
+        val book = Book(bookUrl = "same")
+        ReadBook.book = book
+        assertNull(ReadBook.captureProgressSync(book.copy()))
+    }
+
+    @Test
+    fun switchingBooksRejectsLateProgressSync() {
+        val book = Book(bookUrl = "old")
+        ReadBook.book = book
+        val token = ReadBook.captureProgressSync(book)!!
+        ReadBook.book = Book(bookUrl = "new")
+        assertFalse(ReadBook.isProgressSyncCurrent(token))
+    }
+
+    @Test
+    fun reopeningSameBookRejectsPreviousSessionsProgressSync() {
+        val book = Book(bookUrl = "same")
+        ReadBook.book = book
+        val token = ReadBook.captureProgressSync(book)!!
+        epoch.invalidate()
+        assertFalse(ReadBook.isProgressSyncCurrent(token))
+        assertTrue(ReadBook.isProgressSyncCurrent(ReadBook.captureProgressSync(book)!!))
+    }
+
+    @Test
+    fun explicitProgressRestoreInvalidatesPendingSyncEvenAtSamePosition() {
+        val book = Book(bookUrl = "same", durChapterIndex = 4, durChapterPos = 87)
+        ReadBook.book = book
+        ReadBook.durChapterIndex = 4
+        ReadBook.durChapterPos = 87
+        val pendingResponse = ReadBook.captureProgressSync(book)!!
+        val pendingConfirmation = ReadBook.captureProgressSync(book)!!
+        // Same position avoids loading/persisting, but is still an explicit navigation.
+        ReadBook.setProgress(BookProgress(book))
+        assertFalse(ReadBook.isProgressSyncCurrent(pendingResponse))
+        assertFalse(ReadBook.isProgressSyncCurrent(pendingConfirmation))
+        assertTrue(ReadBook.isProgressSyncCurrent(ReadBook.captureProgressSync(book)!!))
     }
 
     @Test

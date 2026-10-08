@@ -341,6 +341,7 @@ class ReadBookActivity : BaseReadBookActivity(),
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        justInitData = true
         epubOpeningPreview?.close()
         epubOpeningPreview = null
         epubOpeningPreparation?.close()
@@ -2927,6 +2928,7 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
 
     private fun sureSyncProgress(progress: BookProgress) {
+        val syncToken = ReadBook.book?.let(ReadBook::captureProgressSync) ?: return
         showReadConfirmDialog(
             context = this,
             title = getString(R.string.get_book_progress),
@@ -2934,7 +2936,7 @@ class ReadBookActivity : BaseReadBookActivity(),
             confirmLabel = getString(R.string.ok),
             cancelLabel = getString(R.string.no),
             onConfirm = {
-                ReadBook.setProgress(progress)
+                if (ReadBook.isProgressSyncCurrent(syncToken)) ReadBook.setProgress(progress)
             },
         )
     }
@@ -3031,6 +3033,7 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
 
     override fun sureNewProgress(progress: BookProgress) {
+        val syncToken = ReadBook.book?.let(ReadBook::captureProgressSync) ?: return
         syncDialog?.dismiss()
         syncDialog = showReadConfirmDialog(
             context = this,
@@ -3039,7 +3042,7 @@ class ReadBookActivity : BaseReadBookActivity(),
             confirmLabel = getString(R.string.ok),
             cancelLabel = getString(R.string.no),
             onConfirm = {
-                ReadBook.setProgress(progress)
+                if (ReadBook.isProgressSyncCurrent(syncToken)) ReadBook.setProgress(progress)
             },
         )
     }

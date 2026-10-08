@@ -55,6 +55,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import splitties.init.appCtx
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.min
 
@@ -77,6 +78,7 @@ object ReadBook : CoroutineScope by MainScope() {
     var msg: String? = null
     private val loadingChapters = arrayListOf<Int>()
     private val loadEpoch = ReadBookLoadEpoch()
+    private val progressNavigationVersion = AtomicLong()
     private val chapterLoadingJobs = ConcurrentHashMap<Int, Coroutine<*>>()
     private val prevChapterLoadingLock = Mutex()
     private val curChapterLoadingLock = Mutex()
@@ -212,6 +214,7 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     fun setProgress(progress: BookProgress) {
+        progressNavigationVersion.incrementAndGet()
         pendingBookmarkNavigation = null
         if (progress.durChapterIndex < chapterSize &&
             (durChapterIndex != progress.durChapterIndex
@@ -303,6 +306,22 @@ object ReadBook : CoroutineScope by MainScope() {
         }
     }
 
+    /** Entry sync and its confirmation must not outlive a book session or explicit navigation. */
+    internal data class ProgressSyncToken(
+        val book: Book,
+        val loadGeneration: Long,
+        val navigationVersion: Long,
+    )
+
+    internal fun captureProgressSync(targetBook: Book): ProgressSyncToken? {
+        if (book !== targetBook) return null
+        return ProgressSyncToken(targetBook, loadEpoch.current, progressNavigationVersion.get())
+    }
+
+    internal fun isProgressSyncCurrent(token: ProgressSyncToken): Boolean =
+        book === token.book && loadEpoch.isCurrent(token.loadGeneration) &&
+                progressNavigationVersion.get() == token.navigationVersion
+
     /**
      * 同步阅读进度
      * 如果当前进度快于服务器进度或者没有进度进行上传，如果慢与服务器进度则执行传入动作
@@ -314,11 +333,15 @@ object ReadBook : CoroutineScope by MainScope() {
     ) {
         if (!AppConfig.syncBookProgress) return
         val book = book ?: return
+        val syncToken = captureProgressSync(book) ?: return
         Coroutine.async {
             AppWebDav.getBookProgress(book)
         }.onError {
             AppLog.put("拉取阅读进度失败", it)
         }.onSuccess { progress ->
+            if (!AppConfig.syncBookProgress) return@onSuccess
+            // Exit sync only uploads the captured book and must survive reader teardown.
+            if (newProgressAction != null && !isProgressSyncCurrent(syncToken)) return@onSuccess
             if (progress == null || progress.durChapterIndex < book.durChapterIndex ||
                 (progress.durChapterIndex == book.durChapterIndex
                         && progress.durChapterPos < book.durChapterPos)
@@ -480,6 +503,7 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     fun skipToPage(index: Int, success: (() -> Unit)? = null) {
+        progressNavigationVersion.incrementAndGet()
         pendingBookmarkNavigation = null
         durChapterPos = curTextChapter?.getReadLength(index) ?: index
         callBack?.upContent {
@@ -545,6 +569,8 @@ object ReadBook : CoroutineScope by MainScope() {
         bookmark: Bookmark?,
     ) {
         if (index < chapterSize) {
+            // 即使跳到相同位置，也不能再应用跳转前发出的同步结果。
+            progressNavigationVersion.incrementAndGet()
             clearTextChapter()
             if (upContent) callBack?.upContent()
             durChapterIndex = index

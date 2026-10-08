@@ -99,18 +99,19 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
                 bookUrl.isNullOrEmpty() -> appDb.bookDao.lastReadBook
                 else -> appDb.bookDao.getBook(bookUrl)
             } ?: ReadBook.book
-            when {
-                book != null -> initBook(book)
-                else -> {
-                    ReadBook.upMsg(context.getString(R.string.no_book))
-                    AppLog.put("未找到书籍\nbookUrl:$bookUrl")
-                }
-            }
             val index = intent.getIntExtra("index", -1)
             val chapterPos = intent.getIntExtra("chapterPos", -1)
             val bookmarkTime = intent.getLongExtra("bookmarkTime", -1L)
             val bookmark = book?.takeIf { bookmarkTime >= 0 }?.let {
                 appDb.bookmarkDao.getByBook(it.name, it.author).firstOrNull { mark -> mark.time == bookmarkTime }
+            }
+            val hasExplicitPosition = bookmark != null || (index >= 0 && chapterPos >= 0)
+            when {
+                book != null -> initBook(book, hasExplicitPosition)
+                else -> {
+                    ReadBook.upMsg(context.getString(R.string.no_book))
+                    AppLog.put("未找到书籍\nbookUrl:$bookUrl")
+                }
             }
             if (bookmark != null) {
                 ReadBook.saveCurrentBookProgress()
@@ -130,7 +131,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    private suspend fun initBook(book: Book) {
+    private suspend fun initBook(book: Book, hasExplicitPosition: Boolean) {
         readingRecordBookKey = book.bookUrl
         val startup = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("book-init") else null
         val isSameBook = ReadBook.book?.bookUrl == book.bookUrl
@@ -168,8 +169,8 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
                 }
             }
         }
-        if (ReadBook.chapterChanged) {
-            // 有章节跳转不同步阅读进度
+        if (ReadBook.chapterChanged || hasExplicitPosition) {
+            // 显式定位（含同章书签）优先于入场自动同步。
             ReadBook.chapterChanged = false
         } else if (!(isSameBook && BaseReadAloudService.isRun) && ReadBook.inBookshelf) {
             if (AppConfig.syncBookProgressPlus) {
@@ -342,11 +343,13 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
         alertSync: ((progress: BookProgress) -> Unit)? = null
     ) {
         if (!AppConfig.syncBookProgress) return
+        val syncToken = ReadBook.captureProgressSync(book) ?: return
         execute {
             AppWebDav.getBookProgress(book)
         }.onError {
             AppLog.put("拉取阅读进度失败《${book.name}》\n${it.localizedMessage}", it)
         }.onSuccess { progress ->
+            if (!AppConfig.syncBookProgress || !ReadBook.isProgressSyncCurrent(syncToken)) return@onSuccess
             progress ?: return@onSuccess
             if (progress.durChapterIndex == book.durChapterIndex && progress.durChapterPos == book.durChapterPos) {
                 return@onSuccess
