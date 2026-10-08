@@ -181,7 +181,7 @@ internal fun HomeWidgetSkinBackdrop(
                         size.height - leafSize.height + 6.dp.toPx() * scale) {
                         scale(scaleX = -1f, scaleY = 1f,
                             pivot = Offset(leafSize.width / 2f, leafSize.height / 2f)) {
-                            with(cornerLeaves) { draw(leafSize, alpha = 0.44f) }
+                            with(cornerLeaves) { draw(leafSize, colorFilter = HomeStorybookLeafColorFilter) }
                         }
                     }
                     val girlSize = 100.dp.toPx() * scale

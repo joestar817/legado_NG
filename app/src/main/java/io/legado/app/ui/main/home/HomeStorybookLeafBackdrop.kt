@@ -5,12 +5,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+
+/** Match the theme's richer leaf greens without recoloring the card or flattening leaf veins. */
+internal val HomeStorybookLeafColorFilter = ColorFilter.colorMatrix(ColorMatrix(floatArrayOf(
+    1.10f, 0f, 0f, 0f, -68f,
+    0f, 1.10f, 0f, 0f, -42f,
+    0f, 0f, 1.10f, 0f, -78f,
+    0f, 0f, 0f, 1f, 0f,
+)))
 
 /** Fit the original branch itself, so rotation never moves padding into the corner. */
 @Composable
@@ -37,13 +47,13 @@ internal fun HomeStorybookLeafBackdrop(
             translate(size.width - top.width + 4.dp.toPx() * factor,
                 headerStart - 6.dp.toPx() * factor) {
                 rotate(180f, pivot = Offset(top.width / 2f, top.height / 2f)) {
-                    with(leaves) { draw(top, alpha = 0.60f) }
+                    with(leaves) { draw(top, colorFilter = HomeStorybookLeafColorFilter) }
                 }
             }
             val bottom = fittedSize(if (small) 64.dp else 96.dp)
             translate(-4.dp.toPx() * factor,
                 size.height - bottom.height + 6.dp.toPx() * factor) {
-                with(leaves) { draw(bottom, alpha = 0.50f) }
+                with(leaves) { draw(bottom, colorFilter = HomeStorybookLeafColorFilter) }
             }
         }
     }
