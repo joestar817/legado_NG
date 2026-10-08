@@ -10,6 +10,48 @@ import org.junit.Test
 
 class AllBookmarkFilterTest {
     @Test
+    fun readerSearchOnlyMatchesChapterExcerptAndNotes() {
+        val bookmarks = listOf(
+            bookmark(1).copy(bookName = "needle"),
+            bookmark(2).copy(bookAuthor = "needle"),
+            bookmark(3).copy(chapterName = "NEEDLE"),
+            bookmark(4).copy(bookText = "needle passage"),
+            bookmark(5).copy(content = "needle note"),
+        )
+        val reader = buildAllBookmarkCollection(bookmarks, " needle ", AllBookmarkFilter(), searchBookMetadata = false)
+        assertEquals(listOf(3L, 4L, 5L), reader.times())
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), collect(bookmarks, query = "needle").times())
+    }
+
+    @Test
+    fun readerCombinesNoteColorAndSearchAndPreservesBookmarkIdentity() {
+        val selected = highlight(1).copy(bookmarkType = Bookmark.TYPE_TEXT_HIGHLIGHT_CANONICAL,
+            bookText = "目标段落", content = "备注")
+        val others = listOf(highlight(2).copy(bookText = "目标段落"),
+            highlight(3, 0xFF3366CC.toInt()).copy(bookText = "目标段落", content = "备注"),
+            bookmark(4).copy(bookText = "目标段落", content = "备注"))
+        val input = listOf(selected) + others
+        val collection = buildAllBookmarkCollection(input, "目标", AllBookmarkFilter(
+            noteFilter = BookmarkNoteFilter.WITH_NOTE, color = selected.highlightColor), searchBookMetadata = false)
+        assertEquals(listOf(1L), collection.times())
+        assertSame(selected, collection.groups.single().matches.single().value)
+        assertEquals(2, collection.colors.size)
+        assertEquals(input.map { it.time }, buildAllBookmarkCollection(input, "", AllBookmarkFilter(),
+            searchBookMetadata = false).times())
+    }
+
+    @Test
+    fun readerNoMatchesRetainsColorOptionsAndRecoversWhenFilterIsCleared() {
+        val input = listOf(highlight(1), bookmark(2))
+        val collection = buildAllBookmarkCollection(input, "", AllBookmarkFilter(
+            noteFilter = BookmarkNoteFilter.WITH_NOTE), searchBookMetadata = false)
+        assertEquals(0, collection.matchCount)
+        assertEquals(listOf(Bookmark.DEFAULT_HIGHLIGHT_COLOR), collection.colors)
+        assertEquals(2, buildAllBookmarkCollection(input, "", AllBookmarkFilter(),
+            searchBookMetadata = false).matchCount)
+    }
+
+    @Test
     fun defaultFilterIsInactiveAndEachConditionActivatesIt() {
         assertFalse(AllBookmarkFilter().isActive)
         assertTrue(AllBookmarkFilter(bookKey = "book").isActive)

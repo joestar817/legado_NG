@@ -43,6 +43,7 @@ internal fun buildAllBookmarkCollection(
     bookmarks: List<Bookmark>,
     query: String,
     filter: AllBookmarkFilter,
+    searchBookMetadata: Boolean = true,
 ): AllBookmarkCollection {
     val indexedGroups = bookmarks.withIndex().groupBy {
         bookmarkBookKey(it.value.bookName, it.value.bookAuthor)
@@ -65,7 +66,7 @@ internal fun buildAllBookmarkCollection(
             bookmark.matchesNoteFilter(filter.noteFilter) &&
                 (filter.color == null ||
                     bookmark.isTextHighlight && bookmark.highlightColor == filter.color) &&
-                bookmark.matchesQuery(normalizedQuery)
+                bookmark.matchesQuery(normalizedQuery, searchBookMetadata)
         }
         if (matches.isEmpty()) null else BookmarkTimelineGroup(book, matches)
     }
@@ -78,9 +79,9 @@ private fun Bookmark.matchesNoteFilter(filter: BookmarkNoteFilter): Boolean = wh
     BookmarkNoteFilter.WITHOUT_NOTE -> content.isBlank()
 }
 
-private fun Bookmark.matchesQuery(query: String): Boolean = query.isEmpty() ||
-    bookName.contains(query, ignoreCase = true) ||
-    bookAuthor.contains(query, ignoreCase = true) ||
+private fun Bookmark.matchesQuery(query: String, searchBookMetadata: Boolean): Boolean = query.isEmpty() ||
+    searchBookMetadata && (bookName.contains(query, ignoreCase = true) ||
+        bookAuthor.contains(query, ignoreCase = true)) ||
     chapterName.contains(query, ignoreCase = true) ||
     bookText.contains(query, ignoreCase = true) ||
     content.contains(query, ignoreCase = true)
