@@ -54,9 +54,6 @@ import io.legado.app.utils.putPrefBoolean
 class TipConfigDialog : BaseComposeDialogFragment() {
 
     companion object {
-        const val TIP_COLOR = 7897
-        const val TIP_DIVIDER_COLOR = 7898
-
         private const val SECTION_TITLE = 0
         private const val SECTION_HEADER = 1
         private const val SECTION_FOOTER = 2
