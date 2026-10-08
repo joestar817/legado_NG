@@ -1,7 +1,11 @@
 package io.legado.app.ui.main.bookshelf.style1
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.os.Bundle
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -41,6 +45,7 @@ import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.collections.set
 
 /**
@@ -63,6 +68,16 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
     private val bookGroups = mutableListOf<BookGroup>()
     private val fragmentMap = hashMapOf<Long, BooksFragment>()
     private var activeBooksFragment: BooksFragment? = null
+    private class GroupSwipe(
+        val direction: Int,
+        val targetIndex: Int,
+        val current: BooksFragment,
+        val target: BooksFragment,
+        val width: Int,
+        var offset: Float = 0f,
+    )
+    private var groupSwipe: GroupSwipe? = null
+    private var groupSwipeAnimator: ValueAnimator? = null
     private var pendingGroupSelection = false
     private var groupGridBooks: List<Book> = emptyList()
     private var groupGridCustomGroupMask: Long = 0L
@@ -105,6 +120,22 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
 
     private fun initView() {
         updateFloatingDockSettings()
+        binding.bookshelfPageContainer.addOnLayoutChangeListener { container, left, top, right, bottom,
+                                                                  oldLeft, oldTop, oldRight, oldBottom ->
+            if ((right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) &&
+                resetGroupSwipe()
+            ) {
+                pendingGroupSelection = true
+                // The Activity handles configuration changes without recreating this view.
+                // Leave fragment transactions until after the current layout traversal.
+                container.post {
+                    if (view != null && binding.bookshelfPageContainer === container &&
+                        isResumed && !childFragmentManager.isStateSaved &&
+                        pendingGroupSelection && groupSwipe == null
+                    ) selectedGroup?.let(::showGroupFragment)
+                }
+            }
+        }
         binding.bookshelfScreen.setViewCompositionStrategy(
             ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
         )
@@ -246,6 +277,13 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         }
     }
 
+    override fun onPause() {
+        // Fragment lifecycle dispatch may already be inside a transaction. Clean up its
+        // temporary neighbor through the normal selection path after resuming instead.
+        if (resetGroupSwipe()) pendingGroupSelection = true
+        super.onPause()
+    }
+
     private fun openBookshelfManage() {
         startActivity<BookshelfManageActivity> {
             putExtra("groupId", groupId)
@@ -319,6 +357,7 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         } else {
             val visibleGroups = data
             if (visibleGroups != bookGroups) {
+                resetGroupSwipe()
                 bookGroups.clear()
                 bookGroups.addAll(visibleGroups)
                 dockGroups = visibleGroups.map { group ->
@@ -348,11 +387,104 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
     }
 
     fun canSwipeGroup(direction: Int): Boolean =
-        !showGroupGrid && !childFragmentManager.isStateSaved &&
+        view != null && isResumed && !showGroupGrid && !childFragmentManager.isStateSaved &&
             direction in listOf(-1, 1) && selectedGroupIndex + direction in bookGroups.indices
 
-    fun swipeGroup(direction: Int) {
-        if (canSwipeGroup(direction)) selectGroup(selectedGroupIndex + direction)
+    /** Finish an earlier release before a new pointer sequence starts. */
+    fun completePendingGroupSwipe() {
+        if (!isResumed || childFragmentManager.isStateSaved) return
+        val animator = groupSwipeAnimator
+        if (animator != null) animator.end()
+        else if (resetGroupSwipe() || pendingGroupSelection) selectedGroup?.let(::showGroupFragment)
+    }
+
+    fun beginGroupSwipe(direction: Int): Boolean {
+        if (!canSwipeGroup(direction) || groupSwipe != null) return false
+        val current = activeBooksFragment?.takeIf(::isFragmentMounted) ?: return false
+        val container = binding.bookshelfPageContainer
+        if (container.width <= 0) return false
+        val targetIndex = selectedGroupIndex + direction
+        val group = bookGroups[targetIndex]
+        val manager = childFragmentManager
+        val tag = booksFragmentTag(group.groupId)
+        val target = (manager.findFragmentByTag(tag) as? BooksFragment)
+            ?: fragmentMap[group.groupId]
+            ?: BooksFragment(group)
+        target.updateGroup(group)
+        if (target.isAdded && !target.isDetached && !isFragmentMounted(target)) {
+            manager.beginTransaction().setReorderingAllowed(true).detach(target).commitNow()
+        }
+        // Keep the selected group and primary navigation fragment unchanged until release.
+        manager.beginTransaction().setReorderingAllowed(true).apply {
+            when {
+                target.isDetached -> attach(target)
+                !target.isAdded -> add(R.id.bookshelf_page_container, target, tag)
+            }
+        }.commitNow()
+        fragmentMap[group.groupId] = target
+        if (!isFragmentMounted(target)) return false
+        target.requireView().isVisible = true
+        groupSwipe = GroupSwipe(direction, targetIndex, current, target, container.width)
+        updateGroupSwipe(0f)
+        return true
+    }
+
+    fun updateGroupSwipe(distance: Float) {
+        val swipe = groupSwipe ?: return
+        val offset = (distance * swipe.direction).coerceIn(-swipe.width.toFloat(), 0f) * swipe.direction
+        swipe.offset = offset
+        swipe.current.view?.translationX = offset
+        swipe.target.view?.translationX = offset + swipe.direction * swipe.width
+    }
+
+    fun finishGroupSwipe(commit: Boolean) {
+        val swipe = groupSwipe ?: return
+        groupSwipeAnimator?.apply {
+            removeAllListeners()
+            removeAllUpdateListeners()
+            cancel()
+        }
+        val targetOffset = if (commit) -swipe.direction * swipe.width.toFloat() else 0f
+        val animator = ValueAnimator.ofFloat(swipe.offset, targetOffset)
+        groupSwipeAnimator = animator
+        animator.duration = (220f * abs(targetOffset - swipe.offset) / swipe.width)
+            .toLong().coerceIn(80L, 220L)
+        animator.interpolator = DecelerateInterpolator()
+        animator.addUpdateListener { updateGroupSwipe(it.animatedValue as Float) }
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                if (groupSwipe !== swipe) return
+                resetGroupSwipe()
+                if (!isResumed || childFragmentManager.isStateSaved) {
+                    pendingGroupSelection = true
+                    return
+                }
+                if (commit && bookGroups.getOrNull(swipe.targetIndex)?.groupId == swipe.target.configuredGroupId) {
+                    selectGroup(swipe.targetIndex)
+                } else {
+                    selectedGroup?.let(::showGroupFragment)
+                }
+            }
+        })
+        animator.start()
+    }
+
+    /** Reset visual state only; callers decide when it is safe to transact fragments. */
+    private fun resetGroupSwipe(): Boolean {
+        val swipe = groupSwipe ?: return false
+        groupSwipe = null
+        groupSwipeAnimator?.apply {
+            removeAllListeners()
+            removeAllUpdateListeners()
+            cancel()
+        }
+        groupSwipeAnimator = null
+        swipe.current.view?.translationX = 0f
+        swipe.target.view?.apply {
+            translationX = 0f
+            isVisible = false
+        }
+        return true
     }
 
     private fun selectGroup(
@@ -360,12 +492,13 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         showReselectionFeedback: Boolean = false,
         force: Boolean = false,
     ) {
+        val hadSwipe = resetGroupSwipe()
         val group = bookGroups.getOrNull(index) ?: return
         val currentFragment = activeBooksFragment
         val reselected = index == selectedGroupIndex &&
             currentFragment?.configuredGroupId == group.groupId &&
             isFragmentMounted(currentFragment)
-        if (reselected && !force) {
+        if (reselected && !force && !hadSwipe) {
             if (showReselectionFeedback) {
                 toastOnUi("${group.groupName}(${currentFragment.getBooksCount()})")
             }
@@ -423,6 +556,10 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         }
         transaction.setPrimaryNavigationFragment(target)
         transaction.commitNow()
+        target.view?.apply {
+            translationX = 0f
+            isVisible = true
+        }
         fragmentMap[group.groupId] = target
         activeBooksFragment = target
         pendingGroupSelection = false
@@ -464,6 +601,7 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
     }
 
     override fun onDestroyView() {
+        resetGroupSwipe()
         binding.bookshelfScreen.setTag(R.id.bookshelf_floating_dock, null)
         super.onDestroyView()
     }

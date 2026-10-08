@@ -225,6 +225,9 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     }
 
     override fun onPause() {
+        shelfSwipeAction = 0
+        shelfSwipeEligible = false
+        shelfSwipeCancelled = true
         binding.aiChatPet.setHostActive(false)
         super.onPause()
     }
@@ -238,6 +241,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         val shelf = fragmentMap[idBookshelf1] as? BookshelfFragment1
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                shelf?.completePendingGroupSwipe()
                 shelfSwipeAction = 0
                 shelfSwipeCancelled = false
                 shelfSwipeMode = BookshelfGestureConfig.mode
@@ -252,6 +256,10 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                     !isTouchInsideChatEntry(event)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
+                if (shelfSwipeAction == -1 || shelfSwipeAction == 1) {
+                    shelf?.finishGroupSwipe(commit = false)
+                    shelfSwipeAction = 2
+                }
                 if (shelfSwipeEligible && shelfSwipeMode == BookshelfSwipeMode.DISABLED) {
                     shelfSwipeAction = 2
                     cancelShelfTouchTarget(event)
@@ -259,7 +267,9 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 shelfSwipeEligible = false
                 shelfSwipeCancelled = true
             }
-            MotionEvent.ACTION_MOVE -> if (shelfSwipeEligible && shelfSwipeAction == 0) {
+            MotionEvent.ACTION_MOVE -> if (shelfSwipeAction == -1 || shelfSwipeAction == 1) {
+                if (!shelfSwipeCancelled) shelf?.updateGroupSwipe(event.rawX - shelfSwipeStartX)
+            } else if (shelfSwipeEligible && shelfSwipeAction == 0) {
                 if (shelfSwipeMode == BookshelfSwipeMode.GROUPS_FIRST &&
                     event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) {
                     shelfSwipeEligible = false
@@ -274,18 +284,27 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                     val direction = if (dx < 0) 1 else -1
                     shelfSwipeAction = resolveBookshelfSwipe(shelfSwipeMode, direction, shelf?.canSwipeGroup(direction) == true)
                     shelfSwipeEligible = false
+                    if ((shelfSwipeAction == -1 || shelfSwipeAction == 1) &&
+                        shelf?.beginGroupSwipe(shelfSwipeAction) != true
+                    ) {
+                        shelfSwipeAction = 0
+                    }
                     if (shelfSwipeAction != 0) {
                         // End the child's press and the outer pager's drag before claiming the gesture.
                         cancelShelfTouchTarget(event)
+                        if (shelfSwipeAction == -1 || shelfSwipeAction == 1) {
+                            shelf?.updateGroupSwipe(dx)
+                        }
                     }
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 val action = shelfSwipeAction
-                if (event.actionMasked == MotionEvent.ACTION_UP && !shelfSwipeCancelled && action in listOf(-1, 1)) {
+                if (action == -1 || action == 1) {
                     val dx = event.rawX - shelfSwipeStartX
                     val dy = event.rawY - shelfSwipeStartY
-                    if (-dx * action >= 48.dpToPx() && abs(dx) > abs(dy) * 1.8f) shelf?.swipeGroup(action)
+                    shelf?.finishGroupSwipe(commit = event.actionMasked == MotionEvent.ACTION_UP &&
+                        !shelfSwipeCancelled && -dx * action >= 48.dpToPx() && abs(dx) > abs(dy) * 1.8f)
                 }
                 shelfSwipeAction = 0
                 shelfSwipeEligible = false
