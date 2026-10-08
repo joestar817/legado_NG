@@ -1,7 +1,6 @@
 package io.legado.app.ui.design.components.compose
 
 import android.os.Build
-import androidx.appcompat.widget.SwitchCompat
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -43,13 +42,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import io.legado.app.R
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.theme.NgTheme
-import io.legado.app.utils.applyTint
 
 @Composable
 fun NgSettingsSectionLabel(
@@ -540,22 +537,9 @@ private fun NgSettingsSwitch(
     enabled: Boolean,
     onCheckedChange: ((Boolean) -> Unit)?
 ) {
-    val primary = NgTheme.colors.primary
-    val isDark = NgTheme.snapshot.isDark
-    AndroidView(
-        factory = { context ->
-            SwitchCompat(context).apply {
-                showText = false
-            }
-        },
-        update = { switch ->
-            switch.setOnCheckedChangeListener(null)
-            switch.isEnabled = enabled
-            switch.isChecked = checked
-            switch.applyTint(primary, isDark)
-            switch.setOnCheckedChangeListener { _, isChecked ->
-                onCheckedChange?.invoke(isChecked)
-            }
-        }
+    NgSwitchControl(
+        checked = checked,
+        enabled = enabled,
+        onCheckedChange = onCheckedChange,
     )
 }
