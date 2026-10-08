@@ -493,7 +493,7 @@ internal open class ReadCatalogDialog : CatalogDrawerDialog() {
     }
 
     override fun onBookmarkSelected(bookmark: Bookmark) {
-        ReadBook.openChapter(bookmark.chapterIndex, bookmark.chapterPos)
+        ReadBook.openBookmark(bookmark)
         dismissAllowingStateLoss()
     }
 }

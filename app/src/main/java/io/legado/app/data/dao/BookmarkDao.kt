@@ -51,7 +51,7 @@ interface BookmarkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(vararg bookmark: Bookmark)
 
-    @Query("""SELECT * FROM bookmarks WHERE bookmarkType = 1
+    @Query("""SELECT * FROM bookmarks WHERE bookmarkType = :bookmarkType
         AND bookName = :bookName AND bookAuthor = :bookAuthor
         AND chapterIndex = :chapterIndex AND chapterPos = :chapterPos
         AND endChapterIndex = :endChapterIndex
@@ -59,13 +59,15 @@ interface BookmarkDao {
         AND (endChapterPos = :endChapterPos OR bookText = :bookText)
         ORDER BY time DESC LIMIT 1""")
     fun findTextHighlight(bookName: String, bookAuthor: String, chapterIndex: Int,
-                          chapterPos: Int, endChapterIndex: Int, endChapterPos: Int, bookText: String): Bookmark?
+                          chapterPos: Int, endChapterIndex: Int, endChapterPos: Int, bookText: String,
+                          bookmarkType: Int): Bookmark?
 
     @Transaction
     fun getOrInsertTextHighlight(bookmark: Bookmark): Bookmark {
         require(bookmark.isTextHighlight)
         return findTextHighlight(bookmark.bookName, bookmark.bookAuthor, bookmark.chapterIndex,
-            bookmark.chapterPos, bookmark.endChapterIndex, bookmark.endChapterPos, bookmark.bookText)
+            bookmark.chapterPos, bookmark.endChapterIndex, bookmark.endChapterPos, bookmark.bookText,
+            bookmark.bookmarkType)
             ?: bookmark.also { insert(it) }
     }
 

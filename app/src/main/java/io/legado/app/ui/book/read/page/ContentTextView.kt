@@ -31,6 +31,8 @@ import io.legado.app.ui.book.read.page.entities.column.ReviewColumn
 import io.legado.app.ui.book.read.page.entities.column.TextBaseColumn
 import io.legado.app.ui.book.read.page.entities.column.TextColumn
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
+import io.legado.app.ui.book.read.page.provider.NativeHighlightPositionMap
+import io.legado.app.ui.book.read.page.provider.NativeTextHighlightResolver
 import io.legado.app.ui.book.read.page.provider.ReadNoteMarkerStyle
 import io.legado.app.ui.book.read.page.provider.TextPageFactory
 import io.legado.app.ui.widget.dialog.PhotoDialog
@@ -41,6 +43,7 @@ import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
 import java.util.concurrent.Executors
+import java.util.WeakHashMap
 import kotlin.math.max
 import kotlin.math.min
 
@@ -79,6 +82,8 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
     val selectStart = TextPos(0, -1, -1)
     private val selectEnd = TextPos(0, -1, -1)
     private var textHighlights: List<Bookmark> = emptyList()
+    private data class ResolvedHighlight(val range: NativeHighlightPositionMap.Range?, val end: Int?)
+    private val highlightRanges = WeakHashMap<NativeHighlightPositionMap, MutableMap<Long, ResolvedHighlight>>()
     private var textHighlightNotesByEndChapter: Map<Int, List<Bookmark>> = emptyMap()
     private val textHighlightNoteMarkers = mutableListOf<TextHighlightNoteMarker>()
     private val textHighlightNoteMarkerDrawable by lazy {
@@ -128,10 +133,30 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
 
     fun setTextHighlights(bookmarks: List<Bookmark>) {
         textHighlights = bookmarks.filter(Bookmark::isTextHighlight)
+        synchronized(highlightRanges) { highlightRanges.clear() }
         textHighlightNotesByEndChapter = ReadNoteMarkerStyle.notes(textHighlights)
             .groupBy(Bookmark::endChapterIndex)
         textHighlightNoteMarkers.clear()
         postInvalidate()
+    }
+
+    private fun highlightRange(page: TextPage, bookmark: Bookmark): NativeHighlightPositionMap.Range? {
+        return resolvedHighlight(page, bookmark)?.range
+    }
+
+    private fun resolvedHighlight(page: TextPage, bookmark: Bookmark): ResolvedHighlight? {
+        if (!bookmark.coversChapter(page.chapterIndex)) return null
+        val map = page.getTextChapter().highlightPositionMap
+        return synchronized(highlightRanges) {
+            val ranges = highlightRanges.getOrPut(map) { HashMap() }
+            if (!ranges.containsKey(bookmark.time)) {
+                ranges[bookmark.time] = ResolvedHighlight(
+                    NativeTextHighlightResolver.resolve(bookmark, page.chapterIndex, map),
+                    NativeTextHighlightResolver.resolveEnd(bookmark, page.chapterIndex, map),
+                )
+            }
+            ranges[bookmark.time]
+        }
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -199,21 +224,20 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                 (it.highlightStyle == Bookmark.STYLE_BACKGROUND) == backgroundPass
             }
             .sortedBy(Bookmark::time)
+            .mapNotNull { highlight -> highlightRange(page, highlight)?.let { highlight to it } }
         if (pageHighlights.isEmpty()) return
         canvas.withTranslation(0f, relativeOffset) {
             page.lines.forEach { line ->
-                val columns = line.columns.filterIsInstance<TextBaseColumn>()
+                val columns = line.columns
                 if (columns.isEmpty()) return@forEach
-                pageHighlights.forEach { highlight ->
+                pageHighlights.forEach { (highlight, range) ->
                     var chapterPosition = line.chapterPosition
                     var segmentStart: Float? = null
                     var segmentEnd = 0f
                     columns.forEach { column ->
-                        val marked = highlight.containsChapterPosition(
-                            page.chapterIndex,
-                            chapterPosition,
-                        )
-                        chapterPosition += column.charData.length
+                        val marked = column is TextBaseColumn &&
+                            chapterPosition >= range.start && chapterPosition < range.endExclusive
+                        chapterPosition += column.highlightTextLength()
                         if (marked) {
                             if (segmentStart == null) segmentStart = column.start
                             segmentEnd = column.end
@@ -320,7 +344,8 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         val markerGap = NOTE_MARKER_GAP_DP.dpToPx().toFloat()
         val touchSize = NOTE_MARKER_TOUCH_SIZE_DP.dpToPx().toFloat()
         highlights.forEach { highlight ->
-            val endpoint = findTextHighlightEndpoint(page, highlight.endChapterPos)
+            val end = resolvedHighlight(page, highlight)?.end ?: return@forEach
+            val endpoint = findTextHighlightEndpoint(page, end)
                 ?: return@forEach
             // 备注标记属于划线终点装饰，不能为了避让正文被挪到整行末尾或页边。
             val inlineOffset = textHighlightNoteSpacerPositions(endpoint.line)
@@ -407,7 +432,9 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         val highlights = textHighlightNotesByEndChapter[line.textPage.chapterIndex].orEmpty()
         if (highlights.isEmpty()) return emptyList()
         return highlights
-            .mapNotNull { textHighlightNoteEndpointX(line, it.endChapterPos) }
+            .mapNotNull { highlight ->
+                resolvedHighlight(line.textPage, highlight)?.end?.let { textHighlightNoteEndpointX(line, it) }
+            }
             .distinct()
             .sorted()
     }
@@ -423,9 +450,9 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
     ): Float? {
         var chapterPosition = line.chapterPosition
         for (column in line.columns) {
-            if (column !is TextBaseColumn) continue
-            val columnEndPosition = chapterPosition + column.charData.length
+            val columnEndPosition = chapterPosition + column.highlightTextLength()
             if (
+                column is TextBaseColumn &&
                 endChapterPosition > chapterPosition &&
                 endChapterPosition <= columnEndPosition
             ) {
@@ -599,7 +626,9 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
                 val highlight = textHighlights
                     .asSequence()
                     .filter {
-                        it.containsChapterPosition(textPage.chapterIndex, chapterPosition)
+                        highlightRange(textPage, it)?.let { range ->
+                            chapterPosition >= range.start && chapterPosition < range.endExclusive
+                        } == true
                     }
                     .maxByOrNull(Bookmark::time)
                 if (highlight != null) {
@@ -703,9 +732,16 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         var position = textLine.chapterPosition
         textLine.columns.forEach { column ->
             if (column === target) return position
-            if (column is TextBaseColumn) position += column.charData.length
+            position += column.highlightTextLength()
         }
         return position
+    }
+
+    // Inline images/review icons occupy one UTF-16 placeholder in line.text as well.
+    private fun BaseColumn.highlightTextLength(): Int = when (this) {
+        is TextBaseColumn -> charData.length
+        is ImageColumn, is ReviewColumn -> 1
+        else -> 0
     }
 
     /**
@@ -1182,12 +1218,12 @@ class ContentTextView(context: Context, attrs: AttributeSet?) : View(context, at
         var position = line.chapterPosition
         line.columns.forEachIndexed { index, column ->
             if (index == targetIndex) {
-                if (includeColumnEnd && column is TextBaseColumn) {
-                    position += column.charData.length
+                if (includeColumnEnd) {
+                    position += column.highlightTextLength()
                 }
                 return position
             }
-            if (column is TextBaseColumn) position += column.charData.length
+            position += column.highlightTextLength()
         }
         return position
     }

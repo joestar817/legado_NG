@@ -8,6 +8,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookProgress
 import io.legado.app.data.entities.BookSource
+import io.legado.app.data.entities.Bookmark
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
@@ -30,6 +31,7 @@ import io.legado.app.service.CacheBookService
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.ui.book.read.page.provider.LayoutProgressListener
+import io.legado.app.ui.book.read.page.provider.NativeTextHighlightResolver
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.stackTraceStr
 import io.legado.app.utils.toastOnUi
@@ -79,6 +81,15 @@ object ReadBook : CoroutineScope by MainScope() {
     private val prevChapterLoadingLock = Mutex()
     private val curChapterLoadingLock = Mutex()
     private val nextChapterLoadingLock = Mutex()
+    @Volatile
+    private var pendingBookmarkNavigation: PendingBookmarkNavigation? = null
+
+    private data class PendingBookmarkNavigation(
+        val bookUrl: String,
+        val generation: Long,
+        val owner: CallBack?,
+        val bookmark: Bookmark,
+    )
 
     /* 跳转进度前进度记录 */
     var lastBookProgress: BookProgress? = null
@@ -201,6 +212,7 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     fun setProgress(progress: BookProgress) {
+        pendingBookmarkNavigation = null
         if (progress.durChapterIndex < chapterSize &&
             (durChapterIndex != progress.durChapterIndex
                     || durChapterPos != progress.durChapterPos)
@@ -222,6 +234,7 @@ object ReadBook : CoroutineScope by MainScope() {
 
     //恢复跳转前进度
     fun restoreLastBookProgress() {
+        pendingBookmarkNavigation = null
         lastBookProgress?.let {
             setProgress(it)
             lastBookProgress = null
@@ -229,6 +242,7 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     fun clearTextChapter() {
+        pendingBookmarkNavigation = null
         clearExpiredChapterLoadingJob(true)
         prevTextChapter = null
         curTextChapter = null
@@ -337,6 +351,7 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     fun moveToNextPage(): Boolean {
+        pendingBookmarkNavigation = null
         var hasNextPage = false
         curTextChapter?.let {
             val nextPagePos = it.getNextPageLength(durChapterPos)
@@ -353,6 +368,7 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     fun moveToPrevPage(): Boolean {
+        pendingBookmarkNavigation = null
         var hasPrevPage = false
         curTextChapter?.let {
             val prevPagePos = it.getPrevPageLength(durChapterPos)
@@ -372,6 +388,7 @@ object ReadBook : CoroutineScope by MainScope() {
         restartReadAloud: Boolean = true,
         startPosition: Int = 0,
     ): Boolean {
+        pendingBookmarkNavigation = null
         if (durChapterIndex < simulatedChapterSize - 1) {
             durChapterPos = startPosition
             durChapterIndex++
@@ -403,6 +420,7 @@ object ReadBook : CoroutineScope by MainScope() {
         upContent: Boolean,
         upContentInPlace: Boolean = true
     ): Boolean {
+        pendingBookmarkNavigation = null
         if (durChapterIndex < simulatedChapterSize - 1) {
             durChapterPos = 0
             durChapterIndex++
@@ -437,6 +455,7 @@ object ReadBook : CoroutineScope by MainScope() {
         restartReadAloud: Boolean = true,
         startPosition: Int? = null,
     ): Boolean {
+        pendingBookmarkNavigation = null
         if (durChapterIndex > 0) {
             durChapterPos = startPosition ?: if (toLast) prevTextChapter?.lastReadLength ?: Int.MAX_VALUE else 0
             durChapterIndex--
@@ -461,6 +480,7 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     fun skipToPage(index: Int, success: (() -> Unit)? = null) {
+        pendingBookmarkNavigation = null
         durChapterPos = curTextChapter?.getReadLength(index) ?: index
         callBack?.upContent {
             success?.invoke()
@@ -476,6 +496,7 @@ object ReadBook : CoroutineScope by MainScope() {
 
     /** A layout supplies a content offset; persistence and playback policy stay here. */
     internal fun commitContentPosition(position: Int) {
+        if (position != durChapterPos) pendingBookmarkNavigation = null
         durChapterPos = position
         saveRead(true)
         curPageChanged(true)
@@ -501,17 +522,70 @@ object ReadBook : CoroutineScope by MainScope() {
         durChapterPos: Int = 0,
         upContent: Boolean = true,
         success: (() -> Unit)? = null
+    ) = openChapter(index, durChapterPos, upContent, success, null)
+
+    /** Highlight offsets are resolved against the target chapter as its pages become available. */
+    fun openBookmark(bookmark: Bookmark, success: (() -> Unit)? = null) {
+        val currentBook = book ?: return
+        if (bookmark.bookName != currentBook.name || bookmark.bookAuthor != currentBook.author ||
+            bookmark.chapterIndex !in 0 until chapterSize
+        ) return
+        if (!bookmark.isTextHighlight) {
+            openChapter(bookmark.chapterIndex, bookmark.chapterPos, success = success)
+            return
+        }
+        openChapter(bookmark.chapterIndex, 0, true, success, bookmark.copy())
+    }
+
+    private fun openChapter(
+        index: Int,
+        durChapterPos: Int,
+        upContent: Boolean,
+        success: (() -> Unit)?,
+        bookmark: Bookmark?,
     ) {
         if (index < chapterSize) {
             clearTextChapter()
             if (upContent) callBack?.upContent()
             durChapterIndex = index
             ReadBook.durChapterPos = durChapterPos
+            pendingBookmarkNavigation = bookmark?.let { target ->
+                book?.let { PendingBookmarkNavigation(it.bookUrl, loadEpoch.current, callBack, target) }
+            }
             saveRead()
             loadContent(resetPageOffset = true) {
                 success?.invoke()
             }
         }
+    }
+
+    /** False means a requested highlight still has no visible range in the published layout. */
+    private fun applyPendingBookmarkNavigation(chapter: TextChapter, completed: Boolean = false): Boolean {
+        val pending = pendingBookmarkNavigation ?: return true
+        if (!isLoadCurrent(pending.bookUrl, pending.generation) || callBack !== pending.owner ||
+            durChapterIndex != pending.bookmark.chapterIndex
+        ) {
+            if (pendingBookmarkNavigation === pending) pendingBookmarkNavigation = null
+            return true
+        }
+        // A cancelled older load may finish dispatching a page after a new request was installed.
+        if (curTextChapter !== chapter || chapter.position != pending.bookmark.chapterIndex) return true
+        // Legacy quote verification and its display-offset fallback need the complete chapter.
+        if (pending.bookmark.bookmarkType == Bookmark.TYPE_TEXT_HIGHLIGHT && !completed) return false
+        val range = NativeTextHighlightResolver.resolve(pending.bookmark, chapter.position, chapter.highlightPositionMap)
+        if (range == null && !completed) return false
+        synchronized(this) {
+            if (pendingBookmarkNavigation !== pending ||
+                !isLoadCurrent(pending.bookUrl, pending.generation) || curTextChapter !== chapter ||
+                callBack !== pending.owner || durChapterIndex != pending.bookmark.chapterIndex
+            ) return true
+            pendingBookmarkNavigation = null
+            if (range != null) {
+                durChapterPos = range.start
+                saveRead()
+            }
+        }
+        return true
     }
 
     /**
@@ -838,19 +912,21 @@ object ReadBook : CoroutineScope by MainScope() {
                     var available = false
                     for (page in textChapter.layoutChannel) {
                         val index = page.index
-                        if (!available && page.containPos(durChapterPos)) {
+                        val bookmarkReady = applyPendingBookmarkNavigation(textChapter)
+                        if (bookmarkReady && !available && page.containPos(durChapterPos)) {
                             if (upContent) {
                                 withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                             }
                             available = true
                         }
-                        if (upContent && isScroll) {
+                        if (bookmarkReady && upContent && isScroll) {
                             if (max(index - 3, 0) < durPageIndex) {
                                 withCurrentLoad(book, generation) { callBack?.upContent(offset, false) }
                             }
                         }
                         withCurrentLoad(book, generation) { callBack?.onLayoutPageCompleted(index, page) }
                     }
+                    applyPendingBookmarkNavigation(textChapter, completed = true)
                     if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, !available && resetPageOffset) }
                     withCurrentLoad(book, generation) { curPageChanged() }
                     withCurrentLoad(book, generation) { callBack?.contentLoadFinish() }
@@ -930,19 +1006,21 @@ object ReadBook : CoroutineScope by MainScope() {
                     var available = false
                     for (page in textChapter.layoutChannel) {
                         val index = page.index
-                        if (!available && page.containPos(durChapterPos)) {
+                        val bookmarkReady = applyPendingBookmarkNavigation(textChapter)
+                        if (bookmarkReady && !available && page.containPos(durChapterPos)) {
                             if (upContent) {
                                 withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                             }
                             available = true
                         }
-                        if (upContent && isScroll) {
+                        if (bookmarkReady && upContent && isScroll) {
                             if (max(index - 3, 0) < durPageIndex) {
                                 withCurrentLoad(book, generation) { callBack?.upContent(offset, false) }
                             }
                         }
                         withCurrentLoad(book, generation) { callBack?.onLayoutPageCompleted(index, page) }
                     }
+                    applyPendingBookmarkNavigation(textChapter, completed = true)
                     if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, !available && resetPageOffset) }
                     withCurrentLoad(book, generation) { curPageChanged() }
                     withCurrentLoad(book, generation) { callBack?.contentLoadFinish() }
@@ -1139,6 +1217,7 @@ object ReadBook : CoroutineScope by MainScope() {
 
     @Synchronized
     private fun releaseAndCancel() {
+        pendingBookmarkNavigation = null
         loadEpoch.invalidate()
         msg = null
         preDownloadTask?.cancel()

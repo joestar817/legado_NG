@@ -157,6 +157,8 @@ class BooksFragment() : BaseFragment(0),
             }
             startActivityForBook(updatedBook) {
                 putExtra("chapterChanged", chapterChanged)
+                val bookmarkTime = result.getOrNull(5) as? Long ?: -1L
+                if (bookmarkTime >= 0) putExtra("bookmarkTime", bookmarkTime)
             }
         }
     }

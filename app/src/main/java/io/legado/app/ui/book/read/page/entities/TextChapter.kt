@@ -12,6 +12,7 @@ import io.legado.app.help.tts.paragraphNumberAt
 import io.legado.app.help.tts.readTextRange
 import io.legado.app.ui.book.read.page.provider.LayoutProgressListener
 import io.legado.app.ui.book.read.page.provider.NativeReadAloudTextSource
+import io.legado.app.ui.book.read.page.provider.NativeHighlightPositionMap
 import io.legado.app.ui.book.read.page.provider.TextChapterLayout
 import io.legado.app.utils.fastBinarySearchBy
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +39,12 @@ data class TextChapter(
 
     @Transient
     internal val highlightInputs = arrayListOf<io.legado.app.ui.book.read.page.provider.ReadHighlightInput>()
+
+    /** Manual highlights use their own stable coordinates; reading/TTS positions stay unchanged. */
+    @Transient
+    @Volatile
+    var highlightPositionMap = NativeHighlightPositionMap.Builder("").snapshot()
+        internal set
 
     private val textPages = arrayListOf<TextPage>()
     @Transient

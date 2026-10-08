@@ -51,6 +51,7 @@ import io.legado.app.ui.book.read.page.entities.column.TextBaseColumn
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.ui.book.read.page.provider.LayoutProgressListener
 import io.legado.app.ui.book.read.page.provider.NativeReaderSelectionSource
+import io.legado.app.ui.book.read.page.provider.NativeTextHighlightResolver
 import io.legado.app.ui.book.read.page.provider.TextPageFactory
 import io.legado.app.utils.activity
 import io.legado.app.utils.invisible
@@ -1053,18 +1054,34 @@ class ReadView(context: Context, attrs: AttributeSet) :
 
     fun createTextHighlight(): Bookmark? {
         val book = ReadBook.book ?: return null
-        return selectionSource.highlightSelection()?.createTextHighlight(book)
+        val selection = selectionSource.highlightSelection() ?: return null
+        val start = highlightChapter(selection.chapterIndex)?.highlightPositionMap
+            ?.toCanonical(selection.chapterPosition) ?: return null
+        val end = highlightChapter(selection.endChapterIndex)?.highlightPositionMap
+            ?.toCanonical(selection.endChapterPosition, end = true) ?: return null
+        return selection.copy(chapterPosition = start, endChapterPosition = end)
+            .createTextHighlight(book)?.apply { bookmarkType = Bookmark.TYPE_TEXT_HIGHLIGHT_CANONICAL }
+    }
+
+    private fun highlightChapter(index: Int): TextChapter? {
+        epubLayout?.takeIf { it.active }?.let { return it.highlightChapter(index) }
+        return listOfNotNull(ReadBook.curTextChapter, ReadBook.prevTextChapter, ReadBook.nextTextChapter)
+            .firstOrNull { it.chapter.index == index }
     }
 
     fun getContentEditTarget(highlight: Bookmark?): ReaderContentEditTarget? {
         val selection = highlight?.let {
+            val startMap = highlightChapter(it.chapterIndex)?.highlightPositionMap ?: return null
+            val start = NativeTextHighlightResolver.resolve(it, it.chapterIndex, startMap)?.start ?: return null
+            val endMap = highlightChapter(it.endChapterIndex)?.highlightPositionMap
+            val end = endMap?.let { map -> NativeTextHighlightResolver.resolve(it, it.endChapterIndex, map)?.endExclusive }
             ReaderSelection(
                 chapterIndex = it.chapterIndex,
-                chapterPosition = it.chapterPos,
+                chapterPosition = start,
                 chapterTitle = it.chapterName,
                 text = it.bookText,
                 endChapterIndex = it.endChapterIndex,
-                endChapterPosition = it.endChapterPos,
+                endChapterPosition = end ?: start,
             )
         }
         return selectionSource.contentEditTarget(selection)

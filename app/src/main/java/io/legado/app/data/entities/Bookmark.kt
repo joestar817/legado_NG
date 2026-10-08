@@ -41,7 +41,7 @@ data class Bookmark(
 ) : Parcelable {
 
     val isTextHighlight: Boolean
-        get() = bookmarkType == TYPE_TEXT_HIGHLIGHT &&
+        get() = (bookmarkType == TYPE_TEXT_HIGHLIGHT || bookmarkType == TYPE_TEXT_HIGHLIGHT_CANONICAL) &&
             (endChapterIndex > chapterIndex || endChapterPos > chapterPos)
 
     fun coversChapter(targetChapterIndex: Int): Boolean {
@@ -58,6 +58,8 @@ data class Bookmark(
     companion object {
         const val TYPE_POSITION = 0
         const val TYPE_TEXT_HIGHLIGHT = 1
+        // UTF-16 offsets in the chapter's text before visual indentation/title segmentation.
+        const val TYPE_TEXT_HIGHLIGHT_CANONICAL = 2
 
         const val STYLE_BACKGROUND = 0
         const val STYLE_UNDERLINE = 1

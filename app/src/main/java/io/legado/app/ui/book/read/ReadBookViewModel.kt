@@ -108,7 +108,14 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
             }
             val index = intent.getIntExtra("index", -1)
             val chapterPos = intent.getIntExtra("chapterPos", -1)
-            if (index >= 0 && chapterPos >= 0) { //从书签打开的正文，有进度传递
+            val bookmarkTime = intent.getLongExtra("bookmarkTime", -1L)
+            val bookmark = book?.takeIf { bookmarkTime >= 0 }?.let {
+                appDb.bookmarkDao.getByBook(it.name, it.author).firstOrNull { mark -> mark.time == bookmarkTime }
+            }
+            if (bookmark != null) {
+                ReadBook.saveCurrentBookProgress()
+                ReadBook.openBookmark(bookmark)
+            } else if (index >= 0 && chapterPos >= 0) { //从书签打开的正文，有进度传递
                 ReadBook.saveCurrentBookProgress() //启用恢复进度提示
                 openChapter(index, chapterPos)
             }

@@ -157,7 +157,7 @@ class BookInfoActivity :
                         book.chapterInVolumeIndex = chapterInVolumeIndex
                         appDb.bookDao.update(book)
                     }
-                    startReadActivity(book)
+                    startReadActivity(book, it.getOrNull(5) as? Long ?: -1L)
                 }
             }
         } ?: let {
@@ -1669,7 +1669,7 @@ class BookInfoActivity :
         }
     }
 
-    private fun startReadActivity(book: Book) {
+    private fun startReadActivity(book: Book, bookmarkTime: Long = -1L) {
         when {
             book.isAudio -> readBookResult.launch(
                 Intent(this, AudioPlayActivity::class.java)
@@ -1692,6 +1692,7 @@ class BookInfoActivity :
                     .putExtra("bookUrl", book.bookUrl)
                     .putExtra("inBookshelf", viewModel.inBookshelf)
                     .putExtra("chapterChanged", chapterChanged)
+                    .apply { if (bookmarkTime >= 0) putExtra("bookmarkTime", bookmarkTime) }
             )
         }
     }

@@ -20,7 +20,8 @@ class TocActivityResult : ActivityResultContract<String, Array<Any>?>() {
                     it.getIntExtra("chapterPos", 0),
                     it.getBooleanExtra("chapterChanged", false),
                     it.getIntExtra("durVolumeIndex", 0),
-                    it.getIntExtra("chapterInVolumeIndex", 0)
+                    it.getIntExtra("chapterInVolumeIndex", 0),
+                    it.getLongExtra("bookmarkTime", -1L),
                 )
             }
         }

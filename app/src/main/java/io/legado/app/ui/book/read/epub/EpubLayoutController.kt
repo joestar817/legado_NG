@@ -944,12 +944,20 @@ internal class EpubLayoutController(
             textHighlights.asSequence().filter {
                 it.bookName == book.name && it.bookAuthor == book.author && it.coversChapter(chapterIndex)
             }.sortedBy(Bookmark::time).forEach { mark ->
-                val from = maxOf(document.first, if (chapterIndex == mark.chapterIndex) mark.chapterPos else 0)
-                val to = minOf(document.last, if (chapterIndex == mark.endChapterIndex) mark.endChapterPos else document.text.length)
+                val range = io.legado.app.ui.book.read.page.provider.NativeTextHighlightResolver.resolve(
+                    mark, chapterIndex, document.chapter.highlightPositionMap,
+                ) ?: return@forEach
+                val from = maxOf(document.first, range.start)
+                val to = minOf(document.last, range.endExclusive)
+                val noteEnd = if (mark.time in noteIds) {
+                    io.legado.app.ui.book.read.page.provider.NativeTextHighlightResolver.resolveEnd(
+                        mark, chapterIndex, document.chapter.highlightPositionMap,
+                    )
+                } else null
                 if (to > from) put(JSONObject().put("id", mark.time.toString()).put("occurrence", index)
                     .put("from", from).put("to", to).put("style", mark.highlightStyle)
                     .put("color", String.format("#%06X", mark.highlightColor and 0xffffff))
-                    .put("note", mark.time in noteIds && chapterIndex == mark.endChapterIndex && to == mark.endChapterPos))
+                    .put("note", noteEnd != null && to == noteEnd))
             }
         }
     }
@@ -1224,6 +1232,8 @@ internal class EpubLayoutController(
             if (valid()) { collect(result); next() }
         }
     }
+    internal fun highlightChapter(index: Int): TextChapter? = preparedChapters[index]?.chapter
+
     override fun highlightSelection() = selection
     override fun bookmarkSelection(): ReaderSelection? {
         selection?.let { return it }

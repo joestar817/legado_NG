@@ -95,7 +95,8 @@ class AllBookmarkActivity : VMBaseActivity<ActivityAllBookmarkBinding, AllBookma
             } else {
                 startActivityForBook(book) {
                     putExtra("index", bookmark.chapterIndex)
-                    putExtra("chapterPos", bookmark.chapterPos)
+                    putExtra("chapterPos", if (bookmark.isTextHighlight) 0 else bookmark.chapterPos)
+                    if (bookmark.isTextHighlight) putExtra("bookmarkTime", bookmark.time)
                 }
             }
         }

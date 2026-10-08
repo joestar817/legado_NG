@@ -368,7 +368,8 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
     private fun openBookmark(bookmark: Bookmark) {
         setResult(RESULT_OK, Intent().apply {
             putExtra("index", bookmark.chapterIndex)
-            putExtra("chapterPos", bookmark.chapterPos)
+            putExtra("chapterPos", if (bookmark.isTextHighlight) 0 else bookmark.chapterPos)
+            if (bookmark.isTextHighlight) putExtra("bookmarkTime", bookmark.time)
         })
         finish()
     }

@@ -17,6 +17,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.help.book.isEpub
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.help.book.BookContent
+import io.legado.app.help.book.ContentPositionMap
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.getBookSource
 import io.legado.app.help.config.AppConfig
@@ -127,6 +128,9 @@ class TextChapterLayout(
     private var floatArray = FloatArray(128)
 
     private var isCompleted = false
+    private lateinit var highlightPositions: NativeHighlightPositionMap.Builder
+    private lateinit var highlightParagraphs: List<HighlightParagraph>
+    private var highlightDisplayLength = 0
     private val job: Coroutine<*>
 
     var exception: Throwable? = null
@@ -174,6 +178,7 @@ class TextChapterLayout(
         textPage.textChapter = textChapter
         textPage.upLinesPosition()
         textPage.upRenderHeight()
+        textChapter.highlightPositionMap = highlightPositions.snapshot()
         textPages.add(textPage)
         channel.trySend(textPage)
         try {
@@ -225,6 +230,7 @@ class TextChapterLayout(
     ) {
         startupTiming?.mark("layout-start")
         val contents = bookContent.textList
+        prepareHighlightPositions(displayTitle, contents)
         val imageStyle = book.getImageStyle()
         val isSingleImageStyle = imageStyle.equals(Book.imgStyleSingle, true)
 
@@ -240,8 +246,15 @@ class TextChapterLayout(
                 )
             }
             //标题非隐藏
+            var titleSourceCursor = 0
             titleSegments.forEachIndexed { segmentIndex, segment ->
                 val text = segment.text
+                val titleSourceStart = displayTitle.indexOf(text, titleSourceCursor)
+                check(titleSourceStart >= 0) { "Title segment must belong to its source title" }
+                titleSourceCursor = titleSourceStart + text.length
+                val titlePositions = HighlightTextPositions().apply {
+                    add(text.length, titleSourceStart, titleSourceCursor)
+                }
                 val segmentPaint: TextPaint
                 val segmentMetrics: Paint.FontMetrics
                 val segmentHeight: Float
@@ -327,12 +340,14 @@ class TextChapterLayout(
                                 contentPaintTextHeight,
                                 style,
                                 imgSize,
-                                click
+                                click,
+                                NativeHighlightPositionMap.Range(titleSourceStart, titleSourceStart),
                             )
                             null
                         }
                     }
                 }
+                if (imgText != null) titlePositions.add(1, titleSourceCursor, titleSourceCursor)
                 setTypeText(
                     book,
                     if (imgText != null) text + imgText else text,
@@ -344,7 +359,8 @@ class TextChapterLayout(
                     clickList = clickList,
                     isTitle = true,
                     emptyContent = contents.isEmpty(),
-                    isVolumeTitle = bookChapter.isVolume
+                    isVolumeTitle = bookChapter.isVolume,
+                    positions = titlePositions,
                 )
                 if (!segment.main) {
                     pendingTextPage.lines.drop(firstSegmentLine).forEach { line ->
@@ -353,6 +369,11 @@ class TextChapterLayout(
                 }
                 pendingTextPage.lines.last().isParagraphEnd = true
                 stringBuilder.append("\n")
+                if (segmentIndex == titleSegments.lastIndex) {
+                    appendHighlightText("\n", displayTitle.length, displayTitle.length + 1)
+                } else {
+                    appendHighlightText("\n", titleSourceCursor, titleSourceCursor)
+                }
                 if (segmentIndex < titleSegments.lastIndex) {
                     durY += segmentHeight * ChapterProvider.titleLineSpacingSub
                 }
@@ -392,6 +413,8 @@ class TextChapterLayout(
         var wordCount = 0
         contents.forEachIndexed { contentIndex, content ->
             sourceParagraphIndex++
+            val paragraphPositions = highlightParagraphs[contentIndex]
+            val paragraphDisplayStart = highlightDisplayLength
             currentCoroutineContext().ensureActive()
             val highlightContext = highlightContexts.getOrNull(contentIndex)
             if (adaptSpecialStyle) {
@@ -402,24 +425,30 @@ class TextChapterLayout(
                 } else if (text.startsWith("<usehtml>")) {
                     val endInt = text.lastIndexOf("<")
                     if (endInt > 9) {
-                        setTypeHtml(imageStyle, book, text.substring(9, endInt))
+                        setTypeHtml(imageStyle, book, checkNotNull(paragraphPositions.html), paragraphPositions.start)
                         return@forEachIndexed
                     }
                 }
             }
+            val textPositions = HighlightTextPositions()
             var text = content.replace(srcReplaceChar, srcReplacementChar)
             if (isTextImageStyle) {
                 //图片样式为文字嵌入类型
                 val srcList = LinkedList<String>()
                 sb.setLength(0)
                 val matcher = AppPattern.imgPattern.matcher(text)
+                var sourceCursor = 0
                 while (matcher.find()) {
                     matcher.group(1)?.let { src ->
+                        textPositions.addSource(paragraphPositions, sourceCursor, matcher.start())
+                        textPositions.addImage(paragraphPositions, matcher.start(), matcher.end())
+                        sourceCursor = matcher.end()
                         srcList.add(src)
                         matcher.appendReplacement(sb, srcReplaceStr)
                     }
                 }
                 matcher.appendTail(sb)
+                textPositions.addSource(paragraphPositions, sourceCursor, text.length)
                 text = sb.toString()
                 wordCount += text.replace(noWordCountRegex,"").length
                 setTypeText(
@@ -433,6 +462,7 @@ class TextChapterLayout(
                     clickList = null,
                     highlightContext = highlightContext?.context,
                     highlightContextOffset = highlightContext?.offset ?: 0,
+                    positions = textPositions,
                 )
             } else {
                 if (isSingleImageStyle && isSetTypedImage) {
@@ -489,15 +519,18 @@ class TextChapterLayout(
                         }
                         if (start < matcher.start()) {
                             sb.append(text.subSequence(start, matcher.start()))
+                            textPositions.addSource(paragraphPositions, start, matcher.start())
                         }
                         when (style) {
                             "TEXT" -> {
                                 sb.append(reviewChar)
+                                textPositions.addImage(paragraphPositions, matcher.start(), matcher.end())
                                 srcList.add(imgSrc)
                                 clickList.add(click)
                             }
                             "text" -> {
                                 sb.append(srcReplaceChar)
+                                textPositions.addImage(paragraphPositions, matcher.start(), matcher.end())
                                 srcList.add(imgSrc)
                                 clickList.add(click)
                             }
@@ -517,8 +550,10 @@ class TextChapterLayout(
                                         clickList = clickList,
                                         highlightContext = highlightContext?.context,
                                         highlightContextOffset = highlightContext?.offset ?: 0,
+                                        positions = textPositions,
                                     )
                                     sb.setLength(0)
+                                    textPositions.clear()
                                     isFirstLine = false
                                 }
                                 setTypeImage(
@@ -527,7 +562,8 @@ class TextChapterLayout(
                                     contentPaintTextHeight,
                                     style,
                                     imgSize,
-                                    click
+                                    click,
+                                    paragraphPositions.range(matcher.start(), matcher.end()),
                                 )
                                 isSetTypedImage = true
                             }
@@ -542,6 +578,7 @@ class TextChapterLayout(
                     }
                     val textAfter = content.subSequence(start, content.length)
                     sb.append(textAfter)
+                    textPositions.addSource(paragraphPositions, start, content.length)
                 }
                 text = sb.toString()
                 if (text.isNotBlank()) {
@@ -558,11 +595,17 @@ class TextChapterLayout(
                         clickList = clickList,
                         highlightContext = highlightContext?.context,
                         highlightContextOffset = highlightContext?.offset ?: 0,
+                        positions = textPositions,
                     )
                 }
             }
             pendingTextPage.lines.last().isParagraphEnd = true
             stringBuilder.append("\n")
+            // An image-only paragraph may render no line. Defer its display gap until a later
+            // actual line requests it; native pagination does not always retain extra tail breaks.
+            if (highlightDisplayLength > paragraphDisplayStart) {
+                appendHighlightText("\n", paragraphPositions.end, paragraphPositions.end + 1)
+            }
         }
         val chapterWordCount = StringUtils.wordCountFormat(wordCount.toString())
         bookChapter.wordCount = chapterWordCount
@@ -593,7 +636,8 @@ class TextChapterLayout(
         textHeight: Float,
         imageStyle: String?,
         size: Size,
-        click: String?
+        click: String?,
+        positions: NativeHighlightPositionMap.Range,
     ) {
         if (size.width > 0 && size.height > 0) {
             prepareNextPageIfNeed(durY)
@@ -664,6 +708,9 @@ class TextChapterLayout(
             )
             calcTextLinePosition(textPages, textLine, stringBuilder.length)
             stringBuilder.append(" ") // 确保翻页时索引计算正确
+            recordHighlightText(textLine.chapterPosition, " ", HighlightTextPositions().apply {
+                add(1, positions.start, positions.endExclusive)
+            }, 0)
             pendingTextPage.addLine(textLine)
         }
         durY += textHeight * paragraphSpacing / 10f
@@ -675,10 +722,9 @@ class TextChapterLayout(
     private suspend fun setTypeHtml(
         imageStyle: String?,
         book: Book,
-        htmlContent: String,
+        spanned: Spanned,
+        canonicalStart: Int,
     ) {
-        val textViewTagHandler = TextViewTagHandler()
-        val spanned = htmlContent.parseAsHtml(HtmlCompat.FROM_HTML_MODE_COMPACT, tagHandler = textViewTagHandler)
         val width = visibleWidth
         val textPaint = contentPaint
         val textColor = ReadBookConfig.textColor
@@ -792,7 +838,8 @@ class TextChapterLayout(
                                     contentPaintTextHeight,
                                     iStyle,
                                     imgSize,
-                                    click
+                                    click,
+                                    NativeHighlightPositionMap.Range(canonicalStart + charIndex, canonicalStart + charIndex + 1),
                                 )
                             }
                         }
@@ -804,7 +851,8 @@ class TextChapterLayout(
                             contentPaintTextHeight,
                             imageStyle,
                             imgSize,
-                            null
+                            null,
+                            NativeHighlightPositionMap.Range(canonicalStart + charIndex, canonicalStart + charIndex + 1),
                         )
                     }
                     needAddText = false
@@ -850,6 +898,9 @@ class TextChapterLayout(
             }
             calcTextLinePosition(textPages, textLine, stringBuilder.length)
             stringBuilder.append(lineText)
+            recordHighlightText(textLine.chapterPosition, lineText.toString(), HighlightTextPositions().apply {
+                add(lineText.length, canonicalStart + lineStart, canonicalStart + lineEnd)
+            }, 0)
             val textPage = pendingTextPage
             textPage.addLine(textLine)
             durY += lineHeight * lineSpacingExtra //行距
@@ -987,6 +1038,7 @@ class TextChapterLayout(
         clickList: LinkedList<String?>?,
         highlightContext: ReadHighlightContext? = null,
         highlightContextOffset: Int = 0,
+        positions: HighlightTextPositions,
     ) {
         val charStyles = highlightMatcher.match(text, isTitle, highlightContext, highlightContextOffset)
         val widthsArray = allocateFloatArray(text.length)
@@ -1113,6 +1165,7 @@ class TextChapterLayout(
                 ))
             }
             stringBuilder.append(lineText)
+            recordHighlightText(textLine.chapterPosition, lineText, positions, lineStart)
             val textPage = pendingTextPage
             textPage.addLine(textLine)
             durY += textHeight * if (isTitle) titleLineSpacingExtra else lineSpacingExtra
@@ -1484,6 +1537,115 @@ class TextChapterLayout(
             }
             durY = 0f
         }
+    }
+
+    /** Canonical content is independent of this layout's indent, wrapping and title visibility. */
+    private fun prepareHighlightPositions(title: String, paragraphs: List<String>) {
+        val canonical = StringBuilder().append(title).append('\n')
+        highlightParagraphs = paragraphs.map { paragraph ->
+            val trimmed = paragraph.trim()
+            val htmlEnd = if (adaptSpecialStyle && trimmed.startsWith("<usehtml>")) trimmed.lastIndexOf('<') else -1
+            val html = if (htmlEnd > 9) {
+                trimmed.substring(9, htmlEnd).parseAsHtml(
+                    HtmlCompat.FROM_HTML_MODE_COMPACT, tagHandler = TextViewTagHandler(),
+                )
+            } else null
+            val indentLength = if (paragraph.startsWith(paragraphIndent)) paragraphIndent.length else 0
+            val projection = if (html == null) ContentPositionMap(paragraph).apply {
+                slice(text, indentLength, display = false)
+                regex(text, AppPattern.imgPattern.toRegex(), "\uFFFC")
+            } else null
+            val canonicalParagraph = html?.toString() ?: checkNotNull(projection).text
+            HighlightParagraph(canonical.length, canonicalParagraph.length, indentLength, projection, html).also {
+                canonical.append(canonicalParagraph).append('\n')
+            }
+        }
+        highlightPositions = NativeHighlightPositionMap.Builder(canonical.toString())
+        textChapter.highlightPositionMap = highlightPositions.snapshot()
+    }
+
+    private data class HighlightParagraph(
+        val start: Int,
+        val length: Int,
+        val indentLength: Int,
+        val projection: ContentPositionMap?,
+        val html: Spanned?,
+    ) {
+        val end: Int get() = start + length
+
+        fun position(sourcePosition: Int, end: Boolean = false): Int = start +
+            checkNotNull(projection).outputPosition(sourcePosition, if (end) {
+                ContentPositionMap.Affinity.AFTER
+            } else {
+                ContentPositionMap.Affinity.BEFORE
+            })
+
+        fun range(start: Int, end: Int) = NativeHighlightPositionMap.Range(position(start), position(end, true))
+    }
+
+    private data class HighlightTextRun(
+        val start: Int,
+        val end: Int,
+        val canonicalStart: Int,
+        val canonicalEnd: Int,
+    )
+
+    /** Coordinates follow the same append operations as the existing paragraph buffer. */
+    private class HighlightTextPositions {
+        val runs = ArrayList<HighlightTextRun>()
+        private var length = 0
+
+        fun add(size: Int, canonicalStart: Int, canonicalEnd: Int) {
+            if (size == 0) return
+            runs.add(HighlightTextRun(length, length + size, canonicalStart, canonicalEnd))
+            length += size
+        }
+
+        fun addSource(paragraph: HighlightParagraph, start: Int, end: Int) {
+            // The injected prefix may be rendered after a full image; remove it by source range,
+            // not by deleting the first N columns of the eventual displayed paragraph.
+            val prefixEnd = minOf(end, paragraph.indentLength)
+            if (start < prefixEnd) add(prefixEnd - start, paragraph.start, paragraph.start)
+            val textStart = maxOf(start, paragraph.indentLength)
+            if (textStart < end) add(end - textStart, paragraph.position(textStart), paragraph.position(end, true))
+        }
+
+        fun addImage(paragraph: HighlightParagraph, start: Int, end: Int) {
+            val range = paragraph.range(start, end)
+            add(1, range.start, range.endExclusive)
+        }
+
+        fun clear() {
+            runs.clear()
+            length = 0
+        }
+    }
+
+    private fun appendHighlightText(text: String, canonicalStart: Int, canonicalEnd: Int) {
+        highlightPositions.append(text, canonicalStart, canonicalEnd)
+        highlightDisplayLength += text.length
+    }
+
+    private fun recordHighlightText(displayStart: Int, text: String, positions: HighlightTextPositions, textStart: Int) {
+        // Existing HTML pagination can reserve an implicit paragraph break outside line.text.
+        // Keep the manual-highlight map in the exact existing chapterPosition domain.
+        if (displayStart > highlightDisplayLength) {
+            val anchor = positions.runs.firstOrNull()?.canonicalStart ?: 0
+            appendHighlightText("\n".repeat(displayStart - highlightDisplayLength), anchor, anchor)
+        }
+        check(displayStart == highlightDisplayLength) { "Highlight positions must follow display order" }
+        val textEnd = textStart + text.length
+        positions.runs.forEach { run ->
+            val start = maxOf(textStart, run.start)
+            val end = minOf(textEnd, run.end)
+            if (start < end) {
+                val linear = run.end - run.start == run.canonicalEnd - run.canonicalStart
+                val canonicalStart = if (linear) run.canonicalStart + start - run.start else run.canonicalStart
+                val canonicalEnd = if (linear) run.canonicalStart + end - run.start else run.canonicalEnd
+                appendHighlightText(text.substring(start - textStart, end - textStart), canonicalStart, canonicalEnd)
+            }
+        }
+        check(highlightDisplayLength == displayStart + text.length) { "Highlight text provenance has a gap" }
     }
 
     private fun allocateFloatArray(size: Int): FloatArray {
