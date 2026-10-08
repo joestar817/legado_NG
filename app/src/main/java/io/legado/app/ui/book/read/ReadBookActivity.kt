@@ -20,7 +20,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.get
 import androidx.core.view.size
 import androidx.lifecycle.lifecycleScope
-import com.jaredrummler.android.colorpicker.ColorPickerDialogListener
 import io.legado.app.BuildConfig
 import io.legado.app.R
 import io.legado.app.constant.AppConst
@@ -56,7 +55,6 @@ import io.legado.app.help.book.removeType
 import io.legado.app.help.book.update
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
-import io.legado.app.help.config.ReadTipConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.source.getSourceType
 import io.legado.app.help.storage.Backup
@@ -97,8 +95,6 @@ import io.legado.app.ui.book.read.config.MoreConfigDialog
 import io.legado.app.ui.book.read.config.ReadStyleDialog
 import io.legado.app.ui.book.read.config.showReadConfirmDialog
 import io.legado.app.ui.book.read.config.showReadComposeDialog
-import io.legado.app.ui.book.read.config.TipConfigDialog.Companion.TIP_COLOR
-import io.legado.app.ui.book.read.config.TipConfigDialog.Companion.TIP_DIVIDER_COLOR
 import io.legado.app.ui.book.read.page.ContentTextView
 import io.legado.app.ui.book.read.page.ReadView
 import io.legado.app.ui.book.read.page.delegate.ScrollPageDelegate
@@ -142,7 +138,6 @@ import io.legado.app.utils.isTrue
 import io.legado.app.utils.navigationBarGravity
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.observeEventSticky
-import io.legado.app.utils.postEvent
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.showHelp
 import io.legado.app.utils.startActivity
@@ -190,7 +185,6 @@ class ReadBookActivity : BaseReadBookActivity(),
     AutoReadDialog.CallBack,
     TxtTocRuleDialog.CallBack,
     ReplaceRuleEditDialog.Callback,
-    ColorPickerDialogListener,
     LayoutProgressListener {
 
     protected override val bindNgToolbarMenu: Boolean = false
@@ -2894,30 +2888,6 @@ class ReadBookActivity : BaseReadBookActivity(),
             binding.root.height + navigationBarHeight - y.toInt()
         )
     }
-
-    /**
-     * colorSelectDialog
-     */
-    override fun onColorSelected(dialogId: Int, color: Int) = ReadBookConfig.durConfig.run {
-        when (dialogId) {
-            TIP_COLOR -> {
-                ReadTipConfig.tipColor = color
-                postEvent(EventBus.TIP_COLOR, "")
-                postEvent(EventBus.UP_CONFIG, arrayListOf(2))
-            }
-
-            TIP_DIVIDER_COLOR -> {
-                ReadTipConfig.tipDividerColor = color
-                postEvent(EventBus.TIP_COLOR, "")
-                postEvent(EventBus.UP_CONFIG, arrayListOf(2))
-            }
-        }
-    }
-
-    /**
-     * colorSelectDialog
-     */
-    override fun onDialogDismissed(dialogId: Int) = Unit
 
     override fun onTocRegexDialogResult(tocRegex: String) {
         ReadBook.book?.let {

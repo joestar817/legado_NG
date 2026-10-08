@@ -159,6 +159,9 @@ private fun NgSwitchControlContent(
                     if (!enabled) return@pointerInput
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+                        // Hit testing reads bounds that draw() normally publishes. A gesture can
+                        // arrive before the first draw, which made every thumb press miss.
+                        artwork.layout(size.width, size.height, isRtl, state.position)
                         artwork.setHotspot(down.position.x, down.position.y)
                         if (!artwork.hitThumb(down.position.x, down.position.y, touchSlop)) {
                             return@awaitEachGesture
