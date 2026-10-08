@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.colorResource
@@ -118,6 +122,7 @@ internal fun SearchScreen(
     val coroutineScope = rememberCoroutineScope()
     var showInputHelp by rememberSaveable { mutableStateOf(state.activeQuery.isEmpty()) }
     var showScopeDialog by rememberSaveable { mutableStateOf(false) }
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
     fun submit(value: String) {
         if (value.isBlank()) return
@@ -140,6 +145,8 @@ internal fun SearchScreen(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
     ) {
         SearchTopBar(
             query = query,
@@ -244,6 +251,14 @@ internal fun SearchScreen(
                     )
                 }
             }
+        }
+        if (imeVisible && !showScopeDialog) {
+            SearchSourceGroupKeyboardBar(
+                groups = groups,
+                scopeNames = scopeNames,
+                isSourceScope = isSourceScope,
+                onApplyScope = onApplySearchScope
+            )
         }
     }
 

@@ -251,7 +251,8 @@
         <!-- 搜索界面 -->
         <activity
             android:name=".ui.book.search.SearchActivity"
-            android:launchMode="standard" />
+            android:launchMode="standard"
+            android:windowSoftInputMode="adjustResize" />
         <!-- 关于界面 -->
         <activity
             android:name=".ui.about.AboutActivity"
