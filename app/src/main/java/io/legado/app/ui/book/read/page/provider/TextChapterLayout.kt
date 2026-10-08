@@ -46,7 +46,6 @@ import java.util.LinkedList
 import kotlin.math.roundToInt
 import android.util.Size
 import androidx.core.text.HtmlCompat
-import io.legado.app.constant.AppPattern.noWordCountRegex
 import io.legado.app.data.appDb
 import io.legado.app.ui.book.read.page.entities.TextLine.Companion.atLeastApi28
 import io.legado.app.ui.book.read.page.entities.column.TextHtmlColumn
@@ -430,6 +429,9 @@ class TextChapterLayout(
                     }
                 }
             }
+            // Count before images become layout placeholders, using the same rule as cached text.
+            // The generated indent is presentation only, even when it contains non-space text.
+            wordCount += StringUtils.contentWordCount(content.removePrefix(paragraphIndent))
             val textPositions = HighlightTextPositions()
             var text = content.replace(srcReplaceChar, srcReplacementChar)
             if (isTextImageStyle) {
@@ -450,7 +452,6 @@ class TextChapterLayout(
                 matcher.appendTail(sb)
                 textPositions.addSource(paragraphPositions, sourceCursor, text.length)
                 text = sb.toString()
-                wordCount += text.replace(noWordCountRegex,"").length
                 setTypeText(
                     book,
                     text,
@@ -537,7 +538,6 @@ class TextChapterLayout(
                             else -> {
                                 val textBefore = sb.toString()
                                 if (textBefore.isNotBlank()) {
-                                    wordCount += textBefore.replace(noWordCountRegex, "").length
                                     setTypeText(
                                         book,
                                         sb.toString(),
@@ -582,7 +582,6 @@ class TextChapterLayout(
                 }
                 text = sb.toString()
                 if (text.isNotBlank()) {
-                    wordCount += text.replace(noWordCountRegex,"").length
                     setTypeText(
                         book,
                         text,

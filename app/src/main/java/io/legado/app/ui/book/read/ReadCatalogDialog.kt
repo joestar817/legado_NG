@@ -542,12 +542,6 @@ internal enum class CatalogDrawerVisualStyle {
 private const val CATALOG_PAGE_SIZE = 64
 private const val CATALOG_PRELOAD_ITEMS = 16
 private const val CATALOG_RETAINED_PAGE_RADIUS = 2
-private val catalogUpdateTimeRegex = Regex(
-    """(?:更新)?时间\s*[:：]\s*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)"""
-)
-private val catalogSourceWordCountRegex = Regex(
-    """(?:章节)?字数\s*[:：]\s*([0-9万千百.]+)\s*字?"""
-)
 
 @Composable
 private fun ReadCatalogPanel(
@@ -1807,7 +1801,6 @@ private fun CatalogChapterList(
                         cached = cached,
                         showCacheState = showCacheState,
                         showWordCount = showWordCount,
-                        showUncachedWordCount = showUncachedWordCount,
                         contentColor = contentColor,
                         mutedColor = mutedColor,
                         volumeExpanded = volumeExpanded,
@@ -1832,20 +1825,18 @@ internal fun NgCatalogChapterRow(
     mutedColor: Color,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
-    showUncachedWordCount: Boolean = false,
     volumeExpanded: Boolean? = null,
 ) {
     val cardColor = catalogCardColor()
     val cardShape = RoundedCornerShape(NgTheme.shapes.largeDp.dp)
     val currentChapterColor = Color(NgTheme.colors.secondary)
-    val wordCount = if (showCacheState && (cached || showUncachedWordCount) && showWordCount && !chapter.isVolume) {
-        chapter.wordCount?.takeIf { it.isNotBlank() }
+    val metadata = catalogChapterMetadata(chapter.tag, chapter.wordCount, cached)
+    val wordCount = if (showWordCount && !chapter.isVolume) {
+        metadata.wordCount
     } else {
         null
     }
-    val chapterTag = chapter.tag
-        ?.takeIf { it.isNotBlank() }
-        ?.let(::formatCatalogChapterTag)
+    val chapterTag = if (chapter.isVolume) chapter.tag?.takeIf(String::isNotBlank) else metadata.description
     val currentChapterIndicatorColor = Color(NgTheme.colors.primary)
     Column(
         modifier = Modifier
@@ -1912,23 +1903,26 @@ internal fun NgCatalogChapterRow(
                     stringResource(if (volumeExpanded) R.string.read_catalog_collapse_volume else R.string.read_catalog_expand_volume),
                     modifier = Modifier.size(20.dp), tint = mutedColor,
                 )
-            } else if (showCacheState && !cached && wordCount == null) {
-                Spacer(Modifier.width(6.dp))
-                Icon(
-                    painter = painterResource(R.drawable.ic_outline_cloud_24),
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = mutedColor.copy(alpha = 0.72f),
-                )
-            } else if (showCacheState && wordCount != null) {
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = wordCount,
-                    color = if (current) currentChapterColor else mutedColor.copy(alpha = 0.82f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                )
+            } else {
+                if (wordCount != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = wordCount,
+                        color = if (current) currentChapterColor else mutedColor.copy(alpha = 0.82f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                    )
+                }
+                if (showCacheState && !cached && !chapter.isVolume) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        painter = painterResource(R.drawable.ic_outline_cloud_24),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = mutedColor.copy(alpha = 0.72f),
+                    )
+                }
             }
         }
         if (chapterTag != null) {
@@ -1960,7 +1954,7 @@ private fun CompactCatalogChapterRow(
 ) {
     val activeColor = Color(NgTheme.colors.secondary)
     val wordCount = if (showWordCount && !chapter.isVolume) {
-        chapter.wordCount?.takeIf(String::isNotBlank)
+        catalogChapterMetadata(chapter.tag, chapter.wordCount, cached).wordCount
     } else null
     Row(
         modifier = Modifier.fillMaxWidth().height(52.dp)
@@ -1999,7 +1993,8 @@ private fun CompactCatalogChapterRow(
             Spacer(Modifier.width(8.dp))
             Text(wordCount, color = if (current) activeColor else mutedColor,
                 fontSize = 11.sp, maxLines = 1)
-        } else if (showCacheState && !cached && !chapter.isVolume) {
+        }
+        if (showCacheState && !cached && !chapter.isVolume) {
             Spacer(Modifier.width(8.dp))
             Icon(painterResource(R.drawable.ic_outline_cloud_24), null,
                 modifier = Modifier.size(14.dp), tint = mutedColor)
@@ -2044,19 +2039,6 @@ private fun CatalogChapterPlaceholder(mutedColor: Color) {
                 .background(mutedColor.copy(alpha = 0.05f)),
         )
     }
-}
-
-private fun formatCatalogChapterTag(tag: String): String {
-    val updateTime = catalogUpdateTimeRegex.find(tag)?.groupValues?.getOrNull(1)?.trim()
-    val sourceWordCount = catalogSourceWordCountRegex.find(tag)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.trim()
-    if (updateTime == null && sourceWordCount == null) return tag
-    return listOfNotNull(
-        updateTime,
-        sourceWordCount?.let { "字数：$it" },
-    ).joinToString("  ")
 }
 
 @Composable
