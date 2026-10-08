@@ -610,14 +610,14 @@ private fun ReplaceRulePanel(
                                     onMoveToBottom = { onMoveToBottom(item.rule) },
                                     onDelete = { onDelete(item.rule) },
                                     modifier = if (viewMode == ReplaceRuleViewMode.LIST) {
-                                        Modifier.ngDraggedItem(reorderState, item.rule.id)
+                                        Modifier.ngDraggedItem(reorderState, item.key)
                                     } else {
                                         Modifier
                                     },
                                     bodyDragModifier = if (reorderEnabled) {
                                         Modifier.ngReorderAfterLongPress(
                                             state = reorderState,
-                                            key = item.rule.id,
+                                            key = item.key,
                                             enabled = true,
                                             contentDescription = stringResource(R.string.sort),
                                         )
