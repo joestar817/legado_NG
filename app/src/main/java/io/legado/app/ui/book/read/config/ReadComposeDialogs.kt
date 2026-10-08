@@ -24,7 +24,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -118,6 +120,82 @@ internal fun showReadConfirmDialog(
                 }
             },
         )
+    }
+}
+
+internal fun showReadPresetNameDialog(
+    context: Context,
+    title: String,
+    label: String,
+    confirmLabel: String,
+    cancelLabel: String,
+    onConfirm: (String) -> Boolean,
+    onDismiss: () -> Unit = {},
+): ComponentDialog {
+    return showReadComposeDialog(
+        context = context,
+        cancelOnTouchOutside = true,
+        onDismiss = onDismiss,
+    ) { dismiss ->
+        var name by remember { mutableStateOf("") }
+        ReadPresetNameDialogContent(
+            title = title,
+            label = label,
+            name = name,
+            confirmLabel = confirmLabel,
+            cancelLabel = cancelLabel,
+            onNameChange = { name = it },
+            onConfirm = {
+                if (!onConfirm(name)) return@ReadPresetNameDialogContent
+                dismiss()
+            },
+            onCancel = dismiss,
+        )
+    }
+}
+
+@Composable
+private fun ReadPresetNameDialogContent(
+    title: String,
+    label: String,
+    name: String,
+    confirmLabel: String,
+    cancelLabel: String,
+    onNameChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    ReadConfigDialogSurface(
+        contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 16.dp),
+    ) {
+        ReadConfigDialogTitle(title)
+        ReadDialogTextField(
+            value = name,
+            onValueChange = onNameChange,
+            label = label,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NgFormActionButton(
+                text = cancelLabel,
+                onClick = onCancel,
+                modifier = Modifier.weight(1f),
+            )
+            NgFormActionButton(
+                text = confirmLabel,
+                onClick = onConfirm,
+                modifier = Modifier.weight(1f),
+                variant = NgButtonVariant.PRIMARY,
+            )
+        }
     }
 }
 

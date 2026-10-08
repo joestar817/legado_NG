@@ -29,11 +29,14 @@ import kotlinx.coroutines.launch
 import com.google.gson.reflect.TypeToken
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
+import io.legado.app.data.appDb
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
 import io.legado.app.help.DefaultData
 import io.legado.app.help.book.isEpub
+import io.legado.app.help.globalExecutor
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.PresetNames
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.EpubScriptFontHealth
 import io.legado.app.help.config.ReadPresetPreferences
@@ -98,6 +101,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var backgroundColorPickerDialog: ComponentDialog? = null
     private var editingHighlightIndex: Int? = null
     private var creatingPreset = false
+    private var namingPreset = false
+    private val appliedPresetRebinds = ArrayDeque<Pair<String, String>>()
     private var colorSessionAppearance: ReadBookConfig.Config? = null
     private var highlightDraft: ReadHighlightRule? = null
     private var highlightSelectionMode = HighlightSelectionMode.NONE
@@ -272,7 +277,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         backgroundColorPickerDialog?.dismiss()
         backgroundColorPickerDialog = null
         ReadBook.book?.let(ReadStyleLanguageBinder::rememberCurrentStyle)
-        ReadBookConfig.explicitStyleSelection = false
+        // 转屏若拆掉界面，语言匹配会在新界面起来之前跑。守卫留着，避免选中被拽回第一张预设。
+        if (activity?.isChangingConfigurations != true) {
+            ReadBookConfig.explicitStyleSelection = false
+        }
         // 旋转等场景不会走 onDismiss，这里兜底清除临时日/夜预览
         clearEditorThemeOverride()
         super.onDestroyView()
@@ -280,19 +288,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     private fun createActions() = ReadStyleActions(
         onPageSelected = ::navigateTo,
-        onCreatePreset = {
-            val index = ReadBookConfig.createStyle(
-                ReadBookConfig.Config(
-                    readFloatingTransparency = 0,
-                    readFloatingPrimaryStrength = 100,
-                )
-            )
-            openEditor(index, isNew = true)
-            if (ReadBookConfig.onlyThisBook) {
-                ReadFloatingAppearanceState.refreshFromConfig()
-                notifyPresetRestored()
-            }
-        },
+        onCreatePreset = ::promptNewPreset,
         onSelectPreset = ::changeBgTextConfig,
         onImportPreset = {
             selectImportDocument.launch(
@@ -350,13 +346,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onBack = ::navigateBack,
         onEditorThemeModeToggle = ::toggleEditorThemeMode,
         onPresetNameChanged = { value ->
-            ReadBookConfig.durConfig.name = value
-            updateEditorState {
-                copy(
-                    selectedPresetName = value,
-                    canRestoreCurrentDefault = ReadBookConfig.hasDefaultForCurrent(),
-                )
-            }
+            updateEditorState { copy(presetNameDraft = value) }
         },
         onTextColorChanged = ::applyEditorTextColor,
         onBackgroundColorChanged = ::applyEditorBackgroundColor,
@@ -649,6 +639,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     private fun discardAndLeave() {
         if (closing) return
+        reversePresetRebinds()
         if (!discardChanges()) return
         closing = true
         notifyPresetRestored()
@@ -660,6 +651,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             dismissAllowingStateLoss()
             return
         }
+        if (!commitPresetNameDraft()) return
         if (computeUnsaved()) {
             showUnsavedConfirm()
         } else {
@@ -695,7 +687,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun refreshUi() {
         val previous = screenState
         val config = ReadBookConfig.durConfig
-        val name = config.name.ifBlank { getString(R.string.text) }
+        val name = config.name
         val mode = if (ReadBookConfig.isNightTheme) 1 else 0
         val modeLabel = getString(
             if (mode == 1) R.string.read_style_mode_night else R.string.read_style_mode_day
@@ -725,7 +717,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 ReadStylePresetUi(
                     index = index,
                     name = if (index == -1) getString(R.string.read_style_this_book)
-                        else item.name.ifBlank { getString(R.string.text) },
+                        else item.name,
                     textColor = item.curTextColor(),
                     background = runCatching {
                         item.curBgDrawable(176, 128).toBitmap(176, 128).asImageBitmap()
@@ -734,6 +726,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             },
             selectedPresetIndex = ReadBookConfig.styleSelect,
             selectedPresetName = name,
+            presetNameDraft = previous?.presetNameDraft,
             canRestoreCurrentDefault = ReadBookConfig.hasDefaultForCurrent(),
             highlightSummary = getString(
                 R.string.read_highlight_summary,
@@ -865,6 +858,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         val oldIndex = ReadBookConfig.styleSelect
         if (index !in ReadBookConfig.configList.indices) return
         if (index != oldIndex) {
+            ReadBookConfig.noteUserStyleSelection(ReadBook.book?.bookUrl)
             ReadBookConfig.styleSelect = index
             ReadFloatingAppearanceState.refreshFromConfig()
             refreshUi()
@@ -872,6 +866,101 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             notifyFloatingAppearanceChanged()
         }
         ReadBook.book?.let(ReadStyleLanguageBinder::rememberCurrentStyle)
+    }
+
+    private fun promptNewPreset() {
+        if (namingPreset) return
+        namingPreset = true
+        showReadPresetNameDialog(
+            context = requireContext(),
+            title = getString(R.string.read_style_create_title),
+            label = getString(R.string.read_style_name),
+            confirmLabel = getString(R.string.ok),
+            cancelLabel = getString(R.string.cancel),
+            onConfirm = { raw ->
+                val name = PresetNames.allocate(raw, ReadBookConfig.configList.map { it.name })
+                if (name == null) {
+                    toastOnUi(R.string.read_style_name_required)
+                    false
+                } else {
+                    createNamedPreset(name)
+                    true
+                }
+            },
+            onDismiss = { namingPreset = false },
+        )
+    }
+
+    private fun createNamedPreset(name: String) {
+        val index = ReadBookConfig.createStyle(
+            ReadBookConfig.Config(
+                name = name,
+                readFloatingTransparency = 0,
+                readFloatingPrimaryStrength = 100,
+            )
+        )
+        if (!ReadBookConfig.onlyThisBook) ReadBookConfig.save()
+        openEditor(index, isNew = true)
+        if (ReadBookConfig.onlyThisBook) {
+            ReadFloatingAppearanceState.refreshFromConfig()
+            notifyPresetRestored()
+        }
+        ReadBook.book?.let(ReadStyleLanguageBinder::rememberCurrentStyle)
+    }
+
+    /**
+     * 离开编辑或关闭界面时才收名字。空名字不写入：已有名字的预设保持原名，仍为空的预设继续为空。
+     */
+    private fun commitPresetNameDraft(): Boolean {
+        val draft = screenState?.presetNameDraft ?: return true
+        val oldName = ReadBookConfig.durConfig.name
+        val saved = ReadBookConfig.commitPresetName(draft)
+        screenState = screenState?.copy(presetNameDraft = null)
+        if (saved == null) {
+            toastOnUi(
+                if (oldName.isBlank()) R.string.read_style_name_required
+                else R.string.read_style_name_kept
+            )
+            refreshUi()
+            return true
+        }
+        notePresetRebind(oldName, saved)
+        refreshUi()
+        return true
+    }
+
+    private fun notePresetRebind(oldName: String, newName: String) {
+        if (ReadBookConfig.onlyThisBook || oldName.isBlank() || oldName == newName) return
+        ReadBookConfig.rebindPresetIdentity(oldName, newName)
+        rebindBooks(oldName, newName)
+        appliedPresetRebinds.addLast(oldName to newName)
+    }
+
+    private fun reversePresetRebinds() {
+        while (appliedPresetRebinds.isNotEmpty()) {
+            val (oldName, newName) = appliedPresetRebinds.removeLast()
+            ReadBookConfig.rebindPresetIdentity(newName, oldName)
+            rebindBooks(newName, oldName)
+        }
+    }
+
+    private fun rebindBooks(oldName: String, newName: String) {
+        if (oldName.isBlank() || oldName == newName) return
+        ReadBook.book?.let { book ->
+            if (book.config.readStyleName == oldName) {
+                book.config.readStyleName = newName
+                book.save()
+            }
+        }
+        val currentUrl = ReadBook.book?.bookUrl
+        globalExecutor.execute {
+            appDb.bookDao.all.forEach { book ->
+                if (book.bookUrl == currentUrl) return@forEach
+                if (book.readConfig?.readStyleName != oldName) return@forEach
+                book.config.readStyleName = newName
+                book.save()
+            }
+        }
     }
 
     private fun openEditor(index: Int, isNew: Boolean = false) {
@@ -1103,6 +1192,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             }
 
             page == ReadStylePage.EDIT -> {
+                if (!commitPresetNameDraft()) return
                 page = ReadStylePage.PRESET
                 clearEditorThemeOverride()
                 refreshUi()
@@ -1578,7 +1668,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             notifyPresetRestored()
             return
         }
-        val name = ReadBookConfig.durConfig.name.ifBlank { getString(R.string.text) }
+        val name = ReadBookConfig.durConfig.name
         showReadConfirmDialog(
             context = requireContext(),
             title = getString(R.string.delete),
@@ -1588,6 +1678,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             onConfirm = {
                 if (ReadBookConfig.deleteDur()) {
                     editorBackgroundCache = null
+                    ReadBookConfig.noteUserStyleSelection(ReadBook.book?.bookUrl)
                     ReadBook.book?.let(ReadStyleLanguageBinder::rememberCurrentStyle)
                     refreshUi()
                     postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
@@ -1866,6 +1957,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         }.onSuccess { result ->
             val appendResult = ReadBookConfig.appendImportedConfigWithReport(result.config)
             if (!ReadBookConfig.onlyThisBook) result.readerSettings?.let(ReadPresetPreferences::apply)
+            ReadBookConfig.noteUserStyleSelection(ReadBook.book?.bookUrl)
             ReadBookConfig.styleSelect = appendResult.index
             ReadBook.book?.let(ReadStyleLanguageBinder::rememberCurrentStyle)
             captureSessionSnapshot()

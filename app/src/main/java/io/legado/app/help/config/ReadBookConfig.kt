@@ -309,6 +309,36 @@ object ReadBookConfig {
     }
 
     /**
+     * 把编辑框里的名字收成唯一身份。空名字返回 null，调用方不写入。
+     * [current] 是这份预设现在的名字，改回原名不算重名。
+     */
+    fun commitPresetName(requested: String): String? {
+        val old = durConfig.name
+        val allocated = PresetNames.allocate(
+            requested = requested,
+            taken = configList.map { it.name },
+            current = old,
+        ) ?: return null
+        if (allocated != old) {
+            durConfig.name = allocated
+            if (!onlyThisBook) save()
+        }
+        return allocated
+    }
+
+    /** 预设改名后，语言对照里指向旧名字的项改到新名字。书的改写由界面层处理。 */
+    fun rebindPresetIdentity(oldName: String, newName: String) {
+        if (oldName.isBlank() || oldName == newName) return
+        val bindings = ReadStyleLanguageMap.current()
+        val next = bindings.copy(
+            cjk = if (bindings.cjk == oldName) newName else bindings.cjk,
+            latin = if (bindings.latin == oldName) newName else bindings.latin,
+            other = if (bindings.other == oldName) newName else bindings.other,
+        )
+        if (next != bindings) ReadStyleLanguageMap.update(next)
+    }
+
+    /**
      * 写入目的地（shareLayout 退役后）：
      * - 仅本书：写 bookStyle 副本（DB）。
      * - 全局：只写当前预设 [durConfig]；不再同步覆写 shareConfig。
@@ -380,6 +410,15 @@ object ReadBookConfig {
      * 新建预设的名字还是空的，空名或重名都会匹配到列表里第一项，把用户输入的名字写到正在用的预设上。
      */
     var explicitStyleSelection: Boolean = false
+
+    /** 用户在这本书里点过预设之后，正文重载不再改选中项。 */
+    var stylePinnedBookUrl: String? = null
+
+    fun noteUserStyleSelection(bookUrl: String?) {
+        if (!bookUrl.isNullOrBlank()) stylePinnedBookUrl = bookUrl
+    }
+
+    fun isStylePinned(bookUrl: String): Boolean = stylePinnedBookUrl == bookUrl
 
     fun initConfigs() {
         val configFile = File(configFilePath)
@@ -1107,6 +1146,7 @@ object ReadBookConfig {
         appendImportedConfigWithReport(config).index
 
     internal fun appendImportedConfigWithReport(config: Config): AppendImportedConfigResult {
+        PresetNames.allocate(config.name, configList.map { it.name })?.let { config.name = it }
         if (onlyThisBook) {
             bookStyle.use(config)
             return AppendImportedConfigResult(-1, null)

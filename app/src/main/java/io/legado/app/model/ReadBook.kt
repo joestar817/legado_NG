@@ -23,6 +23,7 @@ import io.legado.app.help.book.update
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadStyleLanguageBinder
+import io.legado.app.help.config.allowContentStyleDefault
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.globalExecutor
 import io.legado.app.model.localBook.TextFile
@@ -202,7 +203,11 @@ object ReadBook : CoroutineScope by MainScope() {
         val oldIndex = ReadBookConfig.styleSelect
         val bookStyleChanged = ReadBookConfig.bindBook(book)
         ReadBookConfig.isComic = book.isImage
-        val languageStyleChanged = ReadStyleLanguageBinder.apply(book)
+        val languageStyleChanged = if (ReadBookConfig.isStylePinned(book.bookUrl)) {
+            false
+        } else {
+            ReadStyleLanguageBinder.apply(book)
+        }
         if (oldIndex != ReadBookConfig.styleSelect || bookStyleChanged || languageStyleChanged) {
             postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5))
             if (AppConfig.readBarStyleFollowPage) {
@@ -214,6 +219,13 @@ object ReadBook : CoroutineScope by MainScope() {
     private fun applyLanguageStyleFromContent(book: Book, chapter: BookChapter, content: String) {
         if (this.book?.bookUrl != book.bookUrl) return
         if (chapter.index != durChapterIndex) return
+        if (!allowContentStyleDefault(
+                book.config.readStyleName,
+                ReadBookConfig.isStylePinned(book.bookUrl),
+            )
+        ) {
+            return
+        }
         val sample = content.take(2000)
         if (ReadStyleLanguageBinder.apply(book, sample)) {
             ChapterProvider.upStyle()

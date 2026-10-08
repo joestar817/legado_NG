@@ -2442,6 +2442,8 @@
     <string name="read_style_keep_one_preset">Keep at least one preset</string>
     <string name="read_style_section_colors">Colors</string>
     <string name="read_style_name">Style name</string>
+    <string name="read_style_name_required">Enter a preset name</string>
+    <string name="read_style_name_kept">Empty name was not saved</string>
     <string name="read_style_mode_day">Day</string>
     <string name="read_style_mode_night">Night</string>
     <string name="read_style_toggle_theme_mode">Toggle day/night theme</string>

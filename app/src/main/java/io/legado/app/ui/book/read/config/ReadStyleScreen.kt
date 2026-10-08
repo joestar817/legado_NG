@@ -1,5 +1,6 @@
 package io.legado.app.ui.book.read.config
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -58,6 +59,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,6 +73,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -120,6 +124,12 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private val StandardPageHeight = 336.dp
+
+/** 与 Context.isPad 同一判断：大屏才收短编辑页、才把滚出视野的预设拉回来。 */
+private fun isLargeScreen(configuration: Configuration): Boolean {
+    return configuration.screenLayout and Configuration.SCREENLAYOUT_SIZE_MASK >=
+        Configuration.SCREENLAYOUT_SIZE_LARGE
+}
 private val EditorPageHeight = 500.dp
 private val ColorSessionPages = setOf(
     ReadStylePage.EDIT_TEXT_COLOR,
@@ -200,6 +210,7 @@ internal data class ReadStyleUiState(
     val presets: List<ReadStylePresetUi>,
     val selectedPresetIndex: Int,
     val selectedPresetName: String,
+    val presetNameDraft: String? = null,
     val canRestoreCurrentDefault: Boolean,
     val highlightSummary: String,
     val isEpub: Boolean,
@@ -727,6 +738,22 @@ private fun PresetPage(
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val spacing = 8.dp
         val presetWidth = (maxWidth - spacing * 6) / 5
+        val largeScreen = isLargeScreen(LocalConfiguration.current)
+        val targetRowWidthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
+        LaunchedEffect(targetRowWidthPx, largeScreen) {
+            if (!largeScreen || targetRowWidthPx <= 0) return@LaunchedEffect
+            snapshotFlow {
+                val info = presetListState.layoutInfo
+                val position = state.presets.indexOfFirst { it.index == state.selectedPresetIndex }
+                val laidOut = info.viewportSize.width == targetRowWidthPx
+                val shown = info.visibleItemsInfo.any { it.index == position }
+                Triple(laidOut, shown, position)
+            }.collect { (laidOut, shown, position) ->
+                if (laidOut && position >= 0 && !shown) {
+                    presetListState.scrollToItem(position)
+                }
+            }
+        }
         LazyRow(
             state = presetListState,
             modifier = Modifier
@@ -1233,8 +1260,8 @@ private fun NewBookPresetPage(
 ) {
     val useCurrent = stringResource(R.string.read_style_use_current_preset)
     val options = remember(state.presets, useCurrent) {
-        listOf(null to useCurrent) + state.presets.filter { it.index >= 0 }.map { preset ->
-            preset.name to preset.name.ifBlank { useCurrent }
+        listOf(null to useCurrent) + state.presets.filter { it.index >= 0 && it.name.isNotBlank() }.map { preset ->
+            preset.name to preset.name
         }
     }
     StyleSubpageHeader(
@@ -1467,11 +1494,16 @@ private fun EditorPage(
     actions: ReadStyleActions,
 ) {
     val indicatorColor = Color(NgTheme.colors.primary)
-    val editorHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.85f
+    val configuration = LocalConfiguration.current
+    val maxEditorHeight = configuration.screenHeightDp.dp * 0.85f
+    val largeScreen = isLargeScreen(configuration)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(editorHeight),
+            .then(
+                if (largeScreen) Modifier.heightIn(max = maxEditorHeight)
+                else Modifier.height(maxEditorHeight)
+            ),
     ) {
         EditorHeader(
             creatingPreset = state.creatingPreset,
@@ -1482,19 +1514,15 @@ private fun EditorPage(
             onBack = actions.onBack,
             onModeToggle = actions.onEditorThemeModeToggle,
         )
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                bottom = 8.dp,
-            ),
+                .then(if (largeScreen) Modifier else Modifier.weight(1f))
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
         ) {
-            item {
                 EditorNameRow(
-                    name = state.selectedPresetName,
+                    name = state.presetNameDraft ?: state.selectedPresetName,
                     contentColor = contentColor,
                     accentColor = accentColor,
                     onNameChanged = actions.onPresetNameChanged,
@@ -1574,8 +1602,6 @@ private fun EditorPage(
                     color = contentColor,
                     fontSize = 15.sp,
                 )
-            }
-            item {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val tileWidth = (maxWidth - 25.dp) / 5f
                     LazyRow(
@@ -1672,7 +1698,6 @@ private fun EditorPage(
                     enabled = state.canRestoreCurrentDefault,
                     onClick = actions.onRestoreCurrentPreset,
                 )
-            }
         }
     }
 }

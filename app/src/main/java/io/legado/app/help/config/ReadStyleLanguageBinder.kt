@@ -4,6 +4,15 @@ import io.legado.app.data.entities.Book
 import io.legado.app.help.book.BookLanguageDetector
 import io.legado.app.help.book.isImage
 
+/**
+ * 默认预设只在新书还没有记住名字时用一次。
+ * 已经记住，或用户刚选过，正文重载（含转屏）不再改预设。
+ */
+internal fun allowContentStyleDefault(readStyleName: String?, userPinned: Boolean): Boolean {
+    if (userPinned) return false
+    return readStyleName.isNullOrBlank()
+}
+
 object ReadStyleLanguageBinder {
     fun apply(book: Book, extraSample: String? = null): Boolean {
         if (book.isImage || ReadBookConfig.onlyThisBook || ReadBookConfig.explicitStyleSelection) {

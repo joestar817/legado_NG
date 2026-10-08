@@ -112,6 +112,19 @@ class ReadStyleLanguagePolicyTest {
     }
 
     @Test
+    fun contentReloadDoesNotReapplyAfterPresetIsChosen() {
+        assertFalse(allowContentStyleDefault("暖纸书香", userPinned = false))
+        assertFalse(allowContentStyleDefault(null, userPinned = true))
+        assertFalse(allowContentStyleDefault("  ", userPinned = true))
+    }
+
+    @Test
+    fun newBookMayTakeTheDefaultOnce() {
+        assertTrue(allowContentStyleDefault(null, userPinned = false))
+        assertTrue(allowContentStyleDefault("  ", userPinned = false))
+    }
+
+    @Test
     fun latinMappingAppliesOnFirstOpen() {
         val decision = ReadStyleLanguagePolicy.decide(
             rememberedStyleName = null,
