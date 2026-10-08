@@ -26,7 +26,7 @@ interface RssArticleDao {
     fun insert(vararg rssArticle: RssArticle)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    fun append(vararg rssArticle: RssArticle)
+    fun append(vararg rssArticle: RssArticle): List<Long>
 
     @Query("delete from rssArticles where origin = :origin and sort = :sort and `order` < :order")
     fun clearOld(origin: String, sort: String, order: Long)

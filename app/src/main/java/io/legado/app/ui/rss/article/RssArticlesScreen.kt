@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -29,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -75,6 +77,7 @@ internal fun RssArticlesScreen(
     onSortSelected: (Int) -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
+    onRetry: () -> Unit,
     onOpenArticle: (RssArticle) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSearch: (String) -> Unit,
@@ -182,14 +185,27 @@ internal fun RssArticlesScreen(
                 modifier = Modifier.weight(1f)
             ) {
                 if (articles.isEmpty() && !refreshing) {
-                    RssEmptyState(loadError ?: stringResource(R.string.empty))
+                    when {
+                        loadingMore -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) { RssLoadingFooter() }
+                        loadError != null -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) { RssRetryFooter(enabled = true, onRetry = onRetry) }
+                        else -> RssEmptyState(stringResource(R.string.empty))
+                    }
                 } else {
                     RssArticleCollection(
                         articles = articles,
                         style = articleStyle,
                         hasMore = hasMore,
                         loading = loadingMore,
+                        refreshing = refreshing,
+                        loadError = loadError,
                         onLoadMore = onLoadMore,
+                        onRetry = onRetry,
                         onOpenArticle = onOpenArticle
                     )
                 }
@@ -204,12 +220,17 @@ private fun RssArticleCollection(
     style: Int,
     hasMore: Boolean,
     loading: Boolean,
+    refreshing: Boolean,
+    loadError: String?,
     onLoadMore: () -> Unit,
+    onRetry: () -> Unit,
     onOpenArticle: (RssArticle) -> Unit
 ) {
     if (style == 0 || style == 1) {
         val state = rememberLazyListState()
-        RssListLoadMoreEffect(state, articles.size, hasMore, loading, onLoadMore)
+        RssListLoadMoreEffect(
+            state, articles.size, hasMore && loadError == null, loading || refreshing, onLoadMore
+        )
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = state,
@@ -219,11 +240,18 @@ private fun RssArticleCollection(
             items(articles, key = { it.origin + '\u0000' + it.sort + '\u0000' + it.link }) {
                 RssArticleCard(it, style, onOpenArticle)
             }
-            if (loading && articles.isNotEmpty()) item { RssLoadingFooter() }
+            if (articles.isNotEmpty()) {
+                if (loading) item { RssLoadingFooter() }
+                else if (loadError != null) item {
+                    RssRetryFooter(enabled = !refreshing, onRetry = onRetry)
+                }
+            }
         }
     } else {
         val state = rememberLazyGridState()
-        RssGridLoadMoreEffect(state, articles.size, hasMore, loading, onLoadMore)
+        RssGridLoadMoreEffect(
+            state, articles.size, hasMore && loadError == null, loading || refreshing, onLoadMore
+        )
         val columns = when (style) {
             4 -> 3
             3 -> if (LocalConfiguration.current.orientation ==
@@ -241,7 +269,12 @@ private fun RssArticleCollection(
             items(articles, key = { it.origin + '\u0000' + it.sort + '\u0000' + it.link }) {
                 RssArticleCard(it, style, onOpenArticle)
             }
-            if (loading && articles.isNotEmpty()) item { RssLoadingFooter() }
+            if (articles.isNotEmpty()) {
+                if (loading) item(span = { GridItemSpan(maxLineSpan) }) { RssLoadingFooter() }
+                else if (loadError != null) item(span = { GridItemSpan(maxLineSpan) }) {
+                    RssRetryFooter(enabled = !refreshing, onRetry = onRetry)
+                }
+            }
         }
     }
 }
@@ -331,6 +364,21 @@ private fun ArticleText(article: RssArticle, modifier: Modifier = Modifier) {
                 overflow = TextOverflow.Ellipsis
             )
         }
+    }
+}
+
+@Composable
+private fun RssRetryFooter(enabled: Boolean, onRetry: () -> Unit) {
+    TextButton(
+        onClick = onRetry,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = stringResource(R.string.load_error_retry),
+            color = Color(NgTheme.colors.primary),
+            fontSize = 14.sp
+        )
     }
 }
 

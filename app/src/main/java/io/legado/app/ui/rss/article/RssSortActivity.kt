@@ -57,6 +57,7 @@ class RssSortActivity : VMBaseActivity<RssComposeBinding, RssSortViewModel>(),
     private var loadingMore by mutableStateOf(false)
     private var hasMore by mutableStateOf(false)
     private var loadError by mutableStateOf<String?>(null)
+    private var articleFlowError by mutableStateOf<String?>(null)
     private var title by mutableStateOf("")
     private var searchVisible by mutableStateOf(false)
     private var searchQuery by mutableStateOf("")
@@ -86,8 +87,8 @@ class RssSortActivity : VMBaseActivity<RssComposeBinding, RssSortViewModel>(),
                     articleStyle = articleStyle,
                     refreshing = refreshing,
                     loadingMore = loadingMore,
-                    hasMore = hasMore,
-                    loadError = loadError,
+                    hasMore = hasMore && articleFlowError == null,
+                    loadError = articleFlowError ?: loadError,
                     searchVisible = searchVisible,
                     searchQuery = searchQuery,
                     searchEnabled = !source?.searchUrl.isNullOrBlank(),
@@ -96,6 +97,7 @@ class RssSortActivity : VMBaseActivity<RssComposeBinding, RssSortViewModel>(),
                     onSortSelected = ::selectSort,
                     onRefresh = ::refreshArticles,
                     onLoadMore = { activeArticleModel?.let(::loadMore) },
+                    onRetry = ::retryArticles,
                     onOpenArticle = { ReadRss.readRss(this, it, viewModel.rssSource) },
                     onSearchQueryChange = { searchQuery = it },
                     onSearch = ::submitSearch,
@@ -144,14 +146,15 @@ class RssSortActivity : VMBaseActivity<RssComposeBinding, RssSortViewModel>(),
             else -> viewModel.sourceName.orEmpty()
         }
         if (resolved.isEmpty()) {
-            activeArticleModel?.loadFinallyLiveData?.removeObservers(this)
-            activeArticleModel?.loadErrorLiveData?.removeObservers(this)
+            activeArticleModel?.loadState?.removeObservers(this)
             activeArticleModel = null
             articleFlowJob?.cancel()
             articles = emptyList()
             refreshing = false
             loadingMore = false
             hasMore = false
+            loadError = null
+            articleFlowError = null
             return
         }
         if (source.preload) {
@@ -200,39 +203,27 @@ class RssSortActivity : VMBaseActivity<RssComposeBinding, RssSortViewModel>(),
                 '\u0000' + viewModel.searchKey.orEmpty()
         if (collect) {
             activeArticleModel?.takeIf { it !== model }?.let { previous ->
-                previous.loadFinallyLiveData.removeObservers(this)
-                previous.loadErrorLiveData.removeObservers(this)
+                previous.loadState.removeObservers(this)
             }
             activeArticleModel = model
             articleFlowJob?.cancel()
             articles = emptyList()
-            refreshing = model.isLoading
+            refreshing = false
             loadingMore = false
             hasMore = false
             loadError = null
-            model.loadFinallyLiveData.removeObservers(this)
-            model.loadErrorLiveData.removeObservers(this)
-            model.loadFinallyLiveData.observe(this) {
-                refreshing = false
-                loadingMore = false
-                hasMore = it
+            model.loadState.removeObservers(this)
+            model.loadState.observe(this) { state ->
+                if (activeArticleModel === model) {
+                    refreshing = state.refreshing
+                    loadingMore = state.loadingMore
+                    hasMore = state.hasMore
+                    loadError = state.error
+                }
             }
-            model.loadErrorLiveData.observe(this) {
-                refreshing = false
-                loadingMore = false
-                loadError = it
-            }
-            articleFlowJob = lifecycleScope.launch {
-                appDb.rssArticleDao.flowByOriginSort(source.sourceUrl, sort.first)
-                    .catch {
-                        AppLog.put("订阅文章界面获取数据失败\n${it.localizedMessage}", it)
-                    }
-                    .flowOn(IO)
-                    .collect { articles = it }
-            }
+            collectArticles(source.sourceUrl, sort.first, model)
         }
         if (loadedSorts.add(loadKey)) {
-            if (collect) refreshing = true
             model.loadArticles(source)
         }
     }
@@ -241,17 +232,45 @@ class RssSortActivity : VMBaseActivity<RssComposeBinding, RssSortViewModel>(),
         if (loadingMore) return
         val source = viewModel.rssSource ?: return
         val model = activeArticleModel ?: return
-        refreshing = true
-        loadingMore = false
-        loadError = null
+        if (articleFlowError != null) collectArticles(source.sourceUrl, model.sortName, model)
         model.loadArticles(source)
     }
 
     private fun loadMore(model: RssArticlesViewModel) {
-        if (refreshing || loadingMore || !hasMore) return
+        if (refreshing || loadingMore || !hasMore || loadError != null || articleFlowError != null) return
         val source = viewModel.rssSource ?: return
-        loadingMore = true
         model.loadMore(source)
+    }
+
+    private fun retryArticles() {
+        if (refreshing || loadingMore) return
+        val source = viewModel.rssSource ?: return
+        val model = activeArticleModel ?: return
+        if (articleFlowError != null) {
+            collectArticles(source.sourceUrl, model.sortName, model)
+        }
+        if (loadError != null) model.retry(source)
+    }
+
+    private fun collectArticles(origin: String, sort: String, model: RssArticlesViewModel) {
+        articleFlowJob?.cancel()
+        articleFlowError = null
+        articleFlowJob = lifecycleScope.launch {
+            appDb.rssArticleDao.flowByOriginSort(origin, sort)
+                .flowOn(IO)
+                .catch {
+                    AppLog.put("订阅文章界面获取数据失败\n${it.localizedMessage}", it)
+                    if (activeArticleModel === model) {
+                        articleFlowError = it.localizedMessage ?: getString(R.string.error)
+                    }
+                }
+                .collect {
+                    if (activeArticleModel === model) {
+                        articles = it
+                        articleFlowError = null
+                    }
+                }
+        }
     }
 
     private fun submitSearch(query: String) {

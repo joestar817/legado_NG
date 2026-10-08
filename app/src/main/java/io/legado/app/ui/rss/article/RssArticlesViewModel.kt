@@ -2,28 +2,70 @@ package io.legado.app.ui.rss.article
 
 import android.app.Application
 import android.os.Bundle
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.AppLog
 import io.legado.app.data.appDb
-import io.legado.app.data.entities.RssArticle
 import io.legado.app.data.entities.RssSource
 import io.legado.app.model.rss.Rss
 import io.legado.app.utils.stackTraceStr
 import kotlinx.coroutines.Dispatchers.IO
-
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 class RssArticlesViewModel(application: Application) : BaseViewModel(application) {
-    val loadFinallyLiveData = MutableLiveData<Boolean>()
-    val loadErrorLiveData = MutableLiveData<String>()
-    var isLoading = true
-    var order = System.currentTimeMillis()
-    private var nextPageUrl: String? = null
+    private val mutableLoadState = MutableLiveData(RssArticlesLoadState())
+    internal val loadState: LiveData<RssArticlesLoadState> = mutableLoadState
     var sortName: String = ""
     var sortUrl: String = ""
     var searchKey: String? = null
-    var page = 1
+
+    private val paging = RssArticlesPaging(
+        scope = viewModelScope,
+        fetch = { request ->
+            withContext(IO) {
+                Rss.getArticlesAwait(
+                    request.query.sortName, request.url, request.query.source,
+                    request.page, request.query.searchKey
+                )
+            }
+        },
+        store = { request, articles ->
+            withContext(IO) {
+                var nextOrder = request.order
+                // Preserve refresh REPLACE order when a feed repeats the same article.
+                val orderedArticles = articles.map { it.copy(order = nextOrder--) }
+                var addedCount = 0
+                val requestContext = coroutineContext
+                appDb.runInTransaction {
+                    requestContext.ensureActive()
+                    if (request.refreshing) {
+                        appDb.rssArticleDao.insert(*orderedArticles.toTypedArray())
+                        if (!request.query.source.ruleNextPage.isNullOrEmpty()) {
+                            appDb.rssArticleDao.clearOld(
+                                request.query.source.sourceUrl, request.query.sortName, nextOrder
+                            )
+                        }
+                        addedCount = orderedArticles.size
+                    } else {
+                        // IGNORE keeps existing entries in place. Inspect every insertion result,
+                        // including new entries between a repeated first and last article.
+                        addedCount = appDb.rssArticleDao.append(*orderedArticles.toTypedArray())
+                            .count { it != -1L }
+                    }
+                    requestContext.ensureActive()
+                }
+                RssArticlesStoredPage(addedCount, nextOrder)
+            }
+        },
+        onStateChanged = { mutableLoadState.value = it },
+        errorMessage = {
+            AppLog.put("rss获取内容失败", it)
+            it.stackTraceStr
+        }
+    )
 
     fun init(bundle: Bundle?) {
         bundle?.let {
@@ -33,66 +75,11 @@ class RssArticlesViewModel(application: Application) : BaseViewModel(application
         }
     }
 
-    fun loadArticles(rssSource: RssSource) {
-        isLoading = true
-        page = 1
-        order = System.currentTimeMillis()
-        Rss.getArticles(viewModelScope, sortName, sortUrl, rssSource, page, searchKey).onSuccess(IO) {
-            nextPageUrl = it.second
-            val articles = it.first
-            articles.forEach { rssArticle ->
-                rssArticle.order = order--
-            }
-            appDb.rssArticleDao.insert(*articles.toTypedArray())
-            if (!rssSource.ruleNextPage.isNullOrEmpty()) {
-                appDb.rssArticleDao.clearOld(rssSource.sourceUrl, sortName, order)
-            }
-            val hasMore = articles.isNotEmpty() && !rssSource.ruleNextPage.isNullOrEmpty()
-            loadFinallyLiveData.postValue(hasMore)
-            isLoading = false
-        }.onError {
-            loadFinallyLiveData.postValue(false)
-            AppLog.put("rss获取内容失败", it)
-            loadErrorLiveData.postValue(it.stackTraceStr)
-        }
-    }
+    fun loadArticles(rssSource: RssSource) = paging.refresh(query(rssSource))
 
-    fun loadMore(rssSource: RssSource) {
-        isLoading = true
-        page++
-        val pageUrl = nextPageUrl
-        if (pageUrl.isNullOrEmpty()) {
-            loadFinallyLiveData.postValue(false)
-            return
-        }
-        Rss.getArticles(viewModelScope, sortName, pageUrl, rssSource, page, searchKey).onSuccess(IO) {
-            nextPageUrl = it.second
-            loadMoreSuccess(it.first)
-            isLoading = false
-        }.onError {
-            loadFinallyLiveData.postValue(false)
-            AppLog.put("rss获取内容失败", it)
-            loadErrorLiveData.postValue(it.stackTraceStr)
-        }
-    }
+    fun loadMore(rssSource: RssSource) = paging.loadMore(query(rssSource))
 
-    private fun loadMoreSuccess(articles: MutableList<RssArticle>) {
-        if (articles.isEmpty()) {
-            loadFinallyLiveData.postValue(false)
-            return
-        }
-        val firstArticle = articles.first()
-        val dbFirstArticle = appDb.rssArticleDao.get(firstArticle.origin, firstArticle.link, firstArticle.sort)
-        val lastArticle = articles.last()
-        val dbLastArticle = appDb.rssArticleDao.get(lastArticle.origin, lastArticle.link, firstArticle.sort)
-        if (dbFirstArticle != null && dbLastArticle != null) {
-            loadFinallyLiveData.postValue(false)
-        } else {
-            articles.forEach {
-                it.order = order--
-            }
-            appDb.rssArticleDao.append(*articles.toTypedArray())
-        }
-    }
+    fun retry(rssSource: RssSource) = paging.retry(query(rssSource))
 
+    private fun query(source: RssSource) = RssArticlesQuery(source, sortName, sortUrl, searchKey)
 }
