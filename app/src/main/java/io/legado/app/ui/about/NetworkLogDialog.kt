@@ -470,7 +470,7 @@ private fun NetworkStatus(item: NetworkLog.Entry) {
     val color = if (!error && statusCode != null && statusCode in 200..399) {
         Color(0xFF34A853)
     } else {
-        Color(0xFFD93025)
+        colorResource(R.color.ng_log_error)
     }
     Row(
         modifier = Modifier.padding(start = 8.dp),

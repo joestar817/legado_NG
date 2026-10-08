@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -77,6 +78,7 @@ import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.utils.isNightMode
 import io.legado.app.utils.toDurationTime
 
 internal enum class AudioPlayerPage {
@@ -819,8 +821,10 @@ private fun AudioExitConfirmationDialog(
     onDiscard: () -> Unit,
 ) {
     val playerSnapshot = NgTheme.snapshot
-    val dialogSnapshot = remember(playerSnapshot) {
-        ListeningCoverTheme.drawerSnapshot(playerSnapshot)
+    // NgDialog 的卡片背景读取日夜资源，前景必须选择相同的明暗分支。
+    val isNightMode = LocalConfiguration.current.isNightMode
+    val dialogSnapshot = remember(playerSnapshot, isNightMode) {
+        if (isNightMode) playerSnapshot else ListeningCoverTheme.drawerSnapshot(playerSnapshot)
     }
     NgAppTheme(snapshot = dialogSnapshot, updateSystemBars = false) {
         Dialog(onDismissRequest = onDismiss) {

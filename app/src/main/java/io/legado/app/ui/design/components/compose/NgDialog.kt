@@ -17,9 +17,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,6 +33,24 @@ import androidx.compose.ui.unit.TextUnit
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.design.theme.resolveNgDialogTheme
+import io.legado.app.utils.isNightMode
+
+@Composable
+private fun NgDialogTheme(content: @Composable () -> Unit) {
+    val source = NgTheme.snapshot
+    val isDark = LocalConfiguration.current.isNightMode
+    val surface = colorResource(R.color.ng_surface_card).toArgb()
+    val snapshot = remember(source, isDark, surface) {
+        resolveNgDialogTheme(source, isDark, surface)
+    }
+    if (snapshot === source) {
+        content()
+    } else {
+        NgAppTheme(snapshot = snapshot, updateSystemBars = false, content = content)
+    }
+}
 
 /** Compose NG 居中弹窗内容外壳；窗口尺寸与遮罩仍由 applyNgDialogWindow 统一处理。 */
 @Composable
@@ -41,7 +62,7 @@ fun NgDialog(
     titleFontWeight: FontWeight = FontWeight.Bold,
     actions: @Composable RowScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
-) {
+) = NgDialogTheme {
     val metrics = dialogMetrics(variant)
     val cornerRadius = when (variant) {
         NgDialogVariant.COMPACT_CONFIRMATION -> NgTheme.shapes.largeDp
@@ -135,7 +156,7 @@ fun NgCompactEditorDialog(
     titleFontWeight: FontWeight = FontWeight.Medium,
     titleAction: @Composable RowScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
-) {
+) = NgDialogTheme {
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = colorResource(R.color.ng_surface_card),

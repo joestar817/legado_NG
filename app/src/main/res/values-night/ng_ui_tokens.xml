@@ -50,6 +50,7 @@
     <color name="ng_warning">#E0A347</color>
     <color name="ng_warning_container">#3D2D13</color>
     <color name="ng_error">@color/error</color>
+    <color name="ng_log_error">#FF8A80</color>
     <color name="ng_error_container">#4A221E</color>
     <color name="ng_info">#7AB7F1</color>
     <color name="ng_info_container">#183247</color>

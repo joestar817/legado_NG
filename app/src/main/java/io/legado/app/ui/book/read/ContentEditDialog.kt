@@ -196,13 +196,16 @@ class ContentEditDialog : DialogFragment() {
 
     override fun onStart() {
         super.onStart()
+        val snapshot = ReadDrawerStyle.themeSnapshot(requireContext())
         dialog?.window?.apply {
-            setBackgroundDrawable(ColorDrawable(android.graphics.Color.WHITE))
+            setBackgroundDrawable(ColorDrawable(
+                if (snapshot.isDark) snapshot.colors.surface else android.graphics.Color.WHITE
+            ))
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             decorView.setPadding(0, 0, 0, 0)
             WindowCompat.setDecorFitsSystemWindows(this, false)
             WindowInsetsControllerCompat(this, decorView).apply {
-                isAppearanceLightStatusBars = true
+                isAppearanceLightStatusBars = !snapshot.isDark
                 isAppearanceLightNavigationBars = false
             }
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -404,7 +407,7 @@ private fun ContentEditorScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(if (NgTheme.snapshot.isDark) Color(NgTheme.colors.surface) else Color.White)
             .statusBarsPadding()
             .imePadding(),
     ) {
@@ -458,6 +461,7 @@ private fun ContentEditorTopBar(
     onReset: () -> Unit,
     onCopyAll: () -> Unit,
 ) {
+    val contentColor = if (NgTheme.snapshot.isDark) Color(NgTheme.colors.onSurface) else Color.Black
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -473,7 +477,7 @@ private fun ContentEditorTopBar(
                     painter = painterResource(R.drawable.ic_arrow_back),
                     contentDescription = stringResource(R.string.back),
                     modifier = Modifier.size(24.dp),
-                    tint = Color.Black,
+                    tint = contentColor,
                 )
             }
             Box(
@@ -490,7 +494,7 @@ private fun ContentEditorTopBar(
             ) {
                 Text(
                     text = chapterTitle,
-                    color = Color.Black,
+                    color = contentColor,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -502,7 +506,7 @@ private fun ContentEditorTopBar(
                     painter = painterResource(R.drawable.ic_save),
                     contentDescription = stringResource(R.string.action_save),
                     modifier = Modifier.size(24.dp),
-                    tint = Color.Black,
+                    tint = contentColor,
                 )
             }
             Box {
@@ -511,7 +515,7 @@ private fun ContentEditorTopBar(
                         painter = painterResource(R.drawable.ic_more_vert),
                         contentDescription = stringResource(R.string.more),
                         modifier = Modifier.size(24.dp),
-                        tint = Color.Black,
+                        tint = contentColor,
                     )
                 }
                 ContentEditorOverflowMenu(

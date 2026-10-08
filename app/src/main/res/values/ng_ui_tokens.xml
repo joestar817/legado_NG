@@ -51,6 +51,7 @@
     <color name="ng_warning">#B86B00</color>
     <color name="ng_warning_container">#FFF1D8</color>
     <color name="ng_error">@color/error</color>
+    <color name="ng_log_error">#D93025</color>
     <color name="ng_error_container">#FDE8E5</color>
     <color name="ng_info">#1769AA</color>
     <color name="ng_info_container">#E2F1FF</color>
