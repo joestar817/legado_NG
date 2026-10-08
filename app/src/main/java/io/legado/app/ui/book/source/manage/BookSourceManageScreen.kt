@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -754,6 +755,11 @@ private fun BookSourceFlatList(
     var orderedSources by remember(sourceVersions) { mutableStateOf(sources) }
     val listState = rememberLazyListState()
     var isReordering by remember { mutableStateOf(false) }
+    // Drag handles retain callbacks; source refreshes can replace the local list state.
+    val currentOnDragStopped by rememberUpdatedState {
+        isReordering = false
+        onAction(BookSourceManageAction.Reorder(orderedSources))
+    }
     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
         if (canReorder && from.index in orderedSources.indices &&
             to.index in orderedSources.indices
@@ -805,10 +811,7 @@ private fun BookSourceFlatList(
                         Modifier
                             .longPressDraggableHandle(
                                 onDragStarted = { isReordering = true },
-                                onDragStopped = {
-                                    isReordering = false
-                                    onAction(BookSourceManageAction.Reorder(orderedSources))
-                                },
+                                onDragStopped = { currentOnDragStopped() },
                             )
                             .semantics { contentDescription = sortDescription }
                     } else {
