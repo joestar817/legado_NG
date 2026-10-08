@@ -804,8 +804,10 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             if (state == ViewPager.SCROLL_STATE_IDLE) {
                 bindFloatingBottomBackdropToCurrentPage()
             } else {
+                // Drawing the pager directly lets EdgeEffect stretch the backdrop RenderNode.
+                // Its content-only parent keeps the pager on its own normal rendering layer.
                 binding.floatingBottomNavigation.setLiquidBackdropSource(
-                    binding.viewPagerMain,
+                    binding.viewPagerMain.parent as View,
                 )
             }
         }

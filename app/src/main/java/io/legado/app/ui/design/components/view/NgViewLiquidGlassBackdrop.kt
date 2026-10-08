@@ -49,7 +49,12 @@ internal class NgViewLiquidGlassRenderer(
             if (field === value) return
             detachPreDrawListener()
             field = value
+            // A recording may carry RenderNode properties set by the sampled View (e.g.
+            // overscroll stretch). Re-recording its display list does not reset them.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) renderNode?.discardDisplayList()
+            renderNode = null
             recordedBackdrop = null
+            appliedEffect = null
             attachPreDrawListener()
             owner.invalidate()
         }
@@ -259,9 +264,10 @@ internal class NgViewLiquidGlassRenderer(
     private fun drawSource(canvas: Canvas, source: View, padding: Int) {
         source.getLocationInWindow(sourceLocation)
         val saveCount = canvas.save()
+        // Window coordinates include ancestor scrolling; direct draw still needs this View's scroll.
         canvas.translate(
-            (padding + sourceLocation[0] - ownerLocation[0]).toFloat(),
-            (padding + sourceLocation[1] - ownerLocation[1]).toFloat(),
+            (padding + sourceLocation[0] - ownerLocation[0] - source.scrollX).toFloat(),
+            (padding + sourceLocation[1] - ownerLocation[1] - source.scrollY).toFloat(),
         )
         source.draw(canvas)
         canvas.restoreToCount(saveCount)
