@@ -50,9 +50,9 @@ class BlueFishPetRenderer(private val bitmaps: Map<String, Bitmap>) {
         translate(PADDING, PADDING)
     }
     private val pixels = IntArray(SURFACE_SIZE * SURFACE_SIZE)
-    private val thinkingBody = expressionBody("think.png")
-    private val ahaBody = expressionBody("aha.png")
-    private val sleeveTexture = crop("eat-arm.png", BlueFishArmRig.SLEEVE_X, BlueFishArmRig.SLEEVE_Y, BlueFishArmRig.SLEEVE_WIDTH, BlueFishArmRig.SLEEVE_HEIGHT)
+    private val thinkingBody = expressionBody("think.webp")
+    private val ahaBody = expressionBody("aha.webp")
+    private val sleeveTexture = crop("eat-arm.webp", BlueFishArmRig.SLEEVE_X, BlueFishArmRig.SLEEVE_Y, BlueFishArmRig.SLEEVE_WIDTH, BlueFishArmRig.SLEEVE_HEIGHT)
     private val sleevePaint = Paint(paint).apply { shader = BitmapShader(sleeveTexture, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP) }
     private val sleeveTextureCoordinates = FloatArray(arm.meshVertices.size).apply {
         for (row in 0..BlueFishArmRig.ROWS) for (column in 0..BlueFishArmRig.COLUMNS) {
@@ -72,9 +72,9 @@ class BlueFishPetRenderer(private val bitmaps: Map<String, Bitmap>) {
             this[index++] = a.toShort(); this[index++] = d.toShort(); this[index++] = c.toShort()
         }
     }
-    private val handTexture = crop("eat-arm.png", 185f, 560f, 350f, 230f)
-    private val riceTexture = crop("rice-grains.png", 172f, 766f, 894f, 302f)
-    private val biteTexture = crop("rice-bite.png", 250f, 367f, 757f, 526f)
+    private val handTexture = crop("eat-arm.webp", 185f, 560f, 350f, 230f)
+    private val riceTexture = crop("rice-grains.webp", 172f, 766f, 894f, 302f)
+    private val biteTexture = crop("rice-bite.webp", 250f, 367f, 757f, 526f)
     private val handRect = RectF(185f, 560f, 535f, 790f)
     private val biteRect = RectF(250f, 367f, 1007f, 893f)
     private val mouthPath = Path().apply { addOval(508f, 557f, 632f, 671f, Path.Direction.CW) }
@@ -151,24 +151,24 @@ class BlueFishPetRenderer(private val bitmaps: Map<String, Bitmap>) {
             val pivotY = if (eating) 1155f else 1080f
             canvas.save()
             canvas.rotate(visual.tailAngle * DEGREES, pivotX, pivotY)
-            drawFull(canvas, if (eating) "eat-tail.png" else "standing-tail.png")
+            drawFull(canvas, if (eating) "eat-tail.webp" else "standing-tail.webp")
             canvas.restore()
         }
         val body = when (visual.stage) {
-            BlueFishStage.PEEK -> bitmaps.getValue("peek.png")
+            BlueFishStage.PEEK -> bitmaps.getValue("peek.webp")
             BlueFishStage.THINKING -> thinkingBody
             BlueFishStage.AHA -> ahaBody
-            BlueFishStage.SURPRISED -> bitmaps.getValue("drag-surprised.png")
-            BlueFishStage.SHY -> bitmaps.getValue("release-shy.png")
-            BlueFishStage.EATING -> bitmaps.getValue("eat-body.png")
-            else -> bitmaps.getValue("standing-body.png")
+            BlueFishStage.SURPRISED -> bitmaps.getValue("drag-surprised.webp")
+            BlueFishStage.SHY -> bitmaps.getValue("release-shy.webp")
+            BlueFishStage.EATING -> bitmaps.getValue("eat-body.webp")
+            else -> bitmaps.getValue("standing-body.webp")
         }
         canvas.drawBitmap(body, null, sourceRect, paint)
         if (eating) {
             drawRice(canvas, visual.riceLevel)
             if (!visual.chew) {
                 canvas.save(); canvas.clipPath(mouthPath)
-                drawFull(canvas, "mouth-open.png")
+                drawFull(canvas, "mouth-open.webp")
                 canvas.restore()
             }
             visual.arm?.let { drawArm(canvas, it) }
@@ -177,11 +177,11 @@ class BlueFishPetRenderer(private val bitmaps: Map<String, Bitmap>) {
             when (visual.stage) {
                 BlueFishStage.PEEK -> {
                     canvas.clipPath(peekBlinkPath)
-                    drawFull(canvas, "peek-blink.png")
+                    drawFull(canvas, "peek-blink.webp")
                 }
                 BlueFishStage.IDLE, BlueFishStage.THINKING, BlueFishStage.SETTLE -> {
                     canvas.clipRect(375f, 375f, 795f, 580f)
-                    drawFull(canvas, "idle-blink.png")
+                    drawFull(canvas, "idle-blink.webp")
                 }
                 else -> Unit
             }
@@ -229,7 +229,7 @@ class BlueFishPetRenderer(private val bitmaps: Map<String, Bitmap>) {
             canvas.restore()
         }
         canvas.save(); canvas.clipRect(130f, 814f, 1030f, 1234f); canvas.clipPath(bowlFrontPath)
-        drawFull(canvas, "eat-body.png")
+        drawFull(canvas, "eat-body.webp")
         canvas.restore()
     }
 
@@ -270,11 +270,11 @@ class BlueFishPetRenderer(private val bitmaps: Map<String, Bitmap>) {
     private fun drawFull(canvas: Canvas, key: String) = canvas.drawBitmap(bitmaps.getValue(key), null, sourceRect, paint)
 
     private fun expressionBody(key: String): Bitmap {
-        val base = bitmaps.getValue("standing-body.png")
+        val base = bitmaps.getValue("standing-body.webp")
         val result = Bitmap.createBitmap(base.width, base.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(result)
         canvas.scale(base.width / SOURCE_SIZE, base.height / SOURCE_SIZE)
-        drawFull(canvas, "standing-body.png")
+        drawFull(canvas, "standing-body.webp")
         canvas.save(); canvas.clipRect(260f, 360f, 870f, 1020f)
         canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
         drawFull(canvas, key)
