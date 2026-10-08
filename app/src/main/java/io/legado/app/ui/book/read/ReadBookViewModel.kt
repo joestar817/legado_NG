@@ -63,6 +63,9 @@ import java.io.FileOutputStream
 class ReadBookViewModel(application: Application) : BaseViewModel(application) {
     val permissionDenialLiveData = MutableLiveData<Int>()
     var isInitFinish = false
+    @Volatile
+    internal var readingRecordBookKey: String? = null
+        private set
     var searchContentQuery = ""
     var searchResultList: List<SearchResult>? = null
     var searchResultIndex: Int = 0
@@ -121,6 +124,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
     }
 
     private suspend fun initBook(book: Book) {
+        readingRecordBookKey = book.bookUrl
         val startup = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("book-init") else null
         val isSameBook = ReadBook.book?.bookUrl == book.bookUrl
         if (isSameBook) {

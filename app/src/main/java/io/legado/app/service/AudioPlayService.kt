@@ -39,8 +39,8 @@ import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.help.exoplayer.ExoPlayerHelper
 import io.legado.app.help.glide.ImageLoader
 import io.legado.app.model.AudioPlay
-import io.legado.app.model.DailyReadingSource
-import io.legado.app.model.DailyReadingTracker
+import io.legado.app.model.ReadingRecordSource
+import io.legado.app.model.ReadingRecordTracker
 import io.legado.app.model.ListeningHistorySource
 import io.legado.app.model.ListeningHistoryStore
 import io.legado.app.model.ListeningPlaybackTarget
@@ -137,7 +137,7 @@ class AudioPlayService : BaseService(),
 
     override fun onCreate() {
         super.onCreate()
-        DailyReadingTracker.register(DailyReadingSource.AUDIO, this)
+        ReadingRecordTracker.register(ReadingRecordSource.AUDIO, this)
         isRun = true
         exoPlayer.addListener(this)
         AudioPlay.registerService(this)
@@ -210,7 +210,7 @@ class AudioPlayService : BaseService(),
     }
 
     override fun onDestroy() {
-        DailyReadingTracker.remove(DailyReadingSource.AUDIO, this)
+        ReadingRecordTracker.remove(ReadingRecordSource.AUDIO, this)
         flushListeningHistory()
         clearListeningHistorySession()
         super.onDestroy()
@@ -291,7 +291,7 @@ class AudioPlayService : BaseService(),
      * 暂停播放
      */
     private fun pause(abandonFocus: Boolean = true) {
-        DailyReadingTracker.setActive(DailyReadingSource.AUDIO, this, false, flush = true)
+        ReadingRecordTracker.setActive(ReadingRecordSource.AUDIO, this, false)
         if (useWakeLock) {
             wakeLock.release()
             wifiLock?.release()
@@ -376,9 +376,9 @@ class AudioPlayService : BaseService(),
      */
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         super.onIsPlayingChanged(isPlaying)
-        DailyReadingTracker.setActive(
-            DailyReadingSource.AUDIO, this,
-            isPlaying && !pause && isCurrentListeningHistorySession()
+        ReadingRecordTracker.setPlaybackActive(
+            ReadingRecordSource.AUDIO, this,
+            isPlaying && !pause && isCurrentListeningHistorySession(), historyBookUrl
         )
         if (isPlaying && isCurrentListeningHistorySession()) {
             historyPlaybackConfirmed = true
@@ -418,7 +418,7 @@ class AudioPlayService : BaseService(),
     }
 
     private fun clearListeningHistorySession() {
-        DailyReadingTracker.setActive(DailyReadingSource.AUDIO, this, false, flush = true)
+        ReadingRecordTracker.setActive(ReadingRecordSource.AUDIO, this, false)
         historyBookUrl = null
         historyChapterIndex = -1
         historyPlaybackConfirmed = false

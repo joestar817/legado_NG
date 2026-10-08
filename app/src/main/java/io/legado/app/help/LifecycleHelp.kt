@@ -9,8 +9,8 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import io.legado.app.base.BaseService
-import io.legado.app.model.DailyReadingSource
-import io.legado.app.model.DailyReadingTracker
+import io.legado.app.model.ReadingRecordSource
+import io.legado.app.model.ReadingRecordTracker
 import io.legado.app.ui.book.manga.ReadMangaActivity
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.utils.LogUtils
@@ -87,16 +87,21 @@ object LifecycleHelp : Application.ActivityLifecycleCallbacks {
 
     override fun onActivityPaused(activity: Activity) {
         LogUtils.d(TAG, "${activity::class.simpleName} onPause")
-        if (activity is ReadBookActivity || activity is ReadMangaActivity) {
-            DailyReadingTracker.remove(DailyReadingSource.PAGE, activity)
+        readingRecordSource(activity)?.let { source ->
+            ReadingRecordTracker.setActive(source, activity, false)
         }
     }
 
     override fun onActivityResumed(activity: Activity) {
         LogUtils.d(TAG, "${activity::class.simpleName} onResume")
         activity.applyAppNavigationBarVisibility()
-        if (activity is ReadBookActivity || activity is ReadMangaActivity) {
-            DailyReadingTracker.pageResumed(activity)
+        readingRecordSource(activity)?.let { source ->
+            val bookKey = when (activity) {
+                is ReadBookActivity -> activity.readingRecordBookKey
+                is ReadMangaActivity -> activity.readingRecordBookKey
+                else -> null
+            }
+            ReadingRecordTracker.pageResumed(source, activity, bookKey)
         }
     }
 
@@ -106,8 +111,8 @@ object LifecycleHelp : Application.ActivityLifecycleCallbacks {
 
     override fun onActivityDestroyed(activity: Activity) {
         LogUtils.d(TAG, "${activity::class.simpleName} onDestroy")
-        if (activity is ReadBookActivity || activity is ReadMangaActivity) {
-            DailyReadingTracker.remove(DailyReadingSource.PAGE, activity)
+        readingRecordSource(activity)?.let { source ->
+            ReadingRecordTracker.remove(source, activity)
         }
         (activity as? FragmentActivity)?.supportFragmentManager
             ?.unregisterFragmentLifecycleCallbacks(fragmentLifecycleCallbacks)
@@ -136,6 +141,12 @@ object LifecycleHelp : Application.ActivityLifecycleCallbacks {
         (activity as? FragmentActivity)?.supportFragmentManager
             ?.registerFragmentLifecycleCallbacks(fragmentLifecycleCallbacks, true)
         activity.applyAppNavigationBarVisibility()
+    }
+
+    private fun readingRecordSource(activity: Activity): ReadingRecordSource? = when (activity) {
+        is ReadBookActivity -> ReadingRecordSource.PAGE
+        is ReadMangaActivity -> ReadingRecordSource.MANGA_PAGE
+        else -> null
     }
 
     @Synchronized

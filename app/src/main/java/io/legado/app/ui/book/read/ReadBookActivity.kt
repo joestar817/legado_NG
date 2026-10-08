@@ -239,6 +239,9 @@ class ReadBookActivity : BaseReadBookActivity(),
         PopupAction(this)
     }
     override val isInitFinish: Boolean get() = viewModel.isInitFinish
+
+    internal val readingRecordBookKey: String?
+        get() = viewModel.readingRecordBookKey ?: intent.getStringExtra("bookUrl")
     override val isScroll: Boolean get() = binding.readView.isScroll
     private val isAutoPage get() = binding.readView.isAutoPage
     var isShowingSearchResult = false
@@ -383,7 +386,6 @@ class ReadBookActivity : BaseReadBookActivity(),
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onResume() {
         super.onResume()
-        ReadBook.readStartTime = System.currentTimeMillis()
         if (bookChanged) {
             bookChanged = false
             ReadBook.callBack = this

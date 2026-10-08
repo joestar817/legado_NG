@@ -16,8 +16,8 @@ import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.model.ReadAloud
-import io.legado.app.model.DailyReadingSource
-import io.legado.app.model.DailyReadingTracker
+import io.legado.app.model.ReadingRecordSource
+import io.legado.app.model.ReadingRecordTracker
 import io.legado.app.model.ReadBook
 import io.legado.app.utils.GSON
 import io.legado.app.utils.LogUtils
@@ -175,14 +175,14 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
     private fun invalidateUtterances() {
         utteranceGeneration.incrementAndGet()
         dailyReadingUtterance = null
-        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, false)
+        ReadingRecordTracker.setActive(ReadingRecordSource.READ_ALOUD, this, false)
         speakJob?.cancel()
     }
 
     private fun finishDailyReadingUtterance(id: String?) {
         if (id == null || id != dailyReadingUtterance) return
         dailyReadingUtterance = null
-        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, false)
+        ReadingRecordTracker.setActive(ReadingRecordSource.READ_ALOUD, this, false)
     }
 
     private fun withCurrentUtterance(id: String?, action: () -> Unit) {

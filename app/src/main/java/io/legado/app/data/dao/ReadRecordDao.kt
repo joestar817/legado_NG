@@ -57,6 +57,24 @@ interface ReadRecordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(vararg readRecord: ReadRecord)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertIfAbsent(readRecord: ReadRecord)
+
+    @Query(
+        """
+        update readRecord set readTime = readTime + :readTime, lastRead = max(lastRead, :lastRead)
+        where deviceId = :deviceId and bookName = :bookName"""
+    )
+    fun increment(deviceId: String, bookName: String, readTime: Long, lastRead: Long)
+
+    /** Add only the new local interval; records restored from other devices stay separate. */
+    @Transaction
+    fun addTime(bookName: String, readTime: Long, lastRead: Long) {
+        if (readTime <= 0L) return
+        insertIfAbsent(ReadRecord(deviceId = "", bookName = bookName, lastRead = lastRead))
+        increment(deviceId = "", bookName = bookName, readTime = readTime, lastRead = lastRead)
+    }
+
     @Update
     fun update(vararg record: ReadRecord)
 

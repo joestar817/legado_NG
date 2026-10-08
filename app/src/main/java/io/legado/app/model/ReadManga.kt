@@ -6,7 +6,6 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookProgress
 import io.legado.app.data.entities.BookSource
-import io.legado.app.data.entities.ReadRecord
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.ConcurrentRateLimiter
 import io.legado.app.help.book.BookHelp
@@ -54,8 +53,6 @@ object ReadManga : CoroutineScope by MainScope() {
     var curMangaChapter: MangaChapter? = null
     var nextMangaChapter: MangaChapter? = null
     var bookSource: BookSource? = null
-    var readStartTime: Long = System.currentTimeMillis()
-    private val readRecord = ReadRecord()
     private val loadingChapters = arrayListOf<Int>()
     var simulatedChapterSize = 0
     var mCallback: Callback? = null
@@ -69,9 +66,8 @@ object ReadManga : CoroutineScope by MainScope() {
     val hasNextChapter get() = durChapterIndex < simulatedChapterSize - 1
 
     fun resetData(book: Book) {
+        ReadingRecordTracker.bindBook(ReadingRecordKind.MANGA, book.bookUrl, book.name)
         ReadManga.book = book
-        readRecord.bookName = book.name
-        readRecord.readTime = appDb.readRecordDao.getReadTime(book.name) ?: 0
         chapterSize = appDb.bookChapterDao.getChapterCount(book.bookUrl)
         simulatedChapterSize = if (book.readSimulating()) {
             book.simulatedTotalChapterNum()
@@ -90,6 +86,7 @@ object ReadManga : CoroutineScope by MainScope() {
     }
 
     fun upData(book: Book) {
+        ReadingRecordTracker.bindBook(ReadingRecordKind.MANGA, book.bookUrl, book.name)
         ReadManga.book = book
         chapterSize = appDb.bookChapterDao.getChapterCount(book.bookUrl)
         simulatedChapterSize = if (book.readSimulating()) {
@@ -128,15 +125,7 @@ object ReadManga : CoroutineScope by MainScope() {
 
     //每次切换章节更新阅读记录
     fun upReadTime() {
-        executor.execute {
-            if (!AppConfig.enableReadRecord) {
-                return@execute
-            }
-            readRecord.readTime = readRecord.readTime + System.currentTimeMillis() - readStartTime
-            readStartTime = System.currentTimeMillis()
-            readRecord.lastRead = System.currentTimeMillis()
-            appDb.readRecordDao.insert(readRecord)
-        }
+        ReadingRecordTracker.checkpoint(ReadingRecordKind.MANGA)
     }
 
     @Synchronized

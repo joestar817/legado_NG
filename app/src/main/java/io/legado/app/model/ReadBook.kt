@@ -8,7 +8,6 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookProgress
 import io.legado.app.data.entities.BookSource
-import io.legado.app.data.entities.ReadRecord
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
@@ -76,12 +75,10 @@ object ReadBook : CoroutineScope by MainScope() {
     var msg: String? = null
     private val loadingChapters = arrayListOf<Int>()
     private val loadEpoch = ReadBookLoadEpoch()
-    private val readRecord = ReadRecord()
     private val chapterLoadingJobs = ConcurrentHashMap<Int, Coroutine<*>>()
     private val prevChapterLoadingLock = Mutex()
     private val curChapterLoadingLock = Mutex()
     private val nextChapterLoadingLock = Mutex()
-    var readStartTime: Long = System.currentTimeMillis()
 
     /* 跳转进度前进度记录 */
     var lastBookProgress: BookProgress? = null
@@ -100,9 +97,8 @@ object ReadBook : CoroutineScope by MainScope() {
     @Synchronized
     fun resetData(book: Book) {
         releaseAndCancel()
+        ReadingRecordTracker.bindBook(ReadingRecordKind.TEXT, book.bookUrl, book.name)
         ReadBook.book = book
-        readRecord.bookName = book.name
-        readRecord.readTime = appDb.readRecordDao.getReadTime(book.name) ?: 0
         chapterSize = appDb.bookChapterDao.getChapterCount(book.bookUrl)
         simulatedChapterSize = if (book.readSimulating()) {
             book.simulatedTotalChapterNum()
@@ -133,6 +129,7 @@ object ReadBook : CoroutineScope by MainScope() {
     @Synchronized
     fun upData(book: Book) {
         releaseAndCancel()
+        ReadingRecordTracker.bindBook(ReadingRecordKind.TEXT, book.bookUrl, book.name)
         ReadBook.book = book
         chapterSize = appDb.bookChapterDao.getChapterCount(book.bookUrl)
         simulatedChapterSize = if (book.readSimulating()) {
@@ -329,15 +326,7 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     fun upReadTime() {
-        if (!AppConfig.enableReadRecord) {
-            return
-        }
-        executor.execute {
-            readRecord.readTime = readRecord.readTime + System.currentTimeMillis() - readStartTime
-            readStartTime = System.currentTimeMillis()
-            readRecord.lastRead = System.currentTimeMillis()
-            appDb.readRecordDao.insert(readRecord)
-        }
+        ReadingRecordTracker.checkpoint(ReadingRecordKind.TEXT)
     }
 
     fun upMsg(msg: String?) {

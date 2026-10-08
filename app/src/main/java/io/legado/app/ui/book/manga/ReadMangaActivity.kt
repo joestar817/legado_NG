@@ -144,6 +144,9 @@ class ReadMangaActivity : VMBaseActivity<ActivityMangaBinding, ReadMangaViewMode
         }
     override val binding by viewBinding(ActivityMangaBinding::inflate)
     override val viewModel by viewModels<ReadMangaViewModel>()
+
+    internal val readingRecordBookKey: String?
+        get() = viewModel.readingRecordBookKey ?: intent.getStringExtra("bookUrl")
     private val loadingViewVisible get() = binding.flLoading.isVisible
     private val df by lazy {
         DecimalFormat("0.0%")

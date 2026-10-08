@@ -46,8 +46,8 @@ import io.legado.app.lib.permission.Permissions
 import io.legado.app.lib.permission.PermissionsCompat
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
-import io.legado.app.model.DailyReadingSource
-import io.legado.app.model.DailyReadingTracker
+import io.legado.app.model.ReadingRecordSource
+import io.legado.app.model.ReadingRecordTracker
 import io.legado.app.model.ListeningPlaybackCoordinator
 import io.legado.app.receiver.MediaButtonReceiver
 import io.legado.app.ui.book.read.ReadBookActivity
@@ -212,7 +212,7 @@ abstract class BaseReadAloudService : BaseService(),
     override fun onCreate() {
         super.onCreate()
         playbackStateOwner = this
-        DailyReadingTracker.register(DailyReadingSource.READ_ALOUD, this)
+        ReadingRecordTracker.register(ReadingRecordSource.READ_ALOUD, this)
         actualPlaybackConfirmed = false
         preparationStage = PREPARATION_NONE
         ttsRouteWarning = null
@@ -259,7 +259,7 @@ abstract class BaseReadAloudService : BaseService(),
     }
 
     override fun onDestroy() {
-        DailyReadingTracker.remove(DailyReadingSource.READ_ALOUD, this)
+        ReadingRecordTracker.remove(ReadingRecordSource.READ_ALOUD, this)
         super.onDestroy()
         val ownsPlaybackState = playbackStateOwner === this
         if (useWakeLock) {
@@ -518,7 +518,7 @@ abstract class BaseReadAloudService : BaseService(),
     @SuppressLint("WakelockTimeout")
     open fun play() {
         if (playbackStateOwner !== this) return
-        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, false)
+        ReadingRecordTracker.setActive(ReadingRecordSource.READ_ALOUD, this, false)
         ListeningPlaybackCoordinator.beforeReadAloud()
         if (useWakeLock) {
             wakeLock.acquire()
@@ -548,7 +548,7 @@ abstract class BaseReadAloudService : BaseService(),
 
     @CallSuper
     open fun pauseReadAloud(abandonFocus: Boolean = true) {
-        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, false, flush = true)
+        ReadingRecordTracker.setActive(ReadingRecordSource.READ_ALOUD, this, false)
         if (useWakeLock) {
             wakeLock.release()
             wifiLock?.release()
@@ -595,7 +595,9 @@ abstract class BaseReadAloudService : BaseService(),
             actualPlaybackConfirmed = false
             return false
         }
-        DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, isPlaying)
+        ReadingRecordTracker.setPlaybackActive(
+            ReadingRecordSource.READ_ALOUD, this, isPlaying, textChapter?.chapter?.bookUrl
+        )
         val stateChanged = actualPlaybackConfirmed != isPlaying
         actualPlaybackConfirmed = isPlaying
         if (isPlaying) {

@@ -7,6 +7,7 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.legado.app.data.entities.DailyReadingRecord
+import io.legado.app.data.entities.ReadRecord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -76,6 +77,82 @@ class DailyReadingRecordMigrationTest {
                 listOf(DailyReadingRecord(100, 2500), DailyReadingRecord(101, 3000)),
                 dao.getBetween(100, 110),
             )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun cumulativeAndDailyCheckpointRollBackTogetherAndRetryOnlyOnce() {
+        val database = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+            AppDatabase::class.java,
+        ).allowMainThreadQueries().build()
+        try {
+            val records = database.readRecordDao
+            val daily = database.dailyReadingRecordDao
+            records.insert(ReadRecord(bookName = "当前书", readTime = 5000, lastRead = 1000))
+            daily.addTime(100, 5000)
+            database.openHelper.writableDatabase.execSQL(
+                "CREATE TRIGGER fail_second_day BEFORE UPDATE ON dailyReadingRecords " +
+                    "WHEN NEW.epochDay = 101 BEGIN SELECT RAISE(ABORT, 'Abort checkpoint'); END",
+            )
+            val writeCheckpoint = {
+                database.runInTransaction {
+                    records.addTime("当前书", 1500, 2000)
+                    daily.addTimes(listOf(DailyReadingRecord(100, 700), DailyReadingRecord(101, 800)))
+                }
+            }
+            try {
+                writeCheckpoint()
+                fail("A failed date must roll back the cumulative record and every date")
+            } catch (_: SQLiteException) {
+                // The cumulative update and first date preceded the forced failure.
+            } finally {
+                database.openHelper.writableDatabase.execSQL("DROP TRIGGER fail_second_day")
+            }
+            assertEquals(
+                listOf(ReadRecord(bookName = "当前书", readTime = 5000, lastRead = 1000)),
+                records.all,
+            )
+            assertEquals(listOf(DailyReadingRecord(100, 5000)), daily.getBetween(100, 101))
+
+            writeCheckpoint()
+            assertEquals(
+                listOf(ReadRecord(bookName = "当前书", readTime = 6500, lastRead = 2000)),
+                records.all,
+            )
+            assertEquals(
+                listOf(DailyReadingRecord(100, 5700), DailyReadingRecord(101, 800)),
+                daily.getBetween(100, 101),
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun localIncrementPreservesOtherDevicesAndNeverMovesLastReadBackwards() {
+        val database = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+            AppDatabase::class.java,
+        ).allowMainThreadQueries().build()
+        try {
+            val records = database.readRecordDao
+            val remote = ReadRecord("other-device", "同名书", 9000, 8000)
+            records.insert(remote)
+            records.addTime("同名书", 500, 2000)
+            records.addTime("同名书", 300, 1000)
+            records.addTime("不应创建", 0, 3000)
+            records.addTime("不应创建", -1, 3000)
+            val byDevice = records.all.associateBy { it.deviceId }
+            assertEquals(2, byDevice.size)
+            assertEquals(remote, byDevice["other-device"])
+            assertEquals(
+                ReadRecord(bookName = "同名书", readTime = 800, lastRead = 2000),
+                byDevice[""],
+            )
+            assertEquals(9800L, records.getReadTime("同名书"))
         } finally {
             database.close()
         }

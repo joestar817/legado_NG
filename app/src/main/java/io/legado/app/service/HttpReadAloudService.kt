@@ -68,8 +68,8 @@ import io.legado.app.help.tts.shouldHandoffReadAloudChapter
 import io.legado.app.help.tts.writeReadAloudAudioAtomically
 import io.legado.app.help.tts.writeReadAloudAudioWithWavRetry
 import io.legado.app.model.ReadAloud
-import io.legado.app.model.DailyReadingSource
-import io.legado.app.model.DailyReadingTracker
+import io.legado.app.model.ReadingRecordSource
+import io.legado.app.model.ReadingRecordTracker
 import io.legado.app.model.ReadBook
 import io.legado.app.model.ListeningPlaybackCoordinator
 import io.legado.app.model.CacheBook
@@ -1889,7 +1889,9 @@ class HttpReadAloudService : BaseReadAloudService(),
         if (isPreparingReadAloud) {
             // Position preparation gates progress publication, not actual elapsed audio.
             if (ownsPlaybackState() && isPlaying == exoPlayer.isPlaying) {
-                DailyReadingTracker.setActive(DailyReadingSource.READ_ALOUD, this, isPlaying && !pause)
+                ReadingRecordTracker.setPlaybackActive(
+                    ReadingRecordSource.READ_ALOUD, this, isPlaying && !pause, textChapter?.chapter?.bookUrl
+                )
             }
             return
         }

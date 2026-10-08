@@ -41,6 +41,9 @@ import splitties.init.appCtx
 class ReadMangaViewModel(application: Application) : BaseViewModel(application) {
 
     private var changeSourceCoroutine: Coroutine<*>? = null
+    @Volatile
+    internal var readingRecordBookKey: String? = null
+        private set
 
     /**
      * 初始化
@@ -72,6 +75,7 @@ class ReadMangaViewModel(application: Application) : BaseViewModel(application) 
     }
 
     private suspend fun initManga(book: Book) {
+        readingRecordBookKey = book.bookUrl
         val isSameBook = ReadManga.book?.bookUrl == book.bookUrl
         if (isSameBook) {
             ReadManga.upData(book)
