@@ -2472,4 +2472,21 @@
     <string name="explore_jump">跳转</string>
     <string name="explore_page_input_hint">当前第 %1$d 页</string>
     <string name="ai_chat_entry_load_failed">无法加载聊天形象</string>
+    <string name="all_bookmark_count">%1$d 条</string>
+    <string name="all_bookmark_filtered_count">%1$d / %2$d 条</string>
+    <string name="all_bookmark_filter_title">筛选</string>
+    <string name="all_bookmark_filter_active">筛选（已启用）</string>
+    <string name="all_bookmark_filter_books">全部书籍</string>
+    <string name="all_bookmark_filter_selected_book">所选书籍</string>
+    <string name="all_bookmark_filter_with_note">有备注</string>
+    <string name="all_bookmark_filter_without_note">无备注</string>
+    <string name="all_bookmark_filter_color">颜色</string>
+    <string name="all_bookmark_filter_color_value">颜色 %1$s</string>
+    <string name="all_bookmark_filter_clear">清除筛选</string>
+    <string name="all_bookmark_filter_clear_conditions">清除条件</string>
+    <string name="all_bookmark_filter_empty">没有匹配的书签</string>
+    <string name="all_bookmark_expand_all">全部展开</string>
+    <string name="all_bookmark_collapse_all">全部收起</string>
+    <string name="all_bookmark_expanded">已展开</string>
+    <string name="all_bookmark_collapsed">已收起</string>
 </resources>

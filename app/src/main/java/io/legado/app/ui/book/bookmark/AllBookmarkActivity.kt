@@ -80,7 +80,7 @@ class AllBookmarkActivity : VMBaseActivity<ActivityAllBookmarkBinding, AllBookma
                 bookmark = action.bookmark,
             )
             is AllBookmarkScreenAction.Edit -> showDialogFragment(
-                BookmarkDialog(action.bookmark, action.position)
+                BookmarkDialog(action.bookmark.copy(), action.position)
             )
         }
     }

@@ -2570,4 +2570,21 @@
     <string name="explore_jump">Go</string>
     <string name="explore_page_input_hint">Current page: %1$d</string>
     <string name="ai_chat_entry_load_failed">Unable to load the chat character</string>
+    <string name="all_bookmark_count">%1$d marks</string>
+    <string name="all_bookmark_filtered_count">%1$d / %2$d marks</string>
+    <string name="all_bookmark_filter_title">Filter</string>
+    <string name="all_bookmark_filter_active">Filter (active)</string>
+    <string name="all_bookmark_filter_books">All books</string>
+    <string name="all_bookmark_filter_selected_book">Selected book</string>
+    <string name="all_bookmark_filter_with_note">With notes</string>
+    <string name="all_bookmark_filter_without_note">Without notes</string>
+    <string name="all_bookmark_filter_color">Color</string>
+    <string name="all_bookmark_filter_color_value">Color %1$s</string>
+    <string name="all_bookmark_filter_clear">Clear filters</string>
+    <string name="all_bookmark_filter_clear_conditions">Clear conditions</string>
+    <string name="all_bookmark_filter_empty">No matching bookmarks</string>
+    <string name="all_bookmark_expand_all">Expand all</string>
+    <string name="all_bookmark_collapse_all">Collapse all</string>
+    <string name="all_bookmark_expanded">Expanded</string>
+    <string name="all_bookmark_collapsed">Collapsed</string>
 </resources>
