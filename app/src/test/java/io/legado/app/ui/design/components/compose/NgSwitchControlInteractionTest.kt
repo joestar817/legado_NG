@@ -1,6 +1,5 @@
 package io.legado.app.ui.design.components.compose
 
-import android.app.Application
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgSettingsTrailing
+import io.legado.app.ui.design.theme.InterfaceFontTestApplication
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgLegacyThemeInput
 import io.legado.app.ui.design.theme.NgThemeResolver
@@ -55,7 +55,7 @@ import org.robolectric.annotation.GraphicsMode
 @Config(
     sdk = [35],
     qualifiers = "w411dp-h891dp-xxhdpi",
-    application = Application::class,
+    application = InterfaceFontTestApplication::class,
 )
 class NgSwitchControlInteractionTest {
 

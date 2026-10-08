@@ -309,9 +309,6 @@ dependencies {
     //noinspection GradleDependency
     implementation(libs.zxing.lite)
 
-    //颜色选择
-    implementation(libs.colorpicker)
-
     //压缩解压
     implementation libs.libarchive
 
