@@ -2460,6 +2460,7 @@
     <string name="read_highlight_restore_built_in_unchanged">Built-in rules are already up to date</string>
     <string name="highlight_rule_name">Rule name</string>
     <string name="highlight_rule_pattern">Regular expression</string>
+    <string name="highlight_rule_across_paragraphs">Match across paragraphs</string>
     <string name="highlight_rule_sample">Sample text</string>
     <string name="highlight_rule_preview">Preview</string>
     <string name="highlight_rule_invalid_pattern">Invalid regular expression; the rule was saved as disabled</string>

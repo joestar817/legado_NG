@@ -367,22 +367,43 @@ class TextChapterLayout(
 
         val isTextImageStyle = imageStyle.equals(Book.imgStyleText, true)
 
+        // Match only continuous plain text. Media/HTML keep their existing local layout and
+        // matching boundaries, including image-dependent whitespace and placeholder handling.
+        // EPUB retains this input even without active cross-paragraph rules for style-only refresh.
+        val highlightContexts = if (highlightMatcher.hasCrossParagraphRules || book.isEpub) {
+            prepareReadHighlightContexts(contents.map { content ->
+                val trimmed = content.trim()
+                val specialBlock = adaptSpecialStyle && (trimmed == "[newpage]" ||
+                    (trimmed.startsWith("<usehtml>") && trimmed.lastIndexOf('<') > 9))
+                if (specialBlock || AppPattern.imgPattern.matcher(content).find()) {
+                    null
+                } else if (isTextImageStyle) {
+                    content.replace(srcReplaceChar, srcReplacementChar)
+                } else {
+                    content
+                }
+            })
+        } else {
+            emptyList()
+        }
+
         val sb = StringBuffer()
         var isSetTypedImage = false
         var wordCount = 0
-        contents.forEach { content ->
+        contents.forEachIndexed { contentIndex, content ->
             sourceParagraphIndex++
             currentCoroutineContext().ensureActive()
+            val highlightContext = highlightContexts.getOrNull(contentIndex)
             if (adaptSpecialStyle) {
                 val text = content.trim()
                 if (text == "[newpage]") {
                     prepareNextPageIfNeed()
-                    return@forEach
+                    return@forEachIndexed
                 } else if (text.startsWith("<usehtml>")) {
                     val endInt = text.lastIndexOf("<")
                     if (endInt > 9) {
                         setTypeHtml(imageStyle, book, text.substring(9, endInt))
-                        return@forEach
+                        return@forEachIndexed
                     }
                 }
             }
@@ -409,7 +430,9 @@ class TextChapterLayout(
                     contentPaintFontMetrics,
                     imageStyle,
                     srcList = srcList,
-                    clickList = null
+                    clickList = null,
+                    highlightContext = highlightContext?.context,
+                    highlightContextOffset = highlightContext?.offset ?: 0,
                 )
             } else {
                 if (isSingleImageStyle && isSetTypedImage) {
@@ -491,7 +514,9 @@ class TextChapterLayout(
                                         "TEXT",
                                         isFirstLine = isFirstLine,
                                         srcList = srcList,
-                                        clickList = clickList
+                                        clickList = clickList,
+                                        highlightContext = highlightContext?.context,
+                                        highlightContextOffset = highlightContext?.offset ?: 0,
                                     )
                                     sb.setLength(0)
                                     isFirstLine = false
@@ -530,7 +555,9 @@ class TextChapterLayout(
                         "TEXT",
                         isFirstLine = isFirstLine,
                         srcList = srcList,
-                        clickList = clickList
+                        clickList = clickList,
+                        highlightContext = highlightContext?.context,
+                        highlightContextOffset = highlightContext?.offset ?: 0,
                     )
                 }
             }
@@ -957,9 +984,11 @@ class TextChapterLayout(
         emptyContent: Boolean = false,
         isVolumeTitle: Boolean = false,
         srcList: LinkedList<String>? = null,
-        clickList: LinkedList<String?>?
+        clickList: LinkedList<String?>?,
+        highlightContext: ReadHighlightContext? = null,
+        highlightContextOffset: Int = 0,
     ) {
-        val charStyles = highlightMatcher.match(text, isTitle)
+        val charStyles = highlightMatcher.match(text, isTitle, highlightContext, highlightContextOffset)
         val widthsArray = allocateFloatArray(text.length)
         textPaint.getTextWidthsCompat(text, widthsArray, reviewCharWidth)
         remeasureHighlightFonts(text, charStyles, textPaint, widthsArray)
@@ -1079,7 +1108,9 @@ class TextChapterLayout(
             }
             calcTextLinePosition(textPages, textLine, stringBuilder.length)
             if (book.isEpub && lineIndex == 0) {
-                textChapter.highlightInputs.add(ReadHighlightInput(textLine.chapterPosition, text, isTitle))
+                textChapter.highlightInputs.add(ReadHighlightInput(
+                    textLine.chapterPosition, text, isTitle, highlightContext, highlightContextOffset,
+                ))
             }
             stringBuilder.append(lineText)
             val textPage = pendingTextPage

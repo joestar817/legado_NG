@@ -2360,6 +2360,7 @@
     <string name="read_highlight_restore_built_in_unchanged">内置规则已是默认状态</string>
     <string name="highlight_rule_name">规则名称</string>
     <string name="highlight_rule_pattern">正则表达式</string>
+    <string name="highlight_rule_across_paragraphs">跨段匹配</string>
     <string name="highlight_rule_sample">示例文字</string>
     <string name="highlight_rule_preview">预览效果</string>
     <string name="highlight_rule_invalid_pattern">正则表达式无效，规则已保存为停用</string>

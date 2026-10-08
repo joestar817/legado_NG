@@ -91,7 +91,9 @@ internal class EpubCharStyles(private val loadFont: (String) -> ByteArray?) {
 
     fun rematch(inputs: List<ReadHighlightInput>, matcher: ReadHighlightMatcher) {
         inputs.forEach { input ->
-            val values = matcher.match(input.text, input.isTitle) ?: return@forEach
+            val values = matcher.match(
+                input.text, input.isTitle, input.context, input.contextOffset,
+            ) ?: return@forEach
             var start = 0
             while (start < values.size) {
                 val style = values[start]

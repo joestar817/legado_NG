@@ -1,10 +1,10 @@
 package io.legado.app.ui.book.read.config
 
 import android.graphics.Bitmap
+import android.graphics.Paint
 import android.graphics.RectF
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,12 +44,15 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -57,11 +60,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.PathParser
 import io.legado.app.R
 import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.page.provider.ReadCharStyle
 import io.legado.app.ui.book.read.page.provider.ReadHighlightImageRenderer
+import io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher
 import io.legado.app.ui.config.NgInlineColorPicker
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
@@ -243,6 +248,14 @@ internal fun HighlightRuleEditorPage(
                     contentColor = contentColor,
                     accentColor = accentColor,
                     onValueChanged = { actions.onHighlightDraftChanged(draft.copy(pattern = it)) },
+                )
+                AdvancedSwitchRow(
+                    title = stringResource(R.string.highlight_rule_across_paragraphs),
+                    checked = draft.matchAcrossParagraphs,
+                    contentColor = contentColor,
+                    onCheckedChange = {
+                        actions.onHighlightDraftChanged(draft.copy(matchAcrossParagraphs = it))
+                    },
                 )
                 Spacer(Modifier.height(8.dp))
                 AdvancedTextField(
@@ -520,9 +533,45 @@ private fun HighlightRulePreview(
     contentColor: Color,
     accentColor: Color,
 ) {
-    val text = rule.sampleText.ifBlank { stringResource(R.string.highlight_rule_sample) }
-    val textColor = rule.textColor?.let(::Color) ?: contentColor
-    val underlineColor = rule.underlineColor?.let(::Color) ?: textColor
+    val text = rule.sampleText.ifEmpty { stringResource(R.string.highlight_rule_sample) }
+    val matchedRuns by produceState<Pair<ReadHighlightRule, List<HighlightPreviewRun>>?>(null, rule) {
+        value = null
+        val result = withContext(Dispatchers.Default) {
+            val styles = ReadHighlightMatcher(listOf(rule).filter { it.enabled }).matchSample(
+                rule.sampleText,
+                isTitle = rule.targetScope == ReadHighlightRule.TARGET_TITLE,
+            )
+            buildList {
+                var start = 0
+                while (styles != null && start < styles.size) {
+                    val style = styles[start]
+                    var end = start + 1
+                    while (end < styles.size && styles[end] == style) end++
+                    if (style != null) add(HighlightPreviewRun(start, end, style))
+                    start = end
+                }
+            }
+        }
+        value = rule to result
+    }
+    // 新草稿的首帧不能沿用旧范围，取消的后台匹配也不能回写新草稿。
+    val runs = matchedRuns?.takeIf { it.first == rule }?.second.orEmpty()
+    val annotatedText = remember(text, runs, contentColor) {
+        buildAnnotatedString {
+            append(text)
+            runs.forEach { run ->
+                addStyle(
+                    SpanStyle(
+                        color = run.style.textColor?.let(::Color) ?: contentColor,
+                        fontWeight = FontWeight(run.style.fontWeight.coerceIn(100, 900)),
+                        fontStyle = if (run.style.isItalic) FontStyle.Italic else FontStyle.Normal,
+                    ),
+                    run.start,
+                    run.end,
+                )
+            }
+        }
+    }
     val imagePath = rule.bgImage.orEmpty()
     val loadedImage by produceState<Pair<String, Bitmap?>?>(null, imagePath) {
         value = null
@@ -548,13 +597,13 @@ private fun HighlightRulePreview(
             npBottom = rule.npBottom,
         )
     }
-    val bottomPadding = if (rule.underlineMode == 0) {
+    val bottomPadding = if (runs.isEmpty() || rule.underlineMode == 0) {
         0.dp
     } else {
         (rule.underlineOffset.coerceAtLeast(0f) + 7f).dp
     }
-    val previewCuts = remember(backgroundImage, imageStyle) {
-        backgroundImage?.takeIf { imageStyle.bgImageFit == 3 }?.let {
+    val previewCuts = remember(backgroundImage, imageStyle, runs) {
+        backgroundImage?.takeIf { runs.isNotEmpty() && imageStyle.bgImageFit == 3 }?.let {
             ReadNineSliceGeometry.from(it.width, it.height, imageStyle)
         }
     }
@@ -568,9 +617,18 @@ private fun HighlightRulePreview(
         previewCuts?.verticalInsets(24.sp.toPx(), ChapterProvider.lineSpacingExtra)
             ?.let { maxOf(it.first, it.second).toDp() } ?: 0.dp
     }
-    var textLayout by remember(text, rule.fontWeight, rule.isItalic) {
+    var textLayout by remember(annotatedText) {
         mutableStateOf<TextLayoutResult?>(null)
     }
+    val segments = remember(textLayout, runs) {
+        textLayout?.let { highlightPreviewSegments(it, runs) }.orEmpty()
+    }
+    val underlinePath = remember(rule.underlineSvgPath) {
+        rule.underlineSvgPath?.let { path ->
+            runCatching { PathParser.createPathFromPathData(path) }.getOrNull()
+        }
+    }
+    val svgPaint = remember { Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE } }
     val shape = RoundedCornerShape(12.dp)
 
     AdvancedSectionLabel(
@@ -588,25 +646,32 @@ private fun HighlightRulePreview(
         Box(
             modifier = Modifier
                 .wrapContentSize()
-                .padding(start = frameLeft, end = frameRight, top = frameVertical, bottom = frameVertical)
-                .background(rule.bgColor?.let(::Color) ?: Color.Transparent),
+                .padding(start = frameLeft, end = frameRight, top = frameVertical, bottom = frameVertical),
         ) {
             Text(
-                text = text,
+                text = annotatedText,
                 modifier = Modifier
                     .padding(bottom = bottomPadding)
                     .drawWithContent {
                         val bitmap = backgroundImage
-                        val layout = textLayout
+                        segments.forEach { segment ->
+                            segment.style.bgColor?.let { color ->
+                                drawRect(
+                                    color = Color(color),
+                                    topLeft = androidx.compose.ui.geometry.Offset(segment.left, segment.top),
+                                    size = androidx.compose.ui.geometry.Size(segment.right - segment.left, segment.bottom - segment.top),
+                                )
+                            }
+                        }
                         fun drawImages(frame: Boolean) {
-                            if (bitmap == null || layout == null) return
+                            if (bitmap == null) return
                             val inset = if (imageStyle.bgImageFit == 3) 0f else 1.dp.toPx()
-                            repeat(layout.lineCount) { line ->
+                            segments.forEach { segment ->
                                 val destination = RectF(
-                                    layout.getLineLeft(line) - (if (imageStyle.bgImageFit == 3) 3.dp.toPx() else 0f),
-                                    layout.getLineTop(line) + inset,
-                                    layout.getLineRight(line) + (if (imageStyle.bgImageFit == 3) 3.dp.toPx() else 0f),
-                                    layout.getLineBottom(line) - inset,
+                                    segment.left - (if (imageStyle.bgImageFit == 3) 3.dp.toPx() else 0f),
+                                    segment.top + inset,
+                                    segment.right + (if (imageStyle.bgImageFit == 3) 3.dp.toPx() else 0f),
+                                    segment.bottom - inset,
                                 )
                                 if (destination.width() > 0f && destination.height() > 0f) {
                                     if (frame) {
@@ -625,90 +690,142 @@ private fun HighlightRulePreview(
                         drawImages(false)
                         drawContent()
                         if (imageStyle.bgImageFit == 3) drawImages(true)
-                    },
-                color = textColor,
-                fontSize = 16.sp,
-                lineHeight = 24.sp,
-                fontWeight = FontWeight(rule.fontWeight.coerceIn(100, 900)),
-                fontStyle = if (rule.isItalic) FontStyle.Italic else FontStyle.Normal,
-                onTextLayout = { textLayout = it },
-            )
-            if (rule.underlineMode != 0) {
-                Canvas(Modifier.matchParentSize()) {
-                    val layout = textLayout ?: return@Canvas
-                    val strokeWidth = rule.underlineWidth.coerceIn(0.1f, 10f).dp.toPx()
-                    val offset = rule.underlineOffset.coerceIn(0f, 20f).dp.toPx()
-                    repeat(layout.lineCount) { line ->
-                        val start = layout.getLineLeft(line)
-                        val end = layout.getLineRight(line)
-                        val y = layout.getLineBottom(line) + offset
-                        when (rule.underlineMode) {
-                            1 -> drawLine(
-                                color = underlineColor,
-                                start = androidx.compose.ui.geometry.Offset(start, y),
-                                end = androidx.compose.ui.geometry.Offset(end, y),
-                                strokeWidth = strokeWidth,
-                            )
-
-                            2 -> drawLine(
-                                color = underlineColor,
-                                start = androidx.compose.ui.geometry.Offset(start, y),
-                                end = androidx.compose.ui.geometry.Offset(end, y),
-                                strokeWidth = strokeWidth,
-                                pathEffect = PathEffect.dashPathEffect(
-                                    floatArrayOf(8.dp.toPx(), 5.dp.toPx())
-                                ),
-                            )
-
-                            3 -> {
-                                val amplitude = 3.dp.toPx()
-                                val wavelength = 12.dp.toPx()
-                                val step = 1.dp.toPx()
-                                var previous = androidx.compose.ui.geometry.Offset(start, y)
-                                var x = start
-                                while (x < end) {
-                                    val next = (x + step).coerceAtMost(end)
-                                    val phase = ((next - start) / wavelength) * 2f * PI.toFloat()
-                                    val nextPoint = androidx.compose.ui.geometry.Offset(
-                                        next,
-                                        y + sin(phase.toDouble()).toFloat() * amplitude,
-                                    )
-                                    drawLine(
-                                        color = underlineColor,
-                                        start = previous,
-                                        end = nextPoint,
-                                        strokeWidth = strokeWidth,
-                                    )
-                                    previous = nextPoint
-                                    x = next
-                                }
-                            }
-
-                            4 -> {
-                                drawLine(
+                        segments.forEach { segment ->
+                            val style = segment.style
+                            val underlineColor = style.underlineColor?.let(::Color)
+                                ?: style.textColor?.let(::Color) ?: contentColor
+                            val strokeWidth = style.underlineWidth.coerceIn(0.1f, 10f).dp.toPx()
+                            val offset = style.underlineOffset.coerceIn(0f, 20f).dp.toPx()
+                            val start = segment.left
+                            val end = segment.right
+                            val y = segment.bottom + offset
+                            when (style.underlineMode) {
+                                1 -> drawLine(
                                     color = underlineColor,
                                     start = androidx.compose.ui.geometry.Offset(start, y),
                                     end = androidx.compose.ui.geometry.Offset(end, y),
                                     strokeWidth = strokeWidth,
                                 )
-                                drawLine(
-                                    color = underlineColor,
-                                    start = androidx.compose.ui.geometry.Offset(start, y + 3.dp.toPx()),
-                                    end = androidx.compose.ui.geometry.Offset(end, y + 3.dp.toPx()),
-                                    strokeWidth = strokeWidth,
-                                )
-                            }
 
-                            else -> drawLine(
-                                color = underlineColor,
-                                start = androidx.compose.ui.geometry.Offset(start, y),
-                                end = androidx.compose.ui.geometry.Offset(end, y),
-                                strokeWidth = strokeWidth,
-                            )
+                                2 -> drawLine(
+                                    color = underlineColor,
+                                    start = androidx.compose.ui.geometry.Offset(start, y),
+                                    end = androidx.compose.ui.geometry.Offset(end, y),
+                                    strokeWidth = strokeWidth,
+                                    pathEffect = PathEffect.dashPathEffect(
+                                        floatArrayOf(8.dp.toPx(), 5.dp.toPx())
+                                    ),
+                                )
+
+                                3 -> {
+                                    val amplitude = 3.dp.toPx()
+                                    val wavelength = 12.dp.toPx()
+                                    val step = 1.dp.toPx()
+                                    var previous = androidx.compose.ui.geometry.Offset(start, y)
+                                    var x = start
+                                    while (x < end) {
+                                        val next = (x + step).coerceAtMost(end)
+                                        val phase = ((next - start) / wavelength) * 2f * PI.toFloat()
+                                        val nextPoint = androidx.compose.ui.geometry.Offset(
+                                            next,
+                                            y + sin(phase.toDouble()).toFloat() * amplitude,
+                                        )
+                                        drawLine(
+                                            color = underlineColor,
+                                            start = previous,
+                                            end = nextPoint,
+                                            strokeWidth = strokeWidth,
+                                        )
+                                        previous = nextPoint
+                                        x = next
+                                    }
+                                }
+
+                                4 -> {
+                                    drawLine(
+                                        color = underlineColor,
+                                        start = androidx.compose.ui.geometry.Offset(start, y),
+                                        end = androidx.compose.ui.geometry.Offset(end, y),
+                                        strokeWidth = strokeWidth,
+                                    )
+                                    drawLine(
+                                        color = underlineColor,
+                                        start = androidx.compose.ui.geometry.Offset(start, y + 3.dp.toPx()),
+                                        end = androidx.compose.ui.geometry.Offset(end, y + 3.dp.toPx()),
+                                        strokeWidth = strokeWidth,
+                                    )
+                                }
+
+                                5 -> underlinePath?.let { path ->
+                                    svgPaint.color = underlineColor.toArgb()
+                                    svgPaint.strokeWidth = strokeWidth
+                                    val canvas = drawContext.canvas.nativeCanvas
+                                    val save = canvas.save()
+                                    canvas.translate(start, y - 50f)
+                                    canvas.scale((end - start) / 100f, 1f)
+                                    canvas.drawPath(path, svgPaint)
+                                    canvas.restoreToCount(save)
+                                }
+                            }
                         }
-                    }
+                    },
+                color = contentColor,
+                fontSize = 16.sp,
+                lineHeight = 24.sp,
+                fontWeight = FontWeight.Normal,
+                fontStyle = FontStyle.Normal,
+                onTextLayout = { textLayout = it },
+            )
+        }
+    }
+}
+
+private data class HighlightPreviewRun(val start: Int, val end: Int, val style: ReadCharStyle)
+
+private data class HighlightPreviewSegment(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+    val style: ReadCharStyle,
+)
+
+/** 按命中区间与软折行求交，再合并相邻字框；混合 RTL 文本不能直接取首尾坐标。 */
+private fun highlightPreviewSegments(
+    layout: TextLayoutResult,
+    runs: List<HighlightPreviewRun>,
+): List<HighlightPreviewSegment> = buildList {
+    val text = layout.layoutInput.text.text
+    runs.forEach { run ->
+        val firstLine = layout.getLineForOffset(run.start)
+        val lastLine = layout.getLineForOffset(run.end - 1)
+        for (line in firstLine..lastLine) {
+            val start = maxOf(run.start, layout.getLineStart(line))
+            val end = minOf(run.end, layout.getLineEnd(line))
+            val boxes = (start until end).mapNotNull { offset ->
+                if (text[offset] == '\n' || text[offset] == '\r') null
+                else layout.getBoundingBox(offset).takeIf { it.width > 0f }
+            }.sortedBy { it.left }
+            var left: Float? = null
+            var right = 0f
+            fun flush() {
+                left?.let {
+                    add(HighlightPreviewSegment(it, layout.getLineTop(line), right, layout.getLineBottom(line), run.style))
                 }
             }
+            boxes.forEach { box ->
+                if (left == null) {
+                    left = box.left
+                    right = box.right
+                } else if (box.left <= right + 0.5f) {
+                    right = maxOf(right, box.right)
+                } else {
+                    flush()
+                    left = box.left
+                    right = box.right
+                }
+            }
+            flush()
         }
     }
 }

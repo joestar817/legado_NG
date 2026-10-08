@@ -31,7 +31,8 @@ internal class EpubPreparedContent private constructor(
 ) {
     fun estimatedBytes(): Long = mapped.text.length * 2L + documents.sumOf {
         it.html.length * 2L + it.payload.toString().length * 2L + it.styleFonts.values.sumOf { font -> font.size.toLong() }
-    } + mapped.documents.sumOf { document -> document.nodes.sumOf { (it.starts.size + it.ends.size) * 4L } }
+    } + mapped.documents.sumOf { document -> document.nodes.sumOf { (it.starts.size + it.ends.size) * 4L } } +
+        chapter.highlightInputs.asSequence().mapNotNull { it.context }.distinct().sumOf { it.text.length * 2L }
     /** Called only after the owner accepts this chapter; speculative work has no publication side effects. */
     fun publishMapping(book: Book, revision: String?) {
         cachePositions?.let { EpubOpeningMappingCache.put(book, chapter, revision, it, mapped) }

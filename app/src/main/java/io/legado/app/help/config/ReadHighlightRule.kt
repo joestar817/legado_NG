@@ -11,6 +11,7 @@ data class ReadHighlightRule(
     @SerializedName("pattern") val pattern: String = "",
     @SerializedName("sampleText") val sampleText: String = "",
     @SerializedName("targetScope") val targetScope: Int = TARGET_ALL,
+    @SerializedName("matchAcrossParagraphs") val matchAcrossParagraphs: Boolean = false,
     @SerializedName("enabled") val enabled: Boolean = true,
     @SerializedName("position") val position: Int = 0,
     @SerializedName("textColor") val textColor: Int? = null,
