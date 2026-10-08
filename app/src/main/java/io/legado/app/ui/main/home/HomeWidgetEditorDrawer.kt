@@ -1,21 +1,26 @@
 package io.legado.app.ui.main.home
 
+import android.view.ViewGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,7 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgButtonShapeVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
@@ -83,14 +89,19 @@ internal fun HomeWidgetDrawerShell(
     confirmEnabled: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.80f).dp
     Dialog(
         onDismissRequest = onNavigateBack ?: onDismiss,
         properties = DialogProperties(
-            usePlatformDefaultWidth = false,
+            // Compose 1.7.6's false branch measures from Configuration instead of the window.
+            usePlatformDefaultWidth = true,
             decorFitsSystemWindows = false,
         ),
     ) {
+        val window = (LocalView.current.parent as DialogWindowProvider).window
+        DisposableEffect(window) {
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            onDispose { }
+        }
         Box(Modifier.fillMaxSize()) {
             Box(
                 Modifier.fillMaxSize().clickable(
@@ -99,14 +110,19 @@ internal fun HomeWidgetDrawerShell(
                     onClick = onDismiss,
                 ),
             )
-            Box(Modifier.align(Alignment.BottomCenter)) {
+            // Consume this Dialog's actual safe area once; content never uses screenHeightDp.
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                val drawerMaxHeight = maxHeight * 0.85f
                 NgDismissibleDrawer(onDismiss = onDismiss) {
                     NgBottomDrawerSurface(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = drawerMaxHeight),
                         contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
                     ) {
                         Column(
-                            Modifier.fillMaxWidth().navigationBarsPadding()
+                            Modifier.fillMaxWidth()
                                 .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 12.dp)
                                 .pointerInput(Unit) { detectTapGestures(onTap = {}) },
                         ) {
