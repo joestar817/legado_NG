@@ -42,13 +42,6 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-internal fun formatHomeReadingHours(readTime: Long, locale: Locale = Locale.getDefault()): String =
-    NumberFormat.getNumberInstance(locale).apply {
-        minimumFractionDigits = 1
-        maximumFractionDigits = 1
-        isGroupingUsed = false
-    }.format(readTime.coerceAtLeast(0L).toDouble() / 3_600_000.0)
-
 internal fun formatHomeReadingLastRead(lastRead: Long, locale: Locale = Locale.getDefault(),
     timeZone: TimeZone = TimeZone.getDefault()): String =
     if (lastRead > 0L) SimpleDateFormat("yyyy-MM-dd HH:mm", locale).apply {
@@ -81,6 +74,11 @@ private fun homeReadingSecondary() = LocalHomeReadingPalette.current?.secondary 
 private fun homeReadingPrimary() = LocalHomeReadingPalette.current?.primary ?: Color(NgTheme.colors.primary)
 
 @Composable
+private fun homeReadingDurationUnit(unit: HomeReadingDurationUnit): String = stringResource(
+    if (unit == HomeReadingDurationUnit.DAYS) R.string.home_reading_days else R.string.home_reading_hours,
+)
+
+@Composable
 private fun HomeReadingContent(
     variant: HomeWidgetVariant,
     state: HomeReadingState,
@@ -90,7 +88,9 @@ private fun HomeReadingContent(
 ) {
     val large = variant.size == HomeWidgetSize.LARGE
     val unavailable = !state.loaded
-    val hours = if (unavailable) "—" else formatHomeReadingHours(state.totalReadTime)
+    val duration = formatHomeReadingDuration(if (unavailable) 0L else state.totalReadTime)
+    val timeValue = if (unavailable) "—" else duration.value
+    val timeUnit = homeReadingDurationUnit(duration.unit)
     val count = if (unavailable) "—" else NumberFormat.getIntegerInstance().format(state.recordCount)
     BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = bodyMinimumHeight)) {
         val horizontalPadding = if (large) 14.dp else 12.dp
@@ -103,8 +103,8 @@ private fun HomeReadingContent(
                     val horizontal = maxWidth >= 220.dp * LocalDensity.current.fontScale
                     if (horizontal) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            HomeReadingMetric(stringResource(R.string.home_reading_total_time), hours,
-                                stringResource(R.string.home_reading_hours), 42, Modifier.weight(1f))
+                            HomeReadingMetric(stringResource(R.string.home_reading_total_time), timeValue,
+                                timeUnit, 42, Modifier.weight(1f))
                             Box(Modifier.padding(horizontal = 16.dp).width(0.5.dp).height(46.dp)
                                 .background(homeReadingPrimary().copy(alpha = 0.22f)))
                             HomeReadingRecordedMetric(variant, measuring,
@@ -113,8 +113,8 @@ private fun HomeReadingContent(
                         }
                     } else {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            HomeReadingMetric(stringResource(R.string.home_reading_total_time), hours,
-                                stringResource(R.string.home_reading_hours), 42)
+                            HomeReadingMetric(stringResource(R.string.home_reading_total_time), timeValue,
+                                timeUnit, 42)
                             HomeReadingRecordedMetric(variant, measuring,
                                 stringResource(R.string.home_reading_recorded), count,
                                 stringResource(R.string.home_reading_books))
@@ -125,8 +125,8 @@ private fun HomeReadingContent(
                 HomeReadingRecent(state, interactive && !measuring)
             } else {
                 Box(Modifier.fillMaxWidth().heightIn(min = 72.dp)) {
-                    HomeReadingMetric(stringResource(R.string.home_reading_total_time), hours,
-                        stringResource(R.string.home_reading_hours), 38)
+                    HomeReadingMetric(stringResource(R.string.home_reading_total_time), timeValue,
+                        timeUnit, 38)
                 }
                 HomeReadingSeparator()
                 Box(Modifier.fillMaxWidth().heightIn(min = 72.dp)) {
@@ -187,8 +187,10 @@ private fun HomeReadingRecentTable(records: List<HomeReadingRecord>, interactive
     val lastReads = remember(records, locale, timeZone) {
         records.map { formatHomeReadingLastRead(it.lastRead, locale, timeZone) }
     }
-    val durations = records.map { stringResource(R.string.home_reading_duration,
-        formatHomeReadingHours(it.readTime)) }
+    val durations = records.map {
+        val duration = formatHomeReadingDuration(it.readTime)
+        stringResource(R.string.home_reading_duration, duration.value, homeReadingDurationUnit(duration.unit))
+    }
     val measurer = rememberTextMeasurer(cacheSize = 24)
     val baseStyle = LocalTextStyle.current
     val bookStyle = baseStyle.copy(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
@@ -297,9 +299,11 @@ private fun HomeReadingMetric(label: String, value: String, unit: String, size: 
                         modifier = Modifier.alignByBaseline())
                 }
             } else {
-                Text(value, color = homeReadingPrimary(), fontWeight = FontWeight.Bold,
-                    fontSize = size.sp, lineHeight = (size + 8).sp)
-                Text(unit, color = homeReadingForeground(), fontSize = 12.sp)
+                Column {
+                    Text(value, color = homeReadingPrimary(), fontWeight = FontWeight.Bold,
+                        fontSize = size.sp, lineHeight = (size + 8).sp)
+                    Text(unit, color = homeReadingForeground(), fontSize = 12.sp)
+                }
             }
         }
     }

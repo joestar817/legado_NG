@@ -329,7 +329,16 @@ private fun homeCalendarDuration(readTime: Long?, compact: Boolean = true): Stri
     val minutes = homeCalendarMinutes(readTime) ?: return "—"
     return when {
         readTime != null && readTime > 0 && minutes == 0L -> stringResource(R.string.home_calendar_under_minute)
-        !compact && minutes >= 60 -> stringResource(R.string.home_calendar_hours_minutes, minutes / 60, minutes % 60)
+        readTime != null && minutes >= 60 -> {
+            val duration = formatHomeReadingDuration(readTime)
+            val unitRes = when (duration.unit) {
+                HomeReadingDurationUnit.HOURS -> if (compact) R.string.home_calendar_hours_short
+                    else R.string.home_calendar_hours
+                HomeReadingDurationUnit.DAYS -> if (compact) R.string.home_calendar_days_short
+                    else R.string.home_calendar_days
+            }
+            stringResource(unitRes, duration.value)
+        }
         else -> stringResource(R.string.home_calendar_minutes, minutes)
     }
 }

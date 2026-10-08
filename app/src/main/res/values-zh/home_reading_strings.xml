@@ -4,8 +4,9 @@
     <string name="home_reading_total_time">累计时长</string>
     <string name="home_reading_recorded">已记录</string>
     <string name="home_reading_hours">小时</string>
+    <string name="home_reading_days">天</string>
     <string name="home_reading_books">本</string>
-    <string name="home_reading_duration">%1$s 小时</string>
+    <string name="home_reading_duration">%1$s %2$s</string>
     <string name="home_reading_no_records">暂无记录</string>
     <string name="home_reading_loading">读取中</string>
     <string name="home_reading_load_failed">读取失败</string>

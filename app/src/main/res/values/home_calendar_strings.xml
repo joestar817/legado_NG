@@ -20,7 +20,10 @@
     <string name="home_calendar_month_number">%1$d</string>
     <string name="home_calendar_minutes">%1$dm</string>
     <string name="home_calendar_under_minute">&lt;1m</string>
-    <string name="home_calendar_hours_minutes">%1$dh %2$dm</string>
+    <string name="home_calendar_hours_short">%1$sh</string>
+    <string name="home_calendar_days_short">%1$sd</string>
+    <string name="home_calendar_hours">%1$s hours</string>
+    <string name="home_calendar_days">%1$s days</string>
     <string name="home_calendar_month_total">Month</string>
     <string name="home_calendar_reading_days">Read %1$s days</string>
     <string name="home_calendar_unknown">No daily record</string>

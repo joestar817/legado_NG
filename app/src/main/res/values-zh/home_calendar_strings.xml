@@ -20,7 +20,10 @@
     <string name="home_calendar_month_number">%1$d月</string>
     <string name="home_calendar_minutes">%1$d分</string>
     <string name="home_calendar_under_minute">&lt;1分</string>
-    <string name="home_calendar_hours_minutes">%1$d小时%2$d分</string>
+    <string name="home_calendar_hours_short">%1$s时</string>
+    <string name="home_calendar_days_short">%1$s天</string>
+    <string name="home_calendar_hours">%1$s小时</string>
+    <string name="home_calendar_days">%1$s天</string>
     <string name="home_calendar_month_total">本月</string>
     <string name="home_calendar_reading_days">阅读 %1$s天</string>
     <string name="home_calendar_unknown">无按日记录</string>
