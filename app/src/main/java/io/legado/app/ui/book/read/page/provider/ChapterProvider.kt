@@ -251,16 +251,25 @@ object ChapterProvider {
     }
 
     private fun getPaints(typeface: Typeface?): Pair<TextPaint, TextPaint> {
-        val titleBaseTypeface = loadOptionalTypeface(ReadBookConfig.titleFont) ?: typeface
-        val textFont = applyFontWeight(typeface, ReadBookConfig.textBold)
-        val titleFont = applyFontWeight(titleBaseTypeface, ReadBookConfig.titleBold)
+        val bodyFontPath = ReadBookConfig.textFont
+        val optionalTitleTypeface = loadOptionalTypeface(ReadBookConfig.titleFont)
+        val titleBaseTypeface = optionalTitleTypeface ?: typeface
+        val titleFontPath = if (optionalTitleTypeface != null) ReadBookConfig.titleFont else bodyFontPath
+        val bodyUsesBuilder = needsCustomFontVariationBuilder(bodyFontPath, ReadBookConfig.textBold)
+        val titleUsesBuilder = needsCustomFontVariationBuilder(titleFontPath, ReadBookConfig.titleBold)
+        val textFont = applyReaderFontWeight(typeface, bodyFontPath, ReadBookConfig.textBold, bodyUsesBuilder)
+        val titleFont = if (titleBaseTypeface === typeface && ReadBookConfig.titleBold == ReadBookConfig.textBold) {
+            textFont
+        } else {
+            applyReaderFontWeight(titleBaseTypeface, titleFontPath, ReadBookConfig.titleBold, titleUsesBuilder)
+        }
 
         //标题
         val tPaint = TextPaint()
         tPaint.color = ReadBookConfig.resolvedTitleColor
         tPaint.letterSpacing = ReadBookConfig.letterSpacing
         tPaint.typeface = titleFont
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && ReadBookConfig.titleBold in 100..900) {
+        if (!titleUsesBuilder && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && ReadBookConfig.titleBold in 100..900) {
             tPaint.setFontVariationSettings("'wght' ${ReadBookConfig.titleBold}")
         }
         tPaint.textSize = with(ReadBookConfig) { textSize + titleSize }.toFloat().spToPx()
@@ -275,7 +284,7 @@ object ChapterProvider {
         cPaint.color = ReadBookConfig.textColor
         cPaint.letterSpacing = ReadBookConfig.letterSpacing
         cPaint.typeface = textFont
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && ReadBookConfig.textBold in 100..900) {
+        if (!bodyUsesBuilder && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && ReadBookConfig.textBold in 100..900) {
             cPaint.setFontVariationSettings("'wght' ${ReadBookConfig.textBold}")
         }
         cPaint.textSize = ReadBookConfig.textSize.toFloat().spToPx()
@@ -286,6 +295,46 @@ object ChapterProvider {
         if (ReadBookConfig.textItalic) cPaint.textSkewX = -0.25f
         applyTextShadow(cPaint)
         return Pair(tPaint, cPaint)
+    }
+
+    private fun needsCustomFontVariationBuilder(fontPath: String, weight: Int): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+            Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true) &&
+            fontPath.isNotBlank() && weight in 100..900
+
+    private fun applyReaderFontWeight(
+        base: Typeface?,
+        fontPath: String,
+        weight: Int,
+        useBuilder: Boolean,
+    ): Typeface {
+        if (!useBuilder || base == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return applyFontWeight(base, weight)
+        }
+        // Xiaomi's Paint variation path loses the custom family identity and replaces it with
+        // MiSans. A Builder applies the axis while retaining the file/asset/fd identity.
+        // Keep the source weight: changing it also changes Android's synthetic-bold decision.
+        fun Typeface.Builder.buildVariation(): Typeface? =
+            setWeight(base.weight).setFontVariationSettings("'wght' $weight").build()
+
+        val varied = runCatching {
+            checkNotNull(when {
+                fontPath.startsWith("assets://") -> Typeface.Builder(
+                    appCtx.assets, fontPath.removePrefix("assets://"),
+                ).buildVariation()
+                fontPath.isContentScheme() -> appCtx.contentResolver
+                    .openFileDescriptor(fontPath.toUri(), "r")?.use {
+                        Typeface.Builder(it.fileDescriptor).buildVariation()
+                    }
+                else -> Typeface.Builder(fontPath).buildVariation()
+            })
+        }.getOrElse {
+            // Retain the already loaded font if the resource becomes unavailable. Never send
+            // it back through the failing Paint path or erase the user's selected font.
+            AppLog.put("自定义字体字重设置失败，保留原字体", it)
+            null
+        }
+        return applyFontWeight(varied ?: base, weight)
     }
 
     private fun applyFontWeight(typeface: Typeface?, weight: Int): Typeface {
