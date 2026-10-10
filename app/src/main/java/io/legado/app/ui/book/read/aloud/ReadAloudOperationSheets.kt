@@ -781,7 +781,17 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
             MoreToggle.READ_BY_PAGE -> {
                 context.putPrefBoolean(PreferKey.readAloudByPage, enabled)
                 state = state?.copy(readByPage = enabled)
-                notifyRuntimeChanged()
+                if (BaseReadAloudService.isRun) {
+                    // The player may be the only open screen. Restart from speech progress,
+                    // not the original reader's page start, and retain the paused state.
+                    ReadAloud.play(
+                        context = context,
+                        play = BaseReadAloudService.isPlay(),
+                        forceRebuild = true,
+                        engineVerified = true,
+                        contentPosition = ReadBook.durChapterPos,
+                    )
+                }
             }
             MoreToggle.SKIP_CHAPTER_TITLE -> {
                 context.putPrefBoolean(PreferKey.skipReadAloudChapterTitle, enabled)

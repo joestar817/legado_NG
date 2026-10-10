@@ -104,9 +104,12 @@ internal fun canReusePreparedReadAloudPlaylist(
     forceRebuild: Boolean,
     playlistChapterIndex: Int,
     currentChapterIndex: Int,
-    hasSpeakItems: Boolean
+    hasSpeakItems: Boolean,
+    playlistReadByPage: Boolean,
+    requestedReadByPage: Boolean,
 ): Boolean = !forceRebuild &&
         playlistChapterIndex == currentChapterIndex &&
+        playlistReadByPage == requestedReadByPage &&
         hasSpeakItems
 
 internal fun preparedReadAloudChapterPosition(

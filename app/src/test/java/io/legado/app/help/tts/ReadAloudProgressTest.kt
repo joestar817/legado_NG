@@ -192,7 +192,9 @@ class ReadAloudProgressTest {
                 forceRebuild = false,
                 playlistChapterIndex = 3,
                 currentChapterIndex = 3,
-                hasSpeakItems = true
+                hasSpeakItems = true,
+                playlistReadByPage = false,
+                requestedReadByPage = false,
             )
         )
     }
@@ -205,9 +207,68 @@ class ReadAloudProgressTest {
                 forceRebuild = true,
                 playlistChapterIndex = 3,
                 currentChapterIndex = 3,
-                hasSpeakItems = true
+                hasSpeakItems = true,
+                playlistReadByPage = false,
+                requestedReadByPage = false,
             )
         )
+    }
+
+    @Test
+    fun preparedPlaylist_rejectsBothPageSplitTransitionsWithinSameChapter() {
+        for (readByPage in listOf(false, true)) {
+            assertFalse(
+                canReusePreparedReadAloudPlaylist(
+                    forceRebuild = false,
+                    playlistChapterIndex = 3,
+                    currentChapterIndex = 3,
+                    hasSpeakItems = true,
+                    playlistReadByPage = readByPage,
+                    requestedReadByPage = !readByPage,
+                )
+            )
+        }
+    }
+
+    @Test
+    fun preparedPlaylist_keepsReuseForUnchangedPageSplitMode() {
+        assertTrue(
+            canReusePreparedReadAloudPlaylist(
+                forceRebuild = false,
+                playlistChapterIndex = 3,
+                currentChapterIndex = 3,
+                hasSpeakItems = true,
+                playlistReadByPage = true,
+                requestedReadByPage = true,
+            )
+        )
+    }
+
+    @Test
+    fun pageSplitTransition_sameParagraphNumberCanPointToDifferentAudio() {
+        val paragraphs = listOf("abcdefghij", "klmnopqrst")
+        val pageParagraphs = listOf("abcd", "efghij", "klmnopqrst")
+        val oldRanges = paragraphs.mapIndexed { index, text ->
+            ReadAloudPreparedItemRange(index, 0, text.length)
+        }
+        // Chapter offset 7 becomes paragraph 1, offset 3 after the first page ends at 4.
+        val wrongTarget = requireNotNull(preparedReadAloudPlaybackTarget(oldRanges, 1, 3, 2))
+        assertEquals("nopqrst", paragraphs[wrongTarget.itemIndex].substring(wrongTarget.itemOffset))
+        assertFalse(
+            canReusePreparedReadAloudPlaylist(
+                forceRebuild = false,
+                playlistChapterIndex = 3,
+                currentChapterIndex = 3,
+                hasSpeakItems = true,
+                playlistReadByPage = false,
+                requestedReadByPage = true,
+            )
+        )
+        val rebuiltRanges = pageParagraphs.mapIndexed { index, text ->
+            ReadAloudPreparedItemRange(index, 0, text.length)
+        }
+        val target = requireNotNull(preparedReadAloudPlaybackTarget(rebuiltRanges, 1, 3, 3))
+        assertEquals(paragraphs[0].substring(7), pageParagraphs[target.itemIndex].substring(target.itemOffset))
     }
 
     @Test

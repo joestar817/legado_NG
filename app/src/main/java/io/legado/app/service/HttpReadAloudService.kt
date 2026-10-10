@@ -139,6 +139,7 @@ class HttpReadAloudService : BaseReadAloudService(),
     private var speakItems: List<SpeakItem> = emptyList()
     private var speakItemIndex = 0
     private var playlistChapterIndex = -1
+    private var playlistReadByPage = false
     private var pendingPlaylistSeek: PendingPlaylistSeek? = null
     private var preparedSeekInProgress = false
     private var progressGeneration = 0L
@@ -223,11 +224,24 @@ class HttpReadAloudService : BaseReadAloudService(),
     }
 
     override fun tryReusePreparedPlayback(play: Boolean, forceRebuild: Boolean): Boolean {
+        if (playlistReadByPage != readAloudByPage) {
+            // Page splitting changes paragraph identities even within the same chapter.
+            // Retire old producers also when the new request remains paused.
+            downloadTask?.cancel()
+            backgroundStoryboardPreloadJob?.cancel()
+            nextStoryboardPreloadJob?.cancel()
+            nextAudioPreloadJob?.cancel()
+            nextChapterPlaybackPlan = null
+            clearSeamlessChapterQueue()
+            playlistProductionState.begin()
+        }
         if (!canReusePreparedReadAloudPlaylist(
                 forceRebuild = forceRebuild,
                 playlistChapterIndex = playlistChapterIndex,
                 currentChapterIndex = ReadBook.durChapterIndex,
-                hasSpeakItems = speakItems.isNotEmpty()
+                hasSpeakItems = speakItems.isNotEmpty(),
+                playlistReadByPage = playlistReadByPage,
+                requestedReadByPage = readAloudByPage,
             )
         ) {
             return false
@@ -459,6 +473,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         backgroundStoryboardPreloadJob?.cancel()
         nextStoryboardPreloadJob?.cancel()
         nextAudioPreloadJob?.cancel()
+        playlistReadByPage = readAloudByPage
         val productionToken = playlistProductionState.begin()
         val routeWarningTracker = RouteWarningTracker(productionToken)
         downloadTask = execute {
