@@ -174,6 +174,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
                     pageDelegate is HorizontalPageDelegate && pageDelegate !is NoAnimPageDelegate },
                 autoPaging = { autoPager.isRunning },
                 isScroll = { isScroll },
+                scrollAnimationStart = ::onScrollAnimStart,
+                scrollAnimationStop = ::onScrollAnimStop,
                 publisherStyle = { EpubLayoutPreferences.read(ReadBook.book?.bookUrl).getValue(EpubLayoutPreferences.PUBLISHER) },
                 position = { ReadBook.durChapterPos },
                 neighboringChapters = { listOfNotNull(ReadBook.prevTextChapter, ReadBook.curTextChapter, ReadBook.nextTextChapter) },
@@ -784,6 +786,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
             }
         }
     }
+
+    fun stopEpubScroll() { epubLayout?.stopScroll() }
 
     /**
      * 销毁事件

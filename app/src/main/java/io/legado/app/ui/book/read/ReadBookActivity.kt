@@ -411,6 +411,7 @@ class ReadBookActivity : BaseReadBookActivity(),
     override fun onPause() {
         super.onPause()
         autoPageStop()
+        binding.readView.stopEpubScroll()
         backupJob?.cancel()
         ReadBook.saveRead()
         ReadBook.cancelPreDownloadTask()

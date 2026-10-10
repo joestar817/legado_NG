@@ -77,6 +77,7 @@ internal class EpubLayoutSurface(
     private var scrollDelta = 0f
     private var scrollTask: Runnable? = null
     private var scrollRevision = 0L
+    private var scrollFinished: ((JSONObject) -> Unit)? = null
     private var readyContentKey: String? = null
     private var readyContentUrl = ""
     private var readyDocumentsKey = ""
@@ -483,7 +484,26 @@ internal class EpubLayoutSurface(
     }
 
     fun beginScroll() {
+        scrollFinished = null
         if (!closed && state != null) webView.evaluateJavascript("$api.beginScroll()", null)
+    }
+
+    fun cancelScroll() {
+        // Keep the in-flight batch's confirmed location, but discard queued momentum.
+        scrollDelta = 0f
+        scrollFinished = null
+    }
+
+    fun finishScroll(callback: (JSONObject) -> Unit) {
+        if (closed || readyState?.optBoolean("scrolled") != true) return
+        scrollFinished = callback
+        if (scrollTask == null) completeScroll()
+    }
+
+    private fun completeScroll() {
+        val callback = scrollFinished ?: return
+        scrollFinished = null
+        readyState?.let(callback)
     }
 
     fun scroll(delta: Float) {
@@ -525,6 +545,7 @@ internal class EpubLayoutSurface(
                     // Keep only one geometry query in flight. Incoming drag/auto-scroll
                     // deltas accumulate until its position has reached the native owner.
                     if (!closed && token == revision && scrollDelta != 0f) scroll(0f)
+                    else if (!closed && token == revision && scrollTask == null) completeScroll()
                 }
                 SystemClock.uptimeMillis() >= until -> {
                     scrollTask = null
@@ -624,6 +645,7 @@ internal class EpubLayoutSurface(
         scrollTask = null
         scrollDelta = 0f
         scrollRevision++
+        scrollFinished = null
     }
 
     private fun awaitLayout(token: String) {

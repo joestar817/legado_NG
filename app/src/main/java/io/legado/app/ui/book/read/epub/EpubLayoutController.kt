@@ -66,6 +66,8 @@ internal class EpubLayoutController(
     private val animationsEnabled: () -> Boolean,
     private val autoPaging: () -> Boolean = { false },
     private val isScroll: () -> Boolean,
+    private val scrollAnimationStart: () -> Unit,
+    private val scrollAnimationStop: () -> Unit,
     private val publisherStyle: () -> Boolean,
     private val position: () -> Int,
     private val commitPosition: (Int, Int) -> Unit,
@@ -409,10 +411,21 @@ internal class EpubLayoutController(
                 } else false
             },
             finishScroll = {
-                val overshoot = next.state?.optDouble("scrollOvershoot", 0.0) ?: 0.0
-                if (kotlin.math.abs(overshoot) > 48) turn(if (overshoot > 0) 1 else -1)
+                next.finishScroll { state ->
+                    val overshoot = state.optDouble("scrollOvershoot", 0.0)
+                    if (kotlin.math.abs(overshoot) > 48) turn(if (overshoot > 0) 1 else -1)
+                }
             },
             canSelect = { selectionEnabled },
+            horizontalScroll = { next.state?.optString("scrollAxis") == "x" },
+            canFling = {
+                !closed && !renderFailed && !loading && surface === next &&
+                    next.readyState?.let { it.optBoolean("scrolled") &&
+                        kotlin.math.abs(it.optDouble("scrollOvershoot", 0.0)) <= 48 } == true
+            },
+            cancelScroll = next::cancelScroll,
+            onFlingStart = scrollAnimationStart,
+            onFlingStop = scrollAnimationStop,
         )
     }
 
@@ -428,6 +441,7 @@ internal class EpubLayoutController(
         val params = view.layoutParams as FrameLayout.LayoutParams
         if (params.width == width && params.height == height && params.leftMargin == left && params.topMargin == top) {
             if (insetsChanged && preparedContent != null && !loading) {
+                stopScroll()
                 cancelTurn()
                 if (modeChanged) view.refreshViewport() else view.restyle(options())
             }
@@ -435,6 +449,7 @@ internal class EpubLayoutController(
             return
         }
         insetsChanged = false
+        stopScroll()
         cancelTurn()
         preparation?.close()
         preparation = null
@@ -988,6 +1003,7 @@ internal class EpubLayoutController(
     }
 
     fun jump(offset: Int) {
+        stopScroll()
         if (renderFailed) { retryRendering(); return }
         val content = preparedContent ?: return
         requestedPosition = offset
@@ -1469,6 +1485,7 @@ internal class EpubLayoutController(
     }
 
     fun turn(direction: Int) {
+        stopScroll()
         speechFollowRevision++
         speechFollowPosition = null
         if (closed) return
@@ -1719,6 +1736,11 @@ internal class EpubLayoutController(
     }
 
     fun cancelAutoPage() { if (autoPaging()) return; cancelTurn() }
+
+    fun stopScroll() {
+        gestures?.cancel()
+        surface?.cancelScroll()
+    }
 
     private fun turnChapter(direction: Int, timing: EpubStartupTiming? = null) {
         val target = chapter?.index?.plus(direction)
