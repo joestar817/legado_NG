@@ -182,9 +182,22 @@ abstract class BaseReadAloudService : BaseService(),
     protected fun readAloudPageStart(chapter: TextChapter, index: Int): Int = readAloudInput(chapter).pageText?.startAt(index) ?: 0
     protected fun moveReadAloudPage(next: Boolean) {
         val chapter = textChapter ?: return
+        val trace = io.legado.app.BuildConfig.DEBUG && chapter.contentPositionMap != null
+        if (trace) {
+            val layoutPages = readAloudInput(chapter).pageText is io.legado.app.help.tts.LayoutReadAloudPageText
+            val target = if (layoutPages) readAloudPageStart(chapter, pageIndex)
+                else if (next) chapter.getNextPageLength(ReadBook.durChapterPos)
+                else chapter.getPrevPageLength(ReadBook.durChapterPos)
+            val caller = Throwable().stackTrace.firstOrNull { it.methodName != "moveReadAloudPage" }
+            android.util.Log.d("EpubAloudTrace", "native-page-request service=${javaClass.simpleName} caller=${caller?.className}.${caller?.methodName} " +
+                "chapter=${chapter.chapter.index} next=$next layoutPages=$layoutPages servicePage=$pageIndex " +
+                "nativePage=${ReadBook.durPageIndex} position=${ReadBook.durChapterPos} target=$target speech=$readAloudNumber")
+        }
         if (readAloudInput(chapter).pageText is io.legado.app.help.tts.LayoutReadAloudPageText) {
             ReadBook.commitContentPosition(readAloudPageStart(chapter, pageIndex))
         } else if (next) ReadBook.moveToNextPage() else ReadBook.moveToPrevPage()
+        if (trace) android.util.Log.d("EpubAloudTrace", "native-page-return chapter=${chapter.chapter.index} " +
+            "position=${ReadBook.durChapterPos} nativePage=${ReadBook.durPageIndex}")
     }
     internal var pageIndex = 0
     private var needResumeOnAudioFocusGain = false

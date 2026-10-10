@@ -839,12 +839,17 @@
             return pageStartsCache;
         } finally { if (state.scrolled) scrollDocument(scroll); else place(page); }
     }
-    function restoreAnchor(anchor) {
-        if (!anchor || !body.contains(anchor.node) || state.mode === 'FIXED') return false;
+    function restoreAnchor(anchor, trace) {
+        if (trace) { trace.mapped = !!anchor; trace.connected = !!anchor && body.contains(anchor.node); }
+        if (!anchor || !body.contains(anchor.node) || state.mode === 'FIXED') {
+            if (trace) trace.result = !anchor ? 'unmapped' : state.mode === 'FIXED' ? 'fixed' : 'detached';
+            return false;
+        }
         galleries.forEach(function (gallery) {
             var index = gallery.cells.findIndex(function (cell) { return cell === anchor.node || cell.contains(anchor.node); });
             if (index >= 0 && index !== galleryIndexes.get(gallery.element)) changeGallery(gallery, index - galleryIndexes.get(gallery.element));
         });
+        var previousPage = state.pageIndex, previousScroll = state.scrollOffset;
         place(0);
         var rect;
         if (anchor.node.nodeType === Node.TEXT_NODE) {
@@ -853,10 +858,19 @@
             range.setEnd(anchor.node, Math.min(anchor.node.length, anchor.offset + 1));
             rect = Array.from(range.getClientRects()).find(function (r) { return r.width > 0 && r.height > 0; });
         } else rect = anchor.node.getBoundingClientRect();
-        if (!rect) return false;
+        if (!rect) {
+            // A collapsed/hidden source character must not leave the measuring page visible.
+            if (state.scrolled) scrollDocument(previousScroll || 0); else place(previousPage);
+            if (trace) trace.result = 'no-rect';
+            return false;
+        }
         var position = axis === 'x' ? (sign > 0 ? rect.left : viewportWidth - rect.right)
             : (sign > 0 ? rect.top : viewportHeight - rect.bottom);
         place(Math.floor(Math.max(0, position) / extent));
+        if (trace) {
+            trace.result = 'restored'; trace.page = state.pageIndex; trace.coordinate = position;
+            trace.rect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        }
         return true;
     }
     function flowPosition(value) {
@@ -1668,6 +1682,10 @@
         }
     }
     async function move(value) {
+        var trace = value.debugAloudTrace ? { event: 'js-move', token: value.token, reason: value.debugTraceReason,
+            beforePage: state.pageIndex, page: value.page || 0,
+            offset: value.textOffset != null ? value.textOffset : value.location && value.location.textOffset,
+            location: {}, text: {} } : null;
         cancelConfiguration();
         var mine = generation;
         var began = performance.now();
@@ -1677,17 +1695,27 @@
         state.token = value.token;
         state.status = 'loading';
         try {
-            if (!value.preserveScroll) place(value.last ? state.pageCount - 1 : (value.page || 0));
+            // A source location owns the destination. Keep the current viewport if it cannot be restored.
+            if (!value.preserveScroll && (state.mode === 'FIXED' || !value.location && value.textOffset == null))
+                place(value.last ? state.pageCount - 1 : (value.page || 0));
             locate(value.fragment);
             delete state.timings;
-            if (value.location) restoreAnchor(locationAnchor(value.location));
-            if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset));
+            if (value.location) restoreAnchor(locationAnchor(value.location), trace && trace.location);
+            if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset), trace && trace.text);
+            if (trace) {
+                trace.afterPage = state.pageIndex;
+                try { window.console.debug('EpubAloudTrace ' + JSON.stringify(trace)); } catch (_) {}
+            }
             await frame(frameTiming); await frame(frameTiming);
             if (mine === generation) {
                 readingAnchor = captureAnchor();
                 state.timings = layoutTimings(frameTiming, 0, performance.now() - began);
                   state.status = 'ready';
                   paintHighlights();
+                if (trace) {
+                    try { window.console.debug('EpubAloudTrace ' + JSON.stringify({ event: 'js-ready', token: value.token,
+                        page: state.pageIndex, capturedOffset: sourceLocation().textOffset })); } catch (_) {}
+                }
             }
         } catch (error) { if (mine === generation) state = { status: 'error', token: value.token, error: String(error) }; }
     }

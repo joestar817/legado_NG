@@ -271,7 +271,7 @@ internal class EpubLayoutController(
             // Equal offsets in different chapters are not the same reading location. A window
             // callback may already have displayed this chapter; a TOC jump still needs a seek.
             else if (chapterChanged && documents.getOrNull(documentIndex)?.chapter !== value ||
-                position() != reportedPosition && position() != requestedPosition) jump(position())
+                position() != reportedPosition && position() != requestedPosition) jump(position(), "bind-chapter-position")
         } else if (textChapter !== value || preparedContent == null && value?.isCompleted == true && !loading) {
             if (snapshot != null) {
                 contentGeneration++
@@ -287,7 +287,7 @@ internal class EpubLayoutController(
             requestedPosition = position()
             if (!loading) showChapter(book)
         } else if (position() != reportedPosition && position() != requestedPosition) {
-            jump(position())
+            jump(position(), "bind-position")
         }
         if (!loading && preparedContent != null) scheduleWarm()
     }
@@ -930,7 +930,7 @@ internal class EpubLayoutController(
         val view = surface ?: return
         if (view.state == null || loading) return
         val target = documents.indexOfLast { it.chapter === textChapter && it.first <= position }
-        if (target >= 0 && target != documentIndex) { jump(position); return }
+        if (target >= 0 && target != documentIndex) { jump(position, "aloud-document"); return }
         val mine = ++speechFollowRevision
         view.interact(JSONObject().put("action", "containsPosition").put("offset", position).put("index", documentIndex)) {
             if (mine != speechFollowRevision || speechFollowPosition != position) return@interact
@@ -940,7 +940,7 @@ internal class EpubLayoutController(
             // Native paging does not turn back for this boundary update either.
             // Consume the progress normally, but keep the visible EPUB page.
             val atLeadingBoundary = reportedPosition > 0 && position == reportedPosition - 1
-            if (it?.optBoolean("mapped") == true && !it.optBoolean("visible") && !atLeadingBoundary) jump(position)
+            if (it?.optBoolean("mapped") == true && !it.optBoolean("visible") && !atLeadingBoundary) jump(position, "aloud-offscreen")
             syncAloudHighlight()
         }
     }
@@ -1002,7 +1002,11 @@ internal class EpubLayoutController(
         })
     }
 
-    fun jump(offset: Int) {
+    fun jump(offset: Int, reason: String = "external") {
+        if (io.legado.app.BuildConfig.DEBUG) android.util.Log.d("EpubAloudTrace", "jump reason=$reason " +
+            "chapter=${chapter?.index} document=$documentIndex offset=$offset position=${position()} " +
+            "reported=$reportedPosition requested=$requestedPosition following=$speechFollowPosition " +
+            "page=${surface?.state?.optInt("pageIndex", -1)} token=${surface?.state?.optString("token")} loading=$loading")
         stopScroll()
         if (renderFailed) { retryRendering(); return }
         val content = preparedContent ?: return
@@ -1022,7 +1026,7 @@ internal class EpubLayoutController(
             }
         }
         if (target != documentIndex) { documentIndex = target; openDocument(offset = offset) }
-        else surface?.move(0, JSONObject().put("textOffset", offset).put("index", target))
+        else surface?.move(0, JSONObject().put("textOffset", offset).put("index", target), reason)
     }
 
     private fun hitSelection(x: Float, y: Float, initial: Boolean) {

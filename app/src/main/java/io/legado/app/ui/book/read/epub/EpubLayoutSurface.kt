@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
+import android.webkit.ConsoleMessage
 import android.webkit.HttpAuthHandler
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
@@ -126,6 +127,13 @@ internal class EpubLayoutSurface(
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) = request.deny()
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                if (io.legado.app.BuildConfig.DEBUG && message.message().startsWith("EpubAloudTrace ")) {
+                    android.util.Log.d("EpubAloudTrace", message.message().removePrefix("EpubAloudTrace "))
+                    return true
+                }
+                return super.onConsoleMessage(message)
+            }
         }
         webView.webViewClient = object : WebViewClient() {
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
@@ -370,12 +378,18 @@ internal class EpubLayoutSurface(
         }
     }
 
-    fun move(page: Int, location: JSONObject? = null) {
+    fun move(page: Int, location: JSONObject? = null, reason: String = "page") {
         if (closed || state == null) return
+        val beforePage = state?.optInt("pageIndex", -1)
         startup = EpubStartupTiming(if (onViewportRequired != null) "visible-move" else "preparation-move")
         val token = begin()
         val value = JSONObject().put("token", token).put("page", page)
         location?.let { value.put("location", it) }
+        if (io.legado.app.BuildConfig.DEBUG && onViewportRequired != null) {
+            value.put("debugAloudTrace", true).put("debugTraceReason", reason)
+            android.util.Log.d("EpubAloudTrace", "surface-move token=$token reason=$reason beforePage=$beforePage " +
+                "page=$page offset=${location?.optInt("textOffset", -1)} document=${location?.optInt("index", -1)}")
+        }
         webView.evaluateJavascript("$api.move($value)", null)
         awaitLayout(token)
     }
