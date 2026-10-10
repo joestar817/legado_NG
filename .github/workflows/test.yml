@@ -39,6 +39,8 @@ jobs:
           echo "version=$(date -d "8 hour" -u +3.%y.%m%d%H)" >> $GITHUB_OUTPUT
           echo "versionL=$(date -d "8 hour" -u +3.%y.%m%d%H%M)" >> $GITHUB_OUTPUT
       - id: release-info
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           REF_NAME="${GITHUB_REF_NAME}"
           CHANNEL="beta"
@@ -58,19 +60,13 @@ jobs:
             TAG_NAME="beta"
           fi
 
-          if [[ "$CHANNEL" == "release" ]]; then
-            LAST_TAG=$(git tag --list '3.*' --sort=-v:refname | head -n 1)
-            if [ -n "$LAST_TAG" ]; then
-              COMMIT_RANGE="$LAST_TAG..HEAD"
-            else
-              COMMIT_RANGE="HEAD~20..HEAD"
-            fi
-          elif git rev-parse -q --verify refs/tags/beta >/dev/null; then
-            COMMIT_RANGE="beta..HEAD"
-          elif [ "${{ github.event_name }}" == "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
-            COMMIT_RANGE="${{ github.event.before }}..${{ github.sha }}"
+          RELEASE_BASE=$(python3 .github/scripts/select_release_base.py --channel "$CHANNEL")
+          LOG_OPTIONS=()
+          if [ -n "$RELEASE_BASE" ]; then
+            COMMIT_RANGE="$RELEASE_BASE..HEAD"
           else
-            COMMIT_RANGE="HEAD~20..HEAD"
+            COMMIT_RANGE="HEAD"
+            LOG_OPTIONS=(--max-count=20)
           fi
 
           echo "DEBUG: REF_NAME=$REF_NAME"
@@ -79,7 +75,7 @@ jobs:
 
           UPDATED_CONTENT=""
           if git rev-parse "$COMMIT_RANGE" >/dev/null 2>&1; then
-            UPDATED_CONTENT=$(git log "$COMMIT_RANGE" --pretty=format:"* %s" --reverse 2>/dev/null \
+            UPDATED_CONTENT=$(git log "$COMMIT_RANGE" "${LOG_OPTIONS[@]}" --pretty=format:"* %s" --reverse 2>/dev/null \
               | grep -vE '^\* (Merge|Sync upstream)' \
               | grep -vE '^\* $' || true)
           else
