@@ -1005,6 +1005,9 @@
     <string name="jf_convert_f">简转繁</string>
     <string name="jf_convert_j">繁转简</string>
     <string name="page_mode">翻页模式</string>
+    <string name="page_turn_mode">翻页方式</string>
+    <string name="page_turn_mode_horizontal">左右翻页</string>
+    <string name="page_turn_mode_vertical">上下滚屏</string>
     <string name="nb_file_sub_count">%1$d 项</string>
     <string name="nb_file_path">存储卡：</string>
     <string name="nb_file_add_shelf">加入书架</string>
