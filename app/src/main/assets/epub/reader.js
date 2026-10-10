@@ -609,17 +609,41 @@
         });
         return closest;
     }
+    function sourcePositionProbe(offset) {
+        function measure(at) {
+            var a = textPoint(at), b = textPoint(Math.min(sourceText.length, at + 1), true);
+            if (!a || !b) return null;
+            var range = document.createRange(); range.setStart(a.node, a.offset); range.setEnd(b.node, b.offset);
+            return { offset: at, range: range, rects: Array.from(range.getClientRects()).filter(function (r) {
+                return r.width > 0 && r.height > 0;
+            }) };
+        }
+        var probe = measure(offset);
+        if (!probe || probe.rects.length || !/[\s\u3000]/.test(sourceText.charAt(offset))) return probe;
+        // Native paragraph indents/separators can map to a collapsed or unpainted DOM range.
+        // Use the next glyph in this paragraph without changing the shared speech position.
+        var end = sourceText.length, next = offset;
+        chapterBoundaries.forEach(function (chapter) { if (chapter.offset > offset) end = Math.min(end, chapter.offset); });
+        if (sourceText.charAt(next) === '\r') { next++; if (sourceText.charAt(next) === '\n') next++; }
+        else if (sourceText.charAt(next) === '\n') next++;
+        while (next < end && /[^\S\r\n\u2028\u2029]/.test(sourceText.charAt(next))) next++;
+        if (next === offset || next >= end || /[\r\n\u2028\u2029]/.test(sourceText.charAt(next))) return probe;
+        var glyph = measure(next);
+        return glyph && glyph.rects.length ? glyph : probe;
+    }
     function interact(value) {
         if (value.token !== state.token) return null;
         if (value.action === 'clear' || value.action === 'clearRange') { clearSelection(); return { token: state.token }; }
         if (state.status !== 'ready') return null;
         try {
             if (value.action === 'containsPosition') {
-                var a = textPoint(value.offset), b = textPoint(Math.min(sourceText.length, value.offset + 1), true);
-                if (!a || !b) return { token: state.token, mapped: false };
-                var probe = document.createRange(); probe.setStart(a.node, a.offset); probe.setEnd(b.node, b.offset);
-                var rects = Array.from(probe.getClientRects()).filter(function (r) { return r.width > 0 && r.height > 0; });
-                return { token: state.token, mapped: !!rects.length, visible: rects.some(visible) };
+                var probe = sourcePositionProbe(value.offset);
+                if (!probe) return { token: state.token, mapped: false };
+                var result = { token: state.token, mapped: !!probe.rects.length, visible: probe.rects.some(visible) };
+                if (value.debugProbe) result.probe = { sameNode: probe.range.startContainer === probe.range.endContainer,
+                    from: probe.range.startOffset, to: probe.range.endOffset, resolvedOffset: probe.offset,
+                    collapsed: probe.range.collapsed, whitespace: /[\s\u3000]/.test(sourceText.charAt(value.offset)), rects: probe.rects.length };
+                return result;
             }
             if (value.action === 'pageBounds') return { token: state.token, pages: [{ index: value.index || 0, starts: pageStarts() }] };
             if (value.action === 'aloud') {
@@ -839,7 +863,7 @@
             return pageStartsCache;
         } finally { if (state.scrolled) scrollDocument(scroll); else place(page); }
     }
-    function restoreAnchor(anchor, trace) {
+    function restoreAnchor(anchor, trace, sourceOffset) {
         if (trace) { trace.mapped = !!anchor; trace.connected = !!anchor && body.contains(anchor.node); }
         if (!anchor || !body.contains(anchor.node) || state.mode === 'FIXED') {
             if (trace) trace.result = !anchor ? 'unmapped' : state.mode === 'FIXED' ? 'fixed' : 'detached';
@@ -858,6 +882,13 @@
             range.setEnd(anchor.node, Math.min(anchor.node.length, anchor.offset + 1));
             rect = Array.from(range.getClientRects()).find(function (r) { return r.width > 0 && r.height > 0; });
         } else rect = anchor.node.getBoundingClientRect();
+        if (!rect && Number.isInteger(sourceOffset) && /[\s\u3000]/.test(sourceText.charAt(sourceOffset))) {
+            var probe = sourcePositionProbe(sourceOffset);
+            if (probe && probe.rects.length) {
+                rect = probe.rects[0];
+                if (trace) trace.resolvedOffset = probe.offset;
+            }
+        }
         if (!rect) {
             // A collapsed/hidden source character must not leave the measuring page visible.
             if (state.scrolled) scrollDocument(previousScroll || 0); else place(previousPage);
@@ -876,6 +907,7 @@
     function flowPosition(value) {
         if (!state.scrolled) return null;
         var anchor = value.location && locationAnchor(value.location);
+        var sourceOffset = anchor ? value.location.textOffset : value.textOffset;
         if (!anchor && value.textOffset != null) anchor = textPoint(value.textOffset);
         if (!anchor && value.fragment) {
             var element = document.getElementById(value.fragment) || document.getElementsByName(value.fragment)[0];
@@ -889,6 +921,10 @@
             var range = document.createRange(); range.setStart(anchor.node, anchor.offset);
             range.setEnd(anchor.node, Math.min(anchor.node.length, anchor.offset + 1)); rect = range.getBoundingClientRect();
         } else rect = anchor.node.getBoundingClientRect();
+        if (!(rect.width > 0 && rect.height > 0) && Number.isInteger(sourceOffset) && /[\s\u3000]/.test(sourceText.charAt(sourceOffset))) {
+            var probe = sourcePositionProbe(sourceOffset);
+            if (probe && probe.rects.length) rect = probe.rects[0];
+        }
         var position = axis === 'x' ? (sign > 0 ? rect.left : viewportWidth - rect.right) : rect.top;
         scrollDocument(old);
         // The continuous host clips normal content to these same reader insets.
@@ -1661,8 +1697,8 @@
             }
             if (!value.preserveScroll) place(value.last ? state.pageCount - 1 : (value.page || 0));
             locate(value.fragment);
-            if (value.location) restoreAnchor(locationAnchor(value.location));
-            if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset));
+            if (value.location) restoreAnchor(locationAnchor(value.location), null, value.location.textOffset);
+            if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset), null, value.textOffset);
             var restored = restoreAnchor(anchor);
             await frame(frameTiming); await frame(frameTiming);
             if (mine !== generation) return;
@@ -1700,8 +1736,8 @@
                 place(value.last ? state.pageCount - 1 : (value.page || 0));
             locate(value.fragment);
             delete state.timings;
-            if (value.location) restoreAnchor(locationAnchor(value.location), trace && trace.location);
-            if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset), trace && trace.text);
+            if (value.location) restoreAnchor(locationAnchor(value.location), trace && trace.location, value.location.textOffset);
+            if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset), trace && trace.text, value.textOffset);
             if (trace) {
                 trace.afterPage = state.pageIndex;
                 try { window.console.debug('EpubAloudTrace ' + JSON.stringify(trace)); } catch (_) {}

@@ -18,7 +18,7 @@ function renderer(text, options = {}) {
     const context = {
         state: { mode: options.mode || 'HORIZONTAL', pageIndex: options.page ?? 14, pageCount: 19,
             scrolled: !!options.scrolled, ...(options.scrolled ? { scrollOffset: initialScroll } : {}), status: 'ready' },
-        generation: 0, galleries: [], Node: { TEXT_NODE: 3 },
+        generation: 0, galleries: [], Node: { TEXT_NODE: 3 }, sourceText: '',
         axis: options.axis || 'x', sign: options.sign || 1, extent,
         viewportWidth: extent, viewportHeight: extent, performance: { now: () => 0 },
         body: { contains: n => n.connected },

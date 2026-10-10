@@ -932,8 +932,14 @@ internal class EpubLayoutController(
         val target = documents.indexOfLast { it.chapter === textChapter && it.first <= position }
         if (target >= 0 && target != documentIndex) { jump(position, "aloud-document"); return }
         val mine = ++speechFollowRevision
-        view.interact(JSONObject().put("action", "containsPosition").put("offset", position).put("index", documentIndex)) {
+        val trace = io.legado.app.BuildConfig.DEBUG && io.legado.app.model.ReadAloud.httpTtsEngineV2 == null
+        view.interact(JSONObject().put("action", "containsPosition").put("offset", position).put("index", documentIndex).apply {
+            if (trace) put("debugProbe", true)
+        }) {
             if (mine != speechFollowRevision || speechFollowPosition != position) return@interact
+            if (trace) android.util.Log.d("EpubAloudTrace", "contains chapter=${chapter?.index} offset=$position " +
+                "page=${view.state?.optInt("pageIndex", -1)} reported=$reportedPosition " +
+                "mapped=${it?.optBoolean("mapped")} visible=${it?.optBoolean("visible")} probe=${it?.optJSONObject("probe")}")
             // HTTP playback seeks through integer milliseconds, then estimates a
             // text position from them. The round trip can report the character
             // immediately before the page start before advancing to that start.

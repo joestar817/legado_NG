@@ -270,6 +270,11 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
                 if (!syncActualPlaybackState(isPlaying = true)) return@withCurrentUtterance
                 dailyReadingUtterance = s
                 textChapter?.let {
+                    if (io.legado.app.BuildConfig.DEBUG && it.contentPositionMap != null) {
+                        android.util.Log.d("EpubAloudTrace", "tts-start chapter=${it.chapter.index} paragraph=$nowSpeak " +
+                            "speech=$readAloudNumber start=$paragraphStartPos length=${contentList.getOrNull(nowSpeak)?.length} " +
+                            "byPage=$readAloudByPage target=${readAloudNumber + 1}")
+                    }
                     if (isReadAloudTextSilent()) {
                         nextParagraph()
                     }
