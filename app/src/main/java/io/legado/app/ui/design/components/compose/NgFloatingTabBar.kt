@@ -48,6 +48,7 @@ data class NgFloatingTabSpec(
 enum class NgFloatingTabBarVariant {
     STANDARD,
     SOLID_LIGHT_CONTENT,
+    SOLID_WHITE_CONTENT,
 }
 enum class NgFloatingTabBarSize { STANDARD, COMPACT }
 
@@ -73,12 +74,14 @@ fun NgFloatingTabBar(
             val selected = index == selectedIndex.coerceIn(items.indices)
             val contentColor = when {
                 !selected -> Color(NgTheme.colors.onSurface)
-                variant == NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT -> Color.White
+                variant == NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT ||
+                    variant == NgFloatingTabBarVariant.SOLID_WHITE_CONTENT -> Color.White
                 else -> Color(NgTheme.colors.primary)
             }
             val selectedContainerColor = when (variant) {
                 NgFloatingTabBarVariant.STANDARD -> Color(NgTheme.colors.selectedContainer)
-                NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT -> Color(NgTheme.colors.primary)
+                NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT,
+                NgFloatingTabBarVariant.SOLID_WHITE_CONTENT -> Color(NgTheme.colors.primary)
             }
             Row(
                 modifier = Modifier
@@ -162,12 +165,21 @@ fun NgFloatingTabBar(
             )
         }
 
-        NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT -> Row(
+        NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT,
+        NgFloatingTabBarVariant.SOLID_WHITE_CONTENT -> Row(
             modifier = modifier
                 .fillMaxWidth()
                 .height(height)
                 .clip(outerShape)
-                .background(colorResource(R.color.ng_neutral_container))
+                .background(
+                    colorResource(
+                        if (variant == NgFloatingTabBarVariant.SOLID_WHITE_CONTENT) {
+                            R.color.ng_surface_card
+                        } else {
+                            R.color.ng_neutral_container
+                        }
+                    )
+                )
                 .border(
                     0.6.dp,
                     colorResource(R.color.ng_settings_item_stroke),

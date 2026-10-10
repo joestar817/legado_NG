@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -126,15 +125,18 @@ private fun BookInfoEditTopBar(
     onBack: () -> Unit,
     onSave: () -> Unit,
 ) {
-    Surface(
+    NgGlassSurface(
         modifier = Modifier
             .statusBarsPadding()
             .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 4.dp)
             .fillMaxWidth()
             .height(56.dp),
-        color = colorResource(R.color.ng_surface_card),
+        role = NgMaterialRole.CONTROL,
         shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
-        shadowElevation = NgTheme.effects.cardElevationDp.dp,
+        liquidCornerRadius = NgTheme.shapes.mediumDp.dp,
+        style = NgGlassDefaults.bookDetailStyle(
+            containerColor = colorResource(R.color.ng_surface_card),
+        ),
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
@@ -245,7 +247,7 @@ private fun BookInfoEditBasicCard(
             ),
             selectedIndex = state.typeIndex,
             onTabSelected = { onEvent(BookInfoEditUiEvent.TypeChange(it)) },
-            variant = NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT,
+            variant = NgFloatingTabBarVariant.SOLID_WHITE_CONTENT,
         )
     }
 }
