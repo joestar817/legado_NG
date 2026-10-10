@@ -70,6 +70,9 @@ import kotlin.math.roundToInt
 internal const val READ_MORE_CONFIG_WINDOW_HEIGHT_DP = 540
 
 internal object ReadMoreConfigKeys {
+    const val PAGE_TURN_MODE = "pageTurnMode"
+    const val PAGE_TURN_MODE_HORIZONTAL = "horizontal"
+    const val PAGE_TURN_MODE_VERTICAL = "vertical"
     const val CLICK_REGIONAL_CONFIG = "clickRegionalConfig"
     const val CUSTOM_PAGE_KEY = "customPageKey"
     const val DISABLE_RETURN_KEY = "disableReturnKey"
@@ -271,6 +274,13 @@ private fun PageSettingsPage(
     contentColor: Color,
 ) {
     SettingsColumn {
+        ChoiceSettingRow(
+            title = stringResource(R.string.page_turn_mode),
+            selectedValue = state.value(ReadMoreConfigKeys.PAGE_TURN_MODE),
+            options = state.options(ReadMoreConfigKeys.PAGE_TURN_MODE),
+            onSelected = { actions.onValueChanged(ReadMoreConfigKeys.PAGE_TURN_MODE, it) },
+        )
+        ReadMoreDivider(contentColor)
         ChoiceSettingRow(
             title = stringResource(R.string.double_page_horizontal),
             selectedValue = state.value(PreferKey.doublePageHorizontal),

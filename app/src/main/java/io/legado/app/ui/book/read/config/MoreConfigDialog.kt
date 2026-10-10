@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.EventBus
+import io.legado.app.constant.PageAnim
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.entities.Book
 import io.legado.app.help.config.AppConfig
@@ -173,9 +174,43 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
             refreshUi()
             return
         }
+        if (key == ReadMoreConfigKeys.PAGE_TURN_MODE) {
+            changePageTurnMode(value)
+            refreshUi()
+            return
+        }
         requireContext().putPrefString(key, value)
         handlePreferenceChanged(key, null)
         refreshUi()
+    }
+
+    private fun changePageTurnMode(value: String) {
+        val currentPageAnim = ReadBook.pageAnim()
+        val isVertical = value == ReadMoreConfigKeys.PAGE_TURN_MODE_VERTICAL
+        val alreadyCurrentMode = if (isVertical) {
+            currentPageAnim == PageAnim.scrollPageAnim
+        } else {
+            currentPageAnim != PageAnim.scrollPageAnim
+        }
+        if (alreadyCurrentMode) return
+        val pageAnim = if (isVertical) {
+            PageAnim.scrollPageAnim
+        } else {
+            PageAnim.simulationPageAnim
+        }
+        ReadBook.book?.setPageAnim(-1)
+        ReadBookConfig.pageAnim = pageAnim
+        ReadBookConfig.save()
+        ReadBook.callBack?.upPageAnim()
+        ReadBook.loadContent(false)
+    }
+
+    private fun currentPageTurnMode(): String {
+        return if (ReadBook.pageAnim() == PageAnim.scrollPageAnim) {
+            ReadMoreConfigKeys.PAGE_TURN_MODE_VERTICAL
+        } else {
+            ReadMoreConfigKeys.PAGE_TURN_MODE_HORIZONTAL
+        }
     }
 
     private fun handlePreferenceChanged(key: String, booleanValue: Boolean?) {
@@ -377,6 +412,7 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
                 ReadCatalogStyle.CARD.value,
             ).orEmpty(),
             ReadMoreConfigKeys.BOOK_IMAGE_STYLE to currentImageStyle(),
+            ReadMoreConfigKeys.PAGE_TURN_MODE to currentPageTurnMode(),
         )
         screenState = ReadMoreConfigUiState(
             booleans = booleanDefaults.mapValues { (key, default) ->
@@ -414,6 +450,7 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
                         getString(R.string.read_catalog_style_compact_side),
                     ),
                 ),
+                ReadMoreConfigKeys.PAGE_TURN_MODE to pageTurnModeOptions(),
                 ReadMoreConfigKeys.BOOK_IMAGE_STYLE to imageStyleOptions(),
             ),
             actionValues = buildActionValues(),
@@ -435,6 +472,17 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
         ReadBook.book?.getImageStyle().equals(Book.imgStyleSingle, true) -> Book.imgStyleSingle
         else -> Book.imgStyleDefault
     }
+
+    private fun pageTurnModeOptions() = listOf(
+        ReadMoreConfigOption(
+            ReadMoreConfigKeys.PAGE_TURN_MODE_HORIZONTAL,
+            getString(R.string.page_turn_mode_horizontal),
+        ),
+        ReadMoreConfigOption(
+            ReadMoreConfigKeys.PAGE_TURN_MODE_VERTICAL,
+            getString(R.string.page_turn_mode_vertical),
+        ),
+    )
 
     private fun imageStyleOptions() = listOf(
         ReadMoreConfigOption(

@@ -1009,6 +1009,9 @@
     <string name="jf_convert_f">Simplified to traditional</string>
     <string name="jf_convert_j">Traditional to simplified</string>
     <string name="page_mode">Flipping mode</string>
+    <string name="page_turn_mode">Page turn mode</string>
+    <string name="page_turn_mode_horizontal">Left/right pages</string>
+    <string name="page_turn_mode_vertical">Vertical scroll</string>
     <string name="nb_file_sub_count">%1$d items</string>
     <string name="nb_file_path">Storage:</string>
     <string name="nb_file_add_shelf">Add to Bookshelf</string>
