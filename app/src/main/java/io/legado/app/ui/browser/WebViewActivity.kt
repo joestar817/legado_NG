@@ -1,6 +1,7 @@
 package io.legado.app.ui.browser
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.net.Uri
@@ -44,6 +45,7 @@ import io.legado.app.utils.startActivity
 import io.legado.app.utils.toggleSystemBar
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import io.legado.app.utils.visible
+import io.legado.app.utils.toastOnUi
 import android.webkit.JavascriptInterface
 import android.webkit.URLUtil
 import io.legado.app.constant.AppLog
@@ -439,6 +441,20 @@ class WebViewActivity : VMBaseActivity<ActivityWebViewBinding, WebViewModel>() {
             request: WebResourceRequest?
         ): Boolean {
             request?.let {
+                val sourceOwnedPage = viewModel.localHtml && viewModel.sourceVerificationEnable &&
+                    viewModel.source != null && view?.url == viewModel.baseUrl
+                if (isDirectQqLoginLink(it.url.toString(), it.hasGesture(), it.isForMainFrame, sourceOwnedPage)) {
+                    runCatching {
+                        startActivity(Intent(Intent.ACTION_VIEW, it.url).apply {
+                            addCategory(Intent.CATEGORY_BROWSABLE)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            setPackage("com.tencent.mobileqq")
+                        })
+                    }.onFailure {
+                        toastOnUi("无法打开QQ，请先安装或更新QQ")
+                    }
+                    return true
+                }
                 return shouldOverrideUrlLoading(it.url)
             }
             return true
