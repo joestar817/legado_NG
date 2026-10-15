@@ -124,6 +124,7 @@ object CacheBook {
 
     fun close() {
         cacheBookMap.forEach { it.value.stop() }
+        userPaused.value = false
         cacheBookMap.clear()
         successDownloadSet.clear()
         errorDownloadMap.clear()
@@ -133,6 +134,17 @@ object CacheBook {
         workingState.value = value
     }
 
+    /** 用户手动暂停缓存。与目录更新优先级无关,不会被 MainViewModel 覆盖。 */
+    private val userPaused = MutableStateFlow(false)
+
+    val isUserPaused: Boolean
+        get() = userPaused.value
+
+    fun setUserPaused(value: Boolean) {
+        userPaused.value = value
+        postEvent(EventBus.UP_DOWNLOAD, "")
+    }
+
     suspend fun startProcessJob(context: CoroutineContext) = mutex.withLock {
         setWorkingState(true)
         flow {
@@ -140,6 +152,8 @@ object CacheBook {
                 var emitted = false
 
                 cacheBookMap.forEach { (_, model) ->
+                    //暂停时不再派发新章节;已在下载中的章节会自然跑完。
+                    userPaused.first { !it }
                     if (!model.isLoading() && model.hasWaitingDownload()) {
                         emit(model)
                         emitted = true
@@ -167,8 +181,9 @@ object CacheBook {
         get() {
             val base =
                 "正在下载:${onDownloadCount}|等待中:${waitCount}|失败:${errorDownloadMap.count()}|成功:${successDownloadSet.size}"
-            val pace = ReadingPaceController.statusText ?: return base
-            return "$base|$pace"
+            val paused = if (isUserPaused) "|已暂停" else ""
+            val pace = ReadingPaceController.statusText ?: return base + paused
+            return "$base$paused|$pace"
         }
 
     val isRun: Boolean

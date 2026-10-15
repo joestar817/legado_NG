@@ -89,6 +89,9 @@ internal fun BookshelfManageScreen(
     onCachePaceMinIntervalChanged: (Int) -> Unit,
     onCachePaceMaxIntervalChanged: (Int) -> Unit,
     onCachePaceIntervalChangeFinished: () -> Unit,
+    onCachePause: () -> Unit,
+    onCacheResume: () -> Unit,
+    onCacheStop: () -> Unit,
     onDockAction: (BookshelfManageDockAction) -> Unit,
     onDismissCoverUpdate: () -> Unit,
     onConfirmCoverUpdate: () -> Unit,
@@ -138,6 +141,9 @@ internal fun BookshelfManageScreen(
             onPaceMinIntervalChanged = onCachePaceMinIntervalChanged,
             onPaceMaxIntervalChanged = onCachePaceMaxIntervalChanged,
             onPaceIntervalChangeFinished = onCachePaceIntervalChangeFinished,
+            onPauseCacheClick = onCachePause,
+            onResumeCacheClick = onCacheResume,
+            onStopCacheClick = onCacheStop,
         )
         BookshelfCacheFilterRow(
             selected = cacheFilter,

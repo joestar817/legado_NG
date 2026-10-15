@@ -121,6 +121,8 @@ class BookshelfManageActivity :
         upBookDataByGroupId()
         // 概览条常驻,进页即统计一次;筛选依赖统计结果,变化时重算可见书目。
         cacheViewModel.refresh()
+        //可能在本页之外已经开始缓存,进页先同步一次运行/暂停态。
+        cacheViewModel.syncDownloadState()
         lifecycleScope.launch {
             snapshotFlow { cacheFilter to cacheViewModel.state.sizeByBookUrl }.collect {
                 updateVisibleBooks()
@@ -141,6 +143,10 @@ class BookshelfManageActivity :
         }
         observeEvent<Pair<Book, BookChapter>>(EventBus.SAVE_CONTENT) { (book, chapter) ->
             viewModel.addCachedChapter(book.bookUrl, chapter.url)
+        }
+        //缓存任务的运行/暂停态由引擎侧发起,这里只做镜像。
+        observeEvent<String>(EventBus.UP_DOWNLOAD) {
+            cacheViewModel.syncDownloadState()
         }
     }
 
@@ -192,6 +198,9 @@ class BookshelfManageActivity :
                     onCachePaceMinIntervalChanged = cacheViewModel::setPaceMinIntervalDraft,
                     onCachePaceMaxIntervalChanged = cacheViewModel::setPaceMaxIntervalDraft,
                     onCachePaceIntervalChangeFinished = cacheViewModel::savePaceIntervals,
+                    onCachePause = cacheViewModel::pauseCache,
+                    onCacheResume = cacheViewModel::resumeCache,
+                    onCacheStop = cacheViewModel::stopCache,
                     onDockAction = ::onDockAction,
                     onDismissCoverUpdate = { coverUpdateSelection = null },
                     onConfirmCoverUpdate = {

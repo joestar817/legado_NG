@@ -2528,4 +2528,5 @@
     <string name="cache_filter_cached">已缓存</string>
     <string name="cache_filter_uncached">未缓存</string>
     <string name="cache_overview_progress">已缓存 %1$d 章 · %2$d 本</string>
+    <string name="cache_paused">缓存已暂停</string>
 </resources>

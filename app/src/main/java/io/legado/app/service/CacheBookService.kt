@@ -47,8 +47,8 @@ class CacheBookService : BaseService() {
     private var downloadJob: Job? = null
     private var notificationContent = appCtx.getString(R.string.service_starting)
     private var mutex = Mutex()
-    private val notificationBuilder by lazy {
-        val builder = NotificationCompat.Builder(this, AppConst.channelIdDownload)
+    private val notificationBuilder
+        get() = NotificationCompat.Builder(this, AppConst.channelIdDownload)
             .setSmallIcon(R.drawable.ic_download)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -56,13 +56,28 @@ class CacheBookService : BaseService() {
             .setContentIntent(activityPendingIntent<MainActivity>("mainActivity") {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             })
-        builder.addAction(
-            R.drawable.ic_stop_black_24dp,
-            getString(R.string.cancel),
-            servicePendingIntent<CacheBookService>(IntentAction.stop)
-        )
-        builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-    }
+            .addAction(
+                R.drawable.ic_stop_black_24dp,
+                getString(R.string.cancel),
+                servicePendingIntent<CacheBookService>(IntentAction.stop)
+            )
+            .apply {
+                //暂停/继续二选一,与「停止」并列常驻。
+                if (CacheBook.isUserPaused) {
+                    addAction(
+                        R.drawable.ic_play_24dp,
+                        getString(R.string.resume),
+                        servicePendingIntent<CacheBookService>(IntentAction.resume, requestCode = 1)
+                    )
+                } else {
+                    addAction(
+                        R.drawable.ic_pause_24dp,
+                        getString(R.string.pause),
+                        servicePendingIntent<CacheBookService>(IntentAction.pause, requestCode = 2)
+                    )
+                }
+            }
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
     override fun onCreate() {
         super.onCreate()
@@ -80,13 +95,29 @@ class CacheBookService : BaseService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         intent?.action?.let { action ->
             when (action) {
-                IntentAction.start -> addDownloadData(
-                    intent.getStringExtra("bookUrl"),
-                    intent.getIntExtra("start", 0),
-                    intent.getIntExtra("end", 0)
-                )
+                IntentAction.start -> {
+                    //显式发起缓存视为要继续,否则暂停期间点「缓存」会毫无反应。
+                    CacheBook.setUserPaused(false)
+                    addDownloadData(
+                        intent.getStringExtra("bookUrl"),
+                        intent.getIntExtra("start", 0),
+                        intent.getIntExtra("end", 0)
+                    )
+                }
 
                 IntentAction.remove -> removeDownload(intent.getStringExtra("bookUrl"))
+                IntentAction.pause -> {
+                    CacheBook.setUserPaused(true)
+                    notificationContent = CacheBook.downloadSummary
+                    upCacheBookNotification()
+                }
+
+                IntentAction.resume -> {
+                    CacheBook.setUserPaused(false)
+                    notificationContent = CacheBook.downloadSummary
+                    upCacheBookNotification()
+                }
+
                 IntentAction.stop -> stopSelf()
             }
         }

@@ -40,6 +40,7 @@ import io.legado.app.help.config.PACE_INTERVAL_MAX
 import io.legado.app.help.config.PACE_INTERVAL_MIN
 import io.legado.app.ui.design.components.NgFilterChipGroupVariant
 import io.legado.app.ui.design.components.NgSettingsTrailing
+import io.legado.app.ui.design.components.compose.NgActionChip
 import io.legado.app.ui.design.components.compose.NgDockSlider
 import io.legado.app.ui.design.components.compose.NgExpandableSettingsItem
 import io.legado.app.ui.design.components.compose.NgFilterChipGroup
@@ -77,6 +78,9 @@ internal fun BookshelfCacheOverviewBar(
     onPaceMinIntervalChanged: (Int) -> Unit,
     onPaceMaxIntervalChanged: (Int) -> Unit,
     onPaceIntervalChangeFinished: () -> Unit,
+    onPauseCacheClick: () -> Unit,
+    onResumeCacheClick: () -> Unit,
+    onStopCacheClick: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var paceExpanded by rememberSaveable { mutableStateOf(true) }
@@ -100,6 +104,13 @@ internal fun BookshelfCacheOverviewBar(
                     state = state,
                     expanded = expanded,
                     onToggle = { expanded = !expanded },
+                )
+                // 任务态控件放在收起区,不展开也能暂停/停止正在跑的缓存。
+                CacheTaskRow(
+                    state = state,
+                    onPauseClick = onPauseCacheClick,
+                    onResumeClick = onResumeCacheClick,
+                    onStopClick = onStopCacheClick,
                 )
                 if (expanded) {
                     CacheSegmentedBar(state = state)
@@ -204,6 +215,56 @@ private fun OverviewHeader(
                 .size(16.dp)
                 .rotate(if (expanded) 90f else -90f),
             tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f),
+        )
+    }
+}
+
+/**
+ * 缓存任务态：显示是否在跑，并提供暂停/继续与停止。
+ *
+ * 无任务在跑时整行隐藏,避免空闲时占位。
+ */
+@Composable
+private fun CacheTaskRow(
+    state: BookshelfCacheState,
+    onPauseClick: () -> Unit,
+    onResumeClick: () -> Unit,
+    onStopClick: () -> Unit,
+) {
+    if (!state.downloading) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(
+                if (state.paused) R.string.cache_paused else R.string.offline_cache,
+            ),
+            color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f),
+            fontSize = 12.sp,
+            lineHeight = 15.sp,
+            modifier = Modifier.weight(1f),
+        )
+        if (state.paused) {
+            NgActionChip(
+                text = stringResource(R.string.resume),
+                onClick = onResumeClick,
+                iconRes = R.drawable.ic_play_24dp,
+            )
+        } else {
+            NgActionChip(
+                text = stringResource(R.string.pause),
+                onClick = onPauseClick,
+                iconRes = R.drawable.ic_pause_24dp,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        NgActionChip(
+            text = stringResource(R.string.stop),
+            onClick = onStopClick,
+            iconRes = R.drawable.ic_stop_black_24dp,
         )
     }
 }

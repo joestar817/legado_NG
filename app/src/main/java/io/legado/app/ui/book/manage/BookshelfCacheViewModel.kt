@@ -18,6 +18,7 @@ import io.legado.app.help.config.PACE_INTERVAL_DEFAULT_MAX
 import io.legado.app.help.config.PACE_INTERVAL_DEFAULT_MIN
 import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.model.BookCacheManager
+import io.legado.app.model.CacheBook
 import io.legado.app.utils.ArchiveUtils
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.externalFiles
@@ -73,6 +74,10 @@ internal data class BookshelfCacheState(
     val paceManualEnabled: Boolean = false,
     val paceMinInterval: Int = PACE_INTERVAL_DEFAULT_MIN,
     val paceMaxInterval: Int = PACE_INTERVAL_DEFAULT_MAX,
+    /** 后台缓存任务是否在跑(见 `CacheBook.isRun`)。 */
+    val downloading: Boolean = false,
+    /** 缓存任务是否被用户暂停(见 `CacheBook.isUserPaused`)。 */
+    val paused: Boolean = false,
 ) {
     val totalBytes: Long get() = bookBytes + audioBytes + epubBytes + appBytes
 
@@ -115,6 +120,37 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
         }.onSuccess {
             state = it
         }
+    }
+
+    /**
+     * 从引擎同步缓存任务的运行/暂停态。
+     *
+     * 运行态的唯一事实源是 [CacheBook],此处只做镜像;Activity 观察
+     * `EventBus.UP_DOWNLOAD`(引擎与服务都会投递)后调用。
+     */
+    fun syncDownloadState() {
+        val running = CacheBook.isRun
+        val isPaused = CacheBook.isUserPaused
+        if (state.downloading != running || state.paused != isPaused) {
+            state = state.copy(downloading = running, paused = isPaused)
+        }
+    }
+
+    /** 暂停派发新章节;已在下载中的章节会自然跑完。 */
+    fun pauseCache() {
+        CacheBook.setUserPaused(true)
+        syncDownloadState()
+    }
+
+    fun resumeCache() {
+        CacheBook.setUserPaused(false)
+        syncDownloadState()
+    }
+
+    /** 停止整个缓存任务,等价于通知栏的「取消」。 */
+    fun stopCache() {
+        CacheBook.stop(context)
+        syncDownloadState()
     }
 
     /** 开关缓存间隔的手动设置；关闭时回到内置默认节奏。 */
@@ -246,6 +282,8 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
             paceManualEnabled = previous.paceManualEnabled,
             paceMinInterval = previous.paceMinInterval,
             paceMaxInterval = previous.paceMaxInterval,
+            downloading = previous.downloading,
+            paused = previous.paused,
         )
     }
 }

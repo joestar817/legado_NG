@@ -2626,4 +2626,5 @@
     <string name="cache_filter_cached">Cached</string>
     <string name="cache_filter_uncached">Not cached</string>
     <string name="cache_overview_progress">%1$d cached chapters · %2$d books</string>
+    <string name="cache_paused">Cache paused</string>
 </resources>
