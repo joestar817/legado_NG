@@ -21,9 +21,11 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
+import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.help.book.isWebFile
 import io.legado.app.help.config.AppConfig
+import io.legado.app.ui.book.audio.AudioPlayActivity
 import io.legado.app.ui.book.manga.ReadMangaActivity
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
@@ -42,7 +44,6 @@ import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.startActivity
-import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.drop
@@ -76,6 +77,7 @@ open class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
     private var blockSourceDialogs by mutableStateOf(false)
     private var progress by mutableStateOf(ChangeBookSourceProgressUi("", 0, 0))
     private var groups by mutableStateOf(emptyList<String>())
+    private var enabledSources = emptyList<BookSourcePart>()
     private var settingsRevision by mutableIntStateOf(0)
     private var resultsRevision by mutableIntStateOf(0)
     private var scoreRevision by mutableIntStateOf(0)
@@ -84,8 +86,13 @@ open class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
     private val searchFinishCallback: (isEmpty: Boolean) -> Unit = { isEmpty ->
         if (isEmpty) {
             val searchGroup = AppConfig.searchGroup
-            if (searchGroup.isNotEmpty()) {
+            val sameTypeOnly = AppConfig.changeSourceSameTypeOnly
+            if (searchGroup.isNotEmpty() && !viewModel.selectedGroupUnavailable) {
                 lifecycleScope.launch {
+                    if (AppConfig.searchGroup != searchGroup ||
+                        AppConfig.changeSourceSameTypeOnly != sameTypeOnly ||
+                        viewModel.selectedGroupUnavailable
+                    ) return@launch
                     showReadConfirmDialog(
                         context = requireContext(),
                         title = "搜索结果为空",
@@ -93,9 +100,13 @@ open class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
                         confirmLabel = getString(R.string.yes),
                         cancelLabel = getString(R.string.no),
                         onConfirm = {
-                            AppConfig.searchGroup = ""
-                            settingsRevision++
-                            viewModel.startSearch()
+                            if (AppConfig.searchGroup == searchGroup &&
+                                AppConfig.changeSourceSameTypeOnly == sameTypeOnly
+                            ) {
+                                AppConfig.searchGroup = ""
+                                updateGroups()
+                                viewModel.startSearch()
+                            }
                         },
                         themeSnapshot = themeSnapshot(),
                     )
@@ -123,7 +134,7 @@ open class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
     protected open fun contentPresentation(): ChangeBookSourcePresentation =
         when (activity) {
             is ReadMangaActivity -> ChangeBookSourcePresentation.MANGA_DIALOG
-            is ReadBookActivity -> ChangeBookSourcePresentation.READING_DIALOG
+            is ReadBookActivity, is AudioPlayActivity -> ChangeBookSourcePresentation.READING_DIALOG
             else -> ChangeBookSourcePresentation.DIALOG
         }
 
@@ -162,6 +173,8 @@ open class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
                             loadToc = AppConfig.changeSourceLoadToc,
                             selectedGroup = AppConfig.searchGroup,
                             groups = groups,
+                            sameTypeOnly = AppConfig.changeSourceSameTypeOnly,
+                            selectedGroupUnavailable = viewModel.selectedGroupUnavailable,
                         ),
                         getScore = viewModel::getBookScore,
                         onClose = { dismissAllowingStateLoss() },
@@ -169,6 +182,7 @@ open class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
                         onRefreshToggle = viewModel::startOrStopSearch,
                         onOpenSourceManage = { startActivity<BookSourceActivity>() },
                         onRefreshList = { viewModel.startRefreshList() },
+                        onToggleSameTypeOnly = ::toggleSameTypeOnly,
                         onToggleBlockSourceDialogs = ::toggleBlockSourceDialogs,
                         onToggleCheckAuthor = ::toggleCheckAuthor,
                         onToggleLoadWordCount = ::toggleLoadWordCount,
@@ -224,16 +238,29 @@ open class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
             }
         }
         lifecycleScope.launch {
-            appDb.bookSourceDao.flowEnabledGroups().conflate().collect {
-                groups = it.toList()
+            appDb.bookSourceDao.flowEnabled().conflate().collect {
+                enabledSources = it
+                updateGroups()
+                viewModel.execute { viewModel.refresh() }
             }
         }
+    }
+
+    private fun updateGroups() {
+        groups = viewModel.sourceFilterGroups(enabledSources)
+        settingsRevision++
+    }
+
+    private fun toggleSameTypeOnly() {
+        AppConfig.changeSourceSameTypeOnly = !AppConfig.changeSourceSameTypeOnly
+        viewModel.onSearchScopeChanged()
+        updateGroups()
     }
 
     private fun toggleCheckAuthor() {
         AppConfig.changeSourceCheckAuthor = !AppConfig.changeSourceCheckAuthor
         settingsRevision++
-        viewModel.refresh()
+        viewModel.execute { viewModel.refresh() }
     }
 
     private fun toggleBlockSourceDialogs() {
@@ -264,11 +291,8 @@ open class ChangeBookSourceDialog() : BaseComposeDialogFragment() {
     private fun selectGroup(group: String) {
         if (AppConfig.searchGroup == group) return
         AppConfig.searchGroup = group
-        settingsRevision++
-        lifecycleScope.launch(IO) {
-            viewModel.stopSearch()
-            if (viewModel.refresh()) viewModel.startSearch()
-        }
+        viewModel.onSearchScopeChanged()
+        updateGroups()
     }
 
     private fun handleSourceAction(

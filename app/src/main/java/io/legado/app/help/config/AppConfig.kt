@@ -785,6 +785,12 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             appCtx.putPrefBoolean(PreferKey.parallelExportBook, value)
         }
 
+    var changeSourceSameTypeOnly: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.changeSourceSameTypeOnly, true)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.changeSourceSameTypeOnly, value)
+        }
+
     var changeSourceCheckAuthor: Boolean
         get() = appCtx.getPrefBoolean(PreferKey.changeSourceCheckAuthor)
         set(value) {

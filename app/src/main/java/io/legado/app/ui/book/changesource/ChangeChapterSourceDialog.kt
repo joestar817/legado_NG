@@ -3,7 +3,6 @@ package io.legado.app.ui.book.changesource
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
-import androidx.activity.addCallback
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -17,10 +16,12 @@ import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
+import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
+import io.legado.app.data.entities.BookSourcePart
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.AppConfig
@@ -31,11 +32,12 @@ import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.book.source.manage.BookSourceActivity
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.StartActivityContract
+import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.observeEvent
+import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.setLayout
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
-import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.first
@@ -63,6 +65,8 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
     private var searchBooks by mutableStateOf(emptyList<SearchBook>())
     private var toc by mutableStateOf(emptyList<BookChapter>())
     private var groups by mutableStateOf(emptyList<String>())
+    private var enabledSources = emptyList<BookSourcePart>()
+    private var blockSourceDialogs by mutableStateOf(false)
     private var query by mutableStateOf("")
     private var searching by mutableStateOf(false)
     private var showToc by mutableStateOf(false)
@@ -81,8 +85,13 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
     private val searchFinishCallback: (isEmpty: Boolean) -> Unit = { isEmpty ->
         if (isEmpty) {
             val searchGroup = AppConfig.searchGroup
-            if (searchGroup.isNotEmpty()) {
+            val sameTypeOnly = AppConfig.changeSourceSameTypeOnly
+            if (searchGroup.isNotEmpty() && !viewModel.selectedGroupUnavailable) {
                 lifecycleScope.launch {
+                    if (AppConfig.searchGroup != searchGroup ||
+                        AppConfig.changeSourceSameTypeOnly != sameTypeOnly ||
+                        viewModel.selectedGroupUnavailable
+                    ) return@launch
                     showReadConfirmDialog(
                         context = requireContext(),
                         title = "搜索结果为空",
@@ -90,9 +99,13 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
                         confirmLabel = getString(R.string.yes),
                         cancelLabel = getString(R.string.no),
                         onConfirm = {
-                            AppConfig.searchGroup = ""
-                            settingsRevision++
-                            viewModel.startSearch()
+                            if (AppConfig.searchGroup == searchGroup &&
+                                AppConfig.changeSourceSameTypeOnly == sameTypeOnly
+                            ) {
+                                AppConfig.searchGroup = ""
+                                updateGroups()
+                                viewModel.startSearch()
+                            }
                         },
                     )
                 }
@@ -111,6 +124,8 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         viewModel.initData(arguments, callBack?.oldBook, activity is ReadBookActivity)
+        blockSourceDialogs = requireContext().getPrefBoolean(PreferKey.searchBlockSourceDialogs)
+        viewModel.setBlockSourceDialogs(blockSourceDialogs)
         (view as ComposeView).apply {
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -131,6 +146,7 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
                         searching = searching,
                         tocLoading = tocLoading,
                         query = query,
+                        blockSourceDialogs = blockSourceDialogs,
                         settings = ChangeChapterSourceSettingsUi(
                             checkAuthor = AppConfig.changeSourceCheckAuthor,
                             loadWordCount = AppConfig.changeSourceLoadWordCount,
@@ -138,6 +154,8 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
                             loadToc = AppConfig.changeSourceLoadToc,
                             selectedGroup = AppConfig.searchGroup,
                             groups = groups,
+                            sameTypeOnly = AppConfig.changeSourceSameTypeOnly,
+                            selectedGroupUnavailable = viewModel.selectedGroupUnavailable,
                         ),
                         scoreRevision = scoreRevision,
                         getScore = viewModel::getBookScore,
@@ -148,6 +166,8 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
                         onRefreshToggle = viewModel::startOrStopSearch,
                         onClose = { dismissAllowingStateLoss() },
                         onOpenSourceManage = { startActivity<BookSourceActivity>() },
+                        onToggleSameTypeOnly = ::toggleSameTypeOnly,
+                        onToggleBlockSourceDialogs = ::toggleBlockSourceDialogs,
                         onToggleCheckAuthor = ::toggleCheckAuthor,
                         onToggleLoadWordCount = ::toggleLoadWordCount,
                         onToggleLoadInfo = ::toggleLoadInfo,
@@ -162,13 +182,6 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
                 }
             }
         }
-        activity?.onBackPressedDispatcher?.addCallback(this) {
-            if (showToc) {
-                showToc = false
-            } else {
-                dismissAllowingStateLoss()
-            }
-        }
         viewModel.searchStateData.observe(viewLifecycleOwner) {
             searching = it
         }
@@ -180,8 +193,10 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
             }
         }
         lifecycleScope.launch {
-            appDb.bookSourceDao.flowEnabledGroups().conflate().collect {
-                groups = it.toList()
+            appDb.bookSourceDao.flowEnabled().conflate().collect {
+                enabledSources = it
+                updateGroups()
+                viewModel.execute { viewModel.refresh() }
             }
         }
         viewModel.searchFinishCallback = searchFinishCallback
@@ -192,10 +207,27 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
         super.onDestroy()
     }
 
+    private fun updateGroups() {
+        groups = viewModel.sourceFilterGroups(enabledSources)
+        settingsRevision++
+    }
+
+    private fun toggleSameTypeOnly() {
+        AppConfig.changeSourceSameTypeOnly = !AppConfig.changeSourceSameTypeOnly
+        viewModel.onSearchScopeChanged()
+        updateGroups()
+    }
+
+    private fun toggleBlockSourceDialogs() {
+        blockSourceDialogs = !blockSourceDialogs
+        requireContext().putPrefBoolean(PreferKey.searchBlockSourceDialogs, blockSourceDialogs)
+        viewModel.setBlockSourceDialogs(blockSourceDialogs)
+    }
+
     private fun toggleCheckAuthor() {
         AppConfig.changeSourceCheckAuthor = !AppConfig.changeSourceCheckAuthor
         settingsRevision++
-        viewModel.refresh()
+        viewModel.execute { viewModel.refresh() }
     }
 
     private fun toggleLoadWordCount() {
@@ -217,11 +249,8 @@ class ChangeChapterSourceDialog() : BaseComposeDialogFragment() {
     private fun selectGroup(group: String) {
         if (AppConfig.searchGroup == group) return
         AppConfig.searchGroup = group
-        settingsRevision++
-        lifecycleScope.launch(IO) {
-            viewModel.stopSearch()
-            if (viewModel.refresh()) viewModel.startSearch()
-        }
+        viewModel.onSearchScopeChanged()
+        updateGroups()
     }
 
     private fun openToc(searchBook: SearchBook) {

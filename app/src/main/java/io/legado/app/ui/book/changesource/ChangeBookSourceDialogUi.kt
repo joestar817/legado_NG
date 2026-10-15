@@ -30,7 +30,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.HorizontalDivider
@@ -64,14 +63,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.NgSurfaceVariant
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
-import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandle
 import io.legado.app.ui.design.components.compose.NgDrawerDragHandleVariant
@@ -116,6 +113,7 @@ internal fun ChangeBookSourceDialogContent(
     onRefreshToggle: () -> Unit,
     onOpenSourceManage: () -> Unit,
     onRefreshList: () -> Unit,
+    onToggleSameTypeOnly: () -> Unit,
     onToggleBlockSourceDialogs: () -> Unit,
     onToggleCheckAuthor: () -> Unit,
     onToggleLoadWordCount: () -> Unit,
@@ -131,6 +129,7 @@ internal fun ChangeBookSourceDialogContent(
     val density = LocalDensity.current
     var query by rememberSaveable { mutableStateOf("") }
     var searchActive by rememberSaveable { mutableStateOf(false) }
+    var settingsActive by rememberSaveable { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
     val closeSearch = {
         searchActive = false
@@ -138,7 +137,8 @@ internal fun ChangeBookSourceDialogContent(
         onQueryChanged("")
     }
 
-    BackHandler(enabled = searchActive, onBack = closeSearch)
+    BackHandler(enabled = searchActive && !settingsActive, onBack = closeSearch)
+    BackHandler(enabled = settingsActive) { settingsActive = false }
     LaunchedEffect(searchActive) {
         if (searchActive) searchFocusRequester.requestFocus()
     }
@@ -159,121 +159,139 @@ internal fun ChangeBookSourceDialogContent(
             if (presentation == ChangeBookSourcePresentation.DRAWER) {
                 NgDrawerDragHandle(variant = NgDrawerDragHandleVariant.COMPACT)
             }
-            ChangeBookSourceTopBar(
-                searching = searching,
-                query = query,
-                searchActive = searchActive,
-                searchFocusRequester = searchFocusRequester,
-                settings = settings,
-                onBack = onClose,
-                onSearchOpen = { searchActive = true },
-                onSearchClose = closeSearch,
-                onQueryChanged = {
-                    query = it
-                    onQueryChanged(it)
-                },
-                onRefreshToggle = onRefreshToggle,
-                onOpenSourceManage = onOpenSourceManage,
-                onRefreshList = onRefreshList,
-                blockSourceDialogs = blockSourceDialogs,
-                onToggleBlockSourceDialogs = onToggleBlockSourceDialogs,
-                onToggleCheckAuthor = onToggleCheckAuthor,
-                onToggleLoadWordCount = onToggleLoadWordCount,
-                onToggleLoadInfo = onToggleLoadInfo,
-                onToggleLoadToc = onToggleLoadToc,
-                onGroupSelected = onGroupSelected,
-                onClose = onClose,
-            )
-            if (searching) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp),
-                    color = Color(NgTheme.colors.primary),
-                    trackColor = Color.Transparent,
+            if (settingsActive) {
+                ChangeSourceSettingsContent(
+                    settings = settings,
+                    blockSourceDialogs = blockSourceDialogs,
+                    onBack = { settingsActive = false },
+                    onToggleSameTypeOnly = onToggleSameTypeOnly,
+                    onToggleBlockSourceDialogs = onToggleBlockSourceDialogs,
+                    onToggleCheckAuthor = onToggleCheckAuthor,
+                    onToggleLoadWordCount = onToggleLoadWordCount,
+                    onToggleLoadInfo = onToggleLoadInfo,
+                    onToggleLoadToc = onToggleLoadToc,
                 )
             } else {
-                Spacer(Modifier.height(2.dp))
-            }
-            val resultsContent: @Composable () -> Unit = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(Color.Transparent),
-                ) {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(top = 4.dp),
+                ChangeBookSourceTopBar(
+                    searching = searching,
+                    query = query,
+                    searchActive = searchActive,
+                    searchFocusRequester = searchFocusRequester,
+                    settings = settings,
+                    onBack = onClose,
+                    onSearchOpen = { searchActive = true },
+                    onSearchClose = closeSearch,
+                    onQueryChanged = {
+                        query = it
+                        onQueryChanged(it)
+                    },
+                    onRefreshToggle = onRefreshToggle,
+                    onOpenSourceManage = onOpenSourceManage,
+                    onRefreshList = onRefreshList,
+                    onOpenSettings = { settingsActive = true },
+                    onGroupSelected = onGroupSelected,
+                    onClose = onClose,
+                )
+                if (searching) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp),
+                        color = Color(NgTheme.colors.primary),
+                        trackColor = Color.Transparent,
+                    )
+                } else {
+                    Spacer(Modifier.height(2.dp))
+                }
+                val resultsContent: @Composable () -> Unit = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .background(Color.Transparent),
                     ) {
-                        itemsIndexed(
-                            items = searchBooks,
-                        ) { index, item ->
-                            ChangeBookSourceResultRow(
-                                presentation = presentation,
-                                item = item,
-                                current = item.bookUrl == currentBookUrl,
-                                score = getScore(item),
-                                showWordCount = settings.loadWordCount,
-                                onClick = { onSourceClick(item) },
-                                onAction = { action -> onSourceAction(action, item) },
-                                onScoreChanged = { score -> onScoreChanged(item, score) },
-                            )
-                            if (
-                                presentation == ChangeBookSourcePresentation.DIALOG &&
-                                index != searchBooks.lastIndex
-                            ) {
-                                HorizontalDivider(
-                                    thickness = 0.5.dp,
-                                    color = Color(NgTheme.colors.outlineVariant),
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(top = 4.dp),
+                        ) {
+                            itemsIndexed(
+                                items = searchBooks,
+                                key = { _, item -> "${item.origin}\u0000${item.bookUrl}" },
+                            ) { index, item ->
+                                ChangeBookSourceResultRow(
+                                    presentation = presentation,
+                                    item = item,
+                                    current = item.bookUrl == currentBookUrl,
+                                    score = getScore(item),
+                                    showWordCount = settings.loadWordCount,
+                                    onClick = { onSourceClick(item) },
+                                    onAction = { action -> onSourceAction(action, item) },
+                                    onScoreChanged = { score -> onScoreChanged(item, score) },
                                 )
+                                if (
+                                    presentation == ChangeBookSourcePresentation.DIALOG &&
+                                    index != searchBooks.lastIndex
+                                ) {
+                                    HorizontalDivider(
+                                        thickness = 0.5.dp,
+                                        color = Color(NgTheme.colors.outlineVariant),
+                                    )
+                                }
                             }
                         }
+                        NgLazyListFastScroller(
+                            state = listState,
+                            itemCount = searchBooks.size,
+                            modifier = Modifier.align(Alignment.CenterEnd),
+                        )
+                        if (searchBooks.isEmpty() && settings.selectedGroupUnavailable) {
+                            Text(
+                                text = stringResource(R.string.change_source_no_matching_group_hint),
+                                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                                color = Color(NgTheme.colors.onSurfaceVariant),
+                                fontSize = 13.sp,
+                            )
+                        }
                     }
-                    NgLazyListFastScroller(
-                        state = listState,
-                        itemCount = searchBooks.size,
-                        modifier = Modifier.align(Alignment.CenterEnd),
-                    )
                 }
-            }
-            if (
-                presentation == ChangeBookSourcePresentation.DRAWER ||
-                presentation == ChangeBookSourcePresentation.READING_DIALOG ||
-                presentation == ChangeBookSourcePresentation.MANGA_DIALOG
-            ) {
-                val baseSnapshot = NgTheme.snapshot
-                NgAppTheme(
-                    snapshot = remember(baseSnapshot, presentation) {
-                        if (
-                            presentation == ChangeBookSourcePresentation.MANGA_DIALOG ||
-                            (presentation != ChangeBookSourcePresentation.DIALOG && baseSnapshot.isDark)
-                        ) {
-                            baseSnapshot
-                        } else {
-                            baseSnapshot.toChangeBookSourceListSnapshot()
+                if (
+                    presentation == ChangeBookSourcePresentation.DRAWER ||
+                    presentation == ChangeBookSourcePresentation.READING_DIALOG ||
+                    presentation == ChangeBookSourcePresentation.MANGA_DIALOG
+                ) {
+                    val baseSnapshot = NgTheme.snapshot
+                    NgAppTheme(
+                        snapshot = remember(baseSnapshot, presentation) {
+                            if (
+                                presentation == ChangeBookSourcePresentation.MANGA_DIALOG ||
+                                (presentation != ChangeBookSourcePresentation.DIALOG && baseSnapshot.isDark)
+                            ) {
+                                baseSnapshot
+                            } else {
+                                baseSnapshot.toChangeBookSourceListSnapshot()
+                            }
+                        },
+                        updateSystemBars = false,
+                        content = resultsContent,
+                    )
+                } else {
+                    resultsContent()
+                }
+                ChangeBookSourceProgress(
+                    presentation = presentation,
+                    progress = progress,
+                    onClick = {
+                        val index = searchBooks.indexOfFirst { it.bookUrl == currentBookUrl }
+                        if (index >= 0) {
+                            scope.launch {
+                                listState.scrollToItem(index)
+                                listState.scrollBy(-with(density) { 60.dp.toPx() })
+                            }
                         }
                     },
-                    updateSystemBars = false,
-                    content = resultsContent,
                 )
-            } else {
-                resultsContent()
             }
-            ChangeBookSourceProgress(
-                presentation = presentation,
-                progress = progress,
-                onClick = {
-                    val index = searchBooks.indexOfFirst { it.bookUrl == currentBookUrl }
-                    if (index >= 0) {
-                        scope.launch {
-                            listState.scrollToItem(index)
-                            listState.scrollBy(-with(density) { 60.dp.toPx() })
-                        }
-                    }
-                },
-            )
         }
     }
     when (presentation) {
@@ -318,12 +336,7 @@ private fun ChangeBookSourceTopBar(
     onRefreshToggle: () -> Unit,
     onOpenSourceManage: () -> Unit,
     onRefreshList: () -> Unit,
-    blockSourceDialogs: Boolean,
-    onToggleBlockSourceDialogs: () -> Unit,
-    onToggleCheckAuthor: () -> Unit,
-    onToggleLoadWordCount: () -> Unit,
-    onToggleLoadInfo: () -> Unit,
-    onToggleLoadToc: () -> Unit,
+    onOpenSettings: () -> Unit,
     onGroupSelected: (String) -> Unit,
     onClose: () -> Unit,
 ) {
@@ -397,161 +410,13 @@ private fun ChangeBookSourceTopBar(
                 modifier = Modifier.size(24.dp),
             )
         }
-        ChangeBookSourceMoreMenu(
+        ChangeSourceMoreMenu(
             settings = settings,
             onOpenSourceManage = onOpenSourceManage,
             onRefreshList = onRefreshList,
-            blockSourceDialogs = blockSourceDialogs,
-            onToggleBlockSourceDialogs = onToggleBlockSourceDialogs,
-            onToggleCheckAuthor = onToggleCheckAuthor,
-            onToggleLoadWordCount = onToggleLoadWordCount,
-            onToggleLoadInfo = onToggleLoadInfo,
-            onToggleLoadToc = onToggleLoadToc,
+            onOpenSettings = onOpenSettings,
             onGroupSelected = onGroupSelected,
             onClose = onClose,
-        )
-    }
-}
-
-@Composable
-private fun ChangeBookSourceMoreMenu(
-    settings: ChangeChapterSourceSettingsUi,
-    onOpenSourceManage: () -> Unit,
-    onRefreshList: () -> Unit,
-    blockSourceDialogs: Boolean,
-    onToggleBlockSourceDialogs: () -> Unit,
-    onToggleCheckAuthor: () -> Unit,
-    onToggleLoadWordCount: () -> Unit,
-    onToggleLoadInfo: () -> Unit,
-    onToggleLoadToc: () -> Unit,
-    onGroupSelected: (String) -> Unit,
-    onClose: () -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val groupTitle = if (settings.selectedGroup.isBlank()) {
-        stringResource(R.string.group)
-    } else {
-        "${stringResource(R.string.group)}(${settings.selectedGroup})"
-    }
-    val allSourceTitle = stringResource(R.string.all_source)
-    val menuItems = listOf(
-        NgExpandableActionMenuItem(
-            itemId = MENU_SOURCE_MANAGE,
-            titleRes = R.string.book_source_manage,
-            iconRes = R.drawable.ic_cfg_source,
-        ),
-        NgExpandableActionMenuItem(
-            itemId = MENU_REFRESH_LIST,
-            titleRes = R.string.refresh_list,
-            iconRes = R.drawable.ic_refresh_black_24dp,
-        ),
-        NgExpandableActionMenuItem(
-            itemId = R.id.menu_block_source_dialogs,
-            titleRes = R.string.block_source_dialogs,
-            iconRes = R.drawable.ic_popup_blocked,
-            checked = blockSourceDialogs,
-        ),
-        NgExpandableActionMenuItem(
-            itemId = MENU_CHECK_AUTHOR,
-            titleRes = R.string.checkAuthor,
-            iconRes = R.drawable.ic_author,
-            checked = settings.checkAuthor,
-        ),
-        NgExpandableActionMenuItem(
-            itemId = MENU_LOAD_WORD_COUNT,
-            titleRes = R.string.load_word_count,
-            iconRes = R.drawable.ic_chapter_list,
-            checked = settings.loadWordCount,
-        ),
-        NgExpandableActionMenuItem(
-            itemId = MENU_LOAD_INFO,
-            titleRes = R.string.load_info,
-            iconRes = R.drawable.ic_bookshelf_action_detail,
-            checked = settings.loadInfo,
-        ),
-        NgExpandableActionMenuItem(
-            itemId = MENU_LOAD_TOC,
-            titleRes = R.string.load_toc,
-            iconRes = R.drawable.ic_toc,
-            checked = settings.loadToc,
-        ),
-        NgExpandableActionMenuItem(
-            itemId = MENU_GROUP,
-            titleRes = 0,
-            title = groupTitle,
-            iconRes = R.drawable.ic_groups,
-            children = buildList {
-                add(
-                    NgExpandableActionMenuItem(
-                        itemId = MENU_GROUP_ALL,
-                        titleRes = 0,
-                        title = allSourceTitle,
-                        iconRes = 0,
-                        checked = settings.selectedGroup.isBlank(),
-                    )
-                )
-                settings.groups.forEachIndexed { index, group ->
-                    add(
-                        NgExpandableActionMenuItem(
-                            itemId = MENU_GROUP_BASE + index,
-                            titleRes = 0,
-                            title = group,
-                            iconRes = 0,
-                            checked = settings.selectedGroup == group,
-                        )
-                    )
-                }
-            },
-        ),
-        NgExpandableActionMenuItem(
-            itemId = MENU_CLOSE,
-            titleRes = R.string.close,
-            iconRes = R.drawable.ic_baseline_close,
-        ),
-    )
-
-    Box {
-        IconButton(
-            onClick = { expanded = true },
-            modifier = Modifier.size(48.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.MoreVert,
-                contentDescription = stringResource(R.string.menu),
-                tint = Color(NgTheme.colors.onSurface),
-                modifier = Modifier.size(24.dp),
-            )
-        }
-        NgExpandableActionMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            items = menuItems,
-            onItemClick = { item ->
-                expanded = false
-                when (item.itemId) {
-                    MENU_SOURCE_MANAGE -> onOpenSourceManage()
-                    MENU_REFRESH_LIST -> onRefreshList()
-                    R.id.menu_block_source_dialogs -> onToggleBlockSourceDialogs()
-                    MENU_CHECK_AUTHOR -> onToggleCheckAuthor()
-                    MENU_LOAD_WORD_COUNT -> onToggleLoadWordCount()
-                    MENU_LOAD_INFO -> onToggleLoadInfo()
-                    MENU_LOAD_TOC -> onToggleLoadToc()
-                    MENU_GROUP_ALL -> onGroupSelected("")
-                    MENU_CLOSE -> onClose()
-                    else -> {
-                        val index = item.itemId - MENU_GROUP_BASE
-                        settings.groups.getOrNull(index)?.let(onGroupSelected)
-                    }
-                }
-            },
-            width = 152.dp,
-            rowMinHeight = 44.dp,
-            menuContainerColor = Color(NgTheme.colors.cardContainer).copy(alpha = 1f),
-            variant = NgExpandableActionMenuVariant.DRILL_IN,
-            properties = PopupProperties(
-                focusable = true,
-                clippingEnabled = false,
-            ),
         )
     }
 }
@@ -911,16 +776,6 @@ private val CHANGE_SOURCE_LIST_SECONDARY_CONTENT = 0xFF6E6B70.toInt()
 private val CHANGE_SOURCE_LIST_OUTLINE = 0xFF79747E.toInt()
 private const val CHANGE_SOURCE_LIST_DIVIDER = 0x1F000000
 
-private const val MENU_SOURCE_MANAGE = 0x62000001
-private const val MENU_REFRESH_LIST = 0x62000002
-private const val MENU_CHECK_AUTHOR = 0x62000003
-private const val MENU_LOAD_WORD_COUNT = 0x62000004
-private const val MENU_LOAD_INFO = 0x62000005
-private const val MENU_LOAD_TOC = 0x62000006
-private const val MENU_GROUP = 0x62000007
-private const val MENU_GROUP_ALL = 0x62000008
-private const val MENU_CLOSE = 0x62000009
-private const val MENU_GROUP_BASE = 0x62000100
 
 private const val SOURCE_ACTION_TOP = 0x62001001
 private const val SOURCE_ACTION_BOTTOM = 0x62001002

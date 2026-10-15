@@ -1,5 +1,6 @@
 package io.legado.app.ui.book.changesource
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -21,8 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -36,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +67,8 @@ internal data class ChangeChapterSourceSettingsUi(
     val loadToc: Boolean,
     val selectedGroup: String,
     val groups: List<String>,
+    val sameTypeOnly: Boolean = true,
+    val selectedGroupUnavailable: Boolean = false,
 )
 
 @Composable
@@ -88,6 +90,9 @@ internal fun ChangeChapterSourceDialogContent(
     onRefreshToggle: () -> Unit,
     onClose: () -> Unit,
     onOpenSourceManage: () -> Unit,
+    blockSourceDialogs: Boolean,
+    onToggleSameTypeOnly: () -> Unit,
+    onToggleBlockSourceDialogs: () -> Unit,
     onToggleCheckAuthor: () -> Unit,
     onToggleLoadWordCount: () -> Unit,
     onToggleLoadInfo: () -> Unit,
@@ -98,12 +103,16 @@ internal fun ChangeChapterSourceDialogContent(
     onScoreChanged: (SearchBook, Int) -> Unit,
     onHideToc: () -> Unit,
     onChapterClick: (BookChapter, String?) -> Unit,
+    onRefreshList: (() -> Unit)? = null,
 ) {
     scoreRevision
     val colors = NgTheme.colors
     val listState = rememberLazyListState()
     val tocListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    var settingsActive by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = showToc && !settingsActive, onBack = onHideToc)
+    BackHandler(enabled = settingsActive) { settingsActive = false }
     LaunchedEffect(showToc, tocCurrentIndex, toc.size) {
         if (showToc && toc.isNotEmpty()) {
             val currentPosition = toc.indexOfFirst { it.index == tocCurrentIndex }
@@ -118,158 +127,179 @@ internal fun ChangeChapterSourceDialogContent(
         style = NgGlassDefaults.style(containerAlpha = NgTheme.effects.dialogAlpha),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ChangeChapterSourceHeader(
-                title = title,
-                searching = searching,
-                settings = settings,
-                onRefreshToggle = onRefreshToggle,
-                onClose = onClose,
-                onOpenSourceManage = onOpenSourceManage,
-                onToggleCheckAuthor = onToggleCheckAuthor,
-                onToggleLoadWordCount = onToggleLoadWordCount,
-                onToggleLoadInfo = onToggleLoadInfo,
-                onToggleLoadToc = onToggleLoadToc,
-                onGroupSelected = onGroupSelected,
-            )
-            NgSearchBar(
-                query = query,
-                onQueryChange = onQueryChanged,
-                hint = stringResource(R.string.screen),
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                containerColor = Color(colors.inputContainer),
-            )
-            if (searching) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp),
-                    color = Color(colors.primary),
-                    trackColor = Color(colors.outline).copy(alpha = 0.32f),
+            if (settingsActive) {
+                ChangeSourceSettingsContent(
+                    settings = settings,
+                    blockSourceDialogs = blockSourceDialogs,
+                    onBack = { settingsActive = false },
+                    onToggleSameTypeOnly = onToggleSameTypeOnly,
+                    onToggleBlockSourceDialogs = onToggleBlockSourceDialogs,
+                    onToggleCheckAuthor = onToggleCheckAuthor,
+                    onToggleLoadWordCount = onToggleLoadWordCount,
+                    onToggleLoadInfo = onToggleLoadInfo,
+                    onToggleLoadToc = onToggleLoadToc,
                 )
             } else {
-                Spacer(Modifier.height(2.dp))
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    itemsIndexed(
-                        items = searchBooks,
-                    ) { _, item ->
-                        ChangeChapterSourceRow(
-                            item = item,
-                            current = item.bookUrl == oldBookUrl,
-                            score = getScore(item),
-                            showWordCount = AppConfig.changeSourceLoadWordCount,
-                            onClick = { onSourceClick(item) },
-                            onAction = { action -> onSourceAction(action, item) },
-                            onScoreChanged = { score -> onScoreChanged(item, score) },
-                        )
-                    }
-                }
-                if (showToc) {
-                    Column(
+                ChangeChapterSourceHeader(
+                    title = title,
+                    searching = searching,
+                    settings = settings,
+                    onRefreshToggle = onRefreshToggle,
+                    onClose = onClose,
+                    onOpenSourceManage = onOpenSourceManage,
+                    onOpenSettings = { settingsActive = true },
+                    onGroupSelected = onGroupSelected,
+                    onRefreshList = onRefreshList,
+                )
+                NgSearchBar(
+                    query = query,
+                    onQueryChange = onQueryChanged,
+                    hint = stringResource(R.string.screen),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    containerColor = Color(colors.inputContainer),
+                )
+                if (searching) {
+                    LinearProgressIndicator(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(colors.dialogContainer)),
+                            .fillMaxWidth()
+                            .height(2.dp),
+                        color = Color(colors.primary),
+                        trackColor = Color(colors.outline).copy(alpha = 0.32f),
+                    )
+                } else {
+                    Spacer(Modifier.height(2.dp))
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp)
-                                .clickable(role = Role.Button, onClick = onHideToc),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_arrow_down),
-                                contentDescription = stringResource(R.string.close),
-                                tint = Color(colors.onSurface),
+                        itemsIndexed(
+                            items = searchBooks,
+                            key = { _, item -> "${item.origin}\u0000${item.bookUrl}" },
+                        ) { _, item ->
+                            ChangeChapterSourceRow(
+                                item = item,
+                                current = item.bookUrl == oldBookUrl,
+                                score = getScore(item),
+                                showWordCount = AppConfig.changeSourceLoadWordCount,
+                                onClick = { onSourceClick(item) },
+                                onAction = { action -> onSourceAction(action, item) },
+                                onScoreChanged = { score -> onScoreChanged(item, score) },
                             )
                         }
-                        Box(Modifier.weight(1f)) {
-                            LazyColumn(
-                                state = tocListState,
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(vertical = 6.dp),
+                    }
+                    if (searchBooks.isEmpty() && settings.selectedGroupUnavailable) {
+                        Text(
+                            text = stringResource(R.string.change_source_no_matching_group_hint),
+                            modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                            color = Color(colors.onSurfaceVariant),
+                            fontSize = 13.sp,
+                        )
+                    }
+                    if (showToc) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(colors.dialogContainer)),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .clickable(role = Role.Button, onClick = onHideToc),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                itemsIndexed(
-                                    items = toc,
-                                    key = { index, chapter -> "${chapter.index}:${chapter.url}:$index" },
-                                ) { index, chapter ->
-                                    ChangeChapterTocRow(
-                                        chapter = chapter,
-                                        current = chapter.index == tocCurrentIndex,
-                                        onClick = {
-                                            onChapterClick(chapter, toc.getOrNull(index + 1)?.url)
-                                        },
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_arrow_down),
+                                    contentDescription = stringResource(R.string.close),
+                                    tint = Color(colors.onSurface),
+                                )
+                            }
+                            Box(Modifier.weight(1f)) {
+                                LazyColumn(
+                                    state = tocListState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(vertical = 6.dp),
+                                ) {
+                                    itemsIndexed(
+                                        items = toc,
+                                        key = { _, chapter -> "${chapter.index}:${chapter.url}" },
+                                    ) { index, chapter ->
+                                        ChangeChapterTocRow(
+                                            chapter = chapter,
+                                            current = chapter.index == tocCurrentIndex,
+                                            onClick = {
+                                                onChapterClick(chapter, toc.getOrNull(index + 1)?.url)
+                                            },
+                                        )
+                                    }
+                                }
+                                if (tocLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier
+                                            .align(Alignment.Center)
+                                            .size(44.dp),
+                                        color = Color(colors.primary),
+                                        trackColor = Color(colors.outline).copy(alpha = 0.4f),
                                     )
                                 }
                             }
-                            if (tocLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier
-                                        .align(Alignment.Center)
-                                        .size(44.dp),
-                                    color = Color(colors.primary),
-                                    trackColor = Color(colors.outline).copy(alpha = 0.4f),
-                                )
-                            }
                         }
                     }
                 }
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = currentSourceName,
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .clickable(role = Role.Button) {
-                            val index = searchBooks.indexOfFirst { it.bookUrl == oldBookUrl }
-                            if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
-                        }
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    color = Color(colors.onSurfaceVariant),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                IconButton(
-                    onClick = {
-                        scope.launch { listState.animateScrollToItem(0) }
-                    },
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_arrow_drop_up),
-                        contentDescription = stringResource(R.string.go_to_top),
-                        tint = Color(colors.onSurface),
+                    Text(
+                        text = currentSourceName,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(role = Role.Button) {
+                                val index = searchBooks.indexOfFirst { it.bookUrl == oldBookUrl }
+                                if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
+                            }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        color = Color(colors.onSurfaceVariant),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                }
-                IconButton(
-                    onClick = {
-                        if (searchBooks.isNotEmpty()) {
-                            scope.launch { listState.animateScrollToItem(searchBooks.lastIndex) }
-                        }
-                    },
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_arrow_drop_down),
-                        contentDescription = stringResource(R.string.go_to_bottom),
-                        tint = Color(colors.onSurface),
-                    )
+                    IconButton(
+                        onClick = {
+                            scope.launch { listState.animateScrollToItem(0) }
+                        },
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_drop_up),
+                            contentDescription = stringResource(R.string.go_to_top),
+                            tint = Color(colors.onSurface),
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            if (searchBooks.isNotEmpty()) {
+                                scope.launch { listState.animateScrollToItem(searchBooks.lastIndex) }
+                            }
+                        },
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_drop_down),
+                            contentDescription = stringResource(R.string.go_to_bottom),
+                            tint = Color(colors.onSurface),
+                        )
+                    }
                 }
             }
         }
@@ -284,14 +314,11 @@ private fun ChangeChapterSourceHeader(
     onRefreshToggle: () -> Unit,
     onClose: () -> Unit,
     onOpenSourceManage: () -> Unit,
-    onToggleCheckAuthor: () -> Unit,
-    onToggleLoadWordCount: () -> Unit,
-    onToggleLoadInfo: () -> Unit,
-    onToggleLoadToc: () -> Unit,
+    onOpenSettings: () -> Unit,
     onGroupSelected: (String) -> Unit,
+    onRefreshList: (() -> Unit)?,
 ) {
     val colors = NgTheme.colors
-    var menuExpanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -318,108 +345,15 @@ private fun ChangeChapterSourceHeader(
                 tint = Color(colors.onSurface),
             )
         }
-        Box {
-            IconButton(onClick = { menuExpanded = true }) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_more_vert),
-                    contentDescription = stringResource(R.string.menu),
-                    tint = Color(colors.onSurface),
-                )
-            }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false },
-                containerColor = Color(colors.dialogContainer),
-            ) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.book_source_manage)) },
-                    onClick = {
-                        menuExpanded = false
-                        onOpenSourceManage()
-                    },
-                )
-                SettingsMenuItem(stringResource(R.string.checkAuthor), settings.checkAuthor) {
-                    onToggleCheckAuthor()
-                }
-                SettingsMenuItem(
-                    stringResource(R.string.load_word_count),
-                    settings.loadWordCount,
-                ) { onToggleLoadWordCount() }
-                SettingsMenuItem(stringResource(R.string.load_info), settings.loadInfo) {
-                    onToggleLoadInfo()
-                }
-                SettingsMenuItem(stringResource(R.string.load_toc), settings.loadToc) {
-                    onToggleLoadToc()
-                }
-                ReadGroupMenuItem(
-                    label = stringResource(R.string.all_source),
-                    selected = settings.selectedGroup.isBlank(),
-                    onClick = {
-                        menuExpanded = false
-                        onGroupSelected("")
-                    },
-                )
-                settings.groups.forEach { group ->
-                    ReadGroupMenuItem(
-                        label = group,
-                        selected = settings.selectedGroup == group,
-                        onClick = {
-                            menuExpanded = false
-                            onGroupSelected(group)
-                        },
-                    )
-                }
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.close)) },
-                    onClick = {
-                        menuExpanded = false
-                        onClose()
-                    },
-                )
-            }
-        }
+        ChangeSourceMoreMenu(
+            settings = settings,
+            onOpenSourceManage = onOpenSourceManage,
+            onOpenSettings = onOpenSettings,
+            onGroupSelected = onGroupSelected,
+            onClose = onClose,
+            onRefreshList = onRefreshList,
+        )
     }
-}
-
-@Composable
-private fun SettingsMenuItem(
-    label: String,
-    checked: Boolean,
-    onClick: () -> Unit,
-) {
-    DropdownMenuItem(
-        text = { Text(label) },
-        trailingIcon = {
-            Checkbox(
-                checked = checked,
-                onCheckedChange = null,
-                colors = CheckboxDefaults.colors(
-                    checkedColor = Color(NgTheme.colors.primary),
-                ),
-            )
-        },
-        onClick = onClick,
-    )
-}
-
-@Composable
-private fun ReadGroupMenuItem(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    DropdownMenuItem(
-        text = {
-            Text(
-                text = label,
-                color = Color(
-                    if (selected) NgTheme.colors.primary else NgTheme.colors.onSurface
-                ),
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            )
-        },
-        onClick = onClick,
-    )
 }
 
 internal enum class ChangeChapterSourceAction {

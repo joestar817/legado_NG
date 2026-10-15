@@ -629,6 +629,11 @@ fun NgFormSliderRow(
     }
 }
 
+enum class NgFormSwitchSettingRowVariant {
+    DEFAULT,
+    CHANGE_SOURCE,
+}
+
 /** 分组内的紧凑开关设置行。整行与开关本身均可切换。 */
 @Composable
 fun NgFormSwitchSettingRow(
@@ -638,11 +643,13 @@ fun NgFormSwitchSettingRow(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    variant: NgFormSwitchSettingRowVariant = NgFormSwitchSettingRowVariant.DEFAULT,
 ) {
+    val changeSource = variant == NgFormSwitchSettingRowVariant.CHANGE_SOURCE
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = if (summary.isNullOrBlank()) 44.dp else 52.dp)
+            .heightIn(min = if (changeSource) 64.dp else if (summary.isNullOrBlank()) 44.dp else 52.dp)
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .alpha(if (enabled) 1f else 0.45f)
             .padding(start = 14.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
@@ -655,8 +662,8 @@ fun NgFormSwitchSettingRow(
             Text(
                 text = title,
                 color = Color(NgTheme.colors.onSurface),
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
+                fontSize = if (changeSource) 15.sp else 14.sp,
+                lineHeight = if (changeSource) 20.sp else 18.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -664,9 +671,9 @@ fun NgFormSwitchSettingRow(
                 Text(
                     text = summary,
                     color = Color(NgTheme.colors.onSurfaceVariant),
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp,
-                    maxLines = 1,
+                    fontSize = if (changeSource) 12.sp else 11.sp,
+                    lineHeight = if (changeSource) 18.sp else 14.sp,
+                    maxLines = if (changeSource) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

@@ -175,6 +175,7 @@ object PreferKey {
     const val exportPictureFile = "exportPictureFile"
     const val exportPlainText = "exportPlainText"
     const val exportFilterInteractiveImages = "exportFilterInteractiveImages"
+    const val changeSourceSameTypeOnly = "changeSourceSameTypeOnly"
     const val changeSourceCheckAuthor = "changeSourceCheckAuthor"
     const val changeSourceLoadToc = "changeSourceLoadToc"
     const val changeSourceLoadInfo = "changeSourceLoadInfo"

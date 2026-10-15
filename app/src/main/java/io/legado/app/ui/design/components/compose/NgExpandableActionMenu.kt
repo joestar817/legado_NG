@@ -86,6 +86,7 @@ data class NgExpandableActionMenuItem(
     val danger: Boolean = false,
     val themedIconKind: NgThemedActionIconKind? = null,
     val enabled: Boolean = true,
+    val navigation: Boolean = false,
 )
 
 enum class NgExpandableActionMenuVariant {
@@ -136,7 +137,7 @@ internal fun rememberNgExpandableActionMenuContentWidth(
                 var fixedWidthDp = 24.dp
                 if (reserveIconSpace) fixedWidthDp += 30.dp
                 if (item.checked && item.selectionStyle == NgMenuSelectionStyle.INDICATOR) fixedWidthDp += 30.dp
-                if (item.children.isNotEmpty()) fixedWidthDp += 30.dp
+                if (item.children.isNotEmpty() || item.navigation) fixedWidthDp += 30.dp
                 val rowWidthPx = textWidthPx + with(density) { fixedWidthDp.toPx() }
                 maxOf(rowWidthPx, groupWidthPx(item.children))
             }
@@ -759,7 +760,7 @@ private fun NgExpandableActionMenuRow(
                 modifier = Modifier.size(20.dp)
             )
         }
-        if (item.children.isNotEmpty()) {
+        if (item.children.isNotEmpty() || item.navigation) {
             Spacer(Modifier.width(10.dp))
             Box(
                 modifier = Modifier.size(20.dp),
