@@ -73,18 +73,6 @@ class AdvancedConfigFragment : BaseFragment(R.layout.fragment_advanced_config),
                         onRecordHeapDumpChanged = {
                             setBooleanPreference(PreferKey.recordHeapDump, it)
                         },
-                        onReadingPaceEnabledChanged = {
-                            setBooleanPreference(PreferKey.readingPaceEnabled, it)
-                        },
-                        onReadingPaceMinIntervalChanged = ::setReadingPaceMinIntervalDraft,
-                        onReadingPaceMaxIntervalChanged = ::setReadingPaceMaxIntervalDraft,
-                        onReadingPaceIntervalChangeFinished = ::saveReadingPaceIntervals,
-                        onReadingPaceLongRestChanged = {
-                            setBooleanPreference(PreferKey.readingPaceLongRest, it)
-                        },
-                        onReadingPaceQuietHoursChanged = {
-                            setBooleanPreference(PreferKey.readingPaceQuietHours, it)
-                        },
                     )
                     when (activeDialog) {
                         AdvancedConfigDialog.USER_AGENT -> ConfigTextEditorDialog(
@@ -135,11 +123,6 @@ class AdvancedConfigFragment : BaseFragment(R.layout.fragment_advanced_config),
                 AppConfig.recordNetworkLog =
                     appCtx.getPrefBoolean(PreferKey.recordNetworkLog)
             }
-            PreferKey.readingPaceEnabled,
-            PreferKey.readingPaceMinInterval,
-            PreferKey.readingPaceMaxInterval,
-            PreferKey.readingPaceLongRest,
-            PreferKey.readingPaceQuietHours -> Unit
         }
         view?.post(::refreshContent)
     }
@@ -153,11 +136,6 @@ class AdvancedConfigFragment : BaseFragment(R.layout.fragment_advanced_config),
             recordLog = getPrefBoolean(PreferKey.recordLog, false),
             recordNetworkLog = getPrefBoolean(PreferKey.recordNetworkLog, false),
             recordHeapDump = getPrefBoolean(PreferKey.recordHeapDump, false),
-            readingPaceEnabled = AppConfig.readingPaceEnabled,
-            readingPaceMinInterval = AppConfig.readingPaceMinInterval,
-            readingPaceMaxInterval = AppConfig.readingPaceMaxInterval,
-            readingPaceLongRest = AppConfig.readingPaceLongRest,
-            readingPaceQuietHours = AppConfig.readingPaceQuietHours,
         )
     }
 
@@ -169,38 +147,8 @@ class AdvancedConfigFragment : BaseFragment(R.layout.fragment_advanced_config),
             PreferKey.recordLog -> screenState.copy(recordLog = enabled)
             PreferKey.recordNetworkLog -> screenState.copy(recordNetworkLog = enabled)
             PreferKey.recordHeapDump -> screenState.copy(recordHeapDump = enabled)
-            PreferKey.readingPaceEnabled -> screenState.copy(readingPaceEnabled = enabled)
-            PreferKey.readingPaceLongRest -> screenState.copy(readingPaceLongRest = enabled)
-            PreferKey.readingPaceQuietHours -> screenState.copy(readingPaceQuietHours = enabled)
             else -> screenState
         }
-    }
-
-    private fun setReadingPaceMinIntervalDraft(value: Int) {
-        screenState = screenState.copy(readingPaceMinInterval = value)
-    }
-
-    private fun setReadingPaceMaxIntervalDraft(value: Int) {
-        screenState = screenState.copy(readingPaceMaxInterval = value)
-    }
-
-    private fun saveReadingPaceIntervals() {
-        // 保证最小间隔不大于最大间隔,否则取反
-        var min = screenState.readingPaceMinInterval
-        var max = screenState.readingPaceMaxInterval
-        if (min > max) {
-            val swap = min
-            min = max
-            max = swap
-            screenState = screenState.copy(
-                readingPaceMinInterval = min,
-                readingPaceMaxInterval = max,
-            )
-        }
-        AppConfig.readingPaceMinInterval = min
-        AppConfig.readingPaceMaxInterval = max
-        // 在这里手动调过间隔即视为手动模式,否则缓存管理页的开关会让这两个值静默失效。
-        AppConfig.cachePaceManualEnabled = true
     }
 
     private fun showUserAgentDialog() {

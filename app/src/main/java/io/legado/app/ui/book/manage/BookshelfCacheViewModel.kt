@@ -66,10 +66,16 @@ internal data class BookshelfCacheState(
     val audioBytes: Long = 0L,
     val epubBytes: Long = 0L,
     val appBytes: Long = 0L,
+    /** 拟人化缓存节奏总开关；关闭时完全不等待。 */
+    val paceEnabled: Boolean = true,
     /** 是否由用户手动指定缓存间隔；false 时使用内置默认节奏。 */
     val paceManualEnabled: Boolean = false,
     val paceMinInterval: Int = PACE_INTERVAL_DEFAULT_MIN,
     val paceMaxInterval: Int = PACE_INTERVAL_DEFAULT_MAX,
+    /** 每 30 章插入一次长休息。 */
+    val paceLongRest: Boolean = true,
+    /** 23:00–07:00 之间暂停缓存。 */
+    val paceQuietHours: Boolean = false,
     /** 后台缓存任务是否在跑(见 `CacheBook.isRun`)。 */
     val downloading: Boolean = false,
     /** 缓存任务是否被用户暂停(见 `CacheBook.isUserPaused`)。 */
@@ -112,9 +118,12 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
 
     var state by mutableStateOf(
         BookshelfCacheState(
+            paceEnabled = AppConfig.readingPaceEnabled,
             paceManualEnabled = AppConfig.cachePaceManualEnabled,
             paceMinInterval = AppConfig.readingPaceMinInterval,
             paceMaxInterval = AppConfig.readingPaceMaxInterval,
+            paceLongRest = AppConfig.readingPaceLongRest,
+            paceQuietHours = AppConfig.readingPaceQuietHours,
         )
     )
         private set
@@ -186,6 +195,12 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
         syncDownloadState()
     }
 
+    /** 开关拟人化缓存节奏本身；关闭后不做任何间隔等待。 */
+    fun setPaceEnabled(enabled: Boolean) {
+        AppConfig.readingPaceEnabled = enabled
+        state = state.copy(paceEnabled = enabled)
+    }
+
     /** 开关缓存间隔的手动设置；关闭时回到内置默认节奏。 */
     fun setPaceManualEnabled(enabled: Boolean) {
         AppConfig.cachePaceManualEnabled = enabled
@@ -212,6 +227,18 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
         AppConfig.readingPaceMinInterval = min
         AppConfig.readingPaceMaxInterval = max
         state = state.copy(paceMinInterval = min, paceMaxInterval = max)
+    }
+
+    /** 每 30 章的长休息开关。 */
+    fun setPaceLongRest(enabled: Boolean) {
+        AppConfig.readingPaceLongRest = enabled
+        state = state.copy(paceLongRest = enabled)
+    }
+
+    /** 夜间静默开关。 */
+    fun setPaceQuietHours(enabled: Boolean) {
+        AppConfig.readingPaceQuietHours = enabled
+        state = state.copy(paceQuietHours = enabled)
     }
 
     /** 与旧「清理缓存」入口完全等价: 书缓存 + cacheDir + 无关联角色卡。 */
@@ -327,9 +354,12 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
             audioBytes = File(context.externalFiles, "audio_cache").sizeBytes(),
             epubBytes = File(context.externalFiles, "epub").sizeBytes(),
             appBytes = context.cacheDir.sizeBytes(),
+            paceEnabled = previous.paceEnabled,
             paceManualEnabled = previous.paceManualEnabled,
             paceMinInterval = previous.paceMinInterval,
             paceMaxInterval = previous.paceMaxInterval,
+            paceLongRest = previous.paceLongRest,
+            paceQuietHours = previous.paceQuietHours,
             downloading = previous.downloading,
             paused = previous.paused,
             bookStates = CacheBook.bookStates,

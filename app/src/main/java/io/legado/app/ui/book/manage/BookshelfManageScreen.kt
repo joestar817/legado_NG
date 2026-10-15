@@ -1,7 +1,10 @@
 package io.legado.app.ui.book.manage
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,10 +21,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,8 +36,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -91,10 +98,13 @@ internal fun BookshelfManageScreen(
     onCacheClearAll: () -> Unit,
     onCacheClearInvalid: () -> Unit,
     onCacheClearApp: () -> Unit,
+    onCachePaceEnabledChanged: (Boolean) -> Unit,
     onCachePaceManualEnabledChanged: (Boolean) -> Unit,
     onCachePaceMinIntervalChanged: (Int) -> Unit,
     onCachePaceMaxIntervalChanged: (Int) -> Unit,
     onCachePaceIntervalChangeFinished: () -> Unit,
+    onCachePaceLongRestChanged: (Boolean) -> Unit,
+    onCachePaceQuietHoursChanged: (Boolean) -> Unit,
     onCachePause: () -> Unit,
     onCacheResume: () -> Unit,
     onCacheStop: () -> Unit,
@@ -148,11 +158,14 @@ internal fun BookshelfManageScreen(
         BookshelfCacheFilterRail(
             selected = cacheFilter,
             onSelected = onCacheFilterSelected,
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 1.dp),
+        )
+        BookshelfGroupFilterRail(
             groups = groups,
             selectedGroupId = selectedGroupId,
             onGroupSelected = onGroupSelected,
             onGroupManage = onGroupManage,
-            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 2.dp),
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 3.dp),
         )
         LazyColumn(
             modifier = Modifier
@@ -194,6 +207,9 @@ internal fun BookshelfManageScreen(
                     BookshelfManageBookCard(
                         book = book,
                         selected = selected,
+                        selectionMode = selectedCount > 0,
+                        // 有选中项时,未选中的卡整卡变淡,让选中项在长列表里一眼可见。
+                        selectionDimmed = selectedCount > 0 && !selected,
                         groupNames = bookGroupNames(groups, book.group),
                         cachedChapterCount = cachedChapterCounts[book.bookUrl],
                         cacheSizeBytes = cacheState.sizeByBookUrl[book.bookUrl],
@@ -292,10 +308,13 @@ internal fun BookshelfManageScreen(
             onClearAll = onCacheClearAll,
             onClearInvalid = onCacheClearInvalid,
             onClearAppCache = onCacheClearApp,
+            onPaceEnabledChanged = onCachePaceEnabledChanged,
             onPaceManualEnabledChanged = onCachePaceManualEnabledChanged,
             onPaceMinIntervalChanged = onCachePaceMinIntervalChanged,
             onPaceMaxIntervalChanged = onCachePaceMaxIntervalChanged,
             onPaceIntervalChangeFinished = onCachePaceIntervalChangeFinished,
+            onPaceLongRestChanged = onCachePaceLongRestChanged,
+            onPaceQuietHoursChanged = onCachePaceQuietHoursChanged,
             onPauseAll = onCachePause,
             onStopAll = onCacheStop,
         )
@@ -344,29 +363,34 @@ private fun BookshelfCacheMenuDialog(
             if (state == CacheBook.BookState.NONE) {
                 NgCacheMenuRow(
                     text = stringResource(R.string.cache_menu_re_cache),
+                    iconRes = R.drawable.ic_refresh_black_24dp,
                     onClick = { onAction(BookshelfCacheMenuAction.CACHE) },
                 )
             }
             if (state == CacheBook.BookState.RUNNING || state == CacheBook.BookState.WAITING) {
                 NgCacheMenuRow(
                     text = stringResource(R.string.pause),
+                    iconRes = R.drawable.ic_pause_24dp,
                     onClick = { onAction(BookshelfCacheMenuAction.PAUSE) },
                 )
             }
             if (state == CacheBook.BookState.PAUSED) {
                 NgCacheMenuRow(
                     text = stringResource(R.string.resume),
+                    iconRes = R.drawable.ic_play_24dp,
                     onClick = { onAction(BookshelfCacheMenuAction.RESUME) },
                 )
             }
             if (state != CacheBook.BookState.NONE) {
                 NgCacheMenuRow(
                     text = stringResource(R.string.stop),
+                    iconRes = R.drawable.ic_stop_black_24dp,
                     onClick = { onAction(BookshelfCacheMenuAction.STOP) },
                 )
             }
             NgCacheMenuRow(
                 text = stringResource(R.string.cache_menu_clear_book),
+                iconRes = R.drawable.ic_outline_delete,
                 onClick = { onAction(BookshelfCacheMenuAction.CLEAR) },
                 danger = true,
             )
@@ -378,6 +402,7 @@ private fun BookshelfCacheMenuDialog(
 private fun NgCacheMenuRow(
     text: String,
     onClick: () -> Unit,
+    @DrawableRes iconRes: Int? = null,
     danger: Boolean = false,
 ) {
     val color = Color(
@@ -387,9 +412,27 @@ private fun NgCacheMenuRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(vertical = 11.dp),
+            .padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (iconRes != null) {
+            // 每个动作配一个圆底图标:纯文字的四行动作读起来像设置项,不像操作。
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = color,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+        }
         Text(
             text = text,
             color = color,
@@ -397,6 +440,13 @@ private fun NgCacheMenuRow(
             lineHeight = 20.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_right_20),
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.54f),
         )
     }
 }

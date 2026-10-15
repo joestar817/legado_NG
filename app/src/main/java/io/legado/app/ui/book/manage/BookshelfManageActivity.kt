@@ -199,10 +199,13 @@ class BookshelfManageActivity :
                         activeCacheDialog = BookshelfCacheDialog.CLEAR_INVALID
                     },
                     onCacheClearApp = cacheViewModel::clearAppCache,
+                    onCachePaceEnabledChanged = cacheViewModel::setPaceEnabled,
                     onCachePaceManualEnabledChanged = cacheViewModel::setPaceManualEnabled,
                     onCachePaceMinIntervalChanged = cacheViewModel::setPaceMinIntervalDraft,
                     onCachePaceMaxIntervalChanged = cacheViewModel::setPaceMaxIntervalDraft,
                     onCachePaceIntervalChangeFinished = cacheViewModel::savePaceIntervals,
+                    onCachePaceLongRestChanged = cacheViewModel::setPaceLongRest,
+                    onCachePaceQuietHoursChanged = cacheViewModel::setPaceQuietHours,
                     onCachePause = cacheViewModel::pauseCache,
                     onCacheResume = cacheViewModel::resumeCache,
                     onCacheStop = cacheViewModel::stopCache,

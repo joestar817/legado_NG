@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
@@ -67,11 +68,13 @@ fun NgBookshelfManageCard(
     cacheText: String? = null,
     /** 该书缓存占用的可读大小，如 "3.2 MB"；为 null 时不显示。 */
     cacheSizeText: String? = null,
-    /** 缓存进度 0f..1f；为 null 时不画进度条。 */
-    cacheFraction: Float? = null,
     groupTag: NgStatusTagSpec? = null,
     updateTag: NgStatusTagSpec? = null,
     selected: Boolean = false,
+    /** 处于「已选中其他书」的状态:整卡降透明度,让选中项更突出。 */
+    dimmed: Boolean = false,
+    /** 是否显示拖拽手柄。默认态不显示:它只能拖拽排序,却容易被当成菜单入口。 */
+    showDragHandle: Boolean = false,
     coverContent: (@Composable () -> Unit)? = null,
     /** 书卡右侧的操作槽位,用于放这本书的缓存环形按钮;为 null 时不占位。 */
     cacheActionContent: (@Composable () -> Unit)? = null,
@@ -94,10 +97,11 @@ fun NgBookshelfManageCard(
             metadataText = metadataText,
             cacheText = cacheText,
             cacheSizeText = cacheSizeText,
-            cacheFraction = cacheFraction,
             groupTag = groupTag,
             updateTag = updateTag,
             selected = selected,
+            dimmed = dimmed,
+            showDragHandle = showDragHandle,
             coverContent = requireNotNull(coverContent) {
                 "COVER_CARD variant requires coverContent"
             },
@@ -301,10 +305,11 @@ private fun NgBookshelfManageCoverCard(
     metadataText: String,
     cacheText: String?,
     cacheSizeText: String?,
-    cacheFraction: Float?,
     groupTag: NgStatusTagSpec?,
     updateTag: NgStatusTagSpec?,
     selected: Boolean,
+    dimmed: Boolean,
+    showDragHandle: Boolean,
     coverContent: @Composable () -> Unit,
     cacheActionContent: (@Composable () -> Unit)?,
     dragHandleContentDescription: String,
@@ -315,23 +320,28 @@ private fun NgBookshelfManageCoverCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(dimensionResource(R.dimen.ng_radius_s))
-    val coverShape = RoundedCornerShape(4.dp)
+    val coverShape = RoundedCornerShape(9.dp)
     val selectedOutline = Color(NgTheme.colors.primary)
     val metadataColor = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.68f)
     val supportingMetadata = listOf(supportingText, metadataText)
         .filter { it.isNotBlank() }
         .joinToString(" · ")
     val cardColor = colorResource(R.color.ng_surface_card).copy(alpha = 1f)
+    // 选中卡的底色:先铺卡片本色,再叠一层极浅主色,等价于设计稿里的 #FFF8F6,且跟随主题。
+    val selectedTint = Color(NgTheme.colors.primary).copy(alpha = 0.08f)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (cacheFraction != null) 84.dp else 76.dp)
+            // 高度固定:进度条并入环钮后,卡片不再随是否已缓存而变高,列表行距恒定。
+            .height(82.dp)
+            .then(if (dimmed) Modifier.alpha(0.58f) else Modifier)
             .clip(shape)
             .background(cardColor)
+            .then(if (selected) Modifier.background(selectedTint) else Modifier)
             .then(
                 if (selected) {
-                    Modifier.border(2.dp, selectedOutline, shape)
+                    Modifier.border(2.2.dp, selectedOutline, shape)
                 } else {
                     Modifier
                 }
@@ -352,8 +362,8 @@ private fun NgBookshelfManageCoverCard(
         ) {
             Box(
                 modifier = Modifier
-                    .width(46.dp)
-                    .height(60.dp),
+                    .width(52.dp)
+                    .height(58.dp),
             ) {
                 Box(
                     modifier = Modifier
@@ -361,6 +371,32 @@ private fun NgBookshelfManageCoverCard(
                         .clip(coverShape),
                 ) {
                     coverContent()
+                }
+                // 选中角标压在封面左上角:白圈托底,主色圆承载对勾,在任意封面上都读得清。
+                if (selected) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .size(27.dp)
+                            .clip(CircleShape)
+                            .background(Color.White),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(23.dp)
+                                .clip(CircleShape)
+                                .background(selectedOutline),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_check),
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp),
+                                tint = Color.White,
+                            )
+                        }
+                    }
                 }
             }
             Column(
@@ -401,11 +437,13 @@ private fun NgBookshelfManageCoverCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (!cacheText.isNullOrBlank()) {
+                            // 章数是「进度」,用主色加粗;体积是参考值,留给次要色。
                             Text(
                                 text = cacheText,
-                                color = metadataColor,
+                                color = Color(NgTheme.colors.primary),
                                 fontSize = 12.sp,
                                 lineHeight = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                             )
                         }
@@ -442,24 +480,6 @@ private fun NgBookshelfManageCoverCard(
                             )
                         }
                     }
-                    if (cacheFraction != null) {
-                        Spacer(Modifier.height(4.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(3.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(metadataColor.copy(alpha = 0.20f)),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(cacheFraction.coerceIn(0f, 1f))
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(Color(NgTheme.colors.primary)),
-                            )
-                        }
-                    }
                 }
             }
             if (cacheActionContent != null) {
@@ -470,19 +490,26 @@ private fun NgBookshelfManageCoverCard(
                     cacheActionContent()
                 }
             }
-            Box(
-                modifier = dragHandleModifier
-                    .width(32.dp)
-                    .fillMaxHeight()
-                    .semantics { contentDescription = dragHandleContentDescription },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_drag_handle),
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = metadataColor.copy(alpha = 0.62f),
-                )
+            // 手柄只在选中态出现:默认态它看起来像个菜单入口,而它实际只能拖拽排序。
+            if (showDragHandle) {
+                Box(
+                    modifier = dragHandleModifier
+                        .width(28.dp)
+                        .fillMaxHeight()
+                        .semantics { contentDescription = dragHandleContentDescription },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_drag_handle),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = if (selected) {
+                            Color(NgTheme.colors.primary)
+                        } else {
+                            metadataColor.copy(alpha = 0.62f)
+                        },
+                    )
+                }
             }
         }
     }

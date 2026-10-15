@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
@@ -71,7 +72,7 @@ internal fun BookshelfManageBottomDock(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .height(58.dp)
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -81,8 +82,15 @@ internal fun BookshelfManageBottomDock(
                     selectedCount
                 ),
                 modifier = Modifier.weight(1f),
-                color = Color(NgTheme.colors.onSurface),
-                fontSize = 12.sp,
+                // 底栏三项操作恒定,只有这里的计数随选中数变化:有选中就转主色加粗,
+                // 让「已经在选择状态了」不需要再去看书卡。
+                color = if (selectedCount > 0) {
+                    Color(NgTheme.colors.primary)
+                } else {
+                    Color(NgTheme.colors.onSurface)
+                },
+                fontSize = 13.sp,
+                fontWeight = if (selectedCount > 0) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

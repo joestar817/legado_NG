@@ -3,7 +3,9 @@ package io.legado.app.ui.config
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,7 +33,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,6 +57,7 @@ import io.legado.app.ui.design.components.compose.rememberNgCodeVisualTransforma
 import io.legado.app.ui.design.theme.NgTheme
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 internal data class ConfigChoiceOption(
     val label: String,
@@ -127,6 +134,22 @@ internal fun ConfigNumberPickerDialog(
     var selectedValue by remember(minValue, maxValue, initialValue) {
         mutableIntStateOf(initialValue.coerceIn(minValue, maxValue))
     }
+    // 手动输入与滚轮共用同一个值:输入框文本单独持有,避免与滚轮的每次吸附互相覆盖。
+    var manualText by remember(minValue, maxValue, initialValue) {
+        mutableStateOf(formatNumberValue(initialValue, decimalMode))
+    }
+    val coerceValue: (Int) -> Int = { it.coerceIn(minValue, maxValue) }
+    val applyManualText: (String) -> Unit = { text ->
+        manualText = text
+        parseNumberValue(text, decimalMode)?.let { selectedValue = coerceValue(it) }
+    }
+    // 滚轮选择变化时回写输入框;若当前文本已经表示同一个值则不动,免得打断输入。
+    LaunchedEffect(selectedValue, decimalMode) {
+        val shown = parseNumberValue(manualText, decimalMode)
+        if (shown != selectedValue) {
+            manualText = formatNumberValue(selectedValue, decimalMode)
+        }
+    }
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -153,19 +176,61 @@ internal fun ConfigNumberPickerDialog(
                 )
                 NgDialogTextActionButton(
                     text = confirmText,
-                    onClick = { onValueSelected(selectedValue) },
+                    // 手动输入未失焦时直接确定:以输入框当前文本为准,否则取滚轮值。
+                    onClick = {
+                        onValueSelected(
+                            parseNumberValue(manualText, decimalMode)
+                                ?.let(coerceValue) ?: selectedValue
+                        )
+                    },
                 )
             },
         ) {
-            ConfigNumberWheel(
-                minValue = minValue,
-                maxValue = maxValue,
-                selectedValue = selectedValue,
-                decimalMode = decimalMode,
-                onSelectedValueChange = { selectedValue = it },
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                NgFormField(
+                    label = stringResource(R.string.manual_input),
+                    value = manualText,
+                    onValueChange = applyManualText,
+                    placeholder = "$minValue – $maxValue",
+                    supportingText = stringResource(
+                        R.string.manual_input_range,
+                        formatNumberValue(minValue, decimalMode),
+                        formatNumberValue(maxValue, decimalMode),
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (decimalMode) {
+                            KeyboardType.Decimal
+                        } else {
+                            KeyboardType.Number
+                        },
+                    ),
+                    visualTransformation = VisualTransformation.None,
+                    variant = NgFormFieldVariant.OUTLINED,
+                )
+                ConfigNumberWheel(
+                    minValue = minValue,
+                    maxValue = maxValue,
+                    selectedValue = selectedValue,
+                    decimalMode = decimalMode,
+                    onSelectedValueChange = { selectedValue = it },
+                )
+            }
         }
     }
+}
+
+/** 滚轮与输入框共用的取值/格式化:decimalMode 下内部值放大 10 倍存储。 */
+private fun formatNumberValue(value: Int, decimalMode: Boolean): String =
+    if (decimalMode) (value / 10.0).toString() else value.toString()
+
+private fun parseNumberValue(text: String, decimalMode: Boolean): Int? {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return null
+    val number = trimmed.toDoubleOrNull() ?: return null
+    return if (decimalMode) (number * 10).roundToInt() else number.roundToInt()
 }
 
 @Composable

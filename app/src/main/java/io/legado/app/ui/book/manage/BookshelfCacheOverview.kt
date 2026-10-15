@@ -1,5 +1,6 @@
 package io.legado.app.ui.book.manage
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,7 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -87,6 +93,30 @@ internal fun BookshelfCacheStatusBar(
     val primaryColor = Color(NgTheme.colors.onSurface)
     val secondaryColor = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f)
 
+    // 左端的环同一处承担两种含义:有任务时是当前进度,空闲时是整体缓存占比。
+    // 环比一个圆点多带了「缓存到哪了」这一层信息,而宽度不变。
+    val ringProgress: Float
+    val taskDone: Int
+    val taskTotal: Int
+    if (running) {
+        taskDone = taskBooks.sumOf { it.done }
+        taskTotal = taskBooks.sumOf { it.total }
+        ringProgress = if (taskTotal > 0) {
+            (taskDone.toFloat() / taskTotal).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+    } else {
+        taskDone = 0
+        taskTotal = 0
+        val allChapters = state.books.sumOf { it.totalChapterNum }
+        ringProgress = if (allChapters > 0) {
+            (state.cachedChapterTotal.toFloat() / allChapters).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+    }
+
     // 标题与副标题按任务态切换,同一行不因状态改变而换高。
     val title: String
     val subtitle: String
@@ -142,20 +172,19 @@ internal fun BookshelfCacheStatusBar(
                         .height(STATUS_BAR_HEIGHT),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(accent),
+                    StatusRing(
+                        progress = ringProgress,
+                        color = accent,
+                        paused = running && state.paused,
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = title,
                             color = primaryColor,
-                            fontSize = 13.sp,
-                            lineHeight = 16.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp,
+                            lineHeight = 17.sp,
+                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -191,9 +220,9 @@ internal fun BookshelfCacheStatusBar(
                         Text(
                             text = formatCacheSize(state.bookRelatedBytes),
                             color = Color(NgTheme.colors.primary),
-                            fontSize = 14.sp,
-                            lineHeight = 17.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontSize = 15.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.Bold,
                         )
                         Spacer(Modifier.width(4.dp))
                         Icon(
@@ -232,6 +261,52 @@ internal fun BookshelfCacheStatusBar(
     }
 }
 
+/** 状态条左端的进度环:底轨一圈,进度从十二点方向顺时针铺开,芯里是状态图标。 */
+@Composable
+private fun StatusRing(
+    progress: Float,
+    color: Color,
+    paused: Boolean,
+) {
+    val trackColor = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.16f)
+    Box(modifier = Modifier.size(27.dp), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val stroke = 3.2.dp.toPx()
+            val radius = (size.minDimension - stroke) / 2f
+            val inset = stroke / 2f
+            drawArc(
+                color = trackColor,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = Offset(inset, inset),
+                size = Size(radius * 2f, radius * 2f),
+                style = Stroke(width = stroke),
+            )
+            if (progress > 0f) {
+                drawArc(
+                    color = color,
+                    startAngle = -90f,
+                    sweepAngle = 360f * progress.coerceIn(0f, 1f),
+                    useCenter = false,
+                    topLeft = Offset(inset, inset),
+                    size = Size(radius * 2f, radius * 2f),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+        // 芯里的图标让环在极低进度时也能被认出是「缓存」而不是装饰。
+        Icon(
+            painter = painterResource(
+                if (paused) R.drawable.ic_play_24dp else R.drawable.ic_arrow_down
+            ),
+            contentDescription = null,
+            modifier = Modifier.size(12.dp),
+            tint = color,
+        )
+    }
+}
+
 /** 状态条右手边的图标按钮:只用在缓存任务控制上,不进设计系统。 */
 @Composable
 private fun StatusBarIconButton(
@@ -258,19 +333,15 @@ private fun StatusBarIconButton(
 }
 
 /**
- * 一行的筛选轨:左侧是缓存维度,右侧固定一个分组下拉。
+ * 缓存维度的筛选轨。
  *
- * 分组原本与缓存各占一条 `SINGLE_ROW_RAIL`(共约 68dp);把分组压成右端的下拉后
- * 只剩一行,省下的高度还给书目列表。
+ * 不再带左侧的维度名:同一屏里紧跟着还有一条分组轨,两条轨各自一眼可辨,
+ * 前缀文字只是重复占用宽度。
  */
 @Composable
 internal fun BookshelfCacheFilterRail(
     selected: BookshelfCacheFilter,
     onSelected: (BookshelfCacheFilter) -> Unit,
-    groups: List<BookGroup>,
-    selectedGroupId: Long,
-    onGroupSelected: (Long) -> Unit,
-    onGroupManage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     NgFilterChipGroup(
@@ -285,100 +356,54 @@ internal fun BookshelfCacheFilterRail(
         },
         modifier = modifier,
         variant = NgFilterChipGroupVariant.SINGLE_ROW_RAIL,
-        leadingLabel = stringResource(R.string.book_cache),
-        trailingContent = {
-            BookshelfGroupDropdown(
-                groups = groups,
-                selectedGroupId = selectedGroupId,
-                onGroupSelected = onGroupSelected,
-                onGroupManage = onGroupManage,
-            )
-        },
     )
 }
 
-/** 分组下拉:折叠态只显示当前分组名,展开后列出全部/未分组/各命名分组与分组管理。 */
+/** 分组维度轨末端的「管理」项 key;不是真实分组 id,故用一个不可能与 groupId 冲突的字符串。 */
+private const val GROUP_MANAGE_KEY = "manage"
+
+/**
+ * 分组维度的筛选轨:全部 / 未分组 / 各命名分组,末端固定一个「管理」。
+ *
+ * 与缓存轨同样是 chip 语言:两套筛选并列出现,而不是一个在轨道上一个藏在下拉里,
+ * 免得同一个「筛选」概念有两种操作方式。
+ */
 @Composable
-private fun BookshelfGroupDropdown(
+internal fun BookshelfGroupFilterRail(
     groups: List<BookGroup>,
     selectedGroupId: Long,
     onGroupSelected: (Long) -> Unit,
     onGroupManage: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    val allLabel = stringResource(R.string.all)
+    val noGroupLabel = stringResource(R.string.no_group)
+    val manageLabel = stringResource(R.string.group_manage)
     val namedGroups = remember(groups) {
         groups.filterNot {
             it.groupId == BookGroup.IdAll || it.groupId == BookGroup.IdNoGroup
         }
     }
-    val currentLabel = when (selectedGroupId) {
-        BookGroup.IdNoGroup -> stringResource(R.string.no_group)
-        else -> namedGroups.firstOrNull { it.groupId == selectedGroupId }?.groupName
-            ?: stringResource(R.string.all)
-    }
-    val label = stringResource(R.string.group)
-    val accentColor = Color(NgTheme.colors.primary)
-
-    Box {
-        Row(
-            modifier = Modifier
-                .height(32.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 10.dp)
-                .semantics { contentDescription = label },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                text = currentLabel,
-                color = accentColor,
-                fontSize = 13.sp,
-                lineHeight = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 84.dp),
-            )
-            Icon(
-                painter = painterResource(R.drawable.ic_arrow_down),
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f),
-            )
+    val items = buildList {
+        add(NgFilterChipItem(key = BookGroup.IdAll.toString(), label = allLabel))
+        add(NgFilterChipItem(key = BookGroup.IdNoGroup.toString(), label = noGroupLabel))
+        namedGroups.forEach {
+            add(NgFilterChipItem(key = it.groupId.toString(), label = it.groupName))
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.all)) },
-                onClick = {
-                    expanded = false
-                    onGroupSelected(BookGroup.IdAll)
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.no_group)) },
-                onClick = {
-                    expanded = false
-                    onGroupSelected(BookGroup.IdNoGroup)
-                },
-            )
-            namedGroups.forEach { group ->
-                DropdownMenuItem(
-                    text = { Text(group.groupName) },
-                    onClick = {
-                        expanded = false
-                        onGroupSelected(group.groupId)
-                    },
-                )
+        add(NgFilterChipItem(key = GROUP_MANAGE_KEY, label = manageLabel))
+    }
+    NgFilterChipGroup(
+        items = items,
+        selectedKeys = setOf(selectedGroupId.toString()),
+        onToggle = { key ->
+            when (key) {
+                GROUP_MANAGE_KEY -> onGroupManage()
+                else -> key.toLongOrNull()?.let(onGroupSelected)
             }
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.group_manage)) },
-                onClick = {
-                    expanded = false
-                    onGroupManage()
-                },
-            )
-        }
-    }
+        },
+        modifier = modifier,
+        variant = NgFilterChipGroupVariant.SINGLE_ROW_RAIL,
+    )
 }
 
 /** 与缓存抽屉一致的可读体积格式。 */
@@ -394,4 +419,4 @@ internal fun formatCacheSize(bytes: Long): String {
     }
 }
 
-private val STATUS_BAR_HEIGHT = 46.dp
+private val STATUS_BAR_HEIGHT = 50.dp

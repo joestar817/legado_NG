@@ -61,10 +61,13 @@ internal fun BookshelfCacheSheet(
     onClearAll: () -> Unit,
     onClearInvalid: () -> Unit,
     onClearAppCache: () -> Unit,
+    onPaceEnabledChanged: (Boolean) -> Unit,
     onPaceManualEnabledChanged: (Boolean) -> Unit,
     onPaceMinIntervalChanged: (Int) -> Unit,
     onPaceMaxIntervalChanged: (Int) -> Unit,
     onPaceIntervalChangeFinished: () -> Unit,
+    onPaceLongRestChanged: (Boolean) -> Unit,
+    onPaceQuietHoursChanged: (Boolean) -> Unit,
     onPauseAll: () -> Unit,
     onStopAll: () -> Unit,
 ) {
@@ -91,10 +94,13 @@ internal fun BookshelfCacheSheet(
                 }
                 PaceSection(
                     state = state,
+                    onEnabledChanged = onPaceEnabledChanged,
                     onManualEnabledChanged = onPaceManualEnabledChanged,
                     onMinIntervalChanged = onPaceMinIntervalChanged,
                     onMaxIntervalChanged = onPaceMaxIntervalChanged,
                     onIntervalChangeFinished = onPaceIntervalChangeFinished,
+                    onLongRestChanged = onPaceLongRestChanged,
+                    onQuietHoursChanged = onPaceQuietHoursChanged,
                 )
                 ClearSection(onClearInvalid, onClearAll)
             }
@@ -130,29 +136,31 @@ private fun SheetTitle(state: BookshelfCacheState) {
 /**
  * 占用构成:一条分段占比条 + 分类明细。
  *
- * 分类行只在有占用时渲染 —— 旧面板把三行 0 B 与有效数据同等占位,
- * 用户滚过三行才知道这台机器其实只有一本书缓存。
+ * 三类一律列出,0 B 也保留 —— 用户点开明细就是在问「缓存都花在哪了」,
+ * 缺行会被读成「漏统计」,0 B 反而是有用的答案(确实没缓存音频)。
  */
 @Composable
 private fun CacheComposition(state: BookshelfCacheState) {
     val segments = listOf(
-        Triple(
-            stringResource(R.string.cache_manager_books),
-            state.bookBytes,
-            Color(NgTheme.colors.primary),
+        CacheSegment(
+            label = stringResource(R.string.cache_manager_books),
+            description = stringResource(R.string.cache_manager_books_desc),
+            bytes = state.bookBytes,
+            color = Color(NgTheme.colors.primary),
         ),
-        Triple(
-            stringResource(R.string.cache_manager_audio),
-            state.audioBytes,
-            Color(NgTheme.colors.tertiary),
+        CacheSegment(
+            label = stringResource(R.string.cache_manager_audio),
+            description = stringResource(R.string.cache_manager_audio_desc),
+            bytes = state.audioBytes,
+            color = Color(NgTheme.colors.tertiary),
         ),
-        Triple(
-            stringResource(R.string.cache_manager_epub),
-            state.epubBytes,
-            Color(NgTheme.colors.secondary),
+        CacheSegment(
+            label = stringResource(R.string.cache_manager_epub),
+            description = stringResource(R.string.cache_manager_epub_desc),
+            bytes = state.epubBytes,
+            color = Color(NgTheme.colors.secondary),
         ),
     )
-    val visible = segments.filter { it.second > 0L }
     val total = state.bookRelatedBytes
 
     NgCompactSettingsGroup {
@@ -183,16 +191,16 @@ private fun CacheComposition(state: BookshelfCacheState) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp)
-                        .height(6.dp)
+                        .height(9.dp)
                         .clip(CircleShape),
                 ) {
-                    segments.forEach { (_, bytes, color) ->
-                        if (bytes > 0L) {
+                    segments.forEach { segment ->
+                        if (segment.bytes > 0L) {
                             Box(
                                 modifier = Modifier
-                                    .weight(bytes.toFloat())
+                                    .weight(segment.bytes.toFloat())
                                     .fillMaxHeight()
-                                    .background(color),
+                                    .background(segment.color),
                             )
                         }
                     }
@@ -200,24 +208,32 @@ private fun CacheComposition(state: BookshelfCacheState) {
             }
             Spacer(Modifier.height(2.dp))
         }
-        if (visible.isEmpty()) {
-            NgCompactSettingsItem(
-                title = stringResource(
-                    if (state.loading) R.string.cache_manager_loading else R.string.cache_manager_empty
-                ),
-                trailing = NgSettingsTrailing.NONE,
+        segments.forEachIndexed { index, segment ->
+            CompositionRow(
+                label = segment.label,
+                description = segment.description,
+                sizeText = formatCacheSize(segment.bytes),
+                dotColor = segment.color,
             )
-        } else {
-            visible.forEachIndexed { index, (label, bytes, color) ->
-                CompositionRow(label = label, sizeText = formatCacheSize(bytes), dotColor = color)
-                if (index < visible.lastIndex) NgCompactSettingsDivider()
-            }
+            if (index < segments.lastIndex) NgCompactSettingsDivider()
         }
     }
 }
 
+private data class CacheSegment(
+    val label: String,
+    val description: String,
+    val bytes: Long,
+    val color: Color,
+)
+
 @Composable
-private fun CompositionRow(label: String, sizeText: String, dotColor: Color) {
+private fun CompositionRow(
+    label: String,
+    description: String,
+    sizeText: String,
+    dotColor: Color,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -231,21 +247,31 @@ private fun CompositionRow(label: String, sizeText: String, dotColor: Color) {
                 .background(dotColor),
         )
         Spacer(Modifier.width(9.dp))
-        Text(
-            text = label,
-            color = Color(NgTheme.colors.onSurface),
-            fontSize = 14.sp,
-            lineHeight = 18.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                color = Color(NgTheme.colors.onSurface),
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = description,
+                color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f),
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Spacer(Modifier.width(8.dp))
         Text(
             text = sizeText,
-            color = Color(NgTheme.colors.onSurfaceVariant),
+            color = Color(NgTheme.colors.onSurface),
             fontSize = 13.sp,
             lineHeight = 17.sp,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
@@ -258,10 +284,11 @@ private fun CompositionRow(label: String, sizeText: String, dotColor: Color) {
  */
 @Composable
 private fun AppCacheRow(state: BookshelfCacheState, onClearAppCache: () -> Unit) {
+    val sizeText = formatCacheSize(state.appBytes)
     NgCompactSettingsGroup {
         NgCompactSettingsItem(
             title = stringResource(R.string.cache_manager_other),
-            summary = formatCacheSize(state.appBytes),
+            summary = stringResource(R.string.cache_manager_other_desc, sizeText),
             trailing = NgSettingsTrailing.NONE,
         )
         NgCompactSettingsDivider()
@@ -354,61 +381,93 @@ private fun CacheTaskSection(
 @Composable
 private fun PaceSection(
     state: BookshelfCacheState,
+    onEnabledChanged: (Boolean) -> Unit,
     onManualEnabledChanged: (Boolean) -> Unit,
     onMinIntervalChanged: (Int) -> Unit,
     onMaxIntervalChanged: (Int) -> Unit,
     onIntervalChangeFinished: () -> Unit,
+    onLongRestChanged: (Boolean) -> Unit,
+    onQuietHoursChanged: (Boolean) -> Unit,
 ) {
     NgCompactSettingsGroup {
         NgCompactSettingsItem(
-            title = stringResource(R.string.cache_pace_manual),
-            summary = if (state.paceManualEnabled) {
-                stringResource(
-                    R.string.reading_pace_interval_summary,
-                    state.paceMinInterval,
-                    state.paceMaxInterval,
-                )
-            } else {
-                stringResource(
-                    R.string.cache_pace_default_summary,
-                    PACE_INTERVAL_DEFAULT_MIN,
-                    PACE_INTERVAL_DEFAULT_MAX,
-                )
-            },
+            title = stringResource(R.string.reading_pace),
+            summary = stringResource(R.string.reading_pace_summary),
             trailing = NgSettingsTrailing.SWITCH,
-            checked = state.paceManualEnabled,
-            onCheckedChange = onManualEnabledChanged,
-            onClick = { onManualEnabledChanged(!state.paceManualEnabled) },
+            checked = state.paceEnabled,
+            onCheckedChange = onEnabledChanged,
+            onClick = { onEnabledChanged(!state.paceEnabled) },
         )
-        if (state.paceManualEnabled) {
+        if (state.paceEnabled) {
             NgCompactSettingsDivider()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 14.dp, top = 6.dp, end = 14.dp, bottom = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                NgDockSlider(
-                    title = stringResource(R.string.reading_pace_min_interval),
-                    valueText = "${state.paceMinInterval} ms",
-                    minimumText = "$PACE_INTERVAL_MIN ms",
-                    maximumText = "$PACE_INTERVAL_MAX ms",
-                    value = state.paceMinInterval.toFloat(),
-                    valueRange = PACE_INTERVAL_MIN.toFloat()..PACE_INTERVAL_MAX.toFloat(),
-                    onValueChange = { onMinIntervalChanged(it.toInt()) },
-                    onValueChangeFinished = onIntervalChangeFinished,
-                )
-                NgDockSlider(
-                    title = stringResource(R.string.reading_pace_max_interval),
-                    valueText = "${state.paceMaxInterval} ms",
-                    minimumText = "$PACE_INTERVAL_MIN ms",
-                    maximumText = "$PACE_INTERVAL_MAX ms",
-                    value = state.paceMaxInterval.toFloat(),
-                    valueRange = PACE_INTERVAL_MIN.toFloat()..PACE_INTERVAL_MAX.toFloat(),
-                    onValueChange = { onMaxIntervalChanged(it.toInt()) },
-                    onValueChangeFinished = onIntervalChangeFinished,
-                )
+            NgCompactSettingsItem(
+                title = stringResource(R.string.cache_pace_manual),
+                summary = if (state.paceManualEnabled) {
+                    stringResource(
+                        R.string.reading_pace_interval_summary,
+                        state.paceMinInterval,
+                        state.paceMaxInterval,
+                    )
+                } else {
+                    stringResource(
+                        R.string.cache_pace_default_summary,
+                        PACE_INTERVAL_DEFAULT_MIN,
+                        PACE_INTERVAL_DEFAULT_MAX,
+                    )
+                },
+                trailing = NgSettingsTrailing.SWITCH,
+                checked = state.paceManualEnabled,
+                onCheckedChange = onManualEnabledChanged,
+                onClick = { onManualEnabledChanged(!state.paceManualEnabled) },
+            )
+            if (state.paceManualEnabled) {
+                NgCompactSettingsDivider()
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 14.dp, top = 6.dp, end = 14.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    NgDockSlider(
+                        title = stringResource(R.string.reading_pace_min_interval),
+                        valueText = "${state.paceMinInterval} ms",
+                        minimumText = "$PACE_INTERVAL_MIN ms",
+                        maximumText = "$PACE_INTERVAL_MAX ms",
+                        value = state.paceMinInterval.toFloat(),
+                        valueRange = PACE_INTERVAL_MIN.toFloat()..PACE_INTERVAL_MAX.toFloat(),
+                        onValueChange = { onMinIntervalChanged(it.toInt()) },
+                        onValueChangeFinished = onIntervalChangeFinished,
+                    )
+                    NgDockSlider(
+                        title = stringResource(R.string.reading_pace_max_interval),
+                        valueText = "${state.paceMaxInterval} ms",
+                        minimumText = "$PACE_INTERVAL_MIN ms",
+                        maximumText = "$PACE_INTERVAL_MAX ms",
+                        value = state.paceMaxInterval.toFloat(),
+                        valueRange = PACE_INTERVAL_MIN.toFloat()..PACE_INTERVAL_MAX.toFloat(),
+                        onValueChange = { onMaxIntervalChanged(it.toInt()) },
+                        onValueChangeFinished = onIntervalChangeFinished,
+                    )
+                }
             }
+            NgCompactSettingsDivider()
+            NgCompactSettingsItem(
+                title = stringResource(R.string.reading_pace_long_rest),
+                summary = stringResource(R.string.reading_pace_long_rest_summary),
+                trailing = NgSettingsTrailing.SWITCH,
+                checked = state.paceLongRest,
+                onCheckedChange = onLongRestChanged,
+                onClick = { onLongRestChanged(!state.paceLongRest) },
+            )
+            NgCompactSettingsDivider()
+            NgCompactSettingsItem(
+                title = stringResource(R.string.reading_pace_quiet_hours),
+                summary = stringResource(R.string.reading_pace_quiet_hours_summary),
+                trailing = NgSettingsTrailing.SWITCH,
+                checked = state.paceQuietHours,
+                onCheckedChange = onQuietHoursChanged,
+                onClick = { onQuietHoursChanged(!state.paceQuietHours) },
+            )
         }
     }
 }

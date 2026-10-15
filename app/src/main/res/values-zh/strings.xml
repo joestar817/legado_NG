@@ -33,6 +33,7 @@
     <string name="tip_cannot_jump_setting_page">无法跳转至设置界面</string>
 
     <string name="manual_input">手动输入</string>
+    <string name="manual_input_range">有效范围 %1$s – %2$s</string>
 
     <string name="dynamic_click_retry">点击重试</string>
     <string name="dynamic_loading">正在加载</string>
@@ -2517,6 +2518,10 @@
     <string name="cache_manager_audio">有声书音频</string>
     <string name="cache_manager_epub">本地书籍解析</string>
     <string name="cache_manager_other">其他应用缓存</string>
+    <string name="cache_manager_books_desc">已缓存章节正文与内嵌图片</string>
+    <string name="cache_manager_audio_desc">有声书音频文件缓存</string>
+    <string name="cache_manager_epub_desc">导入的本地书籍解析结果</string>
+    <string name="cache_manager_other_desc">%1$s · 由应用自行回收，无法按书管理</string>
     <string name="cache_manager_clear_all">清理全部缓存</string>
     <string name="cache_manager_clear_all_summary">删除所有已缓存章节、图片、音频文件与无关联角色卡</string>
     <string name="cache_manager_clear_invalid">清理残留</string>

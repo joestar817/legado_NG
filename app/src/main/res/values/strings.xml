@@ -35,6 +35,7 @@
     <string name="tip_cannot_jump_setting_page">Cannot jump to Settings.</string>
 
     <string name="manual_input">Manual Input</string>
+    <string name="manual_input_range">Range %1$s – %2$s</string>
 
     <string name="dynamic_click_retry">Retry</string>
     <string name="dynamic_loading">Loading</string>
@@ -2615,6 +2616,10 @@
     <string name="cache_manager_audio">Audiobook audio</string>
     <string name="cache_manager_epub">Local book parsing</string>
     <string name="cache_manager_other">Other app cache</string>
+    <string name="cache_manager_books_desc">Cached chapter text and inline images</string>
+    <string name="cache_manager_audio_desc">Audiobook audio files</string>
+    <string name="cache_manager_epub_desc">Parsed results of imported local books</string>
+    <string name="cache_manager_other_desc">%1$s · managed by the app, not per book</string>
     <string name="cache_manager_clear_all">Clear all cache</string>
     <string name="cache_manager_clear_all_summary">Remove every cached chapter, image, audio file and unlinked character profile</string>
     <string name="cache_manager_clear_invalid">Clear leftovers</string>
