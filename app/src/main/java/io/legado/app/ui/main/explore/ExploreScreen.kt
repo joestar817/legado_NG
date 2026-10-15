@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -113,6 +115,12 @@ internal fun ExploreScreen(
     onRefreshSource: (BookSourcePart) -> Unit
 ) {
     val bottomInset = with(LocalDensity.current) { bottomInsetPx.toDp() }
+    // 滚动状态提升到页面级:布局分支切换会替换 composable 调用点,
+    // 状态若留在分支内部就会随分支一起销毁,表现为列表跳回顶部。
+    // 分组网格与普通网格内容不同,各自保留一份。
+    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    val groupGridState = rememberLazyGridState()
 
     Column(
         modifier = Modifier
@@ -140,6 +148,7 @@ internal fun ExploreScreen(
             when (layoutMode) {
                 ExploreLayoutMode.LIST -> ExploreSourceList(
                     sources = sources,
+                    listState = listState,
                     expandedSourceUrl = expandedSourceUrl,
                     kindsBySource = kindsBySource,
                     loadingSourceUrls = loadingSourceUrls,
@@ -154,6 +163,7 @@ internal fun ExploreScreen(
 
                 ExploreLayoutMode.GRID -> ExploreSourceGrid(
                     sources = sources,
+                    gridState = gridState,
                     loadingSourceUrls = loadingSourceUrls,
                     bottomInset = bottomInset,
                     scrollToTopToken = scrollToTopToken,
@@ -165,6 +175,7 @@ internal fun ExploreScreen(
                     if (query.isBlank() && selectedGroup == null) {
                         ExploreGroupedSourceGrid(
                             sources = sources,
+                            gridState = groupGridState,
                             groups = groups,
                             loadingSourceUrls = loadingSourceUrls,
                             bottomInset = bottomInset,
@@ -175,6 +186,7 @@ internal fun ExploreScreen(
                     } else {
                         ExploreSourceGrid(
                             sources = sources,
+                            gridState = gridState,
                             loadingSourceUrls = loadingSourceUrls,
                             bottomInset = bottomInset,
                             scrollToTopToken = scrollToTopToken,
@@ -205,13 +217,13 @@ internal fun ExploreScreen(
 @Composable
 private fun ExploreSourceGrid(
     sources: List<BookSourcePart>,
+    gridState: LazyGridState,
     loadingSourceUrls: Set<String>,
     bottomInset: androidx.compose.ui.unit.Dp,
     scrollToTopToken: Long,
     onOpenSource: (BookSourcePart) -> Unit,
     onSourceAction: (BookSourcePart, Int) -> Unit
 ) {
-    val gridState = rememberLazyGridState()
     LaunchedEffect(scrollToTopToken) {
         if (scrollToTopToken > 0L) gridState.animateScrollToItem(0)
     }
@@ -310,6 +322,7 @@ internal fun ExploreGridSourceItem(
 @Composable
 private fun ExploreSourceList(
     sources: List<BookSourcePart>,
+    listState: LazyListState,
     expandedSourceUrl: String?,
     kindsBySource: Map<String, List<ExploreKind>>,
     loadingSourceUrls: Set<String>,
@@ -321,7 +334,6 @@ private fun ExploreSourceList(
     onSourceAction: (BookSourcePart, Int) -> Unit,
     onRefreshSource: (BookSourcePart) -> Unit
 ) {
-    val listState = rememberLazyListState()
     LaunchedEffect(expandedSourceUrl) {
         val index = sources.indexOfFirst { it.bookSourceUrl == expandedSourceUrl }
         if (index >= 0) listState.animateScrollToItem(index)
