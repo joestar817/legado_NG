@@ -651,6 +651,34 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             appCtx.putPrefBoolean(PreferKey.readingPaceQuietHours, value)
         }
 
+    /**
+     * 缓存间隔是否由用户手动指定。
+     *
+     * 默认 false：使用 [PACE_INTERVAL_DEFAULT_MIN]~[PACE_INTERVAL_DEFAULT_MAX] 的内置默认节奏，
+     * 缓存管理页里只显示默认值。打开后可在缓存管理页手动设置间隔。
+     */
+    var cachePaceManualEnabled: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.cachePaceManualEnabled, false)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.cachePaceManualEnabled, value)
+        }
+
+    /** 实际生效的最小缓存间隔：手动模式取用户设置，否则取内置默认值。 */
+    val effectiveReadingPaceMinInterval: Int
+        get() = if (cachePaceManualEnabled) {
+            readingPaceMinInterval
+        } else {
+            PACE_INTERVAL_DEFAULT_MIN
+        }
+
+    /** 实际生效的最大缓存间隔：手动模式取用户设置，否则取内置默认值。 */
+    val effectiveReadingPaceMaxInterval: Int
+        get() = if (cachePaceManualEnabled) {
+            readingPaceMaxInterval
+        } else {
+            PACE_INTERVAL_DEFAULT_MAX
+        }
+
     var remoteServerId: Long
         get() = appCtx.getPrefLong(PreferKey.remoteServerId)
         set(value) {

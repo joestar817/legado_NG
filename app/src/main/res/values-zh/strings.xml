@@ -2532,4 +2532,7 @@
     <string name="cache_manager_audio_tag">有声</string>
     <string name="cache_manager_epub_tag">本地</string>
     <string name="cache_manager_clear_book">清理本书</string>
+    <string name="cache_pace_manual">手动设置间隔</string>
+    <string name="cache_pace_manual_summary">打开后可自定义缓存章节之间的下载等待时间</string>
+    <string name="cache_pace_default_summary">当前使用内置默认节奏：每章之间 %1$d–%2$d 毫秒</string>
 </resources>

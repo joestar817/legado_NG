@@ -37,6 +37,10 @@ class CacheManagerFragment : BaseFragment(R.layout.fragment_cache_manager) {
                             pendingBookName = entry.name
                             activeDialog = CacheManagerDialog.CLEAR_BOOK
                         },
+                        onPaceManualEnabledChanged = viewModel::setPaceManualEnabled,
+                        onPaceMinIntervalChanged = viewModel::setPaceMinIntervalDraft,
+                        onPaceMaxIntervalChanged = viewModel::setPaceMaxIntervalDraft,
+                        onPaceIntervalChangeFinished = viewModel::savePaceIntervals,
                     )
                     when (activeDialog) {
                         CacheManagerDialog.CLEAR_ALL -> ConfigConfirmationDialog(

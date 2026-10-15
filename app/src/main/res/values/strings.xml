@@ -2630,4 +2630,7 @@
     <string name="cache_manager_audio_tag">Audio</string>
     <string name="cache_manager_epub_tag">Local</string>
     <string name="cache_manager_clear_book">Clear this book</string>
+    <string name="cache_pace_manual">Set interval manually</string>
+    <string name="cache_pace_manual_summary">Turn on to customize how long the app waits between cached chapters</string>
+    <string name="cache_pace_default_summary">Built-in default pace: %1$d–%2$d ms between chapters</string>
 </resources>

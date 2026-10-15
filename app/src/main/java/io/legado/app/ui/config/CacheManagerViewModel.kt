@@ -11,6 +11,9 @@ import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isEpub
+import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.PACE_INTERVAL_DEFAULT_MAX
+import io.legado.app.help.config.PACE_INTERVAL_DEFAULT_MIN
 import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.model.BookCacheManager
 import io.legado.app.utils.ArchiveUtils
@@ -37,6 +40,10 @@ internal data class CacheManagerState(
     val audioBytes: Long = 0L,
     val epubBytes: Long = 0L,
     val appBytes: Long = 0L,
+    /** 是否由用户手动指定缓存间隔；false 时使用内置默认节奏。 */
+    val paceManualEnabled: Boolean = false,
+    val paceMinInterval: Int = PACE_INTERVAL_DEFAULT_MIN,
+    val paceMaxInterval: Int = PACE_INTERVAL_DEFAULT_MAX,
 ) {
     val totalBytes: Long get() = bookBytes + audioBytes + epubBytes + appBytes
 }
@@ -55,15 +62,51 @@ internal data class CacheManagerState(
  */
 internal class CacheManagerViewModel(application: Application) : BaseViewModel(application) {
 
-    var state by mutableStateOf(CacheManagerState())
+    var state by mutableStateOf(
+        CacheManagerState(
+            paceManualEnabled = AppConfig.cachePaceManualEnabled,
+            paceMinInterval = AppConfig.readingPaceMinInterval,
+            paceMaxInterval = AppConfig.readingPaceMaxInterval,
+        )
+    )
         private set
 
     fun refresh() {
+        // 带上当前节奏设置,避免统计刷新时把用户正在拖动的草稿重置掉。
+        val previous = state
         execute {
-            scan()
+            scan(previous)
         }.onSuccess {
             state = it
         }
+    }
+
+    /** 开关缓存间隔的手动设置；关闭时回到内置默认节奏。 */
+    fun setPaceManualEnabled(enabled: Boolean) {
+        AppConfig.cachePaceManualEnabled = enabled
+        state = state.copy(paceManualEnabled = enabled)
+    }
+
+    fun setPaceMinIntervalDraft(value: Int) {
+        state = state.copy(paceMinInterval = value)
+    }
+
+    fun setPaceMaxIntervalDraft(value: Int) {
+        state = state.copy(paceMaxInterval = value)
+    }
+
+    /** 落盘手动间隔,并保证最小间隔不大于最大间隔。 */
+    fun savePaceIntervals() {
+        var min = state.paceMinInterval
+        var max = state.paceMaxInterval
+        if (min > max) {
+            val swap = min
+            min = max
+            max = swap
+        }
+        AppConfig.readingPaceMinInterval = min
+        AppConfig.readingPaceMaxInterval = max
+        state = state.copy(paceMinInterval = min, paceMaxInterval = max)
     }
 
     /** 与旧「清理缓存」入口完全等价: 书缓存 + cacheDir + 无关联角色卡。 */
@@ -130,7 +173,7 @@ internal class CacheManagerViewModel(application: Application) : BaseViewModel(a
             .forEach { appDb.bookCharacterDao.deleteProfile(it.workKey) }
     }
 
-    private fun scan(): CacheManagerState {
+    private fun scan(previous: CacheManagerState): CacheManagerState {
         val entries = ArrayList<CacheBookEntry>()
         var bookBytes = 0L
         for (book in appDb.bookDao.all) {
@@ -163,6 +206,9 @@ internal class CacheManagerViewModel(application: Application) : BaseViewModel(a
             audioBytes = File(context.externalFiles, "audio_cache").sizeBytes(),
             epubBytes = File(context.externalFiles, "epub").sizeBytes(),
             appBytes = context.cacheDir.sizeBytes(),
+            paceManualEnabled = previous.paceManualEnabled,
+            paceMinInterval = previous.paceMinInterval,
+            paceMaxInterval = previous.paceMaxInterval,
         )
     }
 }

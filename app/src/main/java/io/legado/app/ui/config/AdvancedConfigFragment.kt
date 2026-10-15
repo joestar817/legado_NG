@@ -199,6 +199,8 @@ class AdvancedConfigFragment : BaseFragment(R.layout.fragment_advanced_config),
         }
         AppConfig.readingPaceMinInterval = min
         AppConfig.readingPaceMaxInterval = max
+        // 在这里手动调过间隔即视为手动模式,否则缓存管理页的开关会让这两个值静默失效。
+        AppConfig.cachePaceManualEnabled = true
     }
 
     private fun showUserAgentDialog() {

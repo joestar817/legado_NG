@@ -111,6 +111,7 @@ object PreferKey {
     const val readingPaceMaxInterval = "readingPaceMaxInterval"
     const val readingPaceLongRest = "readingPaceLongRest"
     const val readingPaceQuietHours = "readingPaceQuietHours"
+    const val cachePaceManualEnabled = "cachePaceManualEnabled"
     const val webPort = "webPort"
     const val keepLight = "keep_light"
     const val webService = "webService"

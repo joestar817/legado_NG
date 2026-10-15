@@ -154,8 +154,9 @@ object ReadingPaceController {
     }
 
     private fun nextIntervalMillis(sourceKey: String): Long {
-        val minInterval = AppConfig.readingPaceMinInterval.toLong()
-        val maxInterval = max(minInterval, AppConfig.readingPaceMaxInterval.toLong())
+        // 手动模式未开启时取内置默认间隔（见 AppConfig.effectiveReadingPace*Interval）
+        val minInterval = AppConfig.effectiveReadingPaceMinInterval.toLong()
+        val maxInterval = max(minInterval, AppConfig.effectiveReadingPaceMaxInterval.toLong())
         var interval = randomBetween(minInterval, maxInterval)
         val count = chapterCounter[sourceKey] ?: 0
         if (AppConfig.readingPaceLongRest && count > 0 && count % LONG_REST_EVERY == 0) {
