@@ -36,6 +36,14 @@ internal const val THREAD_COUNT_DEFAULT = 64
 internal fun normalizeThreadCount(value: Int): Int =
     value.coerceIn(THREAD_COUNT_MIN, THREAD_COUNT_MAX)
 
+internal const val PACE_INTERVAL_MIN = 0
+internal const val PACE_INTERVAL_MAX = 60_000
+internal const val PACE_INTERVAL_DEFAULT_MIN = 1_200
+internal const val PACE_INTERVAL_DEFAULT_MAX = 4_500
+
+internal fun normalizePaceInterval(value: Int): Int =
+    value.coerceIn(PACE_INTERVAL_MIN, PACE_INTERVAL_MAX)
+
 internal fun normalizeThemeMode(value: String?): String {
     return when (value) {
         "0", "1", "2", "3" -> value
@@ -608,6 +616,41 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             appCtx.putPrefInt(PreferKey.threadCount, normalizeThreadCount(value))
         }
 
+    // 拟人化缓存节奏：总开关、章节间隔区间、长休息、夜间静默
+    var readingPaceEnabled: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.readingPaceEnabled, true)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.readingPaceEnabled, value)
+        }
+
+    var readingPaceMinInterval: Int
+        get() = normalizePaceInterval(
+            appCtx.getPrefInt(PreferKey.readingPaceMinInterval, PACE_INTERVAL_DEFAULT_MIN)
+        )
+        set(value) {
+            appCtx.putPrefInt(PreferKey.readingPaceMinInterval, normalizePaceInterval(value))
+        }
+
+    var readingPaceMaxInterval: Int
+        get() = normalizePaceInterval(
+            appCtx.getPrefInt(PreferKey.readingPaceMaxInterval, PACE_INTERVAL_DEFAULT_MAX)
+        )
+        set(value) {
+            appCtx.putPrefInt(PreferKey.readingPaceMaxInterval, normalizePaceInterval(value))
+        }
+
+    var readingPaceLongRest: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.readingPaceLongRest, true)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.readingPaceLongRest, value)
+        }
+
+    var readingPaceQuietHours: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.readingPaceQuietHours, false)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.readingPaceQuietHours, value)
+        }
+
     var remoteServerId: Long
         get() = appCtx.getPrefLong(PreferKey.remoteServerId)
         set(value) {
@@ -640,12 +683,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         get() = appCtx.getPrefInt(PreferKey.ttsSpeechRate, defaultSpeechRate)
         set(value) {
             appCtx.putPrefInt(PreferKey.ttsSpeechRate, value)
-        }
-
-    var ttsTimer: Int
-        get() = appCtx.getPrefInt(PreferKey.ttsTimer, 0)
-        set(value) {
-            appCtx.putPrefInt(PreferKey.ttsTimer, value)
         }
 
     val speechRatePlay: Int get() = if (ttsFlowSys) defaultSpeechRate else ttsSpeechRate

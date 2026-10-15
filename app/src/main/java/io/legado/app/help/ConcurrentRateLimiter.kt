@@ -2,6 +2,7 @@ package io.legado.app.help
 
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.exception.ConcurrentException
+import io.legado.app.help.cache.ReadingPaceController
 import io.legado.app.model.analyzeRule.AnalyzeUrl.ConcurrentRecord
 import kotlinx.coroutines.delay
 import java.util.concurrent.ConcurrentHashMap
@@ -105,7 +106,8 @@ class ConcurrentRateLimiter(source: BaseSource?) {
             try {
                 return fetchStart()
             } catch (e: ConcurrentException) {
-                delay(e.waitTime)
+                // 叠加抖动,使受限请求不再是完美周期,避免被识别为爬虫
+                delay(ReadingPaceController.withRateLimitJitter(e.waitTime))
             }
         }
     }
@@ -115,7 +117,7 @@ class ConcurrentRateLimiter(source: BaseSource?) {
             try {
                 return fetchStart()
             } catch (e: ConcurrentException) {
-                Thread.sleep(e.waitTime)
+                Thread.sleep(ReadingPaceController.withRateLimitJitter(e.waitTime))
             }
         }
     }

@@ -150,8 +150,7 @@ internal class ReadAloudTimerDialog : ReadAloudComposeBottomSheet() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        val initialMinute = BaseReadAloudService.timeMinute.takeIf { it > 0 }
-            ?: AppConfig.ttsTimer
+        val initialMinute = BaseReadAloudService.timeMinute
         (view as ComposeView).setContent {
             ListeningSheetTheme {
                 ReadAloudTimerSheet(
@@ -165,7 +164,6 @@ internal class ReadAloudTimerDialog : ReadAloudComposeBottomSheet() {
     private fun commitMinute(minute: Int) {
         val safeContext = context ?: return
         val normalized = minute.coerceIn(0, TIMER_MAX_MINUTES)
-        AppConfig.ttsTimer = normalized
         ReadAloud.setTimer(safeContext, normalized)
     }
 }

@@ -2502,4 +2502,14 @@
     <string name="all_bookmark_collapse_all">全部收起</string>
     <string name="all_bookmark_expanded">已展开</string>
     <string name="all_bookmark_collapsed">已收起</string>
+    <string name="reading_pace">拟人缓存节奏</string>
+    <string name="reading_pace_summary">让同一书源的缓存请求间隔随机化，避免触发源站限制</string>
+    <string name="reading_pace_interval">缓存间隔</string>
+    <string name="reading_pace_interval_summary">每章之间等待 %1$d–%2$d 毫秒</string>
+    <string name="reading_pace_min_interval">最小间隔</string>
+    <string name="reading_pace_max_interval">最大间隔</string>
+    <string name="reading_pace_long_rest">长休息</string>
+    <string name="reading_pace_long_rest_summary">每缓存 30 章后休息较长时间</string>
+    <string name="reading_pace_quiet_hours">夜间静默</string>
+    <string name="reading_pace_quiet_hours_summary">23:00 至次日 07:00 之间暂停缓存</string>
 </resources>
