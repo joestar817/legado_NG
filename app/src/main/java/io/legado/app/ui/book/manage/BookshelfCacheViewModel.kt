@@ -44,8 +44,6 @@ internal enum class BookshelfCacheFilter {
     ALL,
     CACHED,
     UNCACHED,
-    AUDIO,
-    LOCAL,
 }
 
 /**
@@ -59,8 +57,6 @@ internal fun BookshelfCacheFilter.matches(book: Book, state: BookshelfCacheState
         BookshelfCacheFilter.ALL -> true
         BookshelfCacheFilter.CACHED -> state.sizeByBookUrl.containsKey(book.bookUrl)
         BookshelfCacheFilter.UNCACHED -> !state.sizeByBookUrl.containsKey(book.bookUrl)
-        BookshelfCacheFilter.AUDIO -> book.isAudio
-        BookshelfCacheFilter.LOCAL -> book.isLocal
     }
 
 internal data class BookshelfCacheState(
@@ -78,6 +74,10 @@ internal data class BookshelfCacheState(
     val downloading: Boolean = false,
     /** 缓存任务是否被用户暂停(见 `CacheBook.isUserPaused`)。 */
     val paused: Boolean = false,
+    /** 每本书的任务状态,驱动书卡上的环形缓存按钮(见 `CacheBook.stateOf`)。 */
+    val bookStates: Map<String, CacheBook.BookState> = emptyMap(),
+    /** 正在缓存的书(书名 → 已完成/总数),驱动概览条与通知栏。 */
+    val activeBooks: List<CacheBook.BookProgress> = emptyList(),
 ) {
     val totalBytes: Long get() = bookBytes + audioBytes + epubBytes + appBytes
 
@@ -131,9 +131,35 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
     fun syncDownloadState() {
         val running = CacheBook.isRun
         val isPaused = CacheBook.isUserPaused
-        if (state.downloading != running || state.paused != isPaused) {
-            state = state.copy(downloading = running, paused = isPaused)
+        val states = CacheBook.bookStates
+        val active = CacheBook.activeBookProgress
+        if (state.downloading != running || state.paused != isPaused ||
+            state.bookStates != states || state.activeBooks != active
+        ) {
+            state = state.copy(
+                downloading = running,
+                paused = isPaused,
+                bookStates = states,
+                activeBooks = active,
+            )
         }
+    }
+
+    /**
+     * 单独暂停/继续一本书的缓存。
+     *
+     * 与 [pauseCache] 不同: 后者停整个派发队列,前者只让这本书退出派发,
+     * 其它书照常下载。
+     */
+    fun setBookPaused(bookUrl: String, paused: Boolean) {
+        CacheBook.setBookPaused(bookUrl, paused)
+        syncDownloadState()
+    }
+
+    /** 为单本书排队缓存(书卡环形按钮的主操作)。 */
+    fun cacheBook(book: Book, start: Int, end: Int) {
+        CacheBook.start(context, book, start, end)
+        syncDownloadState()
     }
 
     /** 暂停派发新章节;已在下载中的章节会自然跑完。 */
@@ -284,6 +310,8 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
             paceMaxInterval = previous.paceMaxInterval,
             downloading = previous.downloading,
             paused = previous.paused,
+            bookStates = CacheBook.bookStates,
+            activeBooks = CacheBook.activeBookProgress,
         )
     }
 }

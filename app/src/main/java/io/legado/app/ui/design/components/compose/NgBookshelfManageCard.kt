@@ -73,6 +73,8 @@ fun NgBookshelfManageCard(
     updateTag: NgStatusTagSpec? = null,
     selected: Boolean = false,
     coverContent: (@Composable () -> Unit)? = null,
+    /** 书卡右侧的操作槽位,用于放这本书的缓存环形按钮;为 null 时不占位。 */
+    cacheActionContent: (@Composable () -> Unit)? = null,
     dragHandleContentDescription: String,
     dragHandleModifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -99,6 +101,7 @@ fun NgBookshelfManageCard(
             coverContent = requireNotNull(coverContent) {
                 "COVER_CARD variant requires coverContent"
             },
+            cacheActionContent = cacheActionContent,
             dragHandleContentDescription = dragHandleContentDescription,
             dragHandleModifier = dragHandleModifier,
             modifier = modifier,
@@ -303,6 +306,7 @@ private fun NgBookshelfManageCoverCard(
     updateTag: NgStatusTagSpec?,
     selected: Boolean,
     coverContent: @Composable () -> Unit,
+    cacheActionContent: (@Composable () -> Unit)?,
     dragHandleContentDescription: String,
     dragHandleModifier: Modifier,
     modifier: Modifier,
@@ -363,7 +367,13 @@ private fun NgBookshelfManageCoverCard(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .padding(start = 12.dp, top = 1.dp, bottom = 1.dp),
+                    .padding(
+                        start = 12.dp,
+                        top = 1.dp,
+                        bottom = 1.dp,
+                        // 给右侧环形缓存按钮让位,避免分组标签贴到环上。
+                        end = if (cacheActionContent != null) 6.dp else 0.dp,
+                    ),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
@@ -450,6 +460,14 @@ private fun NgBookshelfManageCoverCard(
                             )
                         }
                     }
+                }
+            }
+            if (cacheActionContent != null) {
+                Box(
+                    modifier = Modifier.width(38.dp).fillMaxHeight(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    cacheActionContent()
                 }
             }
             Box(

@@ -7,6 +7,7 @@ import androidx.compose.ui.res.stringResource
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.help.book.isLocal
+import io.legado.app.model.CacheBook
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagStyle
 import io.legado.app.ui.design.components.NgStatusTagVariant
@@ -21,6 +22,9 @@ internal fun BookshelfManageBookCard(
     groupNames: String,
     cachedChapterCount: Int?,
     cacheSizeBytes: Long?,
+    cacheState: CacheBook.BookState,
+    onCacheClick: () -> Unit,
+    onCacheLongPress: () -> Unit,
     modifier: Modifier = Modifier,
     dragHandleModifier: Modifier = Modifier,
     onToggleSelected: () -> Unit,
@@ -38,6 +42,14 @@ internal fun BookshelfManageBookCard(
     val cacheFraction = cachedChapterCount
         ?.takeIf { !book.isLocal && book.totalChapterNum > 0 }
         ?.let { (it.toFloat() / book.totalChapterNum).coerceIn(0f, 1f) }
+    val ringState = when {
+        book.isLocal -> BookshelfCacheRingState.LOCAL
+        cacheState == CacheBook.BookState.PAUSED -> BookshelfCacheRingState.PAUSED
+        cacheState == CacheBook.BookState.RUNNING -> BookshelfCacheRingState.RUNNING
+        cacheState == CacheBook.BookState.WAITING -> BookshelfCacheRingState.QUEUED
+        cacheFraction == 1f -> BookshelfCacheRingState.CACHED
+        else -> BookshelfCacheRingState.EMPTY
+    }
 
     NgBookshelfManageCard(
         title = book.name,
@@ -78,9 +90,45 @@ internal fun BookshelfManageBookCard(
                 contentDescription = stringResource(R.string.img_cover),
             )
         },
+        cacheActionContent = {
+            BookshelfCacheRingButton(
+                state = ringState,
+                progress = cacheFraction ?: 0f,
+                contentDescription = ringContentDescription(
+                    state = ringState,
+                    cachedCount = cachedChapterCount ?: 0,
+                    totalCount = book.totalChapterNum,
+                ),
+                onClick = onCacheClick,
+                onLongClick = onCacheLongPress,
+            )
+        },
         dragHandleContentDescription = stringResource(R.string.bookshelf_px_3),
         dragHandleModifier = dragHandleModifier,
         onClick = onToggleSelected,
         onLongClick = onOpenDetails
+    )
+}
+
+@Composable
+private fun ringContentDescription(
+    state: BookshelfCacheRingState,
+    cachedCount: Int,
+    totalCount: Int,
+): String = when (state) {
+    BookshelfCacheRingState.LOCAL -> stringResource(R.string.cache_ring_local)
+    BookshelfCacheRingState.CACHED -> stringResource(
+        R.string.cache_ring_cached,
+        totalCount,
+        totalCount,
+    )
+
+    BookshelfCacheRingState.RUNNING,
+    BookshelfCacheRingState.PAUSED,
+    BookshelfCacheRingState.QUEUED,
+    BookshelfCacheRingState.EMPTY -> stringResource(
+        R.string.cache_ring_cached,
+        cachedCount,
+        totalCount,
     )
 }

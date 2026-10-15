@@ -145,6 +145,49 @@ object CacheBook {
         postEvent(EventBus.UP_DOWNLOAD, "")
     }
 
+    /** 单本书的任务状态,供书卡上的缓存按钮显示。 */
+    enum class BookState {
+        /** 没有任务(未缓存或已下完)。 */
+        NONE,
+
+        /** 已入队,等前面下完。 */
+        WAITING,
+
+        /** 正在下载。 */
+        RUNNING,
+
+        /** 被用户单独暂停。 */
+        PAUSED,
+    }
+
+    fun stateOf(bookUrl: String): BookState =
+        cacheBookMap[bookUrl]?.bookState() ?: BookState.NONE
+
+    /** 当前所有在队列里的书的状态,驱动书卡上的环形缓存按钮。 */
+    val bookStates: Map<String, BookState>
+        get() = cacheBookMap.mapValues { it.value.bookState() }
+
+    /** 单独暂停/继续一本书,不影响其它书与整体队列。 */
+    fun setBookPaused(bookUrl: String, paused: Boolean) {
+        cacheBookMap[bookUrl]?.setPaused(paused)
+        postEvent(EventBus.UP_DOWNLOAD, bookUrl)
+    }
+
+    /** 通知栏逐本显示用的一本书的进度。 */
+    data class BookProgress(
+        val name: String,
+        val done: Int,
+        val total: Int,
+        val paused: Boolean,
+    )
+
+    val activeBookProgress: List<BookProgress>
+        get() = cacheBookMap.values.mapNotNull { model ->
+            val (done, total) = model.progress
+            if (total <= 0) return@mapNotNull null
+            BookProgress(model.book.name, done, total, model.isPaused())
+        }
+
     suspend fun startProcessJob(context: CoroutineContext) = mutex.withLock {
         setWorkingState(true)
         flow {
@@ -154,6 +197,8 @@ object CacheBook {
                 cacheBookMap.forEach { (_, model) ->
                     //暂停时不再派发新章节;已在下载中的章节会自然跑完。
                     userPaused.first { !it }
+                    //被单独暂停的书跳过派发,其它书照常下载。
+                    if (model.isPaused()) return@forEach
                     if (!model.isLoading() && model.hasWaitingDownload()) {
                         emit(model)
                         emitted = true
@@ -228,8 +273,37 @@ object CacheBook {
         private var waitingRetry = false
         private var isLoading = false
 
+        /** 用户单独暂停这本书;不影响其它书。 */
+        private var paused = false
+
+        /** 本次请求的总章节数与已完成数,用于书卡进度环与通知栏进度。 */
+        private var progressTotal = 0
+        private var progressDone = 0
+
         val waitCount get() = waitDownloadSet.size
         val onDownloadCount get() = onDownloadSet.size
+
+        /** 见 [CacheBook.BookState]。 */
+        @Synchronized
+        fun bookState(): BookState {
+            if (paused && isRun()) return BookState.PAUSED
+            if (onDownloadSet.isNotEmpty() || isLoading) return BookState.RUNNING
+            if (waitDownloadSet.isNotEmpty()) return BookState.WAITING
+            return BookState.NONE
+        }
+
+        @Synchronized
+        fun isPaused(): Boolean = paused
+
+        @Synchronized
+        fun setPaused(value: Boolean) {
+            paused = value
+            postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
+        }
+
+        /** 书卡、通知栏用的进度:已完成 / 本次请求总数。 */
+        val progress: Pair<Int, Int>
+            @Synchronized get() = progressDone to progressTotal
 
         init {
             postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
@@ -266,6 +340,7 @@ object CacheBook {
             tasks.clear()
             isStopped = true
             isLoading = false
+            paused = false
             postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
         }
 
@@ -277,6 +352,8 @@ object CacheBook {
                     waitDownloadSet.add(i)
                 }
             }
+            progressTotal = (end - start + 1).coerceAtLeast(0)
+            progressDone = 0
             cacheBookMap[book.bookUrl] = this
             isLoading = false
             postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
@@ -293,6 +370,7 @@ object CacheBook {
         @Synchronized
         private fun onSuccess(chapter: BookChapter) {
             finishDownload(chapter.index)
+            progressDone++
             successDownloadSet.add(chapter.primaryStr())
             errorDownloadMap.remove(chapter.primaryStr())
         }

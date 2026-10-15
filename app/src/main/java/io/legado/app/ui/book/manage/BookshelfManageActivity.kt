@@ -201,6 +201,8 @@ class BookshelfManageActivity :
                     onCachePause = cacheViewModel::pauseCache,
                     onCacheResume = cacheViewModel::resumeCache,
                     onCacheStop = cacheViewModel::stopCache,
+                    onCacheBookAction = ::onCacheBookAction,
+                    onCacheBookMenu = ::onCacheBookMenu,
                     onDockAction = ::onDockAction,
                     onDismissCoverUpdate = { coverUpdateSelection = null },
                     onConfirmCoverUpdate = {
@@ -474,6 +476,61 @@ class BookshelfManageActivity :
     private fun cacheBook(book: Book, start: Int, end: Int) {
         if (book.isLocal) return
         CacheBook.start(this, book, start, end)
+    }
+
+    /**
+     * 书卡环形按钮的单击:只做这本书当前状态下最常用的一步。
+     *
+     * 完整操作(重新缓存/暂停/继续/停止/清理)放在长按菜单里,见 [onCacheBookMenu]。
+     */
+    private fun onCacheBookAction(book: Book, state: CacheBook.BookState) {
+        if (book.isLocal) return
+        when (state) {
+            CacheBook.BookState.RUNNING -> cacheViewModel.setBookPaused(book.bookUrl, true)
+            CacheBook.BookState.PAUSED -> {
+                // 环上的「已暂停」可能来自全局暂停,此时先解除全局暂停,
+                // 否则单本继续了、队列仍旧被全局门挡住,点下去看不出变化。
+                if (cacheViewModel.state.paused) {
+                    cacheViewModel.resumeCache()
+                }
+                cacheViewModel.setBookPaused(book.bookUrl, false)
+            }
+            // 排队中再点一下 = 退出队列,与「已暂停」区分开。
+            CacheBook.BookState.WAITING -> {
+                CacheBook.cancel(book.bookUrl)
+                cacheViewModel.syncDownloadState()
+            }
+            // NONE 同时覆盖「没缓存过」和「已下完」,两者点一下都是重新排一遍。
+            CacheBook.BookState.NONE ->
+                cacheViewModel.cacheBook(book, 0, book.lastChapterIndex)
+        }
+    }
+
+    /** 长按书卡环形按钮弹出的单本书操作。 */
+    private fun onCacheBookMenu(book: Book, action: BookshelfCacheMenuAction) {
+        when (action) {
+            BookshelfCacheMenuAction.CACHE -> {
+                if (!book.isLocal) cacheViewModel.cacheBook(book, 0, book.lastChapterIndex)
+            }
+
+            BookshelfCacheMenuAction.PAUSE ->
+                cacheViewModel.setBookPaused(book.bookUrl, true)
+
+            BookshelfCacheMenuAction.RESUME -> {
+                // 同环形按钮:全局暂停还在时,单本继续也得先放开全局门。
+                if (cacheViewModel.state.paused) {
+                    cacheViewModel.resumeCache()
+                }
+                cacheViewModel.setBookPaused(book.bookUrl, false)
+            }
+
+            BookshelfCacheMenuAction.STOP -> {
+                CacheBook.cancel(book.bookUrl)
+                cacheViewModel.syncDownloadState()
+            }
+
+            BookshelfCacheMenuAction.CLEAR -> cacheViewModel.clearBook(book.bookUrl)
+        }
     }
 
     private fun showExportSettings(books: List<Book>) {

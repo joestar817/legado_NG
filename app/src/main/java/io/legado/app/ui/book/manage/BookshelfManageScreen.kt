@@ -44,11 +44,13 @@ import androidx.compose.ui.window.DialogProperties
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
+import io.legado.app.model.CacheBook
 import io.legado.app.model.localBook.canExtractOriginalCover
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgDialog
+import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
 import io.legado.app.ui.design.components.compose.ngSlideSelect
 import io.legado.app.ui.design.components.compose.rememberNgLazySlideSelectState
 import io.legado.app.ui.design.theme.NgTheme
@@ -92,6 +94,8 @@ internal fun BookshelfManageScreen(
     onCachePause: () -> Unit,
     onCacheResume: () -> Unit,
     onCacheStop: () -> Unit,
+    onCacheBookAction: (Book, CacheBook.BookState) -> Unit,
+    onCacheBookMenu: (Book, BookshelfCacheMenuAction) -> Unit,
     onDockAction: (BookshelfManageDockAction) -> Unit,
     onDismissCoverUpdate: () -> Unit,
     onConfirmCoverUpdate: () -> Unit,
@@ -108,6 +112,7 @@ internal fun BookshelfManageScreen(
     val selectedCount = selectedBookUrls.count(visibleUrls::contains)
     val listState = rememberLazyListState()
     var isReordering by remember { mutableStateOf(false) }
+    var cacheMenuBook by remember { mutableStateOf<Book?>(null) }
     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
         onMove(from.index, to.index)
     }
@@ -126,12 +131,8 @@ internal fun BookshelfManageScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         BookshelfManageTopBar(
             query = query,
-            groups = groups,
-            selectedGroupId = selectedGroupId,
             onQueryChange = onQueryChange,
             onBack = onBack,
-            onGroupSelected = onGroupSelected,
-            onGroupManage = onGroupManage,
         )
         BookshelfCacheOverviewBar(
             state = cacheState,
@@ -144,10 +145,15 @@ internal fun BookshelfManageScreen(
             onPauseCacheClick = onCachePause,
             onResumeCacheClick = onCacheResume,
             onStopCacheClick = onCacheStop,
+            cacheFilter = cacheFilter,
+            onCacheFilterSelected = onCacheFilterSelected,
         )
-        BookshelfCacheFilterRow(
-            selected = cacheFilter,
-            onSelected = onCacheFilterSelected,
+        BookshelfGroupFilterRail(
+            groups = groups,
+            selectedGroupId = selectedGroupId,
+            onGroupSelected = onGroupSelected,
+            onGroupManage = onGroupManage,
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 2.dp),
         )
         LazyColumn(
             modifier = Modifier
@@ -175,12 +181,26 @@ internal fun BookshelfManageScreen(
                     key = book.bookUrl,
                 ) { _ ->
                     val selected = book.bookUrl in selectedBookUrls
+                    val bookCacheState =
+                        cacheState.bookStates[book.bookUrl] ?: CacheBook.BookState.NONE
+                    // 全局暂停时,队列里的书一律显示成已暂停,点环即全局继续;
+                    // 否则每本书都停在「暂停」图标上,点下去又毫无反应。
+                    val ringState = if (
+                        cacheState.paused && bookCacheState != CacheBook.BookState.NONE
+                    ) {
+                        CacheBook.BookState.PAUSED
+                    } else {
+                        bookCacheState
+                    }
                     BookshelfManageBookCard(
                         book = book,
                         selected = selected,
                         groupNames = bookGroupNames(groups, book.group),
                         cachedChapterCount = cachedChapterCounts[book.bookUrl],
                         cacheSizeBytes = cacheState.sizeByBookUrl[book.bookUrl],
+                        cacheState = ringState,
+                        onCacheClick = { onCacheBookAction(book, ringState) },
+                        onCacheLongPress = { cacheMenuBook = book },
                         dragHandleModifier = if (books.size > 1) {
                             Modifier.draggableHandle(
                                 onDragStarted = {
@@ -246,6 +266,123 @@ internal fun BookshelfManageScreen(
             uri = uri,
             onDismiss = onDismissExportSuccess,
             onCopy = onCopyExportPath,
+        )
+    }
+    cacheMenuBook?.let { book ->
+        val rawState = cacheState.bookStates[book.bookUrl] ?: CacheBook.BookState.NONE
+        BookshelfCacheMenuDialog(
+            bookName = book.name,
+            state = if (cacheState.paused && rawState != CacheBook.BookState.NONE) {
+                CacheBook.BookState.PAUSED
+            } else {
+                rawState
+            },
+            cachedChapterCount = cachedChapterCounts[book.bookUrl] ?: 0,
+            totalChapterCount = book.totalChapterNum,
+            onAction = { action ->
+                cacheMenuBook = null
+                onCacheBookMenu(book, action)
+            },
+            onDismiss = { cacheMenuBook = null },
+        )
+    }
+}
+
+/**
+ * 长按书卡环形按钮弹出的单本书操作。
+ *
+ * 环形按钮的单击只做最常用的一步,完整动作在这里,免得为低频操作挤占卡片。
+ */
+@Composable
+private fun BookshelfCacheMenuDialog(
+    bookName: String,
+    state: CacheBook.BookState,
+    cachedChapterCount: Int,
+    totalChapterCount: Int,
+    onAction: (BookshelfCacheMenuAction) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        NgDialog(
+            title = bookName,
+            variant = NgDialogVariant.CONFIRMATION,
+            actions = {
+                NgDialogTextActionButton(
+                    text = stringResource(R.string.cancel),
+                    onClick = onDismiss,
+                    secondary = true,
+                )
+            },
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.cache_ring_cached,
+                    cachedChapterCount,
+                    totalChapterCount,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(NgTheme.colors.onSurfaceVariant),
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+            // 只列出当前状态下真正可执行的动作,免得「继续」出现在没暂停的书上。
+            if (state == CacheBook.BookState.NONE) {
+                NgCacheMenuRow(
+                    text = stringResource(R.string.cache_menu_re_cache),
+                    onClick = { onAction(BookshelfCacheMenuAction.CACHE) },
+                )
+            }
+            if (state == CacheBook.BookState.RUNNING || state == CacheBook.BookState.WAITING) {
+                NgCacheMenuRow(
+                    text = stringResource(R.string.pause),
+                    onClick = { onAction(BookshelfCacheMenuAction.PAUSE) },
+                )
+            }
+            if (state == CacheBook.BookState.PAUSED) {
+                NgCacheMenuRow(
+                    text = stringResource(R.string.resume),
+                    onClick = { onAction(BookshelfCacheMenuAction.RESUME) },
+                )
+            }
+            if (state != CacheBook.BookState.NONE) {
+                NgCacheMenuRow(
+                    text = stringResource(R.string.stop),
+                    onClick = { onAction(BookshelfCacheMenuAction.STOP) },
+                )
+            }
+            NgCacheMenuRow(
+                text = stringResource(R.string.cache_menu_clear_book),
+                onClick = { onAction(BookshelfCacheMenuAction.CLEAR) },
+                danger = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NgCacheMenuRow(
+    text: String,
+    onClick: () -> Unit,
+    danger: Boolean = false,
+) {
+    val color = Color(
+        if (danger) NgTheme.colors.error else NgTheme.colors.onSurface
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            color = color,
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

@@ -72,7 +72,10 @@ enum class NgManagementListCardVariant {
 
 enum class NgFilterChipGroupVariant {
     WRAP,
-    TWO_ROW_RAIL
+    TWO_ROW_RAIL,
+
+    /** 单排横向滚动轨,用于条目多但只占一行高度的筛选场景。 */
+    SINGLE_ROW_RAIL
 }
 
 data class NgStatusTagSpec(

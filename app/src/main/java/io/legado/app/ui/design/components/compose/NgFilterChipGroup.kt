@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -117,6 +118,8 @@ fun NgFilterChipGroup(
     onToggle: (String) -> Unit,
     modifier: Modifier = Modifier,
     variant: NgFilterChipGroupVariant = NgFilterChipGroupVariant.WRAP,
+    /** 仅 [NgFilterChipGroupVariant.SINGLE_ROW_RAIL] 使用:轨道左侧固定不滚动的维度名。 */
+    leadingLabel: String? = null,
 ) {
     when (variant) {
         NgFilterChipGroupVariant.WRAP -> {
@@ -142,6 +145,62 @@ fun NgFilterChipGroup(
                 onToggle = onToggle,
                 modifier = modifier,
             )
+        }
+
+        NgFilterChipGroupVariant.SINGLE_ROW_RAIL -> {
+            NgSingleRowFilterChipRail(
+                items = items,
+                selectedKeys = selectedKeys,
+                onToggle = onToggle,
+                modifier = modifier,
+                leadingLabel = leadingLabel,
+            )
+        }
+    }
+}
+
+/** 单排横向滚动筛选轨;尾部渐隐提示还能继续滑动。[leadingLabel] 固定在左侧,不随轨道滚动。 */
+@Composable
+private fun NgSingleRowFilterChipRail(
+    items: List<NgFilterChipItem>,
+    selectedKeys: Set<String>,
+    onToggle: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    leadingLabel: String? = null,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (leadingLabel != null) {
+            Text(
+                text = leadingLabel,
+                color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f),
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.width(CHIP_GAP))
+        }
+        val listState = rememberLazyListState()
+        LazyRow(
+            modifier = Modifier
+                .weight(1f)
+                .trailingFadingEdge(listState.canScrollForward),
+            state = listState,
+            horizontalArrangement = Arrangement.spacedBy(CHIP_GAP),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items(
+                items = items,
+                key = { it.key },
+            ) { item ->
+                NgFilterChip(
+                    item = item,
+                    selected = item.key in selectedKeys,
+                    onClick = { onToggle(item.key) },
+                )
+            }
         }
     }
 }

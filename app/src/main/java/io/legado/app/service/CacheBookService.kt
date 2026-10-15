@@ -1,5 +1,6 @@
 package io.legado.app.service
 
+import android.app.Notification
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.lifecycleScope
@@ -47,12 +48,38 @@ class CacheBookService : BaseService() {
     private var downloadJob: Job? = null
     private var notificationContent = appCtx.getString(R.string.service_starting)
     private var mutex = Mutex()
-    private val notificationBuilder
-        get() = NotificationCompat.Builder(this, AppConst.channelIdDownload)
+
+    /**
+     * 通知栏:标题是正在缓存的书名,副标题是状态与进度,不再出现「离线缓存」字样。
+     * 多本时用 InboxStyle 逐本列名与进度。
+     */
+    private fun buildNotification(): Notification {
+        val books = CacheBook.activeBookProgress
+        val first = books.firstOrNull()
+        val title = when {
+            first == null -> getString(R.string.cache_notification_idle)
+            books.size == 1 -> first.name
+            else -> getString(R.string.cache_notification_more, first.name, books.size)
+        }
+        val done = books.sumOf { it.done }
+        val total = books.sumOf { it.total }
+        val statusRes = when {
+            books.isEmpty() -> R.string.cache_notification_done
+            books.any { it.paused } || CacheBook.isUserPaused -> R.string.cache_paused
+            done == 0 -> R.string.cache_notification_queued
+            else -> R.string.cache_notification_caching
+        }
+        val progressText = if (total > 0) {
+            getString(R.string.cache_notification_progress, done, total)
+        } else {
+            notificationContent
+        }
+        val builder = NotificationCompat.Builder(this, AppConst.channelIdDownload)
             .setSmallIcon(R.drawable.ic_download)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setContentTitle(getString(R.string.offline_cache))
+            .setContentTitle(title)
+            .setContentText("${getString(statusRes)} · $progressText")
             .setContentIntent(activityPendingIntent<MainActivity>("mainActivity") {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             })
@@ -77,7 +104,30 @@ class CacheBookService : BaseService() {
                     )
                 }
             }
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        when {
+            //队列已空:不再转圈,直接收起进度条,避免「已完成」旁边还挂个转圈。
+            books.isEmpty() -> builder.setProgress(0, 0, false)
+            total > 0 -> builder.setProgress(total, done, false)
+            else -> builder.setProgress(0, 0, true)
+        }
+        if (books.size > 1) {
+            //多本时逐本列名,每行带自己的进度,而不是把书名挤成一坨。
+            val style = NotificationCompat.InboxStyle()
+            books.take(5).forEach { book ->
+                val label = if (book.paused) {
+                    getString(R.string.cache_paused)
+                } else {
+                    getString(R.string.cache_notification_caching)
+                }
+                style.addLine("${book.name} · $label ${book.done}/${book.total}")
+            }
+            if (books.size > 5) {
+                style.setSummaryText(getString(R.string.cache_notification_more, books.first().name, books.size))
+            }
+            builder.setStyle(style)
+        }
+        return builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC).build()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -203,18 +253,14 @@ class CacheBookService : BaseService() {
     }
 
     private fun upCacheBookNotification() {
-        notificationBuilder.setContentText(notificationContent)
-        val notification = notificationBuilder.build()
-        notificationManager.notify(NotificationId.CacheBookService, notification)
+        notificationManager.notify(NotificationId.CacheBookService, buildNotification())
     }
 
     /**
      * 更新通知
      */
     override fun startForegroundNotification() {
-        notificationBuilder.setContentText(notificationContent)
-        val notification = notificationBuilder.build()
-        startForeground(NotificationId.CacheBookService, notification)
+        startForeground(NotificationId.CacheBookService, buildNotification())
     }
 
 }

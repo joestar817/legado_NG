@@ -2627,4 +2627,14 @@
     <string name="cache_filter_uncached">Not cached</string>
     <string name="cache_overview_progress">%1$d cached chapters · %2$d books</string>
     <string name="cache_paused">Cache paused</string>
+    <string name="cache_notification_idle">Preparing cache</string>
+    <string name="cache_notification_more">%1$s and %2$d books</string>
+    <string name="cache_notification_queued">Queued</string>
+    <string name="cache_notification_caching">Caching</string>
+    <string name="cache_notification_done">Finished</string>
+    <string name="cache_notification_progress">%1$d / %2$d chapters</string>
+    <string name="cache_ring_cached">Cached %1$d / %2$d chapters</string>
+    <string name="cache_ring_local">Local book, no caching needed</string>
+    <string name="cache_menu_re_cache">Cache this book</string>
+    <string name="cache_menu_clear_book">Clear this book\'s cache</string>
 </resources>

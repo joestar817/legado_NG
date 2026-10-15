@@ -2529,4 +2529,14 @@
     <string name="cache_filter_uncached">未缓存</string>
     <string name="cache_overview_progress">已缓存 %1$d 章 · %2$d 本</string>
     <string name="cache_paused">缓存已暂停</string>
+    <string name="cache_notification_idle">正在准备缓存</string>
+    <string name="cache_notification_more">%1$s 等 %2$d 本</string>
+    <string name="cache_notification_queued">排队中</string>
+    <string name="cache_notification_caching">缓存中</string>
+    <string name="cache_notification_done">已完成</string>
+    <string name="cache_notification_progress">%1$d / %2$d 章</string>
+    <string name="cache_ring_cached">已缓存 %1$d / %2$d 章</string>
+    <string name="cache_ring_local">本地书籍，无需缓存</string>
+    <string name="cache_menu_re_cache">缓存本书</string>
+    <string name="cache_menu_clear_book">清理本书缓存</string>
 </resources>
