@@ -7,10 +7,12 @@ import androidx.compose.runtime.setValue
 import io.legado.app.R
 import io.legado.app.base.BaseViewModel
 import io.legado.app.data.appDb
+import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isEpub
+import io.legado.app.help.book.isLocal
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.PACE_INTERVAL_DEFAULT_MAX
 import io.legado.app.help.config.PACE_INTERVAL_DEFAULT_MIN
@@ -22,16 +24,43 @@ import io.legado.app.utils.externalFiles
 import io.legado.app.utils.toastOnUi
 import java.io.File
 
-/** 缓存管理面板里的一本书。 */
+/** 已占用磁盘缓存的一本书。 */
 internal data class BookshelfCacheEntry(
     val bookUrl: String,
     val name: String,
     val author: String,
     val sizeBytes: Long,
+    /** 已缓存章节数（按 book_cache 下的 .nb 正文文件统计）。 */
     val chapterCount: Int,
+    /** 该书总章节数，用于算缓存进度。 */
+    val totalChapterNum: Int,
     val isAudio: Boolean,
     val isEpub: Boolean,
 )
+
+/** 书目列表的缓存筛选维度。 */
+internal enum class BookshelfCacheFilter {
+    ALL,
+    CACHED,
+    UNCACHED,
+    AUDIO,
+    LOCAL,
+}
+
+/**
+ * 判断一本书是否落在当前筛选维度内。
+ *
+ * 「已缓存」以该书在 `book_cache` 下确有占用为准(见 [BookshelfCacheState.sizeByBookUrl]),
+ * 因此本地书与未缓存书一样会被 CACHED 排除。
+ */
+internal fun BookshelfCacheFilter.matches(book: Book, state: BookshelfCacheState): Boolean =
+    when (this) {
+        BookshelfCacheFilter.ALL -> true
+        BookshelfCacheFilter.CACHED -> state.sizeByBookUrl.containsKey(book.bookUrl)
+        BookshelfCacheFilter.UNCACHED -> !state.sizeByBookUrl.containsKey(book.bookUrl)
+        BookshelfCacheFilter.AUDIO -> book.isAudio
+        BookshelfCacheFilter.LOCAL -> book.isLocal
+    }
 
 internal data class BookshelfCacheState(
     val loading: Boolean = true,
@@ -46,6 +75,13 @@ internal data class BookshelfCacheState(
     val paceMaxInterval: Int = PACE_INTERVAL_DEFAULT_MAX,
 ) {
     val totalBytes: Long get() = bookBytes + audioBytes + epubBytes + appBytes
+
+    /** 已缓存书籍的字节数，是「已缓存 / 未缓存」筛选与卡片进度条的判据。 */
+    val sizeByBookUrl: Map<String, Long> by lazy {
+        books.associate { it.bookUrl to it.sizeBytes }
+    }
+
+    val cachedChapterTotal: Int by lazy { books.sumOf { it.chapterCount } }
 }
 
 /**
@@ -194,6 +230,7 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
                 author = book.author,
                 sizeBytes = size,
                 chapterCount = chapterCount,
+                totalChapterNum = book.totalChapterNum,
                 isAudio = book.isAudio,
                 isEpub = book.isEpub,
             )

@@ -65,6 +65,10 @@ fun NgBookshelfManageCard(
     modifier: Modifier = Modifier,
     variant: NgBookshelfManageCardVariant = NgBookshelfManageCardVariant.CONTAINED_CARD,
     cacheText: String? = null,
+    /** 该书缓存占用的可读大小，如 "3.2 MB"；为 null 时不显示。 */
+    cacheSizeText: String? = null,
+    /** 缓存进度 0f..1f；为 null 时不画进度条。 */
+    cacheFraction: Float? = null,
     groupTag: NgStatusTagSpec? = null,
     updateTag: NgStatusTagSpec? = null,
     selected: Boolean = false,
@@ -87,6 +91,8 @@ fun NgBookshelfManageCard(
             supportingText = supportingText,
             metadataText = metadataText,
             cacheText = cacheText,
+            cacheSizeText = cacheSizeText,
+            cacheFraction = cacheFraction,
             groupTag = groupTag,
             updateTag = updateTag,
             selected = selected,
@@ -291,6 +297,8 @@ private fun NgBookshelfManageCoverCard(
     supportingText: String,
     metadataText: String,
     cacheText: String?,
+    cacheSizeText: String?,
+    cacheFraction: Float?,
     groupTag: NgStatusTagSpec?,
     updateTag: NgStatusTagSpec?,
     selected: Boolean,
@@ -314,7 +322,7 @@ private fun NgBookshelfManageCoverCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(76.dp)
+            .height(if (cacheFraction != null) 84.dp else 76.dp)
             .clip(shape)
             .background(cardColor)
             .then(
@@ -377,32 +385,70 @@ private fun NgBookshelfManageCoverCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (!cacheText.isNullOrBlank()) {
-                        Text(
-                            text = cacheText,
-                            color = metadataColor,
-                            fontSize = 12.sp,
-                            lineHeight = 15.sp,
-                            maxLines = 1,
-                        )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (!cacheText.isNullOrBlank()) {
+                            Text(
+                                text = cacheText,
+                                color = metadataColor,
+                                fontSize = 12.sp,
+                                lineHeight = 15.sp,
+                                maxLines = 1,
+                            )
+                        }
+                        if (!cacheSizeText.isNullOrBlank()) {
+                            if (!cacheText.isNullOrBlank()) {
+                                Text(
+                                    text = " · ",
+                                    color = metadataColor,
+                                    fontSize = 12.sp,
+                                    lineHeight = 15.sp,
+                                    maxLines = 1,
+                                )
+                            }
+                            Text(
+                                text = cacheSizeText,
+                                color = metadataColor,
+                                fontSize = 12.sp,
+                                lineHeight = 15.sp,
+                                maxLines = 1,
+                            )
+                        }
+                        if (updateTag != null) {
+                            Spacer(Modifier.width(4.dp))
+                            NgStatusDot(
+                                spec = updateTag,
+                                modifier = Modifier.size(6.dp),
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (groupTag != null) {
+                            NgStatusTag(
+                                spec = groupTag,
+                                modifier = Modifier.widthIn(max = 72.dp),
+                            )
+                        }
                     }
-                    if (updateTag != null) {
-                        Spacer(Modifier.width(4.dp))
-                        NgStatusDot(
-                            spec = updateTag,
-                            modifier = Modifier.size(6.dp),
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (groupTag != null) {
-                        NgStatusTag(
-                            spec = groupTag,
-                            modifier = Modifier.widthIn(max = 72.dp),
-                        )
+                    if (cacheFraction != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(metadataColor.copy(alpha = 0.20f)),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(cacheFraction.coerceIn(0f, 1f))
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color(NgTheme.colors.primary)),
+                            )
+                        }
                     }
                 }
             }

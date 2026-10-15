@@ -20,6 +20,7 @@ internal fun BookshelfManageBookCard(
     selected: Boolean,
     groupNames: String,
     cachedChapterCount: Int?,
+    cacheSizeBytes: Long?,
     modifier: Modifier = Modifier,
     dragHandleModifier: Modifier = Modifier,
     onToggleSelected: () -> Unit,
@@ -33,6 +34,10 @@ internal fun BookshelfManageBookCard(
     val compactStyle = NgStatusTagStyle.COMPACT
     val inlineStyle = NgStatusTagStyle.INLINE
     val cachedCountText = cachedChapterCount?.toString() ?: "—"
+    // 未缓存或本地书不画进度条，避免每张卡都拖一条 0% 的尾巴。
+    val cacheFraction = cachedChapterCount
+        ?.takeIf { !book.isLocal && book.totalChapterNum > 0 }
+        ?.let { (it.toFloat() / book.totalChapterNum).coerceIn(0f, 1f) }
 
     NgBookshelfManageCard(
         title = book.name,
@@ -45,6 +50,10 @@ internal fun BookshelfManageBookCard(
         } else {
             "$cachedCountText/${book.totalChapterNum}"
         },
+        cacheSizeText = cacheSizeBytes
+            ?.takeIf { it > 0L && !book.isLocal }
+            ?.let(::formatCacheSize),
+        cacheFraction = cacheFraction,
         groupTag = NgStatusTagSpec(
             text = groupNames.ifBlank { stringResource(R.string.no_group) },
             variant = NgStatusTagVariant.NEUTRAL,

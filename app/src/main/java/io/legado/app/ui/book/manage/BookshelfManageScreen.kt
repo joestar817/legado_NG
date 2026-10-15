@@ -63,6 +63,8 @@ internal fun BookshelfManageScreen(
     books: List<Book>,
     selectedBookUrls: Set<String>,
     cachedChapterCounts: Map<String, Int>,
+    cacheState: BookshelfCacheState,
+    cacheFilter: BookshelfCacheFilter,
     coverUpdateSelection: List<Book>?,
     deleteDialogVisible: Boolean,
     deleteOriginal: Boolean,
@@ -80,6 +82,13 @@ internal fun BookshelfManageScreen(
     onReorderFinished: () -> Unit,
     onSelectAll: () -> Unit,
     onInvertSelection: () -> Unit,
+    onCacheFilterSelected: (BookshelfCacheFilter) -> Unit,
+    onCacheClearAll: () -> Unit,
+    onCacheClearInvalid: () -> Unit,
+    onCachePaceManualEnabledChanged: (Boolean) -> Unit,
+    onCachePaceMinIntervalChanged: (Int) -> Unit,
+    onCachePaceMaxIntervalChanged: (Int) -> Unit,
+    onCachePaceIntervalChangeFinished: () -> Unit,
     onDockAction: (BookshelfManageDockAction) -> Unit,
     onDismissCoverUpdate: () -> Unit,
     onConfirmCoverUpdate: () -> Unit,
@@ -121,6 +130,19 @@ internal fun BookshelfManageScreen(
             onGroupSelected = onGroupSelected,
             onGroupManage = onGroupManage,
         )
+        BookshelfCacheOverviewBar(
+            state = cacheState,
+            onClearAllClick = onCacheClearAll,
+            onClearInvalidClick = onCacheClearInvalid,
+            onPaceManualEnabledChanged = onCachePaceManualEnabledChanged,
+            onPaceMinIntervalChanged = onCachePaceMinIntervalChanged,
+            onPaceMaxIntervalChanged = onCachePaceMaxIntervalChanged,
+            onPaceIntervalChangeFinished = onCachePaceIntervalChangeFinished,
+        )
+        BookshelfCacheFilterRow(
+            selected = cacheFilter,
+            onSelected = onCacheFilterSelected,
+        )
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -152,6 +174,7 @@ internal fun BookshelfManageScreen(
                         selected = selected,
                         groupNames = bookGroupNames(groups, book.group),
                         cachedChapterCount = cachedChapterCounts[book.bookUrl],
+                        cacheSizeBytes = cacheState.sizeByBookUrl[book.bookUrl],
                         dragHandleModifier = if (books.size > 1) {
                             Modifier.draggableHandle(
                                 onDragStarted = {
