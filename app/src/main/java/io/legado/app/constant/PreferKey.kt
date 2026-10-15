@@ -254,7 +254,6 @@ object PreferKey {
     const val ignoreAudioFocus = "ignoreAudioFocus"
     const val parallelExportBook = "parallelExportBook"
     const val progressBarBehavior = "progressBarBehavior"
-    const val ttsTimer = "ttsTimer"
     const val noAnimScrollPage = "noAnimScrollPage"
     const val webDavDeviceName = "webDavDeviceName"
     const val webServiceWakeLock = "webServiceWakeLock"

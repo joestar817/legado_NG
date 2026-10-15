@@ -685,12 +685,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             appCtx.putPrefInt(PreferKey.ttsSpeechRate, value)
         }
 
-    var ttsTimer: Int
-        get() = appCtx.getPrefInt(PreferKey.ttsTimer, 0)
-        set(value) {
-            appCtx.putPrefInt(PreferKey.ttsTimer, value)
-        }
-
     val speechRatePlay: Int get() = if (ttsFlowSys) defaultSpeechRate else ttsSpeechRate
 
     var readAloudScenarioMode: Int

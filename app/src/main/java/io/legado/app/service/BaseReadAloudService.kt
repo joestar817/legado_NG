@@ -236,9 +236,10 @@ abstract class BaseReadAloudService : BaseService(),
         initBroadcastReceiver()
         initPhoneStateListener()
         upMediaSessionPlaybackState(PlaybackStateCompat.STATE_PLAYING)
-        setTimer(AppConfig.ttsTimer)
-        if (AppConfig.ttsTimer > 0) {
-            toastOnUi("朗读定时 ${AppConfig.ttsTimer} 分钟")
+        // 定时只保留在当前进程内，不写偏好设置，重启应用后回到未定时状态
+        setTimer(timeMinute)
+        if (timeMinute > 0) {
+            toastOnUi("朗读定时 ${timeMinute} 分钟")
         }
         execute {
             ImageLoader
