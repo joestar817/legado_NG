@@ -12,6 +12,7 @@ import io.legado.app.exception.ConcurrentException
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isLocal
+import io.legado.app.help.cache.ReadingPaceController
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.CompositeCoroutine
 import io.legado.app.help.coroutine.Coroutine
@@ -164,7 +165,10 @@ object CacheBook {
 
     val downloadSummary: String
         get() {
-            return "正在下载:${onDownloadCount}|等待中:${waitCount}|失败:${errorDownloadMap.count()}|成功:${successDownloadSet.size}"
+            val base =
+                "正在下载:${onDownloadCount}|等待中:${waitCount}|失败:${errorDownloadMap.count()}|成功:${successDownloadSet.size}"
+            val pace = ReadingPaceController.statusText ?: return base
+            return "$base|$pace"
         }
 
     val isRun: Boolean
@@ -372,8 +376,8 @@ object CacheBook {
                     onSuccess(chapter)
                 }.onError {
                     onPreError(chapter, it)
-                    //出现错误等待一秒后重新加入待下载列表
-                    delay(1000)
+                    //出错后指数退避重试,避免连续请求触发源站限制
+                    delay(cacheRetryDelay(chapter, it))
                     onPostError(chapter, it)
                 }.onCancel {
                     onCancel(chapterIndex)
@@ -385,22 +389,23 @@ object CacheBook {
                 return
             }
             val requestBook = book
+            val sourceKey = bookSource.getKey()
             downloadGenerations[chapter.index] = generation
-            WebBook.getContent(
-                scope,
-                bookSource,
-                requestBook,
-                chapter,
-                context = context,
-                start = CoroutineStart.LAZY,
-                executeContext = context
-            ).onSuccess { content ->
+            // 节奏等待放在协程体内执行,此时不持有本对象的锁,
+            // 因此不会阻塞 startProcessJob 对 isLoading/hasWaitingDownload 的轮询。
+            Coroutine.async(scope, context, start = CoroutineStart.LAZY, executeContext = context) {
+                ReadingPaceController.withPacedTurn(sourceKey) {
+                    WebBook.getContentAwait(bookSource, requestBook, chapter).also {
+                        ReadingPaceController.onContentFetched(sourceKey, it.length)
+                    }
+                }
+            }.onSuccess { content ->
                 onSuccess(chapter)
                 downloadFinish(requestBook, generation, chapter, content)
             }.onError {
                 onPreError(chapter, it)
-                //出现错误等待一秒后重新加入待下载列表
-                delay(1000)
+                //出错后指数退避重试,避免连续请求触发源站限制
+                delay(cacheRetryDelay(chapter, it))
                 onPostError(chapter, it)
                 downloadFinish(requestBook, generation, chapter, "获取正文失败\n${it.localizedMessage}")
             }.onCancel {
@@ -410,6 +415,17 @@ object CacheBook {
             }.apply {
                 tasks.add(this)
             }.start()
+        }
+
+        /**
+         * 缓存失败后的重试等待时长。onPreError 已把本次尝试计入 errorDownloadMap,
+         * 因此这里的计数即当前尝试次数,退避按尝试次数指数增长并叠加抖动。
+         * 不声明为 suspend:它不挂起,避免在持有监视器时挂起。
+         */
+        @Synchronized
+        private fun cacheRetryDelay(chapter: BookChapter, error: Throwable): Long {
+            val attempt = errorDownloadMap[chapter.primaryStr()] ?: 1
+            return ReadingPaceController.nextBackoffMillis(attempt, error)
         }
 
         private fun downloadAudio(
@@ -425,28 +441,33 @@ object CacheBook {
                 return
             }
             onDownloadSet.add(chapter.index)
-            Coroutine.async(scope, context, executeContext = context) {
-                val content = WebBook.getContentAwait(
-                    bookSource = bookSource,
-                    book = book,
-                    bookChapter = chapter,
-                    needSave = false,
-                ).trim()
-                AudioDownloadCache.cacheChapter(bookSource, book, chapter, content)
+            val sourceKey = bookSource.getKey()
+            Coroutine.async(scope, context, start = CoroutineStart.LAZY, executeContext = context) {
+                ReadingPaceController.withPacedTurn(sourceKey) {
+                    val content = WebBook.getContentAwait(
+                        bookSource = bookSource,
+                        book = book,
+                        bookChapter = chapter,
+                        needSave = false,
+                    ).trim()
+                    AudioDownloadCache.cacheChapter(bookSource, book, chapter, content)
+                    ReadingPaceController.onContentFetched(sourceKey, content.length)
+                }
             }.onSuccess {
                 onSuccess(chapter)
                 postEvent(EventBus.SAVE_CONTENT, Pair(book, chapter))
             }.onError {
                 onPreError(chapter, it)
-                delay(1000)
+                //出错后指数退避重试,避免连续请求触发源站限制
+                delay(cacheRetryDelay(chapter, it))
                 onPostError(chapter, it)
             }.onCancel {
                 onCancel(chapter.index)
             }.onFinally {
                 onFinally()
-            }.let {
-                tasks.add(it)
-            }
+            }.apply {
+                tasks.add(this)
+            }.start()
         }
 
         suspend fun downloadAwait(

@@ -16,6 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+import io.legado.app.help.config.PACE_INTERVAL_DEFAULT_MAX
+import io.legado.app.help.config.PACE_INTERVAL_DEFAULT_MIN
+import io.legado.app.help.config.PACE_INTERVAL_MAX
+import io.legado.app.help.config.PACE_INTERVAL_MIN
 import io.legado.app.help.config.THREAD_COUNT_DEFAULT
 import io.legado.app.help.config.THREAD_COUNT_MAX
 import io.legado.app.help.config.THREAD_COUNT_MIN
@@ -35,6 +39,11 @@ internal data class AdvancedConfigScreenState(
     val recordLog: Boolean = false,
     val recordNetworkLog: Boolean = false,
     val recordHeapDump: Boolean = false,
+    val readingPaceEnabled: Boolean = true,
+    val readingPaceMinInterval: Int = PACE_INTERVAL_DEFAULT_MIN,
+    val readingPaceMaxInterval: Int = PACE_INTERVAL_DEFAULT_MAX,
+    val readingPaceLongRest: Boolean = true,
+    val readingPaceQuietHours: Boolean = false,
 )
 
 @Composable
@@ -51,8 +60,15 @@ internal fun AdvancedConfigScreen(
     onRecordNetworkLogChanged: (Boolean) -> Unit,
     onNetworkRequestLogClick: () -> Unit,
     onRecordHeapDumpChanged: (Boolean) -> Unit,
+    onReadingPaceEnabledChanged: (Boolean) -> Unit,
+    onReadingPaceMinIntervalChanged: (Int) -> Unit,
+    onReadingPaceMaxIntervalChanged: (Int) -> Unit,
+    onReadingPaceIntervalChangeFinished: () -> Unit,
+    onReadingPaceLongRestChanged: (Boolean) -> Unit,
+    onReadingPaceQuietHoursChanged: (Boolean) -> Unit,
 ) {
     var threadCountExpanded by rememberSaveable { mutableStateOf(false) }
+    var readingPaceIntervalExpanded by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -106,6 +122,61 @@ internal fun AdvancedConfigScreen(
                         onThreadCountChanged(value.roundToInt())
                     },
                     onValueChangeFinished = onThreadCountChangeFinished,
+                )
+            }
+            AdvancedSwitchSettingItem(
+                title = stringResource(R.string.reading_pace),
+                summary = stringResource(R.string.reading_pace_summary),
+                checked = state.readingPaceEnabled,
+                onCheckedChange = onReadingPaceEnabledChanged,
+            )
+            if (state.readingPaceEnabled) {
+                NgExpandableSettingsItem(
+                    title = stringResource(R.string.reading_pace_interval),
+                    summary = stringResource(
+                        R.string.reading_pace_interval_summary,
+                        state.readingPaceMinInterval,
+                        state.readingPaceMaxInterval,
+                    ),
+                    expanded = readingPaceIntervalExpanded,
+                    onExpandedChange = { readingPaceIntervalExpanded = it },
+                ) {
+                    NgDockSlider(
+                        title = stringResource(R.string.reading_pace_min_interval),
+                        valueText = state.readingPaceMinInterval.toString(),
+                        minimumText = PACE_INTERVAL_MIN.toString(),
+                        maximumText = PACE_INTERVAL_MAX.toString(),
+                        value = state.readingPaceMinInterval.toFloat(),
+                        valueRange = PACE_INTERVAL_MIN.toFloat()..PACE_INTERVAL_MAX.toFloat(),
+                        onValueChange = { value ->
+                            onReadingPaceMinIntervalChanged(value.roundToInt())
+                        },
+                        onValueChangeFinished = onReadingPaceIntervalChangeFinished,
+                    )
+                    NgDockSlider(
+                        title = stringResource(R.string.reading_pace_max_interval),
+                        valueText = state.readingPaceMaxInterval.toString(),
+                        minimumText = PACE_INTERVAL_MIN.toString(),
+                        maximumText = PACE_INTERVAL_MAX.toString(),
+                        value = state.readingPaceMaxInterval.toFloat(),
+                        valueRange = PACE_INTERVAL_MIN.toFloat()..PACE_INTERVAL_MAX.toFloat(),
+                        onValueChange = { value ->
+                            onReadingPaceMaxIntervalChanged(value.roundToInt())
+                        },
+                        onValueChangeFinished = onReadingPaceIntervalChangeFinished,
+                    )
+                }
+                AdvancedSwitchSettingItem(
+                    title = stringResource(R.string.reading_pace_long_rest),
+                    summary = stringResource(R.string.reading_pace_long_rest_summary),
+                    checked = state.readingPaceLongRest,
+                    onCheckedChange = onReadingPaceLongRestChanged,
+                )
+                AdvancedSwitchSettingItem(
+                    title = stringResource(R.string.reading_pace_quiet_hours),
+                    summary = stringResource(R.string.reading_pace_quiet_hours_summary),
+                    checked = state.readingPaceQuietHours,
+                    onCheckedChange = onReadingPaceQuietHoursChanged,
                 )
             }
             AdvancedSwitchSettingItem(

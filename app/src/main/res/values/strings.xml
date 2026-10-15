@@ -2588,4 +2588,14 @@
     <string name="all_bookmark_collapse_all">Collapse all</string>
     <string name="all_bookmark_expanded">Expanded</string>
     <string name="all_bookmark_collapsed">Collapsed</string>
+    <string name="reading_pace">Human-like caching pace</string>
+    <string name="reading_pace_summary">Randomize cache request intervals per source to avoid source rate limits</string>
+    <string name="reading_pace_interval">Cache interval</string>
+    <string name="reading_pace_interval_summary">%1$d–%2$d ms between chapters</string>
+    <string name="reading_pace_min_interval">Minimum interval</string>
+    <string name="reading_pace_max_interval">Maximum interval</string>
+    <string name="reading_pace_long_rest">Long breaks</string>
+    <string name="reading_pace_long_rest_summary">Take a longer break every 30 cached chapters</string>
+    <string name="reading_pace_quiet_hours">Quiet hours</string>
+    <string name="reading_pace_quiet_hours_summary">Pause caching between 23:00 and 07:00</string>
 </resources>
