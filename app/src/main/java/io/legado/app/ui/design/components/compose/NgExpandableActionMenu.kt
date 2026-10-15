@@ -176,7 +176,10 @@ fun NgExpandableActionMenu(
 ) {
     val contentWidth = rememberNgExpandableActionMenuContentWidth(items)
     val resolvedWidth = width ?: widthVariant.width ?: contentWidth
-    var expandedItemIds by remember(items, defaultExpandedItemIds) {
+    // 只随默认展开集重置,不随 items 身份重置。
+    // 调用方常在数据变化时重新构建 items(如发现页的分组菜单),
+    // 若把 items 当作 key,菜单会在展开期间因一次数据刷新而收起。
+    var expandedItemIds by remember(defaultExpandedItemIds) {
         mutableStateOf(defaultExpandedItemIds)
     }
 

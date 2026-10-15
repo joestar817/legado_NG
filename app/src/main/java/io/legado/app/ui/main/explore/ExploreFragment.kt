@@ -45,7 +45,6 @@ import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -73,6 +72,7 @@ class ExploreFragment() : Fragment(), MainFragmentInterface {
         ExploreLayoutMode.from(AppConfig.exploreLayoutMode)
     )
     private var sources by mutableStateOf<List<BookSourcePart>>(emptyList())
+    private var sourcesLoaded by mutableStateOf(false)
     private var expandedSourceUrl by mutableStateOf<String?>(null)
     private val kindsBySource = mutableStateMapOf<String, List<ExploreKind>>()
     private val loadingSources = mutableStateMapOf<String, Boolean>()
@@ -95,6 +95,7 @@ class ExploreFragment() : Fragment(), MainFragmentInterface {
                 NgAppTheme {
                     ExploreScreen(
                         sources = sources,
+                        sourcesLoaded = sourcesLoaded,
                         query = searchQuery,
                         groups = groups,
                         selectedGroup = selectedGroup,
@@ -165,7 +166,6 @@ class ExploreFragment() : Fragment(), MainFragmentInterface {
                 .distinctUntilChanged()
                 .collect {
                     groups = SearchGroupVisibility.visibleGroups(it)
-                    delay(500)
                 }
         }
     }
@@ -188,13 +188,13 @@ class ExploreFragment() : Fragment(), MainFragmentInterface {
                 AppLog.put("发现界面更新数据出错", it)
             }.conflate().flowOn(IO).collect {
                 sources = it
+                sourcesLoaded = true
                 if (expandedSourceUrl != null && it.none { source ->
                         source.bookSourceUrl == expandedSourceUrl
                     }
                 ) {
                     expandedSourceUrl = null
                 }
-                delay(500)
             }
         }
     }

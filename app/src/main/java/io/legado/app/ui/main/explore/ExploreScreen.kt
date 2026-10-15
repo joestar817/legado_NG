@@ -90,6 +90,7 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun ExploreScreen(
     sources: List<BookSourcePart>,
+    sourcesLoaded: Boolean = true,
     query: String,
     groups: List<String>,
     selectedGroup: String?,
@@ -134,7 +135,58 @@ internal fun ExploreScreen(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            if (sources.isEmpty()) {
+            // 列表常驻:即使数据为空也保留布局节点,
+            // 否则一次瞬时空数据就会卸载 LazyColumn,滚动位置随之丢失。
+            when (layoutMode) {
+                ExploreLayoutMode.LIST -> ExploreSourceList(
+                    sources = sources,
+                    expandedSourceUrl = expandedSourceUrl,
+                    kindsBySource = kindsBySource,
+                    loadingSourceUrls = loadingSourceUrls,
+                    bottomInset = bottomInset,
+                    scrollToTopToken = scrollToTopToken,
+                    onToggleSource = onToggleSource,
+                    onOpenKind = onOpenKind,
+                    onShowError = onShowError,
+                    onSourceAction = onSourceAction,
+                    onRefreshSource = onRefreshSource
+                )
+
+                ExploreLayoutMode.GRID -> ExploreSourceGrid(
+                    sources = sources,
+                    loadingSourceUrls = loadingSourceUrls,
+                    bottomInset = bottomInset,
+                    scrollToTopToken = scrollToTopToken,
+                    onOpenSource = onOpenSource,
+                    onSourceAction = onSourceAction
+                )
+
+                ExploreLayoutMode.GROUP_GRID -> {
+                    if (query.isBlank() && selectedGroup == null) {
+                        ExploreGroupedSourceGrid(
+                            sources = sources,
+                            groups = groups,
+                            loadingSourceUrls = loadingSourceUrls,
+                            bottomInset = bottomInset,
+                            scrollToTopToken = scrollToTopToken,
+                            onOpenSource = onOpenSource,
+                            onSourceAction = onSourceAction
+                        )
+                    } else {
+                        ExploreSourceGrid(
+                            sources = sources,
+                            loadingSourceUrls = loadingSourceUrls,
+                            bottomInset = bottomInset,
+                            scrollToTopToken = scrollToTopToken,
+                            onOpenSource = onOpenSource,
+                            onSourceAction = onSourceAction
+                        )
+                    }
+                }
+            }
+
+            // 首次数据到达前不显示空态,否则冷启动/切分组会先闪一下「暂无」
+            if (sources.isEmpty() && sourcesLoaded) {
                 Text(
                     text = stringResource(R.string.explore_empty),
                     style = MaterialTheme.typography.bodyMedium.merge(
@@ -144,54 +196,6 @@ internal fun ExploreScreen(
                     ),
                     modifier = Modifier.align(Alignment.Center)
                 )
-            } else {
-                when (layoutMode) {
-                    ExploreLayoutMode.LIST -> ExploreSourceList(
-                        sources = sources,
-                        expandedSourceUrl = expandedSourceUrl,
-                        kindsBySource = kindsBySource,
-                        loadingSourceUrls = loadingSourceUrls,
-                        bottomInset = bottomInset,
-                        scrollToTopToken = scrollToTopToken,
-                        onToggleSource = onToggleSource,
-                        onOpenKind = onOpenKind,
-                        onShowError = onShowError,
-                        onSourceAction = onSourceAction,
-                        onRefreshSource = onRefreshSource
-                    )
-
-                    ExploreLayoutMode.GRID -> ExploreSourceGrid(
-                        sources = sources,
-                        loadingSourceUrls = loadingSourceUrls,
-                        bottomInset = bottomInset,
-                        scrollToTopToken = scrollToTopToken,
-                        onOpenSource = onOpenSource,
-                        onSourceAction = onSourceAction
-                    )
-
-                    ExploreLayoutMode.GROUP_GRID -> {
-                        if (query.isBlank() && selectedGroup == null) {
-                            ExploreGroupedSourceGrid(
-                                sources = sources,
-                                groups = groups,
-                                loadingSourceUrls = loadingSourceUrls,
-                                bottomInset = bottomInset,
-                                scrollToTopToken = scrollToTopToken,
-                                onOpenSource = onOpenSource,
-                                onSourceAction = onSourceAction
-                            )
-                        } else {
-                            ExploreSourceGrid(
-                                sources = sources,
-                                loadingSourceUrls = loadingSourceUrls,
-                                bottomInset = bottomInset,
-                                scrollToTopToken = scrollToTopToken,
-                                onOpenSource = onOpenSource,
-                                onSourceAction = onSourceAction
-                            )
-                        }
-                    }
-                }
             }
         }
     }
