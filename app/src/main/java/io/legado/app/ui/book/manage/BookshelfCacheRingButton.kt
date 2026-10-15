@@ -27,6 +27,13 @@ import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.min
 
 /**
+ * 环形按钮直径,书卡里唯一的缓存操作入口。
+ *
+ * 34dp 而不是 38dp: 省下的 4dp 还给书名与元数据,长书名更少被截断。
+ */
+private val RING_DIAMETER = 34.dp
+
+/**
  * 书卡右上角环形缓存按钮的状态。
  *
  * 外环显示这本书的整体缓存进度,内芯是当前可执行的操作,因此一个控件同时
@@ -107,7 +114,7 @@ internal fun BookshelfCacheRingButton(
 
     Box(
         modifier = modifier
-            .size(38.dp)
+            .size(RING_DIAMETER)
             .clip(CircleShape)
             .combinedClickable(
                 enabled = enabled,
@@ -154,40 +161,40 @@ internal fun BookshelfCacheRingButton(
             BookshelfCacheRingState.EMPTY -> Icon(
                 painter = painterResource(R.drawable.ic_arrow_down),
                 contentDescription = null,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(14.dp),
                 tint = accent,
             )
 
             BookshelfCacheRingState.QUEUED -> ClockGlyph(
                 color = accent,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(14.dp),
             )
 
             BookshelfCacheRingState.RUNNING -> Icon(
                 painter = painterResource(R.drawable.ic_pause_24dp),
                 contentDescription = null,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(14.dp),
                 tint = accent,
             )
 
             BookshelfCacheRingState.PAUSED -> Icon(
                 painter = painterResource(R.drawable.ic_play_24dp),
                 contentDescription = null,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(14.dp),
                 tint = accent,
             )
 
             BookshelfCacheRingState.CACHED -> Icon(
                 painter = painterResource(R.drawable.ic_check),
                 contentDescription = null,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(14.dp),
                 tint = accent,
             )
 
             BookshelfCacheRingState.LOCAL -> Icon(
                 painter = painterResource(R.drawable.ic_bookshelf_dock_local),
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(16.dp),
                 tint = metadataColor.copy(alpha = 0.62f),
             )
         }

@@ -79,7 +79,14 @@ internal data class BookshelfCacheState(
     /** 正在缓存的书(书名 → 已完成/总数),驱动概览条与通知栏。 */
     val activeBooks: List<CacheBook.BookProgress> = emptyList(),
 ) {
-    val totalBytes: Long get() = bookBytes + audioBytes + epubBytes + appBytes
+    /**
+     * 状态条主数字的口径: 只统计用户能按书管理的缓存。
+     *
+     * 刻意不含 [appBytes]（`cacheDir`）。那是应用自己的临时缓存，用户无法按书管理，
+     * 放进主数字会让「书籍缓存 908 KB」被「其他应用缓存 8.3 MB」掩盖。
+     * [appBytes] 在缓存抽屉里单列一行，并配独立的清理入口。
+     */
+    val bookRelatedBytes: Long get() = bookBytes + audioBytes + epubBytes
 
     /** 已缓存书籍的字节数，是「已缓存 / 未缓存」筛选与卡片进度条的判据。 */
     val sizeByBookUrl: Map<String, Long> by lazy {
@@ -247,6 +254,21 @@ internal class BookshelfCacheViewModel(application: Application) : BaseViewModel
                 }
             }
             FileUtils.delete(ArchiveUtils.TEMP_PATH)
+        }.onSuccess {
+            context.toastOnUi(R.string.clear_cache_success)
+            refresh()
+        }
+    }
+
+    /**
+     * 只清应用临时缓存（cacheDir）。
+     *
+     * 它不进主数字，也不该被「清理残留」顺手带走书籍缓存 ——
+     * 抽屉里给它独立入口，用户才能只回收这块自己不管理的占用。
+     */
+    fun clearAppCache() {
+        execute {
+            FileUtils.delete(context.cacheDir.absolutePath)
         }.onSuccess {
             context.toastOnUi(R.string.clear_cache_success)
             refresh()

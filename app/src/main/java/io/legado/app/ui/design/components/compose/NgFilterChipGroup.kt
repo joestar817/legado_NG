@@ -120,6 +120,13 @@ fun NgFilterChipGroup(
     variant: NgFilterChipGroupVariant = NgFilterChipGroupVariant.WRAP,
     /** 仅 [NgFilterChipGroupVariant.SINGLE_ROW_RAIL] 使用:轨道左侧固定不滚动的维度名。 */
     leadingLabel: String? = null,
+    /**
+     * 仅 [NgFilterChipGroupVariant.SINGLE_ROW_RAIL] 使用:固定在轨道右端、不参与滚动的尾部内容。
+     *
+     * 用于把第二个维度的入口压进同一行(如书架管理页的「缓存 + 分组」),
+     * 省掉一整条筛选轨的高度。
+     */
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     when (variant) {
         NgFilterChipGroupVariant.WRAP -> {
@@ -154,12 +161,18 @@ fun NgFilterChipGroup(
                 onToggle = onToggle,
                 modifier = modifier,
                 leadingLabel = leadingLabel,
+                trailingContent = trailingContent,
             )
         }
     }
 }
 
-/** 单排横向滚动筛选轨;尾部渐隐提示还能继续滑动。[leadingLabel] 固定在左侧,不随轨道滚动。 */
+/**
+ * 单排横向滚动筛选轨;尾部渐隐提示还能继续滑动。
+ *
+ * [leadingLabel] 固定在左侧、[trailingContent] 固定在右侧,两者都不随轨道滚动,
+ * 中间的可选项才是滚动区。
+ */
 @Composable
 private fun NgSingleRowFilterChipRail(
     items: List<NgFilterChipItem>,
@@ -167,6 +180,7 @@ private fun NgSingleRowFilterChipRail(
     onToggle: (String) -> Unit,
     modifier: Modifier = Modifier,
     leadingLabel: String? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -201,6 +215,10 @@ private fun NgSingleRowFilterChipRail(
                     onClick = { onToggle(item.key) },
                 )
             }
+        }
+        if (trailingContent != null) {
+            Spacer(modifier = Modifier.width(CHIP_GAP))
+            trailingContent()
         }
     }
 }

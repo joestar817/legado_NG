@@ -97,6 +97,7 @@ class BookshelfManageActivity :
     private val cacheViewModel by viewModels<BookshelfCacheViewModel>()
     private var cacheFilter by mutableStateOf(BookshelfCacheFilter.ALL)
     private var activeCacheDialog by mutableStateOf<BookshelfCacheDialog?>(null)
+    private var cacheSheetVisible by mutableStateOf(false)
 
     private val exportContentDir = registerForActivityResult(SelectDirectoryContract()) { result ->
         val books = pendingExportBooks
@@ -190,10 +191,14 @@ class BookshelfManageActivity :
                     onSelectAll = ::selectAll,
                     onInvertSelection = ::invertSelection,
                     onCacheFilterSelected = { cacheFilter = it },
+                    cacheSheetVisible = cacheSheetVisible,
+                    onCacheSheetOpen = { cacheSheetVisible = true },
+                    onCacheSheetDismiss = { cacheSheetVisible = false },
                     onCacheClearAll = { activeCacheDialog = BookshelfCacheDialog.CLEAR_ALL },
                     onCacheClearInvalid = {
                         activeCacheDialog = BookshelfCacheDialog.CLEAR_INVALID
                     },
+                    onCacheClearApp = cacheViewModel::clearAppCache,
                     onCachePaceManualEnabledChanged = cacheViewModel::setPaceManualEnabled,
                     onCachePaceMinIntervalChanged = cacheViewModel::setPaceMinIntervalDraft,
                     onCachePaceMaxIntervalChanged = cacheViewModel::setPaceMaxIntervalDraft,

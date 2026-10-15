@@ -464,7 +464,7 @@ private fun NgBookshelfManageCoverCard(
             }
             if (cacheActionContent != null) {
                 Box(
-                    modifier = Modifier.width(38.dp).fillMaxHeight(),
+                    modifier = Modifier.width(34.dp).fillMaxHeight(),
                     contentAlignment = Alignment.Center,
                 ) {
                     cacheActionContent()

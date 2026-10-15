@@ -2620,6 +2620,7 @@
     <string name="cache_manager_clear_invalid">Clear leftovers</string>
     <string name="cache_manager_clear_invalid_summary">Remove cache folders of deleted books and leftover extraction files</string>
     <string name="cache_manager_loading">Calculating cache size…</string>
+    <string name="cache_manager_empty">Nothing cached yet</string>
     <string name="cache_pace_manual">Set interval manually</string>
     <string name="cache_pace_manual_summary">Turn on to customize how long the app waits between cached chapters</string>
     <string name="cache_pace_default_summary">Built-in default pace: %1$d–%2$d ms between chapters</string>
@@ -2637,4 +2638,9 @@
     <string name="cache_ring_local">Local book, no caching needed</string>
     <string name="cache_menu_re_cache">Cache this book</string>
     <string name="cache_menu_clear_book">Clear this book\'s cache</string>
+    <string name="cache_sheet_title">Cache details</string>
+    <string name="cache_status_books">Book cache</string>
+    <string name="cache_sheet_tasks">Caching now</string>
+    <string name="cache_sheet_pause_all">Pause all</string>
+    <string name="cache_sheet_stop_all">Stop all</string>
 </resources>

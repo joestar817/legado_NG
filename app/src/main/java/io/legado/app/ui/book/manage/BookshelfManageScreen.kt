@@ -85,8 +85,12 @@ internal fun BookshelfManageScreen(
     onSelectAll: () -> Unit,
     onInvertSelection: () -> Unit,
     onCacheFilterSelected: (BookshelfCacheFilter) -> Unit,
+    onCacheSheetOpen: () -> Unit,
+    onCacheSheetDismiss: () -> Unit,
+    cacheSheetVisible: Boolean,
     onCacheClearAll: () -> Unit,
     onCacheClearInvalid: () -> Unit,
+    onCacheClearApp: () -> Unit,
     onCachePaceManualEnabledChanged: (Boolean) -> Unit,
     onCachePaceMinIntervalChanged: (Int) -> Unit,
     onCachePaceMaxIntervalChanged: (Int) -> Unit,
@@ -134,26 +138,21 @@ internal fun BookshelfManageScreen(
             onQueryChange = onQueryChange,
             onBack = onBack,
         )
-        BookshelfCacheOverviewBar(
+        BookshelfCacheStatusBar(
             state = cacheState,
-            onClearAllClick = onCacheClearAll,
-            onClearInvalidClick = onCacheClearInvalid,
-            onPaceManualEnabledChanged = onCachePaceManualEnabledChanged,
-            onPaceMinIntervalChanged = onCachePaceMinIntervalChanged,
-            onPaceMaxIntervalChanged = onCachePaceMaxIntervalChanged,
-            onPaceIntervalChangeFinished = onCachePaceIntervalChangeFinished,
-            onPauseCacheClick = onCachePause,
-            onResumeCacheClick = onCacheResume,
-            onStopCacheClick = onCacheStop,
-            cacheFilter = cacheFilter,
-            onCacheFilterSelected = onCacheFilterSelected,
+            onOpenSheet = onCacheSheetOpen,
+            onPauseClick = onCachePause,
+            onResumeClick = onCacheResume,
+            onStopClick = onCacheStop,
         )
-        BookshelfGroupFilterRail(
+        BookshelfCacheFilterRail(
+            selected = cacheFilter,
+            onSelected = onCacheFilterSelected,
             groups = groups,
             selectedGroupId = selectedGroupId,
             onGroupSelected = onGroupSelected,
             onGroupManage = onGroupManage,
-            modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 2.dp),
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 2.dp),
         )
         LazyColumn(
             modifier = Modifier
@@ -284,6 +283,21 @@ internal fun BookshelfManageScreen(
                 onCacheBookMenu(book, action)
             },
             onDismiss = { cacheMenuBook = null },
+        )
+    }
+    if (cacheSheetVisible) {
+        BookshelfCacheSheet(
+            state = cacheState,
+            onDismiss = onCacheSheetDismiss,
+            onClearAll = onCacheClearAll,
+            onClearInvalid = onCacheClearInvalid,
+            onClearAppCache = onCacheClearApp,
+            onPaceManualEnabledChanged = onCachePaceManualEnabledChanged,
+            onPaceMinIntervalChanged = onCachePaceMinIntervalChanged,
+            onPaceMaxIntervalChanged = onCachePaceMaxIntervalChanged,
+            onPaceIntervalChangeFinished = onCachePaceIntervalChangeFinished,
+            onPauseAll = onCachePause,
+            onStopAll = onCacheStop,
         )
     }
 }

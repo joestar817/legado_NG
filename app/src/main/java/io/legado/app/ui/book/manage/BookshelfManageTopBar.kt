@@ -27,8 +27,7 @@ import io.legado.app.ui.design.theme.NgTheme
 /**
  * 书架管理页顶栏:只有返回与搜索。
  *
- * 分组与缓存的筛选统一收在列表上方的筛选轨里(见 [BookshelfCacheFilterRail] 与
- * [BookshelfGroupFilterRail]),这里不再挂悬浮菜单。
+ * 分组与缓存的筛选统一收在列表上方的一行筛选轨里(见 [BookshelfCacheFilterRail]),这里不再挂悬浮菜单。
  */
 @Composable
 internal fun BookshelfManageTopBar(
