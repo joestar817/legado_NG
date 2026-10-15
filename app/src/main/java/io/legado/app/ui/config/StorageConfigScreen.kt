@@ -37,7 +37,7 @@ internal fun StorageConfigScreen(
     onImageRetainNumClick: () -> Unit,
     onPreDownloadNumClick: () -> Unit,
     onAutoClearExpiredChanged: (Boolean) -> Unit,
-    onClearCacheClick: () -> Unit,
+    onCacheManagerClick: () -> Unit,
     onClearWebViewDataClick: () -> Unit,
     onShrinkDatabaseClick: () -> Unit,
 ) {
@@ -102,9 +102,9 @@ internal fun StorageConfigScreen(
                 summaryMaxLines = 2,
             )
             StorageActionSettingItem(
-                title = stringResource(R.string.clear_cache),
-                summary = stringResource(R.string.clear_cache_summary),
-                onClick = onClearCacheClick,
+                title = stringResource(R.string.cache_manager),
+                summary = stringResource(R.string.cache_manager_summary),
+                onClick = onCacheManagerClick,
             )
             StorageActionSettingItem(
                 title = stringResource(R.string.clear_webview_data),

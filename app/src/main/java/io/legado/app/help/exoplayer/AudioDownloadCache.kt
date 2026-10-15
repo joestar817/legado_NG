@@ -272,6 +272,10 @@ object AudioDownloadCache {
         return "$AUDIO_CACHE_KEY_PREFIX${MD5Utils.md5Encode(book.getFolderName())}:"
     }
 
+    /** 该书已下载的音频实体缓存字节数(实体位于 externalFiles/audio_cache)。 */
+    fun bookCacheSize(book: Book): Long =
+        ExoPlayerHelper.audioCacheSizeByPrefix(bookCachePrefix(book))
+
     private fun chapterCacheKey(
         bookPrefix: String,
         book: Book,

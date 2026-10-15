@@ -39,6 +39,7 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
             ConfigTag.INTERFACE_CONFIG -> replaceFragment<ThemeConfigFragment>(configTag)
             ConfigTag.GENERAL_CONFIG -> replaceFragment<GeneralConfigFragment>(configTag)
             ConfigTag.STORAGE_CONFIG -> replaceFragment<StorageConfigFragment>(configTag)
+            ConfigTag.CACHE_MANAGER -> replaceFragment<CacheManagerFragment>(configTag)
             ConfigTag.ADVANCED_CONFIG -> replaceFragment<AdvancedConfigFragment>(configTag)
             ConfigTag.RULE_CONFIG -> replaceFragment<RuleConfigMenuFragment>(configTag)
             ConfigTag.SERVICE_CONFIG -> replaceFragment<ServiceConfigFragment>(configTag)
@@ -81,6 +82,17 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
                 "${ConfigTag.AI_CONFIG}:$page"
             )
             .addToBackStack(page)
+            .commit()
+    }
+
+    fun openCacheManagerPage() {
+        supportFragmentManager.beginTransaction()
+            .replace(
+                R.id.configFrameLayout,
+                CacheManagerFragment(),
+                ConfigTag.CACHE_MANAGER
+            )
+            .addToBackStack(ConfigTag.CACHE_MANAGER)
             .commit()
     }
 

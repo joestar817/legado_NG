@@ -7,6 +7,7 @@ object ConfigTag {
     const val INTERFACE_CONFIG = "interfaceConfig"
     const val GENERAL_CONFIG = "generalConfig"
     const val STORAGE_CONFIG = "storageConfig"
+    const val CACHE_MANAGER = "cacheManager"
     const val ADVANCED_CONFIG = "advancedConfig"
     const val RULE_CONFIG = "ruleConfig"
     const val SERVICE_CONFIG = "serviceConfig"

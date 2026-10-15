@@ -49,7 +49,7 @@ class StorageConfigFragment : BaseFragment(R.layout.fragment_storage_config) {
                         onImageRetainNumClick = ::showImageRetainNumDialog,
                         onPreDownloadNumClick = ::showPreDownloadNumDialog,
                         onAutoClearExpiredChanged = ::setAutoClearExpired,
-                        onClearCacheClick = ::confirmClearCache,
+                        onCacheManagerClick = ::openCacheManager,
                         onClearWebViewDataClick = ::confirmClearWebViewData,
                         onShrinkDatabaseClick = ::confirmShrinkDatabase,
                     )
@@ -97,18 +97,6 @@ class StorageConfigFragment : BaseFragment(R.layout.fragment_storage_config) {
                             confirmText = getString(R.string.ok),
                             onDismissRequest = { activeDialog = null },
                             onValueSelected = ::setPreDownloadNum,
-                        )
-                        StorageConfigDialog.CLEAR_CACHE -> ConfigConfirmationDialog(
-                            title = getString(R.string.clear_cache),
-                            message = getString(R.string.sure_del),
-                            cancelText = getString(R.string.no),
-                            confirmText = getString(R.string.ok),
-                            danger = true,
-                            onDismissRequest = { activeDialog = null },
-                            onConfirm = {
-                                activeDialog = null
-                                viewModel.clearCache()
-                            },
                         )
                         StorageConfigDialog.CLEAR_WEBVIEW -> ConfigConfirmationDialog(
                             title = getString(R.string.clear_webview_data),
@@ -178,8 +166,8 @@ class StorageConfigFragment : BaseFragment(R.layout.fragment_storage_config) {
         screenState = screenState.copy(autoClearExpired = enabled)
     }
 
-    private fun confirmClearCache() {
-        activeDialog = StorageConfigDialog.CLEAR_CACHE
+    private fun openCacheManager() {
+        (activity as? ConfigActivity)?.openCacheManagerPage()
     }
 
     private fun confirmClearWebViewData() {
@@ -222,7 +210,6 @@ class StorageConfigFragment : BaseFragment(R.layout.fragment_storage_config) {
         BITMAP_CACHE,
         IMAGE_RETAIN,
         PRE_DOWNLOAD,
-        CLEAR_CACHE,
         CLEAR_WEBVIEW,
         SHRINK_DATABASE,
     }

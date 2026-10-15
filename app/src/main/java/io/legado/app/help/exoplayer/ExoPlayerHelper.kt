@@ -237,6 +237,15 @@ object ExoPlayerHelper {
         audioDownloadCache.keys.toList().forEach(audioDownloadCache::removeResource)
     }
 
+    /** 统计某个 cacheKey 前缀占用的音频缓存字节数(用于缓存管理页按书统计)。 */
+    fun audioCacheSizeByPrefix(prefix: String): Long {
+        return audioDownloadCache.keys
+            .filter { it.startsWith(prefix) }
+            .sumOf { key ->
+                audioDownloadCache.getCachedSpans(key).sumOf { it.length }
+            }
+    }
+
     private fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
         val encodedUrl = dataSpec.uri.toString()
         val splitIndex = encodedUrl.indexOf(SPLIT_TAG)
