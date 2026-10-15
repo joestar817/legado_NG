@@ -49,7 +49,6 @@ class StorageConfigFragment : BaseFragment(R.layout.fragment_storage_config) {
                         onImageRetainNumClick = ::showImageRetainNumDialog,
                         onPreDownloadNumClick = ::showPreDownloadNumDialog,
                         onAutoClearExpiredChanged = ::setAutoClearExpired,
-                        onCacheManagerClick = ::openCacheManager,
                         onClearWebViewDataClick = ::confirmClearWebViewData,
                         onShrinkDatabaseClick = ::confirmShrinkDatabase,
                     )
@@ -164,10 +163,6 @@ class StorageConfigFragment : BaseFragment(R.layout.fragment_storage_config) {
     private fun setAutoClearExpired(enabled: Boolean) {
         putPrefBoolean(PreferKey.autoClearExpired, enabled)
         screenState = screenState.copy(autoClearExpired = enabled)
-    }
-
-    private fun openCacheManager() {
-        (activity as? ConfigActivity)?.openCacheManagerPage()
     }
 
     private fun confirmClearWebViewData() {

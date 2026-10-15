@@ -1,4 +1,4 @@
-package io.legado.app.ui.config
+package io.legado.app.ui.book.manage
 
 import android.app.Application
 import androidx.compose.runtime.getValue
@@ -22,8 +22,8 @@ import io.legado.app.utils.externalFiles
 import io.legado.app.utils.toastOnUi
 import java.io.File
 
-/** 缓存管理页里的一本书。 */
-internal data class CacheBookEntry(
+/** 缓存管理面板里的一本书。 */
+internal data class BookshelfCacheEntry(
     val bookUrl: String,
     val name: String,
     val author: String,
@@ -33,9 +33,9 @@ internal data class CacheBookEntry(
     val isEpub: Boolean,
 )
 
-internal data class CacheManagerState(
+internal data class BookshelfCacheState(
     val loading: Boolean = true,
-    val books: List<CacheBookEntry> = emptyList(),
+    val books: List<BookshelfCacheEntry> = emptyList(),
     val bookBytes: Long = 0L,
     val audioBytes: Long = 0L,
     val epubBytes: Long = 0L,
@@ -49,7 +49,7 @@ internal data class CacheManagerState(
 }
 
 /**
- * 缓存管理页的数据来源。
+ * 书架管理页内嵌的缓存管理面板的数据来源。
  *
  * 统计口径与磁盘布局一一对应:
  * - 书籍正文/图片/音频清单 = `externalFiles/book_cache/<book.getFolderName()>`
@@ -60,10 +60,10 @@ internal data class CacheManagerState(
  *   (见 `BookHelp.kt:61` 的 `cacheEpubFolderName`)
  * - 应用缓存 = `context.cacheDir`
  */
-internal class CacheManagerViewModel(application: Application) : BaseViewModel(application) {
+internal class BookshelfCacheViewModel(application: Application) : BaseViewModel(application) {
 
     var state by mutableStateOf(
-        CacheManagerState(
+        BookshelfCacheState(
             paceManualEnabled = AppConfig.cachePaceManualEnabled,
             paceMinInterval = AppConfig.readingPaceMinInterval,
             paceMaxInterval = AppConfig.readingPaceMaxInterval,
@@ -173,8 +173,8 @@ internal class CacheManagerViewModel(application: Application) : BaseViewModel(a
             .forEach { appDb.bookCharacterDao.deleteProfile(it.workKey) }
     }
 
-    private fun scan(previous: CacheManagerState): CacheManagerState {
-        val entries = ArrayList<CacheBookEntry>()
+    private fun scan(previous: BookshelfCacheState): BookshelfCacheState {
+        val entries = ArrayList<BookshelfCacheEntry>()
         var bookBytes = 0L
         for (book in appDb.bookDao.all) {
             val dir = File(BookHelp.cachePath, book.getFolderName())
@@ -188,7 +188,7 @@ internal class CacheManagerViewModel(application: Application) : BaseViewModel(a
             val chapterCount = dir.listFiles()
                 ?.count { it.isFile && it.extension == "nb" }
                 ?: 0
-            entries += CacheBookEntry(
+            entries += BookshelfCacheEntry(
                 bookUrl = book.bookUrl,
                 name = book.name,
                 author = book.author,
@@ -199,7 +199,7 @@ internal class CacheManagerViewModel(application: Application) : BaseViewModel(a
             )
         }
         entries.sortByDescending { it.sizeBytes }
-        return CacheManagerState(
+        return BookshelfCacheState(
             loading = false,
             books = entries,
             bookBytes = bookBytes,

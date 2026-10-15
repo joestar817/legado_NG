@@ -35,9 +35,11 @@ private const val CACHE_ACTION_ID = 0x56200001
 private const val EXPORT_CONTENT_ACTION_ID = 0x56200002
 private const val GROUP_ACTION_ID = 0x56200003
 private const val UPDATE_COVER_ACTION_ID = 0x56200010
+private const val CACHE_MANAGER_ACTION_ID = 0x56200011
 
 internal enum class BookshelfManageDockAction {
     CACHE,
+    CACHE_MANAGER,
     UPDATE_COVER,
     EXPORT_CONTENT,
     GROUP,
@@ -146,6 +148,11 @@ private fun dockMoreItems(): List<NgExpandableActionMenuItem> = listOf(
         iconRes = R.drawable.ic_bookshelf_manage_cache,
     ),
     NgExpandableActionMenuItem(
+        itemId = CACHE_MANAGER_ACTION_ID,
+        titleRes = R.string.cache_manager,
+        iconRes = R.drawable.ic_storage_black_24dp,
+    ),
+    NgExpandableActionMenuItem(
         itemId = EXPORT_CONTENT_ACTION_ID,
         titleRes = R.string.export,
         iconRes = R.drawable.ic_bookshelf_manage_export_content,
@@ -202,6 +209,7 @@ private fun dockMoreItems(): List<NgExpandableActionMenuItem> = listOf(
 private fun NgExpandableActionMenuItem.toDockAction(): BookshelfManageDockAction {
     return when (itemId) {
         CACHE_ACTION_ID -> BookshelfManageDockAction.CACHE
+        CACHE_MANAGER_ACTION_ID -> BookshelfManageDockAction.CACHE_MANAGER
         UPDATE_COVER_ACTION_ID -> BookshelfManageDockAction.UPDATE_COVER
         EXPORT_CONTENT_ACTION_ID -> BookshelfManageDockAction.EXPORT_CONTENT
         GROUP_ACTION_ID -> BookshelfManageDockAction.GROUP

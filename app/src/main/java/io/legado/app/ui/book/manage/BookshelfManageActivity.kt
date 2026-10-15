@@ -1,6 +1,7 @@
 package io.legado.app.ui.book.manage
 
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -32,6 +33,7 @@ import io.legado.app.model.localBook.rebuildBookCovers
 import io.legado.app.service.ExportBookService
 import io.legado.app.ui.book.group.GroupManageDialog
 import io.legado.app.ui.book.info.BookInfoActivity
+import io.legado.app.ui.config.ConfigConfirmationDialog
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.main.bookshelf.BookshelfBookGroupSheet
 import io.legado.app.utils.ACache
@@ -90,6 +92,14 @@ class BookshelfManageActivity :
     private val exportBookPathKey = "exportBookPath"
     private var pendingExportBooks: List<Book> = emptyList()
     private var pendingExportSettings = ExportSettingsResult()
+
+    /** 缓存管理面板与书架管理共用同一个 Activity,通过页内二级视图切换。 */
+    private val cacheViewModel by viewModels<BookshelfCacheViewModel>()
+    private var cacheManagerVisible by mutableStateOf(false)
+    private var activeCacheDialog by mutableStateOf<BookshelfCacheDialog?>(null)
+    private var pendingCacheBookUrl by mutableStateOf<String?>(null)
+    private var pendingCacheBookName by mutableStateOf<String?>(null)
+
     private val exportContentDir = registerForActivityResult(SelectDirectoryContract()) { result ->
         val books = pendingExportBooks
         if (books.isEmpty()) return@registerForActivityResult
@@ -135,7 +145,70 @@ class BookshelfManageActivity :
         )
         binding.composeView.setContent {
             NgAppTheme {
-                BookshelfManageScreen(
+                if (cacheManagerVisible) {
+                    BackHandler { closeCacheManager() }
+                    BookshelfCacheScreen(
+                        state = cacheViewModel.state,
+                        onBack = ::closeCacheManager,
+                        onClearAllClick = { activeCacheDialog = BookshelfCacheDialog.CLEAR_ALL },
+                        onClearInvalidClick = {
+                            activeCacheDialog = BookshelfCacheDialog.CLEAR_INVALID
+                        },
+                        onClearBookClick = { entry ->
+                            pendingCacheBookUrl = entry.bookUrl
+                            pendingCacheBookName = entry.name
+                            activeCacheDialog = BookshelfCacheDialog.CLEAR_BOOK
+                        },
+                        onPaceManualEnabledChanged = cacheViewModel::setPaceManualEnabled,
+                        onPaceMinIntervalChanged = cacheViewModel::setPaceMinIntervalDraft,
+                        onPaceMaxIntervalChanged = cacheViewModel::setPaceMaxIntervalDraft,
+                        onPaceIntervalChangeFinished = cacheViewModel::savePaceIntervals,
+                    )
+                    when (activeCacheDialog) {
+                        BookshelfCacheDialog.CLEAR_ALL -> ConfigConfirmationDialog(
+                            title = getString(R.string.cache_manager_clear_all),
+                            message = getString(R.string.sure_del),
+                            cancelText = getString(R.string.no),
+                            confirmText = getString(R.string.ok),
+                            danger = true,
+                            onDismissRequest = { activeCacheDialog = null },
+                            onConfirm = {
+                                activeCacheDialog = null
+                                cacheViewModel.clearAll()
+                            },
+                        )
+
+                        BookshelfCacheDialog.CLEAR_INVALID -> ConfigConfirmationDialog(
+                            title = getString(R.string.cache_manager_clear_invalid),
+                            message = getString(R.string.sure_del),
+                            cancelText = getString(R.string.no),
+                            confirmText = getString(R.string.ok),
+                            danger = true,
+                            onDismissRequest = { activeCacheDialog = null },
+                            onConfirm = {
+                                activeCacheDialog = null
+                                cacheViewModel.clearInvalid()
+                            },
+                        )
+
+                        BookshelfCacheDialog.CLEAR_BOOK -> ConfigConfirmationDialog(
+                            title = pendingCacheBookName
+                                ?: getString(R.string.cache_manager_clear_book),
+                            message = getString(R.string.sure_del),
+                            cancelText = getString(R.string.no),
+                            confirmText = getString(R.string.ok),
+                            danger = true,
+                            onDismissRequest = { activeCacheDialog = null },
+                            onConfirm = {
+                                activeCacheDialog = null
+                                pendingCacheBookUrl?.let(cacheViewModel::clearBook)
+                            },
+                        )
+
+                        null -> Unit
+                    }
+                } else {
+                    BookshelfManageScreen(
                     query = topBarQuery,
                     groups = topBarGroups,
                     selectedGroupId = topBarSelectedGroupId,
@@ -185,8 +258,20 @@ class BookshelfManageActivity :
                         exportedSourceUri = null
                     },
                 )
+                }
             }
         }
+    }
+
+    private fun closeCacheManager() {
+        activeCacheDialog = null
+        cacheManagerVisible = false
+    }
+
+    private enum class BookshelfCacheDialog {
+        CLEAR_ALL,
+        CLEAR_INVALID,
+        CLEAR_BOOK,
     }
 
     private fun initGroupData() {
@@ -279,6 +364,12 @@ class BookshelfManageActivity :
     }
 
     private fun onDockAction(action: BookshelfManageDockAction) {
+        // 缓存管理是整页面板,不依赖选中项,所以放在空选守卫之前。
+        if (action == BookshelfManageDockAction.CACHE_MANAGER) {
+            cacheViewModel.refresh()
+            cacheManagerVisible = true
+            return
+        }
         val selected = selectedBooks()
         if (selected.isEmpty()) return
         when (action) {
