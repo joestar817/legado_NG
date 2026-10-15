@@ -104,7 +104,9 @@ internal fun BookshelfManageBottomDock(
                         NgFlatActionRailItem(
                             iconRes = R.drawable.ic_more_horiz,
                             label = stringResource(R.string.more),
-                            enabled = selectedCount > 0,
+                            // 菜单里的「缓存管理」不依赖选中项,所以入口本身始终可点;
+                            // 依赖选中项的条目由 dockMoreItems 各自置灰。
+                            enabled = true,
                             emphasized = menuState.expanded,
                         ),
                     ),
@@ -120,7 +122,7 @@ internal fun BookshelfManageBottomDock(
                         NgExpandableActionMenu(
                             expanded = menuState.expanded,
                             onDismissRequest = menuState::onDismissRequest,
-                            items = dockMoreItems(),
+                            items = dockMoreItems(selectedCount),
                             onItemClick = { item ->
                                 menuState.close()
                                 onAction(item.toDockAction())
@@ -141,70 +143,84 @@ internal fun BookshelfManageBottomDock(
 }
 
 @Composable
-private fun dockMoreItems(): List<NgExpandableActionMenuItem> = listOf(
-    NgExpandableActionMenuItem(
-        itemId = CACHE_ACTION_ID,
-        titleRes = R.string.book_cache,
-        iconRes = R.drawable.ic_bookshelf_manage_cache,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = CACHE_MANAGER_ACTION_ID,
-        titleRes = R.string.cache_manager,
-        iconRes = R.drawable.ic_storage_black_24dp,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = EXPORT_CONTENT_ACTION_ID,
-        titleRes = R.string.export,
-        iconRes = R.drawable.ic_bookshelf_manage_export_content,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = GROUP_ACTION_ID,
-        titleRes = R.string.group,
-        iconRes = R.drawable.ic_bookshelf_manage_group,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = R.id.menu_export_selection,
-        titleRes = R.string.export_book_source,
-        iconRes = R.drawable.ic_bookshelf_manage_export_source,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = R.id.menu_change_source,
-        titleRes = R.string.change_source_batch,
-        iconRes = R.drawable.ic_bookshelf_manage_change_source,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = R.id.menu_update_enable,
-        titleRes = R.string.allow_update,
-        iconRes = R.drawable.ic_bookshelf_manage_allow_update,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = R.id.menu_update_disable,
-        titleRes = R.string.disable_update,
-        iconRes = R.drawable.ic_bookshelf_manage_disable_update,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = R.id.menu_remove_to_group,
-        titleRes = R.string.set_ungrouped,
-        iconRes = R.drawable.ic_bookshelf_manage_ungroup,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = UPDATE_COVER_ACTION_ID,
-        titleRes = R.string.update_book_cover,
-        iconRes = R.drawable.ic_bookshelf_manage_cover,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = R.id.menu_clear_cache,
-        titleRes = R.string.clear_cache,
-        iconRes = R.drawable.ic_bookshelf_manage_clear_cache,
-    ),
-    NgExpandableActionMenuItem(
-        itemId = R.id.menu_del_selection,
-        titleRes = R.string.delete,
-        iconRes = R.drawable.ic_bookshelf_manage_delete,
-        dividerBefore = true,
-        danger = true
+private fun dockMoreItems(selectedCount: Int): List<NgExpandableActionMenuItem> {
+    val hasSelection = selectedCount > 0
+    return listOf(
+        NgExpandableActionMenuItem(
+            itemId = CACHE_ACTION_ID,
+            titleRes = R.string.book_cache,
+            iconRes = R.drawable.ic_bookshelf_manage_cache,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = CACHE_MANAGER_ACTION_ID,
+            titleRes = R.string.cache_manager,
+            iconRes = R.drawable.ic_storage_black_24dp,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = EXPORT_CONTENT_ACTION_ID,
+            titleRes = R.string.export,
+            iconRes = R.drawable.ic_bookshelf_manage_export_content,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = GROUP_ACTION_ID,
+            titleRes = R.string.group,
+            iconRes = R.drawable.ic_bookshelf_manage_group,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = R.id.menu_export_selection,
+            titleRes = R.string.export_book_source,
+            iconRes = R.drawable.ic_bookshelf_manage_export_source,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = R.id.menu_change_source,
+            titleRes = R.string.change_source_batch,
+            iconRes = R.drawable.ic_bookshelf_manage_change_source,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = R.id.menu_update_enable,
+            titleRes = R.string.allow_update,
+            iconRes = R.drawable.ic_bookshelf_manage_allow_update,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = R.id.menu_update_disable,
+            titleRes = R.string.disable_update,
+            iconRes = R.drawable.ic_bookshelf_manage_disable_update,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = R.id.menu_remove_to_group,
+            titleRes = R.string.set_ungrouped,
+            iconRes = R.drawable.ic_bookshelf_manage_ungroup,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = UPDATE_COVER_ACTION_ID,
+            titleRes = R.string.update_book_cover,
+            iconRes = R.drawable.ic_bookshelf_manage_cover,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = R.id.menu_clear_cache,
+            titleRes = R.string.clear_cache,
+            iconRes = R.drawable.ic_bookshelf_manage_clear_cache,
+            enabled = hasSelection,
+        ),
+        NgExpandableActionMenuItem(
+            itemId = R.id.menu_del_selection,
+            titleRes = R.string.delete,
+            iconRes = R.drawable.ic_bookshelf_manage_delete,
+            dividerBefore = true,
+            danger = true,
+            enabled = hasSelection,
+        )
     )
-)
+}
 
 private fun NgExpandableActionMenuItem.toDockAction(): BookshelfManageDockAction {
     return when (itemId) {

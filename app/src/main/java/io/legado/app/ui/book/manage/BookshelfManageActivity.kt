@@ -265,6 +265,8 @@ class BookshelfManageActivity :
 
     private fun closeCacheManager() {
         activeCacheDialog = null
+        pendingCacheBookUrl = null
+        pendingCacheBookName = null
         cacheManagerVisible = false
     }
 
