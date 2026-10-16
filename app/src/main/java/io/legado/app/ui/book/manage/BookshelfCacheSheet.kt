@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
@@ -23,6 +24,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +37,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,8 +51,11 @@ import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgCompactSettingsDivider
 import io.legado.app.ui.design.components.compose.NgCompactSettingsGroup
 import io.legado.app.ui.design.components.compose.NgCompactSettingsItem
-import io.legado.app.ui.design.components.compose.NgDockSlider
+import io.legado.app.ui.design.components.compose.NgFormField
+import io.legado.app.ui.design.components.compose.NgFormFieldVariant
 import io.legado.app.ui.design.theme.NgTheme
+import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * 缓存抽屉:承载全部占用明细与低频动作。
@@ -405,14 +415,14 @@ private fun PaceSection(
                 summary = if (state.paceManualEnabled) {
                     stringResource(
                         R.string.reading_pace_interval_summary,
-                        state.paceMinInterval,
-                        state.paceMaxInterval,
+                        formatPaceSeconds(state.paceMinInterval),
+                        formatPaceSeconds(state.paceMaxInterval),
                     )
                 } else {
                     stringResource(
                         R.string.cache_pace_default_summary,
-                        PACE_INTERVAL_DEFAULT_MIN,
-                        PACE_INTERVAL_DEFAULT_MAX,
+                        formatPaceSeconds(PACE_INTERVAL_DEFAULT_MIN),
+                        formatPaceSeconds(PACE_INTERVAL_DEFAULT_MAX),
                     )
                 },
                 trailing = NgSettingsTrailing.SWITCH,
@@ -425,28 +435,30 @@ private fun PaceSection(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 14.dp, top = 6.dp, end = 14.dp, bottom = 10.dp),
+                        .padding(start = 14.dp, top = 8.dp, end = 14.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    NgDockSlider(
-                        title = stringResource(R.string.reading_pace_min_interval),
-                        valueText = "${state.paceMinInterval} ms",
-                        minimumText = "$PACE_INTERVAL_MIN ms",
-                        maximumText = "$PACE_INTERVAL_MAX ms",
-                        value = state.paceMinInterval.toFloat(),
-                        valueRange = PACE_INTERVAL_MIN.toFloat()..PACE_INTERVAL_MAX.toFloat(),
-                        onValueChange = { onMinIntervalChanged(it.toInt()) },
-                        onValueChangeFinished = onIntervalChangeFinished,
+                    Text(
+                        text = stringResource(
+                            R.string.cache_pace_seconds_range,
+                            formatPaceSeconds(PACE_INTERVAL_MIN),
+                            formatPaceSeconds(PACE_INTERVAL_MAX),
+                        ),
+                        color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
                     )
-                    NgDockSlider(
-                        title = stringResource(R.string.reading_pace_max_interval),
-                        valueText = "${state.paceMaxInterval} ms",
-                        minimumText = "$PACE_INTERVAL_MIN ms",
-                        maximumText = "$PACE_INTERVAL_MAX ms",
-                        value = state.paceMaxInterval.toFloat(),
-                        valueRange = PACE_INTERVAL_MIN.toFloat()..PACE_INTERVAL_MAX.toFloat(),
-                        onValueChange = { onMaxIntervalChanged(it.toInt()) },
-                        onValueChangeFinished = onIntervalChangeFinished,
+                    PaceIntervalField(
+                        label = stringResource(R.string.reading_pace_min_interval),
+                        intervalMillis = state.paceMinInterval,
+                        onValueChange = onMinIntervalChanged,
+                        onEditingFinished = onIntervalChangeFinished,
+                    )
+                    PaceIntervalField(
+                        label = stringResource(R.string.reading_pace_max_interval),
+                        intervalMillis = state.paceMaxInterval,
+                        onValueChange = onMaxIntervalChanged,
+                        onEditingFinished = onIntervalChangeFinished,
                     )
                 }
             }
@@ -470,6 +482,57 @@ private fun PaceSection(
             )
         }
     }
+}
+
+/** 毫秒转成用户填写的秒:1000ms → 1,1200ms → 1.2,1250ms → 1.25(整数不带小数点)。 */
+private fun formatPaceSeconds(millis: Int): String = when {
+    millis % 1000 == 0 -> (millis / 1000).toString()
+    millis % 100 == 0 -> "%.1f".format(Locale.US, millis / 1000.0)
+    else -> "%.2f".format(Locale.US, millis / 1000.0)
+}
+
+/** 解析用户输入的秒为毫秒;越界按上下限夹住,非法输入返回 null(保留上一次生效值)。 */
+private fun parsePaceSeconds(text: String): Int? {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return null
+    val seconds = trimmed.toDoubleOrNull() ?: return null
+    if (seconds.isNaN() || seconds.isInfinite()) return null
+    return (seconds * 1000).roundToInt().coerceIn(PACE_INTERVAL_MIN, PACE_INTERVAL_MAX)
+}
+
+/**
+ * 间隔输入框:单位是秒。滑块换成直接输入后,1200–4500ms 这类值不必再拖到位。
+ * 输入期间只写草稿,失焦时才提交并回正格式,免得中途的 "1" 被当成最终值存进偏好。
+ */
+@Composable
+private fun PaceIntervalField(
+    label: String,
+    intervalMillis: Int,
+    onValueChange: (Int) -> Unit,
+    onEditingFinished: () -> Unit,
+) {
+    var text by remember { mutableStateOf(formatPaceSeconds(intervalMillis)) }
+    // 外部值变化时回写;能被 formatPaceSeconds 原样还原的文本不回写,避免打断输入
+    LaunchedEffect(intervalMillis) {
+        val shown = formatPaceSeconds(intervalMillis)
+        if (parsePaceSeconds(text) != intervalMillis) text = shown
+    }
+    NgFormField(
+        label = label,
+        value = text,
+        onValueChange = { raw ->
+            text = raw
+            parsePaceSeconds(raw)?.let(onValueChange)
+        },
+        supportingText = stringResource(R.string.seconds),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        variant = NgFormFieldVariant.OUTLINED,
+        onFocusLost = {
+            val parsed = parsePaceSeconds(text)
+            text = formatPaceSeconds(parsed ?: intervalMillis)
+            onEditingFinished()
+        },
+    )
 }
 
 /** 清理:残留是常规操作,清全部是破坏性的,颜色分开。 */

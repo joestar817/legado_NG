@@ -2604,7 +2604,7 @@
     <string name="reading_pace">Human-like caching pace</string>
     <string name="reading_pace_summary">Randomize cache request intervals per source to avoid source rate limits</string>
     <string name="reading_pace_interval">Cache interval</string>
-    <string name="reading_pace_interval_summary">%1$d–%2$d ms between chapters</string>
+    <string name="reading_pace_interval_summary">Wait %1$s–%2$s s between chapters</string>
     <string name="reading_pace_min_interval">Minimum interval</string>
     <string name="reading_pace_max_interval">Maximum interval</string>
     <string name="reading_pace_long_rest">Long breaks</string>
@@ -2628,7 +2628,8 @@
     <string name="cache_manager_empty">Nothing cached yet</string>
     <string name="cache_pace_manual">Set interval manually</string>
     <string name="cache_pace_manual_summary">Turn on to customize how long the app waits between cached chapters</string>
-    <string name="cache_pace_default_summary">Built-in default pace: %1$d–%2$d ms between chapters</string>
+    <string name="cache_pace_default_summary">Built-in default pace: %1$s–%2$s s between chapters</string>
+    <string name="cache_pace_seconds_range">Range %1$s – %2$s seconds, decimals allowed</string>
     <string name="cache_filter_cached">Cached</string>
     <string name="cache_filter_uncached">Not cached</string>
     <string name="cache_overview_progress">%1$d cached chapters · %2$d books</string>

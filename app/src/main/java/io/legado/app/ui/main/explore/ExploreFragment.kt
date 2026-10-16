@@ -43,6 +43,7 @@ import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch
@@ -313,18 +314,29 @@ class ExploreFragment() : Fragment(), MainFragmentInterface {
         kindJobs[sourceUrl]?.cancel()
         loadingSources[sourceUrl] = true
         kindJobs[sourceUrl] = viewLifecycleOwner.lifecycleScope.launch {
-            runCatching {
-                source.clearExploreKindsCache()
-                kindsBySource.remove(sourceUrl)
-                if (expandedSourceUrl == sourceUrl) source.exploreKinds() else null
-            }.onSuccess { kinds ->
-                if (kinds != null) kindsBySource[sourceUrl] = kinds
-            }.onFailure {
-                AppLog.put("刷新发现分类失败", it)
-                toastOnUi(it.localizedMessage ?: getString(R.string.can_not_open))
+            val self = coroutineContext[Job]
+            try {
+                runCatching {
+                    source.clearExploreKindsCache()
+                    // 无论当前是折叠还是网格,都要就地重取一次分类。
+                    // 只清缓存不重取的话,这次刷新要等到下次展开才生效,
+                    // 用户看到的就是「点了刷新什么都没发生」。
+                    source.exploreKinds()
+                }.onSuccess { kinds ->
+                    kindsBySource[sourceUrl] = kinds
+                }.onFailure {
+                    // 被后一次刷新取消不算失败,不该弹错误提示
+                    if (it is CancellationException) throw it
+                    AppLog.put("刷新发现分类失败", it)
+                    toastOnUi(it.localizedMessage ?: getString(R.string.can_not_open))
+                }
+            } finally {
+                // 只有登记的还是自己时才清理,否则会把后一次刷新登记的 job 误删
+                if (kindJobs[sourceUrl] === self) {
+                    loadingSources.remove(sourceUrl)
+                    kindJobs.remove(sourceUrl)
+                }
             }
-            loadingSources.remove(sourceUrl)
-            kindJobs.remove(sourceUrl)
         }
     }
 
