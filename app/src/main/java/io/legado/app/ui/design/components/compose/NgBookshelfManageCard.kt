@@ -357,7 +357,7 @@ private fun NgBookshelfManageCoverCard(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 10.dp, top = 7.dp, bottom = 7.dp),
+                .padding(start = 10.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(

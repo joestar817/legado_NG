@@ -36,6 +36,7 @@
 
     <string name="manual_input">Manual Input</string>
     <string name="manual_input_range">Range %1$s – %2$s</string>
+    <string name="cache_number_edit_hint">Tap the highlighted value to type it, or scroll to adjust</string>
 
     <string name="dynamic_click_retry">Retry</string>
     <string name="dynamic_loading">Loading</string>

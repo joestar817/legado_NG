@@ -83,7 +83,6 @@ internal fun BookshelfManageScreen(
     onQueryChange: (String) -> Unit,
     onBack: () -> Unit,
     onGroupSelected: (Long) -> Unit,
-    onGroupManage: () -> Unit,
     onSelectionChange: (Book, Boolean) -> Unit,
     onOpenDetails: (Book) -> Unit,
     onReorderStarted: () -> Unit,
@@ -164,7 +163,6 @@ internal fun BookshelfManageScreen(
             groups = groups,
             selectedGroupId = selectedGroupId,
             onGroupSelected = onGroupSelected,
-            onGroupManage = onGroupManage,
             modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 3.dp),
         )
         LazyColumn(

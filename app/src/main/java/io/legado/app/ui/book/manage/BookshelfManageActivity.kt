@@ -31,7 +31,6 @@ import io.legado.app.model.localBook.canExtractOriginalCover
 import io.legado.app.model.localBook.localBookCoverUpdates
 import io.legado.app.model.localBook.rebuildBookCovers
 import io.legado.app.service.ExportBookService
-import io.legado.app.ui.book.group.GroupManageDialog
 import io.legado.app.ui.book.info.BookInfoActivity
 import io.legado.app.ui.config.ConfigConfirmationDialog
 import io.legado.app.ui.design.theme.NgAppTheme
@@ -182,7 +181,6 @@ class BookshelfManageActivity :
                         topBarSelectedGroupId = groupId
                         upBookDataByGroupId()
                     },
-                    onGroupManage = { showDialogFragment<GroupManageDialog>() },
                     onSelectionChange = ::setBookSelected,
                     onOpenDetails = ::openBook,
                     onReorderStarted = ::prepareManualSort,

@@ -1,6 +1,7 @@
 package io.legado.app.ui.config
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -31,9 +33,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
@@ -139,15 +146,20 @@ internal fun ConfigNumberPickerDialog(
         mutableStateOf(formatNumberValue(initialValue, decimalMode))
     }
     val coerceValue: (Int) -> Int = { it.coerceIn(minValue, maxValue) }
+    // 正在键盘输入时不能回写文本:中途的值(如刚清空准备重打)往往越界,
+    // 一 clamp 就会把用户敲的字换掉。
+    var editing by remember { mutableStateOf(false) }
     val applyManualText: (String) -> Unit = { text ->
         manualText = text
         parseNumberValue(text, decimalMode)?.let { selectedValue = coerceValue(it) }
     }
     // 滚轮选择变化时回写输入框;若当前文本已经表示同一个值则不动,免得打断输入。
-    LaunchedEffect(selectedValue, decimalMode) {
-        val shown = parseNumberValue(manualText, decimalMode)
-        if (shown != selectedValue) {
-            manualText = formatNumberValue(selectedValue, decimalMode)
+    LaunchedEffect(selectedValue, decimalMode, editing) {
+        if (!editing) {
+            val shown = parseNumberValue(manualText, decimalMode)
+            if (shown != selectedValue) {
+                manualText = formatNumberValue(selectedValue, decimalMode)
+            }
         }
     }
     Dialog(
@@ -188,34 +200,46 @@ internal fun ConfigNumberPickerDialog(
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                NgFormField(
-                    label = stringResource(R.string.manual_input),
-                    value = manualText,
-                    onValueChange = applyManualText,
-                    placeholder = "$minValue – $maxValue",
-                    supportingText = stringResource(
-                        R.string.manual_input_range,
-                        formatNumberValue(minValue, decimalMode),
-                        formatNumberValue(maxValue, decimalMode),
-                    ),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = if (decimalMode) {
-                            KeyboardType.Decimal
-                        } else {
-                            KeyboardType.Number
-                        },
-                    ),
-                    visualTransformation = VisualTransformation.None,
-                    variant = NgFormFieldVariant.OUTLINED,
-                )
+                // 选择与输入合并成一个控件:输入态就落在滚轮中间那一格上,
+                // 不再单独占一行输入框。两个控件叠放时用户要在两处找同一个值。
                 ConfigNumberWheel(
                     minValue = minValue,
                     maxValue = maxValue,
                     selectedValue = selectedValue,
                     decimalMode = decimalMode,
+                    editingText = manualText,
+                    onEditingTextChange = applyManualText,
                     onSelectedValueChange = { selectedValue = it },
+                    editing = editing,
+                    onEditingChange = { editing = it },
+                    onEditingFinished = {
+                        // 输入结束把文本收敛回合法值:中途可能停在一个越界或不可解析的串上。
+                        val parsed = parseNumberValue(manualText, decimalMode)
+                            ?.let(coerceValue) ?: selectedValue
+                        manualText = formatNumberValue(parsed, decimalMode)
+                    },
+                )
+                Text(
+                    text = stringResource(R.string.cache_number_edit_hint),
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.manual_input_range,
+                        formatNumberValue(minValue, decimalMode),
+                        formatNumberValue(maxValue, decimalMode),
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.72f),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    textAlign = TextAlign.Center,
                 )
             }
         }
@@ -239,13 +263,25 @@ private fun ConfigNumberWheel(
     maxValue: Int,
     selectedValue: Int,
     decimalMode: Boolean,
+    editingText: String,
+    onEditingTextChange: (String) -> Unit,
     onSelectedValueChange: (Int) -> Unit,
+    editing: Boolean,
+    onEditingChange: (Boolean) -> Unit,
+    onEditingFinished: () -> Unit,
 ) {
     val itemCount = maxValue - minValue + 1
     val initialIndex = (selectedValue - minValue).coerceIn(0, itemCount - 1)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
     val flingBehavior = rememberSnapFlingBehavior(listState)
     val scope = rememberCoroutineScope()
+    val focusRequester = remember { FocusRequester() }
+    // onFocusChanged 在组合时会先发一次未聚焦,若直接据此收尾会在点开后立刻退出编辑。
+    // 必须等真正拿到过焦点,才把「失焦」当作输入结束。
+    var hasFocused by remember { mutableStateOf(false) }
+    // 编辑中的那一格要钉住:输入会改变 selectedValue,若按 selectedValue 找行,
+    // 输入框会在打字过程中跳到别的行上。
+    var editingValue by remember { mutableStateOf<Int?>(null) }
     val centeredValue by remember(listState, minValue, itemCount) {
         derivedStateOf {
             val layout = listState.layoutInfo
@@ -263,6 +299,13 @@ private fun ConfigNumberWheel(
     }
     LaunchedEffect(centeredValue) {
         centeredValue?.let(onSelectedValueChange)
+    }
+    // 输入结束后把滚轮滚到刚提交的值上:合并成一个控件后,打字可能让值远离当前居中行,
+    // 不滚过去的话没有任何一行的值是 selectedValue,高亮格会空掉。
+    LaunchedEffect(editing) {
+        if (!editing) {
+            listState.animateScrollToItem(selectedValue - minValue)
+        }
     }
     Box(
         modifier = Modifier
@@ -296,27 +339,107 @@ private fun ConfigNumberWheel(
                     Spacer(Modifier.height(WHEEL_ROW_HEIGHT))
                 } else {
                     val value = minValue + virtualIndex - WHEEL_SPACER_ROWS
-                    val selected = value == selectedValue
-                    Text(
-                        text = if (decimalMode) (value / 10.0).toString() else value.toString(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(WHEEL_ROW_HEIGHT)
-                            .clickable {
-                                scope.launch {
-                                    listState.animateScrollToItem(value - minValue)
+                    // 编辑中按钉住的那一格渲染编辑器,其余时候按当前居中值。
+                    val editingHere = editing && editingValue == value
+                    val selected = editingHere || value == selectedValue
+                    if (selected) {
+                        // 选中格:不编辑时是一枚可点的描边数字,点下后原地变输入框。
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(WHEEL_ROW_HEIGHT)
+                                .padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (editingHere) {
+                                BasicTextField(
+                                    value = editingText,
+                                    onValueChange = onEditingTextChange,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(WHEEL_ROW_HEIGHT - 8.dp)
+                                        .focusRequester(focusRequester)
+                                        .onFocusChanged { focusState ->
+                                            if (focusState.isFocused) {
+                                                hasFocused = true
+                                            } else if (hasFocused && editing) {
+                                                editingValue = null
+                                                onEditingChange(false)
+                                                onEditingFinished()
+                                            }
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    textStyle = TextStyle(
+                                        color = Color(NgTheme.colors.primary),
+                                        fontSize = 19.sp,
+                                        lineHeight = 23.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center,
+                                    ),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = if (decimalMode) {
+                                            KeyboardType.Decimal
+                                        } else {
+                                            KeyboardType.Number
+                                        },
+                                    ),
+                                    singleLine = true,
+                                    cursorBrush = SolidColor(Color(NgTheme.colors.primary)),
+                                )
+                                LaunchedEffect(Unit) { focusRequester.requestFocus() }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(WHEEL_ROW_HEIGHT - 8.dp)
+                                        .border(
+                                            width = 1.4.dp,
+                                            color = Color(NgTheme.colors.primary)
+                                                .copy(alpha = 0.55f),
+                                            shape = RoundedCornerShape(12.dp),
+                                        )
+                                        .clickable {
+                                            // 每一轮编辑都要重新等一次聚焦,否则上一轮留下的
+                                            // hasFocused 会让这一轮的首次「未聚焦」直接收尾。
+                                            hasFocused = false
+                                            editingValue = value
+                                            onEditingChange(true)
+                                            scope.launch {
+                                                listState.animateScrollToItem(value - minValue)
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = formatNumberValue(value, decimalMode),
+                                        color = Color(NgTheme.colors.primary),
+                                        fontSize = 19.sp,
+                                        lineHeight = 23.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center,
+                                    )
                                 }
                             }
-                            .padding(vertical = 10.dp),
-                        color = Color(
-                            if (selected) NgTheme.colors.primary
-                            else NgTheme.colors.onSurfaceVariant
-                        ),
-                        fontSize = if (selected) 19.sp else 16.sp,
-                        lineHeight = 23.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        textAlign = TextAlign.Center,
-                    )
+                        }
+                    } else {
+                        Text(
+                            text = formatNumberValue(value, decimalMode),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(WHEEL_ROW_HEIGHT)
+                                .clickable {
+                                    scope.launch {
+                                        listState.animateScrollToItem(value - minValue)
+                                    }
+                                }
+                                .padding(vertical = 10.dp),
+                            color = Color(NgTheme.colors.onSurfaceVariant),
+                            fontSize = 16.sp,
+                            lineHeight = 23.sp,
+                            fontWeight = FontWeight.Normal,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         }

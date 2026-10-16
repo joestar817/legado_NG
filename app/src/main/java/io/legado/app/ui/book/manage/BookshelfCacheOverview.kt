@@ -359,26 +359,25 @@ internal fun BookshelfCacheFilterRail(
     )
 }
 
-/** 分组维度轨末端的「管理」项 key;不是真实分组 id,故用一个不可能与 groupId 冲突的字符串。 */
-private const val GROUP_MANAGE_KEY = "manage"
-
 /**
- * 分组维度的筛选轨:全部 / 未分组 / 各命名分组,末端固定一个「管理」。
+ * 分组维度的筛选轨:全部 / 未分组 / 各命名分组。
  *
  * 与缓存轨同样是 chip 语言:两套筛选并列出现,而不是一个在轨道上一个藏在下拉里,
  * 免得同一个「筛选」概念有两种操作方式。
+ *
+ * 这里只做筛选,不放入口:末端的「分组管理」已去掉——它是「编辑」而不是「筛选」,
+ * 混在筛选轨里既误导点击目标,又把轨道挤到需要缩字号才放得下。该功能在主书架页
+ * 的菜单里仍有入口(`BaseBookshelfFragment` 的 `menu_group_manage`)。
  */
 @Composable
 internal fun BookshelfGroupFilterRail(
     groups: List<BookGroup>,
     selectedGroupId: Long,
     onGroupSelected: (Long) -> Unit,
-    onGroupManage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val allLabel = stringResource(R.string.all)
     val noGroupLabel = stringResource(R.string.no_group)
-    val manageLabel = stringResource(R.string.group_manage)
     val namedGroups = remember(groups) {
         groups.filterNot {
             it.groupId == BookGroup.IdAll || it.groupId == BookGroup.IdNoGroup
@@ -390,17 +389,11 @@ internal fun BookshelfGroupFilterRail(
         namedGroups.forEach {
             add(NgFilterChipItem(key = it.groupId.toString(), label = it.groupName))
         }
-        add(NgFilterChipItem(key = GROUP_MANAGE_KEY, label = manageLabel))
     }
     NgFilterChipGroup(
         items = items,
         selectedKeys = setOf(selectedGroupId.toString()),
-        onToggle = { key ->
-            when (key) {
-                GROUP_MANAGE_KEY -> onGroupManage()
-                else -> key.toLongOrNull()?.let(onGroupSelected)
-            }
-        },
+        onToggle = { key -> key.toLongOrNull()?.let(onGroupSelected) },
         modifier = modifier,
         variant = NgFilterChipGroupVariant.SINGLE_ROW_RAIL,
     )

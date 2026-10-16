@@ -34,6 +34,7 @@
 
     <string name="manual_input">手动输入</string>
     <string name="manual_input_range">有效范围 %1$s – %2$s</string>
+    <string name="cache_number_edit_hint">轻触高亮的数值即可键盘输入，上下滚动可快速微调</string>
 
     <string name="dynamic_click_retry">点击重试</string>
     <string name="dynamic_loading">正在加载</string>
