@@ -400,6 +400,9 @@ internal object ReadStylePackageManager {
         var missingRuleBackgrounds = 0
         var missingRuleFonts = 0
         config.highlightRules = ArrayList(config.highlightRules.map { source ->
+            if (source.hasInvalidNightColorModes()) {
+                warnings += "高亮规则“${source.name.ifBlank { source.id }}”的夜间配色设置无效，对应项已改为跟随日间"
+            }
             val rule = source.normalized()
             val bg = rule.bgImage?.let { resolve(it, "高亮规则背景图") }.also {
                 if (rule.bgImage != null && it == null) missingRuleBackgrounds++

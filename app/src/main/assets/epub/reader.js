@@ -1305,7 +1305,7 @@
                     contentCache = { url: contentUrl.href, value: contentValue };
                 }
                 if (mine !== generation) return;
-                window.__ngEpubContent.apply(contentValue);
+                window.__ngEpubContent.apply(contentValue, value.ngHighlightNight);
                 var styleWarnings = await window.__ngEpubContent.loadFonts();
                 if (mine !== generation) return;
                 styleWarnings.forEach(function (warning) { resourceWarnings.add(warning); });

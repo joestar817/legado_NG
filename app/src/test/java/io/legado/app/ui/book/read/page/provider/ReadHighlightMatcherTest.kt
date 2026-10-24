@@ -9,6 +9,23 @@ import org.junit.Test
 
 class ReadHighlightMatcherTest {
 
+    @Test
+    fun cachedMatchesCarryBothPalettesWithoutChangingRangesOrPrecedence() {
+        val first = ReadHighlightRule(pattern = "目标", textColor = 17, textColorNight = 34)
+        val last = first.copy(textColor = 51, bgColor = 68, nightFollowDay = false,
+            textColorNightMode = ReadHighlightRule.NIGHT_DEFAULT, bgColorNight = 0)
+        val styles = ReadHighlightMatcher(listOf(first, last)).matchSample("前目标后", false)!!
+        assertNull(styles[0])
+        assertNull(styles[3])
+        val style = styles[1]!!
+        assertEquals(style, styles[2])
+        assertEquals(51, style.resolveTextColor(false))
+        assertEquals(68, style.resolveBackgroundColor(false))
+        assertNull(style.resolveTextColor(true))
+        assertEquals(0, style.resolveBackgroundColor(true))
+        assertEquals(51, style.resolveTextColor(false))
+    }
+
     private fun dialogueRule(color: Int = 1) = ReadHighlightRule(
         pattern = "“[^”]{1,1200}”",
         matchAcrossParagraphs = true,

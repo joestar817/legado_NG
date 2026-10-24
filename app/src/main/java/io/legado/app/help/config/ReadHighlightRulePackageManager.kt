@@ -183,6 +183,9 @@ internal object ReadHighlightRulePackageManager {
         warnings: MutableList<String>,
         resolveResource: (String, String) -> String?,
     ): List<ReadHighlightRule> = rules.mapIndexed { index, source ->
+        if (source.hasInvalidNightColorModes()) {
+            warnings += "高亮规则“${source.name.ifBlank { source.id }}”的夜间配色设置无效，对应项已改为跟随日间"
+        }
         val rule = source.normalized()
         val validPattern = rule.pattern.isNotBlank() && runCatching { Regex(rule.pattern) }.isSuccess
         if (!validPattern) warnings += "高亮规则“${rule.name.ifBlank { rule.id }}”的正则无效，已停用"

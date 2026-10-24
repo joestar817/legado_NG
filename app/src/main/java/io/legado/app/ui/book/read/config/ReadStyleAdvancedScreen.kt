@@ -6,6 +6,7 @@ import android.graphics.RectF
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +65,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.PathParser
 import io.legado.app.R
 import io.legado.app.help.config.ReadHighlightRule
+import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadAppearanceMode
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.page.provider.ReadCharStyle
 import io.legado.app.ui.book.read.page.provider.ReadHighlightImageRenderer
@@ -108,6 +112,10 @@ internal fun FullLineUnderlinePage(
             ),
         ) {
             item {
+                Text(
+                    text = stringResource(R.string.read_style_shared_geometry),
+                    color = contentColor.copy(alpha = 0.62f), fontSize = 12.sp,
+                )
                 AdvancedSwitchRow(
                     title = stringResource(R.string.enable),
                     checked = underline.enabled,
@@ -268,8 +276,32 @@ internal fun HighlightRuleEditorPage(
                         actions.onHighlightDraftChanged(draft.copy(sampleText = it))
                     },
                 )
+                Text(
+                    text = stringResource(R.string.highlight_rule_color_mode),
+                    modifier = Modifier.padding(top = 12.dp, bottom = 7.dp),
+                    color = contentColor,
+                    fontSize = 14.sp,
+                )
+                ReadStyleModeSelector(
+                    mode = state.highlightColorMode,
+                    allowEInk = false,
+                    contentColor = contentColor,
+                    accentColor = accentColor,
+                    onSelected = actions.onHighlightColorModeChanged,
+                )
+                if (state.highlightColorMode == 1) {
+                    AdvancedSwitchRow(
+                        title = stringResource(R.string.highlight_rule_night_follow_day),
+                        checked = draft.followsDayAtNight(),
+                        contentColor = contentColor,
+                        onCheckedChange = {
+                            actions.onHighlightDraftChanged(draft.withNightFollowDay(it))
+                        },
+                    )
+                }
                 HighlightRulePreview(
                     rule = draft,
+                    isNight = state.highlightColorMode == 1,
                     contentColor = contentColor,
                     accentColor = accentColor,
                 )
@@ -300,209 +332,193 @@ internal fun HighlightRuleEditorPage(
                         actions.onHighlightDraftChanged(draft.copy(enabled = it))
                     },
                 )
-                AdvancedDivider(contentColor)
-                AdvancedSectionLabel(
-                    stringResource(R.string.highlight_rule_section_style),
-                    accentColor,
-                )
-                OptionalColorRow(
-                    title = stringResource(R.string.highlight_rule_use_text_color),
-                    color = draft.textColor,
-                    contentColor = contentColor,
-                    onEnabledChanged = { enabled ->
-                        actions.onHighlightDraftChanged(
-                            draft.copy(
-                                textColor = if (enabled) state.editorTextAccentColor else null
-                            )
-                        )
-                    },
-                    onClick = {
-                        actions.onPageSelected(ReadStylePage.HIGHLIGHT_TEXT_COLOR)
-                    },
-                )
-                OptionalColorRow(
-                    title = stringResource(R.string.highlight_rule_use_background_color),
-                    color = draft.bgColor,
-                    contentColor = contentColor,
-                    onEnabledChanged = { enabled ->
-                        val fallback = (state.editorTextAccentColor and 0x00FFFFFF) or 0x33000000
-                        actions.onHighlightDraftChanged(
-                            draft.copy(bgColor = if (enabled) fallback else null)
-                        )
-                    },
-                    onClick = {
-                        actions.onPageSelected(ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR)
-                    },
-                )
-                AdvancedFileRow(
-                    title = stringResource(R.string.highlight_rule_background_image),
-                    path = draft.bgImage,
-                    contentColor = contentColor,
-                    accentColor = accentColor,
-                    onSelect = actions.onSelectHighlightBackground,
-                    onClear = actions.onClearHighlightBackground,
-                )
-                if (!draft.bgImage.isNullOrBlank()) {
-                    Text(
-                        text = stringResource(R.string.highlight_rule_image_fit),
-                        modifier = Modifier.padding(top = 8.dp, bottom = 7.dp),
-                        color = contentColor,
-                        fontSize = 14.sp,
+                if (state.highlightColorMode != 1 || !draft.followsDayAtNight()) {
+                    AdvancedDivider(contentColor)
+                    AdvancedSectionLabel(
+                        stringResource(R.string.highlight_rule_section_style),
+                        accentColor,
                     )
-                    AdvancedDock(
-                        labels = listOf(
-                            stringResource(R.string.highlight_rule_image_fit_tile),
-                            stringResource(R.string.highlight_rule_image_fit_stretch),
-                            stringResource(R.string.highlight_rule_image_fit_cover),
-                            stringResource(R.string.highlight_rule_image_fit_nine),
-                        ),
-                        selectedIndex = draft.bgImageFit,
+                    HighlightColorRow(
+                        title = stringResource(R.string.highlight_rule_use_text_color),
+                        color = ReadHighlightRule.COLOR_TEXT,
+                        state = state,
+                        contentColor = contentColor,
+                        actions = actions,
+                        onClick = {
+                            actions.onPageSelected(ReadStylePage.HIGHLIGHT_TEXT_COLOR)
+                        },
+                    )
+                    HighlightColorRow(
+                        title = stringResource(R.string.highlight_rule_use_background_color),
+                        color = ReadHighlightRule.COLOR_BACKGROUND,
+                        state = state,
+                        contentColor = contentColor,
+                        actions = actions,
+                        onClick = {
+                            actions.onPageSelected(ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR)
+                        },
+                    )
+                    AdvancedFileRow(
+                        title = "${stringResource(R.string.highlight_rule_background_image)} · ${stringResource(R.string.read_style_shared_short)}",
+                        path = draft.bgImage,
                         contentColor = contentColor,
                         accentColor = accentColor,
-                        onSelected = {
-                            actions.onHighlightDraftChanged(draft.copy(bgImageFit = it))
-                            if (it == 3) actions.onPageSelected(ReadStylePage.HIGHLIGHT_NINE_SLICE)
-                        },
+                        onSelect = actions.onSelectHighlightBackground,
+                        onClear = actions.onClearHighlightBackground,
                     )
-                    if (draft.bgImageFit == 3) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().height(48.dp)
-                                .clickable(role = Role.Button) {
-                                    actions.onPageSelected(ReadStylePage.HIGHLIGHT_NINE_SLICE)
-                                },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                stringResource(R.string.highlight_nine_slice_editor),
-                                modifier = Modifier.weight(1f), color = contentColor, fontSize = 14.sp,
-                            )
-                            Icon(
-                                painterResource(R.drawable.ic_chevron_right_20), contentDescription = null,
-                                modifier = Modifier.size(20.dp), tint = contentColor,
-                            )
-                        }
-                    }
-                    AdvancedSliderRow(
-                        title = stringResource(R.string.highlight_rule_image_scale),
-                        valueText = String.format(Locale.ROOT, "%.1f×", draft.bgImageScale),
-                        value = draft.bgImageScale.coerceIn(0.1f, 5f),
-                        range = 0.1f..5f,
-                        steps = 48,
-                        contentColor = contentColor,
-                        onValueChanged = {
-                            actions.onHighlightDraftChanged(
-                                draft.copy(bgImageScale = (it * 10).roundToInt() / 10f)
-                            )
-                        },
-                    )
-                }
-                AdvancedDivider(contentColor)
-                AdvancedSectionLabel(
-                    stringResource(R.string.highlight_rule_section_underline),
-                    accentColor,
-                )
-                UnderlineStyleGrid(
-                    selectedMode = draft.underlineMode,
-                    contentColor = contentColor,
-                    accentColor = accentColor,
-                    onSelected = {
-                        actions.onHighlightDraftChanged(draft.copy(underlineMode = it))
-                    },
-                )
-                if (draft.underlineMode != 0) {
-                    OptionalColorRow(
-                        title = stringResource(R.string.highlight_rule_use_underline_color),
-                        color = draft.underlineColor,
-                        contentColor = contentColor,
-                        onEnabledChanged = { enabled ->
-                            actions.onHighlightDraftChanged(
-                                draft.copy(
-                                    underlineColor = if (enabled) {
-                                        draft.textColor ?: state.editorTextAccentColor
-                                    } else {
-                                        null
-                                    }
-                                )
-                            )
-                        },
-                        onClick = {
-                            actions.onPageSelected(ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR)
-                        },
-                    )
-                    AdvancedSliderRow(
-                        title = stringResource(R.string.read_style_underline_width),
-                        valueText = String.format(Locale.ROOT, "%.1f dp", draft.underlineWidth),
-                        value = draft.underlineWidth.coerceIn(0.1f, 10f),
-                        range = 0.1f..10f,
-                        steps = 98,
-                        contentColor = contentColor,
-                        onValueChanged = {
-                            actions.onHighlightDraftChanged(
-                                draft.copy(underlineWidth = (it * 10).roundToInt() / 10f)
-                            )
-                        },
-                    )
-                    AdvancedSliderRow(
-                        title = stringResource(R.string.read_style_underline_offset),
-                        valueText = String.format(Locale.ROOT, "%.1f dp", draft.underlineOffset),
-                        value = draft.underlineOffset.coerceIn(0f, 20f),
-                        range = 0f..20f,
-                        steps = 199,
-                        contentColor = contentColor,
-                        onValueChanged = {
-                            actions.onHighlightDraftChanged(
-                                draft.copy(underlineOffset = (it * 10).roundToInt() / 10f)
-                            )
-                        },
-                    )
-                    if (draft.underlineMode == 5) {
-                        AdvancedTextField(
-                            label = stringResource(R.string.highlight_rule_svg_path),
-                            value = draft.underlineSvgPath.orEmpty(),
+                    if (!draft.bgImage.isNullOrBlank()) {
+                        Text(
+                            text = stringResource(R.string.highlight_rule_image_fit),
+                            modifier = Modifier.padding(top = 8.dp, bottom = 7.dp),
+                            color = contentColor,
+                            fontSize = 14.sp,
+                        )
+                        AdvancedDock(
+                            labels = listOf(
+                                stringResource(R.string.highlight_rule_image_fit_tile),
+                                stringResource(R.string.highlight_rule_image_fit_stretch),
+                                stringResource(R.string.highlight_rule_image_fit_cover),
+                                stringResource(R.string.highlight_rule_image_fit_nine),
+                            ),
+                            selectedIndex = draft.bgImageFit,
                             contentColor = contentColor,
                             accentColor = accentColor,
-                            singleLine = false,
+                            onSelected = {
+                                actions.onHighlightDraftChanged(draft.copy(bgImageFit = it))
+                                if (it == 3) actions.onPageSelected(ReadStylePage.HIGHLIGHT_NINE_SLICE)
+                            },
+                        )
+                        if (draft.bgImageFit == 3) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(48.dp)
+                                    .clickable(role = Role.Button) {
+                                        actions.onPageSelected(ReadStylePage.HIGHLIGHT_NINE_SLICE)
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    stringResource(R.string.highlight_nine_slice_editor),
+                                    modifier = Modifier.weight(1f), color = contentColor, fontSize = 14.sp,
+                                )
+                                Icon(
+                                    painterResource(R.drawable.ic_chevron_right_20), contentDescription = null,
+                                    modifier = Modifier.size(20.dp), tint = contentColor,
+                                )
+                            }
+                        }
+                        AdvancedSliderRow(
+                            title = stringResource(R.string.highlight_rule_image_scale),
+                            valueText = String.format(Locale.ROOT, "%.1f×", draft.bgImageScale),
+                            value = draft.bgImageScale.coerceIn(0.1f, 5f),
+                            range = 0.1f..5f,
+                            steps = 48,
+                            contentColor = contentColor,
                             onValueChanged = {
                                 actions.onHighlightDraftChanged(
-                                    draft.copy(underlineSvgPath = it.ifBlank { null })
+                                    draft.copy(bgImageScale = (it * 10).roundToInt() / 10f)
                                 )
                             },
                         )
                     }
+                    AdvancedDivider(contentColor)
+                    AdvancedSectionLabel(
+                        stringResource(R.string.highlight_rule_section_underline),
+                        accentColor,
+                    )
+                    UnderlineStyleGrid(
+                        selectedMode = draft.underlineMode,
+                        contentColor = contentColor,
+                        accentColor = accentColor,
+                        onSelected = {
+                            actions.onHighlightDraftChanged(draft.copy(underlineMode = it))
+                        },
+                    )
+                    if (draft.underlineMode != 0) {
+                        HighlightColorRow(
+                            title = stringResource(R.string.highlight_rule_use_underline_color),
+                            color = ReadHighlightRule.COLOR_UNDERLINE,
+                            state = state,
+                            contentColor = contentColor,
+                            actions = actions,
+                            onClick = {
+                                actions.onPageSelected(ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR)
+                            },
+                        )
+                        AdvancedSliderRow(
+                            title = stringResource(R.string.read_style_underline_width),
+                            valueText = String.format(Locale.ROOT, "%.1f dp", draft.underlineWidth),
+                            value = draft.underlineWidth.coerceIn(0.1f, 10f),
+                            range = 0.1f..10f,
+                            steps = 98,
+                            contentColor = contentColor,
+                            onValueChanged = {
+                                actions.onHighlightDraftChanged(
+                                    draft.copy(underlineWidth = (it * 10).roundToInt() / 10f)
+                                )
+                            },
+                        )
+                        AdvancedSliderRow(
+                            title = stringResource(R.string.read_style_underline_offset),
+                            valueText = String.format(Locale.ROOT, "%.1f dp", draft.underlineOffset),
+                            value = draft.underlineOffset.coerceIn(0f, 20f),
+                            range = 0f..20f,
+                            steps = 199,
+                            contentColor = contentColor,
+                            onValueChanged = {
+                                actions.onHighlightDraftChanged(
+                                    draft.copy(underlineOffset = (it * 10).roundToInt() / 10f)
+                                )
+                            },
+                        )
+                        if (draft.underlineMode == 5) {
+                            AdvancedTextField(
+                                label = stringResource(R.string.highlight_rule_svg_path),
+                                value = draft.underlineSvgPath.orEmpty(),
+                                contentColor = contentColor,
+                                accentColor = accentColor,
+                                singleLine = false,
+                                onValueChanged = {
+                                    actions.onHighlightDraftChanged(
+                                        draft.copy(underlineSvgPath = it.ifBlank { null })
+                                    )
+                                },
+                            )
+                        }
+                    }
+                    AdvancedDivider(contentColor)
+                    AdvancedSectionLabel(
+                        "${stringResource(R.string.highlight_rule_section_font)} · ${stringResource(R.string.read_style_shared_short)}",
+                        accentColor,
+                    )
+                    AdvancedFileRow(
+                        title = stringResource(R.string.highlight_rule_font_file),
+                        path = draft.fontPath,
+                        contentColor = contentColor,
+                        accentColor = accentColor,
+                        onSelect = actions.onSelectHighlightFont,
+                        onClear = actions.onClearHighlightFont,
+                    )
+                    AdvancedSliderRow(
+                        title = stringResource(R.string.font_weight),
+                        valueText = draft.fontWeight.toString(),
+                        value = draft.fontWeight.toFloat().coerceIn(100f, 900f),
+                        range = 100f..900f,
+                        steps = 7,
+                        contentColor = contentColor,
+                        onValueChanged = {
+                            val weight = ((it / 100f).roundToInt() * 100).coerceIn(100, 900)
+                            actions.onHighlightDraftChanged(draft.copy(fontWeight = weight))
+                        },
+                    )
+                    AdvancedSwitchRow(
+                        title = stringResource(R.string.highlight_rule_italic),
+                        checked = draft.isItalic,
+                        contentColor = contentColor,
+                        onCheckedChange = {
+                            actions.onHighlightDraftChanged(draft.copy(isItalic = it))
+                        },
+                    )
                 }
-                AdvancedDivider(contentColor)
-                AdvancedSectionLabel(
-                    stringResource(R.string.highlight_rule_section_font),
-                    accentColor,
-                )
-                AdvancedFileRow(
-                    title = stringResource(R.string.highlight_rule_font_file),
-                    path = draft.fontPath,
-                    contentColor = contentColor,
-                    accentColor = accentColor,
-                    onSelect = actions.onSelectHighlightFont,
-                    onClear = actions.onClearHighlightFont,
-                )
-                AdvancedSliderRow(
-                    title = stringResource(R.string.font_weight),
-                    valueText = draft.fontWeight.toString(),
-                    value = draft.fontWeight.toFloat().coerceIn(100f, 900f),
-                    range = 100f..900f,
-                    steps = 7,
-                    contentColor = contentColor,
-                    onValueChanged = {
-                        val weight = ((it / 100f).roundToInt() * 100).coerceIn(100, 900)
-                        actions.onHighlightDraftChanged(draft.copy(fontWeight = weight))
-                    },
-                )
-                AdvancedSwitchRow(
-                    title = stringResource(R.string.highlight_rule_italic),
-                    checked = draft.isItalic,
-                    contentColor = contentColor,
-                    onCheckedChange = {
-                        actions.onHighlightDraftChanged(draft.copy(isItalic = it))
-                    },
-                )
                 if (state.editingHighlightIndex != null) {
                     Spacer(Modifier.height(10.dp))
                     Box(
@@ -530,6 +546,7 @@ internal fun HighlightRuleEditorPage(
 @Composable
 private fun HighlightRulePreview(
     rule: ReadHighlightRule,
+    isNight: Boolean,
     contentColor: Color,
     accentColor: Color,
 ) {
@@ -556,13 +573,16 @@ private fun HighlightRulePreview(
     }
     // 新草稿的首帧不能沿用旧范围，取消的后台匹配也不能回写新草稿。
     val runs = matchedRuns?.takeIf { it.first == rule }?.second.orEmpty()
-    val annotatedText = remember(text, runs, contentColor) {
+    val previewTextColor = Color(ReadBookConfig.durConfig.textColorForMode(
+        if (isNight) ReadAppearanceMode.NIGHT else ReadAppearanceMode.DAY,
+    ))
+    val annotatedText = remember(text, runs, previewTextColor, isNight) {
         buildAnnotatedString {
             append(text)
             runs.forEach { run ->
                 addStyle(
                     SpanStyle(
-                        color = run.style.textColor?.let(::Color) ?: contentColor,
+                        color = run.style.resolveTextColor(isNight)?.let(::Color) ?: previewTextColor,
                         fontWeight = FontWeight(run.style.fontWeight.coerceIn(100, 900)),
                         fontStyle = if (run.style.isItalic) FontStyle.Italic else FontStyle.Normal,
                     ),
@@ -639,7 +659,7 @@ private fun HighlightRulePreview(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(Color(NgTheme.colors.surface).copy(alpha = 0.22f))
+            .background(if (isNight) Color(0xFF181818) else Color(0xFFFAF7F0))
             .border(0.7.dp, contentColor.copy(alpha = 0.12f), shape)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
@@ -655,7 +675,7 @@ private fun HighlightRulePreview(
                     .drawWithContent {
                         val bitmap = backgroundImage
                         segments.forEach { segment ->
-                            segment.style.bgColor?.let { color ->
+                            segment.style.resolveBackgroundColor(isNight)?.let { color ->
                                 drawRect(
                                     color = Color(color),
                                     topLeft = androidx.compose.ui.geometry.Offset(segment.left, segment.top),
@@ -692,8 +712,8 @@ private fun HighlightRulePreview(
                         if (imageStyle.bgImageFit == 3) drawImages(true)
                         segments.forEach { segment ->
                             val style = segment.style
-                            val underlineColor = style.underlineColor?.let(::Color)
-                                ?: style.textColor?.let(::Color) ?: contentColor
+                            val underlineColor = style.resolveUnderlineColor(isNight)?.let(::Color)
+                                ?: style.resolveTextColor(isNight)?.let(::Color) ?: previewTextColor
                             val strokeWidth = style.underlineWidth.coerceIn(0.1f, 10f).dp.toPx()
                             val offset = style.underlineOffset.coerceIn(0f, 20f).dp.toPx()
                             val start = segment.left
@@ -769,7 +789,7 @@ private fun HighlightRulePreview(
                             }
                         }
                     },
-                color = contentColor,
+                color = previewTextColor,
                 fontSize = 16.sp,
                 lineHeight = 24.sp,
                 fontWeight = FontWeight.Normal,
@@ -837,41 +857,44 @@ internal fun HighlightRuleColorPage(
     actions: ReadStyleActions,
 ) {
     val draft = state.highlightDraft ?: return
+    val isNight = state.highlightColorMode == 1
     val title: String
     val color: Int
     when (page) {
         ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> {
             title = stringResource(R.string.bg_color)
-            color = draft.bgColor ?: state.editorTextAccentColor
+            color = draft.colorValue(ReadHighlightRule.COLOR_BACKGROUND, isNight) ?: state.editorTextAccentColor
         }
 
         ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR -> {
             title = stringResource(R.string.read_style_full_underline_color)
-            color = draft.underlineColor
-                ?: draft.textColor
+            color = draft.colorValue(ReadHighlightRule.COLOR_UNDERLINE, isNight)
+                ?: draft.colorValue(ReadHighlightRule.COLOR_TEXT, isNight)
                 ?: state.editorTextAccentColor
         }
 
         else -> {
             title = stringResource(R.string.text_color)
-            color = draft.textColor ?: state.editorTextAccentColor
+            color = draft.colorValue(ReadHighlightRule.COLOR_TEXT, isNight) ?: state.editorTextAccentColor
         }
     }
     AdvancedColorPage(
-        title = title,
+        title = stringResource(if (isNight) R.string.read_style_mode_night else R.string.read_style_mode_day) + " · " + title,
         initialColor = state.editorInitialColor ?: color,
         onBack = actions.onBack,
         onColorChanged = { selected ->
             actions.onHighlightDraftChanged(
                 when (page) {
-                    ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> draft.copy(bgColor = selected)
+                    ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR ->
+                        draft.withColor(ReadHighlightRule.COLOR_BACKGROUND, selected, isNight)
                     ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR ->
-                        draft.copy(underlineColor = selected)
-                    else -> draft.copy(textColor = selected)
+                        draft.withColor(ReadHighlightRule.COLOR_UNDERLINE, selected, isNight)
+                    else -> draft.withColor(ReadHighlightRule.COLOR_TEXT, selected, isNight)
                 }
             )
         },
         onReset = actions.onResetEditorColor,
+        backgroundRenderer = state.colorPreviewTarget::renderBackground,
     )
 }
 
@@ -882,6 +905,7 @@ internal fun AdvancedColorPage(
     onBack: () -> Unit,
     onColorChanged: (Int) -> Unit,
     onReset: () -> Unit,
+    backgroundRenderer: (Int, Int) -> Bitmap = ::renderCurrentReadBackground,
 ) {
     Column(
         modifier = Modifier
@@ -892,7 +916,7 @@ internal fun AdvancedColorPage(
         NgInlineColorPicker(
             title = title,
             initialColor = initialColor,
-            backgroundRenderer = ::renderCurrentReadBackground,
+            backgroundRenderer = backgroundRenderer,
             onBack = onBack,
             onColorChanged = onColorChanged,
             onReset = onReset,
@@ -1059,6 +1083,35 @@ private fun AdvancedColorRow(
             tint = contentColor.copy(alpha = 0.68f),
         )
     }
+}
+
+@Composable
+private fun HighlightColorRow(
+    title: String,
+    color: Int,
+    state: ReadStyleUiState,
+    contentColor: Color,
+    actions: ReadStyleActions,
+    onClick: () -> Unit,
+) {
+    val draft = state.highlightDraft ?: return
+    val isNight = state.highlightColorMode == 1
+    val currentColor = draft.colorValue(color, isNight)
+    val fallback = when (color) {
+        ReadHighlightRule.COLOR_BACKGROUND -> (state.editorTextAccentColor and 0x00FFFFFF) or 0x33000000
+        ReadHighlightRule.COLOR_UNDERLINE ->
+            draft.colorValue(ReadHighlightRule.COLOR_TEXT, isNight) ?: state.editorTextAccentColor
+        else -> state.editorTextAccentColor
+    }
+    OptionalColorRow(
+        title = title,
+        color = currentColor,
+        contentColor = contentColor,
+        onEnabledChanged = { enabled ->
+            actions.onHighlightDraftChanged(draft.withColor(color, if (enabled) fallback else null, isNight))
+        },
+        onClick = onClick,
+    )
 }
 
 @Composable
@@ -1235,11 +1288,33 @@ private fun UnderlineStyleGrid(
 }
 
 @Composable
+internal fun ReadStyleModeSelector(
+    mode: Int,
+    allowEInk: Boolean,
+    contentColor: Color,
+    accentColor: Color,
+    onSelected: (Int) -> Unit,
+) {
+    AdvancedDock(
+        labels = listOf(
+            stringResource(R.string.read_style_mode_day),
+            stringResource(R.string.read_style_mode_night),
+        ) + if (allowEInk) listOf(stringResource(R.string.read_style_mode_eink)) else emptyList(),
+        selectedIndex = mode,
+        contentColor = contentColor,
+        accentColor = accentColor,
+        icons = listOf(R.drawable.ic_daytime, R.drawable.ic_brightness),
+        onSelected = onSelected,
+    )
+}
+
+@Composable
 private fun AdvancedDock(
     labels: List<String>,
     selectedIndex: Int,
     contentColor: Color,
     accentColor: Color,
+    icons: List<Int> = emptyList(),
     onSelected: (Int) -> Unit,
 ) {
     val shape = RoundedCornerShape(12.dp)
@@ -1255,27 +1330,39 @@ private fun AdvancedDock(
     ) {
         labels.forEachIndexed { index, label ->
             val selected = index == selectedIndex.coerceIn(labels.indices)
+            val labelColor = if (selected) {
+                if (accentColor.luminance() > 0.5f) Color.Black else Color.White
+            } else {
+                contentColor
+            }
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(10.dp))
                     .background(if (selected) accentColor else Color.Transparent)
-                    .clickable(role = Role.RadioButton) { onSelected(index) },
+                    .selectable(selected = selected, role = Role.RadioButton) { onSelected(index) },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = label,
-                    color = if (selected) {
-                        if (accentColor.luminance() > 0.5f) Color.Black else Color.White
-                    } else {
-                        contentColor
-                    },
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    icons.getOrNull(index)?.let { icon ->
+                        Icon(
+                            painter = painterResource(icon),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = labelColor,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(
+                        text = label,
+                        color = labelColor,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

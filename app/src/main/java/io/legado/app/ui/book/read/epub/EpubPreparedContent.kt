@@ -53,7 +53,8 @@ internal class EpubPreparedContent private constructor(
         styles.rematch(chapter.highlightInputs, matcher)
         return EpubPreparedContent(chapter, mapped, documents.map { document ->
             document.copy(payload = JSONObject(document.payload.toString())
-                .put("charStyles", styles.styles).put("styleRanges", styles.ranges),
+                .put("charStyles", styles.styles).put("nightCharStyles", styles.nightStyles)
+                .put("styleRanges", styles.ranges).put("nightStyleRanges", styles.nightRanges),
                 styleFonts = styles.fonts, nineSlices = styles.nineSlices, backgrounds = styles.backgrounds)
         })
     }
@@ -143,7 +144,8 @@ internal class EpubPreparedContent private constructor(
                     EpubPageSize(requireNotNull(width) { "固定 SVG 缺少宽度" }, requireNotNull(height) { "固定 SVG 缺少高度" })
                 } else null
                 Document(location, document.source.html, document.toReaderJson("$key-$index").put("text", mapped.text)
-                    .put("charStyles", charStyles.styles).put("styleRanges", charStyles.ranges),
+                    .put("charStyles", charStyles.styles).put("nightCharStyles", charStyles.nightStyles)
+                    .put("styleRanges", charStyles.ranges).put("nightStyleRanges", charStyles.nightRanges),
                     first, end, if (index == mapped.documents.lastIndex) chapter.chapter.endFragmentId else null,
                     spineIndex, chapter, mapped.text, svgSize, charStyles.fonts, charStyles.nineSlices, charStyles.backgrounds,
                     EpubTitleProjection.from(document, titleLines))

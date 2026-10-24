@@ -267,6 +267,10 @@ class ReadStylePackageManagerTest {
             npRight = 0.22f,
             npTop = 0.32f,
             npBottom = 0.42f,
+            textColorNight = 0, bgColorNight = 0x33000000, underlineColorNight = 123,
+            nightFollowDay = false, textColorNightMode = ReadHighlightRule.NIGHT_DEFAULT,
+            bgColorNightMode = ReadHighlightRule.NIGHT_CUSTOM,
+            underlineColorNightMode = ReadHighlightRule.NIGHT_FOLLOW_DAY,
         )
         val config = ReadBookConfig.Config(
             name = "full-md3",

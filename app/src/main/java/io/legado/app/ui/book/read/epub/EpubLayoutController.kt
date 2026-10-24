@@ -837,6 +837,7 @@ internal class EpubLayoutController(
                 .put("top", ReadBookConfig.titleTopSpacing).put("bottom", ReadBookConfig.titleBottomSpacing))
         val fixed = item?.let { publication.layoutFor(it) == EpubLayout.FIXED } ?: false
         val value = JSONObject().put("fixed", fixed)
+            .put("ngHighlightNight", ReadBookConfig.isNightTheme)
             // PageView owns decorations for both per-book and global reading styles.
             .put("ngNativePageDecorations", boundBook?.let {
                 it.bookUrl == ReadBook.book?.bookUrl

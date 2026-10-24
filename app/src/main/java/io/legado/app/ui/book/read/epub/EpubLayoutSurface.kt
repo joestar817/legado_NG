@@ -327,6 +327,8 @@ internal class EpubLayoutSurface(
         val updates = JSONArray().apply { values.forEach { document ->
             put(JSONObject().put("key", document.payload.getString("key"))
                 .put("charStyles", document.payload.getJSONArray("charStyles"))
+                .put("nightCharStyles", document.payload.getJSONArray("nightCharStyles"))
+                .put("nightStyleRanges", document.payload.getJSONArray("nightStyleRanges"))
                 .put("styleRanges", document.payload.getJSONArray("styleRanges")))
         } }
         val token = begin()

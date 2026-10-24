@@ -206,6 +206,9 @@ class RhinoBookSourceClassPolicyTest {
             "io.legado.app.help.tts.TtsEngineStore",
             "io.legado.app.help.http.NetworkLog",
             "io.legado.app.help.config.AppConfig",
+            "io.legado.app.help.config.ReadBookConfig",
+            "io.legado.app.help.config.ReadBookConfig\$Config",
+            "io.legado.app.help.config.ReadAppearanceMode",
             "io.legado.app.web.mcp.McpServer"
         )
 

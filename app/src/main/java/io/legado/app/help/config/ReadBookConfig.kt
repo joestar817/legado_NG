@@ -518,12 +518,13 @@ object ReadBookConfig {
 
     internal fun effectiveReadFloatingColor(
         preset: Config = durConfig,
+        mode: ReadAppearanceMode = ReadAppearanceMode.current(),
     ): EffectiveReadFloatingColor = resolveEffectiveReadFloatingColor(
-        isEInk = AppConfig.isEInkMode,
+        isEInk = mode == ReadAppearanceMode.EINK,
         globallyFollowsApplication = floatingColorManagedGlobally,
         globalColorStyle = readFloatingGlobalColorStyle,
-        presetSeed = preset.curReadFloatingSeed(),
-        presetFollowsApplication = preset.curReadFloatingFollowsApplication(),
+        presetSeed = preset.readFloatingSeedForMode(mode),
+        presetFollowsApplication = preset.readFloatingFollowsApplicationForMode(mode),
         presetColorStyle = preset.curReadFloatingColorStyle(),
     )
 
@@ -1080,14 +1081,16 @@ object ReadBookConfig {
             initAccentColorInt = true
         }
 
-        fun setCurTextColor(color: Int) {
-            when {
-                AppConfig.isEInkMode -> {
+        fun setCurTextColor(color: Int) = setTextColorForMode(color, ReadAppearanceMode.current())
+
+        internal fun setTextColorForMode(color: Int, mode: ReadAppearanceMode) {
+            when (mode) {
+                ReadAppearanceMode.EINK -> {
                     textColorEInk = "#${color.hexString}"
                     textColorIntEInk = color
                 }
 
-                ReadBookConfig.isNightTheme -> {
+                ReadAppearanceMode.NIGHT -> {
                     textColorNight = "#${color.hexString}"
                     textColorIntNight = color
                 }
@@ -1099,25 +1102,35 @@ object ReadBookConfig {
             }
         }
 
-        fun curTextColor(): Int {
+        fun curTextColor(): Int = textColorForMode(ReadBookConfig.isNightTheme)
+
+        /** Read-only preview access; selecting a preview never changes the effective reader mode. */
+        fun textColorForMode(isNight: Boolean): Int = textColorForMode(
+            if (AppConfig.isEInkMode) ReadAppearanceMode.EINK
+            else if (isNight) ReadAppearanceMode.NIGHT else ReadAppearanceMode.DAY,
+        )
+
+        internal fun textColorForMode(mode: ReadAppearanceMode): Int {
             if (!initColorInt) {
                 initColorInt()
             }
-            return when {
-                AppConfig.isEInkMode -> textColorIntEInk
-                ReadBookConfig.isNightTheme -> textColorIntNight
+            return when (mode) {
+                ReadAppearanceMode.EINK -> textColorIntEInk
+                ReadAppearanceMode.NIGHT -> textColorIntNight
                 else -> textColorInt
             }
         }
 
-        fun setCurTextAccentColor(color: Int) {
-            when {
-                AppConfig.isEInkMode -> {
+        fun setCurTextAccentColor(color: Int) = setTextAccentColorForMode(color, ReadAppearanceMode.current())
+
+        internal fun setTextAccentColorForMode(color: Int, mode: ReadAppearanceMode) {
+            when (mode) {
+                ReadAppearanceMode.EINK -> {
                     textAccentColorEInk = "#${color.hexString}"
                     textAccentColorIntEInk = color
                 }
 
-                ReadBookConfig.isNightTheme -> {
+                ReadAppearanceMode.NIGHT -> {
                     textAccentColorNight = "#${color.hexString}"
                     textAccentColorIntNight = color
                 }
@@ -1129,13 +1142,15 @@ object ReadBookConfig {
             }
         }
 
-        fun curTextAccentColor(): Int {
+        fun curTextAccentColor(): Int = textAccentColorForMode(ReadAppearanceMode.current())
+
+        internal fun textAccentColorForMode(mode: ReadAppearanceMode): Int {
             if (!initAccentColorInt) {
                 initAccentColorInt()
             }
-            return when {
-                AppConfig.isEInkMode -> textAccentColorIntEInk
-                ReadBookConfig.isNightTheme -> textAccentColorIntNight
+            return when (mode) {
+                ReadAppearanceMode.EINK -> textAccentColorIntEInk
+                ReadAppearanceMode.NIGHT -> textAccentColorIntNight
                 else -> textAccentColorInt
             }
         }
@@ -1172,8 +1187,17 @@ object ReadBookConfig {
             else underlineColor.toColorInt()
         }.getOrDefault(curTextColor())
 
+        internal fun underlineColorForMode(mode: ReadAppearanceMode): Int = runCatching {
+            if (mode == ReadAppearanceMode.NIGHT) underlineColorNight.toColorInt()
+            else underlineColor.toColorInt()
+        }.getOrDefault(textColorForMode(mode))
+
         fun setCurUnderlineColor(color: Int) {
-            if (ReadBookConfig.isNightTheme) {
+            setUnderlineColorForMode(color, if (ReadBookConfig.isNightTheme) ReadAppearanceMode.NIGHT else ReadAppearanceMode.DAY)
+        }
+
+        internal fun setUnderlineColorForMode(color: Int, mode: ReadAppearanceMode) {
+            if (mode == ReadAppearanceMode.NIGHT) {
                 underlineColorNight = "#${color.hexString}"
             } else {
                 underlineColor = "#${color.hexString}"
@@ -1201,14 +1225,16 @@ object ReadBookConfig {
             }
         }
 
-        fun setCurBg(bgType: Int, bg: String) {
-            when {
-                AppConfig.isEInkMode -> {
+        fun setCurBg(bgType: Int, bg: String) = setBackgroundForMode(bgType, bg, ReadAppearanceMode.current())
+
+        internal fun setBackgroundForMode(bgType: Int, bg: String, mode: ReadAppearanceMode) {
+            when (mode) {
+                ReadAppearanceMode.EINK -> {
                     bgTypeEInk = bgType
                     bgStrEInk = bg
                 }
 
-                ReadBookConfig.isNightTheme -> {
+                ReadAppearanceMode.NIGHT -> {
                     bgTypeNight = bgType
                     bgStrNight = bg
                 }
@@ -1220,9 +1246,14 @@ object ReadBookConfig {
             }
         }
 
-        fun setCurReadFloatingSeed(color: Int) {
+        fun setCurReadFloatingSeed(color: Int) = setReadFloatingSeedForMode(
+            color, if (ReadBookConfig.isNightTheme) ReadAppearanceMode.NIGHT else ReadAppearanceMode.DAY,
+        )
+
+        internal fun setReadFloatingSeedForMode(color: Int, mode: ReadAppearanceMode) {
+            if (mode == ReadAppearanceMode.EINK) return
             val opaqueColor = color or 0xFF000000.toInt()
-            if (ReadBookConfig.isNightTheme) {
+            if (mode == ReadAppearanceMode.NIGHT) {
                 readFloatingSeedNight = opaqueColor
                 readFloatingFollowAppNight = false
             } else {
@@ -1230,8 +1261,13 @@ object ReadBookConfig {
             }
         }
 
-        fun clearCurReadFloatingSeed() {
-            if (ReadBookConfig.isNightTheme) {
+        fun clearCurReadFloatingSeed() = clearReadFloatingSeedForMode(
+            if (ReadBookConfig.isNightTheme) ReadAppearanceMode.NIGHT else ReadAppearanceMode.DAY,
+        )
+
+        internal fun clearReadFloatingSeedForMode(mode: ReadAppearanceMode) {
+            if (mode == ReadAppearanceMode.EINK) return
+            if (mode == ReadAppearanceMode.NIGHT) {
                 readFloatingSeedNight = 0
                 readFloatingFollowAppNight = true
             } else {
@@ -1239,9 +1275,11 @@ object ReadBookConfig {
             }
         }
 
-        fun curReadFloatingSeed(): Int = when {
-            AppConfig.isEInkMode -> 0
-            ReadBookConfig.isNightTheme -> readFloatingSeedNight
+        fun curReadFloatingSeed(): Int = readFloatingSeedForMode(ReadAppearanceMode.current())
+
+        internal fun readFloatingSeedForMode(mode: ReadAppearanceMode): Int = when (mode) {
+            ReadAppearanceMode.EINK -> 0
+            ReadAppearanceMode.NIGHT -> readFloatingSeedNight
             else -> readFloatingSeed
         }
 
@@ -1249,9 +1287,11 @@ object ReadBookConfig {
          * 旧内置预设只验收过日间种子，夜间的 0 不是用户显式选择“跟随应用”。
          * 新选择会写入独立标记；旧数据仅在日夜种子都为空时延续跟随语义。
          */
-        fun curReadFloatingFollowsApplication(): Boolean = when {
-            AppConfig.isEInkMode -> false
-            ReadBookConfig.isNightTheme -> readFloatingSeedNight == 0 &&
+        fun curReadFloatingFollowsApplication(): Boolean = readFloatingFollowsApplicationForMode(ReadAppearanceMode.current())
+
+        internal fun readFloatingFollowsApplicationForMode(mode: ReadAppearanceMode): Boolean = when (mode) {
+            ReadAppearanceMode.EINK -> false
+            ReadAppearanceMode.NIGHT -> readFloatingSeedNight == 0 &&
                 (readFloatingFollowAppNight ?: (readFloatingSeed == 0))
             else -> readFloatingSeed == 0
         }
@@ -1264,42 +1304,52 @@ object ReadBookConfig {
 
         fun curReadFloatingColorStyle(): ReadFloatingColorStyle = readFloatingColorStyle
 
-        fun curBgStr(): String {
-            val background = when {
-                AppConfig.isEInkMode -> bgStrEInk
-                ReadBookConfig.isNightTheme -> bgStrNight
+        fun curBgStr(): String = backgroundForMode(ReadAppearanceMode.current())
+
+        internal fun backgroundForMode(mode: ReadAppearanceMode): String {
+            val background = when (mode) {
+                ReadAppearanceMode.EINK -> bgStrEInk
+                ReadAppearanceMode.NIGHT -> bgStrNight
                 else -> bgStr
             }
-            return if (curBgType() == 1) {
+            return if (backgroundTypeForMode(mode) == 1) {
                 resolveBundledReadBackgroundName(background)
             } else {
                 background
             }
         }
 
-        fun curBgType(): Int {
-            return when {
-                AppConfig.isEInkMode -> bgTypeEInk
-                ReadBookConfig.isNightTheme -> bgTypeNight
+        fun curBgType(): Int = backgroundTypeForMode(ReadAppearanceMode.current())
+
+        internal fun backgroundTypeForMode(mode: ReadAppearanceMode): Int {
+            return when (mode) {
+                ReadAppearanceMode.EINK -> bgTypeEInk
+                ReadAppearanceMode.NIGHT -> bgTypeNight
                 else -> bgType
             }
         }
 
         fun curBgDrawable(width: Int, height: Int): Drawable {
-            val curBgStr = curBgStr()
-            isNineBgImg = curBgStr.endsWith(".9.png")
+            val mode = ReadAppearanceMode.current()
+            isNineBgImg = backgroundForMode(mode).endsWith(".9.png")
+            return backgroundDrawableForMode(mode, width, height)
+        }
+
+        /** Preview decoding never changes the live reader's nine-patch/cache flags. */
+        internal fun backgroundDrawableForMode(mode: ReadAppearanceMode, width: Int, height: Int): Drawable {
+            val curBgStr = backgroundForMode(mode)
+            val ninePatch = curBgStr.endsWith(".9.png")
             if (width == 0 || height == 0) {
                 return appCtx.getCompatColor(R.color.background).toDrawable()
             }
             var bgDrawable: Drawable? = null
-            val resources = appCtx.resources
             try {
-                bgDrawable = when (curBgType()) {
+                bgDrawable = when (backgroundTypeForMode(mode)) {
                     0 -> curBgStr.toColorInt().toDrawable()
                     1 -> {
                         val path = "bg" + File.separator + curBgStr
                         val bitmap = BitmapUtils.decodeAssetsBitmap(appCtx, path, width, height)
-                        bitmap?.resizeAndRecycle(width, height)?.toDrawable(resources)
+                        bitmap?.resizeAndRecycle(width, height)?.toDrawable(appCtx.resources)
                     }
 
                     else -> {
@@ -1307,11 +1357,11 @@ object ReadBookConfig {
                             if (it.contains(File.separator)) it
                             else FileUtils.getPath(appCtx.externalFiles, "bg", it)
                         }
-                        if (isNineBgImg) {
+                        if (ninePatch) {
                             BitmapUtils.decodeNinePatchDrawable(path)
                         } else {
                             val bitmap = BitmapUtils.decodeBitmap(path, width, height)
-                            bitmap?.resizeAndRecycle(width, height)?.toDrawable(resources)
+                            bitmap?.resizeAndRecycle(width, height)?.toDrawable(appCtx.resources)
                         }
                     }
                 }

@@ -18,16 +18,27 @@ import io.legado.app.model.epub.EpubBackgroundImage
 /** Projects already matched native styles. This layer never evaluates highlighting rules. */
 internal class EpubCharStyles(private val loadFont: (String) -> ByteArray?) {
     val styles = JSONArray()
+    val nightStyles = JSONArray()
     val ranges = JSONArray()
+    val nightRanges = JSONArray()
     val fonts = LinkedHashMap<String, ByteArray>()
     val nineSlices = LinkedHashMap<String, EpubNineSliceImage>()
     val backgrounds = LinkedHashMap<String, EpubBackgroundImage>()
     private val backgroundPaths = HashMap<List<Any>, EpubBackgroundImage?>()
     private val nineSlicePaths = HashMap<List<Any>, EpubNineSliceImage?>()
     private val identities = LinkedHashMap<ReadCharStyle, Int>()
+    private val nightIdentities = LinkedHashMap<ReadCharStyle, Int>()
     private val fontPaths = HashMap<String, String?>()
 
     fun add(from: Int, to: Int, style: ReadCharStyle) {
+        addResolved(from, to, style.forTheme(false), styles, ranges, identities)
+        addResolved(from, to, style.forTheme(true), nightStyles, nightRanges, nightIdentities)
+    }
+
+    private fun addResolved(
+        from: Int, to: Int, style: ReadCharStyle,
+        styles: JSONArray, ranges: JSONArray, identities: MutableMap<ReadCharStyle, Int>,
+    ) {
         if (to <= from) return
         val id = identities.getOrPut(style) {
             val font = if (style.fontPath.isBlank()) null else fontPaths.getOrPut(style.fontPath) {

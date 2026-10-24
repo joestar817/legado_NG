@@ -2349,6 +2349,10 @@
     <string name="read_style_mode_day">日间</string>
     <string name="read_style_mode_night">夜间</string>
     <string name="read_style_mode_eink">墨水</string>
+    <string name="read_style_shared_short">共用</string>
+    <string name="read_style_shared_geometry">形状与尺寸共用，颜色按日夜配置</string>
+    <string name="read_style_editor_target_lost">页面已变化，请重新选择</string>
+    <string name="read_style_floating_ink_no_seed">墨水模式不使用浮窗主色</string>
     <string name="read_style_preview_title">第1章 凶案</string>
     <string name="read_style_preview_accent">姓名？</string>
     <string name="read_style_underline_solid">实线</string>
@@ -2413,6 +2417,8 @@
     <string name="highlight_rule_use_text_color">自定义文字颜色</string>
     <string name="highlight_rule_use_background_color">背景颜色</string>
     <string name="highlight_rule_use_underline_color">自定义下划线颜色</string>
+    <string name="highlight_rule_night_follow_day">跟随日间</string>
+    <string name="highlight_rule_color_mode">配色</string>
     <string name="highlight_rule_underline_none">关闭</string>
     <string name="highlight_rule_underline_wavy">波浪线</string>
     <string name="highlight_rule_underline_bar">强调条</string>

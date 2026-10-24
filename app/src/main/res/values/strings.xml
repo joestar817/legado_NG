@@ -2449,6 +2449,10 @@
     <string name="read_style_mode_day">Day</string>
     <string name="read_style_mode_night">Night</string>
     <string name="read_style_mode_eink">E-Ink</string>
+    <string name="read_style_shared_short">Shared</string>
+    <string name="read_style_shared_geometry">Shape and size are shared; colors have day and night settings</string>
+    <string name="read_style_editor_target_lost">The page has changed. Please select again.</string>
+    <string name="read_style_floating_ink_no_seed">E-ink mode does not use a floating color seed</string>
     <string name="read_style_preview_title">Chapter 1 · The murder</string>
     <string name="read_style_preview_accent">Name?</string>
     <string name="read_style_underline_solid">Solid</string>
@@ -2513,6 +2517,8 @@
     <string name="highlight_rule_use_text_color">Custom text color</string>
     <string name="highlight_rule_use_background_color">Background color</string>
     <string name="highlight_rule_use_underline_color">Custom underline color</string>
+    <string name="highlight_rule_night_follow_day">Follow day</string>
+    <string name="highlight_rule_color_mode">Palette</string>
     <string name="highlight_rule_underline_none">None</string>
     <string name="highlight_rule_underline_wavy">Wavy</string>
     <string name="highlight_rule_underline_bar">Emphasis bar</string>
