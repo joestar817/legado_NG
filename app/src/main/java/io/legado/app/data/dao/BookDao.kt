@@ -92,13 +92,13 @@ interface BookDao {
     )
     fun flowNoGroup(): Flow<List<Book>>
 
-    @Query("SELECT * FROM books WHERE (`group` & :group) > 0")
+    @Query("SELECT * FROM books WHERE (`group` & :group) != 0")
     fun flowByUserGroup(group: Long): Flow<List<Book>>
 
     @Query("SELECT * FROM books WHERE name like '%'||:key||'%' or author like '%'||:key||'%'")
     fun flowSearch(key: String): Flow<List<Book>>
 
-    @Query("SELECT * FROM books WHERE (`group` & :group) > 0")
+    @Query("SELECT * FROM books WHERE (`group` & :group) != 0")
     fun getBooksByGroup(group: Long): List<Book>
 
     @Query("SELECT * FROM books WHERE `name` in (:names)")
@@ -182,7 +182,13 @@ interface BookDao {
     @Query("update books set `group` = :newGroupId where `group` = :oldGroupId")
     fun upGroup(oldGroupId: Long, newGroupId: Long)
 
-    @Query("update books set `group` = `group` - :group where `group` & :group > 0")
+    @Query("UPDATE books SET `group` = `group` | :groups WHERE bookUrl = :bookUrl")
+    fun addGroups(bookUrl: String, groups: Long)
+
+    @Query("UPDATE books SET `group` = :groups WHERE bookUrl = :bookUrl")
+    fun setGroups(bookUrl: String, groups: Long)
+
+    @Query("update books set `group` = `group` - :group where (`group` & :group) != 0")
     fun removeGroup(group: Long)
 
     @Query("delete from books where type & ${BookType.notShelf} > 0")

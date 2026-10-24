@@ -29,6 +29,7 @@ interface BookGroupDao {
         where show > 0 
         and (
             groupId >= 0
+            or groupId = ${Long.MIN_VALUE}
             or groupId = ${BookGroup.IdAll}
             or (groupId = ${BookGroup.IdLocal} and exists (select 1 from books where type & ${BookType.local} > 0))
             or (groupId = ${BookGroup.IdAudio} and exists (select 1 from books where type & ${BookType.audio} > 0))
@@ -40,13 +41,13 @@ interface BookGroupDao {
     )
     val show: LiveData<List<BookGroup>>
 
-    @Query("SELECT * FROM book_groups where groupId > 0 ORDER BY `order`")
+    @Query("SELECT * FROM book_groups where groupId > 0 or groupId = ${Long.MIN_VALUE} ORDER BY `order`")
     fun flowSelect(): Flow<List<BookGroup>>
 
-    @get:Query("SELECT sum(groupId) FROM book_groups where groupId >= 0")
+    @get:Query("SELECT sum(groupId) FROM book_groups where groupId >= 0 or groupId = ${Long.MIN_VALUE}")
     val idsSum: Long
 
-    @get:Query("SELECT MAX(`order`) FROM book_groups where groupId > 0")
+    @get:Query("SELECT MAX(`order`) FROM book_groups where groupId > 0 or groupId = ${Long.MIN_VALUE}")
     val maxOrder: Int
 
     @get:Query("SELECT * FROM book_groups ORDER BY `order`")
@@ -58,7 +59,7 @@ interface BookGroupDao {
     @Query("update book_groups set show = 1 where groupId = :groupId")
     fun enableGroup(groupId: Long)
 
-    @Query("select groupName from book_groups where groupId > 0 and (groupId & :id) > 0")
+    @Query("select groupName from book_groups where (groupId > 0 or groupId = ${Long.MIN_VALUE}) and (groupId & :id) != 0 ORDER BY `order`")
     fun getGroupNames(id: Long): List<String>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

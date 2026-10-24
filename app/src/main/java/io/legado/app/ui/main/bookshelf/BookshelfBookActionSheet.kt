@@ -294,7 +294,7 @@ class BookshelfBookActionSheet(
                     dismissThen { callback.onCharacters(book) }
                 },
                 QuickAction(
-                    R.string.bookshelf_book_action_move_group,
+                    R.string.group,
                     NgThemedActionIconKind.MOVE_TO_GROUP,
                 ) {
                     dismissThen { callback.onGroup(book) }

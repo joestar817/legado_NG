@@ -238,6 +238,14 @@
     <string name="bookshelf_new_group">新建分组</string>
     <string name="bookshelf_new_group_hint">20字以内，支持汉字、字母或数字</string>
     <string name="bookshelf_group_book_count">%1$d本</string>
+    <string name="bookshelf_group_add">添加分组</string>
+    <string name="bookshelf_group_move">移动分组</string>
+    <string name="bookshelf_group_joined">已加入</string>
+    <string name="bookshelf_group_partly_joined">部分已加入</string>
+    <string name="bookshelf_group_confirm">确定</string>
+    <string name="bookshelf_group_confirm_count">确定（%1$d）</string>
+    <string name="bookshelf_group_count">%1$d个分组</string>
+    <string name="bookshelf_group_update_failed">分组更新失败</string>
     <string name="bookshelf_adding">添加中…</string>
     <string name="bookshelf_adding_progress">添加中…（%1$d）</string>
     <string name="bookshelf_book_total">共 %1$d 本</string>

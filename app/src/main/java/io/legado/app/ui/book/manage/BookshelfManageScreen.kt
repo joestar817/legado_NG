@@ -45,6 +45,7 @@ import androidx.compose.ui.window.DialogProperties
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
+import io.legado.app.help.book.summarizeBookGroups
 import io.legado.app.model.localBook.canExtractOriginalCover
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
@@ -300,10 +301,14 @@ private fun BookshelfCoverExtractionDialog(
     }
 }
 
+@Composable
 private fun bookGroupNames(groups: List<BookGroup>, groupId: Long): String {
-    return groups
-        .filter { it.groupId > 0 && (it.groupId and groupId) > 0 }
-        .joinToString(",") { it.groupName }
+    val summary = remember(groups, groupId) { summarizeBookGroups(groups, groupId) }
+    return if (summary.count > 1) {
+        stringResource(R.string.bookshelf_group_count, summary.count)
+    } else {
+        summary.singleName.orEmpty()
+    }
 }
 
 @Composable

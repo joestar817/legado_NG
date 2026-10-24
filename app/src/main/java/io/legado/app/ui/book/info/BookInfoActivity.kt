@@ -1264,7 +1264,7 @@ class BookInfoActivity :
                 }
                 if (viewModel.inBookshelf) {
                     viewModel.saveBook(book, onSaved)
-                } else if (groupId > 0) {
+                } else if (groupId != 0L) {
                     viewModel.addToBookshelf(onSaved)
                 }
             }

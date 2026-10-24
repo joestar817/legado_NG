@@ -240,6 +240,14 @@
     <string name="bookshelf_new_group">New group</string>
     <string name="bookshelf_new_group_hint">Within 20 chars, Chinese, letters or numbers</string>
     <string name="bookshelf_group_book_count">%1$d books</string>
+    <string name="bookshelf_group_add">Add to groups</string>
+    <string name="bookshelf_group_move">Move to group</string>
+    <string name="bookshelf_group_joined">Joined</string>
+    <string name="bookshelf_group_partly_joined">Partly joined</string>
+    <string name="bookshelf_group_confirm">Confirm</string>
+    <string name="bookshelf_group_confirm_count">Confirm (%1$d)</string>
+    <string name="bookshelf_group_count">%1$d groups</string>
+    <string name="bookshelf_group_update_failed">Failed to update groups</string>
     <string name="bookshelf_adding">Adding…</string>
     <string name="bookshelf_adding_progress">Adding… (%1$d)</string>
     <string name="bookshelf_book_total">%1$d books</string>
