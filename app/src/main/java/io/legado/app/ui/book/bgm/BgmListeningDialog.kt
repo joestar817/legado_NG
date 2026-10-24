@@ -15,7 +15,6 @@ import io.legado.app.ui.book.read.aloud.ReadAloudComposeBottomSheet
 internal class BgmListeningDialog : ReadAloudComposeBottomSheet() {
     private val model by viewModels<BgmViewModel>()
     private var preview: BgmPreviewController? = null
-    override val usePlayerPalette = true
 
     override fun listeningBook() =
         if (activity is AudioPlayActivity) AudioPlay.book else super.listeningBook()

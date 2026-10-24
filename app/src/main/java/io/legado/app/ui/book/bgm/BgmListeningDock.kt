@@ -16,7 +16,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -32,7 +31,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
-import com.google.android.material.color.utilities.Hct
 import io.legado.app.R
 import io.legado.app.help.bgm.BgmPlaybackController
 import io.legado.app.help.bgm.BgmPlaybackState
@@ -202,11 +200,8 @@ private fun ListeningVolumeTrack(value: Float, onChange: (Float) -> Unit, onFini
     val change by rememberUpdatedState(onChange)
     val finish by rememberUpdatedState(onFinished)
     val cancel by rememberUpdatedState(onCancel)
-    // Match ReadAloudProgressSlider's tones and thumb proportions.
-    val primaryHct = Hct.fromInt(NgTheme.colors.primary)
-    val primary = Color(Hct.from(primaryHct.hue, maxOf(primaryHct.chroma, 48.0), 50.0).toInt())
-    val inactive = Color(Hct.from(primaryHct.hue, maxOf(primaryHct.chroma, 40.0), 30.0).toInt())
-    val thumbOutline = Color(NgTheme.colors.onSurface)
+    val primary = Color(NgTheme.colors.primary)
+    val inactive = Color(NgTheme.colors.onSurface).copy(alpha = .16f)
     val thumbRadius = 11.dp
     Canvas(modifier.semantics {
         contentDescription = "配乐音量滑块"
@@ -247,10 +242,8 @@ private fun ListeningVolumeTrack(value: Float, onChange: (Float) -> Unit, onFini
         val stroke = 6.dp.toPx()
         drawLine(inactive, Offset(x, top), Offset(x, bottom), stroke, StrokeCap.Round)
         drawLine(primary, Offset(x, bottom), Offset(x, y), stroke, StrokeCap.Round)
-        drawCircle(thumbOutline, thumbRadius.toPx(), Offset(x, y))
+        drawCircle(primary.copy(alpha = .18f), thumbRadius.toPx(), Offset(x, y))
         drawCircle(primary, 7.dp.toPx(), Offset(x, y))
-        drawCircle(primary.copy(alpha = .40f), thumbRadius.toPx(), Offset(x, y),
-            style = Stroke(1.dp.toPx()))
     }
 }
 

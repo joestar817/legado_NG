@@ -45,6 +45,7 @@ internal fun BgmLibrarySearchEmptyState(
     val eInk = NgTheme.snapshot.isEInk
     val listening = LocalBgmListeningMode.current
     val darkListening = listening && NgTheme.snapshot.isDark
+    val lightListening = listening && !NgTheme.snapshot.isDark && !eInk
     Column(
         Modifier.fillMaxWidth().bgmListSurface()
             .padding(start = 14.dp, end = 14.dp, bottom = if (listening) 0.dp else 16.dp),
@@ -65,16 +66,22 @@ internal fun BgmLibrarySearchEmptyState(
                     colorFilter = ColorFilter.tint(onSurface.copy(alpha = when {
                         eInk -> .12f
                         darkListening -> .04f
+                        lightListening -> .10f
                         else -> .025f
                     })))
                 drawImage(image.shadow, dstOffset = offset, dstSize = target, filterQuality = FilterQuality.High,
-                    colorFilter = ColorFilter.tint(Color.Black.copy(alpha = when {
+                    colorFilter = ColorFilter.tint((if (lightListening) onSurface else Color.Black).copy(alpha = when {
                         eInk -> .12f
                         darkListening -> .30f
+                        lightListening -> .20f
                         else -> .055f
                     })))
                 drawImage(image.highlight, dstOffset = offset, dstSize = target, filterQuality = FilterQuality.High,
-                    colorFilter = ColorFilter.tint(Color.White.copy(alpha = if (darkListening) .16f else .65f)))
+                    colorFilter = ColorFilter.tint(Color.White.copy(alpha = when {
+                        darkListening -> .16f
+                        lightListening -> .45f
+                        else -> .65f
+                    })))
             }
         }
         Spacer(Modifier.height(4.dp))

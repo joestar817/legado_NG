@@ -76,7 +76,7 @@ internal fun BgmContent(
         val pageContent: @Composable () -> Unit = {
             when {
                 listening && page != BgmPage.LIBRARY -> savedPages.SaveableStateProvider("queue") {
-                    BgmListeningQueue(settings,
+                    BgmListeningQueue(settings, playback,
                         onSelect = { preview.stop(); BgmRepository.select(it) },
                         onClear = { confirmation = "clear" })
                 }

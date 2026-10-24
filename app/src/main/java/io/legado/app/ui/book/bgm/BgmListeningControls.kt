@@ -175,7 +175,12 @@ internal fun BgmListeningTab(
 }
 
 @Composable
-internal fun BgmListeningQueue(settings: BgmSettings, onSelect: (String) -> Unit, onClear: () -> Unit) {
+internal fun BgmListeningQueue(
+    settings: BgmSettings,
+    playback: BgmPlaybackState,
+    onSelect: (String) -> Unit,
+    onClear: () -> Unit,
+) {
     val modeMenu = remember { NgPopupToggleState() }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 12.dp, end = 4.dp),
@@ -233,8 +238,11 @@ internal fun BgmListeningQueue(settings: BgmSettings, onSelect: (String) -> Unit
                                 BgmTrackVipBadge(track)
                             }
                         }
-                        if (selected) BgmIcon(R.drawable.ic_check, modifier = Modifier.padding(start = 8.dp).size(18.dp),
-                            tint = Color(NgTheme.colors.primary))
+                        if (selected) BgmListeningPlayingIndicator(
+                            playing = settings.enabled && playback.trackKey == track.key &&
+                                playback.status == BgmPlaybackStatus.PLAYING,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
                     }
                     BgmLocalActions(buildList {
                         if (index > 0) add(BgmLocalAction("上移", R.drawable.ic_arrow_drop_up,

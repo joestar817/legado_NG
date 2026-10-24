@@ -114,8 +114,6 @@ import io.legado.app.ui.book.bookmark.AllBookmarkFilter
 import io.legado.app.ui.book.bookmark.BookmarkNoteFilter
 import io.legado.app.ui.book.bookmark.buildAllBookmarkCollection
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
-import io.legado.app.ui.design.components.compose.NgDrawerDefaults
-import io.legado.app.ui.design.components.compose.rememberNgDrawerThemeProfile
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgDrawerThemeProvider
 import io.legado.app.ui.design.components.compose.NgBookCover
@@ -126,7 +124,6 @@ import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
 import io.legado.app.ui.design.components.compose.NgLazyListFastScrollerVariant
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.design.theme.NgDrawerPalette
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
 import io.legado.app.utils.observeEvent
@@ -638,24 +635,7 @@ private fun ReadCatalogPanel(
         outline?.let { visibleCatalogRows(it, collapsedVolumes, descending) }
     }
     var visibleChapterCount by remember(chapterCount) { mutableStateOf(chapterCount) }
-    val drawerThemeProfile = if (useMangaPanelTheme) null else when (visualStyle) {
-        CatalogDrawerVisualStyle.READING_ORIGINAL -> null
-        CatalogDrawerVisualStyle.READING_COMPACT_SIDE -> null
-        CatalogDrawerVisualStyle.LISTENING -> rememberNgDrawerThemeProfile()
-    }
-    val baseSnapshot = NgTheme.snapshot
-    val drawerAppearance = if (!useMangaPanelTheme && visualStyle == CatalogDrawerVisualStyle.LISTENING) {
-        NgDrawerDefaults.rememberAppearance()
-    } else null
-    val primaryStrength = drawerAppearance?.primaryStrengthPercent ?: 0
-    val drawerColors = remember(baseSnapshot, drawerThemeProfile, primaryStrength) {
-        val backgroundColor = drawerThemeProfile
-            ?.takeIf { !baseSnapshot.isEInk && it.source == "custom_color" }
-            ?.forNight(baseSnapshot.isDark)?.backgroundColor
-        if (backgroundColor == null) baseSnapshot.colors else NgDrawerPalette.applyAdaptiveContentCardRoles(
-            baseSnapshot, primaryStrength, backgroundColor,
-        ).colors
-    }
+    val drawerColors = NgTheme.colors
     val contentColor = Color(drawerColors.onSurface)
     val mutedColor = Color(drawerColors.onSurfaceVariant)
     val accentColor = Color(drawerColors.primary)
@@ -1138,7 +1118,7 @@ private fun ReadCatalogPanel(
             content()
         }
     } else {
-        NgBottomDrawerSurface(modifier = Modifier.fillMaxSize(), themeProfile = drawerThemeProfile) {
+        NgBottomDrawerSurface(modifier = Modifier.fillMaxSize(), themeProfile = null) {
             content()
         }
     }
