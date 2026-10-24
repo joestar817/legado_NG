@@ -8,6 +8,7 @@ import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.menuCapabilities
+import io.legado.app.help.config.BookshelfCardStyle
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagStyle
 import io.legado.app.ui.design.components.NgStatusTagVariant
@@ -22,6 +23,7 @@ internal fun formatBookshelfCacheSize(bytes: Long): String =
 @Composable
 internal fun BookshelfManageBookCard(
     book: Book,
+    appearance: BookshelfCardStyle,
     selected: Boolean,
     groupNames: String,
     cachedChapterCount: Int?,
@@ -48,6 +50,7 @@ internal fun BookshelfManageBookCard(
         metadataText = sourceName,
         modifier = modifier,
         variant = NgBookshelfManageCardVariant.COVER_CARD,
+        appearance = appearance,
         cacheText = when {
             !book.menuCapabilities.showCache -> null
             book.isLocal -> cacheBytes?.let(::formatBookshelfCacheSize)

@@ -46,6 +46,7 @@ import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.help.book.summarizeBookGroups
+import io.legado.app.help.config.BookshelfCardAppearanceStore
 import io.legado.app.model.localBook.canExtractOriginalCover
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
@@ -98,6 +99,10 @@ internal fun BookshelfManageScreen(
     onDismissExportSuccess: () -> Unit,
     onCopyExportPath: () -> Unit,
 ) {
+    val isDark = NgTheme.snapshot.isDark
+    val cardAppearance = remember(isDark) {
+        BookshelfCardAppearanceStore.read().forNight(isDark)
+    }
     val visibleUrls = remember(books) {
         books.mapTo(hashSetOf()) { it.bookUrl }
     }
@@ -169,6 +174,7 @@ internal fun BookshelfManageScreen(
                     val selected = book.bookUrl in selectedBookUrls
                     BookshelfManageBookCard(
                         book = book,
+                        appearance = cardAppearance,
                         selected = selected,
                         groupNames = bookGroupNames(groups, book.group),
                         cachedChapterCount = cachedChapterCounts[book.bookUrl],
