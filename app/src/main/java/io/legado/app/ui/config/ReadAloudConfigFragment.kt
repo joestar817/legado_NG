@@ -19,6 +19,7 @@ import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.model.ReadAloud
 import io.legado.app.service.BaseReadAloudService
+import io.legado.app.ui.book.bgm.BgmActivity
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.startActivity
@@ -63,6 +64,11 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
                                 requireContext().startActivity<ConfigActivity> {
                                     putExtra("configTag", ConfigTag.DEFAULT_TTS_VOICE_CONFIG)
                                 }
+                            }
+                        },
+                        onOpenBgm = {
+                            runCardAction {
+                                BgmActivity.open(requireContext())
                             }
                         },
                         onShowListeningCapsuleOnMainChanged = ::setShowListeningCapsuleOnMain,

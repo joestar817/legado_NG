@@ -1567,6 +1567,8 @@ enum class NgFormActionButtonAppearance {
     SURFACE_CARD_BORDERLESS,
     DIALOG,
     COLOR_PICKER_CONFIRM,
+    /** 无底色、无描边的主题色文字操作，图标与文字使用紧凑间距。 */
+    TEXT,
 }
 
 @Composable
@@ -1586,13 +1588,14 @@ fun NgFormActionButton(
     val colors = NgTheme.colors
     val primary = Color(colors.primary)
     val colorPickerConfirm = appearance == NgFormActionButtonAppearance.COLOR_PICKER_CONFIRM
+    val textAppearance = appearance == NgFormActionButtonAppearance.TEXT
     val shape = RoundedCornerShape(if (colorPickerConfirm) 13.dp else NgTheme.shapes.mediumDp.dp)
     val surfaceCardAppearance = appearance == NgFormActionButtonAppearance.DIALOG ||
         appearance == NgFormActionButtonAppearance.SURFACE_CARD ||
         appearance == NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS
     val borderlessSurfaceAppearance =
         appearance == NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS
-    val containerColor = when (variant) {
+    val containerColor = if (textAppearance) Color.Transparent else when (variant) {
         NgButtonVariant.PRIMARY,
         NgButtonVariant.PRIMARY_LIGHT_CONTENT -> primary
         NgButtonVariant.TONAL -> Color(colors.selectedContainer)
@@ -1607,7 +1610,7 @@ fun NgFormActionButton(
             Color(colors.surface)
         }
     }
-    val contentColor = when (variant) {
+    val contentColor = if (textAppearance) primary else when (variant) {
         NgButtonVariant.PRIMARY -> if (colorPickerConfirm) Color.White else ngDrawerPrimaryContentColor()
         NgButtonVariant.PRIMARY_LIGHT_CONTENT -> ngDrawerPrimaryContentColor()
         NgButtonVariant.TONAL,
@@ -1626,10 +1629,10 @@ fun NgFormActionButton(
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor,
-            disabledContainerColor = containerColor.copy(alpha = 0.45f),
+            disabledContainerColor = if (textAppearance) Color.Transparent else containerColor.copy(alpha = 0.45f),
             disabledContentColor = contentColor.copy(alpha = 0.55f)
         ),
-        border = if (variant == NgButtonVariant.OUTLINE && !borderlessSurfaceAppearance) {
+        border = if (variant == NgButtonVariant.OUTLINE && !borderlessSurfaceAppearance && !textAppearance) {
             BorderStroke(1.dp, primary)
         } else {
             null
@@ -1641,11 +1644,11 @@ fun NgFormActionButton(
             hoveredElevation = 0.dp,
             disabledElevation = 0.dp
         ),
-        contentPadding = PaddingValues(horizontal = 12.dp)
+        contentPadding = PaddingValues(horizontal = if (textAppearance) 8.dp else 12.dp)
     ) {
         leadingIcon?.let { icon ->
             icon()
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(if (textAppearance) 4.dp else 6.dp))
         }
         Text(
             text = text,

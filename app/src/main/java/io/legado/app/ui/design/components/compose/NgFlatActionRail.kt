@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +32,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,6 +58,8 @@ enum class NgFlatActionRailVariant {
     INLINE_MODE_PICKER,
     INLINE_DIVIDED,
     FORM_TEXT_PICKER,
+    /** 表单内的文字分页：透明底、文字等宽分区、标签宽度的选中下划线。 */
+    FORM_UNDERLINE_TABS,
 }
 
 /**
@@ -84,7 +89,8 @@ fun NgFlatActionRail(
     val inlineModePicker = variant == NgFlatActionRailVariant.INLINE_MODE_PICKER
     val inlineDivided = variant == NgFlatActionRailVariant.INLINE_DIVIDED
     val formTextPicker = variant == NgFlatActionRailVariant.FORM_TEXT_PICKER
-    val picker = modePicker || textModePicker || inlineModePicker || formTextPicker
+    val formUnderlineTabs = variant == NgFlatActionRailVariant.FORM_UNDERLINE_TABS
+    val picker = modePicker || textModePicker || inlineModePicker || formTextPicker || formUnderlineTabs
     val segmented = variant != NgFlatActionRailVariant.SPACED_COMPACT
     val dividerColor = Color(NgTheme.colors.outlineVariant).copy(
         alpha = if (NgTheme.snapshot.isEInk) 1f else 0.32f
@@ -95,14 +101,16 @@ fun NgFlatActionRail(
             .height(
                 when {
                     modePicker -> 58.dp
+                    formUnderlineTabs -> 48.dp
                     textModePicker || formTextPicker -> 44.dp
                     inlineModePicker || inlineDivided -> 36.dp
                     compactSegmented -> 28.dp
                     else -> 36.dp
                 }
             )
+            .then(if (formUnderlineTabs) Modifier.selectableGroup() else Modifier)
             .then(
-                if (compactSegmented || (picker && !formTextPicker && !inlineModePicker)) {
+                if (compactSegmented || (picker && !formTextPicker && !inlineModePicker && !formUnderlineTabs)) {
                     val railShape = RoundedCornerShape(if (picker) 12.dp else 8.dp)
                     Modifier
                         .clip(railShape)
@@ -177,7 +185,8 @@ private fun NgFlatActionRailSegment(
     val inlineModePicker = variant == NgFlatActionRailVariant.INLINE_MODE_PICKER
     val inlineDivided = variant == NgFlatActionRailVariant.INLINE_DIVIDED
     val formTextPicker = variant == NgFlatActionRailVariant.FORM_TEXT_PICKER
-    val textOnlyPicker = textModePicker || formTextPicker
+    val formUnderlineTabs = variant == NgFlatActionRailVariant.FORM_UNDERLINE_TABS
+    val textOnlyPicker = textModePicker || formTextPicker || formUnderlineTabs
     val picker = variant == NgFlatActionRailVariant.MODE_PICKER || inlineModePicker || textOnlyPicker
     val contentColor = when {
         !item.enabled -> disabledColor
@@ -200,11 +209,12 @@ private fun NgFlatActionRailSegment(
     val interactionModifier = Modifier
         .clickable(
             enabled = item.enabled,
-            role = Role.Button,
+            role = if (formUnderlineTabs) Role.Tab else Role.Button,
             onClick = onClick
         )
         .semantics(mergeDescendants = true) {
             item.contentDescription?.let { contentDescription = it }
+            if (formUnderlineTabs) selected = item.emphasized
         }
     if (picker) {
         Box(
@@ -213,7 +223,29 @@ private fun NgFlatActionRailSegment(
                 .then(interactionModifier),
             contentAlignment = Alignment.Center,
         ) {
-            if (inlineModePicker) {
+            if (formUnderlineTabs) {
+                Column(
+                    modifier = Modifier.width(IntrinsicSize.Max),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = item.label.orEmpty(),
+                        color = contentColor,
+                        fontSize = 16.sp,
+                        lineHeight = 22.sp,
+                        fontWeight = if (item.emphasized) FontWeight.Medium else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(if (item.emphasized) contentColor else Color.Transparent)
+                    )
+                }
+            } else if (inlineModePicker) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally,

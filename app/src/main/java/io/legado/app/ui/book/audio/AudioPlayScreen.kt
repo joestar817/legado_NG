@@ -64,6 +64,7 @@ import io.legado.app.help.config.ReadAloudPlayerDisplaySettings
 import io.legado.app.model.AudioPlay
 import io.legado.app.ui.book.listen.ListeningCoverArtwork
 import io.legado.app.ui.book.listen.ListeningCoverTheme
+import io.legado.app.ui.book.read.aloud.ListeningBgmEntry
 import io.legado.app.ui.book.read.aloud.ListeningLoadingBars
 import io.legado.app.ui.book.read.aloud.ListeningPlayerBackground
 import io.legado.app.ui.book.read.aloud.PlayerCover
@@ -113,6 +114,7 @@ internal data class AudioPlayerUiState(
 
 internal sealed interface AudioPlayerAction {
     data object Close : AudioPlayerAction
+    data object BackgroundMusic : AudioPlayerAction
     data object OpenBookInfo : AudioPlayerAction
     data object Timer : AudioPlayerAction
     data object Speed : AudioPlayerAction
@@ -177,6 +179,7 @@ internal fun AudioPlayScreen(
             selectedPage = state.page,
             showPageIndicator = hasLyrics && state.displaySettings.showPageIndicator,
             onClose = { onAction(AudioPlayerAction.Close) },
+            onOpenBgm = { onAction(AudioPlayerAction.BackgroundMusic) },
         )
         if (state.showExitConfirmation) {
             AudioExitConfirmationDialog(
@@ -244,6 +247,7 @@ private fun AudioPlayerTopBar(
     selectedPage: AudioPlayerPage,
     showPageIndicator: Boolean,
     onClose: () -> Unit,
+    onOpenBgm: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -270,6 +274,12 @@ private fun AudioPlayerTopBar(
                 )
             }
         }
+        ListeningBgmEntry(
+            onClick = onOpenBgm,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 27.dp, end = 11.dp),
+        )
         if (showPageIndicator) {
             Row(
                 modifier = Modifier

@@ -6,8 +6,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -32,6 +36,7 @@ internal fun ReadAloudConfigScreen(
     onOpenTtsEngine: () -> Unit,
     onOpenMultiRoleEngine: () -> Unit,
     onOpenDefaultVoice: () -> Unit,
+    onOpenBgm: () -> Unit,
     onShowListeningCapsuleOnMainChanged: (Boolean) -> Unit,
     onMediaButtonOnExitChanged: (Boolean) -> Unit,
     onReadAloudByMediaButtonChanged: (Boolean) -> Unit,
@@ -49,20 +54,26 @@ internal fun ReadAloudConfigScreen(
             ReadAloudConfigEntry(
                 title = stringResource(R.string.tts_engine_settings),
                 summary = stringResource(R.string.tts_engine_settings_summary),
-                iconRes = R.drawable.ic_ai_capability_tts,
+                icon = painterResource(R.drawable.ic_ai_capability_tts),
                 onClick = onOpenTtsEngine
             )
             ReadAloudConfigEntry(
                 title = stringResource(R.string.multi_role_tts_engine),
                 summary = state.multiRoleEngineSummary,
-                iconRes = R.drawable.ic_groups,
+                icon = painterResource(R.drawable.ic_groups),
                 onClick = onOpenMultiRoleEngine
             )
             ReadAloudConfigEntry(
                 title = stringResource(R.string.default_tts_voice),
                 summary = stringResource(R.string.default_tts_voice_summary),
-                iconRes = R.drawable.ic_tts_tab_voice,
+                icon = painterResource(R.drawable.ic_tts_tab_voice),
                 onClick = onOpenDefaultVoice
+            )
+            ReadAloudConfigEntry(
+                title = stringResource(R.string.bgm_title),
+                summary = stringResource(R.string.bgm_library_summary),
+                icon = rememberVectorPainter(Icons.Rounded.MusicNote),
+                onClick = onOpenBgm
             )
         }
 
@@ -128,7 +139,7 @@ private fun ReadAloudConfigSwitchEntry(
 private fun ReadAloudConfigEntry(
     title: String,
     summary: String,
-    @DrawableRes iconRes: Int,
+    icon: Painter,
     onClick: () -> Unit
 ) {
     NgSettingsItem(
@@ -137,7 +148,7 @@ private fun ReadAloudConfigEntry(
         onClick = onClick,
         leading = {
             NgSettingsIcon(
-                painter = painterResource(iconRes),
+                painter = icon,
                 contentDescription = null
             )
         }

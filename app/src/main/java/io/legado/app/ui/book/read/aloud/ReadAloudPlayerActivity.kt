@@ -30,6 +30,7 @@ import io.legado.app.help.tts.shouldProjectReadAloudSubtitle
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
+import io.legado.app.ui.book.bgm.BgmListeningDialog
 import io.legado.app.ui.book.character.BookCharacterActivity
 import io.legado.app.ui.book.character.BookCharacterTtsActivity
 import io.legado.app.ui.book.character.BookStoryboardActivity
@@ -158,6 +159,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     private fun handleAction(action: ReadAloudPlayerAction) {
         when (action) {
             ReadAloudPlayerAction.Close -> finish()
+            ReadAloudPlayerAction.BackgroundMusic -> showDrawer("bgmListening", ::BgmListeningDialog)
             ReadAloudPlayerAction.OpenBookInfo -> openBookInfo()
             ReadAloudPlayerAction.Timer -> {
                 showDrawer("readAloudTimer", ::ReadAloudTimerDialog)
@@ -948,6 +950,13 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             progress = 0,
             bufferedProgress = 0,
         )
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            io.legado.app.help.bgm.BgmPlaybackController.releaseForegroundPlayback()
+        }
     }
 
     override fun onDestroy() {

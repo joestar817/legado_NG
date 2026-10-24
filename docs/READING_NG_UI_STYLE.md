@@ -22,6 +22,7 @@
 | --- | --- | --- | --- |
 | 页面／抽屉搜索 | `NgSearchBar` | Provider、模型列表、模型选择 BottomSheet | 44dp 胶囊搜索框，15sp 输入，统一搜索、清除和键盘行为 |
 | 次要按钮 | `NgSecondaryButtonView`／`NgFormActionButton(SURFACE_CARD / SURFACE_CARD_BORDERLESS)` | Provider 详情／表单、Skill 操作 | 高不透明亮白底和强调色文字；`SURFACE_CARD` 保留 1dp 主题强调色描边，Provider 配置操作使用 `SURFACE_CARD_BORDERLESS` 去除描边；不得使用发灰的通用 surface，主操作仍使用强调色实底 |
+| 紧凑文字按钮（Trial） | `NgFormActionButton(TEXT)` | 背景音乐新建／添加歌曲（待验收） | 仅显式选用TEXT时使用透明底、无描边和主题色文字，禁用时底色仍透明；水平内边距8dp、图文间距4dp。图标继承内容色，业务页传匹配字高的尺寸与按钮高度；默认及其它Appearance保持不变 |
 | 高饱和实底按钮 | `NgButton`／`NgFormActionButton`／`NgActionBarButton` | 主操作、确认操作、危险确认 | 标准外形对齐书架底部操作栏：稳定矩形、12dp 中圆角，不使用默认胶囊；Primary／Danger 等强调色或错误色实底一律使用白色文字、图标和进度指示，禁止动态 `onPrimary`／`onError` 产生彩底黑字 |
 | 连续开关分组（Trial） | `NgFormSwitchGroup` + `NgFormSwitchRow(GROUPED)` | Provider 配置 | 相关开关与其展开字段共用一张12dp中性承载面；分组行40dp、16sp，行间使用单层12dp内缩细分隔线。透明玻璃使用高不透明语义底保证复杂壁纸上的可读性，液态玻璃由公共视觉路由切换为`CONTROL`材质；不拆成多张小卡，分组外上下间距保持一致 |
 | 详情页底部切换 | `NgFloatingTabBar` | Provider 配置／模型、TTS 引擎配置／发音人 | 48dp 悬浮栏、等宽项、纯图标居中；文字保留为无障碍描述 |
@@ -42,6 +43,7 @@
 | 右侧滑入可展开菜单（Trial） | `NgExpandableActionMenu(SIDE_SLIDE)` | 书架批量管理分组菜单 | 参考阅读菜单使用 156dp 宽、12dp 圆角、44dp 行高和 8dp 右边距；水平方向按整扇窗口贴右，纵向从顶栏菜单按钮底边下移 16dp，使面板覆盖下层容器右上角，展开过长时再向上收口。进入与退出均移动完整 Popup 窗口，使用 `mediumDuration` 的单向减速／加速滑动，禁止固定窗口内裁切式显现、弹簧、缩放和抖动。可通过 `defaultExpandedItemIds` 声明每次打开的默认展开项；书架分组不超过 10 个时默认展开，超过 10 个才收起。保留原位展开、选中反馈、返回与外部点击关闭。书架管理使用不透明暖白 `ng_surface_soft`，不得复用阅读玻璃透明度；默认 `DROPDOWN` Variant 不受影响 |
 | 紧凑批量操作轨（Trial） | `NgFlatActionRail(COMPACT_SEGMENTED / SPACED_COMPACT)` | 书架批量管理底部操作坞 | `COMPACT_SEGMENTED` 使用 28dp 高、8dp 圆角、轻承载面与细边界承载成对选择操作，不使用投影；`SPACED_COMPACT` 四个带文字动作等宽排列，启用态统一只使用主题强调色，不绘制单项遮罩或阴影；业务页只传图标、短文案、可用态与事件 |
 | 类型切换操作轨（Trial） | `NgFlatActionRail(MODE_PICKER / TEXT_MODE_PICKER / FORM_TEXT_PICKER)` | 书架布局、颜色选择顶栏文字、模型编辑 | `MODE_PICKER` 为 58dp 图标＋文字，`TEXT_MODE_PICKER` 为 44dp 独立亮白纯文字轨；`FORM_TEXT_PICKER` 为 44dp 嵌入连续表单的纯文字轨，不重复绘制外壳，选中态只用主题色文字＋小勾，不铺大面积色块。业务页不得再用大胶囊或灰色底手搓同类切换 |
+| 表单文字分页（Trial） | `NgFlatActionRail(FORM_UNDERLINE_TABS)` | 背景音乐登录方式 | 用户已确认的登录稿使用 48dp 等宽触控区、16sp 文字、7dp 间距和标签宽度的 2dp 选中下划线；透明底、无分段底板、勾选或竖向分隔，提供 Tab 和选中语义。仅显式选用此 Variant 的页面生效，其它操作轨维持原样 |
 | 连续表单文本行（Trial） | `NgFormPanel` + `NgFormPanelSectionTitle` + `NgFormInlineTextRow` | 模型编辑 | 多个相关分区共用一张亮白底板，分区标题与控件直接铺在面板内；文本行 48dp，左侧短标签、右侧单行值，只读值使用次要文字色，编辑态保留真实光标，行间只用细分隔线 |
 | 短抽屉选择面板（Trial） | `NgDrawerDragHandle(COMPACT)` + `NgCompactDrawerHeader` + `NgCompactDrawerSelectionPanel` | 书架移动到分组 | 顶部使用 12dp 公共紧凑提示线，标题在 38dp 标题栏中严格居中；所有选项共享单个中性卡面，52dp 行高、无分隔线、无独立卡片和取消按钮；业务页面只提供数据与点击事件 |
 | 少量互斥选项卡（Trial） | `NgChoiceCard` | 书架管理导出格式 | 两到三个互斥选项使用并列卡片表达，整卡可点并保留明确选中反馈；业务页面只传标题、摘要、状态和事件，不单独手搓卡面 |

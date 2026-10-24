@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,9 +53,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -99,6 +105,7 @@ import io.legado.app.ui.config.toDrawerCard
 import io.legado.app.ui.config.withUpdatedEngine
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
+import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
@@ -931,6 +938,8 @@ private fun ReadAloudMoreSheetContent(
     onStop: () -> Unit,
 ) {
     val drawerHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
+    val bgmContext = LocalContext.current
+    val bgmSettings by io.legado.app.help.bgm.BgmRepository.settings.collectAsState()
     NgBottomDrawerSurface(
         modifier = Modifier
             .fillMaxWidth()
@@ -995,6 +1004,15 @@ private fun ReadAloudMoreSheetContent(
                         title = "播放设置",
                         backgroundColor = groupBackgroundColor,
                     ) {
+                        ListeningBgmRow(
+                            title = stringResource(R.string.bgm_title),
+                            summary = bgmSettings.currentTrack?.let { if (bgmSettings.enabled) it.title else "已关闭" } ?: "未选择音乐",
+                            checked = bgmSettings.enabled,
+                            enabled = bgmSettings.queue.isNotEmpty(),
+                            onOpenLibrary = { io.legado.app.ui.book.bgm.BgmActivity.selectForPlayback(bgmContext) },
+                            onCheckedChange = { io.legado.app.help.bgm.BgmRepository.setEnabled(it) },
+                        )
+                        ListeningDivider()
                         NgFormSwitchSettingRow(
                             title = "忽略音频焦点",
                             summary = "允许与其他应用同时播放",
@@ -1503,6 +1521,47 @@ internal fun ListeningDivider() {
             .height(1.dp)
             .background(Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f)),
     )
+}
+
+/** The library target and playback switch have disjoint hit areas. */
+@Composable
+internal fun ListeningBgmRow(
+    title: String,
+    summary: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onOpenLibrary: () -> Unit,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier.weight(1f).fillMaxHeight()
+                .clickable(role = Role.Button, onClick = onOpenLibrary),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = Color(NgTheme.colors.onSurface), fontSize = 14.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(summary, color = Color(NgTheme.colors.onSurfaceVariant), fontSize = 11.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = Color(NgTheme.colors.onSurfaceVariant),
+                modifier = Modifier.padding(end = 8.dp).size(20.dp),
+            )
+        }
+        NgSwitchControl(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            modifier = Modifier.semantics { contentDescription = title },
+        )
+    }
 }
 
 @Composable

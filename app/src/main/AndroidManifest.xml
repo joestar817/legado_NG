@@ -342,6 +342,16 @@
             android:configChanges="orientation|screenSize"
             android:hardwareAccelerated="true"
             android:theme="@style/AppTheme.Transparent" />
+        <activity
+            android:name=".ui.book.bgm.BgmActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize"
+            android:hardwareAccelerated="true" />
+        <activity
+            android:name=".ui.book.bgm.BgmLocalImportActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize"
+            android:hardwareAccelerated="true" />
         <!-- 阅读记录 -->
         <activity
             android:name=".ui.about.ReadRecordActivity"

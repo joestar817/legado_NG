@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bgm_title">背景音乐</string>
+    <string name="bgm_library_summary">在线音乐与本地音乐</string>
+    <string name="bgm_import_add">添加</string>
+    <string name="bgm_relocate">重新定位</string>
+</resources>

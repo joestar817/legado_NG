@@ -62,6 +62,8 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
     private var listeningThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
     private var listeningThemeJob: Job? = null
 
+    protected open val usePlayerPalette: Boolean = false
+
     protected open fun listeningBook() = ReadBook.book
 
     protected open fun listeningSourceOrigin(): String? = ReadBook.bookSource?.bookSourceUrl
@@ -90,19 +92,13 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
         val book = listeningBook()
         val sourceOrigin = listeningSourceOrigin()
         listeningThemeJob?.cancel()
-        listeningThemeSnapshot = ReadAloudPlayerTheme.initialDrawerSnapshot(
-            context = safeContext,
-            book = book,
-            sourceOrigin = sourceOrigin,
-            settings = settings,
-        )
+        listeningThemeSnapshot = if (usePlayerPalette) {
+            ReadAloudPlayerTheme.initialSnapshot(safeContext, book, sourceOrigin, settings)
+        } else ReadAloudPlayerTheme.initialDrawerSnapshot(safeContext, book, sourceOrigin, settings)
         listeningThemeJob = viewLifecycleOwner.lifecycleScope.launch {
-            listeningThemeSnapshot = ReadAloudPlayerTheme.resolveDrawerSnapshot(
-                context = safeContext,
-                book = book,
-                sourceOrigin = sourceOrigin,
-                settings = settings,
-            )
+            listeningThemeSnapshot = if (usePlayerPalette) {
+                ReadAloudPlayerTheme.resolveSnapshot(safeContext, book, sourceOrigin, settings)
+            } else ReadAloudPlayerTheme.resolveDrawerSnapshot(safeContext, book, sourceOrigin, settings)
         }
     }
 

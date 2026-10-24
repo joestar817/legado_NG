@@ -41,6 +41,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -70,6 +71,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -81,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.materialkolor.hct.Hct
 import io.legado.app.R
+import io.legado.app.help.bgm.BgmRepository
 import io.legado.app.help.config.ListeningMotionEffect
 import io.legado.app.help.config.ListeningMotionSettings
 import io.legado.app.help.config.ReadAloudPlayerDisplaySettings
@@ -128,6 +131,7 @@ internal data class ReadAloudPlayerUiState(
 
 internal sealed interface ReadAloudPlayerAction {
     data object Close : ReadAloudPlayerAction
+    data object BackgroundMusic : ReadAloudPlayerAction
     data object OpenBookInfo : ReadAloudPlayerAction
     data object Timer : ReadAloudPlayerAction
     data object Speed : ReadAloudPlayerAction
@@ -187,6 +191,7 @@ internal fun ReadAloudPlayerScreen(
             selectedPage = state.page,
             showPageIndicator = state.displaySettings.showPageIndicator,
             onClose = { onAction(ReadAloudPlayerAction.Close) },
+            onOpenBgm = { onAction(ReadAloudPlayerAction.BackgroundMusic) },
         )
     }
 }
@@ -314,6 +319,7 @@ private fun PlayerTopBar(
     selectedPage: ReadAloudPlayerPage,
     showPageIndicator: Boolean,
     onClose: () -> Unit,
+    onOpenBgm: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -343,6 +349,12 @@ private fun PlayerTopBar(
                 )
             }
         }
+        ListeningBgmEntry(
+            onClick = onOpenBgm,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 27.dp, end = 11.dp),
+        )
         if (showPageIndicator) {
             Row(
                 modifier = Modifier
@@ -367,6 +379,40 @@ private fun PlayerTopBar(
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun ListeningBgmEntry(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val settings by BgmRepository.settings.collectAsState()
+    val contentColor = Color(if (settings.enabled) NgTheme.colors.primary else NgTheme.colors.onSurface)
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        PlayerTranslucentSurface(
+            modifier = Modifier.size(38.dp),
+            shape = CircleShape,
+            containerAlpha = 0.54f,
+            elevation = 3.dp,
+        ) {}
+        Icon(
+            painter = painterResource(R.drawable.ic_bgm_listening_entry),
+            contentDescription = "配乐",
+            tint = contentColor,
+            modifier = Modifier.size(22.dp),
+        )
     }
 }
 

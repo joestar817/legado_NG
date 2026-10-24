@@ -34,6 +34,7 @@ import io.legado.app.service.AudioPlayService
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
+import io.legado.app.ui.book.bgm.BgmListeningDialog
 import io.legado.app.ui.book.info.BookInfoActivity
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.book.read.aloud.ReadAloudPlayerTheme
@@ -252,6 +253,7 @@ class AudioPlayActivity :
     private fun handleAction(action: AudioPlayerAction) {
         when (action) {
             AudioPlayerAction.Close -> finish()
+            AudioPlayerAction.BackgroundMusic -> showDrawer("bgmListening", ::BgmListeningDialog)
             AudioPlayerAction.OpenBookInfo -> openBookInfo()
             AudioPlayerAction.Timer -> showDrawer("audioTimer", ::AudioPlayTimerDialog)
             AudioPlayerAction.Speed -> showDrawer("audioSpeed", ::AudioPlaySpeedDialog)
@@ -465,6 +467,13 @@ class AudioPlayActivity :
             AudioPlay.book,
             AudioPlay.durChapter,
         )
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            io.legado.app.help.bgm.BgmPlaybackController.releaseForegroundPlayback()
+        }
     }
 
     override fun onDestroy() {

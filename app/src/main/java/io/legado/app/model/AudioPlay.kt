@@ -121,7 +121,7 @@ object AudioPlay : CoroutineScope by MainScope() {
 
     fun resetData(book: Book) {
         invalidateHistoryRequest()
-        stop()
+        if (AudioPlayService.isRun) stop()
         ReadingRecordTracker.bindBook(ReadingRecordKind.AUDIO, book.bookUrl, book.name)
         AudioPlay.book = book
         chapterSize = appDb.bookChapterDao.getChapterCount(book.bookUrl)
@@ -423,6 +423,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun stop() {
+        io.legado.app.help.bgm.BgmPlaybackController.releaseForegroundPlayback()
         invalidateHistoryRequest()
         if (AudioPlayService.isRun) {
             context.startService<AudioPlayService> {
