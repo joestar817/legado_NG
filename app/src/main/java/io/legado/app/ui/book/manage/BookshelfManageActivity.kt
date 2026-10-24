@@ -84,6 +84,10 @@ class BookshelfManageActivity :
     private var cachedChapterCounts by mutableStateOf<Map<String, Int>>(emptyMap())
     private var cacheChapterTotals by mutableStateOf<Map<String, Int>>(emptyMap())
     private var clearableBookUrls by mutableStateOf<Set<String>>(emptySet())
+    private var cachedBytes by mutableStateOf<Map<String, Long>>(emptyMap())
+    private var sortOrder by mutableStateOf(BookshelfManageSort.FOLLOW_BOOKSHELF)
+    private var cacheReadError = false
+    private var reordering = false
     private var pendingChangeSourceBooks: List<Book> = emptyList()
     private var deleteDialogVisible by mutableStateOf(false)
     private var deleteOriginal by mutableStateOf(false)
@@ -111,16 +115,17 @@ class BookshelfManageActivity :
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         viewModel.groupId = intent.getLongExtra("groupId", -1)
         topBarSelectedGroupId = viewModel.groupId
-        cachedChapterCounts = viewModel.cacheChapters.mapValues { it.value.size }
-        cacheChapterTotals = viewModel.cacheChapterTotals.toMap()
-        clearableBookUrls = viewModel.clearableBookUrls.toSet()
+        sortOrder = viewModel.sortOrder
+        applyCacheStatistics(viewModel.cacheState.value)
         initContent()
         initGroupData()
         upBookDataByGroupId()
     }
 
     override fun observeLiveBus() {
-        viewModel.cacheChapterCountLiveData.observe(this, ::notifyBookChanged)
+        lifecycleScope.launch {
+            viewModel.cacheState.collect(::applyCacheStatistics)
+        }
         viewModel.batchChangeSourceState.observe(this) {
             batchChangeSourceRunning = it
             if (!it) {
@@ -134,12 +139,17 @@ class BookshelfManageActivity :
             if (books.any { it.bookUrl == book.bookUrl }) viewModel.refreshCache(book.bookUrl)
         }
         observeEvent<String>(EventBus.UP_DOWNLOAD) { bookUrl ->
-            if (bookUrl.isEmpty()) {
-                books.forEach { viewModel.refreshCache(it.bookUrl) }
-            } else if (books.any { it.bookUrl == bookUrl }) {
+            // 活跃任务每秒都发进度，完成章节由 SAVE_CONTENT 刷新，避免反复扫盘。
+            if (bookUrl.isNotEmpty() && !CacheBook.cacheBookMap.containsKey(bookUrl)) {
                 viewModel.refreshCache(bookUrl)
             }
         }
+        observeEvent<String>(EventBus.BOOK_CACHE_CLEARED) { viewModel.refreshCache(it) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshCache("")
     }
 
     private fun initContent() {
@@ -157,6 +167,8 @@ class BookshelfManageActivity :
                     cachedChapterCounts = cachedChapterCounts,
                     cacheChapterTotals = cacheChapterTotals,
                     clearableBookUrls = clearableBookUrls,
+                    cachedBytes = cachedBytes,
+                    sortOrder = sortOrder,
                     coverUpdateSelection = coverUpdateSelection,
                     deleteDialogVisible = deleteDialogVisible,
                     deleteOriginal = deleteOriginal,
@@ -174,6 +186,11 @@ class BookshelfManageActivity :
                         upBookDataByGroupId()
                     },
                     onGroupManage = { showDialogFragment<GroupManageDialog>() },
+                    onSortChange = {
+                        sortOrder = it
+                        viewModel.sortOrder = it
+                        updateVisibleBooks()
+                    },
                     onSelectionChange = ::setBookSelected,
                     onOpenDetails = ::openBook,
                     onReorderStarted = ::prepareManualSort,
@@ -247,24 +264,32 @@ class BookshelfManageActivity :
     }
 
     private fun updateVisibleBooks() {
-        visibleBooks = if (topBarQuery.isEmpty()) {
+        val matching = if (topBarQuery.isEmpty()) {
             books
         } else {
             books.filter { it.contains(topBarQuery) }
         }
+        visibleBooks = matching.sortedForBookshelfManage(
+            sort = sortOrder,
+            readTime = Book::durChapterTime,
+            updateTime = Book::latestChapterTime,
+            compareNames = { first, second -> first.name.cnCompare(second.name) },
+            manualOrder = Book::order,
+            cacheBytes = { cachedBytes[it.bookUrl] },
+        )
     }
 
-    private fun notifyBookChanged(bookUrl: String) {
-        val count = viewModel.cacheChapters[bookUrl]?.size ?: return
-        cachedChapterCounts = cachedChapterCounts + (bookUrl to count)
-        viewModel.cacheChapterTotals[bookUrl]?.let {
-            cacheChapterTotals = cacheChapterTotals + (bookUrl to it)
-        }
-        clearableBookUrls = if (bookUrl in viewModel.clearableBookUrls) {
-            clearableBookUrls + bookUrl
-        } else {
-            clearableBookUrls - bookUrl
-        }
+    private fun applyCacheStatistics(state: BookshelfCacheState) {
+        val sizes = state.books.mapValues { it.value.bytes }
+        val sizesChanged = cachedBytes != sizes
+        cachedChapterCounts = state.books.mapValues { it.value.status.cached }
+        cacheChapterTotals = state.books.mapValues { it.value.status.total }
+        clearableBookUrls = state.books.filterValues { it.status.hasCache }.keys
+        cachedBytes = sizes
+        val failed = state.failedBookUrls.isNotEmpty()
+        if (failed && !cacheReadError) toastOnUi(R.string.bookshelf_manage_cache_failed)
+        cacheReadError = failed
+        if (sizesChanged && sortOrder == BookshelfManageSort.CACHE_SIZE && !reordering) updateVisibleBooks()
     }
 
     private fun setBookSelected(book: Book, selected: Boolean) {
@@ -393,7 +418,7 @@ class BookshelfManageActivity :
     }
 
     private fun moveBook(fromIndex: Int, toIndex: Int) {
-        if (fromIndex !in visibleBooks.indices ||
+        if (!sortOrder.allowsDragging || fromIndex !in visibleBooks.indices ||
             toIndex !in visibleBooks.indices ||
             fromIndex == toIndex
         ) {
@@ -410,13 +435,17 @@ class BookshelfManageActivity :
     }
 
     private fun finishDrag() {
+        reordering = false
         books.takeIf { it.isNotEmpty() }?.let {
             viewModel.updateBook(*it.toTypedArray())
         }
     }
 
     private fun prepareManualSort() {
-        books.forEachIndexed { index, book ->
+        if (!sortOrder.allowsDragging) return
+        reordering = true
+        val orderedBooks = if (sortOrder == BookshelfManageSort.MANUAL) books.sortedBy(Book::order) else books
+        orderedBooks.forEachIndexed { index, book ->
             book.order = index + 1
         }
         if (!isManualSort) {

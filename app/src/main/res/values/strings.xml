@@ -2605,4 +2605,10 @@
     <string name="all_bookmark_collapsed">Collapsed</string>
     <string name="book_action_eligible_selection">Processing %1$d items; skipped %2$d unsupported items</string>
     <string name="book_export_unsupported">This resource does not support text or EPUB export</string>
+    <string name="bookshelf_manage_sort_follow">Follow shelf</string>
+    <string name="bookshelf_manage_sort_read">Last read</string>
+    <string name="bookshelf_manage_sort_update">Last updated</string>
+    <string name="bookshelf_manage_sort_name">Title</string>
+    <string name="bookshelf_manage_cache_sort">Cache size</string>
+    <string name="bookshelf_manage_cache_failed">Could not read cache</string>
 </resources>

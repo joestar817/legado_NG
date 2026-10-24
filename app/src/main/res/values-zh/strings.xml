@@ -2507,4 +2507,10 @@
     <string name="all_bookmark_collapsed">已收起</string>
     <string name="book_action_eligible_selection">仅处理 %1$d 项，跳过 %2$d 项不适用资源</string>
     <string name="book_export_unsupported">该资源不支持文本或 EPUB 导出</string>
+    <string name="bookshelf_manage_sort_follow">跟随书架</string>
+    <string name="bookshelf_manage_sort_read">最近阅读</string>
+    <string name="bookshelf_manage_sort_update">最近更新</string>
+    <string name="bookshelf_manage_sort_name">书名</string>
+    <string name="bookshelf_manage_cache_sort">缓存占用</string>
+    <string name="bookshelf_manage_cache_failed">缓存读取失败</string>
 </resources>

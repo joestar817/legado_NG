@@ -223,6 +223,11 @@ object ExoPlayerHelper {
     fun isAudioCacheComplete(cacheKey: String, length: Long): Boolean =
         length > 0L && audioDownloadCache.isCached(cacheKey, 0L, length)
 
+    /** 实际已落盘的媒体跨度；包含尚未下载完整的资源，不读取或修改播放进度。 */
+    internal fun audioCacheSizes(): Map<String, Long> = audioDownloadCache.keys.associateWith { key ->
+        audioDownloadCache.getCachedSpans(key).sumOf { it.length }
+    }
+
     fun removeAudioCache(cacheKeys: Collection<String>) {
         cacheKeys.forEach(audioDownloadCache::removeResource)
     }

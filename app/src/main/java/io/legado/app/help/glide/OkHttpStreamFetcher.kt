@@ -11,6 +11,7 @@ import com.script.rhino.runScriptWithContext
 import io.legado.app.data.entities.BaseSource
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.book.getCachedBookImage
 import io.legado.app.help.http.addHeaders
 import io.legado.app.help.http.okHttpClient
 import io.legado.app.help.http.okHttpClientManga
@@ -29,6 +30,7 @@ import okhttp3.ResponseBody
 import splitties.init.appCtx
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.io.File
 import java.io.InputStream
 
 
@@ -42,6 +44,7 @@ class OkHttpStreamFetcher(
     private var callback: DataFetcher.DataCallback<in InputStream>? = null
     private var source: BaseSource? = null
     private val manga = options.get(OkHttpModelLoader.mangaOption) == true
+    private var fromBookCache = false
     private val coroutineContext = SupervisorJob()
     private val coroutineScope = CoroutineScope(coroutineContext)
     private lateinit var analyzedUrl: GlideUrl
@@ -54,6 +57,24 @@ class OkHttpStreamFetcher(
     }
 
     override fun loadData(priority: Priority, callback: DataFetcher.DataCallback<in InputStream>) {
+        if (manga) {
+            val path = options.get(OkHttpModelLoader.mangaImageCacheOption)
+            val image = path?.let { getCachedBookImage(File(it)) }
+            if (image != null) {
+                val input = try {
+                    image.inputStream()
+                } catch (_: IOException) {
+                    null // 清理与加载竞争时，继续原有网络路径。
+                }
+                if (input != null) {
+                    fromBookCache = true
+                    stream = input
+                    // 书籍图片在下载时已解密，不再经过网络流的二次解密。
+                    callback.onDataReady(input)
+                    return
+                }
+            }
+        }
         if (failUrl.contains(url.toStringUrl())) {
             callback.onLoadFailed(NoStackTraceException("跳过加载失败的图片"))
             return
@@ -105,7 +126,7 @@ class OkHttpStreamFetcher(
     }
 
     override fun getDataSource(): DataSource {
-        return DataSource.REMOTE
+        return if (fromBookCache) DataSource.LOCAL else DataSource.REMOTE
     }
 
     override fun onFailure(call: Call, e: IOException) {

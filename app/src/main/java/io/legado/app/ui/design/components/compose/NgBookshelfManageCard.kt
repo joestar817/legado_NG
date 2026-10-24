@@ -71,6 +71,7 @@ fun NgBookshelfManageCard(
     coverContent: (@Composable () -> Unit)? = null,
     dragHandleContentDescription: String,
     dragHandleModifier: Modifier = Modifier,
+    dragHandleEnabled: Boolean = true,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -95,6 +96,7 @@ fun NgBookshelfManageCard(
             },
             dragHandleContentDescription = dragHandleContentDescription,
             dragHandleModifier = dragHandleModifier,
+            dragHandleEnabled = dragHandleEnabled,
             modifier = modifier,
             onClick = onClick,
             onLongClick = onLongClick,
@@ -297,6 +299,7 @@ private fun NgBookshelfManageCoverCard(
     coverContent: @Composable () -> Unit,
     dragHandleContentDescription: String,
     dragHandleModifier: Modifier,
+    dragHandleEnabled: Boolean,
     modifier: Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -381,23 +384,30 @@ private fun NgBookshelfManageCoverCard(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (!cacheText.isNullOrBlank()) {
-                        Text(
-                            text = cacheText,
-                            color = metadataColor,
-                            fontSize = 12.sp,
-                            lineHeight = 15.sp,
-                            maxLines = 1,
-                        )
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (!cacheText.isNullOrBlank()) {
+                            Text(
+                                text = cacheText,
+                                modifier = Modifier.weight(1f, fill = false),
+                                color = metadataColor,
+                                fontSize = 12.sp,
+                                lineHeight = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (updateTag != null) {
+                            Spacer(Modifier.width(4.dp))
+                            NgStatusDot(
+                                spec = updateTag,
+                                modifier = Modifier.size(6.dp),
+                            )
+                        }
                     }
-                    if (updateTag != null) {
-                        Spacer(Modifier.width(4.dp))
-                        NgStatusDot(
-                            spec = updateTag,
-                            modifier = Modifier.size(6.dp),
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(4.dp))
                     if (groupTag != null) {
                         NgStatusTag(
                             spec = groupTag,
@@ -410,14 +420,16 @@ private fun NgBookshelfManageCoverCard(
                 modifier = dragHandleModifier
                     .width(32.dp)
                     .fillMaxHeight()
-                    .semantics { contentDescription = dragHandleContentDescription },
+                    .semantics {
+                        if (dragHandleEnabled) contentDescription = dragHandleContentDescription
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_drag_handle),
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = metadataColor.copy(alpha = 0.62f),
+                    tint = metadataColor.copy(alpha = if (dragHandleEnabled) 0.62f else 0.24f),
                 )
             }
         }

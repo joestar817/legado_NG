@@ -40,17 +40,21 @@ import io.legado.app.ui.design.theme.NgTheme
 
 private const val ALL_GROUP_ITEM_ID = 0x53FFFFFF
 private const val UNGROUPED_GROUP_ITEM_ID = 0x53FFFFFE
+private const val SORT_MENU_ITEM_ID = 0x53FFFFFC
 private const val GROUP_ITEM_ID_BASE = 0x54000000
+private const val SORT_ITEM_ID_BASE = 0x55000000
 
 @Composable
 internal fun BookshelfManageTopBar(
     query: String,
     groups: List<BookGroup>,
     selectedGroupId: Long,
+    sortOrder: BookshelfManageSort,
     onQueryChange: (String) -> Unit,
     onBack: () -> Unit,
     onGroupSelected: (groupId: Long) -> Unit,
-    onGroupManage: () -> Unit
+    onGroupManage: () -> Unit,
+    onSortChange: (BookshelfManageSort) -> Unit,
 ) {
     val menuState = remember { NgPopupToggleState() }
     val actionContentColor = colorResource(R.color.ng_search_icon)
@@ -68,7 +72,31 @@ internal fun BookshelfManageTopBar(
             emptySet()
         }
     }
-    val menuItems = remember(groupedEntries, selectedGroupId) {
+    val sortMenuItems = remember(sortOrder) {
+        BookshelfManageSort.entries.map { sort ->
+            NgExpandableActionMenuItem(
+                itemId = SORT_ITEM_ID_BASE + sort.ordinal,
+                titleRes = when (sort) {
+                    BookshelfManageSort.FOLLOW_BOOKSHELF -> R.string.bookshelf_manage_sort_follow
+                    BookshelfManageSort.RECENT_READ -> R.string.bookshelf_manage_sort_read
+                    BookshelfManageSort.RECENT_UPDATE -> R.string.bookshelf_manage_sort_update
+                    BookshelfManageSort.NAME -> R.string.bookshelf_manage_sort_name
+                    BookshelfManageSort.CACHE_SIZE -> R.string.bookshelf_manage_cache_sort
+                    BookshelfManageSort.MANUAL -> R.string.sort_manual
+                },
+                iconRes = when (sort) {
+                    BookshelfManageSort.FOLLOW_BOOKSHELF -> R.drawable.ic_bookshelf_dock_all
+                    BookshelfManageSort.RECENT_READ -> R.drawable.ic_history
+                    BookshelfManageSort.RECENT_UPDATE -> R.drawable.ic_update
+                    BookshelfManageSort.NAME -> R.drawable.ic_sort
+                    BookshelfManageSort.CACHE_SIZE -> R.drawable.ic_cache_octicon
+                    BookshelfManageSort.MANUAL -> R.drawable.ic_drag_handle
+                },
+                checked = sortOrder == sort,
+            )
+        }
+    }
+    val menuItems = remember(groupedEntries, selectedGroupId, sortMenuItems) {
         listOf(
             NgExpandableActionMenuItem(
                 itemId = R.id.menu_group_manage,
@@ -76,22 +104,29 @@ internal fun BookshelfManageTopBar(
                 iconRes = R.drawable.ic_bookshelf_manage_filter_settings
             ),
             NgExpandableActionMenuItem(
-                itemId = ALL_GROUP_ITEM_ID,
-                titleRes = R.string.all,
-                iconRes = R.drawable.ic_bookshelf_dock_all,
-                checked = selectedGroupId == BookGroup.IdAll
-            ),
-            NgExpandableActionMenuItem(
-                itemId = UNGROUPED_GROUP_ITEM_ID,
-                titleRes = R.string.no_group,
-                iconRes = R.drawable.ic_bookshelf_dock_ungrouped,
-                checked = selectedGroupId == BookGroup.IdNoGroup
+                itemId = SORT_MENU_ITEM_ID,
+                titleRes = R.string.sort,
+                iconRes = R.drawable.ic_swap_vert,
+                children = sortMenuItems,
             ),
             NgExpandableActionMenuItem(
                 itemId = R.id.menu_book_group,
                 titleRes = R.string.group,
                 iconRes = R.drawable.ic_bookshelf_manage_filter_group,
-                children = groupedEntries.mapIndexed { index, group ->
+                children = listOf(
+                    NgExpandableActionMenuItem(
+                        itemId = ALL_GROUP_ITEM_ID,
+                        titleRes = R.string.all,
+                        iconRes = R.drawable.ic_bookshelf_dock_all,
+                        checked = selectedGroupId == BookGroup.IdAll,
+                    ),
+                    NgExpandableActionMenuItem(
+                        itemId = UNGROUPED_GROUP_ITEM_ID,
+                        titleRes = R.string.no_group,
+                        iconRes = R.drawable.ic_bookshelf_dock_ungrouped,
+                        checked = selectedGroupId == BookGroup.IdNoGroup,
+                    ),
+                ) + groupedEntries.mapIndexed { index, group ->
                     NgExpandableActionMenuItem(
                         itemId = GROUP_ITEM_ID_BASE + index,
                         titleRes = 0,
@@ -174,13 +209,15 @@ internal fun BookshelfManageTopBar(
                                 when (item.itemId) {
                                     R.id.menu_group_manage -> onGroupManage()
                                     ALL_GROUP_ITEM_ID -> onGroupSelected(BookGroup.IdAll)
-                                    UNGROUPED_GROUP_ITEM_ID ->
-                                        onGroupSelected(BookGroup.IdNoGroup)
-
+                                    UNGROUPED_GROUP_ITEM_ID -> onGroupSelected(BookGroup.IdNoGroup)
                                     else -> {
-                                        val index = item.itemId - GROUP_ITEM_ID_BASE
-                                        groupedEntries.getOrNull(index)?.let { group ->
-                                            onGroupSelected(group.groupId)
+                                        val sort = BookshelfManageSort.entries.getOrNull(item.itemId - SORT_ITEM_ID_BASE)
+                                        if (sort != null) {
+                                            onSortChange(sort)
+                                        } else {
+                                            groupedEntries.getOrNull(item.itemId - GROUP_ITEM_ID_BASE)?.let { group ->
+                                                onGroupSelected(group.groupId)
+                                            }
                                         }
                                     }
                                 }

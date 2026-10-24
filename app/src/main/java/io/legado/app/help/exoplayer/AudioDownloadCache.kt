@@ -272,6 +272,21 @@ object AudioDownloadCache {
         return "$AUDIO_CACHE_KEY_PREFIX${MD5Utils.md5Encode(book.getFolderName())}:"
     }
 
+    /** 一次读取索引，再按书籍归属汇总，避免每张卡扫描整个媒体缓存。 */
+    internal fun cachedBytesByBook(books: List<Book>): Map<String, Long> {
+        if (books.isEmpty()) return emptyMap()
+        val owners = books.associateBy(::bookCachePrefix)
+        val sizes = mutableMapOf<String, Long>()
+        ExoPlayerHelper.audioCacheSizes().forEach { (key, bytes) ->
+            if (key.startsWith(AUDIO_CACHE_KEY_PREFIX)) {
+                val end = key.indexOf(':', AUDIO_CACHE_KEY_PREFIX.length)
+                val owner = owners[key.take(end + 1)]
+                if (owner != null) sizes[owner.bookUrl] = sizes.getOrDefault(owner.bookUrl, 0L) + bytes
+            }
+        }
+        return sizes
+    }
+
     private fun chapterCacheKey(
         bookPrefix: String,
         book: Book,

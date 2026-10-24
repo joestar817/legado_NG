@@ -14,6 +14,7 @@ object BookCacheManager {
         CacheBook.cancel(book.bookUrl)
         AudioPlay.onBookCacheCleared(book.bookUrl)
         BookHelp.clearCache(book)
+        postEvent(EventBus.BOOK_CACHE_CLEARED, book.bookUrl)
         postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
     }
 
@@ -22,6 +23,7 @@ object BookCacheManager {
         AudioPlay.onBookCacheCleared(book.bookUrl)
         AudioDownloadCache.clearChapter(book, chapter)
         BookHelp.delContent(book, chapter)
+        postEvent(EventBus.BOOK_CACHE_CLEARED, book.bookUrl)
         postEvent(EventBus.UP_DOWNLOAD, book.bookUrl)
     }
 
@@ -29,6 +31,7 @@ object BookCacheManager {
         CacheBook.close()
         AudioPlay.book?.bookUrl?.let(AudioPlay::onBookCacheCleared)
         BookHelp.clearCache()
+        postEvent(EventBus.BOOK_CACHE_CLEARED, "")
         postEvent(EventBus.UP_DOWNLOAD, "")
     }
 }
