@@ -38,6 +38,7 @@ object EventBus {
     const val READ_ALOUD_PLAY = "readAloudPlay"
     const val READ_ALOUD_OPEN_PLAYER = "readAloudOpenPlayer"
     const val EXPORT_BOOK = "exportBook"
+    const val WEBDAV_EXPORT_READY = "webdavExportReady"
     const val UP_MANGA_CONFIG = "upMangaConfig"
     const val PLAY_MODE_CHANGED = "playModeChanged"
     const val REFRESH_BOOK_INFO = "refreshBookInfo"

@@ -46,6 +46,9 @@ import io.legado.app.model.ReadBook
 import io.legado.app.model.ReadManga
 import io.legado.app.model.SourceCallBack
 import io.legado.app.model.localBook.LocalBook
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.ui.book.import.remote.RemoteBookActivity
+import io.legado.app.utils.longSnackbar
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.service.ExportBookService
 import io.legado.app.ui.book.character.BookCharacterActivity
@@ -393,7 +396,7 @@ class BooksFragment() : BaseFragment(0),
             putExtra("exportPath", path)
             putExtra("exportUseReplace", true)
             putExtra("parallelExport", true)
-            putExtra("exportToWebDav", false)
+            putExtra("exportToWebDav", settings.exportToWebDav)
             putExtra("includeChapterName", true)
             putExtra("exportPlainText", settings.plainText)
             putExtra("exportFilterInteractiveImages", settings.filterInteractiveImages)
@@ -579,6 +582,10 @@ class BooksFragment() : BaseFragment(0),
 
     override fun observeLiveBus() {
         super.observeLiveBus()
+        observeEvent<WebDavBookLocation>(EventBus.WEBDAV_EXPORT_READY) { location ->
+            if (isResumed && isVisible) view?.longSnackbar(getString(R.string.export_upload_success),
+                getString(R.string.webdav_view_cloud)) { RemoteBookActivity.open(requireContext(), location) }
+        }
         observeEvent<String>(EventBus.UP_BOOKSHELF) { bookUrl ->
             if (bookItems.none { it.bookUrl == bookUrl }) {
                 return@observeEvent

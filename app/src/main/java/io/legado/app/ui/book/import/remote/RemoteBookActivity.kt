@@ -1,10 +1,12 @@
 package io.legado.app.ui.book.import.remote
 
-import android.net.Uri
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.addCallback
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.setValue
@@ -13,20 +15,15 @@ import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.base.VMBaseActivity
-import io.legado.app.constant.AppPattern
-import io.legado.app.data.appDb
-import io.legado.app.data.entities.Book
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.lib.dialogs.alert
-import io.legado.app.lib.dialogs.selector
-import io.legado.app.model.localBook.LocalBook
 import io.legado.app.model.remote.RemoteBook
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.model.remote.webDavBookKey
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.utils.ArchiveUtils
-import io.legado.app.utils.FileDoc
 import io.legado.app.utils.SelectDirectoryContract
 import io.legado.app.utils.find
 import io.legado.app.utils.showDialogFragment
@@ -34,8 +31,6 @@ import io.legado.app.utils.showHelp
 import io.legado.app.utils.startActivityForBook
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -44,6 +39,19 @@ import kotlin.coroutines.resume
 class RemoteBookActivity :
     VMBaseActivity<ComposeActivityBinding, RemoteBookViewModel>(),
     ServersDialog.Callback {
+
+    companion object {
+        internal fun open(context: Context, location: WebDavBookLocation, checkUpdate: Boolean = false) {
+            context.startActivity(createIntent(context, location, checkUpdate))
+        }
+
+        internal fun createIntent(context: Context, location: WebDavBookLocation, checkUpdate: Boolean = false): Intent =
+            Intent(context, RemoteBookActivity::class.java).apply {
+                putExtra(WebDavBookLocation.EXTRA_SERVER, location.serverId ?: -1L)
+                putExtra(WebDavBookLocation.EXTRA_PATH, location.path)
+                putExtra(WebDavBookLocation.EXTRA_CHECK_UPDATE, checkUpdate)
+            }
+    }
 
     override val binding by viewBinding(ComposeActivityBinding::inflate)
     override val viewModel by viewModels<RemoteBookViewModel>()
@@ -60,6 +68,14 @@ class RemoteBookActivity :
     private var isAtRoot by mutableStateOf(true)
     private var isLoading by mutableStateOf(false)
     private var currentSortKey by mutableStateOf(RemoteBookSort.Default)
+    private var actionItem by mutableStateOf<RemoteBook?>(null)
+    private var batchResult by mutableStateOf<RemoteBookViewModel.BatchResult?>(null)
+    private val requestedLocation by lazy {
+        intent.getStringExtra(WebDavBookLocation.EXTRA_PATH)?.let {
+            WebDavBookLocation(intent.getLongExtra(WebDavBookLocation.EXTRA_SERVER, -1L).takeIf { id -> id >= 0 }, it)
+        }
+    }
+    private var checkUpdate = false
     private var localBookTreeSelectListener: ((Boolean) -> Unit)? = null
 
     private val localBookTreeSelect = registerForActivityResult(SelectDirectoryContract()) {
@@ -71,25 +87,22 @@ class RemoteBookActivity :
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         currentSortKey = viewModel.sortKey
+        checkUpdate = savedInstanceState == null && intent.getBooleanExtra(WebDavBookLocation.EXTRA_CHECK_UPDATE, false)
         initContent()
         onBackPressedDispatcher.addCallback(this) {
-            if (!goBackDir()) finish()
+            if (viewModel.transfer.value != null) viewModel.cancelTransfer()
+            else if (!goBackDir()) finish()
         }
         lifecycleScope.launch {
-            if (!setBookStorage()) {
-                finish()
-                return@launch
-            }
             if (!LocalConfig.webDavBookHelpVersionIsLast) {
                 showHelp("webDavBookHelp")
             }
             launch {
-                viewModel.dataFlow.conflate().collect { remoteBooks ->
+                viewModel.dataFlow.collect { remoteBooks ->
                     items = remoteBooks.toList()
-                    delay(500)
                 }
             }
-            viewModel.initData(::upPath)
+            viewModel.initData(requestedLocation, onSuccess = ::upPath)
         }
     }
 
@@ -97,6 +110,7 @@ class RemoteBookActivity :
         viewModel.permissionDenialLiveData.observe(this) {
             localBookTreeSelect.launch(null)
         }
+        viewModel.batchResult.observe(this) { batchResult = it }
     }
 
     private fun initContent() {
@@ -105,6 +119,10 @@ class RemoteBookActivity :
         )
         binding.composeView.setContent {
             NgAppTheme {
+                val statuses by viewModel.statuses.collectAsState()
+                val loading by viewModel.loading.collectAsState()
+                val transfer by viewModel.transfer.collectAsState()
+                val conflict by viewModel.conflict.collectAsState()
                 RemoteBookScreen(
                     items = items,
                     selectedItems = selectedItems,
@@ -112,7 +130,7 @@ class RemoteBookActivity :
                     searchExpanded = searchExpanded,
                     pathText = pathText,
                     isAtRoot = isAtRoot,
-                    isLoading = isLoading,
+                    isLoading = loading,
                     sortKey = currentSortKey,
                     onBack = { onBackPressedDispatcher.onBackPressed() },
                     onSearchExpandedChange = { expanded ->
@@ -129,12 +147,25 @@ class RemoteBookActivity :
                     onSelectAll = ::selectAllVisible,
                     onInvertSelection = ::invertVisibleSelection,
                     onAddSelected = ::addSelected,
+                    statuses = statuses,
+                    focusedPath = viewModel.focusedPath,
+                    transfer = transfer,
+                    conflict = conflict,
+                    actionItem = actionItem,
+                    batchResult = batchResult,
+                    onResolveConflict = viewModel::resolveConflict,
+                    onCancelTransfer = viewModel::cancelTransfer,
+                    onDismissAction = { actionItem = null },
+                    onDownloadItem = { item, add -> actionItem = null; beginTransfer(listOf(item), add) },
+                    onDownloadSelected = { beginTransfer(selectedItems.toList(), false) },
+                    onDismissResult = { batchResult = null; viewModel.batchResult.value = null },
                 )
             }
         }
     }
 
     private suspend fun setBookStorage() = suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { localBookTreeSelectListener = null }
         localBookTreeSelectListener = { selected ->
             localBookTreeSelectListener = null
             if (continuation.isActive) continuation.resume(selected)
@@ -169,6 +200,7 @@ class RemoteBookActivity :
     }
 
     private fun onMenuAction(itemId: Int) {
+        if (viewModel.transfer.value != null) return
         when (itemId) {
             R.id.menu_server_config -> showDialogFragment<ServersDialog>()
             R.id.menu_help -> showHelp("webDavBookHelp")
@@ -178,6 +210,7 @@ class RemoteBookActivity :
     }
 
     private fun changeSort(sortKey: RemoteBookSort) {
+        if (viewModel.transfer.value != null) return
         if (viewModel.sortKey == sortKey) {
             viewModel.sortAscending = !viewModel.sortAscending
         } else {
@@ -189,6 +222,7 @@ class RemoteBookActivity :
     }
 
     private fun goBackDir(): Boolean {
+        if (viewModel.transfer.value != null) return false
         if (viewModel.dirList.isEmpty()) return false
         viewModel.dirList.removeLastOrNull()
         upPath()
@@ -196,19 +230,28 @@ class RemoteBookActivity :
     }
 
     private fun upPath() {
+        if (viewModel.transfer.value != null) return
         isAtRoot = viewModel.dirList.isEmpty()
         pathText = buildList {
             add(if (viewModel.isDefaultWebdav) "books" else "/")
             addAll(viewModel.dirList.map(RemoteBook::filename))
         }.joinToString("  ›  ")
         selectedItems = emptySet()
-        viewModel.dataCallback?.clear()
         viewModel.loadRemoteBookList(viewModel.dirList.lastOrNull()?.path) {
             isLoading = it
+            if (!it && viewModel.loadSucceeded && checkUpdate) {
+                checkUpdate = false
+                val target = viewModel.dataFlow.value.find { item ->
+                    requestedLocation?.let { location -> webDavBookKey(location.serverId, item.path) == location.key } == true
+                }
+                if (target == null) toastOnUi(R.string.webdav_target_missing)
+                else beginTransfer(listOf(target), true)
+            }
         }
     }
 
     private fun onItemClick(remoteBook: RemoteBook) {
+        if (viewModel.transfer.value != null) return
         when {
             remoteBook.isDir -> {
                 viewModel.dirList.add(remoteBook)
@@ -221,11 +264,11 @@ class RemoteBookActivity :
     }
 
     private fun onItemLongClick(remoteBook: RemoteBook) {
-        if (remoteBook.isOnBookShelf) addToBookShelfAgain(remoteBook)
+        if (!remoteBook.isDir && viewModel.transfer.value == null) actionItem = remoteBook
     }
 
     private fun toggleItem(remoteBook: RemoteBook) {
-        if (remoteBook.isDir || remoteBook.isOnBookShelf) return
+        if (remoteBook.isDir || viewModel.transfer.value != null) return
         selectedItems = if (remoteBook in selectedItems) {
             selectedItems - remoteBook
         } else {
@@ -234,7 +277,8 @@ class RemoteBookActivity :
     }
 
     private fun selectAllVisible() {
-        val selectable = items.filter { !it.isDir && !it.isOnBookShelf }
+        if (viewModel.transfer.value != null) return
+        val selectable = items.filter { !it.isDir }
         selectedItems = if (selectable.isNotEmpty() && selectable.all(selectedItems::contains)) {
             selectedItems - selectable.toSet()
         } else {
@@ -244,112 +288,38 @@ class RemoteBookActivity :
 
     private fun invertVisibleSelection() {
         var updated = selectedItems
-        items.filter { !it.isDir && !it.isOnBookShelf }.forEach { item ->
+        if (viewModel.transfer.value != null) return
+        items.filter { !it.isDir }.forEach { item ->
             updated = if (item in updated) updated - item else updated + item
         }
         selectedItems = updated
     }
 
     private fun addSelected() {
-        val selected = HashSet(selectedItems)
-        if (selected.isEmpty()) return
-        isLoading = true
-        viewModel.addToBookshelf(selected) {
-            selectedItems = emptySet()
-            items = items.toList()
-            isLoading = false
+        beginTransfer(selectedItems.toList(), true)
+    }
+
+    private fun beginTransfer(selected: List<RemoteBook>, addToShelf: Boolean) {
+        if (selected.isEmpty() || viewModel.transfer.value != null) return
+        lifecycleScope.launch {
+            if (!setBookStorage()) return@launch
+            viewModel.download(selected, addToShelf) {
+                selectedItems = emptySet()
+                upPath()
+            }
         }
     }
 
     override fun onDialogDismiss(tag: String) {
-        viewModel.initData(::upPath)
-    }
-
-    private fun showRemoteBookDownloadAlert(
-        remoteBook: RemoteBook,
-        onDownloadFinish: (() -> Unit)? = null,
-    ) {
-        alert(R.string.draw, R.string.archive_not_found) {
-            okButton {
-                viewModel.addToBookshelf(hashSetOf(remoteBook)) {
-                    onDownloadFinish?.invoke()
-                }
-            }
-            noButton()
-        }
+        viewModel.dirList.clear()
+        viewModel.initData(force = true, onSuccess = ::upPath)
     }
 
     private fun startRead(remoteBook: RemoteBook) {
-        val downloadFileName = remoteBook.filename
-        if (!ArchiveUtils.isArchive(downloadFileName)) {
-            appDb.bookDao.getBookByFileName(downloadFileName)?.let(::startActivityForBook)
-        } else {
-            AppConfig.defaultBookTreeUri ?: return
-            val archive = FileDoc.fromUri(Uri.parse(AppConfig.defaultBookTreeUri), true)
-                .find(downloadFileName)
-            if (archive == null) {
-                showRemoteBookDownloadAlert(remoteBook) { startRead(remoteBook) }
-            } else {
-                onArchiveFileClick(archive)
-            }
+        lifecycleScope.launch {
+            viewModel.findLocal(remoteBook)?.let(::startActivityForBook)
+                ?: beginTransfer(listOf(remoteBook), true)
         }
     }
 
-    private fun addToBookShelfAgain(remoteBook: RemoteBook) {
-        alert(getString(R.string.sure), "是否重新加入书架？") {
-            yesButton {
-                isLoading = true
-                viewModel.addToBookshelf(hashSetOf(remoteBook)) {
-                    items = items.toList()
-                    isLoading = false
-                }
-            }
-            noButton()
-        }
-    }
-
-    private fun onArchiveFileClick(fileDoc: FileDoc) {
-        val fileNames = ArchiveUtils.getArchiveFilesName(fileDoc) {
-            it.matches(AppPattern.bookFileRegex)
-        }
-        if (fileNames.size == 1) {
-            val name = fileNames[0]
-            appDb.bookDao.getBookByFileName(name)?.let(::startActivityForBook)
-                ?: showImportAlert(fileDoc, name)
-        } else {
-            showSelectBookReadAlert(fileDoc, fileNames)
-        }
-    }
-
-    private fun showSelectBookReadAlert(fileDoc: FileDoc, fileNames: List<String>) {
-        if (fileNames.isEmpty()) {
-            toastOnUi(R.string.unsupport_archivefile_entry)
-            return
-        }
-        selector(R.string.start_read, fileNames) { _, name, _ ->
-            appDb.bookDao.getBookByFileName(name)?.let(::startActivityForBook)
-                ?: showImportAlert(fileDoc, name)
-        }
-    }
-
-    private inline fun addArchiveToBookShelf(
-        fileDoc: FileDoc,
-        fileName: String,
-        onSuccess: (Book) -> Unit,
-    ) {
-        LocalBook.importArchiveFile(fileDoc.uri, fileName) {
-            it.contains(fileName)
-        }.firstOrNull()?.run {
-            onSuccess(this)
-        }
-    }
-
-    private fun showImportAlert(fileDoc: FileDoc, fileName: String) {
-        alert(R.string.draw, R.string.no_book_found_bookshelf) {
-            okButton {
-                addArchiveToBookShelf(fileDoc, fileName, ::startActivityForBook)
-            }
-            noButton()
-        }
-    }
 }

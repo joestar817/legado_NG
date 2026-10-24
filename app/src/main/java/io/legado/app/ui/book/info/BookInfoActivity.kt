@@ -45,8 +45,6 @@ import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.SearchBook
-import io.legado.app.exception.NoStackTraceException
-import io.legado.app.help.AppWebDav
 import io.legado.app.help.GlideImageGetter
 import io.legado.app.help.TextViewTagHandler
 import io.legado.app.help.source.webCacheObject
@@ -60,7 +58,6 @@ import io.legado.app.help.book.isImage
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.loadBookCacheStatus
 import io.legado.app.help.book.menuCapabilities
-import io.legado.app.help.book.isLocalTxt
 import io.legado.app.help.book.isVideo
 import io.legado.app.help.book.isWebFile
 import io.legado.app.help.book.removeType
@@ -79,6 +76,10 @@ import io.legado.app.model.CacheBook
 import io.legado.app.model.ReadBook
 import io.legado.app.model.SourceCallBack
 import io.legado.app.model.remote.RemoteBookWebDav
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.model.remote.webDavBookManager
+import io.legado.app.ui.book.import.remote.RemoteBookActivity
+import kotlinx.coroutines.CancellationException
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.audio.AudioPlayActivity
@@ -208,6 +209,9 @@ class BookInfoActivity :
         }
     }
     private var chapterChanged = false
+    private val cloudBookResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        viewModel.initData(intent)
+    }
     private val waitDialog by lazy { WaitDialog(this) }
     private var characterPreviewJob: Job? = null
     private var otherWorksRawBooks = emptyList<SearchBook>()
@@ -554,9 +558,16 @@ class BookInfoActivity :
     }
 
     private fun refreshBook() {
-        upLoading(true)
-        viewModel.getBook()?.let {
-            viewModel.refreshBook(it)
+        viewModel.getBook()?.let { current ->
+            val location = try { WebDavBookLocation.fromBook(current) }
+                catch (error: Exception) { toastOnUi(error.localizedMessage); return }
+            if (location != null) {
+                intent.putExtra("name", current.name).putExtra("author", current.author)
+                cloudBookResult.launch(RemoteBookActivity.createIntent(this, location, checkUpdate = true))
+            } else {
+                upLoading(true)
+                viewModel.refreshBook(current)
+            }
         }
     }
 
@@ -569,18 +580,24 @@ class BookInfoActivity :
 
     private fun upLoadBook(
         book: Book,
-        bookWebDav: RemoteBookWebDav? = AppWebDav.defaultBookWebDav,
+        bookWebDav: RemoteBookWebDav? = null,
     ) {
         lifecycleScope.launch {
             waitDialog.setText("上传中.....")
             waitDialog.show()
             try {
-                bookWebDav
-                    ?.upload(book)
-                    ?: throw NoStackTraceException("未配置webDav")
+                val location = WebDavBookLocation.fromBook(book)
+                val dav = bookWebDav ?: webDavBookManager(location?.serverId)
+                dav.upload(book)
                 //更新书籍最后更新时间,使之比远程书籍的时间新
                 book.lastCheckTime = System.currentTimeMillis()
                 viewModel.saveBook(book)
+                WebDavBookLocation.fromBook(book)?.let { uploaded ->
+                    binding.root.longSnackbar(getString(R.string.export_upload_success),
+                        getString(R.string.webdav_view_cloud)) { RemoteBookActivity.open(this@BookInfoActivity, uploaded) }
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 toastOnUi(e.localizedMessage)
             } finally {

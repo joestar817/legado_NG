@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
@@ -30,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,14 +47,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import io.legado.app.R
 import io.legado.app.constant.AppConst
 import io.legado.app.model.remote.RemoteBook
+import io.legado.app.model.remote.WebDavBookChoice
+import io.legado.app.model.remote.WebDavBookConflict
+import io.legado.app.model.remote.WebDavBookChange
 import io.legado.app.ui.book.import.ImportBrowserPathRow
 import io.legado.app.ui.book.import.ImportSelectionDock
 import io.legado.app.ui.design.components.NgStatusTagStyle
 import io.legado.app.ui.design.components.NgStatusTagVariant
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
+import io.legado.app.ui.design.components.compose.NgDialog
+import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgFileEntryIcon
 import io.legado.app.ui.design.components.compose.NgFileEntryIconKind
@@ -91,9 +99,21 @@ internal fun RemoteBookScreen(
     onSelectAll: () -> Unit,
     onInvertSelection: () -> Unit,
     onAddSelected: () -> Unit,
+    statuses: Map<String, String>,
+    focusedPath: String?,
+    transfer: RemoteBookViewModel.TransferProgress?,
+    conflict: WebDavBookConflict?,
+    actionItem: RemoteBook?,
+    batchResult: RemoteBookViewModel.BatchResult?,
+    onResolveConflict: (WebDavBookChoice) -> Unit,
+    onCancelTransfer: () -> Unit,
+    onDismissAction: () -> Unit,
+    onDownloadItem: (RemoteBook, Boolean) -> Unit,
+    onDownloadSelected: () -> Unit,
+    onDismissResult: () -> Unit,
 ) {
     val selectedCount = selectedItems.size
-    val selectableItemCount = items.count { !it.isDir && !it.isOnBookShelf }
+    val selectableItemCount = items.count { !it.isDir }
     Column(modifier = Modifier.fillMaxSize()) {
         RemoteBookTopBar(
             query = query,
@@ -121,11 +141,74 @@ internal fun RemoteBookScreen(
             onSelectAll = onSelectAll,
             onInvertSelection = onInvertSelection,
             onAddSelected = onAddSelected,
+            statuses = statuses,
+            focusedPath = focusedPath,
+            transfer = transfer,
+            onCancelTransfer = onCancelTransfer,
+            onDownloadSelected = onDownloadSelected,
             modifier = Modifier
                 .weight(1f)
                 .navigationBarsPadding()
                 .padding(start = 10.dp, top = 4.dp, end = 10.dp, bottom = 10.dp),
         )
+    }
+    conflict?.let { value ->
+        Dialog(onDismissRequest = { onResolveConflict(WebDavBookChoice.KEEP_LOCAL) }) {
+            NgDialog(
+                title = stringResource(R.string.webdav_update_title),
+                titleFontSize = 20.sp,
+                titleFontWeight = FontWeight.Normal,
+                actions = {
+                    NgDialogTextActionButton(stringResource(R.string.webdav_keep_local),
+                        { onResolveConflict(WebDavBookChoice.KEEP_LOCAL) }, secondary = true)
+                    NgDialogTextActionButton(stringResource(R.string.webdav_use_cloud),
+                        { onResolveConflict(WebDavBookChoice.USE_CLOUD) })
+                },
+            ) {
+                Text(value.fileName, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(12.dp))
+                Text(stringResource(when {
+                    value.sameWork -> R.string.webdav_same_work
+                    value.change == WebDavBookChange.CONFLICT -> R.string.webdav_both_changed
+                    value.change == WebDavBookChange.LOCAL_CHANGED -> R.string.webdav_local_changed_confirm
+                    value.change == WebDavBookChange.REMOTE_CHANGED -> R.string.webdav_remote_changed_confirm
+                    else -> R.string.webdav_untracked_confirm
+                }), fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.webdav_keep_original), fontSize = 12.sp,
+                    color = Color(NgTheme.colors.onSurfaceVariant))
+                if (value.allowCopy) TextButton(onClick = { onResolveConflict(WebDavBookChoice.SAVE_COPY) }) {
+                    Text(stringResource(R.string.webdav_save_copy))
+                }
+            }
+        }
+    }
+    actionItem?.let { item ->
+        Dialog(onDismissRequest = onDismissAction) {
+            NgDialog(title = stringResource(R.string.remote_book), titleFontSize = 20.sp,
+                titleFontWeight = FontWeight.Normal, actions = {
+                    NgDialogTextActionButton(stringResource(R.string.cancel), onDismissAction, secondary = true)
+                    NgDialogTextActionButton(stringResource(R.string.webdav_download_only), { onDownloadItem(item, false) })
+                    NgDialogTextActionButton(stringResource(R.string.webdav_add_update), { onDownloadItem(item, true) })
+                }) {
+                Text(item.filename, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+    batchResult?.let { result ->
+        Dialog(onDismissRequest = onDismissResult) {
+            NgDialog(title = stringResource(if (result.cancelled) R.string.webdav_cancelled else R.string.webdav_transfer_result),
+                titleFontSize = 20.sp, titleFontWeight = FontWeight.Normal, actions = {
+                    NgDialogTextActionButton(stringResource(R.string.ok), onDismissResult)
+                }) {
+                Text(stringResource(R.string.webdav_result_counts, result.completed, result.skipped, result.failures.size), fontSize = 14.sp)
+                if (result.failures.isNotEmpty()) LazyColumn(Modifier.height(180.dp)) {
+                    itemsIndexed(result.failures) { _, failure ->
+                        Text(failure, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -289,9 +372,23 @@ private fun RemoteBookDirectoryPanel(
     onSelectAll: () -> Unit,
     onInvertSelection: () -> Unit,
     onAddSelected: () -> Unit,
+    statuses: Map<String, String>,
+    focusedPath: String?,
+    transfer: RemoteBookViewModel.TransferProgress?,
+    onCancelTransfer: () -> Unit,
+    onDownloadSelected: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cardColor = colorResource(R.color.ng_surface_card)
+    val listState = rememberLazyListState()
+    var focusApplied by remember(focusedPath) { mutableStateOf(false) }
+    LaunchedEffect(items, focusedPath) {
+        val index = items.indexOfFirst { it.path == focusedPath }
+        if (!focusApplied && index >= 0) {
+            listState.scrollToItem(index)
+            focusApplied = true
+        }
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = cardColor,
@@ -313,7 +410,15 @@ private fun RemoteBookDirectoryPanel(
                 onRefresh = onRefresh,
                 onSortChange = onSortChange,
             )
-            if (isLoading) {
+            if (transfer != null) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                val amount = if (transfer.size > 0) "${transfer.bytes * 100 / transfer.size}%"
+                    else ConvertUtils.formatFileSize(transfer.bytes)
+                Text("${transfer.index}/${transfer.total} · $amount · ${transfer.name}", Modifier.weight(1f),
+                    fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                TextButton(onClick = onCancelTransfer) { Text(stringResource(R.string.cancel)) }
+            }
+            if (isLoading || transfer != null) {
                 LinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -342,6 +447,7 @@ private fun RemoteBookDirectoryPanel(
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
@@ -354,6 +460,8 @@ private fun RemoteBookDirectoryPanel(
                         RemoteBookDirectoryRow(
                             item = item,
                             selected = item in selectedItems,
+                            focused = item.path == focusedPath,
+                            status = statuses[item.path],
                             onClick = { onItemClick(item) },
                             onLongClick = { onItemLongClick(item) },
                             onToggle = { onToggleItem(item) },
@@ -371,12 +479,19 @@ private fun RemoteBookDirectoryPanel(
             HorizontalDivider(
                 color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.24f),
             )
+            if (selectedCount > 0 && transfer == null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDownloadSelected, modifier = Modifier.padding(end = 12.dp)) {
+                    Text(stringResource(R.string.webdav_download_only))
+                }
+            }
             ImportSelectionDock(
                 selectedCount = selectedCount,
                 itemCount = selectableItemCount,
                 onSelectAll = onSelectAll,
                 onInvertSelection = onInvertSelection,
                 onAddSelected = onAddSelected,
+                actionLabelRes = R.string.webdav_add_update,
+                enabled = transfer == null,
             )
         }
     }
@@ -481,13 +596,15 @@ private fun RemoteDirectoryUtilityRow(
 private fun RemoteBookDirectoryRow(
     item: RemoteBook,
     selected: Boolean,
+    focused: Boolean,
+    status: String?,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onToggle: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val selectedColor = Color(NgTheme.colors.primary).copy(alpha = 0.08f)
-    val rowBackground = if (selected) selectedColor else Color.Transparent
+    val rowBackground = if (selected || focused) selectedColor else Color.Transparent
     val primary = Color(NgTheme.colors.onSurface)
     val secondary = Color(NgTheme.colors.onSurfaceVariant)
     val isArchive = ArchiveUtils.isArchive(item.filename)
@@ -505,7 +622,7 @@ private fun RemoteBookDirectoryRow(
             .padding(start = 8.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!item.isDir && !item.isOnBookShelf) {
+        if (!item.isDir) {
             NgFileSelectionCheckbox(
                 checked = selected,
                 onCheckedChange = { onToggle() },
@@ -561,8 +678,8 @@ private fun RemoteBookDirectoryRow(
                 modifier = Modifier.size(20.dp),
             )
 
-            item.isOnBookShelf -> NgStatusTag(
-                text = stringResource(R.string.local_import_on_bookshelf),
+            status != null -> NgStatusTag(
+                text = status,
                 variant = NgStatusTagVariant.SUCCESS,
                 style = NgStatusTagStyle.INLINE,
             )

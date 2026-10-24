@@ -2,6 +2,7 @@ package io.legado.app.service
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
@@ -22,6 +23,7 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
+import io.legado.app.help.book.attemptBookExportUpload
 import io.legado.app.help.book.menuCapabilities
 import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.book.ExportContentImageProcessor
@@ -32,6 +34,8 @@ import io.legado.app.help.config.EpubReadStylePackage
 import io.legado.app.help.glide.ImageLoader
 import io.legado.app.model.ReadBook
 import io.legado.app.model.localBook.LocalBook
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.ui.book.import.remote.RemoteBookActivity
 import io.legado.app.ui.main.MainActivity
 import io.legado.app.utils.FileDoc
 import io.legado.app.utils.FileUtils
@@ -53,6 +57,7 @@ import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.writeFile
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -108,6 +113,7 @@ class ExportBookService : BaseService() {
     private val waitExportBooks = linkedMapOf<String, ExportConfig>()
     private var exportJob: Job? = null
     private var notificationContentText = appCtx.getString(R.string.service_starting)
+    @Volatile private var uploadedLocation: WebDavBookLocation? = null
 
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -202,6 +208,11 @@ class ExportBookService : BaseService() {
                 getString(R.string.cancel),
                 servicePendingIntent<ExportBookService>(IntentAction.stop)
             )
+        } else uploadedLocation?.let { location ->
+            notification.setContentIntent(activityPendingIntent<RemoteBookActivity>("exportCloud${location.path.hashCode()}") {
+                putExtra(WebDavBookLocation.EXTRA_SERVER, location.serverId ?: -1L)
+                putExtra(WebDavBookLocation.EXTRA_PATH, location.path)
+            })
         }
         notificationManager.notify(NotificationId.ExportBook, notification.build())
     }
@@ -211,10 +222,25 @@ class ExportBookService : BaseService() {
             return
         }
         exportJob = lifecycleScope.launch(IO) {
+            var exportFailures = 0
+            var uploadFailures = 0
+            var uploaded = 0
             while (isActive) {
                 val (bookUrl, exportConfig) = waitExportBooks.entries.firstOrNull() ?: let {
-                    notificationContentText = "导出完成"
+                    val failures = buildList {
+                        if (exportFailures > 0) add(getString(R.string.export_failed_count, exportFailures))
+                        if (uploadFailures > 0) add(getString(R.string.export_upload_failed_count, uploadFailures))
+                    }
+                    notificationContentText = when {
+                        failures.isNotEmpty() -> getString(
+                            R.string.export_finished_with_failures,
+                            failures.joinToString(" · "),
+                        )
+                        uploaded > 0 -> getString(R.string.export_finished_uploaded, uploaded)
+                        else -> getString(R.string.export_finished)
+                    }
                     upExportNotification(true)
+                    uploadedLocation?.let { postEvent(EventBus.WEBDAV_EXPORT_READY, it) }
                     stopSelf()
                     return@launch
                 }
@@ -233,7 +259,7 @@ class ExportBookService : BaseService() {
                         waitExportBooks.size
                     )
                     upExportNotification()
-                    if (exportConfig.type == "epub") {
+                    val uploadResult = if (exportConfig.type == "epub") {
                         if (exportConfig.epubScope.isNullOrBlank()) {
                             exportEpub(exportConfig.path, book, exportConfig)
                         } else {
@@ -247,9 +273,23 @@ class ExportBookService : BaseService() {
                     } else {
                         exportTxt(exportConfig.path, book, exportConfig)
                     }
-                    exportMsg[book.bookUrl] = getString(R.string.export_success)
+                    val uploadError = uploadResult?.exceptionOrNull()
+                    exportMsg[book.bookUrl] = when {
+                        uploadError != null -> {
+                            uploadFailures++
+                            AppLog.put("书籍<${book.name}>本地已导出，WebDAV上传失败", uploadError)
+                            getString(R.string.export_upload_failed)
+                        }
+                        uploadResult != null -> {
+                            uploaded++
+                            getString(R.string.export_upload_success)
+                        }
+                        else -> getString(R.string.export_success)
+                    }
                 } catch (e: Throwable) {
+                    if (e is CancellationException) throw e
                     ensureActive()
+                    exportFailures++
                     exportMsg[bookUrl] = e.localizedMessage ?: "ERROR"
                     AppLog.put("导出书籍<${book?.name ?: bookUrl}>出错", e)
                 } finally {
@@ -258,6 +298,10 @@ class ExportBookService : BaseService() {
                 }
             }
         }
+    }
+
+    private suspend fun uploadAndLocate(uri: Uri, fileName: String, contentType: String) {
+        uploadedLocation = AppWebDav.exportBookToWebDav(uri, fileName, contentType)
     }
 
     private fun refreshChapterList(book: Book) {
@@ -280,14 +324,14 @@ class ExportBookService : BaseService() {
         val src: String
     )
 
-    private suspend fun exportTxt(path: String, book: Book, config: ExportConfig) {
+    private suspend fun exportTxt(path: String, book: Book, config: ExportConfig): Result<Unit>? {
         exportMsg.remove(book.bookUrl)
         postEvent(EventBus.EXPORT_BOOK, book.bookUrl)
         val fileDoc = FileDoc.fromDir(path)
-        exportTxt(fileDoc, book, config)
+        return exportTxt(fileDoc, book, config)
     }
 
-    private suspend fun exportTxt(fileDoc: FileDoc, book: Book, config: ExportConfig) {
+    private suspend fun exportTxt(fileDoc: FileDoc, book: Book, config: ExportConfig): Result<Unit>? {
         val filename = book.getExportFileName("txt")
         fileDoc.find(filename)?.delete()
 
@@ -311,10 +355,9 @@ class ExportBookService : BaseService() {
                 }
             }
         }
-        if (config.exportToWebDav) {
-            // 导出到webdav
-            AppWebDav.exportWebDav(bookDoc.uri, filename)
-        }
+        return if (config.exportToWebDav) {
+            attemptBookExportUpload { uploadAndLocate(bookDoc.uri, filename, "text/plain") }
+        } else null
     }
 
     private suspend fun getAllContents(
@@ -406,14 +449,14 @@ class ExportBookService : BaseService() {
     /**
      * 导出Epub
      */
-    private suspend fun exportEpub(path: String, book: Book, config: ExportConfig) {
+    private suspend fun exportEpub(path: String, book: Book, config: ExportConfig): Result<Unit>? {
         exportMsg.remove(book.bookUrl)
         postEvent(EventBus.EXPORT_BOOK, book.bookUrl)
         val fileDoc = FileDoc.fromDir(path)
-        exportEpub(fileDoc, book, config)
+        return exportEpub(fileDoc, book, config)
     }
 
-    private suspend fun exportEpub(fileDoc: FileDoc, book: Book, config: ExportConfig) {
+    private suspend fun exportEpub(fileDoc: FileDoc, book: Book, config: ExportConfig): Result<Unit>? {
         val filename = book.getExportFileName("epub")
         fileDoc.find(filename)?.delete()
 
@@ -436,10 +479,11 @@ class ExportBookService : BaseService() {
             EpubWriter().write(epubBook, bookOs)
         }
 
-        if (config.exportToWebDav) {
-            // 导出到webdav
-            AppWebDav.exportWebDav(bookDoc.uri, filename)
-        }
+        return if (config.exportToWebDav) {
+            attemptBookExportUpload {
+                uploadAndLocate(bookDoc.uri, filename, "application/epub+zip")
+            }
+        } else null
     }
 
     private fun setAssets(
@@ -795,7 +839,7 @@ class ExportBookService : BaseService() {
         suspend fun export(
             path: String,
             book: Book
-        ) {
+        ): Result<Unit>? {
             exportProgress[book.bookUrl] = 0
             exportMsg.remove(book.bookUrl)
             postEvent(EventBus.EXPORT_BOOK, book.bookUrl)
@@ -808,6 +852,7 @@ class ExportBookService : BaseService() {
             val readStyle = EpubReadStylePackage.create(book)
             val (contentModel, epubList) = createEpubs(book, fileDoc, readStyle)
             var progressBar = 0.0
+            var uploadFailure: Throwable? = null
             epubList.forEachIndexed { index, ep ->
                 val (filename, epubBook) = ep
                 //设置正文
@@ -823,16 +868,20 @@ class ExportBookService : BaseService() {
                     progressBar += book.totalChapterNum.toDouble() / scope.size / 2
                     exportProgress[book.bookUrl] = progressBar.toInt()
                 }
-                save2Drive(filename, epubBook, fileDoc) { total, _ ->
+                val uploadResult = save2Drive(filename, epubBook, fileDoc) { total, _ ->
                     //写入硬盘时更新进度条
                     progressBar += book.totalChapterNum.toDouble() / epubList.size / total / 2
                     postEvent(EventBus.EXPORT_BOOK, book.bookUrl)
                     exportProgress[book.bookUrl] = progressBar.toInt()
                 }
+                if (uploadFailure == null) uploadFailure = uploadResult?.exceptionOrNull()
             }
 
             val elapsed = System.currentTimeMillis() - currentTimeMillis
             AppLog.put("分割导出书籍 ${book.name} 一共耗时 $elapsed")
+            return if (exportToWebDav && epubList.isNotEmpty()) {
+                uploadFailure?.let { Result.failure<Unit>(it) } ?: Result.success(Unit)
+            } else null
         }
 
 
@@ -960,7 +1009,7 @@ class ExportBookService : BaseService() {
             epubBook: EpubBook,
             fileDoc: FileDoc,
             callback: (total: Int, progress: Int) -> Unit
-        ) {
+        ): Result<Unit>? {
             val bookDoc = fileDoc.createFileIfNotExist(filename)
             bookDoc.openOutputStream().getOrThrow().buffered().use { bookOs ->
                 EpubWriter()
@@ -972,10 +1021,11 @@ class ExportBookService : BaseService() {
                     .write(epubBook, bookOs)
             }
 
-            if (exportToWebDav) {
-                // 导出到webdav
-                AppWebDav.exportWebDav(bookDoc.uri, filename)
-            }
+            return if (exportToWebDav) {
+                attemptBookExportUpload {
+                    uploadAndLocate(bookDoc.uri, filename, "application/epub+zip")
+                }
+            } else null
         }
 
         /**

@@ -12,7 +12,8 @@ class WebDavFile(
     val size: Long,
     val contentType: String,
     val resourceType: String,
-    val lastModify: Long
+    val lastModify: Long,
+    val etag: String? = null,
 ) : WebDav(urlStr, authorization) {
 
     val isDir by lazy {

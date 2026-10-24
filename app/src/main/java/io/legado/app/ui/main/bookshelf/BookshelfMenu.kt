@@ -73,12 +73,12 @@ internal fun bookshelfMenuItems(
                 NgExpandableActionMenuItem(
                     R.id.menu_add_local,
                     R.string.book_local,
-                    R.drawable.ic_add
+                    R.drawable.ic_folder_outline
                 ),
                 NgExpandableActionMenuItem(
                     R.id.menu_remote,
                     R.string.add_remote_book,
-                    R.drawable.ic_add
+                    R.drawable.ic_outline_cloud_24
                 ),
                 NgExpandableActionMenuItem(
                     R.id.menu_add_url,

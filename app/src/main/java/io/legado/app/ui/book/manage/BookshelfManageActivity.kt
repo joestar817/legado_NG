@@ -26,6 +26,10 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.model.CacheBook
 import io.legado.app.model.localBook.LocalBook
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.ui.book.import.remote.RemoteBookActivity
+import io.legado.app.utils.longSnackbar
+import androidx.lifecycle.Lifecycle
 import io.legado.app.model.localBook.canExtractOriginalCover
 import io.legado.app.model.localBook.localBookCoverUpdates
 import io.legado.app.model.localBook.rebuildBookCovers
@@ -123,6 +127,12 @@ class BookshelfManageActivity :
     }
 
     override fun observeLiveBus() {
+        observeEvent<WebDavBookLocation>(EventBus.WEBDAV_EXPORT_READY) { location ->
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) binding.root.longSnackbar(
+                getString(R.string.export_upload_success), getString(R.string.webdav_view_cloud)) {
+                RemoteBookActivity.open(this, location)
+            }
+        }
         lifecycleScope.launch {
             viewModel.cacheState.collect(::applyCacheStatistics)
         }
@@ -494,7 +504,7 @@ class BookshelfManageActivity :
                 putExtra("exportPath", path)
                 putExtra("exportUseReplace", true)
                 putExtra("parallelExport", true)
-                putExtra("exportToWebDav", false)
+                putExtra("exportToWebDav", settings.exportToWebDav)
                 putExtra("includeChapterName", true)
                 putExtra("exportPlainText", settings.plainText)
                 putExtra("exportFilterInteractiveImages", settings.filterInteractiveImages)
