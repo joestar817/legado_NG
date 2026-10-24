@@ -123,6 +123,7 @@ internal fun ExploreTopBar(
                 expanded = menuState.expanded,
                 onDismissRequest = menuState::onDismissRequest,
                 items = menuItems,
+                modifier = exploreDropdownMenuBounds(),
                 onItemClick = { item ->
                     menuState.close()
                     when (item.itemId) {

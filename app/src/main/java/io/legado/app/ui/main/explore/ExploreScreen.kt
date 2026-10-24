@@ -1,7 +1,6 @@
 package io.legado.app.ui.main.explore
 
 import android.graphics.Color as AndroidColor
-import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -36,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +47,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
@@ -388,10 +387,10 @@ private fun ExploreListSourceItem(
             highlightWidth = 0.dp,
         )
     }
-    Box(
+    Column(
         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
-        Column {
+        Box {
             NgVisualSurface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -437,26 +436,26 @@ private fun ExploreListSourceItem(
                     )
                 }
             }
-            if (expanded && kinds != null) {
-                ExploreKindRows(
-                    source = source,
-                    kinds = kinds,
-                    onOpenKind = onOpenKind,
-                    onShowError = onShowError,
-                    onRefreshSource = onRefreshSource,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
+            ExploreSourceMenu(
+                source = source,
+                expanded = menuExpanded,
+                onDismiss = { menuExpanded = false },
+                onAction = {
+                    menuExpanded = false
+                    onAction(it)
+                }
+            )
         }
-        ExploreSourceMenu(
-            source = source,
-            expanded = menuExpanded,
-            onDismiss = { menuExpanded = false },
-            onAction = {
-                menuExpanded = false
-                onAction(it)
-            }
-        )
+        if (expanded && kinds != null) {
+            ExploreKindRows(
+                source = source,
+                kinds = kinds,
+                onOpenKind = onOpenKind,
+                onShowError = onShowError,
+                onRefreshSource = onRefreshSource,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
     }
 }
 
@@ -516,6 +515,7 @@ private fun ExploreSourceMenu(
         onDismissRequest = onDismiss,
         items = items,
         onItemClick = { onAction(it.itemId) },
+        modifier = exploreDropdownMenuBounds(),
         width = 168.dp
     )
 }
@@ -533,7 +533,6 @@ private fun ExploreKindRows(
         kinds.filter(ExploreKind::isSupportedExploreKind)
     }
     val rows = remember(supportedKinds) { calculateExploreKindRows(supportedKinds) }
-    val context = LocalContext.current
     val sourceDetail by produceState<BookSource?>(initialValue = null, source.bookSourceUrl) {
         value = withContext(IO) { source.getBookSource() }
     }
@@ -542,20 +541,7 @@ private fun ExploreKindRows(
             ExploreInfoStore.infoMapList.put(source.bookSourceUrl, it)
         }
     }
-    val composeScope = rememberCoroutineScope()
-    val sourceJsExtensions = remember(sourceDetail, infoMap) {
-        SourceLoginJsExtensions(
-            context as? AppCompatActivity,
-            sourceDetail,
-            callback = object : SourceLoginJsExtensions.Callback {
-                override fun upUiData(data: Map<String, Any?>?) = Unit
-
-                override fun reUiView(deltaUp: Boolean) {
-                    composeScope.launch { onRefreshSource() }
-                }
-            }
-        )
-    }
+    val sourceJsExtensions = rememberExploreSourceJsExtensions(sourceDetail, infoMap, onRefreshSource)
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -773,12 +759,7 @@ private fun ExploreSelectKind(
     val chars = remember(kind.chars) {
         kind.chars?.filterNotNull()?.takeIf { it.isNotEmpty() } ?: listOf("chars", "is null")
     }
-    var selected by remember(kind.title) {
-        mutableStateOf(
-            infoMap[kind.title].takeUnless { it.isNullOrEmpty() }
-                ?: (kind.default ?: chars.first()).also { infoMap[kind.title] = it }
-        )
-    }
+    var selected by rememberExploreSelectValue(kind, chars, infoMap)
     var expanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     Box(modifier) {
@@ -791,12 +772,13 @@ private fun ExploreSelectKind(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            modifier = exploreDropdownMenuBounds(),
             shape = RoundedCornerShape(12.dp),
             containerColor = Color(NgTheme.colors.dialogContainer)
         ) {
             chars.forEach { value ->
                 DropdownMenuItem(
-                    text = { Text(value) },
+                    text = { Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     onClick = {
                         expanded = false
                         if (selected == value) return@DropdownMenuItem
@@ -818,6 +800,20 @@ private fun ExploreSelectKind(
             }
         }
     }
+}
+
+@Composable
+internal fun rememberExploreSelectValue(
+    kind: ExploreKind,
+    chars: List<String>,
+    infoMap: InfoMap
+): MutableState<String> = remember(infoMap, kind.title, chars, kind.default) {
+    // 模式切换可替换选项，已失效的选中值应使用书源返回的默认值。
+    val selected = infoMap[kind.title]?.takeIf { it in chars }
+        ?: kind.default?.takeIf { it in chars }
+        ?: chars.first()
+    infoMap[kind.title] = selected
+    mutableStateOf(selected)
 }
 
 @OptIn(ExperimentalFoundationApi::class)

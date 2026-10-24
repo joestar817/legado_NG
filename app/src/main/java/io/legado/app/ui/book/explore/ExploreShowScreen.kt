@@ -2,7 +2,6 @@ package io.legado.app.ui.book.explore
 
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.activity.compose.BackHandler
-import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -11,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -63,9 +61,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -86,7 +81,8 @@ import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarBackButton
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
 import io.legado.app.ui.design.theme.NgTheme
-import io.legado.app.ui.login.SourceLoginJsExtensions
+import io.legado.app.ui.main.explore.rememberExploreSourceJsExtensions
+import io.legado.app.ui.main.explore.exploreDropdownMenuBounds
 import io.legado.app.ui.main.explore.ExploreInfoStore
 import io.legado.app.ui.main.explore.ExploreKindItem
 import io.legado.app.ui.main.explore.rememberExploreKindLabel
@@ -618,48 +614,45 @@ private fun ExploreSectionDropdown(
     }
     // Measure all labels without selection state, so switching groups never resizes the menu.
     val preferredMenuWidth = rememberNgExpandableActionMenuContentWidth(baseItems)
-    val layoutDirection = LocalLayoutDirection.current
-    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val menuWidth = preferredMenuWidth.coerceAtMost(maxWidth)
-        // Anchor the popup to the entire panel content area, then align its right
-        // edge inside that area instead of letting Material align it to the label.
-        val menuOffset = if (layoutDirection == LayoutDirection.Ltr) maxWidth - menuWidth else 0.dp
-        Row(
-            modifier = Modifier.align(Alignment.CenterEnd).widthIn(max = 200.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(onClick = menuState::onAnchorClick)
-                .padding(horizontal = 8.dp)
-                .height(36.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = labels.getOrNull(selectedIndex).orEmpty(),
-                modifier = Modifier.weight(1f, fill = false),
-                color = Color(NgTheme.colors.primary),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.width(4.dp))
-            Icon(
-                painter = painterResource(R.drawable.ic_expand_more),
-                contentDescription = stringResource(R.string.group),
-                tint = Color(NgTheme.colors.primary),
-                modifier = Modifier.size(18.dp)
+    Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Box {
+            Row(
+                modifier = Modifier.widthIn(max = 200.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = menuState::onAnchorClick)
+                    .padding(horizontal = 8.dp)
+                    .height(36.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = labels.getOrNull(selectedIndex).orEmpty(),
+                    modifier = Modifier.weight(1f, fill = false),
+                    color = Color(NgTheme.colors.primary),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_expand_more),
+                    contentDescription = stringResource(R.string.group),
+                    tint = Color(NgTheme.colors.primary),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            NgExpandableActionMenu(
+                expanded = menuState.expanded,
+                onDismissRequest = menuState::onDismissRequest,
+                items = items,
+                modifier = exploreDropdownMenuBounds(),
+                width = preferredMenuWidth,
+                onItemClick = { item ->
+                    menuState.close()
+                    onSelectSection(item.itemId)
+                }
             )
         }
-        NgExpandableActionMenu(
-            expanded = menuState.expanded,
-            onDismissRequest = menuState::onDismissRequest,
-            items = items,
-            width = menuWidth,
-            offset = DpOffset(menuOffset, 0.dp),
-            onItemClick = { item ->
-                menuState.close()
-                onSelectSection(item.itemId)
-            }
-        )
     }
 }
 
@@ -673,27 +666,13 @@ private fun ExploreCategoryRow(
     onShowError: (String) -> Unit
 ) {
     val fallbackLabel = stringResource(R.string.explore_category_default)
-    val context = androidx.compose.ui.platform.LocalContext.current
     val infoMap = remember(source?.bookSourceUrl) {
         val sourceUrl = source?.bookSourceUrl.orEmpty()
         ExploreInfoStore.infoMapList[sourceUrl] ?: InfoMap(sourceUrl).also {
             ExploreInfoStore.infoMapList.put(sourceUrl, it)
         }
     }
-    val scope = rememberCoroutineScope()
-    val sourceJsExtensions = remember(source, infoMap) {
-        SourceLoginJsExtensions(
-            context as? AppCompatActivity,
-            source,
-            callback = object : SourceLoginJsExtensions.Callback {
-                override fun upUiData(data: Map<String, Any?>?) = Unit
-
-                override fun reUiView(deltaUp: Boolean) {
-                    scope.launch { onRefreshKinds() }
-                }
-            }
-        )
-    }
+    val sourceJsExtensions = rememberExploreSourceJsExtensions(source, infoMap, onRefreshKinds)
     val usedSpan = row.sumOf { it.second }.coerceAtMost(EXPLORE_DETAIL_MAX_SPAN)
 
     Row(
