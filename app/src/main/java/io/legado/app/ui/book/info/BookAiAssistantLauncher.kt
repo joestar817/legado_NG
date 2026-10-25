@@ -5,12 +5,14 @@ import com.google.gson.JsonObject
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.ai.AgentModeEntryContext
+import io.legado.app.help.book.menuCapabilities
 import io.legado.app.ui.config.AiChatActivity
 import io.legado.app.utils.startActivity
 
 object BookAiAssistantLauncher {
 
     fun openBookScan(context: Context, book: Book) {
+        if (!book.menuCapabilities.textContent) return
         val payload = JsonObject().apply {
             addProperty(
                 "work_key",

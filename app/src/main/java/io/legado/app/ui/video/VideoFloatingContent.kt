@@ -25,14 +25,20 @@ fun VideoFloatingContent(owner: Any, onClose: () -> Unit, onOpen: () -> Unit,
                          onDragStart: () -> Unit, onDrag: (Float, Float) -> Unit, onDragEnd: () -> Unit) {
     val state by VideoPlaybackBridge.state.collectAsState()
     var controls by remember { mutableStateOf(true) }
-    LaunchedEffect(controls, state.playing) { if (controls && state.playing) { delay(2500); controls = false } }
+    var dragging by remember { mutableStateOf(false) }
+    val stablePlayback = state.playing && !state.preparing && !state.buffering && state.error == null && !state.networkConfirmation
+    LaunchedEffect(stablePlayback) { if (!stablePlayback) controls = true }
+    LaunchedEffect(controls, stablePlayback, dragging) {
+        if (controls && stablePlayback && !dragging) { delay(2500); controls = false }
+    }
     Box(Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)).background(Color.Black)) {
         VideoRenderHost(owner, state, false, Modifier.fillMaxSize(), allowDanmaku = false)
         Box(Modifier.fillMaxSize().pointerInput(Unit) {
             detectTapGestures { controls = !controls }
         }.pointerInput(Unit) {
-            detectDragGestures(onDragStart = { onDragStart() }, onDragEnd = onDragEnd,
-                onDragCancel = onDragEnd, onDrag = { change, amount -> change.consume(); onDrag(amount.x, amount.y) })
+            detectDragGestures(onDragStart = { dragging = true; controls = true; onDragStart() },
+                onDragEnd = { dragging = false; onDragEnd() }, onDragCancel = { dragging = false; onDragEnd() },
+                onDrag = { change, amount -> change.consume(); onDrag(amount.x, amount.y) })
         })
         if (controls) {
             Row(Modifier.fillMaxWidth().align(Alignment.TopCenter).background(Color.Black.copy(alpha = .3f))) {
@@ -41,7 +47,7 @@ fun VideoFloatingContent(owner: Any, onClose: () -> Unit, onOpen: () -> Unit,
                 VideoIcon(R.drawable.ic_fullscreen, "返回播放器", onOpen, Modifier.size(36.dp))
             }
             if (!state.preparing && !state.buffering && state.error == null) VideoIcon(if (state.playing) R.drawable.ic_pause_24dp else R.drawable.ic_play_24dp,
-                if (state.playing) "暂停" else "播放", { VideoPlaybackBridge.toggle() }, Modifier.align(Alignment.Center))
+                if (state.playing) "暂停" else if (state.ended) "重播" else "播放", { VideoPlaybackBridge.toggle() }, Modifier.align(Alignment.Center))
         }
         if (state.preparing || state.buffering) CircularProgressIndicator(
             Modifier.align(Alignment.Center).size(28.dp), color = Color.White, strokeWidth = 2.dp)

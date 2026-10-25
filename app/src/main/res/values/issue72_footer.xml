@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="read_footer_image">图片页脚</string>
+    <string name="read_footer_image_failed">页脚图片导入失败</string>
+</resources>

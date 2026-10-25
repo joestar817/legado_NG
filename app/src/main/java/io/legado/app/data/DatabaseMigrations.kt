@@ -25,8 +25,16 @@ object DatabaseMigrations {
             migration_99_100, migration_100_101, migration_101_102, migration_102_103,
             migration_103_104, migration_104_105, migration_105_106, migration_106_107,
             migration_107_108, migration_108_109, migration_109_110, migration_110_111,
-            migration_111_112, migration_112_113, migration_113_114,
+            migration_111_112, migration_112_113, migration_113_114, migration_119_120,
         )
+    }
+
+    private val migration_119_120 = object : Migration(119, 120) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `readingTimeTotal` (`id` INTEGER NOT NULL, `readTime` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))")
+            // Preserve the displayed historical total once. Old book/day rows are never recalculated.
+            db.execSQL("INSERT INTO `readingTimeTotal` (`id`, `readTime`) SELECT 1, COALESCE(SUM(`readTime`), 0) FROM `readRecord`")
+        }
     }
 
     private val migration_10_11 = object : Migration(10, 11) {

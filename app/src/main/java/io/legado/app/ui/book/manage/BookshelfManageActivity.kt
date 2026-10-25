@@ -22,11 +22,16 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.data.entities.BookSource
 import io.legado.app.help.book.contains
-import io.legado.app.help.book.isLocal
+import io.legado.app.help.book.menuCapabilities
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.model.CacheBook
 import io.legado.app.model.localBook.LocalBook
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.ui.book.import.remote.RemoteBookActivity
+import io.legado.app.ui.book.group.GroupManageDialog
+import io.legado.app.utils.longSnackbar
+import androidx.lifecycle.Lifecycle
 import io.legado.app.model.localBook.canExtractOriginalCover
 import io.legado.app.model.localBook.localBookCoverUpdates
 import io.legado.app.model.localBook.rebuildBookCovers
@@ -83,6 +88,13 @@ class BookshelfManageActivity :
     )
     private var selectedBookUrls by mutableStateOf<Set<String>>(emptySet())
     private var cachedChapterCounts by mutableStateOf<Map<String, Int>>(emptyMap())
+    private var cacheChapterTotals by mutableStateOf<Map<String, Int>>(emptyMap())
+    private var clearableBookUrls by mutableStateOf<Set<String>>(emptySet())
+    private var cachedBytes by mutableStateOf<Map<String, Long>>(emptyMap())
+    private var sortOrder by mutableStateOf(BookshelfManageSort.FOLLOW_BOOKSHELF)
+    private var cacheReadError = false
+    private var reordering = false
+    private var pendingChangeSourceBooks: List<Book> = emptyList()
     private var deleteDialogVisible by mutableStateOf(false)
     private var deleteOriginal by mutableStateOf(false)
     private var batchChangeSourceRunning by mutableStateOf(false)
@@ -116,6 +128,8 @@ class BookshelfManageActivity :
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         viewModel.groupId = intent.getLongExtra("groupId", -1)
         topBarSelectedGroupId = viewModel.groupId
+        sortOrder = viewModel.sortOrder
+        applyCacheStatistics(viewModel.cacheState.value)
         initContent()
         initGroupData()
         upBookDataByGroupId()
@@ -131,7 +145,15 @@ class BookshelfManageActivity :
     }
 
     override fun observeLiveBus() {
-        viewModel.cacheChapterCountLiveData.observe(this, ::notifyBookChanged)
+        observeEvent<WebDavBookLocation>(EventBus.WEBDAV_EXPORT_READY) { location ->
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) binding.root.longSnackbar(
+                getString(R.string.export_upload_success), getString(R.string.webdav_view_cloud)) {
+                RemoteBookActivity.open(this, location)
+            }
+        }
+        lifecycleScope.launch {
+            viewModel.cacheState.collect(::applyCacheStatistics)
+        }
         viewModel.batchChangeSourceState.observe(this) {
             batchChangeSourceRunning = it
             if (!it) {
@@ -141,13 +163,24 @@ class BookshelfManageActivity :
         viewModel.batchChangeSourceProcessLiveData.observe(this) {
             batchChangeSourceProgress = it
         }
-        observeEvent<Pair<Book, BookChapter>>(EventBus.SAVE_CONTENT) { (book, chapter) ->
-            viewModel.addCachedChapter(book.bookUrl, chapter.url)
+        observeEvent<Pair<Book, BookChapter>>(EventBus.SAVE_CONTENT) { (book, _) ->
+            if (books.any { it.bookUrl == book.bookUrl }) viewModel.refreshCache(book.bookUrl)
         }
         //缓存任务的运行/暂停态由引擎侧发起,这里只做镜像。
-        observeEvent<String>(EventBus.UP_DOWNLOAD) {
+        observeEvent<String>(EventBus.UP_DOWNLOAD) { bookUrl ->
             cacheViewModel.syncDownloadState()
+            // 活跃任务每秒都发进度，完成章节由 SAVE_CONTENT 刷新，避免反复扫盘。
+            if (bookUrl.isNotEmpty() && !CacheBook.cacheBookMap.containsKey(bookUrl)) {
+                viewModel.refreshCache(bookUrl)
+            }
         }
+        observeEvent<String>(EventBus.BOOK_CACHE_CLEARED) { viewModel.refreshCache(it) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshCache("")
+        cacheViewModel.refresh()
     }
 
     private fun initContent() {
@@ -163,6 +196,10 @@ class BookshelfManageActivity :
                     books = visibleBooks,
                     selectedBookUrls = selectedBookUrls,
                     cachedChapterCounts = cachedChapterCounts,
+                    cacheChapterTotals = cacheChapterTotals,
+                    clearableBookUrls = clearableBookUrls,
+                    cachedBytes = cachedBytes,
+                    sortOrder = sortOrder,
                     cacheState = cacheViewModel.state,
                     cacheFilter = cacheFilter,
                     coverUpdateSelection = coverUpdateSelection,
@@ -180,6 +217,12 @@ class BookshelfManageActivity :
                         viewModel.groupId = groupId
                         topBarSelectedGroupId = groupId
                         upBookDataByGroupId()
+                    },
+                    onGroupManage = { showDialogFragment<GroupManageDialog>() },
+                    onSortChange = {
+                        sortOrder = it
+                        viewModel.sortOrder = it
+                        updateVisibleBooks()
                     },
                     onSelectionChange = ::setBookSelected,
                     onOpenDetails = ::openBook,
@@ -314,12 +357,28 @@ class BookshelfManageActivity :
         } else {
             books.filter { it.contains(topBarQuery) }
         }
-        visibleBooks = byQuery.filter { cacheFilter.matches(it, cacheViewModel.state) }
+        val matching = byQuery.sortedForBookshelfManage(
+            sort = sortOrder,
+            readTime = Book::durChapterTime,
+            updateTime = Book::latestChapterTime,
+            compareNames = { first, second -> first.name.cnCompare(second.name) },
+            manualOrder = Book::order,
+            cacheBytes = { cachedBytes[it.bookUrl] },
+        )
+        visibleBooks = matching.filter { cacheFilter.matches(it, cacheViewModel.state) }
     }
 
-    private fun notifyBookChanged(bookUrl: String) {
-        val count = viewModel.cacheChapters[bookUrl]?.size ?: return
-        cachedChapterCounts = cachedChapterCounts + (bookUrl to count)
+    private fun applyCacheStatistics(state: BookshelfManageCacheState) {
+        val sizes = state.books.mapValues { it.value.bytes }
+        val sizesChanged = cachedBytes != sizes
+        cachedChapterCounts = state.books.mapValues { it.value.status.cached }
+        cacheChapterTotals = state.books.mapValues { it.value.status.total }
+        clearableBookUrls = state.books.filterValues { it.status.hasCache }.keys
+        cachedBytes = sizes
+        val failed = state.failedBookUrls.isNotEmpty()
+        if (failed && !cacheReadError) toastOnUi(R.string.bookshelf_manage_cache_failed)
+        cacheReadError = failed
+        if (sizesChanged && sortOrder == BookshelfManageSort.CACHE_SIZE && !reordering) updateVisibleBooks()
     }
 
     private fun setBookSelected(book: Book, selected: Boolean) {
@@ -357,8 +416,12 @@ class BookshelfManageActivity :
     }
 
     private fun onDockAction(action: BookshelfManageDockAction) {
-        val selected = selectedBooks()
+        val allSelected = selectedBooks()
+        val selected = allSelected.filter { action.isApplicable(it, it.bookUrl in clearableBookUrls) }
         if (selected.isEmpty()) return
+        if (selected.size < allSelected.size) {
+            toastOnUi(getString(R.string.book_action_eligible_selection, selected.size, allSelected.size - selected.size))
+        }
         when (action) {
             BookshelfManageDockAction.CACHE -> selected.forEach { book ->
                 cacheBook(book, 0, book.lastChapterIndex)
@@ -374,7 +437,10 @@ class BookshelfManageActivity :
             BookshelfManageDockAction.EXPORT_CONTENT -> showExportSettings(selected)
             BookshelfManageDockAction.GROUP -> BookshelfBookGroupSheet(this, selected).show()
             BookshelfManageDockAction.EXPORT_SOURCE -> exportBookSources(selected)
-            BookshelfManageDockAction.CHANGE_SOURCE -> showDialogFragment<SourcePickerDialog>()
+            BookshelfManageDockAction.CHANGE_SOURCE -> {
+                pendingChangeSourceBooks = selected
+                showDialogFragment<SourcePickerDialog>()
+            }
             BookshelfManageDockAction.ENABLE_UPDATE -> viewModel.upCanUpdate(selected, true)
             BookshelfManageDockAction.DISABLE_UPDATE -> viewModel.upCanUpdate(selected, false)
             BookshelfManageDockAction.REMOVE_GROUP -> clearSelectedBookGroups(selected)
@@ -441,7 +507,7 @@ class BookshelfManageActivity :
     }
 
     private fun moveBook(fromIndex: Int, toIndex: Int) {
-        if (fromIndex !in visibleBooks.indices ||
+        if (!sortOrder.allowsDragging || fromIndex !in visibleBooks.indices ||
             toIndex !in visibleBooks.indices ||
             fromIndex == toIndex
         ) {
@@ -458,13 +524,17 @@ class BookshelfManageActivity :
     }
 
     private fun finishDrag() {
+        reordering = false
         books.takeIf { it.isNotEmpty() }?.let {
             viewModel.updateBook(*it.toTypedArray())
         }
     }
 
     private fun prepareManualSort() {
-        books.forEachIndexed { index, book ->
+        if (!sortOrder.allowsDragging) return
+        reordering = true
+        val orderedBooks = if (sortOrder == BookshelfManageSort.MANUAL) books.sortedBy(Book::order) else books
+        orderedBooks.forEachIndexed { index, book ->
             book.order = index + 1
         }
         if (!isManualSort) {
@@ -480,7 +550,7 @@ class BookshelfManageActivity :
     }
 
     private fun cacheBook(book: Book, start: Int, end: Int) {
-        if (book.isLocal) return
+        if (!book.menuCapabilities.download) return
         CacheBook.start(this, book, start, end)
     }
 
@@ -560,7 +630,7 @@ class BookshelfManageActivity :
         settings: ExportSettingsResult,
     ) {
         val exportType = if (settings.exportType == 1) "epub" else "txt"
-        books.forEach { book ->
+        books.filter { it.menuCapabilities.export }.forEach { book ->
             startService<ExportBookService> {
                 action = IntentAction.start
                 putExtra("bookUrl", book.bookUrl)
@@ -568,7 +638,7 @@ class BookshelfManageActivity :
                 putExtra("exportPath", path)
                 putExtra("exportUseReplace", true)
                 putExtra("parallelExport", true)
-                putExtra("exportToWebDav", false)
+                putExtra("exportToWebDav", settings.exportToWebDav)
                 putExtra("includeChapterName", true)
                 putExtra("exportPlainText", settings.plainText)
                 putExtra("exportFilterInteractiveImages", settings.filterInteractiveImages)
@@ -604,7 +674,8 @@ class BookshelfManageActivity :
     }
 
     override fun sourceOnClick(source: BookSource) {
-        viewModel.changeSource(selectedBooks(), source)
-        viewModel.batchChangeSourceState.value = true
+        val selected = pendingChangeSourceBooks.filter { it.menuCapabilities.changeSource }
+        pendingChangeSourceBooks = emptyList()
+        if (selected.isNotEmpty()) viewModel.changeSource(selected, source)
     }
 }

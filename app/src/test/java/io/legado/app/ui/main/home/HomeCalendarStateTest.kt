@@ -98,10 +98,10 @@ class HomeCalendarStateTest {
         assertEquals(state.readTime(date), state.copy(loadFailed = true).readTime(date))
     }
 
-    @Test fun `calendar exposes three large skins with one storybook large default`() {
+    @Test fun `calendar exposes four large skins with one storybook large default`() {
         val calendar = HomeWidgetCatalog.type("calendar")!!
-        assertEquals(listOf("large", "story-large", "night-large"), calendar.variants.map { it.id })
-        assertEquals(listOf("basic", "storybook", "night"), calendar.variants.map { it.styleId })
+        assertEquals(listOf("large", "story-large", "night-large", "white-large"), calendar.variants.map { it.id })
+        assertEquals(listOf("basic", "storybook", "night", "white"), calendar.variants.map { it.styleId })
         assertTrue(calendar.variants.all { it.size == HomeWidgetSize.LARGE })
         calendar.variants.forEach { variant ->
             assertNull(HomeWidgetCatalog.variantForSize("calendar", variant.id, HomeWidgetSize.SMALL))
@@ -113,7 +113,7 @@ class HomeCalendarStateTest {
             HomeWidgetInstance("calendar-$index", "calendar", variant.id)
         }
         assertEquals(widgets, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(widgets)))
-        listOf("small", "story-small", "night-small").forEach { variantId ->
+        listOf("small", "story-small", "night-small", "white-small").forEach { variantId ->
             assertNull(changeHomeWidgetVariant(widgets, "calendar-0", variantId))
             assertTrue(runCatching { HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(
                 listOf(HomeWidgetInstance("calendar", "calendar", variantId)),

@@ -12,7 +12,6 @@ import io.legado.app.R
 import io.legado.app.base.BaseActivity
 import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.constant.EventBus
-import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.BookCharacterProfile
@@ -32,7 +31,6 @@ import io.legado.app.ui.config.TtsSheetLaunchDebouncer
 import io.legado.app.ui.config.TtsVoiceOption
 import io.legado.app.ui.config.TtsVoiceSelectionSheet
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.utils.getPrefString
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.toastOnUi
@@ -43,7 +41,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import splitties.init.appCtx
 
 open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
     BookCharacterEditDialog.Callback {
@@ -913,11 +910,7 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
         companion object {
             fun load(): VoiceCatalogSnapshot {
                 val engines = TtsEngineStore.engines()
-                val activeEngineId = appCtx.getPrefString(PreferKey.ttsEngineV2ActiveId)
-                    ?.takeIf { savedId ->
-                        engines.any { engine -> engine.id == savedId && engine.enabled }
-                    }
-                    ?: engines.firstOrNull { it.enabled }?.id
+                val activeEngineId = TtsEngineStore.activeEngineId().takeIf { it.isNotBlank() }
                 return VoiceCatalogSnapshot(
                     loaded = true,
                     engines = engines.associateBy { it.id },

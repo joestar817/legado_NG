@@ -30,12 +30,15 @@
     <string name="home_style_storybook">Storybook</string>
     <string name="home_style_paper">Paper Leaves</string>
     <string name="home_style_night">Night Desk</string>
+    <string name="home_style_white">Bright white</string>
     <string name="home_variant_storybook_small">Storybook · Small</string>
     <string name="home_variant_storybook_large">Storybook · Large</string>
     <string name="home_variant_paper_small">Paper Leaves · Small</string>
     <string name="home_variant_paper_large">Paper Leaves · Large</string>
     <string name="home_variant_night_small">Night Desk · Small</string>
     <string name="home_variant_night_large">Night Desk · Large</string>
+    <string name="home_variant_white_small">Bright white · Small</string>
+    <string name="home_variant_white_large">Bright white · Large</string>
     <string name="home_move_widget_up">Move up</string>
     <string name="home_move_widget_down">Move down</string>
     <string name="home_edit">Edit</string>

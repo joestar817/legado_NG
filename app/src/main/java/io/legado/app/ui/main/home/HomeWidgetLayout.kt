@@ -56,6 +56,14 @@ internal object HomeWidgetCatalog {
                     "night-large", HomeWidgetSize.LARGE, R.string.home_variant_night_large,
                     styleId = "night", styleTitleRes = R.string.home_style_night,
                 ),
+                HomeWidgetVariant(
+                    "white-small", HomeWidgetSize.SMALL, R.string.home_variant_white_small,
+                    styleId = "white", styleTitleRes = R.string.home_style_white,
+                ),
+                HomeWidgetVariant(
+                    "white-large", HomeWidgetSize.LARGE, R.string.home_variant_white_large,
+                    styleId = "white", styleTitleRes = R.string.home_style_white,
+                ),
             ) else emptyList(),
         )
     } + HomeWidgetType(
@@ -69,6 +77,10 @@ internal object HomeWidgetCatalog {
             HomeWidgetVariant(
                 "night-large", HomeWidgetSize.LARGE, R.string.home_variant_night_large,
                 styleId = "night", styleTitleRes = R.string.home_style_night,
+            ),
+            HomeWidgetVariant(
+                "white-large", HomeWidgetSize.LARGE, R.string.home_variant_white_large,
+                styleId = "white", styleTitleRes = R.string.home_style_white,
             ),
         ),
     )
@@ -88,11 +100,14 @@ internal object HomeWidgetCatalog {
 
     fun defaults(): List<HomeWidgetInstance> = listOf(
         HomeWidgetInstance("default_updates", "updates", "story-large"),
-        HomeWidgetInstance("default_reading", "reading", "story-small"),
-        HomeWidgetInstance("default_listening", "listening", "story-small"),
+        HomeWidgetInstance("default_listening", "listening", "story-large"),
+        HomeWidgetInstance("default_reading", "reading", "story-large"),
         HomeWidgetInstance("default_calendar", "calendar", "story-large"),
     )
 }
+
+internal fun isPlainHomeWidgetStyle(styleId: String?): Boolean =
+    styleId == "basic" || styleId == "white"
 
 internal fun selectHomeWidgetSize(
     variants: List<HomeWidgetVariant>,

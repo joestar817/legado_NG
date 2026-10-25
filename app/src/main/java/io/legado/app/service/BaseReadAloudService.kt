@@ -35,6 +35,7 @@ import io.legado.app.constant.NotificationId
 import io.legado.app.constant.PreferKey
 import io.legado.app.constant.Status
 import io.legado.app.help.MediaHelp
+import io.legado.app.help.bgm.BgmPlaybackController
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.tts.ReadAloudBufferProgress
 import io.legado.app.help.tts.paragraphNumberAt
@@ -201,6 +202,7 @@ abstract class BaseReadAloudService : BaseService(),
     }
     internal var pageIndex = 0
     private var needResumeOnAudioFocusGain = false
+    private lateinit var backgroundMusic: BgmPlaybackController
     private var needResumeOnCallStateIdle = false
     private var registeredPhoneStateListener = false
     private var dsJob: Job? = null
@@ -225,6 +227,7 @@ abstract class BaseReadAloudService : BaseService(),
     override fun onCreate() {
         super.onCreate()
         playbackStateOwner = this
+        backgroundMusic = BgmPlaybackController(this)
         ReadingRecordTracker.register(ReadingRecordSource.READ_ALOUD, this)
         actualPlaybackConfirmed = false
         preparationStage = PREPARATION_NONE
@@ -273,6 +276,7 @@ abstract class BaseReadAloudService : BaseService(),
     }
 
     override fun onDestroy() {
+        backgroundMusic.release()
         ReadingRecordTracker.remove(ReadingRecordSource.READ_ALOUD, this)
         super.onDestroy()
         val ownsPlaybackState = playbackStateOwner === this
@@ -328,7 +332,10 @@ abstract class BaseReadAloudService : BaseService(),
             IntentAction.next -> nextChapter()
             IntentAction.addTimer -> addTimer()
             IntentAction.setTimer -> setTimer(intent.getIntExtra("minute", 0))
-            IntentAction.stop -> stopSelf()
+            IntentAction.stop -> {
+                backgroundMusic.release()
+                stopSelf()
+            }
         }
         return super.onStartCommand(intent, flags, startId)
     }
@@ -344,6 +351,7 @@ abstract class BaseReadAloudService : BaseService(),
         val chapter = ReadBook.curTextChapter ?: return
         val bookUrl = ReadBook.book?.bookUrl
         val fromLast = toLast
+        onBgmSpeechWaiting()
         onNewReadAloudRequest()
         positionRequest = execute(executeContext = IO) {
             val readAloudText = chapter.readAloudText
@@ -532,6 +540,7 @@ abstract class BaseReadAloudService : BaseService(),
     @SuppressLint("WakelockTimeout")
     open fun play() {
         if (playbackStateOwner !== this) return
+        onBgmSpeechWaiting()
         ReadingRecordTracker.setActive(ReadingRecordSource.READ_ALOUD, this, false)
         ListeningPlaybackCoordinator.beforeReadAloud()
         if (useWakeLock) {
@@ -568,6 +577,7 @@ abstract class BaseReadAloudService : BaseService(),
             wifiLock?.release()
         }
         if (playbackStateOwner !== this) return
+        backgroundMusic.onPaused()
         ListeningHistoryStore.flush()
         actualPlaybackConfirmed = false
         preparationStage = PREPARATION_NONE
@@ -609,6 +619,7 @@ abstract class BaseReadAloudService : BaseService(),
             actualPlaybackConfirmed = false
             return false
         }
+        if (isPlaying) onBgmSpeechStarted() else onBgmSpeechWaiting()
         ReadingRecordTracker.setPlaybackActive(
             ReadingRecordSource.READ_ALOUD, this, isPlaying, textChapter?.chapter?.bookUrl
         )
@@ -643,6 +654,15 @@ abstract class BaseReadAloudService : BaseService(),
     }
 
     protected fun ownsPlaybackState(): Boolean = playbackStateOwner === this
+
+    // BGM observes real audio separately from progress and reading-record publication.
+    protected fun onBgmSpeechStarted() {
+        if (ownsPlaybackState() && !pause) backgroundMusic.onSpeechStarted()
+    }
+
+    protected fun onBgmSpeechWaiting() {
+        if (ownsPlaybackState()) backgroundMusic.onSpeechWaiting()
+    }
 
     abstract fun upSpeechRate(reset: Boolean = false)
 
@@ -797,6 +817,7 @@ abstract class BaseReadAloudService : BaseService(),
      * @return 音频焦点
      */
     fun requestFocus(): Boolean {
+        backgroundMusic.onPrimaryStarting()
         if (AppConfig.ignoreAudioFocus) {
             return true
         }
@@ -863,6 +884,7 @@ abstract class BaseReadAloudService : BaseService(),
             }
 
             override fun onStop() {
+                backgroundMusic.release()
                 stopSelf()
             }
 
@@ -1064,6 +1086,7 @@ abstract class BaseReadAloudService : BaseService(),
         AppLog.putDebug("${ReadBook.curTextChapter?.chapter?.title} 朗读结束跳转下一章并朗读")
         resumeReadAloudInternal()
         if (!ReadBook.moveToNextChapter(true)) {
+            backgroundMusic.release()
             stopSelf()
         }
     }

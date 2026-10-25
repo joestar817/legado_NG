@@ -42,6 +42,8 @@ enum class NgSliderVariant {
     COMPACT,
     /** 漫画主菜单的细轨道，未读部分保持中性灰。 */
     MANGA_PROGRESS,
+    /** 试听音量浮层的细轨道与小实心滑块，保留独立的触控高度。 */
+    AUDIO_PREVIEW,
 }
 
 internal fun ngSliderStepValue(
@@ -125,9 +127,12 @@ fun NgSlider(
     val currentOnValueChange = rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished = rememberUpdatedState(onValueChangeFinished)
     val compact = variant == NgSliderVariant.COMPACT || variant == NgSliderVariant.MANGA_PROGRESS
+    val audioPreview = variant == NgSliderVariant.AUDIO_PREVIEW
+    val thumbSurfaceColor = if (audioPreview) ngDrawerContentCardColor() else Color(colors.surface)
     val thumbSize = when (variant) {
         NgSliderVariant.COMPACT, NgSliderVariant.MANGA_PROGRESS -> 6.dp
         NgSliderVariant.INLINE -> 10.dp
+        NgSliderVariant.AUDIO_PREVIEW -> 7.5.dp
         else -> 12.dp
     }
     fun snapToStep(rawValue: Float): Float {
@@ -146,7 +151,14 @@ fun NgSlider(
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (compact) 36.dp else if (variant == NgSliderVariant.INLINE) 40.dp else 48.dp)
+            .height(
+                when {
+                    compact -> 36.dp
+                    audioPreview -> 44.dp
+                    variant == NgSliderVariant.INLINE -> 40.dp
+                    else -> 48.dp
+                }
+            )
             .semantics {
                 progressBarRangeInfo = ProgressBarRangeInfo(
                     current = currentValue,
@@ -194,13 +206,18 @@ fun NgSlider(
             }
     ) {
         val thumbRadius = thumbSize.toPx()
-        val innerThumbRadius = if (variant == NgSliderVariant.INLINE) 6.dp.toPx() else 8.dp.toPx()
+        val innerThumbRadius = if (variant == NgSliderVariant.INLINE || audioPreview) {
+            6.dp.toPx()
+        } else {
+            8.dp.toPx()
+        }
         val trackHeight = when (variant) {
             NgSliderVariant.CONTINUOUS -> 6.dp.toPx()
             NgSliderVariant.INLINE -> 5.dp.toPx()
             NgSliderVariant.DISCRETE -> 10.dp.toPx()
             NgSliderVariant.COMPACT -> 2.dp.toPx()
             NgSliderVariant.MANGA_PROGRESS -> 3.dp.toPx()
+            NgSliderVariant.AUDIO_PREVIEW -> 3.dp.toPx()
         }
         val trackStart = thumbRadius
         val trackWidth = (size.width - thumbRadius * 2f).coerceAtLeast(0f)
@@ -215,9 +232,11 @@ fun NgSlider(
         val thumbX = trackStart + trackWidth * fraction
         val enabledAlpha = if (enabled) 1f else 0.45f
         val primary = Color(colors.primary).copy(alpha = enabledAlpha)
-        val inactive = Color(if (variant == NgSliderVariant.MANGA_PROGRESS) colors.onSurface else colors.primary)
+        val inactive = Color(
+            if (variant == NgSliderVariant.MANGA_PROGRESS || audioPreview) colors.onSurface else colors.primary
+        )
             .copy(alpha = 0.16f * enabledAlpha)
-        val thumbSurface = Color(colors.surface).copy(alpha = enabledAlpha)
+        val thumbSurface = thumbSurfaceColor.copy(alpha = enabledAlpha)
 
         drawRoundRect(
             color = inactive,
@@ -279,12 +298,14 @@ fun NgSlider(
                 radius = innerThumbRadius,
                 center = Offset(thumbX, size.height / 2f)
             )
-            drawCircle(
-                color = primary.copy(alpha = 0.42f * enabledAlpha),
-                radius = thumbRadius,
-                center = Offset(thumbX, size.height / 2f),
-                style = Stroke(width = 1.dp.toPx())
-            )
+            if (!audioPreview) {
+                drawCircle(
+                    color = primary.copy(alpha = 0.42f * enabledAlpha),
+                    radius = thumbRadius,
+                    center = Offset(thumbX, size.height / 2f),
+                    style = Stroke(width = 1.dp.toPx())
+                )
+            }
         }
     }
 }

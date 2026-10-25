@@ -20,6 +20,7 @@ data class VideoPlaybackState(
     val preparing: Boolean = false,
     val prepared: Boolean = false,
     val playing: Boolean = false,
+    val ended: Boolean = false,
     val buffering: Boolean = false,
     val position: Long = 0,
     val duration: Long = 0,
@@ -101,7 +102,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, GSYMediaPlayerListener {
         url = null
         hasPlaybackPosition = false
         manager.releaseMediaPlayer()
-        mutableState.update { it.copy(preparing = true, prepared = false, position = seekOnStart,
+        mutableState.update { it.copy(preparing = true, prepared = false, ended = false, position = seekOnStart,
             duration = 0, buffering = false, error = null, networkConfirmation = false) }
     }
 
@@ -141,7 +142,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, GSYMediaPlayerListener {
         if (!playWhenReady) manager.pause()
         hasPlaybackPosition = true
         onVideoSizeChanged()
-        mutableState.update { it.copy(preparing = false, prepared = true, playing = playWhenReady,
+        mutableState.update { it.copy(preparing = false, prepared = true, playing = playWhenReady, ended = false,
             duration = manager.duration.coerceAtLeast(0), error = null) }
         if (network == null) {
             network = NetInfoModule(appCtx) { type ->
@@ -152,7 +153,9 @@ object VideoPlaybackBridge : VideoPlaybackTarget, GSYMediaPlayerListener {
         ticker?.cancel()
         ticker = scope.launch {
             while (isActive) {
-                mutableState.update { it.copy(position = manager.currentPosition.coerceAtLeast(0),
+                // Reattaching a completed video seeks just before its end to paint the last frame.
+                // That decoder position must not turn a completed session into a paused one.
+                mutableState.update { if (it.ended) it else it.copy(position = manager.currentPosition.coerceAtLeast(0),
                     duration = manager.duration.coerceAtLeast(0)) }
                 delay(500)
             }
@@ -179,6 +182,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, GSYMediaPlayerListener {
     override fun onVideoResume() = onVideoResume(false)
     override fun onVideoResume(seek: Boolean) {
         playWhenReady = true
+        if (state.value.ended || state.value.duration > 0 && state.value.position >= state.value.duration) seekTo(0)
         if (!state.value.prepared) {
             if (url == null && state.value.error != null) {
                 retry()
@@ -189,14 +193,13 @@ object VideoPlaybackBridge : VideoPlaybackTarget, GSYMediaPlayerListener {
         }
         @Suppress("DEPRECATION")
         audio.requestAudioFocus(focus, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
-        if (state.value.duration > 0 && state.value.position >= state.value.duration) seekTo(0)
         manager.start()
         mutableState.update { it.copy(playing = true) }
     }
     fun seekTo(position: Long) {
         val target = position.coerceIn(0, state.value.duration.coerceAtLeast(0))
         if (state.value.prepared) manager.seekTo(target) else seekOnStart = target
-        mutableState.update { it.copy(position = target, seekRevision = it.seekRevision + 1) }
+        mutableState.update { it.copy(position = target, ended = false, seekRevision = it.seekRevision + 1) }
     }
     fun speed(value: Float, temporary: Boolean = false) {
         if (!temporary) selectedSpeed = value
@@ -208,7 +211,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, GSYMediaPlayerListener {
     fun retry() = VideoPlay.startPlay(this)
 
     override fun onAutoCompletion() {
-        mutableState.update { it.copy(playing = false, position = it.duration) }
+        mutableState.update { it.copy(playing = false, buffering = false, ended = true, position = it.duration) }
         VideoPlay.saveRead()
         if (!next(1)) {
             onVideoPause()

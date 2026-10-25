@@ -67,6 +67,70 @@ class EpubMissingResourceTest {
     }
 
     @Test
+    fun changingNeighborWindowKeepsRetainedDocumentUrls() {
+        EpubPublicationSession.open(archive()).use { session ->
+            EpubResourceGateway(session, readerRuntime = true).use { gateway ->
+                gateway.setContent("chapter.xhtml", "<p>current</p>", "current")
+                val mainContent = gateway.contentUrl()
+                fun document(key: String) = Triple(key, "chapter.xhtml", "<p>$key</p>" to key)
+                val before = document("before")
+                val current = document("current")
+                val after = document("after")
+                gateway.setDocumentContents(listOf(before, current))
+                val beforeUrl = gateway.contentUrl("before")
+                val currentUrl = gateway.contentUrl("current")
+
+                gateway.setDocumentContents(listOf(current, after, before))
+                assertEquals(beforeUrl, gateway.contentUrl("before"))
+                assertEquals(currentUrl, gateway.contentUrl("current"))
+                gateway.setDocumentContents(listOf(current, after))
+                assertEquals(currentUrl, gateway.contentUrl("current"))
+                gateway.serve(beforeUrl, "GET", false).use { assertEquals(404, it.status) }
+                gateway.serve(gateway.contentUrl("missing"), "GET", false).use { assertEquals(404, it.status) }
+
+                gateway.setDocumentContents(listOf(before, current, after))
+                assertNotEquals(beforeUrl, gateway.contentUrl("before"))
+                assertEquals(currentUrl, gateway.contentUrl("current"))
+                assertEquals(mainContent, gateway.contentUrl())
+                gateway.serve(currentUrl, "GET", false).use { assertEquals("current", it.data.reader().readText()) }
+                val restoredBefore = gateway.contentUrl("before")
+                gateway.setDocumentContents(emptyList())
+                gateway.setDocumentContents(listOf(before))
+                assertNotEquals(restoredBefore, gateway.contentUrl("before"))
+                gateway.close()
+                gateway.serve(gateway.contentUrl("current"), "GET", false).use { assertEquals(410, it.status) }
+            }
+        }
+    }
+
+    @Test
+    fun changedDocumentPathHtmlOrPayloadOnlyVersionsThatDocument() {
+        EpubPublicationSession.open(archive()).use { session ->
+            EpubResourceGateway(session, readerRuntime = true).use { gateway ->
+                val neighbor = Triple("neighbor", "chapter.xhtml", "<p>neighbor</p>" to "neighbor")
+                var current = Triple("current", "chapter.xhtml", "<p>first</p>" to "first")
+                gateway.setDocumentContents(listOf(current, neighbor))
+                var currentUrl = gateway.contentUrl("current")
+                val neighborUrl = gateway.contentUrl("neighbor")
+                for (updated in listOf(
+                    Triple("current", "chapter.xhtml", "<p>second</p>" to "first"),
+                    Triple("current", "chapter.xhtml", "<p>second</p>" to "second"),
+                    Triple("current", "other.xhtml", "<p>second</p>" to "second"),
+                )) {
+                    current = updated
+                    gateway.setDocumentContents(listOf(current, neighbor))
+                    assertNotEquals(currentUrl, gateway.contentUrl("current"))
+                    assertEquals(neighborUrl, gateway.contentUrl("neighbor"))
+                    currentUrl = gateway.contentUrl("current")
+                    gateway.serve(currentUrl, "GET", false).use { assertEquals(current.third.second, it.data.reader().readText()) }
+                    gateway.setDocumentContents(listOf(current, neighbor))
+                    assertEquals(currentUrl, gateway.contentUrl("current"))
+                }
+            }
+        }
+    }
+
+    @Test
     fun unusedResourceCannotEscapeArchive() {
         assertThrows(EpubFormatException::class.java) {
             EpubPackageParser().parseLayout(archive("""<item id="bad" href="../outside.png" media-type="image/png"/>"""))

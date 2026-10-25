@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.Placeable
@@ -100,7 +101,7 @@ private fun HomeListeningUnifiedBody(
     SubcomposeLayout(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) { constraints ->
         val width = constraints.maxWidth
         val functionalMin = 152.dp.roundToPx()
-        val skinMinimum = if (variant.styleId == "basic") 0.dp else 232.dp
+        val skinMinimum = if (isPlainHomeWidgetStyle(variant.styleId)) 0.dp else 232.dp
         val bodyMin = maxOf(skinMinimum.roundToPx(), context.bodyMinimumHeight.roundToPx())
         val bottom = 8.dp.roundToPx()
         val functional = subcompose("functional") {
@@ -128,11 +129,12 @@ private fun HomeListeningRestoredLargeBody(
     showPreparing: Boolean,
 ) {
     val palette = homeListeningAppearance(variant)?.palette
-    if (variant.styleId != "basic") {
+    if (!isPlainHomeWidgetStyle(variant.styleId)) {
         HomeListeningRestoredReferenceBody(variant, context, showPreparing, palette)
         return
     }
-    val panel = colorResource(R.color.ng_surface_panel).copy(alpha = 0.12f)
+    val panel = if (variant.styleId == "white") Color.Transparent
+        else colorResource(R.color.ng_surface_panel).copy(alpha = 0.12f)
     SubcomposeLayout(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(20.dp))
         .padding(horizontal = 14.dp)) { constraints ->
         val foreground = subcompose("foreground") {
@@ -445,10 +447,10 @@ private fun HomeListeningRestoredControlPair(
     val actions: @Composable (Dp) -> Unit = { width ->
         HomeListeningActionButton(context, HomeListeningAction.TOGGLE, showPreparing, width,
             captionMaxLines = Int.MAX_VALUE, showPrimaryCaption = true, palette = palette,
-            captionOverride = continueCaption, discStyleId = styleId.takeIf { it != "basic" },
+            captionOverride = continueCaption, discStyleId = styleId.takeUnless(::isPlainHomeWidgetStyle),
             captionReference = captionReference)
         HomeListeningActionButton(context, HomeListeningAction.OPEN, false, width,
-            captionMaxLines = Int.MAX_VALUE, palette = palette, discStyleId = styleId.takeIf { it != "basic" },
+            captionMaxLines = Int.MAX_VALUE, palette = palette, discStyleId = styleId.takeUnless(::isPlainHomeWidgetStyle),
             captionReference = captionReference)
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -559,13 +561,13 @@ private fun HomeListeningUnifiedActions(
                         context, HomeListeningAction.TOGGLE, showPreparing, actionColumn,
                         captionMaxLines = Int.MAX_VALUE, showPrimaryCaption = true, palette = palette,
                         captionOverride = continueCaption,
-                        discStyleId = styleId.takeIf { it != "basic" },
+                        discStyleId = styleId.takeUnless(::isPlainHomeWidgetStyle),
                     )
                 }
                 HomeListeningActionButton(
                     context, HomeListeningAction.OPEN, false, actionColumn,
                     captionMaxLines = Int.MAX_VALUE, palette = palette,
-                    discStyleId = styleId.takeIf { it != "basic" },
+                    discStyleId = styleId.takeUnless(::isPlainHomeWidgetStyle),
                 )
             }
         } else {
@@ -578,12 +580,12 @@ private fun HomeListeningUnifiedActions(
                     context, HomeListeningAction.TOGGLE, showPreparing, contentWidth,
                     captionMaxLines = Int.MAX_VALUE, showPrimaryCaption = true, palette = palette,
                     captionOverride = continueCaption,
-                    discStyleId = styleId.takeIf { it != "basic" },
+                    discStyleId = styleId.takeUnless(::isPlainHomeWidgetStyle),
                 )
                 HomeListeningActionButton(
                     context, HomeListeningAction.OPEN, false, contentWidth,
                     captionMaxLines = Int.MAX_VALUE, palette = palette,
-                    discStyleId = styleId.takeIf { it != "basic" },
+                    discStyleId = styleId.takeUnless(::isPlainHomeWidgetStyle),
                 )
             }
         }

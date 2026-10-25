@@ -566,6 +566,9 @@ private fun SourceLoginFlexLayout(
         content = content,
     ) { measurables, constraints ->
         val layoutWidth = constraints.maxWidth
+        if (layoutWidth == 0) {
+            return@Layout layout(0, constraints.minHeight) {}
+        }
         val containerPadding = 3.dp.roundToPx()
         val dividerSize = 8.dp.roundToPx()
         val chipMargin = 3.dp.roundToPx()

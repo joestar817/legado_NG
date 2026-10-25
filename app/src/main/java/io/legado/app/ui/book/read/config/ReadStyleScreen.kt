@@ -35,8 +35,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -177,6 +175,8 @@ internal data class ReadStyleUiState(
     val highlightSelectionMode: HighlightSelectionMode,
     val selectedHighlightIds: Set<String>,
     val editorMode: Int,
+    val allowEInkEditing: Boolean,
+    val colorPreviewTarget: ReadStyleEditTarget,
     val editorModeLabel: String,
     val editorPreviewBackground: ImageBitmap?,
     val editorBackgrounds: List<ReadStyleBackgroundUi>,
@@ -193,6 +193,7 @@ internal data class ReadStyleUiState(
     val editorFloatingColorStyle: ReadFloatingColorStyle,
     val fullLineUnderline: FullLineUnderlineUiState,
     val highlightDraft: ReadHighlightRule?,
+    val highlightColorMode: Int,
     val editingHighlightIndex: Int?,
     val editorInitialColor: Int?,
     val editorInitialColorWasUnset: Boolean,
@@ -200,6 +201,9 @@ internal data class ReadStyleUiState(
     val editorInitialBackgroundName: String?,
     val editorInitialBackground: ImageBitmap?,
 )
+
+internal fun ReadStyleUiState.withHighlightColorMode(mode: Int): ReadStyleUiState =
+    copy(highlightColorMode = mode.coerceIn(0, 1))
 
 internal data class ReadStyleActions(
     val onPageSelected: (ReadStylePage) -> Unit,
@@ -228,6 +232,7 @@ internal data class ReadStyleActions(
     val onTextColorChanged: (Int) -> Unit,
     val onBackgroundColorChanged: (Int) -> Unit,
     val onTextAccentColorChanged: (Int) -> Unit,
+    val onEditorModeChanged: (Int) -> Unit,
     val onResetEditorColor: () -> Unit,
     val onBackgroundAlphaChanged: (Int) -> Unit,
     val onSelectBackgroundImage: () -> Unit,
@@ -261,6 +266,7 @@ internal data class ReadStyleActions(
     val onEditHighlight: (Int) -> Unit,
     val onCopyHighlight: (String) -> Unit,
     val onHighlightDraftChanged: (ReadHighlightRule) -> Unit,
+    val onHighlightColorModeChanged: (Int) -> Unit,
     val onSelectHighlightBackground: () -> Unit,
     val onClearHighlightBackground: () -> Unit,
     val onSelectHighlightFont: () -> Unit,
@@ -399,11 +405,14 @@ internal fun ReadStyleScreen(
                 )
 
                 ReadStylePage.EDIT_UNDERLINE_COLOR -> AdvancedColorPage(
-                    title = stringResource(R.string.read_style_full_underline_color),
+                    title = (if (state.editorMode == 2) {
+                        stringResource(R.string.read_style_mode_day) + " · " + stringResource(R.string.read_style_shared_short)
+                    } else state.editorModeLabel) + " · " + stringResource(R.string.read_style_full_underline_color),
                     initialColor = state.editorInitialColor ?: state.fullLineUnderline.color,
                     onBack = actions.onBack,
                     onColorChanged = actions.onFullLineUnderlineColorChanged,
                     onReset = actions.onResetEditorColor,
+                    backgroundRenderer = state.colorPreviewTarget::renderBackground,
                 )
 
                 ReadStylePage.HIGHLIGHT_EDIT -> HighlightRuleEditorPage(
@@ -763,10 +772,11 @@ private fun EditorPage(
         EditorHeader(
             creatingPreset = state.creatingPreset,
             mode = state.editorMode,
-            modeLabel = state.editorModeLabel,
+            allowEInk = state.allowEInkEditing,
             contentColor = contentColor,
             accentColor = accentColor,
             onBack = actions.onBack,
+            onModeSelected = actions.onEditorModeChanged,
         )
         Column(
             modifier = Modifier
@@ -832,7 +842,7 @@ private fun EditorPage(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = stringResource(R.string.bg_alpha),
+                        text = "${stringResource(R.string.bg_alpha)} · ${stringResource(R.string.read_style_shared_short)}",
                         modifier = Modifier.weight(1f),
                         color = contentColor,
                         fontSize = 15.sp,
@@ -929,10 +939,11 @@ private fun EditorPage(
 private fun EditorHeader(
     creatingPreset: Boolean,
     mode: Int,
-    modeLabel: String,
+    allowEInk: Boolean,
     contentColor: Color,
     accentColor: Color,
     onBack: () -> Unit,
+    onModeSelected: (Int) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -959,34 +970,16 @@ private fun EditorHeader(
             text = stringResource(
                 if (creatingPreset) R.string.read_style_create_title else R.string.read_style_edit_title
             ),
-            modifier = Modifier.padding(start = 2.dp),
+            modifier = Modifier.padding(start = 2.dp).weight(1f),
             color = contentColor,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
         )
-        Row(
-            modifier = Modifier
-                .padding(start = 12.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(NgTheme.colors.surface).copy(alpha = 0.34f))
-                .padding(horizontal = 10.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = modeLabel,
-                color = accentColor,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Icon(
-                imageVector = when (mode) {
-                    1 -> Icons.Rounded.DarkMode
-                    else -> Icons.Rounded.LightMode
-                },
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = accentColor,
+        Box(Modifier.size(width = if (allowEInk) 186.dp else 140.dp, height = 42.dp)) {
+            ReadStyleModeSelector(
+                mode = mode, allowEInk = allowEInk,
+                contentColor = contentColor, accentColor = accentColor,
+                onSelected = onModeSelected,
             )
         }
     }
@@ -1086,7 +1079,8 @@ private fun EditorFloatingSection(
     val selectedContentColor = Color(NgTheme.colors.onPrimary)
     val sourceShape = RoundedCornerShape(10.dp)
     val globallyFollowsApplication = state.globalFloatingFollowApp
-    val fromBackground = !globallyFollowsApplication && state.editorFloatingColorFromBackground
+    val inkMode = state.editorMode == 2
+    val fromBackground = !globallyFollowsApplication && !inkMode && state.editorFloatingColorFromBackground
     val hasSample = state.editorFloatingColorSeed != 0
     val displayedColor = if (hasSample) {
         state.editorFloatingColorSeed
@@ -1109,13 +1103,13 @@ private fun EditorFloatingSection(
     ) {
         FloatingSourceOption(
             label = stringResource(R.string.read_style_floating_color_follow),
-            selected = !fromBackground,
+            selected = !inkMode && !fromBackground,
             contentColor = contentColor,
             selectedContainerColor = indicatorColor,
             selectedContentColor = selectedContentColor,
             onClick = { actions.onFloatingColorSourceChanged(false) },
             modifier = Modifier.weight(1f),
-            enabled = !globallyFollowsApplication,
+            enabled = !globallyFollowsApplication && !inkMode,
         )
         FloatingSourceOption(
             label = stringResource(R.string.read_style_floating_color_background),
@@ -1125,11 +1119,16 @@ private fun EditorFloatingSection(
             selectedContentColor = selectedContentColor,
             onClick = { actions.onFloatingColorSourceChanged(true) },
             modifier = Modifier.weight(1f),
-            enabled = !globallyFollowsApplication,
+            enabled = !globallyFollowsApplication && !inkMode,
         )
     }
 
-    if (globallyFollowsApplication) {
+    if (inkMode) {
+        Text(
+            text = stringResource(R.string.read_style_floating_ink_no_seed),
+            modifier = Modifier.padding(top = 6.dp), color = contentColor.copy(alpha = 0.62f), fontSize = 11.sp,
+        )
+    } else if (globallyFollowsApplication) {
         Text(
             text = stringResource(R.string.read_style_global_follow_app_color_managed),
             modifier = Modifier.padding(top = 6.dp),
@@ -1142,7 +1141,7 @@ private fun EditorFloatingSection(
         text = stringResource(
             if (globallyFollowsApplication) R.string.read_style_global_color_style
             else R.string.read_style_floating_color_style
-        ),
+        ) + " · " + stringResource(R.string.read_style_shared_short),
         modifier = Modifier.padding(top = 12.dp, bottom = 7.dp),
         color = contentColor,
         fontSize = 15.sp,
@@ -1215,7 +1214,7 @@ private fun EditorFloatingSection(
     }
 
     EditorFloatingSlider(
-        title = stringResource(R.string.read_floating_window_transparency),
+        title = "${stringResource(R.string.read_floating_window_transparency)} · ${stringResource(R.string.read_style_shared_short)}",
         value = state.editorFloatingTransparency,
         contentColor = contentColor,
         accentColor = accentColor,
@@ -1223,7 +1222,7 @@ private fun EditorFloatingSection(
         onValueChangeFinished = actions.onFloatingAppearanceChangeFinished,
     )
     EditorFloatingSlider(
-        title = stringResource(R.string.read_floating_window_primary_strength),
+        title = "${stringResource(R.string.read_floating_window_primary_strength)} · ${stringResource(R.string.read_style_shared_short)}",
         value = state.editorFloatingPrimaryStrength,
         contentColor = contentColor,
         accentColor = accentColor,
@@ -1464,9 +1463,9 @@ private fun EditorColorPage(
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         NgInlineColorPicker(
-            title = title,
+            title = state.editorModeLabel + " · " + title,
             initialColor = state.editorInitialColor ?: currentColor,
-            backgroundRenderer = ::renderCurrentReadBackground,
+            backgroundRenderer = state.colorPreviewTarget::renderBackground,
             onBack = actions.onBack,
             onColorChanged = onColorChanged,
             onReset = actions.onResetEditorColor,

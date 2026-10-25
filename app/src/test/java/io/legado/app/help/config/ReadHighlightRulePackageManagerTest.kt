@@ -32,6 +32,10 @@ class ReadHighlightRulePackageManagerTest {
             bgImage = "assets://background/paper.png", bgImageFit = 3, bgImageScale = 1.4f,
             fontPath = "assets://font/reader.ttf", fontWeight = 700, isItalic = true,
             npLeft = 0.12f, npRight = 0.23f, npTop = 0.34f, npBottom = 0.45f,
+            textColorNight = 0, bgColorNight = 0x33000000, underlineColorNight = 321,
+            nightFollowDay = true, textColorNightMode = ReadHighlightRule.NIGHT_CUSTOM,
+            bgColorNightMode = ReadHighlightRule.NIGHT_DEFAULT,
+            underlineColorNightMode = ReadHighlightRule.NIGHT_FOLLOW_DAY,
         )
         val bytes = export(listOf(rule), mapOf(rule.bgImage!! to image, rule.fontPath!! to font))
         val restored = ReadHighlightRulePackageManager.importZip(bytes, temporaryFolder.newFolder()).rules.single()

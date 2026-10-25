@@ -13,6 +13,10 @@ import io.legado.app.model.epub.EpubBodyReader
 import io.legado.app.model.epub.EpubSourceCapture
 import io.legado.app.model.epub.EpubSourceChapter
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.EpubReadStylePackage
+import io.legado.app.model.epub.EpubArchive
+import io.legado.app.model.epub.EpubArchiveEntry
+import io.legado.app.model.epub.EpubPackageParser
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.isXml
 import io.legado.app.utils.printOnDebug
@@ -25,6 +29,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.select.Elements
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -95,6 +100,7 @@ class EpubFile(var book: Book) {
      *持有引用，避免被回收
      */
     private var fileDescriptor: ParcelFileDescriptor? = null
+    private var sourceArchive: AndroidZipFile? = null
     private var epubBook: EpubBook? = null
         get() {
             if (field == null || fileDescriptor == null) {
@@ -126,6 +132,7 @@ class EpubFile(var book: Book) {
             BookHelp.getBookPFD(book)?.let {
                 fileDescriptor = it
                 val zipFile = AndroidZipFile(it, book.originName)
+                sourceArchive = zipFile
                 EpubReader().readEpubLazy(zipFile, "utf-8")
             }
 
@@ -133,6 +140,7 @@ class EpubFile(var book: Book) {
         }.onFailure {
             fileDescriptor?.close()
             fileDescriptor = null
+            sourceArchive = null
             AppLog.put("读取Epub文件失败\n${it.localizedMessage}", it)
             it.printOnDebug()
         }.getOrThrow()
@@ -253,6 +261,47 @@ class EpubFile(var book: Book) {
                     desc
                 }
             }
+            restoreExportedReadStyle()
+        }
+    }
+
+    /** Only the initial file import consumes the explicit NG attachment. Reopening never reapplies it. */
+    private fun restoreExportedReadStyle() {
+        if (book.config.independentReadStyle != null || appDb.bookDao.has(book.bookUrl)) return
+        // epublib does not preserve unknown MIME types, so verify the original OPF with our parser.
+        if (epubBook?.resources?.getById(EpubReadStylePackage.STYLE_ID) == null) return
+        val zip = sourceArchive ?: return
+        try {
+            val archive = object : EpubArchive {
+                override val entries = zip.entries().toList().associate { entry ->
+                    entry.name to EpubArchiveEntry(entry.name, entry.size, entry.compressedSize)
+                }
+                override fun open(path: String): InputStream = zip.getInputStream(
+                    zip.getEntry(path) ?: throw IOException("EPUB 样式资源不存在"),
+                )
+                // EpubFile's existing descriptor owns the lifetime, not this metadata adapter.
+                override fun close() = Unit
+            }
+            val publication = EpubPackageParser().parseLayout(archive)
+            val location = EpubReadStylePackage.styleLocation(publication) ?: return
+            val output = ByteArrayOutputStream()
+            archive.open(location).use { input ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var total = 0L
+                while (true) {
+                    val size = input.read(buffer)
+                    if (size < 0) break
+                    total += size
+                    require(total <= 256L * 1024 * 1024) { "EPUB 阅读样式附件过大" }
+                    output.write(buffer, 0, size)
+                }
+            }
+            val warnings = EpubReadStylePackage.bindImportedStyle(book, output.toByteArray())
+            warnings.forEach { AppLog.put("EPUB 阅读样式提示：$it") }
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            // Optional styling must not make an otherwise readable EPUB fail its import.
+            AppLog.put("EPUB 阅读样式附件未应用，仍可阅读原书：${error.localizedMessage}", error)
         }
     }
 

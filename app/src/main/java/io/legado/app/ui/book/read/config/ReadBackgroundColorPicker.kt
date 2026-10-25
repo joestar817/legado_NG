@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
@@ -66,6 +67,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.view.WindowCompat
 import io.legado.app.R
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadAppearanceMode
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassStyle
@@ -119,20 +121,42 @@ internal fun renderCurrentReadBackground(width: Int, height: Int): Bitmap {
     val safeWidth = width.coerceAtLeast(1)
     val safeHeight = height.coerceAtLeast(1)
     val drawable = ReadBookConfig.durConfig.curBgDrawable(safeWidth, safeHeight)
+    return renderReadBackground(drawable, safeWidth, safeHeight, ReadBookConfig.bgAlpha, ReadBookConfig.bgMeanColor)
+}
+
+internal fun renderEditorReadBackground(target: ReadStyleEditTarget, width: Int, height: Int): Bitmap {
+    val safeWidth = width.coerceAtLeast(1)
+    val safeHeight = height.coerceAtLeast(1)
+    val drawable = target.appearance.backgroundDrawableForMode(target.mode, safeWidth, safeHeight)
+    return renderReadBackground(
+        drawable, safeWidth, safeHeight, target.layout.bgAlpha, null,
+        if (target.mode == ReadAppearanceMode.NIGHT) AndroidColor.BLACK else AndroidColor.WHITE,
+    )
+}
+
+private fun renderReadBackground(
+    drawable: Drawable, safeWidth: Int, safeHeight: Int, alpha: Int,
+    fallbackMean: Int?, neutral: Int = AndroidColor.BLACK,
+): Bitmap {
     var target: Bitmap? = null
     try {
-        val meanColor = when (drawable) {
-            is BitmapDrawable -> drawable.bitmap?.getMeanColor() ?: ReadBookConfig.bgMeanColor
-            is ColorDrawable -> drawable.color
-            else -> ReadBookConfig.bgMeanColor
-        }
         val rendered = Bitmap.createBitmap(safeWidth, safeHeight, Bitmap.Config.ARGB_8888)
         target = rendered
         val canvas = Canvas(rendered)
+        drawable.setBounds(0, 0, safeWidth, safeHeight)
+        val meanColor = when (drawable) {
+            is BitmapDrawable -> drawable.bitmap?.getMeanColor() ?: fallbackMean ?: neutral
+            is ColorDrawable -> drawable.color
+            else -> fallbackMean ?: run {
+                canvas.drawColor(neutral)
+                drawable.alpha = 255
+                drawable.draw(canvas)
+                rendered.getMeanColor()
+            }
+        }
         // Sampling is background-only even when the chosen reading color has zero alpha.
         canvas.drawColor(meanColor or AndroidColor.BLACK)
-        drawable.alpha = (ReadBookConfig.bgAlpha.coerceIn(0, 100) / 100f * 255).roundToInt()
-        drawable.setBounds(0, 0, safeWidth, safeHeight)
+        drawable.alpha = (alpha.coerceIn(0, 100) / 100f * 255).roundToInt()
         drawable.draw(canvas)
         return rendered
     } catch (error: Throwable) {

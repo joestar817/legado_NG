@@ -22,10 +22,8 @@ import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.exception.NoBooksDirException
 import io.legado.app.exception.NoStackTraceException
-import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.getExportFileName
-import io.legado.app.help.book.getRemoteUrl
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isNotShelf
 import io.legado.app.help.book.isSameNameAuthor
@@ -35,7 +33,6 @@ import io.legado.app.help.book.updateTo
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.source.SourceInteractionBlockedException
 import io.legado.app.help.source.SourceInteractionPolicy
-import io.legado.app.lib.webdav.ObjectNotFoundException
 import io.legado.app.model.AudioPlay
 import io.legado.app.model.BookCacheManager
 import io.legado.app.model.BookCover
@@ -50,7 +47,6 @@ import io.legado.app.utils.ArchiveUtils
 import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.UrlUtil
 import io.legado.app.utils.getPrefLong
-import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.putPrefLong
@@ -416,18 +412,6 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
         executeLazy(executeContext = IO) {
             if (book.isLocal) {
                 book.tocUrl = ""
-                book.getRemoteUrl()?.let {
-                    val bookWebDav = AppWebDav.defaultBookWebDav
-                        ?: throw NoStackTraceException("webDav没有配置")
-                    val remoteBook = bookWebDav.getRemoteBook(it)
-                    if (remoteBook == null) {
-                        book.origin = BookType.localTag
-                    } else if (remoteBook.lastModify > book.lastCheckTime) {
-                        val uri = bookWebDav.downloadRemoteBook(remoteBook)
-                        book.bookUrl = if (uri.isContentScheme()) uri.toString() else uri.path!!
-                        book.lastCheckTime = remoteBook.lastModify
-                    }
-                }
             } else {
                 val bs = bookSource ?: return@executeLazy
                 if (book.originName != bs.bookSourceName) {
@@ -435,15 +419,7 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                 }
             }
         }.onError {
-            when (it) {
-                is ObjectNotFoundException -> {
-                    book.origin = BookType.localTag
-                }
-
-                else -> {
-                    AppLog.put("下载远程书籍<${book.name}>失败", it)
-                }
-            }
+            AppLog.put("刷新书籍<${book.name}>失败", it)
         }.onFinally {
             loadBookInfo(book, false)
         }.start()

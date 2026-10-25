@@ -162,6 +162,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
     }
 
     override fun playStop() {
+        onBgmSpeechWaiting()
         invalidateUtterances()
         textToSpeech?.runCatching {
             stop()
@@ -181,6 +182,7 @@ class TTSReadAloudService : BaseReadAloudService(), TextToSpeech.OnInitListener 
 
     private fun finishDailyReadingUtterance(id: String?) {
         if (id == null || id != dailyReadingUtterance) return
+        onBgmSpeechWaiting()
         dailyReadingUtterance = null
         ReadingRecordTracker.setActive(ReadingRecordSource.READ_ALOUD, this, false)
     }

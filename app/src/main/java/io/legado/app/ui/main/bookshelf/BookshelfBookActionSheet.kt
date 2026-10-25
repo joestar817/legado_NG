@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
@@ -49,8 +50,9 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
-import io.legado.app.help.book.BookHelp
-import io.legado.app.help.book.isLocal
+import io.legado.app.help.book.isEpub
+import io.legado.app.help.book.loadBookCacheStatus
+import io.legado.app.help.book.menuCapabilities
 import io.legado.app.ui.design.components.compose.NgBookCover
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgCompactDrawerPanel
@@ -95,15 +97,18 @@ class BookshelfBookActionSheet(
     private data class CacheProgress(
         val cached: Int?,
         val total: Int,
+        val hasCache: Boolean = false,
     )
 
     private data class QuickAction(
         val titleRes: Int,
         val iconKind: NgThemedActionIconKind,
+        val enabled: Boolean = true,
         val onClick: () -> Unit,
     )
 
     private val context: Context get() = fragment.requireContext()
+    private val capabilities = book.menuCapabilities
     private val dialog by lazy { BottomSheetDialog(context) }
     private var cacheProgress by mutableStateOf(
         CacheProgress(cached = null, total = book.totalChapterNum.coerceAtLeast(0))
@@ -242,47 +247,54 @@ class BookshelfBookActionSheet(
                 QuickAction(
                     R.string.chapter_list,
                     NgThemedActionIconKind.CONTENTS,
+                    enabled = capabilities.chapterList,
                 ) {
                     dismissThen { callback.onChapterList(book) }
                 },
                 QuickAction(
                     R.string.book_cache,
                     NgThemedActionIconKind.DOWNLOAD,
+                    enabled = capabilities.download,
                 ) {
                     dismissThen { callback.onDownload(book) }
                 },
                 QuickAction(
                     R.string.change_origin,
                     NgThemedActionIconKind.CHANGE_SOURCE,
+                    enabled = capabilities.changeSource,
                 ) {
                     dismissThen { callback.onChangeSource(book) }
                 },
                 QuickAction(
                     R.string.book_info_listen,
                     NgThemedActionIconKind.LISTEN,
+                    enabled = capabilities.listen,
                 ) {
                     dismissThen { callback.onListen(book) }
                 },
                 QuickAction(
                     R.string.simulated_reading,
                     NgThemedActionIconKind.SIMULATED_READING,
+                    enabled = capabilities.simulatedReading,
                 ) {
                     dismissThen { callback.onSimulatedReading(book) }
                 },
                 QuickAction(
                     R.string.bookshelf_book_action_scan,
                     NgThemedActionIconKind.BOOK_SCAN,
+                    enabled = capabilities.textContent,
                 ) {
                     dismissThen { callback.onBookScan(book) }
                 },
                 QuickAction(
                     R.string.bookshelf_character_profile,
                     NgThemedActionIconKind.CHARACTER_PROFILE,
+                    enabled = capabilities.textContent,
                 ) {
                     dismissThen { callback.onCharacters(book) }
                 },
                 QuickAction(
-                    R.string.bookshelf_book_action_move_group,
+                    R.string.group,
                     NgThemedActionIconKind.MOVE_TO_GROUP,
                 ) {
                     dismissThen { callback.onGroup(book) }
@@ -314,7 +326,7 @@ class BookshelfBookActionSheet(
         Column(
             modifier = modifier
                 .height(74.dp)
-                .clickable(onClick = action.onClick),
+                .clickable(enabled = action.enabled, onClick = action.onClick),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -322,11 +334,13 @@ class BookshelfBookActionSheet(
                 kind = action.iconKind,
                 contentDescription = stringResource(action.titleRes),
                 modifier = actionIconModifier(action.iconKind),
+                tint = if (action.enabled) null else Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.48f),
             )
             Spacer(Modifier.height(5.dp))
             Text(
                 text = stringResource(action.titleRes),
-                color = Color(NgTheme.colors.onSurface),
+                color = if (action.enabled) Color(NgTheme.colors.onSurface)
+                    else Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.48f),
                 fontSize = 12.sp,
                 lineHeight = 15.sp,
                 maxLines = 1,
@@ -340,13 +354,17 @@ class BookshelfBookActionSheet(
         NgCompactDrawerPanel(
             modifier = Modifier.fillMaxWidth(),
         ) {
-            ManagementRow(
-                iconKind = NgThemedActionIconKind.EXPORT,
-                title = stringResource(R.string.export),
-                onClick = { dismissThen { callback.onExport(book) } },
-            )
-            if (!book.isLocal) {
-                DrawerDivider(modifier = Modifier.padding(start = 56.dp, end = 20.dp))
+            if (capabilities.export) {
+                ManagementRow(
+                    iconKind = NgThemedActionIconKind.EXPORT,
+                    title = stringResource(R.string.export),
+                    onClick = { dismissThen { callback.onExport(book) } },
+                )
+            }
+            if (capabilities.update) {
+                if (capabilities.export) {
+                    DrawerDivider(modifier = Modifier.padding(start = 56.dp, end = 20.dp))
+                }
                 ManagementRow(
                     iconKind = NgThemedActionIconKind.REFRESH,
                     title = stringResource(R.string.allow_update),
@@ -357,10 +375,13 @@ class BookshelfBookActionSheet(
                     },
                 )
             }
-            DrawerDivider(modifier = Modifier.padding(start = 56.dp, end = 20.dp))
+            if (capabilities.export || capabilities.update) {
+                DrawerDivider(modifier = Modifier.padding(start = 56.dp, end = 20.dp))
+            }
             ManagementRow(
                 iconKind = NgThemedActionIconKind.CLEAR_CACHE,
                 title = stringResource(R.string.clear_cache),
+                enabled = cacheProgress.hasCache,
                 value = cacheProgress.cached?.let {
                     stringResource(R.string.all_chapter_num, it)
                 }.orEmpty(),
@@ -374,6 +395,7 @@ class BookshelfBookActionSheet(
         iconKind: NgThemedActionIconKind,
         title: String,
         value: String = "",
+        enabled: Boolean = true,
         switchValue: Boolean? = null,
         onSwitchChanged: ((Boolean) -> Unit)? = null,
         onClick: (() -> Unit)? = null,
@@ -382,7 +404,8 @@ class BookshelfBookActionSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(45.dp)
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
+                .alpha(if (enabled) 1f else 0.48f)
                 .padding(start = 16.dp, end = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -505,7 +528,9 @@ class BookshelfBookActionSheet(
             R.string.bookshelf_unread_chapters,
             book.getUnreadChapterNum(),
         )
-        return "$unread · ${cacheProgressText(cacheProgress.cached, cacheProgress.total)}"
+        return if (capabilities.showCache) {
+            "$unread · ${cacheProgressText(cacheProgress.cached, cacheProgress.total)}"
+        } else unread
     }
 
     private fun dismissThen(block: () -> Unit) {
@@ -517,16 +542,8 @@ class BookshelfBookActionSheet(
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val progress = withContext(IO) {
                 val chapters = appDb.bookChapterDao.getChapterList(book.bookUrl)
-                val total = chapters.size.takeIf { it > 0 } ?: book.totalChapterNum
-                if (book.isLocal) {
-                    CacheProgress(cached = total, total = total)
-                } else {
-                    val cacheFileNames = BookHelp.getChapterFiles(book)
-                    val cached = chapters.count {
-                        it.isVolume || cacheFileNames.contains(it.getFileName())
-                    }
-                    CacheProgress(cached = cached, total = total)
-                }
+                val status = loadBookCacheStatus(book, chapters)
+                CacheProgress(cached = status.cached, total = status.total, hasCache = status.hasCache)
             }
             if (dialog.isShowing) {
                 cacheProgress = progress
@@ -535,6 +552,9 @@ class BookshelfBookActionSheet(
     }
 
     private fun cacheProgressText(cached: Int?, total: Int): String {
+        if (book.isEpub) {
+            return context.getString(R.string.epub_parsed_cache_count, cached?.toString() ?: "—")
+        }
         val progress = if (cached == null) {
             "--/${total.coerceAtLeast(0)}"
         } else {

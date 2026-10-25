@@ -148,6 +148,12 @@ internal object ReadStylePackageManager {
             ).orEmpty()
             portableConfig.headerFont = copyResource(portableConfig.headerFont, "read_font_header", "页眉字体").orEmpty()
             portableConfig.footerFont = copyResource(portableConfig.footerFont, "read_font_footer", "页脚字体").orEmpty()
+            portableConfig.headerImage = copyResource(
+                portableConfig.headerImage, "read_header_image", "页眉图片",
+            ).orEmpty()
+            portableConfig.footerImage = copyResource(
+                portableConfig.footerImage, "read_footer_image", "页脚图片",
+            ).orEmpty()
             portableConfig.highlightRules = ArrayList(
                 portableConfig.highlightRules.mapIndexed { index, rule ->
                     rule.copy(
@@ -351,6 +357,27 @@ internal object ReadStylePackageManager {
         config.titleFont = resolve(config.titleFont, "标题字体").orEmpty()
         config.headerFont = resolve(config.headerFont, "页眉字体").orEmpty()
         config.footerFont = resolve(config.footerFont, "页脚字体").orEmpty()
+        fun resolveImage(reference: String, label: String): ReadHeaderImageStore.Image? {
+            val path = resolve(reference, label) ?: return null
+            val inspected = runCatching { ReadHeaderImageStore.inspect(File(path)) }
+            inspected.exceptionOrNull()?.let { failure ->
+                if (strict) throw IllegalArgumentException("${label}无效，导入已取消", failure)
+                warnings += "${label}无效，已忽略"
+            }
+            return inspected.getOrNull()
+        }
+        resolveImage(config.headerImage, "页眉图片").also { image ->
+            config.headerImage = image?.path.orEmpty()
+            config.headerImageWidth = image?.width ?: 0
+            config.headerImageHeight = image?.height ?: 0
+        }
+        if (config.headerImage.isBlank()) config.headerImageEnabled = false
+        resolveImage(config.footerImage, "页脚图片").also { image ->
+            config.footerImage = image?.path.orEmpty()
+            config.footerImageWidth = image?.width ?: 0
+            config.footerImageHeight = image?.height ?: 0
+        }
+        if (config.footerImage.isBlank()) config.footerImageEnabled = false
 
         fun resolveBackground(type: Int, value: String, label: String): Pair<Int, String> {
             if (type != 2) return type to value
@@ -373,6 +400,9 @@ internal object ReadStylePackageManager {
         var missingRuleBackgrounds = 0
         var missingRuleFonts = 0
         config.highlightRules = ArrayList(config.highlightRules.map { source ->
+            if (source.hasInvalidNightColorModes()) {
+                warnings += "高亮规则“${source.name.ifBlank { source.id }}”的夜间配色设置无效，对应项已改为跟随日间"
+            }
             val rule = source.normalized()
             val bg = rule.bgImage?.let { resolve(it, "高亮规则背景图") }.also {
                 if (rule.bgImage != null && it == null) missingRuleBackgrounds++
@@ -509,7 +539,9 @@ internal object ReadStylePackageManager {
         "textColor", "textColorNight", "textColorEInk", "textAccentColor",
         "textAccentColorNight", "textAccentColorEInk", "pageAnim", "pageAnimEInk", "textFont",
         "titleFont", "headerFont", "footerFont", "headerFontSize", "footerFontSize",
-        "applyHeaderStyle", "textBold", "textSize", "textItalic", "textShadow", "shadowRadius",
+        "applyHeaderStyle", "headerImage", "headerImageEnabled", "headerImageWidth", "headerImageHeight",
+        "footerImage", "footerImageEnabled", "footerImageWidth", "footerImageHeight",
+        "textBold", "textSize", "textItalic", "textShadow", "shadowRadius",
         "shadowDx", "shadowDy", "shadowColor", "shadowColorN", "letterSpacing",
         "lineSpacingExtra", "paragraphSpacing", "titleMode", "titleSize", "titleTopSpacing",
         "titleBottomSpacing", "titleColor", "titleColorNight", "titleBold",

@@ -40,6 +40,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.help.config.NgVisualSystem
+import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.components.compose.ngDrawerContentCardColor
 import io.legado.app.ui.design.theme.NgTheme
 
@@ -78,8 +81,14 @@ internal fun HomeWidgetSuiteDrawer(
         val scrollState = rememberScrollState()
         val fontScale = LocalDensity.current.fontScale
         BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()) {
-            val previewHeight = (maxHeight - 124.dp).coerceIn(220.dp, 360.dp)
-            val columns = if (maxWidth / 3 >= 92.dp * fontScale) 3 else 1
+            val columns = when {
+                maxWidth >= 92.dp * fontScale * 4 + 36.dp -> 4
+                maxWidth >= 92.dp * fontScale * 2 + 12.dp -> 2
+                else -> 1
+            }
+            val rows = (styles.size + columns - 1) / columns
+            val choicesHeight = (70.dp + 34.dp * fontScale) * rows + 8.dp * (rows - 1)
+            val previewHeight = (maxHeight - choicesHeight - 20.dp).coerceIn(220.dp, 360.dp)
             Column(Modifier.fillMaxWidth().verticalScroll(scrollState),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -135,10 +144,20 @@ private fun HomeWidgetSuiteChoice(
     }
 }
 
-/** Reuse existing skin artwork; the three choices never create three live widget trees. */
+/** Swatches share skin colors/artwork without creating additional live widget trees. */
 @Composable
 private fun HomeWidgetSuiteSwatch(styleId: String) {
-    if (styleId == "basic") {
+    if (styleId == "white") {
+        Box(Modifier.fillMaxSize().background(HomeWhiteWidgetPreviewBackdrop).padding(5.dp)) {
+            NgVisualSurface(
+                modifier = Modifier.fillMaxSize(), role = NgMaterialRole.CONTENT,
+                cornerRadius = 7.dp,
+                style = homeWhiteWidgetSurfaceStyle().copy(shadowElevation = 4.dp),
+                visualSystemOverride = NgVisualSystem.TRANSPARENT_GLASS,
+                surfaceDecoration = { HomeWhiteWidgetEdge(Modifier.matchParentSize(), cornerRadius = 7.dp) },
+            ) {}
+        }
+    } else if (styleId == "basic") {
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(
             Color(0xFFD9F8F5), Color(0xFFF7FCFA), Color(0xFFC4E8D7),
         ))))

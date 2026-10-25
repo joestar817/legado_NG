@@ -1,11 +1,13 @@
 package io.legado.app.ui.font
 
+import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -40,15 +42,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.os.bundleOf
 import androidx.documentfile.provider.DocumentFile
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.AppLog
+import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.config.ReadConfigDialogSurface
 import io.legado.app.ui.book.read.config.ReadConfigDialogTitle
+import io.legado.app.ui.book.read.config.returnToReadStyleAdjustOnDismiss
 import io.legado.app.ui.book.read.config.ReadConfigDock
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
@@ -64,6 +71,7 @@ import io.legado.app.utils.getPrefString
 import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.list
 import io.legado.app.utils.listFileDocs
+import io.legado.app.utils.postEvent
 import io.legado.app.utils.putPrefString
 import io.legado.app.utils.toastOnUi
 import java.io.File
@@ -72,10 +80,26 @@ import java.net.URLDecoder
 /** 字体选择对话框。内容使用 Compose，目录读取与字体应用行为保持不变。 */
 class FontSelectDialog : BaseComposeDialogFragment() {
 
-    private companion object {
-        const val MODE_SYSTEM = 0
-        const val MODE_CUSTOM = 1
+    companion object {
+        private const val MODE_SYSTEM = 0
+        private const val MODE_CUSTOM = 1
+        private const val ARG_TITLE_FONT = "titleFont"
+        private const val ARG_READER_BODY_FONT = "readerBodyFont"
+
+        fun forTitle(): FontSelectDialog = FontSelectDialog().apply {
+            arguments = bundleOf(ARG_TITLE_FONT to true)
+        }
+
+        fun forReaderBody(): FontSelectDialog = FontSelectDialog().apply {
+            arguments = bundleOf(ARG_READER_BODY_FONT to true)
+        }
     }
+
+    private val isTitleFont: Boolean
+        get() = arguments?.getBoolean(ARG_TITLE_FONT) == true
+
+    private val isReaderBodyFont: Boolean
+        get() = arguments?.getBoolean(ARG_READER_BODY_FONT) == true
 
     private val fontRegex = Regex("(?i).*\\.[ot]tf")
     private lateinit var composeView: ComposeView
@@ -83,6 +107,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
     private var customFonts by mutableStateOf<List<FileDoc>>(emptyList())
     private var selectedFontPath by mutableStateOf("")
     private var selectedSystemFont by mutableIntStateOf(0)
+    private var readerPreviewHost: ReadBookActivity? = null
 
     private val selectFontDir = registerForActivityResult(SelectDirectoryContract()) { result ->
         result.uri?.let {
@@ -114,15 +139,32 @@ class FontSelectDialog : BaseComposeDialogFragment() {
             height = 360.dpToPx(),
             dimAmount = 0.4f,
         )
-        parentFragment?.view?.let {
-            ReadDrawerStyle.positionDialogAbove(dialog, it)
+        if (isReaderBodyFont) {
+            dialog?.window?.apply {
+                setGravity(Gravity.CENTER)
+                attributes = attributes.apply { x = 0; y = 0 }
+            }
+        } else {
+            parentFragment?.view?.let {
+                ReadDrawerStyle.positionDialogAbove(dialog, it)
+            }
         }
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
+        if (isReaderBodyFont && readerPreviewHost == null) {
+            (activity as? ReadBookActivity)?.let {
+                it.beginReadConfigPreview()
+                readerPreviewHost = it
+            }
+        }
         composeView = view as ComposeView
         composeView.setBackgroundColor(AndroidColor.TRANSPARENT)
-        selectedFontPath = callBack?.curFontPath.orEmpty()
+        selectedFontPath = if (isReaderBodyFont) {
+            ReadBookConfig.textFont
+        } else {
+            callBack?.curFontPath.orEmpty()
+        }
         selectedSystemFont = AppConfig.systemTypefaces
         fontMode = if (selectedFontPath.isEmpty()) MODE_SYSTEM else MODE_CUSTOM
         composeView.setViewCompositionStrategy(
@@ -139,9 +181,33 @@ class FontSelectDialog : BaseComposeDialogFragment() {
         loadConfiguredFonts()
     }
 
+    override fun onDismiss(dialog: DialogInterface) {
+        if (isReaderBodyFont) ReadBookConfig.save()
+        endReaderPreview()
+        super.onDismiss(dialog)
+        returnToReadStyleAdjustOnDismiss()
+    }
+
+    override fun onDestroyView() {
+        endReaderPreview()
+        super.onDestroyView()
+    }
+
+    private fun endReaderPreview() {
+        readerPreviewHost?.let {
+            readerPreviewHost = null
+            it.endReadConfigPreview()
+        }
+    }
+
     @Composable
     private fun FontSelectContent() {
-        val systemNames = resources.getStringArray(R.array.system_typefaces).toList()
+        val systemNames = if (isTitleFont) {
+            listOf(getString(R.string.read_title_follow_body_font))
+        } else {
+            resources.getStringArray(R.array.system_typefaces).toList()
+        }
+        val fontTitle = getString(if (isTitleFont) R.string.read_title_font else R.string.body_font)
         ReadConfigDialogSurface(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -157,7 +223,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
                     .height(48.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                ReadConfigDialogTitle(getString(R.string.body_font))
+                ReadConfigDialogTitle(fontTitle)
             }
             Spacer(Modifier.height(8.dp))
             ReadConfigDock(
@@ -167,7 +233,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
                 ),
                 selectedIndex = fontMode,
                 onSelected = { fontMode = it },
-                accessibilityLabel = getString(R.string.body_font),
+                accessibilityLabel = fontTitle,
             )
             Spacer(Modifier.height(8.dp))
             if (fontMode == MODE_CUSTOM) {
@@ -193,7 +259,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
                                 name = name,
                                 typeface = typeface,
                                 selected = selectedFontPath.isEmpty() &&
-                                    selectedSystemFont == index,
+                                    (isTitleFont || selectedSystemFont == index),
                                 onClick = { selectSystemFont(index) },
                             )
                         }
@@ -378,14 +444,25 @@ class FontSelectDialog : BaseComposeDialogFragment() {
 
     private fun selectCustomFont(item: FileDoc) {
         selectedFontPath = item.toString()
-        callBack?.selectFont(selectedFontPath)
+        selectFont(selectedFontPath)
     }
 
     private fun selectSystemFont(index: Int) {
         selectedSystemFont = index
         selectedFontPath = ""
-        AppConfig.systemTypefaces = index
-        callBack?.selectFont("")
+        if (!isTitleFont) AppConfig.systemTypefaces = index
+        selectFont("")
+    }
+
+    private fun selectFont(path: String) {
+        if (isReaderBodyFont) {
+            if (path != ReadBookConfig.textFont || path.isEmpty()) {
+                ReadBookConfig.textFont = path
+                postEvent(EventBus.UP_CONFIG, arrayListOf(2, 5))
+            }
+        } else {
+            callBack?.selectFont(path)
+        }
     }
 
     private fun currentFontName(): String? {

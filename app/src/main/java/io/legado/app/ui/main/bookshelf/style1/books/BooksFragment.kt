@@ -32,9 +32,9 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.data.entities.BookSource
-import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isLocal
+import io.legado.app.help.book.menuCapabilities
 import io.legado.app.help.book.removeType
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.BookshelfLayoutMode
@@ -46,6 +46,9 @@ import io.legado.app.model.ReadBook
 import io.legado.app.model.ReadManga
 import io.legado.app.model.SourceCallBack
 import io.legado.app.model.localBook.LocalBook
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.ui.book.import.remote.RemoteBookActivity
+import io.legado.app.utils.longSnackbar
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.service.ExportBookService
 import io.legado.app.ui.book.character.BookCharacterActivity
@@ -345,11 +348,13 @@ class BooksFragment() : BaseFragment(0),
     }
 
     override fun onChapterList(book: Book) {
+        if (!book.menuCapabilities.chapterList) return
         tocBook = book
         tocActivityResult.launch(book.bookUrl)
     }
 
     override fun onCharacters(book: Book) {
+        if (!book.menuCapabilities.textContent) return
         startActivity<BookCharacterActivity> {
             putExtra(BookCharacterActivity.EXTRA_WORK_KEY, BookCharacterProfile.workKey(book.name, book.author))
             putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, book.name)
@@ -363,6 +368,7 @@ class BooksFragment() : BaseFragment(0),
     }
 
     override fun onExport(book: Book) {
+        if (!book.menuCapabilities.export) return
         exportBook = book
         ExportSettingsDialog.show(childFragmentManager, selectedCount = 1)
     }
@@ -381,6 +387,7 @@ class BooksFragment() : BaseFragment(0),
         path: String,
         settings: ExportSettingsResult,
     ) {
+        if (!book.menuCapabilities.export) return
         val exportType = if (settings.exportType == 1) "epub" else "txt"
         requireContext().startService<ExportBookService> {
             action = IntentAction.start
@@ -389,7 +396,7 @@ class BooksFragment() : BaseFragment(0),
             putExtra("exportPath", path)
             putExtra("exportUseReplace", true)
             putExtra("parallelExport", true)
-            putExtra("exportToWebDav", false)
+            putExtra("exportToWebDav", settings.exportToWebDav)
             putExtra("includeChapterName", true)
             putExtra("exportPlainText", settings.plainText)
             putExtra("exportFilterInteractiveImages", settings.filterInteractiveImages)
@@ -399,6 +406,7 @@ class BooksFragment() : BaseFragment(0),
     }
 
     override fun onListen(book: Book) {
+        if (!book.menuCapabilities.listen) return
         if (book.isAudio) {
             startActivity<AudioPlayActivity> {
                 putExtra("bookUrl", book.bookUrl)
@@ -422,10 +430,7 @@ class BooksFragment() : BaseFragment(0),
     }
 
     override fun onDownload(book: Book) {
-        if (book.isLocal) {
-            toastOnUi(R.string.local_book)
-            return
-        }
+        if (!book.menuCapabilities.download) return
         CacheBook.cacheBookMap[book.bookUrl]?.let {
             if (!it.isStop()) {
                 CacheBook.remove(requireContext(), book.bookUrl)
@@ -436,11 +441,13 @@ class BooksFragment() : BaseFragment(0),
     }
 
     override fun onChangeSource(book: Book) {
+        if (!book.menuCapabilities.changeSource) return
         actionBook = book
         showDialogFragment(ChangeBookSourceDrawer(book.name, book.author))
     }
 
     override fun onSimulatedReading(book: Book) {
+        if (!book.menuCapabilities.simulatedReading) return
         showDialogFragment(SimulatedReadingDialog(book))
     }
 
@@ -453,6 +460,7 @@ class BooksFragment() : BaseFragment(0),
     ) {
         viewLifecycleOwner.lifecycleScope.launch(IO) {
             val book = appDb.bookDao.getBook(bookUrl) ?: return@launch
+            if (!book.menuCapabilities.simulatedReading) return@launch
             book.setStartDate(startDate)
             book.setDailyChapters(dailyChapters)
             book.setStartChapter(startChapter)
@@ -467,6 +475,7 @@ class BooksFragment() : BaseFragment(0),
     }
 
     override fun onAllowUpdateChanged(book: Book, allowUpdate: Boolean) {
+        if (!book.menuCapabilities.update) return
         viewLifecycleOwner.lifecycleScope.launch(IO) {
             val updatedBook = book.copy(canUpdate = allowUpdate)
             if (!allowUpdate) {
@@ -573,6 +582,10 @@ class BooksFragment() : BaseFragment(0),
 
     override fun observeLiveBus() {
         super.observeLiveBus()
+        observeEvent<WebDavBookLocation>(EventBus.WEBDAV_EXPORT_READY) { location ->
+            if (isResumed && isVisible) view?.longSnackbar(getString(R.string.export_upload_success),
+                getString(R.string.webdav_view_cloud)) { RemoteBookActivity.open(requireContext(), location) }
+        }
         observeEvent<String>(EventBus.UP_BOOKSHELF) { bookUrl ->
             if (bookItems.none { it.bookUrl == bookUrl }) {
                 return@observeEvent

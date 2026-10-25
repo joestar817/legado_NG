@@ -38,7 +38,7 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
     private var searchPage = 1
     private var searchKey: String = ""
     private var bookSourceParts = emptyList<BookSourcePart>()
-    private var searchBooks = arrayListOf<SearchBook>()
+    private var searchBooks: List<SearchBook> = emptyList()
     private var searchJob: Job? = null
     private var workingState = MutableStateFlow(true)
     private val interactionPolicy = SourceInteractionPolicy(
@@ -61,7 +61,8 @@ class SearchModel(private val scope: CoroutineScope, private val callBack: CallB
             if (mSearchId != 0L) {
                 close()
             }
-            searchBooks.clear()
+            // 已发布的列表仍被 UI 持有，新搜索只替换引用。
+            searchBooks = emptyList()
             bookSourceParts = callBack.getSearchScope().getBookSourceParts()
             if (bookSourceParts.isEmpty()) {
                 callBack.onSearchCancel(NoStackTraceException("启用书源为空"))

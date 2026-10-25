@@ -4,6 +4,7 @@ import android.app.Dialog
 import android.content.Context
 import android.graphics.Color as AndroidColor
 import android.graphics.Typeface
+import android.view.Gravity
 import android.view.View
 import android.view.Window
 import androidx.activity.ComponentDialog
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
@@ -41,17 +43,18 @@ internal object ReadTypographySettingDialog {
 
     fun showDiscrete(
         context: Context,
-        avoidView: View,
+        avoidView: View?,
         title: String,
         stepLabels: List<String>,
         currentValues: List<String>,
         selectedIndex: Int,
         currentValueTextSizeSp: Float = 30f,
         previewTypeface: (Int) -> Typeface? = { null },
+        onDismiss: () -> Unit = {},
         onSelectionChanged: (Int) -> Unit,
     ) {
         if (stepLabels.size < 2) return
-        showDialog(context, avoidView) {
+        showDialog(context, avoidView, onDismiss) {
             var selected by remember {
                 mutableIntStateOf(selectedIndex.coerceIn(stepLabels.indices))
             }
@@ -123,15 +126,16 @@ internal object ReadTypographySettingDialog {
 
     fun showChineseConverter(
         context: Context,
-        avoidView: View,
+        avoidView: View?,
         title: String,
         labels: List<String>,
         selectedIndex: Int,
+        onDismiss: () -> Unit = {},
         onSelectedIndexChanged: (Int) -> Unit,
     ) {
         if (labels.isEmpty()) return
         var dialog: Dialog? = null
-        dialog = showDialog(context, avoidView) {
+        dialog = showDialog(context, avoidView, onDismiss) {
             var selected by remember {
                 mutableIntStateOf(selectedIndex.coerceIn(labels.indices))
             }
@@ -180,7 +184,8 @@ internal object ReadTypographySettingDialog {
 
     private fun showDialog(
         context: Context,
-        avoidView: View,
+        avoidView: View?,
+        onDismiss: () -> Unit,
         content: @androidx.compose.runtime.Composable () -> Unit,
     ): Dialog {
         val composeView = ComposeView(context).apply {
@@ -196,12 +201,37 @@ internal object ReadTypographySettingDialog {
             }
         }
         return ComponentDialog(context).apply {
+            val previewActivity = (context as? ReadBookActivity).takeIf { avoidView == null }
+            var previewRegistered = false
             requestWindowFeature(Window.FEATURE_NO_TITLE)
             setContentView(composeView)
             setCanceledOnTouchOutside(true)
+            setOnShowListener {
+                if (!previewRegistered) {
+                    previewActivity?.let {
+                        it.beginReadConfigPreview()
+                        previewRegistered = true
+                    }
+                }
+            }
+            setOnDismissListener {
+                try {
+                    ReadBookConfig.save()
+                } finally {
+                    if (previewRegistered) {
+                        previewRegistered = false
+                        previewActivity?.endReadConfigPreview()
+                    }
+                }
+                onDismiss()
+            }
             show()
             applyNgWindow(marginDp = 20)
-            ReadDrawerStyle.positionDialogAbove(this, avoidView)
+            if (avoidView != null) {
+                ReadDrawerStyle.positionDialogAbove(this, avoidView)
+            } else {
+                window?.setGravity(Gravity.CENTER)
+            }
         }
     }
 

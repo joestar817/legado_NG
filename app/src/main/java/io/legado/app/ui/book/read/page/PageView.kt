@@ -41,6 +41,7 @@ import io.legado.app.utils.setOnApplyWindowInsetsListenerCompat
 import io.legado.app.utils.setTextIfNotEqual
 import splitties.views.backgroundColor
 import java.util.Date
+import kotlin.math.ceil
 
 /**
  * 页面视图
@@ -83,7 +84,8 @@ class PageView(context: Context) : FrameLayout(context) {
         get() {
             val h1 = if (binding.vwStatusBar.isGone) 0 else binding.vwStatusBar.height
             val h2 = if (binding.llHeader.isGone) 0 else binding.llHeader.height
-            return h1 + h2 + binding.vwRoot.paddingTop
+            val imageHeight = if (binding.ivHeaderImage.isGone) 0 else binding.ivHeaderImage.height
+            return h1 + h2 + imageHeight + binding.vwRoot.paddingTop
         }
     val imgBgPaddingStart: Int
         get() {
@@ -109,9 +111,62 @@ class PageView(context: Context) : FrameLayout(context) {
         upBg()
     }
 
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val imageLimit = MeasureSpec.getSize(heightMeasureSpec) / 2
+        val headerLimitChanged = binding.ivHeaderImage.limitHeight(imageLimit)
+        val footerLimitChanged = binding.ivFooterImage.limitHeight(imageLimit)
+        if (headerLimitChanged || footerLimitChanged) {
+            binding.vwRoot.forceLayout()
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        fun visibleHeight(view: View) = if (view.isGone) 0 else view.measuredHeight
+        val headerImageHeight = visibleHeight(binding.ivHeaderImage)
+        val footerImageHeight = visibleHeight(binding.ivFooterImage)
+        if (headerImageHeight <= 0 && footerImageHeight <= 0) return
+        val contentMetrics = ChapterProvider.contentPaint.fontMetrics
+        val titleMetrics = ChapterProvider.titlePaint.fontMetrics
+        val titleScale = if (ReadBookConfig.config.titleSegType != 0) {
+            ReadBookConfig.config.titleSegScaling.takeIf { it.isFinite() }?.coerceIn(1f, 2f) ?: 1f
+        } else 1f
+        val lineHeight = ceil(maxOf(
+            contentMetrics.bottom - contentMetrics.top,
+            (titleMetrics.bottom - titleMetrics.top) * titleScale,
+        )).toInt().coerceAtLeast(1)
+        val minimumBodyHeight = ReadBookConfig.paddingTop.dpToPx().coerceAtLeast(0) +
+            ReadBookConfig.paddingBottom.dpToPx().coerceAtLeast(0) + lineHeight + 1
+        val chromeHeight = visibleHeight(binding.vwStatusBar) + visibleHeight(binding.llHeader) +
+            visibleHeight(binding.vwTopDivider) + visibleHeight(binding.vwBottomDivider) +
+            visibleHeight(binding.llFooter) + visibleHeight(binding.vwNavigationBar) +
+            binding.vwRoot.paddingTop + binding.vwRoot.paddingBottom
+        val available = (binding.vwRoot.measuredHeight - chromeHeight - minimumBodyHeight).coerceAtLeast(0)
+        val (headerHeight, footerHeight) = readDecorationImageHeights(
+            headerImageHeight, footerImageHeight, available,
+        )
+        if (headerHeight != headerImageHeight || footerHeight != footerImageHeight) {
+            binding.ivHeaderImage.limitHeight(headerHeight)
+            binding.ivFooterImage.limitHeight(footerHeight)
+            binding.vwRoot.forceLayout()
+            // Both measurements precede layout, so the reader sees only the final viewport.
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        }
+    }
+
     fun upStyle() = binding.run {
         upTipStyle()
         ReadBookConfig.let {
+            ivHeaderImage.updateImage(
+                it.config.headerImage,
+                it.config.headerImageWidth,
+                it.config.headerImageHeight,
+                it.config.headerImageEnabled,
+            )
+            ivFooterImage.updateImage(
+                it.config.footerImage,
+                it.config.footerImageWidth,
+                it.config.footerImageHeight,
+                it.config.footerImageEnabled,
+            )
+            if (it.config.headerImageEnabled || it.config.footerImageEnabled) requestLayout()
             val textColor = it.textColor
             val tipDividerColor = with(ReadTipConfig) {
                 when (tipDividerColor) {
@@ -369,10 +424,12 @@ class PageView(context: Context) : FrameLayout(context) {
             canvas.restoreToCount(saved)
         }
         if (!hideHeader) {
+            draw(binding.ivHeaderImage)
             draw(binding.llHeader)
             draw(binding.vwTopDivider)
         }
         if (!hideFooter) {
+            draw(binding.ivFooterImage)
             draw(binding.llFooter)
             draw(binding.vwBottomDivider)
         }

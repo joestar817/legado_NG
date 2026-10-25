@@ -13,11 +13,14 @@
     var styledNodes = [], styleElements = [], fontFaces = [], currentStyles = [], fontPromise = null;
     var baseEntries = [], contentLength = 0, styleRevision = 0, styleSignature = '', geometrySignature = '';
     var fontCache = new Map();
-    var lastStylePayload = null, aloud = null;
+    var lastStylePayload = null, aloud = null, nightMode = false;
     var noteMarkers = [], noteElements = [], noteStyle = null, noteSignature = '[[],null]', noteImage = null;
     var titleSegments = [], titleStyle = null, titleSignature = '[[],null]';
-    function signature(value) { return JSON.stringify([value.charStyles || [], value.styleRanges || []]); }
+    function palette(value) { return nightMode && value.nightCharStyles ? value.nightCharStyles : value.charStyles || []; }
+    function paintRanges(value) { return nightMode && value.nightStyleRanges ? value.nightStyleRanges : value.styleRanges || []; }
+    function signature(value) { return JSON.stringify([palette(value), paintRanges(value)]); }
     function geometry(value) {
+        // Fonts/images are shared by both palettes; color-only paint splits never reflow text.
         var spans = [];
         (value.styleRanges || []).forEach(function (r) {
             var style = (value.charStyles || [])[r[2]] || {};
@@ -39,7 +42,10 @@
     }
     function updateStyles(value) {
         if (value.key !== key) throw new Error('字样式正文已变更');
-        if (signature(value) === styleSignature) return { changed: false, reflow: false };
+        if (signature(value) === styleSignature) {
+            lastStylePayload = Object.assign({}, value, { text: { length: contentLength } });
+            return { changed: false, reflow: false };
+        }
         var reflow = geometry(value) !== geometrySignature;
         resetStyles();
         applyStyles(Object.assign({}, value, { text: { length: contentLength } }));
@@ -121,10 +127,10 @@
         lastStylePayload = value;
         styleRevision++;
         styleSignature = signature(value); geometrySignature = geometry(value);
-        currentStyles = (value.charStyles || []).map(function (style) {
+        currentStyles = palette(value).map(function (style) {
             return style.underline > 0 ? Object.assign({}, style, { nativeUnderline:style.underline }) : style;
         });
-        var ranges = value.styleRanges || [];
+        var ranges = paintRanges(value);
         if (!ranges.length && !aloud && !noteMarkers.length && !titleSegments.length) return;
         var titleBreaks = new Set();
         titleSegments.forEach(function (segment, index) {
@@ -669,8 +675,9 @@
         if (!hidden.has(node)) hidden.set(node, [node.style.getPropertyValue('display'), node.style.getPropertyPriority('display')]);
         node.style.setProperty('display', 'none', 'important');
     }
-    function apply(value) {
+    function apply(value, isNight) {
         if (!value || value.version !== 1 || !Array.isArray(value.nodes)) throw new Error('EPUB 正文位置数据无效');
+        nightMode = !!isNight;
         if (key === value.key) return updateStyles(value).changed;
         clearStyleImages(); imagePlans.clear();
         noteMarkers = []; noteElements = []; noteStyle = null; noteSignature = '[[],null]';

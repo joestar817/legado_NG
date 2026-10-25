@@ -12,10 +12,11 @@ import io.legado.app.lib.webdav.Authorization
 import io.legado.app.lib.webdav.WebDav
 import io.legado.app.lib.webdav.WebDavFile
 import io.legado.app.model.analyzeRule.CustomUrl
-import io.legado.app.model.localBook.LocalBook
 import io.legado.app.utils.NetworkUtils
-import io.legado.app.utils.isContentScheme
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 class RemoteBookWebDav(
     val rootBookUrl: String,
@@ -32,6 +33,7 @@ class RemoteBookWebDav(
 
     @Throws(Exception::class)
     override suspend fun getRemoteBookList(path: String): MutableList<RemoteBook> {
+        requireBookPath(path)
         if (!NetworkUtils.isAvailable()) throw NoStackTraceException("网络不可用")
         val remoteBooks = mutableListOf<RemoteBook>()
         //读取文件列表
@@ -50,6 +52,7 @@ class RemoteBookWebDav(
     }
 
     override suspend fun getRemoteBook(path: String): RemoteBook? {
+        requireBookPath(path)
         if (!NetworkUtils.isAvailable()) throw NoStackTraceException("网络不可用")
         val webDavFile = WebDav(path, authorization).getWebDavFile()
             ?: return null
@@ -60,31 +63,41 @@ class RemoteBookWebDav(
         AppConfig.defaultBookTreeUri
             ?: throw NoStackTraceException("没有设置书籍保存位置!")
         if (!NetworkUtils.isAvailable()) throw NoStackTraceException("网络不可用")
-        val webdav = WebDav(remoteBook.path, authorization)
-        return webdav.downloadInputStream().let { inputStream ->
-            LocalBook.saveBookFile(inputStream, remoteBook.filename)
-        }
+        return WebDavBookTransfer(this).download(remoteBook, false,
+            ask = { WebDavBookChoice.SAVE_COPY }, progress = { _, _ -> }).uri
     }
 
     override suspend fun upload(book: Book) {
         if (!NetworkUtils.isAvailable()) throw NoStackTraceException("网络不可用")
-        val localBookUri = Uri.parse(book.bookUrl)
-        val putUrl = "$rootBookUrl${book.originName}"
-        val webDav = WebDav(putUrl, authorization)
-        if (localBookUri.isContentScheme()) {
-            webDav.upload(localBookUri)
-        } else {
-            webDav.upload(localBookUri.path!!)
-        }
-        book.origin = BookType.webDavTag + CustomUrl(putUrl)
+        val localBookUri = webDavLocalUri(book.bookUrl)
+        val previous = WebDavBookLocation.fromBook(book)?.takeIf { it.serverId == serverID }
+        if (previous != null) WebDavBookTransfer(this).location(previous.path)
+        val name = previous?.path?.toHttpUrl()?.pathSegments?.last()
+            ?: book.originName
+        val directory = previous?.let { WebDavBookRecords.get(it)?.uploadDirectory ?: it.directory } ?: rootBookUrl
+        requireBookPath(directory)
+        val uploaded = uploadWebDavBook(localBookUri, name, "application/octet-stream",
+            directory, authorization, serverID)
+        book.origin = BookType.webDavTag + CustomUrl(uploaded.path)
             .putAttribute("serverID", serverID)
             .toString()
-        book.update()
+        withContext(Dispatchers.IO) { book.update() }
     }
 
     override suspend fun delete(remoteBookUrl: String) {
+        requireBookPath(remoteBookUrl)
         if (!NetworkUtils.isAvailable()) throw NoStackTraceException("网络不可用")
         WebDav(remoteBookUrl, authorization).delete()
+    }
+
+    internal fun requireBookPath(path: String) {
+        val root = normalizedWebDavBookUrl(rootBookUrl).toHttpUrl()
+        val target = normalizedWebDavBookUrl(path).toHttpUrl()
+        require(target.scheme == root.scheme && target.host == root.host && target.port == root.port &&
+            (target.encodedPath == root.encodedPath ||
+                target.encodedPath.startsWith(root.encodedPath.trimEnd('/') + "/"))) {
+            "文件不在当前 WebDAV 目录中"
+        }
     }
 
 }

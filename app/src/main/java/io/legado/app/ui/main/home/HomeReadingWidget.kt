@@ -138,7 +138,7 @@ private fun HomeReadingContent(
                         color = homeReadingSecondary(), fontSize = 12.sp)
                 }
                 // Only illustrated skins need a footer; plain glass ends after its metrics.
-                if (variant.styleId != "basic") Spacer(Modifier.height(72.dp))
+                if (!isPlainHomeWidgetStyle(variant.styleId)) Spacer(Modifier.height(72.dp))
             }
         }
         if (!measuring && !large) {

@@ -112,6 +112,13 @@ object Restore {
         val restoredLocalBooks = arrayListOf<Book>()
         failures.clear()
         val modules = BackupResources.validate(File(path))
+        // Reject a malformed/newer timing file before restoring any app data.
+        val timingSnapshot = ReadingTimeBackup.read(File(path))
+        val readingRecords = fileToListT<ReadRecord>(path, "readRecord.json")
+        val readingTime = ReadingTimeBackup.snapshotForRestore(
+            timingSnapshot,
+            if (timingSnapshot == null) readingRecords?.map { it.readTime } else null,
+        )
         val aes = BackupAES()
         val storedPreferences = appCtx.getSharedPreferences(path, "config")?.all
         val backupPreferences = if (modules != null) {
@@ -222,8 +229,8 @@ object Restore {
             appDb.keyboardAssistsDao.deleteAll() //先删除所有,保证和备份数据一样
             appDb.keyboardAssistsDao.insert(*it.toTypedArray())
         }
-        fileToListT<ReadRecord>(path, "readRecord.json")?.let {
-            it.forEach { readRecord ->
+        appDb.runInTransaction {
+            readingRecords?.forEach { readRecord ->
                 //判断是不是本机记录
                 if (readRecord.deviceId != androidId) {
                     appDb.readRecordDao.insert(readRecord)
@@ -233,6 +240,14 @@ object Restore {
                     if (time == null || time < readRecord.readTime) {
                         appDb.readRecordDao.insert(readRecord)
                     }
+                }
+            }
+            // Archives contain cumulative counters, not intervals from which a cross-device
+            // union could be rebuilt. Max merging is repeatable and never reduces local data.
+            readingTime?.let { snapshot ->
+                appDb.readingTimeTotalDao.mergeAtLeast(snapshot.totalReadTime)
+                snapshot.days.forEach { (epochDay, readTime) ->
+                    appDb.dailyReadingRecordDao.mergeAtLeast(epochDay, readTime)
                 }
             }
         }

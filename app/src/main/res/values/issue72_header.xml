@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="read_header_image">图片页眉</string>
+    <string name="read_header_image_choose">选择图片</string>
+    <string name="read_header_image_change">更换图片</string>
+    <string name="read_header_image_remove">移除</string>
+    <string name="read_header_image_importing">正在导入…</string>
+    <string name="read_header_image_failed">页眉图片导入失败</string>
+    <string name="read_header_image_scope_changed">阅读预设已变化，请重新选择图片</string>
+</resources>

@@ -13,6 +13,10 @@ internal class BookReadStyleSession(
 
     val isBound: Boolean get() = book != null
 
+    /** Read the requested book without rebinding or persisting the active reading session. */
+    fun configFor(owner: Book): ReadBookConfig.Config? =
+        if (book?.bookUrl == owner.bookUrl) config else decode(owner.readConfig?.independentReadStyle)
+
     fun bind(next: Book): Boolean {
         save()
         if (book?.bookUrl == next.bookUrl) {

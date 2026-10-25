@@ -80,6 +80,9 @@ val Book.isWebFile: Boolean
 val Book.supportsReadAloud: Boolean
     get() = !isAudio && !isVideo && !isImage && !isWebFile && !isPdf
 
+internal val Book.menuCapabilities: BookMenuCapabilities
+    get() = BookMenuCapabilities(isLocal, isEpub, isAudio, isVideo, isImage, isWebFile, isPdf)
+
 val Book.isUpError: Boolean
     get() = isType(BookType.updateError)
 

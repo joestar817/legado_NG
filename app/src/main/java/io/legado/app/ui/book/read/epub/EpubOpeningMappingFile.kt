@@ -27,7 +27,7 @@ import java.security.MessageDigest
 /** Disposable derived data, explicitly encoded. No native page geometry, styles or live owners. */
 internal object EpubOpeningMappingFile {
     // Bump when source capture, content projection or native coordinate interpretation changes.
-    private const val VERSION = 1
+    private const val VERSION = 2
     private const val MAX_BYTES = 2 * 1024 * 1024
     private const val MAX_ITEMS = 10_000
 

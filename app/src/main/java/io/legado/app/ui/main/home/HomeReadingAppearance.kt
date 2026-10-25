@@ -1,5 +1,6 @@
 package io.legado.app.ui.main.home
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 
 @Immutable
@@ -9,5 +10,6 @@ internal data class HomeReadingAppearance(
 )
 
 /** Skin families share one palette; content and geometry are owned by the widget. */
+@Composable
 internal fun homeReadingAppearance(variant: HomeWidgetVariant): HomeReadingAppearance? =
     homeWidgetSkinPalette(variant.styleId)?.let { HomeReadingAppearance(variant.styleId, it) }

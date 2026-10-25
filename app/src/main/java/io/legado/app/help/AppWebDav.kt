@@ -16,12 +16,12 @@ import io.legado.app.lib.webdav.WebDav
 import io.legado.app.lib.webdav.WebDavException
 import io.legado.app.lib.webdav.WebDavFile
 import io.legado.app.model.remote.RemoteBookWebDav
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.model.remote.uploadWebDavBook
 import io.legado.app.utils.AlphanumComparator
-import io.legado.app.utils.FileUtils
 import io.legado.app.utils.GSON
 import io.legado.app.utils.NetworkUtils
 import io.legado.app.utils.UrlUtil
-import io.legado.app.utils.compress.ZipUtils
 import io.legado.app.utils.fromJsonObject
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.isJson
@@ -242,6 +242,17 @@ object AppWebDav {
         }
     }
 
+    /** 导出文件上传需要真实结果；调用方在 IO 线程执行。 */
+    internal suspend fun exportBookToWebDav(uri: Uri, fileName: String, contentType: String): WebDavBookLocation {
+        currentCoroutineContext().ensureActive()
+        if (!NetworkUtils.isAvailable()) {
+            throw NoStackTraceException(appCtx.getString(R.string.network_connection_unavailable))
+        }
+        val account = authorization
+            ?: throw NoStackTraceException(appCtx.getString(R.string.export_webdav_account_required))
+        return uploadWebDavBook(uri, fileName, contentType, exportsWebDavUrl, account)
+    }
+
     suspend fun uploadBookProgress(
         book: Book,
         toast: Boolean = false,
@@ -317,10 +328,10 @@ object AppWebDav {
         appDb.bookDao.all.forEach { book ->
             val progressFileName = getProgressFileName(book.name, book.author)
             val webDavFile = map[progressFileName]
-            webDavFile ?: return
+            webDavFile ?: return@forEach
             if (webDavFile.lastModify <= book.syncTime) {
                 //本地同步时间大于上传时间不用同步
-                return
+                return@forEach
             }
             getBookProgress(book)?.let { bookProgress ->
                 if (bookProgress.durChapterIndex > book.durChapterIndex

@@ -19,6 +19,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
@@ -28,9 +29,57 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+import io.legado.app.ui.design.components.compose.NgGlassStyle
+import io.legado.app.ui.design.theme.NgTheme
 
 internal val HomeWidgetSkinCornerRadius = 12.dp
 internal val HomeWidgetSkinHeaderHeight = 48.dp
+internal val HomeWhiteWidgetPreviewBackdrop = Color(0xFFEDF0F2)
+
+/** Pure white stays on the face; the shared decoration owns the narrow raised edge. */
+internal fun homeWhiteWidgetSurfaceStyle(contentColor: Color = Color(0xFF202124)) = NgGlassStyle(
+    containerTop = Color.White, containerBottom = Color.White,
+    accentGlow = Color.Transparent, borderColor = Color.Transparent,
+    edgeHighlight = Color.Transparent, surfaceGloss = Color.Transparent,
+    depthEdge = Color.Transparent, contentColor = contentColor,
+    blurRadius = 0.dp, shadowElevation = 8.dp,
+    borderWidth = 0.dp, highlightWidth = 0.dp,
+)
+
+/** Gray is confined to the side rim and the bottom two dp, below all widget content. */
+@Composable
+internal fun HomeWhiteWidgetEdge(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = HomeWidgetSkinCornerRadius,
+) {
+    Canvas(modifier) {
+        if (size.width <= 0f || size.height <= 0f) return@Canvas
+        val radius = minOf(cornerRadius.toPx(), size.width / 2f, size.height / 2f)
+        val sideWidth = minOf(1.dp.toPx().coerceAtLeast(1f), size.width / 2f, size.height / 2f)
+        val inset = sideWidth / 2f
+        drawRoundRect(
+            brush = Brush.verticalGradient(
+                0f to Color.Transparent, 0.5f to Color.Transparent,
+                0.85f to Color(0xFFECEEEF), 1f to Color(0xFFE3E7EA),
+            ),
+            topLeft = Offset(inset, inset),
+            size = Size(size.width - sideWidth, size.height - sideWidth),
+            cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f)),
+            style = Stroke(sideWidth),
+        )
+        val bottomHeight = minOf(2.dp.toPx().coerceAtLeast(1f), size.height / 2f)
+        val bottomTop = size.height - bottomHeight
+        clipRect(top = bottomTop) {
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    0f to Color.White, 0.6f to Color(0xFFF0F2F3), 1f to Color(0xFFD8DCDE),
+                    startY = bottomTop, endY = size.height,
+                ),
+                cornerRadius = CornerRadius(radius),
+            )
+        }
+    }
+}
 
 internal enum class HomeWidgetBackdropVariant { STANDARD, CALENDAR, BOOK_NEWS }
 
@@ -79,8 +128,14 @@ private fun homeWidgetSkin(styleId: String): HomeWidgetSkin? = when (styleId) {
     else -> null
 }
 
-/** One palette per family; basic glass keeps its existing theme-owned palette. */
-internal fun homeWidgetSkinPalette(styleId: String): HomeListeningPalette? = homeWidgetSkin(styleId)?.palette
+/** White cards keep dark text even when the surrounding page uses a dark theme. */
+@Composable
+internal fun homeWidgetSkinPalette(styleId: String): HomeListeningPalette? =
+    if (styleId == "white") HomeListeningPalette(
+        foreground = Color(0xFF202124), secondary = Color(0xFF5F6368),
+        primary = Color(NgTheme.colors.primary), primaryContent = Color.White,
+        secondaryContainer = Color(0xFFF2F4F5), secondaryContent = Color(0xFF202124),
+    ) else homeWidgetSkin(styleId)?.palette
 
 /** Shared native material, with explicitly scoped artwork below the component's content. */
 @Composable

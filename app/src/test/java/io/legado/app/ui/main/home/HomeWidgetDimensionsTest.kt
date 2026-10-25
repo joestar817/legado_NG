@@ -12,6 +12,18 @@ class HomeWidgetDimensionsTest {
         }
     }
 
+    @Test fun `white small cards use the plain compact measurements`() {
+        listOf("listening", "reading").forEach { typeId ->
+            val white = HomeWidgetCatalog.variantsForSize(typeId, HomeWidgetSize.SMALL)
+                .first { it.styleId == "white" }
+            assertEquals(listOf(white), homeWidgetMeasureVariants(typeId, HomeWidgetSize.SMALL, white))
+            assertEquals(dimensions().height(HomeWidgetSize.SMALL, false, typeId, "basic"),
+                dimensions().height(HomeWidgetSize.SMALL, false, typeId, "white"))
+            assertEquals(dimensions().height(HomeWidgetSize.SMALL, true, typeId, "basic"),
+                dimensions().height(HomeWidgetSize.SMALL, true, typeId, "white"))
+        }
+    }
+
     @Test fun `decorated small probes retain their artwork without reusing the compact probe`() {
         listOf("storybook", "night").forEach { style ->
             val listening = HomeWidgetCatalog.variantsForSize("listening", HomeWidgetSize.SMALL).first { it.styleId == style }
@@ -146,7 +158,7 @@ class HomeWidgetDimensionsTest {
 
     @Test fun `small news cards use their measured body without a shared 280dp floor`() {
         val measured = dimensions().copy(updatesSmallHeader = 40.dp, updatesSmallBody = 180.dp)
-        listOf("basic", "storybook", "night").forEach { styleId ->
+        listOf("basic", "storybook", "night", "white").forEach { styleId ->
             assertEquals(40.dp, dimensions().header(HomeWidgetSize.SMALL, "updates", styleId))
             assertEquals(0.dp, dimensions().body(HomeWidgetSize.SMALL, "updates", styleId))
             assertEquals(220.dp, measured.height(HomeWidgetSize.SMALL, false, "updates", styleId))
@@ -157,7 +169,7 @@ class HomeWidgetDimensionsTest {
     @Test fun `small news height is isolated from both other small groups`() {
         val otherGroupsExpanded = dimensions(header = 72, smallBody = 300,
             compactHeader = 64, compactBody = 250).copy(updatesSmallHeader = 40.dp, updatesSmallBody = 180.dp)
-        listOf("basic", "storybook", "night").forEach { styleId ->
+        listOf("basic", "storybook", "night", "white").forEach { styleId ->
             assertEquals(220.dp, otherGroupsExpanded.height(HomeWidgetSize.SMALL, false, "updates", styleId))
         }
         val newsExpanded = dimensions().copy(updatesSmallHeader = 72.dp, updatesSmallBody = 310.dp)

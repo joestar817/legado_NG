@@ -44,6 +44,7 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Callable
 import java.util.concurrent.TimeUnit
 import androidx.core.content.edit
 import io.legado.app.model.VideoPlay.VIDEO_PREF_NAME
@@ -72,6 +73,7 @@ object Backup {
             "rssStar.json",
             "replaceRule.json",
             "readRecord.json",
+            ReadingTimeBackup.fileName,
             "searchHistory.json",
             "sourceSub.json",
             "txtTocRule.json",
@@ -154,7 +156,16 @@ object Backup {
         writeListToJson(appDb.rssSourceDao.all, "rssSources.json", backupPath)
         writeListToJson(appDb.rssStarDao.all, "rssStar.json", backupPath)
         writeListToJson(appDb.replaceRuleDao.all, "replaceRule.json", backupPath)
-        writeListToJson(appDb.readRecordDao.all, "readRecord.json", backupPath)
+        // The per-book, total and calendar files must describe the same committed checkpoint.
+        val readingRecords = appDb.runInTransaction(Callable {
+            appDb.readRecordDao.all to ReadingTimeBackup.Snapshot(
+                appDb.readingTimeTotalDao.totalReadTime,
+                appDb.dailyReadingRecordDao.all.associate { it.epochDay to it.readTime },
+            )
+        })
+        writeListToJson(readingRecords.first, "readRecord.json", backupPath)
+        FileUtils.createFileIfNotExist(backupPath + File.separator + ReadingTimeBackup.fileName)
+            .writeText(ReadingTimeBackup.encode(readingRecords.second))
         writeListToJson(appDb.searchKeywordDao.all, "searchHistory.json", backupPath)
         writeListToJson(appDb.ruleSubDao.all, "sourceSub.json", backupPath)
         writeListToJson(appDb.txtTocRuleDao.all, "txtTocRule.json", backupPath)

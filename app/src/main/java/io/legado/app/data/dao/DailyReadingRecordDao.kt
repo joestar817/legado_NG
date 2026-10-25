@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DailyReadingRecordDao {
+    @get:Query("SELECT * FROM dailyReadingRecords ORDER BY epochDay")
+    val all: List<DailyReadingRecord>
+
     @Query("SELECT * FROM dailyReadingRecords WHERE epochDay BETWEEN :startEpochDay AND :endEpochDay ORDER BY epochDay")
     fun getBetween(startEpochDay: Long, endEpochDay: Long): List<DailyReadingRecord>
 
@@ -21,6 +24,16 @@ interface DailyReadingRecordDao {
 
     @Query("UPDATE dailyReadingRecords SET readTime = readTime + :readTime WHERE epochDay = :epochDay")
     fun increment(epochDay: Long, readTime: Long)
+
+    @Query("UPDATE dailyReadingRecords SET readTime = MAX(readTime, :readTime) WHERE epochDay = :epochDay")
+    fun mergeExisting(epochDay: Long, readTime: Long)
+
+    @Transaction
+    fun mergeAtLeast(epochDay: Long, readTime: Long) {
+        require(readTime >= 0L)
+        insertDate(DailyReadingRecord(epochDay))
+        mergeExisting(epochDay, readTime)
+    }
 
     @Transaction
     fun addTime(epochDay: Long, readTime: Long) {

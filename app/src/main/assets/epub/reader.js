@@ -1270,6 +1270,20 @@
         }
     }
     async function configure(value) {
+        // This path is admitted by the native OPF manifest check, never inferred from book CSS.
+        // A selector gate also covers documents staged before their per-book options are known.
+        var decorationPath = value.ngNativePageDecorationCssPath;
+        var nativeDecorations = typeof decorationPath === 'string' &&
+            Array.prototype.some.call(document.querySelectorAll('link[rel~=stylesheet]'), function (link) {
+                try {
+                    var url = new URL(link.getAttribute('href'), document.baseURI);
+                    return url.origin === location.origin && decodeURIComponent(url.pathname) === '/' + decorationPath;
+                } catch (_) { return false; }
+            });
+        if (value.ngExportedReadStyle) {
+            if (nativeDecorations) root.setAttribute('data-ng-native-page-decorations', '');
+            else root.removeAttribute('data-ng-native-page-decorations');
+        }
         styleUpdatePending = false; styleReflowPending = false; styleSelection = null;
         cancelConfiguration();
         var mine = generation;
@@ -1291,7 +1305,7 @@
                     contentCache = { url: contentUrl.href, value: contentValue };
                 }
                 if (mine !== generation) return;
-                window.__ngEpubContent.apply(contentValue);
+                window.__ngEpubContent.apply(contentValue, value.ngHighlightNight);
                 var styleWarnings = await window.__ngEpubContent.loadFonts();
                 if (mine !== generation) return;
                 styleWarnings.forEach(function (warning) { resourceWarnings.add(warning); });
@@ -1377,6 +1391,13 @@
             Array.from(body.querySelectorAll(headingSelector)).forEach(function (heading) {
                 adjust(heading, { 'text-align': title.align || 'start',
                     'margin-block-start': (title.top || 0) + 'px', 'margin-block-end': (title.bottom || 0) + 'px' });
+                if (value.ngExportedReadStyle && heading.matches('.ng-read-title[data-ng-read-title="1"]')) {
+                    // Native title ranges own segmentation in reader mode. Keep the exported source
+                    // text/nodes intact while removing its visual block breaks and authored spacing.
+                    adjust(heading, { display: title.hidden ? 'none' : 'block' });
+                    Array.from(heading.children).filter(function (element) { return element.matches('.ng-title-segment'); })
+                        .forEach(function (element) { adjust(element, { display: 'inline', 'margin-top': '0', 'margin-bottom': '0' }); });
+                }
                 [heading].concat(Array.from(heading.querySelectorAll('*'))).forEach(function (el) {
                     if (el.localName.startsWith('ng-') || ['img','svg','br'].includes(el.localName) || el.closest('svg')) return;
                     adjust(el, { 'font-family': titleFamily, 'font-size': el === heading ? (title.fontSize || reader.fontSize || 18) + 'px' : 'inherit',

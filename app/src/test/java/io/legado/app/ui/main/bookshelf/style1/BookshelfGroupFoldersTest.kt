@@ -8,6 +8,20 @@ import org.junit.Test
 
 class BookshelfGroupFoldersTest {
     @Test
+    fun lastBitFolderIncludesBooksWithOtherMemberships() {
+        val group = BookGroup(groupId = Long.MIN_VALUE, bookSort = 3)
+        val books = listOf(
+            Book(bookUrl = "last-only", group = Long.MIN_VALUE),
+            Book(bookUrl = "last-and-first", group = Long.MIN_VALUE or 1),
+            Book(bookUrl = "other", group = 1),
+        )
+        assertEquals(
+            listOf("last-only", "last-and-first"),
+            buildBookshelfGroupFolders(listOf(group), books).single().books.map { it.bookUrl },
+        )
+    }
+
+    @Test
     fun ungroupedIncludesLocalAndOnlineButExcludesHiddenCustomGroups() {
         val ungrouped = BookGroup(groupId = BookGroup.IdNoGroup, bookSort = 3)
         val hidden = BookGroup(groupId = 1, show = false)

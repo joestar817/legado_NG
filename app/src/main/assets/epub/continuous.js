@@ -13,13 +13,16 @@
         var selectionTransparent = false;
         var linkHandler = null;
         var failures = new Map(), failedBefore = null, failedAfter = null, selectionError = null;
-        var chaptersByPath = new Map();
+        var chaptersByPath = new Map(), windowUpdate = 0;
         var base = new URL(document.baseURI);
-        documents = documents.map(function (value) {
-            var url = new URL(value.url, base);
-            if (url.origin !== base.origin || url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error('EPUB document origin mismatch');
-            return Object.assign({}, value, { url: url.href });
-        });
+        function normalizeDocuments(values) {
+            return values.map(function (value) {
+                var url = new URL(value.url, base);
+                if (url.origin !== base.origin || url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error('EPUB document origin mismatch');
+                return Object.assign({}, value, { url: url.href });
+            });
+        }
+        documents = normalizeDocuments(documents);
         function check(mine) { if (closed || mine !== revision) throw new Error('continuous-cancelled'); }
         function frame() { return new Promise(function (resolve) { requestAnimationFrame(resolve); }); }
         function bindLinks(entry) {
@@ -98,7 +101,7 @@
                     bindLinks(entry);
                     ['mousedown', 'touchstart', 'focusin'].forEach(function (event) {
                         iframe.contentDocument.addEventListener(event, function () {
-                            if (!closed && visible.includes(i)) active = i;
+                            if (!closed && entries.get(entry.index) === entry && visible.includes(entry.index)) active = entry.index;
                         }, { capture: true, passive: true });
                     });
                     entries.set(i, entry); lengths.set(i, length);
@@ -321,6 +324,131 @@
                 if (queued) drain();
             } catch (failure) { if (mine === revision && !closed) { status = 'error'; error = String(failure.message || failure); } }
         }
+        function sameValue(left, right) {
+            function ordered(value) {
+                if (Array.isArray(value)) return value.map(ordered);
+                if (value && typeof value === 'object') return Object.keys(value).sort().reduce(function (result, key) {
+                    result[key] = ordered(value[key]); return result;
+                }, {});
+                return value;
+            }
+            return JSON.stringify(ordered(left)) === JSON.stringify(ordered(right));
+        }
+        function windowLayout(value) {
+            var layout = Object.assign({}, value);
+            ['token', 'documents', 'contentUrl', 'index', 'page', 'offset', 'location', 'textOffset', 'fragment', 'last',
+                'preservePosition', 'retainWindowPosition', 'highlights', 'aloud', 'selectionTransparent',
+                'startFragment', 'endFragment', 'titleSegments', 'titleSegmentsByDocument', 'textTransforms',
+                'sourceChapters', 'noteMarkers'].forEach(function (key) { delete layout[key]; });
+            return layout;
+        }
+        function documentKey(item) {
+            return JSON.stringify([item.url, item.contentUrl ? new URL(item.contentUrl, base).href : null,
+                item.startFragment || null, item.endFragment || null]);
+        }
+        function documentLayout(value, item) {
+            var metadata = Object.assign({}, item);
+            ['url', 'contentUrl', 'occurrence', 'title'].forEach(function (key) { delete metadata[key]; });
+            return { metadata: metadata,
+                chapters: (value.sourceChapters || []).filter(function (chapter) { return chapter.path === item.path; }),
+                titles: (value.titleSegmentsByDocument || {})[item.occurrence] || [],
+                transform: (value.textTransforms || {})[item.occurrence] || null,
+                notes: (value.noteMarkers || []).filter(function (mark) { return mark.occurrence === item.occurrence; }).map(function (mark) {
+                    var note = Object.assign({}, mark); delete note.occurrence; return note;
+                }) };
+        }
+        function hasSelection() {
+            return Array.from(entries.values()).some(function (entry) { return entry.iframe.contentWindow.getSelection().rangeCount > 0; });
+        }
+        async function updateWindow(value, nextDocuments, current) {
+            // Reuse only an unchanged, settled layout. Reflow/restoration keeps configure's
+            // original path; window indices alone never establish a document's identity.
+            if (closed || current && !current() || status !== 'ready' || value.preservePosition || hasSelection() ||
+                !sameValue(windowLayout(options), windowLayout(value))) return false;
+            var next = normalizeDocuments(nextDocuments), identities = new Map(), mapping = new Map(), oldIdentities = new Set();
+            if (!next.length) return false;
+            for (var n = 0; n < next.length; n++) {
+                var identity = documentKey(next[n]);
+                if (identities.has(identity)) return false;
+                identities.set(identity, n);
+            }
+            for (var i = 0; i < documents.length; i++) {
+                var key = documentKey(documents[i]);
+                if (oldIdentities.has(key)) return false;
+                oldIdentities.add(key);
+                if (!identities.has(key)) continue;
+                var target = identities.get(key);
+                if (!sameValue(documentLayout(options, documents[i]), documentLayout(value, next[target]))) return false;
+                mapping.set(i, target);
+            }
+            function retainedWindow() {
+                if (!mapping.has(index) || !mapping.has(active) || visible.some(function (i) { return !mapping.has(i); })) return false;
+                // Inserting/removing a source inside the visible span changes its geometry.
+                for (var i = index; i < renderEnd; i++) if (mapping.get(i) !== mapping.get(index) + i - index) return false;
+                return true;
+            }
+            if (!retainedWindow()) return false;
+            var mine = revision, previousToken = token, styles = styleRevision, update = ++windowUpdate;
+            await settle();
+            // Two window requests can settle the same old revision. Only the newest
+            // owner may replace that window, before either request increments revision.
+            if (update !== windowUpdate || current && !current()) return false;
+            check(mine);
+            if (token !== previousToken || styles !== styleRevision || status !== 'ready' || hasSelection() || !retainedWindow()) return false;
+            // Old speculative loads must not bind their old numeric indices into this window.
+            mine = ++revision; styles = ++styleRevision;
+            pending.forEach(function (cancel) { cancel(); }); pending.clear(); loads.clear();
+            Array.from(entries.keys()).forEach(function (i) { if (!mapping.has(i)) dispose(i); });
+            function remap(values) {
+                var mapped = new Map();
+                values.forEach(function (value, i) { if (mapping.has(i)) mapped.set(mapping.get(i), value); });
+                return mapped;
+            }
+            function mappedIndex(i) { return mapping.has(i) ? mapping.get(i) : null; }
+            entries = remap(entries); entries.forEach(function (entry, i) { entry.index = i; });
+            lengths = remap(lengths); emptySources = remap(emptySources); failures = remap(failures);
+            index = mapping.get(index); active = mapping.get(active); visible = visible.map(function (i) { return mapping.get(i); });
+            wanted = new Set(Array.from(wanted).filter(function (i) { return mapping.has(i); }).map(function (i) { return mapping.get(i); }));
+            renderEnd = mapping.has(renderEnd - 1) ? mapping.get(renderEnd - 1) + 1 : index;
+            boundaryBefore = mappedIndex(boundaryBefore); boundaryAfter = mappedIndex(boundaryAfter);
+            failedBefore = mappedIndex(failedBefore); failedAfter = mappedIndex(failedAfter);
+            var occurrences = new Map();
+            mapping.forEach(function (target, i) { occurrences.set(documents[i].occurrence, next[target].occurrence); });
+            var marks = Array.isArray(value.highlights) ? value.highlights : highlightData.filter(function (mark) {
+                return occurrences.has(mark.occurrence);
+            }).map(function (mark) { return Object.assign({}, mark, { occurrence: occurrences.get(mark.occurrence) }); });
+            documents = next; options = value; token = value.token; status = 'loading'; error = null;
+            queued = 0; draining = false; overshoot = 0; selectionError = null;
+            chaptersByPath.clear();
+            (value.sourceChapters || []).forEach(function (chapter) {
+                if (!chaptersByPath.has(chapter.path)) chaptersByPath.set(chapter.path, []);
+                chaptersByPath.get(chapter.path).push(chapter);
+            });
+            setHighlights(marks);
+            if (typeof value.selectionTransparent === 'boolean') selectionTransparent = value.selectionTransparent;
+            entries.forEach(function (entry) { entry.api.setSelectionTransparent(selectionTransparent); });
+            function currentUpdate() {
+                return !closed && mine === revision && update === windowUpdate && styles === styleRevision &&
+                    token === value.token && (!current || current());
+            }
+            function checkUpdate() { if (!currentUpdate()) throw new Error('continuous-cancelled'); }
+            try {
+                if (!value.retainWindowPosition) {
+                    index = Math.max(0, Math.min(documents.length - 1, value.index || 0)); offset = 0;
+                    failures.delete(index); failedBefore = null; failedAfter = null; boundaryBefore = null; boundaryAfter = null;
+                    var entry = await ensure(index, mine); checkUpdate();
+                    while (!entry.length && index + 1 < documents.length) { entry = await ensure(++index, mine); checkUpdate(); }
+                    axis = entry.axis || 'y'; sign = entry.sign || 1; extent = axis === 'x' ? width : height;
+                    if (entry.api && (value.location || value.fragment || value.textOffset != null)) offset = entry.api.flowPosition(value) || 0;
+                    else if (value.last) offset = Math.max(0, entry.length - extent);
+                }
+                await shift(value.retainWindowPosition ? 0 : value.offset || 0, mine); checkUpdate();
+                await render(mine, true); checkUpdate();
+                captureLocation(); status = 'ready';
+                if (queued) drain();
+            } catch (failure) { if (currentUpdate()) { status = 'error'; error = String(failure.message || failure); } }
+            return true;
+        }
         async function drain() {
             if (draining || status !== 'ready') return;
             var mine = revision; draining = true;
@@ -409,6 +537,11 @@
             check(mine);
             captureLocation();
             return state();
+        }
+        function scrollAndSettle(delta) {
+            // Let settle own this drain so its result includes the final location capture.
+            if (Number.isFinite(delta)) queued += delta;
+            return settle();
         }
         async function move(value) {
             if (closed) return;
@@ -568,7 +701,14 @@
             return Object.assign({}, result, { token: token, index: entry.index, document: documents[entry.index], location: sourceLocation,
                 chapterBoundaries: entry.api.state().chapterBoundaries, textLength: entry.api.state().textLength });
         }
-        return Object.freeze({ configure: configure, updateStyles: updateStyles, seek: seek, move: move, prepareSelection: prepareSelection,
+        function setHighlights(values) {
+            highlightData = values.map(function (value) { return Object.assign({}, value, {
+                occurrence: value.occurrence == null ? documents[active].occurrence : value.occurrence }); });
+            entries.forEach(function (entry) { entry.api.setHighlights(highlightData.filter(function (mark) {
+                return mark.occurrence === documents[entry.index].occurrence;
+            })); });
+        }
+        return Object.freeze({ configure: configure, updateWindow: updateWindow, updateStyles: updateStyles, seek: seek, move: move, prepareSelection: prepareSelection,
             cancelConfiguration: function () {
                 revision++; styleRevision++; queued = 0; draining = false;
                 pending.forEach(function (cancel) { cancel(); }); pending.clear(); loads.clear();
@@ -577,7 +717,7 @@
             setLinkHandler: function (handler) { linkHandler = typeof handler === 'function' ? handler : null; entries.forEach(bindLinks); },
             beginScroll: function () { overshoot = 0; },
             scrollBy: function (delta) { if (Number.isFinite(delta)) { queued += delta; drain(); } return state(); },
-            settle: settle, state: state, interact: interact, captureLocation: captureLocation,
+            scrollAndSettle: scrollAndSettle, settle: settle, state: state, interact: interact, captureLocation: captureLocation,
             revealText: function (textOffset) {
                 var entry = entries.get(active); if (!entry) return null;
                 var position = entry.api.flowPosition(textOffset && typeof textOffset === 'object' ? { location: textOffset } : { textOffset: textOffset });
@@ -590,13 +730,7 @@
             mediaOverlay: function (value) {
                 entries.forEach(function (entry) { entry.api.mediaOverlay(entry.index === active ? value : {}); });
             },
-            setHighlights: function (values) {
-                highlightData = values.map(function (value) { return Object.assign({}, value, {
-                    occurrence: value.occurrence == null ? documents[active].occurrence : value.occurrence }); });
-                entries.forEach(function (entry) { entry.api.setHighlights(highlightData.filter(function (mark) {
-                    return mark.occurrence === documents[entry.index].occurrence;
-                })); });
-            },
+            setHighlights: setHighlights,
             setSelectionTransparent: function (value) {
                 selectionTransparent = !!value;
                 entries.forEach(function (entry) { entry.api.setSelectionTransparent(selectionTransparent); });

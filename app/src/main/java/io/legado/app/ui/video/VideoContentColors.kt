@@ -14,6 +14,7 @@ internal data class VideoContentColors(
     val content: Color,
     val muted: Color,
     val accent: Color,
+    val selectedContainer: Color,
     val onAccent: Color,
 )
 
@@ -28,7 +29,23 @@ internal fun videoContentColors(): VideoContentColors {
             content = if (theme.isDark) Color(0xFFF4F4F5) else Color(0xFF1D1D1F),
             muted = if (theme.isDark) Color(0xFFADB1BC) else Color(0xFF6E6E73),
             accent = Color(theme.colors.primary),
-            onAccent = Color(NgColorMath.readableContentColor(theme.colors.primary, theme.colors.onPrimary)),
+            selectedContainer = Color(videoSelectedContainer(theme.colors.primary)),
+            onAccent = Color.White,
         )
     }
+}
+
+/** Only filled selections are darkened, so white labels and checks remain readable. */
+private fun videoSelectedContainer(primary: Int): Int {
+    val background = NgColorMath.opaque(primary)
+    val white = android.graphics.Color.WHITE
+    if (NgColorMath.contrastRatio(background, white) >= 4.5) return background
+    var low = 0f
+    var high = 1f
+    repeat(12) {
+        val amount = (low + high) / 2
+        val candidate = NgColorMath.blend(background, android.graphics.Color.BLACK, amount)
+        if (NgColorMath.contrastRatio(candidate, white) >= 4.5) high = amount else low = amount
+    }
+    return NgColorMath.blend(background, android.graphics.Color.BLACK, high)
 }

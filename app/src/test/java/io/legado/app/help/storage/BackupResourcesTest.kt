@@ -1,6 +1,7 @@
 package io.legado.app.help.storage
 
 import com.google.gson.JsonParser
+import com.google.gson.JsonObject
 import io.legado.app.constant.PreferKey
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -77,6 +78,150 @@ class BackupResourcesTest {
         assertEquals("font", result.get("sampleText").asString)
         assertEquals("resolved:font", result.get("fontPath").asString)
         assertEquals("resolved:image", result.getAsJsonArray("lightImages")[0].asString)
+    }
+
+    @Test fun independentBookHeaderImageIsCollectedAndRestoredInsideStoredStyle() {
+        val originalStyle = JsonParser.parseString("""{
+            "headerImage":"/pictures/header.png","headerImageEnabled":true,
+            "headerImageWidth":1920,"headerImageHeight":540,
+            "name":"backup-resource://keep-name",
+            "highlightRules":[{
+                "pattern":"backup-resource://resources/header.png",
+                "sampleText":"/pictures/header.png"
+            }]
+        }""").asJsonObject
+        val book = JsonObject().apply {
+            addProperty("name", "/pictures/header.png")
+            add("readConfig", JsonObject().apply {
+                addProperty("independentReadStyle", originalStyle.toString())
+                addProperty("pageOffset", 12)
+            })
+        }
+        val copied = mutableListOf<String>()
+        BackupResources.collectBookReadStyleResources(book) { reference ->
+            copied += reference
+            "backup-resource://resources/header.png"
+        }
+        assertEquals(listOf("/pictures/header.png"), copied)
+        val packaged = JsonParser.parseString(
+            book.getAsJsonObject("readConfig").get("independentReadStyle").asString,
+        ).asJsonObject
+        val expected = originalStyle.deepCopy().apply {
+            addProperty("headerImage", "backup-resource://resources/header.png")
+        }
+        assertEquals(expected, packaged)
+
+        val restoredBook = BackupResources.transform(book) { reference ->
+            reference.replace("backup-resource://", "/restored/")
+        }.asJsonObject
+        val restored = JsonParser.parseString(
+            restoredBook.getAsJsonObject("readConfig").get("independentReadStyle").asString,
+        ).asJsonObject
+        expected.addProperty("headerImage", "/restored/resources/header.png")
+        assertEquals(expected, restored)
+        assertEquals("/pictures/header.png", restoredBook.get("name").asString)
+        assertEquals(12, restoredBook.getAsJsonObject("readConfig").get("pageOffset").asInt)
+    }
+
+    @Test fun legacyBookStylesWithoutImageStayOpaqueAndUnchanged() {
+        listOf(
+            "legacy-style-name",
+            "{invalid-json",
+            "[]",
+            "{ \"textSize\": 24, \"pattern\": \"backup-resource://keep\" }",
+        ).forEach { storedStyle ->
+            val book = JsonObject().apply {
+                add("readConfig", JsonObject().apply { addProperty("independentReadStyle", storedStyle) })
+            }
+            BackupResources.collectBookReadStyleResources(book) { error("No resource should be collected") }
+            val restored = BackupResources.transform(book) { error("No resource should be rewritten") }.asJsonObject
+            assertEquals(storedStyle, restored.getAsJsonObject("readConfig").get("independentReadStyle").asString)
+        }
+    }
+
+    @Test fun globalHeaderImageReferenceRewritesWithoutChangingDimensionsOrText() {
+        val config = JsonParser.parseString("""{
+            "headerImage":"backup-resource://resources/header.png","headerImageEnabled":false,
+            "headerImageWidth":1920,"headerImageHeight":540,
+            "pattern":"backup-resource://resources/header.png",
+            "sampleText":"backup-resource://resources/header.png"
+        }""").asJsonObject
+        val expected = config.deepCopy().apply {
+            addProperty("headerImage", "/restored/header.png")
+        }
+
+        assertEquals(expected, BackupResources.transform(config) { "/restored/header.png" })
+    }
+
+    @Test fun independentFontOnlyStyleDoesNotDependOnAnImageKey() {
+        val style = JsonParser.parseString("""{
+            "textFont":"/fonts/body.ttf","titleFont":"/fonts/title.ttf",
+            "titleColor":-125,"titleColorNight":-250,
+            "future":{"path":"backup-resource://keep-unknown"}
+        }""").asJsonObject
+        val book = JsonObject().apply {
+            add("readConfig", JsonObject().apply {
+                addProperty("independentReadStyle", style.toString())
+            })
+        }
+        val copied = mutableListOf<String>()
+        BackupResources.collectBookReadStyleResources(book) {
+            copied += it
+            "backup-resource://resources/${it.substringAfterLast('/')}"
+        }
+        assertEquals(listOf("/fonts/body.ttf", "/fonts/title.ttf"), copied)
+
+        val restored = BackupResources.transform(book) {
+            it.replace("backup-resource://resources/", "/restored/")
+        }.asJsonObject
+        val actual = JsonParser.parseString(
+            restored.getAsJsonObject("readConfig").get("independentReadStyle").asString,
+        ).asJsonObject
+        val expected = style.deepCopy().apply {
+            addProperty("textFont", "/restored/body.ttf")
+            addProperty("titleFont", "/restored/title.ttf")
+        }
+        assertEquals(expected, actual)
+    }
+
+    @Test fun independentStyleCollectsEveryReaderResourceWithoutChangingOtherFields() {
+        val style = JsonParser.parseString("""{
+            "bgType":2,"bgStr":"/images/day.png","bgTypeNight":2,"bgStrNight":"/images/night.png",
+            "bgTypeEInk":1,"bgStrEInk":"bundled.webp",
+            "textFont":"/fonts/body.ttf","titleFont":"/fonts/title.ttf",
+            "headerFont":"/fonts/header.ttf","footerFont":"/fonts/footer.ttf",
+            "headerImage":"/images/header.png","footerImage":"/images/footer.png",
+            "footerImageEnabled":false,"footerImageWidth":480,"footerImageHeight":80,
+            "highlightRules":[{"pattern":"/images/rule.png","bgImage":"/images/rule.png",
+                "fontPath":"/fonts/rule.ttf"}],"future":{"path":"do-not-change"}
+        }""").asJsonObject
+        val book = JsonObject().apply {
+            add("readConfig", JsonObject().apply { addProperty("independentReadStyle", style.toString()) })
+        }
+        val references = mutableListOf<String>()
+        BackupResources.collectBookReadStyleResources(book) {
+            references += it
+            "backup-resource://resources/${it.substringAfterLast('/')}"
+        }
+        assertEquals(listOf("/images/day.png", "/images/night.png", "/fonts/body.ttf", "/fonts/title.ttf",
+            "/fonts/header.ttf", "/fonts/footer.ttf", "/images/header.png", "/images/footer.png",
+            "/images/rule.png", "/fonts/rule.ttf"), references)
+        val restored = BackupResources.transform(book) {
+            it.replace("backup-resource://resources/", "/restored/")
+        }.asJsonObject
+        val actual = JsonParser.parseString(
+            restored.getAsJsonObject("readConfig").get("independentReadStyle").asString,
+        ).asJsonObject
+        val expected = style.deepCopy()
+        listOf("bgStr", "bgStrNight", "textFont", "titleFont", "headerFont", "footerFont",
+            "headerImage", "footerImage").forEach { key ->
+            expected.addProperty(key, "/restored/${style.get(key).asString.substringAfterLast('/')}")
+        }
+        expected.getAsJsonArray("highlightRules")[0].asJsonObject.apply {
+            addProperty("bgImage", "/restored/rule.png")
+            addProperty("fontPath", "/restored/rule.ttf")
+        }
+        assertEquals(expected, actual)
     }
 
     @Test fun drawerImagesAreCollectedAndRestoredWithoutChangingThemeValues() {

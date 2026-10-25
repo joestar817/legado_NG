@@ -18,7 +18,7 @@ internal val HomeWidgetGridGap = 12.dp
 internal fun HomeWidgetSize.standardHeight(): Dp = if (this == HomeWidgetSize.SMALL) 280.dp else HomeWidgetSkinHeaderHeight
 
 internal fun isCompactHomeWidgetSmall(size: HomeWidgetSize, typeId: String?, styleId: String?): Boolean =
-    size == HomeWidgetSize.SMALL && styleId == "basic" && (typeId == "reading" || typeId == "listening")
+    size == HomeWidgetSize.SMALL && isPlainHomeWidgetStyle(styleId) && (typeId == "reading" || typeId == "listening")
 
 internal data class HomeWidgetBodyKey(val typeId: String, val styleId: String, val instanceId: String? = null)
 
@@ -81,7 +81,7 @@ internal fun homeWidgetMeasureVariants(typeId: String, size: HomeWidgetSize,
     if (selected != null && isCompactHomeWidgetSmall(size, typeId, selected.styleId)) return listOf(selected)
     // Reading decorations retain their footer even though basic glass no longer reserves it.
     if (size == HomeWidgetSize.SMALL && typeId == "reading" && selected != null) return listOf(selected)
-    return if (typeId == "listening") variants.filter { selected == null || it.styleId != "basic" }
+    return if (typeId == "listening") variants.filter { selected == null || !isPlainHomeWidgetStyle(it.styleId) }
         else variants.filter { it.styleId == "basic" }
 }
 

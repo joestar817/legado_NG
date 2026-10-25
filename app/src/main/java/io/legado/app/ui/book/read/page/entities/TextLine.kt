@@ -272,7 +272,7 @@ data class TextLine(
         var index = 0
         while (index < columns.size) {
             val column = columns[index]
-            val color = column.readStyle?.bgColor
+            val color = column.readStyle?.resolveBackgroundColor(ReadBookConfig.isNightTheme)
             if (color == null) {
                 index++
                 continue
@@ -281,7 +281,7 @@ data class TextLine(
             var next = index + 1
             while (
                 next < columns.size &&
-                columns[next].readStyle?.bgColor == color
+                columns[next].readStyle?.resolveBackgroundColor(ReadBookConfig.isNightTheme) == color
             ) {
                 end = columns[next].end
                 next++
@@ -336,26 +336,27 @@ data class TextLine(
 
     private fun drawHighlightUnderlines(canvas: Canvas) {
         if (!hasReadStyle) return
+        val isNight = ReadBookConfig.isNightTheme
         val columns = textColumns.filterIsInstance<TextColumn>()
         var index = 0
         while (index < columns.size) {
             val column = columns[index]
-            val style = column.readStyle
+            val style = column.readStyle?.forTheme(isNight)
             if (style == null || style.underlineMode == 0) {
                 index++
                 continue
             }
             var end = column.end
             var next = index + 1
-            while (next < columns.size && columns[next].readStyle == style) {
+            while (next < columns.size && columns[next].readStyle?.forTheme(isNight) == style) {
                 end = columns[next].end
                 next++
             }
             val paint = PaintPool.obtain()
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = style.underlineWidth.dpToPx()
-            paint.color = style.underlineColor
-                ?: style.textColor
+            paint.color = style.resolveUnderlineColor(ReadBookConfig.isNightTheme)
+                ?: style.resolveTextColor(ReadBookConfig.isNightTheme)
                 ?: ReadBookConfig.textColor
             val lineY = height + style.underlineOffset.dpToPx()
             when (style.underlineMode) {

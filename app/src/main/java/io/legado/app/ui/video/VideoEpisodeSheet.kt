@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -52,6 +54,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import io.legado.app.R
 import io.legado.app.data.entities.BookChapter
+import io.legado.app.ui.design.components.compose.NgDrawerDragHandle
+import io.legado.app.ui.design.components.compose.NgDrawerDragHandleVariant
 import kotlinx.coroutines.launch
 
 @Composable
@@ -120,12 +124,17 @@ internal fun VideoEpisodeSheet(
             onDispose { }
         }
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
+            val compactHeight = maxHeight < 280.dp
+            val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+            // Keep the focused field in one composition position while the keyboard opens/closes.
+            val inlineSearch = searching && hasTools && landscape
             Box(Modifier.fillMaxSize().clickable(onClick = onDismiss))
             val shape = if (landscape) RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)
                 else RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             Column(
                 (if (landscape) Modifier.align(Alignment.CenterEnd).width(minOf(420.dp, maxWidth * .55f)).fillMaxHeight()
-                else Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = maxHeight * .72f))
+                else Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .heightIn(max = if (keyboardVisible) maxHeight else maxHeight * .72f))
                     .clip(shape).background(colors.surface)
                     .semantics { dismiss { onDismiss(); true } }
                     .pointerInput(Unit) { detectTapGestures {} },
@@ -138,19 +147,22 @@ internal fun VideoEpisodeSheet(
                     }
                 }
                 Column(dismissOnDrag) {
-                    if (!landscape) Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp)
-                        .size(32.dp, 4.dp).background(colors.content.copy(alpha = .2f), RoundedCornerShape(2.dp)))
-                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 18.dp, end = 10.dp),
+                    if (!landscape) NgDrawerDragHandle(Modifier.padding(top = 8.dp), variant = NgDrawerDragHandleVariant.COMPACT)
+                    Row(Modifier.fillMaxWidth().height(48.dp).padding(start = 18.dp, end = 10.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text("选集", color = colors.content, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (query.isBlank()) "${group?.items?.size ?: 0}集" else "${items.size}/$totalCount",
-                            Modifier.padding(start = 10.dp), color = colors.muted, fontSize = 12.sp)
-                        Spacer(Modifier.weight(1f))
+                        if (inlineSearch) {
+                            EpisodeSearchInput(query, { query = it }, colors, searchFocus, Modifier.weight(1f))
+                        } else {
+                            Text("选集", color = colors.content, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                            Text(if (query.isBlank()) "${group?.items?.size ?: 0}集" else "${items.size}/$totalCount",
+                                Modifier.padding(start = 10.dp), color = colors.muted, fontSize = 12.sp)
+                            Spacer(Modifier.weight(1f))
+                        }
                         if (hasTools) {
-                            EpisodeIcon(R.drawable.ic_search, "搜索剧集", {
+                            EpisodeIcon(R.drawable.ic_search, if (searching) "收起搜索" else "搜索剧集", {
                                 searching = !searching
                                 if (!searching) { query = ""; focus.clearFocus() }
-                            })
+                            }, active = searching)
                             Box {
                                 EpisodeIcon(if (descending) R.drawable.ic_catalog_sort_descending else R.drawable.ic_catalog_sort_ascending,
                                     "选集选项", { menu = true; focus.clearFocus() })
@@ -175,43 +187,36 @@ internal fun VideoEpisodeSheet(
                         }
                     }
                 }
-                if (query.isBlank() && groups.any { it.volume != null }) {
+                if (query.isBlank() && !inlineSearch && groups.any { it.volume != null }) {
                     LazyRow(state = volumeState, contentPadding = PaddingValues(horizontal = 18.dp),
                         horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         itemsIndexed(groups, key = { index, value -> "${index}:${value.volume?.url}" }) { index, value ->
                             val active = groupIndex == index
-                            Box(Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp, max = 200.dp)
+                            Box(Modifier.height(48.dp).widthIn(min = 48.dp, max = 200.dp)
                                 .semantics { selected = active }
                                 .clickable(role = Role.Tab) { browsingVolume = index; focus.clearFocus() }, contentAlignment = Alignment.Center) {
                                 Text(value.volume?.title.orEmpty(), Modifier.padding(vertical = 10.dp), color = if (active) colors.content else colors.muted,
-                                    fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 if (active) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp).background(accent))
                             }
                         }
                     }
                 }
                 if (searching && hasTools) {
-                    LaunchedEffect(Unit) { searchFocus.requestFocus() }
-                    Row(Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(44.dp),
+                    LaunchedEffect(inlineSearch) { searchFocus.requestFocus() }
+                    if (!inlineSearch) Row(Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(48.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Icon(painterResource(R.drawable.ic_search), null, Modifier.size(20.dp), tint = colors.muted)
-                        BasicTextField(query, { query = it }, Modifier.weight(1f).padding(horizontal = 8.dp).focusRequester(searchFocus),
-                            textStyle = TextStyle(color = colors.content, fontSize = 14.sp), singleLine = true,
-                            cursorBrush = SolidColor(accent), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
-                            decorationBox = { field -> Box {
-                                if (query.isEmpty()) Text("搜索集名或集数", color = colors.muted, fontSize = 14.sp)
-                                field()
-                            } })
-                        if (query.isNotEmpty()) TextButton(onClick = { query = "" }) { Text("清空", color = colors.muted, fontSize = 12.sp) }
+                        EpisodeSearchInput(query, { query = it }, colors, searchFocus, Modifier.weight(1f).padding(start = 8.dp))
                     }
                     HorizontalDivider(Modifier.padding(horizontal = 18.dp), color = colors.content.copy(alpha = .12f))
                 }
-                if (items.isEmpty()) Box(Modifier.weight(1f, fill = landscape).fillMaxWidth().heightIn(min = 120.dp), contentAlignment = Alignment.Center) {
+                if (items.isEmpty()) Box(Modifier.weight(1f, fill = landscape).fillMaxWidth()
+                    .heightIn(min = if (compactHeight) 48.dp else 120.dp), contentAlignment = Alignment.Center) {
                     Text(if (query.isBlank()) "暂无可播放剧集" else "未找到相关剧集", color = colors.muted, fontSize = 14.sp)
                 } else if (showGrid) {
                     BoxWithConstraints(Modifier.weight(1f, fill = landscape).fillMaxWidth()) {
-                    val columns = minOf(4, ((maxWidth - 28.dp) / 56.dp).toInt().coerceAtLeast(1))
+                    val columns = minOf(4, ((maxWidth - 28.dp) / 88.dp).toInt().coerceAtLeast(1))
                     LazyVerticalGrid(columns = GridCells.Fixed(columns), state = gridState,
                         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -234,7 +239,7 @@ internal fun VideoEpisodeSheet(
                         }
                     }
                 }
-                if (hasTools && currentItem != null) {
+                if (hasTools && currentItem != null && !compactHeight) {
                     HorizontalDivider(Modifier.padding(horizontal = 18.dp), color = colors.content.copy(alpha = .1f))
                     Text("第${currentItem.episodeIndex + 1}集 · ${currentItem.chapter.title}",
                         Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "定位当前集", onClick = ::locateCurrent)
@@ -249,15 +254,21 @@ internal fun VideoEpisodeSheet(
 @Composable
 private fun EpisodeTile(item: VideoEpisodeItem<BookChapter>, current: Boolean, colors: VideoContentColors,
                         grid: Boolean, duration: Long, volumeTitle: String?, onClick: () -> Unit) {
-    val modifier = Modifier.fillMaxWidth().heightIn(min = if (grid) 48.dp else 56.dp)
+    val modifier = Modifier.fillMaxWidth().heightIn(min = if (grid) 72.dp else 56.dp)
         .clip(RoundedCornerShape(if (grid) 8.dp else 12.dp))
-        .background(if (current && grid) colors.accent else colors.cell)
+        .background(if (current && grid) colors.selectedContainer else colors.cell)
         .semantics { selected = current }.clickable(role = Role.Button, onClick = onClick)
     if (grid) Box(modifier.semantics { contentDescription = "第${item.episodeIndex + 1}集 ${item.chapter.title}" },
         contentAlignment = Alignment.Center) {
         val ink = if (current) colors.onAccent else colors.content
-        Text((item.episodeIndex + 1).toString().padStart(2, '0'), color = ink, fontSize = 15.sp,
-            fontWeight = FontWeight.Medium)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Text((item.episodeIndex + 1).toString().padStart(2, '0'), color = ink, fontSize = 15.sp,
+                fontWeight = FontWeight.Medium)
+            Text(item.chapter.title, Modifier.padding(top = 4.dp), color = ink,
+                fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center)
+        }
         if (item.chapter.isVip && !item.chapter.isPay) Icon(painterResource(R.drawable.ic_lock_outline), "VIP",
             Modifier.align(Alignment.TopEnd).padding(4.dp).size(10.dp), tint = ink)
     } else Row(modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -291,8 +302,31 @@ private fun EpisodeAccess(chapter: BookChapter, tint: Color) {
 }
 
 @Composable
-private fun EpisodeIcon(icon: Int, label: String, onClick: () -> Unit) {
+private fun EpisodeIcon(icon: Int, label: String, onClick: () -> Unit, active: Boolean = false) {
     IconButton(onClick, Modifier.size(48.dp)) {
-        Icon(painterResource(icon), label, Modifier.size(22.dp), tint = videoContentColors().content)
+        val colors = videoContentColors()
+        Icon(painterResource(icon), label, Modifier.size(22.dp), tint = if (active) colors.accent else colors.content)
+    }
+}
+
+@Composable
+private fun EpisodeSearchInput(query: String, onQueryChange: (String) -> Unit, colors: VideoContentColors,
+                               focusRequester: FocusRequester, modifier: Modifier = Modifier) {
+    val focus = LocalFocusManager.current
+    Row(modifier.height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+        BasicTextField(query, onQueryChange, Modifier.weight(1f).focusRequester(focusRequester)
+            .semantics { contentDescription = "搜索集名或集数" },
+            textStyle = TextStyle(color = colors.content, fontSize = 14.sp), singleLine = true,
+            cursorBrush = SolidColor(colors.accent), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+            decorationBox = { field -> Box {
+                if (query.isEmpty()) Text("搜索集名或集数", color = colors.muted, fontSize = 14.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                field()
+            } })
+        if (query.isNotEmpty()) TextButton(onClick = { onQueryChange("") }, modifier = Modifier.height(48.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Text("清空", color = colors.muted, fontSize = 12.sp)
+        }
     }
 }

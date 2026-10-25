@@ -31,7 +31,8 @@ internal object BackupModules {
     }
 
     fun fileModule(name: String): BackupModule = when (name) {
-        "bookshelf.json", "bookmark.json", "bookGroup.json", "readRecord.json" -> BackupModule.BOOKS
+        "bookshelf.json", "bookmark.json", "bookGroup.json", "readRecord.json",
+        ReadingTimeBackup.fileName -> BackupModule.BOOKS
         "bookSource.json", "replaceRule.json", "sourceSub.json", "txtTocRule.json",
         "dictRule.json", "keyboardAssists.json" -> BackupModule.SOURCES
         "rssSources.json", "rssStar.json" -> BackupModule.RSS

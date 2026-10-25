@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -161,7 +162,13 @@ internal fun ColumnScope.HomeWidgetStyleChooser(
             selected = selected.id == variant.id,
             inUse = variant.id in usedIds,
             onSelect = { onSelect(variant.id) },
-            preview = { preview(variant) },
+            preview = {
+                if (variant.styleId == "white") {
+                    Box(Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+                        .background(HomeWhiteWidgetPreviewBackdrop).padding(6.dp),
+                        contentAlignment = Alignment.Center) { preview(variant) }
+                } else preview(variant)
+            },
         )
     }
 }

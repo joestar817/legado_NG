@@ -25,6 +25,7 @@ import io.legado.app.data.entities.BaseSource
 import io.legado.app.data.entities.Book
 import io.legado.app.help.CacheManager
 import io.legado.app.help.DefaultData
+import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgCoverAlbumStore
 import io.legado.app.help.glide.BlurTransformation
@@ -171,6 +172,7 @@ object BookCover {
         if (sourceOrigin != null) {
             options = options.set(OkHttpModelLoader.sourceOriginOption, sourceOrigin)
         }
+        options = mangaCacheOptions(options, path, sourceOrigin)
         return ImageLoader.load(context, path)
             .apply(options)
             .override(context.resources.displayMetrics.widthPixels, SIZE_ORIGINAL)
@@ -195,10 +197,18 @@ object BookCover {
         if (sourceOrigin != null) {
             options = options.set(OkHttpModelLoader.sourceOriginOption, sourceOrigin)
         }
+        options = mangaCacheOptions(options, path, sourceOrigin)
         return Glide.with(context)
             .downloadOnly()
             .apply(options)
             .load(path)
+    }
+
+    /** 这里只捕获请求归属；文件检查仍由 Glide 后台加载线程执行。 */
+    private fun mangaCacheOptions(options: RequestOptions, path: String?, sourceOrigin: String?): RequestOptions {
+        val book = ReadManga.book ?: return options
+        if (path == null || (sourceOrigin != null && sourceOrigin != book.origin)) return options
+        return options.set(OkHttpModelLoader.mangaImageCacheOption, BookHelp.getImage(book, path).path)
     }
 
     /**

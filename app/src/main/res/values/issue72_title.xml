@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="read_title_alignment">对齐方式</string>
+    <string name="read_title_size_spacing">间距与大小</string>
+    <string name="read_title_size_increment">字号增量</string>
+    <string name="read_title_font_color">字体与颜色</string>
+    <string name="read_title_color">标题颜色</string>
+    <string name="read_title_day">日间</string>
+    <string name="read_title_night">夜间</string>
+    <string name="read_title_font">标题字体</string>
+    <string name="read_title_follow_body_font">跟随正文</string>
+    <string name="read_title_color_day">日间标题颜色</string>
+    <string name="read_title_color_night">夜间标题颜色</string>
+    <string name="read_title_line_spacing">行距</string>
+    <string name="read_title_segments">标题分段</string>
+    <string name="read_title_segments_none">不分段</string>
+    <string name="read_title_segments_count">按字数</string>
+    <string name="read_title_segments_flags">分隔符</string>
+    <string name="read_title_segments_regex">正则</string>
+    <string name="read_title_segments_count_value">字数</string>
+    <string name="read_title_flags_hint">分隔符，多个用英文逗号分隔</string>
+    <string name="read_title_regex_hint">在正则匹配后分段</string>
+    <string name="read_title_regex_invalid">正则表达式无效</string>
+    <string name="read_title_segments_scale">后段字号</string>
+    <string name="read_title_segments_spacing">段间距</string>
+</resources>

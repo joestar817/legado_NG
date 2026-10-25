@@ -19,6 +19,9 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.toColorInt
+import androidx.core.os.bundleOf
+import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.viewModels
 import com.github.liuyueyi.quick.transfer.constants.TransType
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
@@ -28,6 +31,7 @@ import io.legado.app.help.DefaultData
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadAppearanceMode
 import io.legado.app.help.config.ReadPresetPreferences
 import io.legado.app.help.config.ReadStylePackageManager
 import io.legado.app.help.config.ReadHighlightRule
@@ -58,7 +62,6 @@ import io.legado.app.utils.postEvent
 import io.legado.app.utils.printOnDebug
 import io.legado.app.utils.readBytes
 import io.legado.app.utils.readUri
-import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.toastOnUi
 import java.io.File
 import java.io.FileOutputStream
@@ -66,9 +69,31 @@ import java.util.UUID
 import kotlin.math.roundToInt
 
 private val EDITOR_FALLBACK_BG_COLOR = 0xFFF7F3EA.toInt()
+private const val ARG_INITIAL_ADJUST = "initialAdjust"
+private const val ARG_RETURN_ADJUST_BOOK = "returnAdjustBook"
+private const val ARG_RETURN_ADJUST_TAG = "returnAdjustTag"
 
-class ReadStyleDialog : BaseComposeDialogFragment(),
-    FontSelectDialog.CallBack {
+internal fun BaseComposeDialogFragment.returnToReadStyleAdjustOnDismiss() {
+    val ownerUrl = arguments?.getString(ARG_RETURN_ADJUST_BOOK) ?: return
+    val host = activity as? ReadBookActivity ?: return
+    showReadStyleAdjust(host, parentFragmentManager, ownerUrl, arguments?.getString(ARG_RETURN_ADJUST_TAG))
+}
+
+private fun showReadStyleAdjust(
+    host: ReadBookActivity,
+    manager: FragmentManager,
+    ownerUrl: String,
+    returnTag: String?,
+) {
+    if (host.isFinishing || host.isDestroyed || manager.isDestroyed || manager.isStateSaved ||
+        ReadBook.book?.bookUrl != ownerUrl || manager.fragments.any { it is ReadStyleDialog && it.isAdded }
+    ) return
+    ReadStyleDialog().apply {
+        arguments = bundleOf(ARG_INITIAL_ADJUST to true)
+    }.show(manager, returnTag ?: ReadStyleDialog::class.java.simpleName)
+}
+
+class ReadStyleDialog : BaseComposeDialogFragment() {
 
     private val callBack get() = activity as? ReadBookActivity
     private lateinit var composeView: ComposeView
@@ -80,13 +105,24 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private var editingHighlightIndex: Int? = null
     private var creatingPreset = false
     private var highlightDraft: ReadHighlightRule? = null
+    private val editorSession by viewModels<ReadStyleEditorSession>()
+    private val presetEditorMode get() = editorSession.presetMode ?: ReadAppearanceMode.current()
+    private var highlightColorMode: Int
+        get() = editorSession.highlightMode ?: if (ReadBookConfig.isNightTheme) 1 else 0
+        set(value) { editorSession.selectHighlightMode(value) }
+    private var highlightColorInitialDraft: ReadHighlightRule? = null
     private var highlightSelectionMode = HighlightSelectionMode.NONE
     private var selectedHighlightIds: Set<String> = emptySet()
     private var pendingHighlightExportName: String? = null
     private var pendingPresetExportName: String? = null
     private var preparingPresetExport = false
     private var preparingHighlightExport = false
-    private var openTipConfigAfterDismiss = false
+    private enum class PreviewDialog(val tag: String) {
+        FONT_WEIGHT("fontWeightDialog"), FONT("bodyFontDialog"),
+        INDENT("paragraphIndentDialog"), CHINESE_CONVERTER("chineseConverterDialog"),
+        INFORMATION("tipConfigDialog"), PADDING("paddingConfigDialog")
+    }
+    private var openPreviewAfterDismiss: PreviewDialog? = null
     private val configFileName = "readConfig.zip"
     private val selectExportDocument = registerForActivityResult(
         CreateDocumentContract("application/zip")
@@ -115,7 +151,14 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     ) { uri -> uri?.let(::importHighlightRules) }
     private val selectBackgroundImage = registerForActivityResult(
         SelectFileContract()
-    ) { uri -> uri?.let(::setBackgroundFromUri) }
+    ) { uri ->
+        val target = editorSession.backgroundTarget
+        editorSession.backgroundTarget = null
+        if (uri != null) {
+            if (target == null) toastOnUi(R.string.read_style_editor_target_lost)
+            else setBackgroundFromUri(uri, target)
+        }
+    }
     private val selectHighlightBackground = registerForActivityResult(
         SelectFileContract()
     ) { uri -> uri?.let { installHighlightResource(it, "background") } }
@@ -125,14 +168,25 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (arguments?.getBoolean(ARG_INITIAL_ADJUST) == true) page = ReadStylePage.ADJUST
         pendingHighlightExportName = savedInstanceState?.getString("pendingHighlightExportName")
         pendingPresetExportName = savedInstanceState?.getString("pendingPresetExportName")
+        if (savedInstanceState?.containsKey("presetEditorMode") == true && editorSession.presetMode == null) {
+            editorSession.selectPresetMode(savedInstanceState.getInt("presetEditorMode"))
+        }
+        if (savedInstanceState?.containsKey("highlightEditorMode") == true && editorSession.highlightMode == null) {
+            editorSession.selectHighlightMode(savedInstanceState.getInt("highlightEditorMode"))
+        }
+        editorSession.allowEInk = editorSession.allowEInk || savedInstanceState?.getBoolean("allowEInkEditing") == true
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString("pendingHighlightExportName", pendingHighlightExportName)
         outState.putString("pendingPresetExportName", pendingPresetExportName)
+        editorSession.presetMode?.let { outState.putInt("presetEditorMode", it.ordinal) }
+        editorSession.highlightMode?.let { outState.putInt("highlightEditorMode", it) }
+        outState.putBoolean("allowEInkEditing", editorSession.allowEInk)
     }
 
     override fun onStart() {
@@ -196,13 +250,41 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     override fun onDismiss(dialog: DialogInterface) {
+        val destination = openPreviewAfterDismiss
+        openPreviewAfterDismiss = null
+        val manager = if (destination != null) parentFragmentManager else null
+        val host = activity as? ReadBookActivity
         super.onDismiss(dialog)
         ReadBookConfig.save()
         (activity as ReadBookActivity).bottomDialog--
-        if (openTipConfigAfterDismiss) {
-            openTipConfigAfterDismiss = false
-            if (!parentFragmentManager.isStateSaved) {
-                TipConfigDialog().show(parentFragmentManager, "tipConfigDialog")
+        if (destination != null && manager != null && host != null && !host.isFinishing && !host.isDestroyed &&
+            !manager.isStateSaved && manager.findFragmentByTag(destination.tag) == null
+        ) {
+            val ownerUrl = ReadBook.book?.bookUrl
+            val returnTag = tag ?: ReadStyleDialog::class.java.simpleName
+            var returnRequested = false
+            val reopenAdjust = {
+                if (!returnRequested) {
+                    returnRequested = true
+                    if (ownerUrl != null) {
+                        showReadStyleAdjust(host, manager, ownerUrl, returnTag)
+                    }
+                }
+            }
+            fun showTarget(target: BaseComposeDialogFragment) {
+                target.arguments = (target.arguments ?: Bundle()).apply {
+                    putString(ARG_RETURN_ADJUST_BOOK, ownerUrl)
+                    putString(ARG_RETURN_ADJUST_TAG, returnTag)
+                }
+                target.show(manager, destination.tag)
+            }
+            when (destination) {
+                PreviewDialog.FONT_WEIGHT -> showFontWeightSetting(host, reopenAdjust)
+                PreviewDialog.FONT -> showTarget(FontSelectDialog.forReaderBody())
+                PreviewDialog.INDENT -> showParagraphIndentSetting(host, reopenAdjust)
+                PreviewDialog.CHINESE_CONVERTER -> showChineseConverterSetting(host, reopenAdjust)
+                PreviewDialog.INFORMATION -> showTarget(TipConfigDialog())
+                PreviewDialog.PADDING -> showTarget(PaddingConfigDialog())
             }
         }
     }
@@ -284,6 +366,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onTextColorChanged = ::applyEditorTextColor,
         onBackgroundColorChanged = ::applyEditorBackgroundColor,
         onTextAccentColorChanged = ::applyEditorAccentColor,
+        onEditorModeChanged = { selected ->
+            editorSession.selectPresetMode(selected)
+            refreshUi(reusePresetThumbnails = true)
+        },
         onResetEditorColor = ::resetEditorColor,
         onBackgroundAlphaChanged = { alpha ->
             val safeAlpha = alpha.coerceIn(0, 100)
@@ -292,6 +378,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             postEvent(EventBus.UP_CONFIG, arrayListOf(3))
         },
         onSelectBackgroundImage = {
+            editorSession.backgroundTarget = captureEditorTarget()
             selectBackgroundImage.launch(arrayOf("image/*"))
         },
         onSelectBackground = ::selectBackground,
@@ -350,8 +437,9 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             refreshFullLineUnderlineState()
         },
         onFullLineUnderlineColorChanged = { color ->
-            ReadBookConfig.config.setCurUnderlineColor(color)
-            refreshFullLineUnderlineState()
+            val target = editorSession.colorTarget ?: captureEditorTarget()
+            target.layout.setUnderlineColorForMode(color, target.mode)
+            refreshFullLineUnderlineState(target)
         },
         onFullLineUnderlineWidthChanged = { width ->
             ReadBookConfig.underlineHeight = width.coerceIn(1, 20)
@@ -373,14 +461,12 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             ReadBookConfig.dottedRatio = length.coerceIn(1f, 20f)
             refreshFullLineUnderlineState()
         },
-        onFontWeight = ::showFontWeightSetting,
-        onFont = { showDialogFragment<FontSelectDialog>() },
-        onIndent = ::showParagraphIndentSetting,
-        onChineseConverter = ::showChineseConverterSetting,
-        onPadding = {
-            PaddingConfigDialog().show(childFragmentManager, "paddingConfigDialog")
-        },
-        onTip = ::showTipConfigCentered,
+        onFontWeight = { showConfigPreview(PreviewDialog.FONT_WEIGHT) },
+        onFont = { showConfigPreview(PreviewDialog.FONT) },
+        onIndent = { showConfigPreview(PreviewDialog.INDENT) },
+        onChineseConverter = { showConfigPreview(PreviewDialog.CHINESE_CONVERTER) },
+        onPadding = { showConfigPreview(PreviewDialog.PADDING) },
+        onTip = { showConfigPreview(PreviewDialog.INFORMATION) },
         onTextSizeChanged = { value ->
             ReadBookConfig.textSize = value
             updateAdjustState { copy(textSize = value) }
@@ -415,6 +501,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         onHighlightDraftChanged = { draft ->
             highlightDraft = draft
             updateEditorState { copy(highlightDraft = draft) }
+        },
+        onHighlightColorModeChanged = { mode ->
+            val selectedMode = editorSession.selectHighlightMode(mode)
+            updateEditorState { withHighlightColorMode(selectedMode) }
         },
         onSelectHighlightBackground = {
             selectHighlightBackground.launch(arrayOf("image/*"))
@@ -460,15 +550,28 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         screenState = screenState?.transform()
     }
 
-    private fun refreshUi() {
+    private var presetPreviewMode: ReadAppearanceMode? = null
+    private var editorBackgroundOwner: ReadBookConfig.Config? = null
+
+    private fun refreshUi() = refreshUi(reusePresetThumbnails = false)
+
+    private fun refreshUi(reusePresetThumbnails: Boolean) {
         val config = ReadBookConfig.durConfig
+        val runtimeMode = ReadAppearanceMode.current()
+        val cachedPresets = screenState?.presets.takeIf { reusePresetThumbnails && presetPreviewMode == runtimeMode }
+        presetPreviewMode = runtimeMode
         val name = config.name.ifBlank { getString(R.string.text) }
-        val mode = if (ReadBookConfig.isNightTheme) 1 else 0
+        val mode = presetEditorMode
+        editorSession.allowEInk = editorSession.allowEInk || AppConfig.isEInkMode || mode == ReadAppearanceMode.EINK
         val modeLabel = getString(
-            if (mode == 1) R.string.read_style_mode_night else R.string.read_style_mode_day
+            when (mode) {
+                ReadAppearanceMode.NIGHT -> R.string.read_style_mode_night
+                ReadAppearanceMode.EINK -> R.string.read_style_mode_eink
+                else -> R.string.read_style_mode_day
+            }
         )
-        val backgroundType = config.curBgType()
-        val backgroundName = config.curBgStr()
+        val backgroundType = config.backgroundTypeForMode(mode)
+        val backgroundName = config.backgroundForMode(mode)
         val backgroundColor = if (backgroundType == 0) {
             runCatching { backgroundName.toColorInt() }.getOrDefault(EDITOR_FALLBACK_BG_COLOR)
         } else {
@@ -478,23 +581,23 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             null
         } else {
             runCatching {
-                config.curBgDrawable(352, 176).toBitmap(352, 176).asImageBitmap()
+                config.backgroundDrawableForMode(mode, 352, 176).toBitmap(352, 176).asImageBitmap()
             }.getOrNull()
         }
         val rules = currentRules()
-        val effectiveFloatingColor = ReadBookConfig.effectiveReadFloatingColor(config)
+        val effectiveFloatingColor = ReadBookConfig.effectiveReadFloatingColor(config, mode)
         selectedHighlightIds = selectedHighlightIds.intersect(rules.mapTo(hashSetOf()) { it.id })
         screenState = ReadStyleUiState(
-            presets = (if (ReadBookConfig.onlyThisBook) listOf(-1 to config) else emptyList())
+            presets = cachedPresets ?: (if (ReadBookConfig.onlyThisBook) listOf(-1 to config) else emptyList())
                 .plus(ReadBookConfig.configList.mapIndexed { index, item -> index to item })
                 .map { (index, item) ->
                 ReadStylePresetUi(
                     index = index,
                     name = if (index == -1) getString(R.string.read_style_this_book)
                         else item.name.ifBlank { getString(R.string.text) },
-                    textColor = item.curTextColor(),
+                    textColor = item.textColorForMode(runtimeMode),
                     background = runCatching {
-                        item.curBgDrawable(176, 128).toBitmap(176, 128).asImageBitmap()
+                        item.backgroundDrawableForMode(runtimeMode, 176, 128).toBitmap(176, 128).asImageBitmap()
                     }.getOrNull(),
                 )
             },
@@ -519,16 +622,18 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             highlightRules = rules,
             highlightSelectionMode = highlightSelectionMode,
             selectedHighlightIds = selectedHighlightIds,
-            editorMode = mode,
+            editorMode = mode.ordinal,
+            allowEInkEditing = editorSession.allowEInk,
+            colorPreviewTarget = editorSession.colorTarget ?: captureEditorTarget(),
             creatingPreset = creatingPreset,
             editorModeLabel = modeLabel,
             editorPreviewBackground = previewBackground,
             editorBackgrounds = if (page.isEditorPage()) loadEditorBackgrounds() else emptyList(),
             editorBackgroundType = backgroundType,
             editorBackgroundName = backgroundName,
-            editorTextColor = config.curTextColor(),
+            editorTextColor = config.textColorForMode(mode),
             editorBackgroundColor = backgroundColor,
-            editorTextAccentColor = config.curTextAccentColor(),
+            editorTextAccentColor = config.textAccentColorForMode(mode),
             editorBackgroundAlpha = ReadBookConfig.bgAlpha.coerceIn(0, 100),
             editorFloatingColorSeed = effectiveFloatingColor.seed,
             editorFloatingColorFromBackground = !effectiveFloatingColor.followsApplication,
@@ -537,6 +642,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             editorFloatingColorStyle = effectiveFloatingColor.colorStyle,
             fullLineUnderline = currentFullLineUnderlineState(),
             highlightDraft = highlightDraft,
+            highlightColorMode = highlightColorMode,
             editingHighlightIndex = editingHighlightIndex,
             editorInitialColor = null,
             editorInitialColorWasUnset = false,
@@ -561,6 +667,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     private fun openEditor(index: Int, isNew: Boolean = false) {
         creatingPreset = isNew
+        if (editorSession.presetMode == null) editorSession.presetMode = ReadAppearanceMode.current()
         changeBgTextConfig(index)
         page = ReadStylePage.EDIT
         refreshUi()
@@ -572,29 +679,41 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         }
         if (target.isAnyColorEditorPage()) {
             val state = screenState ?: return
+            val highlightNight = state.highlightColorMode == 1
+            if (target.isHighlightColorEditorPage()) highlightColorInitialDraft = highlightDraft
+            val previewTarget = captureEditorTarget(
+                if (target.isHighlightColorEditorPage()) ReadAppearanceMode.fromIndex(state.highlightColorMode)
+                else presetEditorMode,
+            )
+            editorSession.colorTarget = previewTarget
             val initialNullableColor = when (target) {
                 ReadStylePage.EDIT_TEXT_COLOR -> state.editorTextColor
                 ReadStylePage.EDIT_BACKGROUND_COLOR -> state.editorBackgroundColor
                 ReadStylePage.EDIT_ACCENT_COLOR -> state.editorTextAccentColor
                 ReadStylePage.EDIT_UNDERLINE_COLOR -> state.fullLineUnderline.color
-                ReadStylePage.HIGHLIGHT_TEXT_COLOR -> state.highlightDraft?.textColor
-                ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> state.highlightDraft?.bgColor
-                ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR -> state.highlightDraft?.underlineColor
+                ReadStylePage.HIGHLIGHT_TEXT_COLOR ->
+                    state.highlightDraft?.colorValue(ReadHighlightRule.COLOR_TEXT, highlightNight)
+                ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR ->
+                    state.highlightDraft?.colorValue(ReadHighlightRule.COLOR_BACKGROUND, highlightNight)
+                ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR ->
+                    state.highlightDraft?.colorValue(ReadHighlightRule.COLOR_UNDERLINE, highlightNight)
                 else -> null
             }
             val fallbackColor = when (target) {
                 ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR ->
-                    state.highlightDraft?.bgColor
+                    state.highlightDraft?.colorValue(ReadHighlightRule.COLOR_BACKGROUND, highlightNight)
                         ?: ((state.editorTextAccentColor and 0x00FFFFFF) or 0x33000000)
                 ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR ->
-                    state.highlightDraft?.underlineColor
-                        ?: state.highlightDraft?.textColor
+                    state.highlightDraft?.colorValue(ReadHighlightRule.COLOR_UNDERLINE, highlightNight)
+                        ?: state.highlightDraft?.colorValue(ReadHighlightRule.COLOR_TEXT, highlightNight)
                         ?: state.editorTextAccentColor
                 ReadStylePage.HIGHLIGHT_TEXT_COLOR ->
-                    state.highlightDraft?.textColor ?: state.editorTextAccentColor
+                    state.highlightDraft?.colorValue(ReadHighlightRule.COLOR_TEXT, highlightNight)
+                        ?: state.editorTextAccentColor
                 else -> state.editorTextAccentColor
             }
             screenState = state.copy(
+                colorPreviewTarget = previewTarget,
                 editorInitialColor = initialNullableColor ?: fallbackColor,
                 editorInitialColorWasUnset = initialNullableColor == null,
                 editorInitialBackgroundType = if (target == ReadStylePage.EDIT_BACKGROUND_COLOR) {
@@ -661,19 +780,22 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun applyEditorTextColor(color: Int) {
-        ReadBookConfig.durConfig.setCurTextColor(color)
+        val target = editorSession.colorTarget ?: captureEditorTarget()
+        target.appearance.setTextColorForMode(color, target.mode)
         updateEditorState { copy(editorTextColor = color) }
-        postEditorTextColorChanged()
+        postEditorTextColorChanged(target)
     }
 
     private fun applyEditorAccentColor(color: Int) {
-        ReadBookConfig.durConfig.setCurTextAccentColor(color)
+        val target = editorSession.colorTarget ?: captureEditorTarget()
+        target.appearance.setTextAccentColorForMode(color, target.mode)
         updateEditorState { copy(editorTextAccentColor = color) }
-        postEditorTextColorChanged()
+        postEditorTextColorChanged(target)
     }
 
     private fun applyEditorBackgroundColor(color: Int) {
-        ReadBookConfig.durConfig.setCurBg(0, "#${color.hexString}")
+        val target = editorSession.colorTarget ?: captureEditorTarget()
+        target.appearance.setBackgroundForMode(0, "#${color.hexString}", target.mode)
         updateEditorState {
             copy(
                 editorPreviewBackground = null,
@@ -682,7 +804,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 editorBackgroundColor = color,
             )
         }
-        postEditorBackgroundChanged()
+        postEditorBackgroundChanged(target)
     }
 
     private fun resetEditorColor() {
@@ -696,7 +818,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 if (initialType == 0) {
                     applyEditorBackgroundColor(initialColor)
                 } else {
-                    ReadBookConfig.durConfig.setCurBg(initialType, initialName)
+                    val target = editorSession.colorTarget ?: captureEditorTarget()
+                    target.appearance.setBackgroundForMode(initialType, initialName, target.mode)
                     updateEditorState {
                         copy(
                             editorPreviewBackground = state.editorInitialBackground,
@@ -704,22 +827,19 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                             editorBackgroundName = initialName,
                         )
                     }
-                    postEditorBackgroundChanged()
+                    postEditorBackgroundChanged(target)
                 }
             }
             ReadStylePage.EDIT_ACCENT_COLOR -> applyEditorAccentColor(initialColor)
             ReadStylePage.EDIT_UNDERLINE_COLOR -> {
-                ReadBookConfig.config.setCurUnderlineColor(initialColor)
-                refreshFullLineUnderlineState()
+                val target = editorSession.colorTarget ?: captureEditorTarget()
+                target.layout.setUnderlineColorForMode(initialColor, target.mode)
+                refreshFullLineUnderlineState(target)
             }
-            ReadStylePage.HIGHLIGHT_TEXT_COLOR -> updateHighlightDraft {
-                copy(textColor = if (state.editorInitialColorWasUnset) null else initialColor)
-            }
-            ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR -> updateHighlightDraft {
-                copy(bgColor = if (state.editorInitialColorWasUnset) null else initialColor)
-            }
+            ReadStylePage.HIGHLIGHT_TEXT_COLOR,
+            ReadStylePage.HIGHLIGHT_BACKGROUND_COLOR,
             ReadStylePage.HIGHLIGHT_UNDERLINE_COLOR -> updateHighlightDraft {
-                copy(underlineColor = if (state.editorInitialColorWasUnset) null else initialColor)
+                highlightColorInitialDraft ?: this
             }
             else -> return
         }
@@ -734,6 +854,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     }
 
     private fun clearEditorColorInitialState() {
+        highlightColorInitialDraft = null
+        editorSession.colorTarget = null
         updateEditorState {
             copy(
                 editorInitialColor = null,
@@ -745,14 +867,29 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         }
     }
 
-    private fun postEditorTextColorChanged() {
+    private fun captureEditorTarget(mode: ReadAppearanceMode = presetEditorMode) = ReadStyleEditTarget(
+        ReadBookConfig.durConfig, ReadBookConfig.config, mode, ReadBook.book?.bookUrl,
+    )
+
+    private fun isActiveAppearanceTarget(target: ReadStyleEditTarget): Boolean =
+        target.appearance === ReadBookConfig.durConfig && target.mode == ReadAppearanceMode.current()
+
+    private fun isSameBook(target: ReadStyleEditTarget): Boolean {
+        if (target.bookUrl == ReadBook.book?.bookUrl) return true
+        toastOnUi(R.string.read_style_editor_target_lost)
+        return false
+    }
+
+    private fun postEditorTextColorChanged(target: ReadStyleEditTarget? = null) {
+        if (target != null && !isActiveAppearanceTarget(target)) return
         postEvent(EventBus.UP_CONFIG, arrayListOf(2, 6, 9, 11))
         if (AppConfig.readBarStyleFollowPage) {
             postEvent(EventBus.UPDATE_READ_ACTION_BAR, true)
         }
     }
 
-    private fun postEditorBackgroundChanged() {
+    private fun postEditorBackgroundChanged(target: ReadStyleEditTarget? = null) {
+        if (target != null && !isActiveAppearanceTarget(target)) return
         postEvent(EventBus.UP_CONFIG, arrayListOf(1))
         if (AppConfig.readBarStyleFollowPage) {
             postEvent(EventBus.UPDATE_READ_ACTION_BAR, true)
@@ -762,7 +899,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun currentFullLineUnderlineState() = FullLineUnderlineUiState(
         enabled = ReadBookConfig.fullLineUnderlineEnabled,
         dashed = ReadBookConfig.dottedLine,
-        color = ReadBookConfig.resolvedUnderlineColor,
+        color = ReadBookConfig.config.underlineColorForMode(presetEditorMode),
         width = ReadBookConfig.underlineHeight.coerceIn(1, 20),
         offset = ReadBookConfig.underlinePadding.coerceIn(0, 20),
         extend = ReadBookConfig.underlineExtend,
@@ -770,14 +907,21 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         gapLength = ReadBookConfig.dottedRatio.coerceIn(1f, 20f),
     )
 
-    private fun showTipConfigCentered() {
-        if (openTipConfigAfterDismiss) return
-        openTipConfigAfterDismiss = true
+    private fun showConfigPreview(destination: PreviewDialog) {
+        val manager = parentFragmentManager
+        if (openPreviewAfterDismiss != null || manager.isStateSaved ||
+            manager.findFragmentByTag(destination.tag) != null
+        ) return
+        ReadBookConfig.save()
+        openPreviewAfterDismiss = destination
         dismiss()
     }
 
-    private fun refreshFullLineUnderlineState() {
+    private fun refreshFullLineUnderlineState(target: ReadStyleEditTarget? = null) {
         updateEditorState { copy(fullLineUnderline = currentFullLineUnderlineState()) }
+        // Underline colors have day/night slots, including when the reader is in E-ink mode.
+        if (target != null && (target.layout !== ReadBookConfig.config ||
+                (target.mode == ReadAppearanceMode.NIGHT) != ReadBookConfig.isNightTheme)) return
         postEvent(EventBus.UP_CONFIG, arrayListOf(6, 9, 11))
     }
 
@@ -785,7 +929,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         val selected = loadEditorBackgrounds().firstOrNull {
             it.type == type && it.name == name
         } ?: return
-        ReadBookConfig.durConfig.setCurBg(type, name)
+        val target = captureEditorTarget()
+        target.appearance.setBackgroundForMode(type, name, target.mode)
         updateEditorState {
             copy(
                 editorPreviewBackground = selected.background,
@@ -793,30 +938,32 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 editorBackgroundName = name,
             )
         }
-        postEditorBackgroundChanged()
+        postEditorBackgroundChanged(target)
     }
 
     private fun setFloatingColorSource(fromBackground: Boolean) {
-        if (ReadBookConfig.floatingColorManagedGlobally) return
-        val config = ReadBookConfig.durConfig
+        if (ReadBookConfig.floatingColorManagedGlobally || presetEditorMode == ReadAppearanceMode.EINK) return
+        val target = captureEditorTarget()
+        val config = target.appearance
         if (fromBackground) {
             updateEditorState { copy(editorFloatingColorFromBackground = true) }
             return
         }
-        if (config.curReadFloatingSeed() != 0) {
-            config.clearCurReadFloatingSeed()
+        if (!config.readFloatingFollowsApplicationForMode(target.mode)) {
+            config.clearReadFloatingSeedForMode(target.mode)
             ReadBookConfig.save()
         }
         refreshUi()
-        notifyFloatingAppearanceChanged()
+        notifyFloatingAppearanceChanged(target)
     }
 
     private fun pickFloatingColor() {
-        if (ReadBookConfig.floatingColorManagedGlobally) return
-        val config = ReadBookConfig.durConfig
-        if (config.curBgType() == 0) {
-            runCatching { config.curBgStr().toColorInt() }
-                .onSuccess(::applyFloatingColor)
+        if (ReadBookConfig.floatingColorManagedGlobally || presetEditorMode == ReadAppearanceMode.EINK) return
+        val target = captureEditorTarget()
+        val config = target.appearance
+        if (config.backgroundTypeForMode(target.mode) == 0) {
+            runCatching { config.backgroundForMode(target.mode).toColorInt() }
+                .onSuccess { applyFloatingColor(it, target) }
                 .onFailure {
                     it.printOnDebug()
                     toastOnUi(R.string.read_style_floating_color_error)
@@ -827,7 +974,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         val width = decorView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
         val height = decorView.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
         val background = runCatching {
-            renderCurrentReadBackground(width, height)
+            target.renderBackground(width, height)
         }.onFailure {
             it.printOnDebug()
             toastOnUi(it.localizedMessage ?: getString(R.string.read_style_floating_color_error))
@@ -836,25 +983,31 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         backgroundColorPickerDialog = showReadBackgroundColorPicker(
             context = requireContext(),
             background = background,
-            onPicked = { result -> applyFloatingColor(result.color) },
+            onPicked = { result -> applyFloatingColor(result.color, target) },
         )
     }
 
-    private fun applyFloatingColor(color: Int) {
+    private fun applyFloatingColor(color: Int, target: ReadStyleEditTarget) {
         if (ReadBookConfig.floatingColorManagedGlobally) return
-        ReadBookConfig.durConfig.setCurReadFloatingSeed(color)
+        if (!isSameBook(target)) return
+        target.appearance.setReadFloatingSeedForMode(color, target.mode)
         ReadBookConfig.save()
         refreshUi()
-        notifyFloatingAppearanceChanged()
+        notifyFloatingAppearanceChanged(target)
     }
 
-    private fun notifyFloatingAppearanceChanged() {
+    private fun notifyFloatingAppearanceChanged(target: ReadStyleEditTarget? = null) {
+        if (target != null && !isActiveAppearanceTarget(target)) return
         ReadFloatingAppearanceState.refreshFromConfig()
         postEvent(EventBus.UPDATE_READ_ACTION_BAR, true)
         callBack?.let(ReadAloudMiniPlayer::refreshAppearance)
     }
 
     private fun loadEditorBackgrounds(): List<ReadStyleBackgroundUi> {
+        if (editorBackgroundOwner !== ReadBookConfig.durConfig) {
+            editorBackgroundOwner = ReadBookConfig.durConfig
+            editorBackgroundCache = null
+        }
         editorBackgroundCache?.let { return it }
         val customBackgrounds = linkedMapOf<String, String>()
         fun addCustomBackground(reference: String) {
@@ -864,9 +1017,10 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             val key = runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
             customBackgrounds.putIfAbsent(key, reference)
         }
-        ReadBookConfig.durConfig.takeIf { it.curBgType() == 2 }
-            ?.curBgStr()
-            ?.let(::addCustomBackground)
+        val config = ReadBookConfig.durConfig
+        ReadAppearanceMode.entries.forEach { mode ->
+            if (config.backgroundTypeForMode(mode) == 2) addCustomBackground(config.backgroundForMode(mode))
+        }
         ReadBookConfig.getAllPicBgStr().forEach(::addCustomBackground)
 
         val customItems = customBackgrounds.values.mapNotNull { reference ->
@@ -911,7 +1065,8 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
             FileUtils.getPath(requireContext().externalFiles, "bg", reference)
         }
 
-    private fun setBackgroundFromUri(uri: Uri) {
+    private fun setBackgroundFromUri(uri: Uri, target: ReadStyleEditTarget) {
+        if (!isSameBook(target)) return
         readUri(uri) { fileDoc, inputStream ->
             runCatching {
                 val suffix = if (fileDoc.name.contains(".9.png", true)) {
@@ -930,10 +1085,11 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
                 FileOutputStream(file).use { outputStream ->
                     inputStream.copyTo(outputStream)
                 }
-                ReadBookConfig.durConfig.setCurBg(2, fileName)
+                if (!isSameBook(target)) return@runCatching
+                target.appearance.setBackgroundForMode(2, fileName, target.mode)
             }.onSuccess {
                 editorBackgroundCache = null
-                postEditorBackgroundChanged()
+                postEditorBackgroundChanged(target)
                 composeView.post { refreshUi() }
             }.onFailure {
                 toastOnUi(it.localizedMessage.orEmpty())
@@ -941,17 +1097,18 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         }
     }
 
-    private fun showFontWeightSetting() {
+    private fun showFontWeightSetting(host: ReadBookActivity, onDismiss: () -> Unit) {
         val weights = (100..900 step 100).toList()
-        val descriptions = resources.getStringArray(R.array.text_font_weight_levels).toList()
+        val descriptions = host.resources.getStringArray(R.array.text_font_weight_levels).toList()
         ReadTypographySettingDialog.showDiscrete(
-            context = requireContext(),
-            avoidView = composeView,
-            title = getString(R.string.text_font_weight_converter),
+            context = host,
+            avoidView = null,
+            title = host.getString(R.string.text_font_weight_converter),
             stepLabels = weights.map(Int::toString),
             currentValues = descriptions,
             selectedIndex = weights.indexOf(resolveFontWeight(ReadBookConfig.textBold))
                 .coerceAtLeast(0),
+            onDismiss = onDismiss,
             previewTypeface = { index ->
                 val weight = weights[index]
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -969,28 +1126,30 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         }
     }
 
-    private fun showParagraphIndentSetting() {
+    private fun showParagraphIndentSetting(host: ReadBookActivity, onDismiss: () -> Unit) {
         ReadTypographySettingDialog.showDiscrete(
-            context = requireContext(),
-            avoidView = composeView,
-            title = getString(R.string.paragraph_first_line_indent),
-            stepLabels = resources.getStringArray(R.array.indent_short).toList(),
-            currentValues = resources.getStringArray(R.array.indent).toList(),
+            context = host,
+            avoidView = null,
+            title = host.getString(R.string.paragraph_first_line_indent),
+            stepLabels = host.resources.getStringArray(R.array.indent_short).toList(),
+            currentValues = host.resources.getStringArray(R.array.indent).toList(),
             selectedIndex = paragraphIndentLevel(),
             currentValueTextSizeSp = 24f,
+            onDismiss = onDismiss,
         ) { index ->
             ReadBookConfig.paragraphIndent = "　".repeat(index)
             postEvent(EventBus.UP_CONFIG, arrayListOf(8, 5))
         }
     }
 
-    private fun showChineseConverterSetting() {
+    private fun showChineseConverterSetting(host: ReadBookActivity, onDismiss: () -> Unit) {
         ReadTypographySettingDialog.showChineseConverter(
-            context = requireContext(),
-            avoidView = composeView,
-            title = getString(R.string.chinese_converter),
-            labels = resources.getStringArray(R.array.chinese_mode_short).toList(),
+            context = host,
+            avoidView = null,
+            title = host.getString(R.string.chinese_converter),
+            labels = host.resources.getStringArray(R.array.chinese_mode_short).toList(),
             selectedIndex = AppConfig.chineseConverterType,
+            onDismiss = onDismiss,
         ) { index ->
             AppConfig.chineseConverterType = index
             ChineseUtils.unLoad(*TransType.entries.toTypedArray())
@@ -1172,6 +1331,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
     private fun openHighlightEditor(position: Int? = null) {
         val oldRule = position?.let(currentRules()::getOrNull)
         editingHighlightIndex = position
+        if (editorSession.highlightMode == null) highlightColorMode = if (ReadBookConfig.isNightTheme) 1 else 0
         highlightDraft = oldRule ?: ReadHighlightRule(
             id = UUID.randomUUID().toString(),
             name = getString(R.string.highlight_rule_default_name),
@@ -1187,6 +1347,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         val rules = currentRules()
         val source = rules.firstOrNull { it.id == id } ?: return
         editingHighlightIndex = null
+        if (editorSession.highlightMode == null) highlightColorMode = if (ReadBookConfig.isNightTheme) 1 else 0
         highlightDraft = source.copy(
             id = UUID.randomUUID().toString(),
             name = getString(
@@ -1207,6 +1368,7 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
 
     private fun clearHighlightDraft() {
         highlightDraft = null
+        highlightColorInitialDraft = null
         editingHighlightIndex = null
     }
 
@@ -1451,15 +1613,6 @@ class ReadStyleDialog : BaseComposeDialogFragment(),
         return if (presetName.isBlank()) configFileName else "$presetName.zip"
     }
 
-    override val curFontPath: String
-        get() = ReadBookConfig.textFont
-
-    override fun selectFont(path: String) {
-        if (path != ReadBookConfig.textFont || path.isEmpty()) {
-            ReadBookConfig.textFont = path
-            postEvent(EventBus.UP_CONFIG, arrayListOf(2, 5))
-        }
-    }
 }
 
 private fun ReadStylePage.isPresetColorEditorPage(): Boolean = when (this) {

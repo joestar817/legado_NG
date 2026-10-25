@@ -88,6 +88,8 @@ internal fun ImportSelectionDock(
     onAddSelected: () -> Unit,
     @StringRes actionLabelRes: Int = R.string.nb_file_add_shelf,
     selectionTextOverride: String? = null,
+    selectedCountText: String? = null,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
@@ -98,6 +100,7 @@ internal fun ImportSelectionDock(
     ) {
         Text(
             text = selectionTextOverride
+                ?: selectedCountText
                 ?: stringResource(R.string.bookshelf_manage_selected_count, selectedCount),
             modifier = Modifier.weight(1f),
             color = Color(NgTheme.colors.onSurface),
@@ -111,12 +114,12 @@ internal fun ImportSelectionDock(
                     NgFlatActionRailItem(
                         iconRes = R.drawable.ic_select_all,
                         label = stringResource(R.string.select_all),
-                        enabled = itemCount > 0,
+                        enabled = enabled && itemCount > 0,
                     ),
                     NgFlatActionRailItem(
                         iconRes = R.drawable.ic_refresh_black_24dp,
                         label = stringResource(R.string.revert_selection),
-                        enabled = itemCount > 0,
+                        enabled = enabled && itemCount > 0,
                     ),
                 ),
                 onItemClick = { index ->
@@ -128,7 +131,7 @@ internal fun ImportSelectionDock(
         Spacer(Modifier.width(6.dp))
         NgButton(
             onClick = onAddSelected,
-            enabled = selectedCount > 0 && selectionTextOverride == null,
+            enabled = enabled && selectedCount > 0 && selectionTextOverride == null,
             variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
             modifier = Modifier
                 .widthIn(min = 92.dp)

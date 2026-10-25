@@ -49,10 +49,16 @@ internal data class EpubSourceToken(
 internal class EpubSourceCapture {
     companion object { const val ATTRIBUTE = "data-ng-epub-source" }
 
+    private data class ChildPosition(val parent: String, val index: Int)
     private data class Draft(
         val href: String, val document: Document, val nodes: List<EpubSourceNode>,
+        val textPositions: List<Int>, val elements: Map<String, ChildPosition>,
         val media: List<EpubSourceMedia>, val occurrence: Int, val excluded: MutableSet<String> = linkedSetOf(),
     )
+    private class TextCursor(val nodes: List<IndexedValue<EpubSourceNode>>) {
+        val text = nodes.joinToString("") { it.value.text }
+        var offset = 0
+    }
     private val drafts = ArrayList<Draft>()
     var sourceOccurrence: Int = -1
     var result: EpubSourceChapter? = null
@@ -62,11 +68,14 @@ internal class EpubSourceCapture {
     fun register(href: String, document: Document): String? {
         val index = drafts.size
         val nodes = ArrayList<EpubSourceNode>()
+        val textPositions = ArrayList<Int>()
+        val elements = HashMap<String, ChildPosition>()
         val media = ArrayList<EpubSourceMedia>()
         document.getAllElements().forEachIndexed { elementIndex, element ->
             if (element === document) return@forEachIndexed
             val id = "$index-$elementIndex"
             element.attr(ATTRIBUTE, id)
+            elements[id] = ChildPosition(element.parent()?.attr(ATTRIBUTE).orEmpty(), element.siblingIndex())
             if (element.tagName().lowercase() in setOf("img", "image")) {
                 media.add(EpubSourceMedia(id, element.attr("src").ifEmpty { element.attr("xlink:href") }))
             }
@@ -76,9 +85,10 @@ internal class EpubSourceCapture {
                 val parent = node.parent() as? Element ?: return@forEachEpubBodyNode
                 val ordinal = parent.textNodes().indexOf(node)
                 nodes.add(EpubSourceNode(parent.attr(ATTRIBUTE), ordinal, node.wholeText))
+                textPositions.add(node.siblingIndex())
             }
         }
-        drafts.add(Draft(href, document.clone(), nodes, media, sourceOccurrence))
+        drafts.add(Draft(href, document.clone(), nodes, textPositions, elements, media, sourceOccurrence))
         return media.firstOrNull()?.element
     }
 
@@ -96,10 +106,12 @@ internal class EpubSourceCapture {
         val tokens = ArrayList<EpubSourceToken>()
         val markerEdits = ArrayList<ContentEdit>()
         val retainedMarkers = flattening.text.contains(" $ATTRIBUTE=\"")
+        val originalByParent = drafts.map { it.nodes.withIndex().groupBy { node -> node.value.element } }
         var base = 0
         for (body in bodyHtml) {
             val parsed = Jsoup.parse(body, "", Parser.htmlParser().setTrackPosition(true))
-            val cursors = HashMap<String, Int>()
+            val cursors = HashMap<TextNode, TextCursor>()
+            val preparedParents = HashSet<Element>()
             forEachEpubBodyNode(parsed.body()) { node ->
                 val element = if (node is Element) node else node.parent() as? Element
                 val id = element?.attr(ATTRIBUTE).orEmpty()
@@ -128,9 +140,14 @@ internal class EpubSourceCapture {
                         val lexical = body.substring(start, end)
                         val decoding = ContentPositionMap(lexical)
                         val decoded = EpubContentEntities.decode(lexical, decoding)
-                        val original = drafts[doc].nodes.withIndex().filter { it.value.element == id }
-                        val source = original.joinToString("") { it.value.text }
-                        var cursor = cursors[id] ?: 0
+                        val parent = requireNotNull(element)
+                        if (preparedParents.add(parent)) {
+                            cursors.putAll(textCursors(parent, drafts[doc], originalByParent[doc][id].orEmpty()))
+                        }
+                        val textCursor = cursors.getValue(node)
+                        val original = textCursor.nodes
+                        val source = textCursor.text
+                        var cursor = textCursor.offset
                         val locations = ArrayList<EpubSourceCharacter?>()
                         for (char in decoded) {
                             if (char.isWhitespace()) {
@@ -146,7 +163,7 @@ internal class EpubSourceCapture {
                                 locations.add(characterAt(original, cursor++))
                             }
                         }
-                        cursors[id] = cursor
+                        textCursor.offset = cursor
                         tokens.add(EpubSourceToken(base + start, base + end, doc, null, decoded, decoding, locations))
                     }
                 } else if (node is Element && node.normalName() == "img" && doc != null) {
@@ -175,6 +192,36 @@ internal class EpubSourceCapture {
             EpubSourceDocument(it.href, it.document.outerHtml(), it.nodes, it.media, it.excluded.toSet(), it.occurrence)
         }
         return EpubSourceChapter(documents, html, flattening, tokens.sortedBy { it.start }).also { result = it }
+    }
+
+    private fun textCursors(parent: Element, draft: Draft,
+                            original: List<IndexedValue<EpubSourceNode>>): Map<TextNode, TextCursor> {
+        val result = HashMap<TextNode, TextCursor>()
+        val pending = ArrayList<TextNode>()
+        val id = parent.attr(ATTRIBUTE)
+        var start = 0
+        var previous = -1
+        fun endGap(boundary: Int) {
+            check(boundary > previous) { "EPUB element $id changed child order during serialization" }
+            var end = start
+            while (end < original.size && draft.textPositions[original[end].index] < boundary) end++
+            val cursor = TextCursor(original.subList(start, end))
+            pending.forEach { result[it] = cursor }
+            pending.clear()
+            start = end
+            previous = boundary
+        }
+        // Retained direct child elements bound text provenance. Removed elements may join
+        // several original text nodes; comments do not split that shared text cursor.
+        for (child in parent.childNodes()) {
+            if (child is TextNode) pending.add(child)
+            else if (child is Element) {
+                val position = draft.elements[child.attr(ATTRIBUTE)]
+                if (position?.parent == id) endGap(position.index)
+            }
+        }
+        endGap(Int.MAX_VALUE)
+        return result
     }
 
     private fun characterAt(nodes: List<IndexedValue<EpubSourceNode>>, offset: Int): EpubSourceCharacter {

@@ -1,5 +1,6 @@
 package io.legado.app.model.epub
 
+import io.legado.app.help.config.EpubReadStylePackage
 import java.io.ByteArrayInputStream
 import java.io.Closeable
 import java.io.IOException
@@ -22,11 +23,12 @@ internal class EpubResourceGateway(
     @Volatile private var documentPath: String? = null
     private val containerPath = "__ng_reader_${UUID.randomUUID()}/index.html"
     private val contentPath = "__ng_reader_${UUID.randomUUID()}/content.json"
-    private data class DocumentContent(val path: String, val html: ByteArray, val data: ByteArray) {
+    private data class DocumentContent(val path: String, val html: ByteArray, val data: ByteArray, val revision: Long = 0L) {
         fun same(other: DocumentContent?) = other != null && path == other.path &&
             html.contentEquals(other.html) && data.contentEquals(other.data)
     }
     private var contentRevision = 0L
+    // Allocate new versions globally, but retain each unchanged document's own URL.
     private var documentsRevision = 0L
     @Volatile private var content: DocumentContent? = null
     @Volatile private var documentContents: Map<String, DocumentContent> = emptyMap()
@@ -39,6 +41,10 @@ internal class EpubResourceGateway(
     @Volatile private var styleFonts: Map<String, ByteArray> = emptyMap()
     @Volatile private var nineSlices: Map<String, EpubNineSliceImage> = emptyMap()
     @Volatile private var backgrounds: Map<String, EpubBackgroundImage> = emptyMap()
+    private val exportedDecorationPath = EpubReadStylePackage.decorationLocation(session.publication)
+    /** Only this authenticated stylesheet can be disabled by native per-book decoration layout. */
+    fun nativePageDecorationPath(enabled: Boolean): String? = exportedDecorationPath.takeIf { enabled }
+    fun hasExportedReadStyle(): Boolean = EpubReadStylePackage.styleLocation(session.publication) != null
 
     fun setBackgrounds(images: Map<String, EpubBackgroundImage>) {
         require(images.all { (id, image) -> id == image.id && id.matches(Regex("[a-f0-9]{64}")) })
@@ -68,16 +74,20 @@ internal class EpubResourceGateway(
 
     fun contentUrl(): String = "$origin/$contentPath?revision=$contentRevision"
 
-    fun contentUrl(key: String): String = "$origin/$contentPath?document=$key&revision=$documentsRevision"
+    fun contentUrl(key: String): String = "$origin/$contentPath?document=$key&revision=${documentContents[key]?.revision ?: documentsRevision}"
 
     fun setDocumentContents(values: List<Triple<String, String, Pair<String, String>>>) {
+        val previous = documentContents
+        var nextRevision = documentsRevision
         val next = values.associate { (key, path, value) ->
             require(key.matches(Regex("[a-zA-Z0-9-]+")))
-            key to DocumentContent(path, value.first.toByteArray(Charsets.UTF_8), value.second.toByteArray(Charsets.UTF_8))
+            val content = DocumentContent(path, value.first.toByteArray(Charsets.UTF_8), value.second.toByteArray(Charsets.UTF_8))
+            val retained = previous[key]
+            key to if (content.same(retained)) retained!! else content.copy(revision = ++nextRevision)
         }
-        if (next.size != documentContents.size || next.any { (key, value) -> !value.same(documentContents[key]) }) {
+        if (next != previous) {
+            documentsRevision = nextRevision
             documentContents = next
-            documentsRevision++
         }
     }
 

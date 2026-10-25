@@ -49,9 +49,11 @@ internal fun HomeWidgetPreview(
                 val canonicalWidth = dimensions.width(variant.size)
                 val canonicalHeight = dimensions.height(variant.size, false, widget.typeId, variant.styleId, widget.id)
                 val roundingSpace = with(baseDensity) { 1.toDp() }
+                // Leave room inside this clip for the white card's stronger shadow.
+                val shadowSpace = if (variant.styleId == "white") 12.dp else 0.dp
                 val scale = minOf(
-                    (slotWidth - roundingSpace).coerceAtLeast(0.dp) / canonicalWidth,
-                    (slotHeight - roundingSpace).coerceAtLeast(0.dp) / canonicalHeight,
+                    (slotWidth - roundingSpace - shadowSpace).coerceAtLeast(0.dp) / canonicalWidth,
+                    (slotHeight - roundingSpace - shadowSpace).coerceAtLeast(0.dp) / canonicalHeight,
                     1f,
                 )
                 // Do not propagate the slot's minimum width/height into the scaled native card.

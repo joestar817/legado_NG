@@ -855,6 +855,18 @@ object ReadBook : CoroutineScope by MainScope() {
         return block()
     }
 
+    private suspend fun notifyEpubLayoutCompleted(book: Book, generation: Long, chapter: TextChapter, upContent: Boolean) {
+        if (!upContent || !book.isEpub) return
+        kotlin.coroutines.coroutineContext.ensureActive()
+        withCurrentLoad(book, generation) {
+            if (chapter.isCompleted && (chapter === prevTextChapter || chapter === curTextChapter || chapter === nextTextChapter)) {
+                // The first two pages can arrive before EPUB can prepare the whole document.
+                // Rebind the completed neighbor without resetting the current page offset.
+                callBack?.onLayoutCompleted()
+            }
+        }
+    }
+
     @Synchronized
     internal fun resumePendingContent(book: Book, generation: Long, index: Int, resetPageOffset: Boolean) {
         if (!isLoadCurrent(book.bookUrl, generation)) return
@@ -978,6 +990,7 @@ object ReadBook : CoroutineScope by MainScope() {
                         }
                         if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                     }
+                    notifyEpubLayoutCompleted(book, generation, textChapter, upContent)
                 }
             }
 
@@ -1072,6 +1085,7 @@ object ReadBook : CoroutineScope by MainScope() {
                         }
                         if (upContent) withCurrentLoad(book, generation) { callBack?.upContent(offset, resetPageOffset) }
                     }
+                    notifyEpubLayoutCompleted(book, generation, textChapter, upContent)
                 }
             }
         }.onFailure {

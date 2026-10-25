@@ -8,17 +8,29 @@ import org.junit.Test
 class ReadHighlightRuleStoreTest {
 
     @Test
-    fun legacyNightColorsAreIgnoredByTheSinglePaletteModel() {
+    fun legacyNightColorsAreReadAndPreserved() {
         val rule = GSON.fromJson(
             """{"textColor":17,"textColorNight":34,"bgColorNight":51,"underlineColorNight":68}""",
             ReadHighlightRule::class.java,
         )
 
         assertEquals(17, rule.textColor)
+        assertEquals(34, rule.colorValue(ReadHighlightRule.COLOR_TEXT, true))
+        assertEquals(51, rule.colorValue(ReadHighlightRule.COLOR_BACKGROUND, true))
+        assertEquals(68, rule.colorValue(ReadHighlightRule.COLOR_UNDERLINE, true))
+        assertFalse(rule.followsDayAtNight())
         val serialized = GSON.toJson(rule)
-        assertFalse(serialized.contains("textColorNight"))
-        assertFalse(serialized.contains("bgColorNight"))
-        assertFalse(serialized.contains("underlineColorNight"))
+        assertEquals(rule, GSON.fromJson(serialized, ReadHighlightRule::class.java))
+    }
+
+    @Test
+    fun mergeDoesNotDiscardRulesThatOnlyDifferAtNight() {
+        val day = ReadHighlightRule(id = "same", pattern = "目标", textColor = 17)
+        val night = day.copy(textColorNight = 34)
+        val result = mergeReadHighlightRules(listOf(day), listOf(night), replaceMatchingIds = true)
+        assertEquals(1, result.updatedCount)
+        assertEquals(34, result.rules.single().colorValue(ReadHighlightRule.COLOR_TEXT, true))
+        assertEquals(0, result.rules.single().position)
     }
 
     @Test

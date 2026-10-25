@@ -88,7 +88,7 @@ internal fun buildBookshelfGroupFolders(
                 BookGroup.IdNovel -> books.filter { it.isType(BookType.text) }
                 BookGroup.IdManga -> books.filter { it.isImage }
                 BookGroup.IdVideo -> books.filter { it.isVideo }
-                else -> books.filter { it.group and group.groupId > 0L }
+                else -> books.filter { it.group and group.groupId != 0L }
             }
             BookshelfGroupFolder(group, groupBooks.sortForGroup(group))
         }

@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,7 +41,14 @@ data class NgCompactDrawerSelectionItem(
     @DrawableRes val iconRes: Int,
     val title: String,
     val value: String? = null,
+    val key: Long? = null,
+    val indicator: NgCompactDrawerSelectionIndicator = NgCompactDrawerSelectionIndicator.NONE,
+    val selected: Boolean = false,
+    val enabled: Boolean = true,
+    val muted: Boolean = false,
 )
+
+enum class NgCompactDrawerSelectionIndicator { NONE, CHECKBOX, NAVIGATION }
 
 /**
  * NG 短抽屉的居中标题栏。
@@ -115,42 +124,83 @@ fun NgCompactDrawerSelectionPanel(
         scrollState = rememberScrollState(),
     ) {
         items.forEachIndexed { index, item ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .clickable(role = Role.Button) { onItemClick(index) }
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    painter = painterResource(item.iconRes),
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                    tint = Color(NgTheme.colors.onSurface),
-                )
-                Text(
-                    text = item.title,
+            key(item.key ?: index) {
+                val contentColor = Color(when {
+                    item.muted -> NgTheme.colors.onSurfaceVariant
+                    item.selected -> NgTheme.colors.primary
+                    else -> NgTheme.colors.onSurface
+                })
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 12.dp),
-                    color = Color(NgTheme.colors.onSurface),
-                    fontSize = NgTheme.typography.itemTitleSp.sp,
-                    lineHeight = (NgTheme.typography.itemTitleSp + 4).sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                item.value?.let { value ->
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .then(
+                            if (item.selected && !item.muted) {
+                                Modifier.background(Color(NgTheme.colors.primary).copy(alpha = 0.06f))
+                            } else Modifier
+                        )
+                        .then(
+                            if (item.indicator == NgCompactDrawerSelectionIndicator.CHECKBOX) {
+                                Modifier.toggleable(
+                                    value = item.selected,
+                                    enabled = item.enabled,
+                                    role = Role.Checkbox,
+                                    onValueChange = { onItemClick(index) },
+                                )
+                            } else {
+                                Modifier.clickable(enabled = item.enabled, role = Role.Button) {
+                                    onItemClick(index)
+                                }
+                            }
+                        )
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        painter = painterResource(item.iconRes),
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = contentColor,
+                    )
                     Text(
-                        text = value,
-                        modifier = Modifier.padding(start = 12.dp),
-                        color = Color(NgTheme.colors.onSurfaceVariant),
-                        fontSize = NgTheme.typography.summarySp.sp,
-                        lineHeight = (NgTheme.typography.summarySp + 3).sp,
+                        text = item.title,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 12.dp),
+                        color = contentColor,
+                        fontSize = NgTheme.typography.itemTitleSp.sp,
+                        lineHeight = (NgTheme.typography.itemTitleSp + 4).sp,
                         fontWeight = FontWeight.Normal,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
+                    item.value?.let { value ->
+                        Text(
+                            text = value,
+                            modifier = Modifier.padding(start = 12.dp),
+                            color = Color(NgTheme.colors.onSurfaceVariant),
+                            fontSize = NgTheme.typography.summarySp.sp,
+                            lineHeight = (NgTheme.typography.summarySp + 3).sp,
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 1,
+                        )
+                    }
+                    when (item.indicator) {
+                        NgCompactDrawerSelectionIndicator.CHECKBOX -> NgFileSelectionCheckbox(
+                            checked = item.selected,
+                            onCheckedChange = null,
+                            modifier = Modifier.padding(start = 8.dp),
+                            enabled = item.enabled,
+                            variant = NgFileSelectionCheckboxVariant.COMPACT,
+                        )
+                        NgCompactDrawerSelectionIndicator.NAVIGATION -> Icon(
+                            painter = painterResource(R.drawable.ic_arrow_right),
+                            contentDescription = null,
+                            modifier = Modifier.padding(start = 8.dp).size(20.dp),
+                            tint = Color(NgTheme.colors.onSurfaceVariant),
+                        )
+                        NgCompactDrawerSelectionIndicator.NONE -> Unit
+                    }
                 }
             }
         }

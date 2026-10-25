@@ -33,6 +33,7 @@ import io.legado.app.constant.NotificationId
 import io.legado.app.constant.Status
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.MediaHelp
+import io.legado.app.help.bgm.BgmPlaybackController
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.exoplayer.AudioDownloadCache
@@ -125,6 +126,7 @@ class AudioPlayService : BaseService(),
     }
     private var broadcastReceiver: BroadcastReceiver? = null
     private var needResumeOnAudioFocusGain = false
+    private lateinit var backgroundMusic: BgmPlaybackController
     private var position = AudioPlay.book?.durChapterPos ?: 0
     private var dsJob: Job? = null
     private var upNotificationJob: Coroutine<*>? = null
@@ -137,6 +139,7 @@ class AudioPlayService : BaseService(),
 
     override fun onCreate() {
         super.onCreate()
+        backgroundMusic = BgmPlaybackController(this)
         ReadingRecordTracker.register(ReadingRecordSource.AUDIO, this)
         isRun = true
         exoPlayer.addListener(this)
@@ -163,6 +166,7 @@ class AudioPlayService : BaseService(),
         intent?.action?.let { action ->
             when (action) {
                 IntentAction.play, IntentAction.playNew -> {
+                    backgroundMusic.onSpeechWaiting()
                     flushListeningHistory()
                     clearListeningHistorySession()
                     exoPlayer.stop()
@@ -181,6 +185,8 @@ class AudioPlayService : BaseService(),
                 }
 
                 IntentAction.stopPlay -> {
+                    // This also precedes every chapter transition; it is not a user pause.
+                    backgroundMusic.onSpeechWaiting()
                     flushListeningHistory()
                     clearListeningHistorySession()
                     exoPlayer.stop()
@@ -203,13 +209,17 @@ class AudioPlayService : BaseService(),
                     adjustProgress(intent.getIntExtra("position", position))
                 }
 
-                IntentAction.stop -> stopSelf()
+                IntentAction.stop -> {
+                    backgroundMusic.release()
+                    stopSelf()
+                }
             }
         }
         return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onDestroy() {
+        backgroundMusic.release()
         ReadingRecordTracker.remove(ReadingRecordSource.AUDIO, this)
         flushListeningHistory()
         clearListeningHistorySession()
@@ -244,6 +254,7 @@ class AudioPlayService : BaseService(),
         }
         upAudioPlayNotification()
         if (!requestFocus()) {
+            backgroundMusic.onPaused()
             return
         }
         ListeningPlaybackCoordinator.beforeAudio(this)
@@ -291,6 +302,7 @@ class AudioPlayService : BaseService(),
      * 暂停播放
      */
     private fun pause(abandonFocus: Boolean = true) {
+        backgroundMusic.onPaused()
         ReadingRecordTracker.setActive(ReadingRecordSource.AUDIO, this, false)
         if (useWakeLock) {
             wakeLock.release()
@@ -319,6 +331,7 @@ class AudioPlayService : BaseService(),
      */
     @SuppressLint("WakelockTimeout")
     private fun resume() {
+        if (!requestFocus()) return
         if (useWakeLock) {
             wakeLock.acquire()
             wifiLock?.acquire()
@@ -376,6 +389,11 @@ class AudioPlayService : BaseService(),
      */
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         super.onIsPlayingChanged(isPlaying)
+        if (isPlaying && !pause && isCurrentListeningHistorySession()) {
+            backgroundMusic.onSpeechStarted()
+        } else {
+            backgroundMusic.onSpeechWaiting()
+        }
         ReadingRecordTracker.setPlaybackActive(
             ReadingRecordSource.AUDIO, this,
             isPlaying && !pause && isCurrentListeningHistorySession(), historyBookUrl
@@ -453,6 +471,7 @@ class AudioPlayService : BaseService(),
 
             Player.STATE_ENDED -> {
                 // 结束
+                onBgmChapterEnded()
                 upPlayProgressJob?.cancel()
                 AudioPlay.playPositionChanged(exoPlayer.duration.toInt())
                 AudioPlay.next()
@@ -477,6 +496,7 @@ class AudioPlayService : BaseService(),
      */
     override fun onPlayerError(error: PlaybackException) {
         super.onPlayerError(error)
+        backgroundMusic.onPaused()
         AudioPlay.status = Status.STOP
         postEvent(EventBus.AUDIO_STATE, Status.STOP)
         AudioPlay.upLoading(false)
@@ -551,6 +571,7 @@ class AudioPlayService : BaseService(),
                         val skipThreshold = duration - (skipEnds * 1000L)
                         if (durP >= skipThreshold) {
                             //同Player.STATE_ENDED
+                            onBgmChapterEnded()
                             upPlayProgressJob?.cancel()
                             AudioPlay.playPositionChanged(exoPlayer.duration.toInt())
                             pause = true
@@ -586,6 +607,16 @@ class AudioPlayService : BaseService(),
         )
     }
 
+    private fun onBgmChapterEnded() {
+        if (AudioPlay.playMode == AudioPlay.PlayMode.LIST_END_STOP &&
+            AudioPlay.durChapterIndex + 1 >= AudioPlay.simulatedChapterSize
+        ) {
+            backgroundMusic.onPaused()
+        } else {
+            backgroundMusic.onSpeechWaiting()
+        }
+    }
+
     private fun displayBufferedPosition(): Long {
         val duration = exoPlayer.duration
         return if (AudioPlay.durAudioCacheKeys.isNotEmpty() && duration > 0L) {
@@ -617,7 +648,10 @@ class AudioPlayService : BaseService(),
                 action ?: return
 
                 when (action) {
-                    APP_ACTION_STOP -> stopSelf()
+                    APP_ACTION_STOP -> {
+                        backgroundMusic.release()
+                        stopSelf()
+                    }
                     APP_ACTION_TIMER -> addTimer()
                 }
             }
@@ -793,10 +827,13 @@ class AudioPlayService : BaseService(),
      * @return 音频焦点
      */
     private fun requestFocus(): Boolean {
+        backgroundMusic.onPrimaryStarting()
         if (AppConfig.ignoreAudioFocus) {
             return true
         }
-        return MediaHelp.requestFocus(mFocusRequest)
+        return MediaHelp.requestFocus(mFocusRequest).also { granted ->
+            if (!granted) backgroundMusic.onPaused()
+        }
     }
 
     /**

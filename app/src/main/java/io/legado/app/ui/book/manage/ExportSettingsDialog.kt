@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -45,12 +46,12 @@ import io.legado.app.ui.design.components.compose.NgExpandableSettingsItemVarian
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormGroup
 import io.legado.app.ui.design.components.compose.NgFormGroupDivider
+import io.legado.app.ui.design.components.compose.NgFormPanel
 import io.legado.app.ui.design.components.compose.NgFormSelectOption
 import io.legado.app.ui.design.components.compose.NgFormSelectRow
 import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.design.theme.NgTheme
 
 /** 书架管理导出设置抽屉。目录由确认后的系统选择器决定。 */
 class ExportSettingsDialog : BottomSheetDialogFragment() {
@@ -121,6 +122,7 @@ class ExportSettingsDialog : BottomSheetDialogFragment() {
                 plainText = draft.plainText,
                 filterInteractiveImages = draft.filterInteractiveImages,
                 exportPictures = draft.exportPictures && !draft.plainText,
+                exportToWebDav = draft.exportToWebDav,
             )
         )
         dismissAllowingStateLoss()
@@ -150,6 +152,7 @@ data class ExportSettingsResult(
     val plainText: Boolean = true,
     val filterInteractiveImages: Boolean = true,
     val exportPictures: Boolean = false,
+    val exportToWebDav: Boolean = false,
 )
 
 private data class ExportSettingsDraft(
@@ -159,6 +162,7 @@ private data class ExportSettingsDraft(
     val filterInteractiveImages: Boolean,
     val exportPictures: Boolean,
     val fileNameRule: String,
+    val exportToWebDav: Boolean,
 )
 
 @Composable
@@ -174,6 +178,7 @@ private fun ExportSettingsSheetContent(
         mutableStateOf(AppConfig.exportFilterInteractiveImages)
     }
     var exportPictures by remember { mutableStateOf(AppConfig.exportPictureFile) }
+    var exportToWebDav by rememberSaveable { mutableStateOf(false) }
     var fileNameRule by remember {
         mutableStateOf(BookExportFileNameRules.presetOrDefault(AppConfig.bookExportFileName))
     }
@@ -243,6 +248,16 @@ private fun ExportSettingsSheetContent(
                         )
                     }
                 }
+                item(key = "webdav") {
+                    NgFormPanel {
+                        NgFormSwitchSettingRow(
+                            title = stringResource(R.string.export_upload_webdav),
+                            summary = stringResource(R.string.export_upload_webdav_summary),
+                            checked = exportToWebDav,
+                            onCheckedChange = { exportToWebDav = it },
+                        )
+                    }
+                }
                 item(key = "advanced") {
                     NgExpandableSettingsItem(
                         title = stringResource(R.string.export_settings_advanced),
@@ -293,6 +308,7 @@ private fun ExportSettingsSheetContent(
                             filterInteractiveImages = filterInteractiveImages,
                             exportPictures = exportPictures,
                             fileNameRule = fileNameRule,
+                            exportToWebDav = exportToWebDav,
                         )
                     )
                 },

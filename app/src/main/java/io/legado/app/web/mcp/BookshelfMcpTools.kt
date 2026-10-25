@@ -1410,7 +1410,7 @@ object BookshelfMcpTools {
                 "limit" to limit,
                 "total" to filtered.size,
                 "has_more" to (offset + page.size < filtered.size),
-                "all_time" to appDb.readRecordDao.allTime
+                "all_time" to appDb.readingTimeTotalDao.totalReadTime
             )
         )
     }

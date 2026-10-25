@@ -45,28 +45,25 @@ import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.SearchBook
-import io.legado.app.exception.NoStackTraceException
-import io.legado.app.help.AppWebDav
 import io.legado.app.help.GlideImageGetter
 import io.legado.app.help.TextViewTagHandler
 import io.legado.app.help.source.webCacheObject
 import io.legado.app.help.http.BookSourceCookieStore
 import io.legado.app.help.ai.AgentModeEntryContext
 import io.legado.app.help.ai.AiSkillRegistry
-import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.addType
 import io.legado.app.help.book.getRemoteUrl
 import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isImage
 import io.legado.app.help.book.isLocal
-import io.legado.app.help.book.isLocalTxt
+import io.legado.app.help.book.loadBookCacheStatus
+import io.legado.app.help.book.menuCapabilities
 import io.legado.app.help.book.isVideo
 import io.legado.app.help.book.isWebFile
 import io.legado.app.help.book.removeType
 import io.legado.app.help.book.supportsReadAloud
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
-import io.legado.app.help.exoplayer.AudioDownloadCache
 import io.legado.app.help.webView.PooledWebView
 import io.legado.app.help.webView.WebJsExtensions
 import io.legado.app.help.webView.WebJsExtensions.Companion.getInjectionString
@@ -79,6 +76,10 @@ import io.legado.app.model.CacheBook
 import io.legado.app.model.ReadBook
 import io.legado.app.model.SourceCallBack
 import io.legado.app.model.remote.RemoteBookWebDav
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.model.remote.webDavBookManager
+import io.legado.app.ui.book.import.remote.RemoteBookActivity
+import kotlinx.coroutines.CancellationException
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.audio.AudioPlayActivity
@@ -208,6 +209,9 @@ class BookInfoActivity :
         }
     }
     private var chapterChanged = false
+    private val cloudBookResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        viewModel.initData(intent)
+    }
     private val waitDialog by lazy { WaitDialog(this) }
     private var characterPreviewJob: Job? = null
     private var otherWorksRawBooks = emptyList<SearchBook>()
@@ -231,9 +235,6 @@ class BookInfoActivity :
     private var pendingUnsupportedWebFile: BookInfoViewModel.WebFile? = null
     private var initIntroView = false
     private var cacheProgressJob: Job? = null
-    private var cacheProgressBookUrl: String? = null
-    private var cacheProgressCached = 0
-    private var cacheProgressTotal = 0
     private val introContainer by lazy {
         FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
@@ -400,6 +401,7 @@ class BookInfoActivity :
                 uiState = uiState.copy(deleteAlertEnabled = LocalConfig.bookInfoDeleteAlert)
             }
             BookInfoMenuAction.ClearCache -> viewModel.getBook()?.let {
+                if (!uiState.hasClearableCache) return@let
                 SourceCallBack.callBackBtn(
                     this,
                     SourceCallBack.CLICK_CLEAR_CACHE,
@@ -538,7 +540,7 @@ class BookInfoActivity :
         }
 
         observeEvent<String>(EventBus.UP_DOWNLOAD) { bookUrl ->
-            if (bookUrl == viewModel.getBook(false)?.bookUrl) {
+            if (bookUrl.isEmpty() || bookUrl == viewModel.getBook(false)?.bookUrl) {
                 upCacheProgress()
             }
         }
@@ -556,9 +558,16 @@ class BookInfoActivity :
     }
 
     private fun refreshBook() {
-        upLoading(true)
-        viewModel.getBook()?.let {
-            viewModel.refreshBook(it)
+        viewModel.getBook()?.let { current ->
+            val location = try { WebDavBookLocation.fromBook(current) }
+                catch (error: Exception) { toastOnUi(error.localizedMessage); return }
+            if (location != null) {
+                intent.putExtra("name", current.name).putExtra("author", current.author)
+                cloudBookResult.launch(RemoteBookActivity.createIntent(this, location, checkUpdate = true))
+            } else {
+                upLoading(true)
+                viewModel.refreshBook(current)
+            }
         }
     }
 
@@ -571,18 +580,24 @@ class BookInfoActivity :
 
     private fun upLoadBook(
         book: Book,
-        bookWebDav: RemoteBookWebDav? = AppWebDav.defaultBookWebDav,
+        bookWebDav: RemoteBookWebDav? = null,
     ) {
         lifecycleScope.launch {
             waitDialog.setText("上传中.....")
             waitDialog.show()
             try {
-                bookWebDav
-                    ?.upload(book)
-                    ?: throw NoStackTraceException("未配置webDav")
+                val location = WebDavBookLocation.fromBook(book)
+                val dav = bookWebDav ?: webDavBookManager(location?.serverId)
+                dav.upload(book)
                 //更新书籍最后更新时间,使之比远程书籍的时间新
                 book.lastCheckTime = System.currentTimeMillis()
                 viewModel.saveBook(book)
+                WebDavBookLocation.fromBook(book)?.let { uploaded ->
+                    binding.root.longSnackbar(getString(R.string.export_upload_success),
+                        getString(R.string.webdav_view_cloud)) { RemoteBookActivity.open(this@BookInfoActivity, uploaded) }
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 toastOnUi(e.localizedMessage)
             } finally {
@@ -621,12 +636,16 @@ class BookInfoActivity :
             sourceAvailable = viewModel.bookSource != null,
             loginAvailable = !viewModel.bookSource?.loginUrl.isNullOrBlank(),
             showToc = !book.isWebFile,
-            showCache = !book.isWebFile,
+            showCache = book.menuCapabilities.showCache,
+            hasClearableCache = if (bookChanged) false else uiState.hasClearableCache,
+            cache = if (bookChanged) BookInfoCacheUiState() else uiState.cache.copy(
+                enabled = book.menuCapabilities.download && uiState.cache.total > 0,
+            ),
             showListen = book.supportsReadAloud,
             primaryActionIsPlay = book.isAudio || book.isVideo,
             otherWorksVisible = !book.isLocal && book.getRealAuthor().isNotBlank(),
             tags = if (bookChanged) emptyList() else uiState.tags,
-            charactersVisible = if (bookChanged) false else uiState.charactersVisible,
+            charactersVisible = !bookChanged && book.menuCapabilities.textContent && uiState.charactersVisible,
             characters = if (bookChanged) emptyList() else uiState.characters,
             characterCount = if (bookChanged) 0 else uiState.characterCount,
             otherWorksState = if (bookChanged) {
@@ -739,8 +758,12 @@ class BookInfoActivity :
     }
 
     private fun observeCharacterPreview(book: Book) {
-        val workKey = BookCharacterProfile.workKey(book.name, book.author)
         characterPreviewJob?.cancel()
+        if (!book.menuCapabilities.textContent) {
+            uiState = uiState.copy(charactersVisible = false, characters = emptyList(), characterCount = 0)
+            return
+        }
+        val workKey = BookCharacterProfile.workKey(book.name, book.author)
         characterPreviewJob = lifecycleScope.launch {
             appDb.bookCharacterDao.flowCharacters(workKey)
                 .catch {
@@ -748,7 +771,11 @@ class BookInfoActivity :
                 }
                 .flowOn(IO)
                 .collect { characters ->
-                    showCharacterPreview(characters)
+                    if (uiState.book?.bookUrl == book.bookUrl &&
+                        uiState.book?.menuCapabilities?.textContent == true
+                    ) {
+                        showCharacterPreview(characters)
+                    }
                 }
         }
     }
@@ -794,6 +821,7 @@ class BookInfoActivity :
     }
 
     private fun openCharacterActivity(book: Book, workKey: String) {
+        if (!book.menuCapabilities.textContent) return
         startActivity<BookCharacterActivity> {
             putExtra(BookCharacterActivity.EXTRA_WORK_KEY, workKey)
             putExtra(BookCharacterActivity.EXTRA_BOOK_NAME, book.name)
@@ -803,6 +831,7 @@ class BookInfoActivity :
     }
 
     private fun openCharacterCardAiAssistant(book: Book) {
+        if (!book.menuCapabilities.textContent) return
         val workKey = BookCharacterProfile.workKey(book.name, book.author)
         val payload = JsonObject().apply {
             addProperty("work_key", workKey)
@@ -1235,7 +1264,7 @@ class BookInfoActivity :
                 }
                 if (viewModel.inBookshelf) {
                     viewModel.saveBook(book, onSaved)
-                } else if (groupId > 0) {
+                } else if (groupId != 0L) {
                     viewModel.addToBookshelf(onSaved)
                 }
             }
@@ -1255,6 +1284,7 @@ class BookInfoActivity :
 
     private fun changeSource() {
         viewModel.getBook()?.let { current ->
+            if (!current.menuCapabilities.changeSource) return
             showDialogFragment(ChangeBookSourceDrawer(current.name, current.author))
         }
     }
@@ -1328,81 +1358,39 @@ class BookInfoActivity :
         book: Book? = viewModel.getBook(false),
         chapterList: List<BookChapter>? = viewModel.chapterListData.value
     ) {
-        if (book == null || book.isWebFile) {
-            cacheProgressJob?.cancel()
-            cacheProgressBookUrl = null
-            cacheProgressCached = 0
-            cacheProgressTotal = 0
+        cacheProgressJob?.cancel()
+        if (book == null) {
             uiState = uiState.copy(
                 showCache = false,
+                hasClearableCache = false,
                 cache = BookInfoCacheUiState(),
             )
             return
         }
-        val chapters = chapterList.orEmpty()
-        val cacheableChapters = if (book.isAudio) {
-            chapters.filterNot(BookChapter::isVolume)
-        } else {
-            chapters
-        }
-        val total = when {
-            chapters.isNotEmpty() -> cacheableChapters.size
-            book.totalChapterNum > 0 -> book.totalChapterNum
-            else -> 0
-        }
-        val cacheEnabled = !book.isLocal && total > 0
         uiState = uiState.copy(
-            showCache = true,
-            cache = uiState.cache.copy(total = total, enabled = cacheEnabled),
+            showCache = book.menuCapabilities.showCache,
         )
-        if (book.isLocal) {
-            cacheProgressJob?.cancel()
-            showCacheProgress(total, total)
-            return
-        }
-        val isSameBook = cacheProgressBookUrl == book.bookUrl
-        if (!isSameBook) {
-            cacheProgressJob?.cancel()
-            showCacheProgress(0, total)
-        } else if (cacheProgressTotal != total) {
-            cacheProgressJob?.cancel()
-            showCacheProgress(cacheProgressCached.coerceAtMost(total), total)
-        } else if (cacheProgressJob?.isActive == true) {
-            return
-        }
-        if (chapters.isEmpty()) {
-            return
-        }
         cacheProgressJob = lifecycleScope.launch {
-            val cachedCount = withContext(IO) {
-                val cacheFileNames = if (book.isAudio) {
-                    viewModel.bookSource?.let {
-                        AudioDownloadCache.getCachedChapterFileNames(it, book)
-                    }.orEmpty()
-                } else {
-                    BookHelp.getChapterFiles(book)
-                }
-                cacheableChapters.count {
-                    (!book.isAudio && it.isVolume) || cacheFileNames.contains(it.getFileName())
-                }
+            val status = withContext(IO) {
+                val chapters = chapterList?.takeIf { it.isNotEmpty() }
+                    ?: appDb.bookChapterDao.getChapterList(book.bookUrl)
+                loadBookCacheStatus(book, chapters)
             }
             if (viewModel.getBook(false)?.bookUrl == book.bookUrl) {
-                showCacheProgress(cachedCount, total)
+                uiState = uiState.copy(
+                    hasClearableCache = status.hasCache,
+                    cache = BookInfoCacheUiState(
+                        cached = status.cached,
+                        total = status.total,
+                        enabled = book.menuCapabilities.download && status.total > 0,
+                    ),
+                )
             }
         }
-    }
-
-    private fun showCacheProgress(cached: Int, total: Int) {
-        cacheProgressBookUrl = viewModel.getBook(false)?.bookUrl
-        cacheProgressCached = cached
-        cacheProgressTotal = total
-        uiState = uiState.copy(
-            cache = uiState.cache.copy(cached = cached, total = total),
-        )
     }
 
     private fun startCacheBook(book: Book) {
-        if (book.isLocal || book.isWebFile) {
+        if (!book.menuCapabilities.download) {
             return
         }
         val chapterList = viewModel.chapterListData.value

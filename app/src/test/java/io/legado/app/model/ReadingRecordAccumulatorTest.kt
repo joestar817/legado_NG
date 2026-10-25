@@ -51,7 +51,6 @@ class ReadingRecordAccumulatorTest {
         val snapshot = target.pendingSnapshot()
         assertEquals(expectedBooks, snapshot.books.mapValues { it.value.readTime })
         assertEquals(expectedDays, snapshot.days)
-        assertEquals(snapshot.books.values.sumOf { it.readTime }, snapshot.days.values.sum())
     }
 
     @Test
@@ -207,7 +206,7 @@ class ReadingRecordAccumulatorTest {
     }
 
     @Test
-    fun differentReaderModelsKeepIndependentTotalsAndTheCalendarMatchesTheirSum() {
+    fun differentReaderModelsKeepIndependentBookTotalsAndTheCalendarCountsTheirUnion() {
         val target = ReadingRecordAccumulator(true)
         val page = page(target)
         val manga = page(target, key = "manga-b", name = "B", source = ReadingRecordSource.MANGA_PAGE)
@@ -215,7 +214,126 @@ class ReadingRecordAccumulatorTest {
         target.remove(ReadingRecordSource.PAGE, page, time(10_000))
         target.remove(ReadingRecordSource.MANGA_PAGE, manga, time(20_000))
         target.remove(ReadingRecordSource.AUDIO, audio, time(30_000))
-        assertTotals(target, mapOf("A" to 10_000L, "B" to 20_000L, "C" to 30_000L))
+        assertTotals(
+            target, mapOf("A" to 10_000L, "B" to 20_000L, "C" to 30_000L),
+            mapOf(day to 30_000L),
+        )
+    }
+
+    @Test
+    fun fullyOverlappingAudioAndTextKeepBothBookTotalsButOneGlobalInterval() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target)
+        val audio = play(target, ReadingRecordSource.AUDIO, key = "audio-b", name = "B")
+        target.remove(ReadingRecordSource.PAGE, reader, time(60_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(60_000))
+        assertTotals(target, mapOf("A" to 60_000L, "B" to 60_000L), mapOf(day to 60_000L))
+    }
+
+    @Test
+    fun partialOverlapCountsOnlyTheUnionForTheCalendar() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target)
+        val audio = play(
+            target, ReadingRecordSource.AUDIO, now = time(10_000), key = "audio-b", name = "B",
+        )
+        target.remove(ReadingRecordSource.PAGE, reader, time(30_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(50_000))
+        assertTotals(target, mapOf("A" to 30_000L, "B" to 40_000L), mapOf(day to 50_000L))
+    }
+
+    @Test
+    fun separateReaderIntervalsExcludeTheInactiveGap() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target)
+        target.remove(ReadingRecordSource.PAGE, reader, time(10_000))
+        val audio = play(
+            target, ReadingRecordSource.AUDIO, now = time(30_000), key = "audio-b", name = "B",
+        )
+        target.remove(ReadingRecordSource.AUDIO, audio, time(50_000))
+        assertTotals(target, mapOf("A" to 10_000L, "B" to 20_000L))
+    }
+
+    @Test
+    fun alternatingCheckpointsAcrossModelsDoNotDuplicateGlobalTime() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target)
+        val audio = play(target, ReadingRecordSource.AUDIO, key = "audio-b", name = "B")
+        target.checkpoint(ReadingRecordKind.TEXT, time(5_000))
+        target.checkpoint(ReadingRecordKind.AUDIO, time(10_000))
+        target.checkpoint(ReadingRecordKind.TEXT, time(15_000))
+        target.checkpoint(ReadingRecordKind.AUDIO, time(20_000))
+        target.remove(ReadingRecordSource.PAGE, reader, time(30_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(30_000))
+        assertTotals(target, mapOf("A" to 30_000L, "B" to 30_000L), mapOf(day to 30_000L))
+    }
+
+    @Test
+    fun pausingEitherModelKeepsTheOtherModelsGlobalIntervalActive() {
+        for (pauseAudioFirst in listOf(false, true)) {
+            val target = ReadingRecordAccumulator(true)
+            val reader = page(target)
+            val audio = play(target, ReadingRecordSource.AUDIO, key = "audio-b", name = "B")
+            val firstSource = if (pauseAudioFirst) ReadingRecordSource.AUDIO else ReadingRecordSource.PAGE
+            val secondSource = if (pauseAudioFirst) ReadingRecordSource.PAGE else ReadingRecordSource.AUDIO
+            target.setActive(firstSource, if (pauseAudioFirst) audio else reader, false, time(10_000))
+            target.setActive(secondSource, if (pauseAudioFirst) reader else audio, false, time(30_000))
+            val expected = if (pauseAudioFirst) mapOf("A" to 30_000L, "B" to 10_000L)
+                else mapOf("A" to 10_000L, "B" to 30_000L)
+            assertTotals(target, expected, mapOf(day to 30_000L))
+        }
+    }
+
+    @Test
+    fun checkpointingAnInactiveModelStillSettlesGlobalTimeFromAnotherModel() {
+        val target = ReadingRecordAccumulator(true)
+        val audio = play(target, ReadingRecordSource.AUDIO)
+        target.checkpoint(ReadingRecordKind.MANGA, time(10_000))
+        assertTotals(target, emptyMap(), mapOf(day to 10_000L))
+        val writing = target.pendingSnapshot()
+        target.acknowledge(writing)
+        target.remove(ReadingRecordSource.AUDIO, audio, time(30_000))
+        assertTotals(target, mapOf("A" to 30_000L), mapOf(day to 20_000L))
+    }
+
+    @Test
+    fun rejectedCallbacksCannotReanchorTheGlobalCalendarWhileAnotherModelPlays() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target)
+        val audio = play(target, ReadingRecordSource.AUDIO, key = "audio-b", name = "B")
+        val nextDay = time(10_000, wallStart + 86_400_000L)
+        target.remove(ReadingRecordSource.MANGA_PAGE, Any(), nextDay)
+        target.setActive(ReadingRecordSource.AUDIO, Any(), false, nextDay)
+        target.setPlaybackActive(ReadingRecordSource.AUDIO, audio, true, "stale-book", nextDay)
+        target.remove(ReadingRecordSource.PAGE, reader, time(30_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(30_000))
+        assertTotals(target, mapOf("A" to 30_000L, "B" to 30_000L), mapOf(day to 30_000L))
+    }
+
+    @Test
+    fun waitingForABookBindingAddsNoGlobalTimeUntilTheBookIsKnown() {
+        val target = ReadingRecordAccumulator(true)
+        val owner = Any()
+        target.pageResumed(ReadingRecordSource.PAGE, owner, null, time(0))
+        target.checkpoint(ReadingRecordKind.AUDIO, time(10_000))
+        assertFalse(target.hasPending)
+        target.bindBook(ReadingRecordKind.TEXT, "book-a", "A", time(20_000))
+        target.remove(ReadingRecordSource.PAGE, owner, time(30_000))
+        assertTotals(target, mapOf("A" to 10_000L))
+    }
+
+    @Test
+    fun switchingAnAudioBookDuringReadingDoesNotInterruptOrRepeatGlobalTime() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target)
+        val audio = play(target, ReadingRecordSource.AUDIO, key = "audio-b", name = "B")
+        target.bindBook(ReadingRecordKind.AUDIO, "audio-c", "C", time(10_000))
+        target.setPlaybackActive(ReadingRecordSource.AUDIO, audio, true, "audio-c", time(20_000))
+        target.remove(ReadingRecordSource.PAGE, reader, time(30_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(40_000))
+        assertTotals(
+            target, mapOf("A" to 30_000L, "B" to 10_000L, "C" to 20_000L), mapOf(day to 40_000L),
+        )
     }
 
     @Test
@@ -466,6 +584,85 @@ class ReadingRecordAccumulatorTest {
             target, mapOf("A" to 20_000L, "B" to 10_000L),
             mapOf(day to 10_000L, day + 1 to 20_000L),
         )
+        target.acknowledge(target.pendingSnapshot())
+        assertFalse(target.hasPending)
+    }
+
+    @Test
+    fun overlappingModelsSplitTheGlobalUnionOnceAtMidnight() {
+        val target = ReadingRecordAccumulator(true)
+        val wall = Instant.parse("2026-10-05T23:59:50Z").toEpochMilli()
+        val reader = page(target, now = time(0, wall))
+        val audio = play(
+            target, ReadingRecordSource.AUDIO, now = time(5_000, wall + 5_000),
+            key = "audio-b", name = "B",
+        )
+        target.remove(ReadingRecordSource.PAGE, reader, time(20_000, wall + 20_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(30_000, wall + 30_000))
+        assertTotals(
+            target, mapOf("A" to 20_000L, "B" to 25_000L),
+            mapOf(day to 10_000L, day + 1 to 20_000L),
+        )
+    }
+
+    @Test
+    fun disablingAllModelsExcludesTheDisabledIntervalFromTheGlobalUnion() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target)
+        val audio = play(target, ReadingRecordSource.AUDIO, key = "audio-b", name = "B")
+        target.setEnabled(false, time(10_000))
+        target.checkpoint(ReadingRecordKind.AUDIO, time(20_000))
+        target.setEnabled(true, time(30_000))
+        target.remove(ReadingRecordSource.PAGE, reader, time(40_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(40_000))
+        assertTotals(target, mapOf("A" to 20_000L, "B" to 20_000L), mapOf(day to 20_000L))
+    }
+
+    @Test
+    fun wallAndZoneChangesReanchorOnlyTheNextGlobalIntervalAcrossModels() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target)
+        val audio = play(target, ReadingRecordSource.AUDIO, key = "audio-b", name = "B")
+        val shanghai = ZoneId.of("Asia/Shanghai")
+        target.checkpoint(
+            ReadingRecordKind.TEXT, time(10_000, wallStart + 365L * 86_400_000L, shanghai),
+        )
+        target.checkpoint(ReadingRecordKind.AUDIO, time(20_000, wallStart - 365L * 86_400_000L))
+        target.remove(ReadingRecordSource.PAGE, reader, time(30_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(30_000))
+        assertTotals(
+            target, mapOf("A" to 30_000L, "B" to 30_000L),
+            mapOf(day to 10_000L, day + 365 to 10_000L, day - 365 to 10_000L),
+        )
+    }
+
+    @Test
+    fun monotonicRollbackResetsTheGlobalAnchorWithoutAddingNegativeTime() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target, now = time(10_000))
+        val audio = play(
+            target, ReadingRecordSource.AUDIO, now = time(10_000), key = "audio-b", name = "B",
+        )
+        target.setEnabled(true, time(5_000))
+        target.remove(ReadingRecordSource.PAGE, reader, time(8_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(8_000))
+        assertTotals(target, mapOf("A" to 3_000L, "B" to 3_000L), mapOf(day to 3_000L))
+    }
+
+    @Test
+    fun acknowledgingAnOverlappingBatchPreservesOnlyUnwrittenGlobalIntervals() {
+        val target = ReadingRecordAccumulator(true)
+        val reader = page(target)
+        val audio = play(target, ReadingRecordSource.AUDIO, key = "audio-b", name = "B")
+        target.checkpoint(ReadingRecordKind.TEXT, time(10_000))
+        target.checkpoint(ReadingRecordKind.AUDIO, time(10_000))
+        val writing = target.pendingSnapshot()
+        target.remove(ReadingRecordSource.PAGE, reader, time(20_000))
+        target.remove(ReadingRecordSource.AUDIO, audio, time(30_000))
+        assertTotals(target, mapOf("A" to 20_000L, "B" to 30_000L), mapOf(day to 30_000L))
+        assertEquals(mapOf(day to 10_000L), writing.days)
+        target.acknowledge(writing)
+        assertTotals(target, mapOf("A" to 10_000L, "B" to 20_000L), mapOf(day to 20_000L))
         target.acknowledge(target.pendingSnapshot())
         assertFalse(target.hasPending)
     }

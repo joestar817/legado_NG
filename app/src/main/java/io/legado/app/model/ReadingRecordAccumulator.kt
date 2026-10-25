@@ -33,7 +33,7 @@ internal data class ReadingRecordBatch(
 /**
  * The old reading-record checkpoints and lifecycle boundaries share one elapsed interval.
  * Pages and read-aloud for the same text book count their union. Different reader models
- * retain their own records, and the calendar receives exactly the same total increments.
+ * retain their own book records; the calendar counts the union of all active models.
  * Callers serialize access; this class never schedules checkpoints or performs I/O.
  */
 internal class ReadingRecordAccumulator(private var enabled: Boolean) {
@@ -57,6 +57,7 @@ internal class ReadingRecordAccumulator(private var enabled: Boolean) {
     }
 
     private val kinds = ReadingRecordKind.entries.associateWith { KindState() }
+    private var previousGlobal: ReadingRecordTime? = null
     private val pendingBooks = linkedMapOf<String, ReadingRecordTotal>()
     private val pendingDays = linkedMapOf<Long, Long>()
 
@@ -161,6 +162,7 @@ internal class ReadingRecordAccumulator(private var enabled: Boolean) {
     }
 
     fun checkpoint(kind: ReadingRecordKind, now: ReadingRecordTime) {
+        checkpointGlobal(now)
         val state = kinds.getValue(kind)
         val start = state.previous
         state.previous = now
@@ -173,7 +175,15 @@ internal class ReadingRecordAccumulator(private var enabled: Boolean) {
             readTime = (previousTotal?.readTime ?: 0L) + duration,
             lastRead = maxOf(previousTotal?.lastRead ?: now.wallMillis, now.wallMillis),
         )
-        addDays(start, duration)
+    }
+
+    private fun checkpointGlobal(now: ReadingRecordTime) {
+        val start = previousGlobal
+        previousGlobal = now
+        if (start == null || !enabled) return
+        if (kinds.values.none { state -> state.book?.let { state.isActive(it.key) } == true }) return
+        val duration = now.elapsedMillis - start.elapsedMillis
+        if (duration > 0L) addDays(start, duration)
     }
 
     private fun addDays(start: ReadingRecordTime, duration: Long) {

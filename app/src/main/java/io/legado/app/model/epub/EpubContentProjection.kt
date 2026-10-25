@@ -14,6 +14,7 @@ internal class EpubContentProjection(
     val source: EpubSourceChapter,
     val prepared: ContentPositionMap,
     internal val checkCancelled: () -> Unit = {},
+    private val preserveExportedTitleOwners: Boolean = false,
 ) {
     internal class Glyph(
         val document: Int,
@@ -41,6 +42,7 @@ internal class EpubContentProjection(
     private val head = Glyph(-1, -1, null, '\u0000')
     private val tail = Glyph(-1, -1, null, '\u0000')
     private val originalNodes = source.documents.map { document -> document.nodes.map { arrayOfNulls<Glyph>(it.text.length) } }
+    private val exportedTitleOwners = HashMap<Pair<Int, Int>, Pair<Int, String>>()
     private val mediaGlyphs = HashMap<Pair<Int, String>, Glyph>()
     private val extraNodes = ArrayList<Pair<Int, String>>()
     private val lexical = arrayOfNulls<Mark>(source.html.length)
@@ -62,6 +64,13 @@ internal class EpubContentProjection(
                     val id = parent.attr(EpubSourceCapture.ATTRIBUTE)
                     val index = indices[id to parent.textNodes().indexOf(node)] ?: error("EPUB source text identity missing")
                     check(node.wholeText == document.nodes[index].text) { "EPUB source text changed while serializing" }
+                    if (preserveExportedTitleOwners && parent.hasClass("ng-title-segment")) {
+                        val heading = parent.parent()
+                        if (heading != null && heading.hasClass("ng-read-title") && heading.attr("data-ng-read-title") == "1" &&
+                            (heading.normalName() in setOf("h1", "h2", "h3", "h4", "h5", "h6") || heading.attr("role") == "heading")) {
+                            exportedTitleOwners[documentIndex to index] = documentIndex to heading.attr(EpubSourceCapture.ATTRIBUTE)
+                        }
+                    }
                     node.wholeText.forEachIndexed { offset, char ->
                         val glyph = Glyph(documentIndex, index, null, char)
                         insertBefore(tail, glyph)
@@ -208,10 +217,50 @@ internal class EpubContentProjection(
         val removed = prepared.removedTitle ?: return
         if (text.isEmpty()) return
         val mark = span(rawMarks, removed.start, removed.end)
+        if (bindExportedTitleOwners(mark, text, positions)) return
         val inserted = replace(mark, ContentEdit(removed.start, removed.end, text))
         inserted.forEachIndexed { index, value ->
             value?.start?.let { it.canonicalStart = positions[index]; it.canonicalEnd = positions[index] + 1 }
         }
+    }
+
+    /** Keep the exporter's authored spans only when the native title has exactly the same letters. */
+    private fun bindExportedTitleOwners(mark: Mark, text: String, positions: IntArray): Boolean {
+        if (exportedTitleOwners.isEmpty()) return false
+        val glyphs = ArrayList<Glyph>()
+        var glyph = active(mark.start ?: mark.boundary)
+        val end = active(mark.last?.next ?: mark.boundary)
+        while (glyph !== end && glyph !== tail) {
+            glyphs.add(glyph)
+            glyph = glyph.next ?: tail
+        }
+        if (glyph !== end) return false
+        val letters = glyphs.filterNot { it.char.isWhitespace() }
+        if (letters.isEmpty() || letters.any { it.generated || it.canonicalStart != Int.MAX_VALUE }) return false
+        val groups = letters.map { exportedTitleOwners[it.document to it.node] ?: return false }.distinct()
+        if (groups.size != 1) return false
+        // Do not preserve a partial heading, or a title whose source nodes were already edited.
+        val authored = exportedTitleOwners.filterValues { it == groups.single() }.keys.flatMap { (document, node) ->
+            originalNodes[document][node].filterNotNull().filterNot { it.char.isWhitespace() }
+        }
+        val selected = letters.toHashSet()
+        if (authored.size != letters.size || authored.any { !it.live || it !in selected }) return false
+        if (letters.map { it.char }.joinToString("") != text.filterNot(Char::isWhitespace)) return false
+        var cursor = 0
+        glyphs.forEach { sourceGlyph ->
+            if (sourceGlyph.char.isWhitespace()) {
+                if (exportedTitleOwners[sourceGlyph.document to sourceGlyph.node] != groups.single()) return@forEach
+                if (cursor >= text.length || !text[cursor].isWhitespace()) return@forEach
+            } else {
+                while (cursor < text.length && text[cursor].isWhitespace()) cursor++
+            }
+            if (cursor < text.length) {
+                sourceGlyph.canonicalStart = positions[cursor]
+                sourceGlyph.canonicalEnd = positions[cursor] + 1
+                cursor++
+            }
+        }
+        return true
     }
 
     fun documents(): List<ProjectedDocument> {

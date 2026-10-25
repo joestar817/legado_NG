@@ -3,9 +3,10 @@
     if (window.__ngEpubContainer) return;
     var host = document.getElementById('ng-epub-continuous'), flow = null, documents = [], key = '';
     var status = { status: 'idle' }, entries = [], revision = 0, options = {}, active = 0;
-    var highlights = [], pending = new Set();
+    var highlights = [], pending = new Set(), scrollTask = null;
     var selectionTransparent = false, linkHandler = null, flowMode = '';
     function clear() {
+        scrollTask = null;
         pending.forEach(function (cancel) { cancel(); }); pending.clear();
         if (flow) flow.close(); flow = null; flowMode = '';
         entries.forEach(function (entry) { window.__ngEpubCancelBackground(entry.backdrop);
@@ -109,6 +110,7 @@
         status = { status: 'ready', token: options.token, pageIndex: page, pageCount: spreads.length };
     }
     async function updateStyles(value) {
+        scrollTask = null;
         var mine = ++revision;
         options.token = value.token; status.token = value.token;
         if (flow) return flow.updateStyles(value);
@@ -124,12 +126,24 @@
         } catch (error) { if (mine === revision) status = { status: 'error', token: value.token, error: String(error.message || error) }; }
     }
     async function configure(value) {
+        scrollTask = null;
         var mine = ++revision, previous = state();
         options = value; status = { status: 'loading', token: value.token };
         if (Array.isArray(value.highlights)) highlights = value.highlights;
         if (typeof value.selectionTransparent === 'boolean') selectionTransparent = value.selectionTransparent;
         try {
-            var nextKey = JSON.stringify(value.documents.map(function (d) { return d.url; }));
+            var nextKey = JSON.stringify(value.documents);
+            if (flow && flowMode === 'continuous' && value.containerMode === 'continuous' && flow.updateWindow) {
+                var currentFlow = flow;
+                var reused = await currentFlow.updateWindow(value, value.documents, function () {
+                    return mine === revision && flow === currentFlow && flowMode === 'continuous';
+                });
+                check(mine);
+                if (reused) {
+                    documents = value.documents; key = nextKey;
+                    return;
+                }
+            }
             if (key !== nextKey || flowMode !== value.containerMode || !flow) {
                 clear(); documents = value.documents; key = nextKey;
                 if (value.containerMode === 'continuous') flow = window.__ngEpubCreateContinuous(host, documents);
@@ -148,12 +162,13 @@
         } catch (error) { if (mine === revision) status = { status: 'error', token: value.token, error: String(error.message || error) }; }
     }
     async function move(value) {
+        scrollTask = null;
+        var mine = ++revision;
         if (flow) {
             var index = value.location && value.location.index;
             if (Number.isInteger(index)) value = Object.assign({}, value, { index: index });
             return flow.move(value);
         }
-        var mine = ++revision;
         options = Object.assign({}, options, { token: value.token });
         status = { status: 'loading', token: value.token };
         try {
@@ -166,10 +181,39 @@
     function state() {
         if (status.status === 'error') return status;
         if (!flow) return fixedState();
-        var current = flow.state();
-        if (flowMode === 'canvas') return current;
+        return flowState(flow.state(), flowMode);
+    }
+    function flowState(current, mode) {
+        if (mode === 'canvas') return current;
         return Object.assign({}, current, { canvas: true, fullViewport: true, scrollOvershoot: current.overshoot,
             hideHeader: current.cover || current.bleedHeader, hideFooter: current.cover });
+    }
+    function currentScroll(task) {
+        return scrollTask === task && revision === task.revision && flow === task.flow && flowMode === task.mode;
+    }
+    async function requestScroll(value) {
+        if (!flow) return null;
+        var task = { token: value.token, request: value.request, revision: revision, flow: flow, mode: flowMode, result: null };
+        scrollTask = task;
+        try {
+            if (task.flow.state().token !== task.token) {
+                if (currentScroll(task)) scrollTask = null;
+                return null;
+            }
+            var report;
+            if (task.mode === 'continuous') report = await task.flow.scrollAndSettle(value.delta);
+            else { task.flow.scrollBy(value.delta); report = await task.flow.settle(); }
+            // The drain's busy flag can clear before captureLocation finishes. Publish only
+            // this batch's settled snapshot, and never replace a newer navigation/request.
+            if (currentScroll(task) && report && report.token === task.token) task.result = flowState(report, task.mode);
+        } catch (error) {
+            if (currentScroll(task)) task.result = { token: task.token, status: 'error', error: String(error.message || error) };
+        }
+        return currentScroll(task) ? task.result : null;
+    }
+    function scrollResult(token, request) {
+        var task = scrollTask;
+        return task && currentScroll(task) && task.token === token && task.request === request ? task.result : null;
     }
     function interact(value) {
         if (flow) return flow.interact(value);
@@ -222,7 +266,7 @@
     window.__ngEpubContainer = Object.freeze({ configure: configure, updateStyles: updateStyles, move: move, state: state, interact: interact,
         setLinkHandler: function (handler) { linkHandler = typeof handler === 'function' ? handler : null;
             if (flow) flow.setLinkHandler(linkHandler); },
-        cancelConfiguration: function () { revision++; pending.forEach(function (cancel) { cancel(); }); pending.clear();
+        cancelConfiguration: function () { scrollTask = null; revision++; pending.forEach(function (cancel) { cancel(); }); pending.clear();
             if (flow && flow.cancelConfiguration) flow.cancelConfiguration();
             else entries.forEach(function (e) { e.api.cancelConfiguration(); window.__ngEpubCancelBackground(e.backdrop); }); },
         pauseMedia: function () { if (flow) flow.pauseMedia(); else entries.forEach(function (e) { e.api.pauseMedia(); }); },
@@ -230,10 +274,11 @@
             e.api.mediaOverlay(e.index === active ? value : {}); }); },
         revealText: function (value) { if (flow) return flow.revealText(value);
             var entry = entries.find(function (e) { return e.index === active; }); return entry && entry.api.revealText(value); },
-        prepareSelection: function (value) { if (flow && flow.prepareSelection) return flow.prepareSelection(value); },
+        prepareSelection: function (value) { if (flow && flow.prepareSelection) { revision++; scrollTask = null; return flow.prepareSelection(value); } },
         flowPosition: function (value) { return flow && flow.flowPosition ? flow.flowPosition(value) : null; },
         beginScroll: function () { if (flow) flow.beginScroll(); },
         scrollBy: function (delta) { if (flow) flow.scrollBy(delta); },
+        requestScroll: requestScroll, scrollResult: scrollResult,
         settle: async function () { if (flow) await flow.settle(); return state(); },
         captureLocation: function () { if (flow && flow.captureLocation) flow.captureLocation(); return state().location; },
         setHighlights: function (values) { highlights = values; if (flow) flow.setHighlights(values); else entries.forEach(function (e) {

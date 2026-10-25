@@ -3,6 +3,8 @@ package io.legado.app.help.tts
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.JsonSyntaxException
+import io.legado.app.constant.AppPattern
+import org.htmlunit.corejs.javascript.Context
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -11,6 +13,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import javax.xml.parsers.DocumentBuilderFactory
 
 class TtsHttpForwarderClientTest {
 
@@ -452,7 +455,7 @@ class TtsHttpForwarderClientTest {
         assertEquals(TtsEngineStore.NEXT_EDGE_PROXY_ID, engine.id)
         assertEquals("Next Edge TTS", engine.name)
         assertEquals(TtsEngineType.SCRIPT, engine.type)
-        assertEquals(true, engine.enabled)
+        assertEquals(false, engine.enabled)
         assertEquals("audio/mpeg", engine.contentType)
         assertEquals("http://5.45.99.149:8075/tts", engine.baseUrl)
         assertTrue(engine.supportsVoiceFetch())
@@ -507,6 +510,114 @@ class TtsHttpForwarderClientTest {
     }
 
     @Test
+    fun microsoftTranslatorDefaultsToYunxiWithoutOverwritingExistingVoice() {
+        val engine = scriptEngineFromAssetFile("microsoft_translator.js")
+        val voices = listOf(
+            TtsVoice(id = "zh-CN-XiaoxiaoNeural", name = "晓晓"),
+            TtsVoice(id = TtsEngineStore.MICROSOFT_TRANSLATOR_DEFAULT_VOICE_ID, name = "云希")
+        )
+
+        assertTrue(engine.enabled)
+        assertEquals(TtsEngineStore.MICROSOFT_TRANSLATOR_ID, engine.id)
+        assertEquals(
+            TtsEngineStore.MICROSOFT_TRANSLATOR_DEFAULT_VOICE_ID,
+            TtsEngineStore.resolveActiveVoiceId(engine, voices)
+        )
+        assertEquals(
+            "zh-CN-XiaoxiaoNeural",
+            TtsEngineStore.resolveActiveVoiceId(
+                engine.copy(activeVoiceId = "zh-CN-XiaoxiaoNeural"),
+                voices
+            )
+        )
+    }
+
+    @Test
+    fun microsoftTranslatorIsDefaultRegardlessOfSavedListOrder() {
+        val edge = scriptEngineFromAssetFile("next_edge_proxy.js").copy(enabled = true)
+        val translator = scriptEngineFromAssetFile("microsoft_translator.js")
+        val engines = listOf(edge, translator)
+
+        assertEquals(translator.id, TtsEngineStore.resolveActiveEngine(engines, null)?.id)
+        assertEquals(translator.id, TtsEngineStore.resolveActiveEngine(engines, "deleted")?.id)
+        assertEquals(edge.id, TtsEngineStore.resolveActiveEngine(engines, edge.id)?.id)
+    }
+
+    @Test
+    fun microsoftTranslatorChineseCatalogUpdatePreservesUserSettings() {
+        val builtIn = scriptEngineFromAssetFile("microsoft_translator.js")
+        val saved = builtIn.copy(
+            script = builtIn.script.replaceFirst("// @version 1.0.1", "// @version 1.0.0"),
+            name = "我的微软翻译",
+            enabled = false,
+            activeVoiceId = "zh-CN-XiaoxiaoNeural",
+            optionValues = mapOf("timeout" to "60")
+        )
+
+        val updated = TtsEngineStore.updateDefaultScriptForTest(saved, builtIn)
+
+        assertEquals(builtIn.script, updated.script)
+        assertEquals(saved.name, updated.name)
+        assertEquals(saved.enabled, updated.enabled)
+        assertEquals(saved.activeVoiceId, updated.activeVoiceId)
+        assertEquals(saved.optionValues, updated.optionValues)
+        assertFalse(TtsEngineStore.preservesVoiceCatalogOnDefaultUpgrade(saved, updated))
+    }
+
+    @Test
+    fun microsoftTranslatorPreservesLiteralTextAcrossRequestRuleBoundary() {
+        val text = "字面文本：{{1+1}}，@Js:，<js>1+1</js>，&，😀"
+        val engine = scriptEngineFromAssetFile("microsoft_translator.js")
+        val context = Context.enter()
+        val ssml = try {
+            context.optimizationLevel = -1
+            context.languageVersion = Context.VERSION_ES6
+            val scope = context.initStandardObjects()
+            context.evaluateString(scope, engine.script, "microsoft_translator.js", 1, null)
+            Context.toString(
+                context.evaluateString(
+                    scope,
+                    "buildTranslatorSsml(${Gson().toJson(text)}, null, {}, {});",
+                    "literal-text", 1, null
+                )
+            )
+        } finally {
+            Context.exit()
+        }
+        val request = TtsScriptEngineClient.TtsScriptRequest(
+            url = "https://southeastasia.tts.speech.microsoft.com/cognitiveservices/v1",
+            method = "POST",
+            body = ssml,
+            requestContentType = "application/ssml+xml"
+        )
+        val rule = request.toAnalyzeUrlRule()
+
+        assertFalse(AppPattern.JS_PATTERN.matcher(rule).find())
+        assertFalse(AppPattern.EXP_PATTERN.matcher(rule).find())
+        val document = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = true
+        }.newDocumentBuilder().parse(ssml.byteInputStream(Charsets.UTF_8))
+        assertEquals(
+            text,
+            document.getElementsByTagNameNS("http://www.w3.org/2001/10/synthesis", "prosody")
+                .item(0).textContent
+        )
+    }
+
+    @Test
+    fun unavailableMicrosoftTranslatorDoesNotOverrideEnabledEngines() {
+        val edge = scriptEngineFromAssetFile("next_edge_proxy.js").copy(enabled = true)
+        val translator = scriptEngineFromAssetFile("microsoft_translator.js").copy(enabled = false)
+
+        assertEquals(
+            edge.id,
+            TtsEngineStore.resolveActiveEngine(listOf(edge, translator), translator.id)?.id
+        )
+        assertEquals(edge.id, TtsEngineStore.resolveActiveEngine(listOf(edge), null)?.id)
+        assertNull(TtsEngineStore.resolveActiveEngine(listOf(translator), null))
+    }
+
+    @Test
     fun nextEdgeLazyCatalogUpgradePreservesExistingVoiceDirectory() {
         val upgraded = scriptEngineFromAssetFile("next_edge_proxy.js")
         val saved = upgraded.copy(
@@ -525,17 +636,17 @@ class TtsHttpForwarderClientTest {
     }
 
     @Test
-    fun firstUseRoleDefaultsSelectNextEdgeAndYunxi() {
+    fun firstUseRoleDefaultsSelectMicrosoftTranslatorAndYunxi() {
         val defaults = resolveFirstUseTtsRoleDefaults(
             currentMultiRoleEngineId = null,
             currentNarratorEngineId = null,
             currentNarratorVoiceId = null,
-            nextEdgeAvailable = true
+            translatorAvailable = true
         )
 
-        assertEquals(TtsEngineStore.NEXT_EDGE_PROXY_ID, defaults.multiRoleEngineId)
-        assertEquals(TtsEngineStore.NEXT_EDGE_PROXY_ID, defaults.narratorEngineId)
-        assertEquals(TtsEngineStore.NEXT_EDGE_DEFAULT_VOICE_ID, defaults.narratorVoiceId)
+        assertEquals(TtsEngineStore.MICROSOFT_TRANSLATOR_ID, defaults.multiRoleEngineId)
+        assertEquals(TtsEngineStore.MICROSOFT_TRANSLATOR_ID, defaults.narratorEngineId)
+        assertEquals(TtsEngineStore.MICROSOFT_TRANSLATOR_DEFAULT_VOICE_ID, defaults.narratorVoiceId)
     }
 
     @Test
@@ -544,7 +655,7 @@ class TtsHttpForwarderClientTest {
             currentMultiRoleEngineId = "dialogue_engine",
             currentNarratorEngineId = "narrator_engine",
             currentNarratorVoiceId = "narrator_voice",
-            nextEdgeAvailable = true
+            translatorAvailable = true
         )
 
         assertEquals("dialogue_engine", defaults.multiRoleEngineId)
@@ -553,12 +664,12 @@ class TtsHttpForwarderClientTest {
     }
 
     @Test
-    fun firstUseRoleDefaultsDoNotRecreateUnavailableNextEdge() {
+    fun firstUseRoleDefaultsDoNotRecreateUnavailableMicrosoftTranslator() {
         val defaults = resolveFirstUseTtsRoleDefaults(
             currentMultiRoleEngineId = null,
             currentNarratorEngineId = null,
             currentNarratorVoiceId = null,
-            nextEdgeAvailable = false
+            translatorAvailable = false
         )
 
         assertNull(defaults.multiRoleEngineId)

@@ -158,7 +158,7 @@ class ReadRecordActivity : BaseActivity<ComposeActivityBinding>() {
                             ""
                         },
                     )
-                }.let { Triple(it, appDb.readRecordDao.allTime, appDb.readRecordDao.recordCount) }
+                }.let { Triple(it, appDb.readingTimeTotalDao.totalReadTime, appDb.readRecordDao.recordCount) }
             }
             items = result.first
             totalReadTime = result.second

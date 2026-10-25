@@ -71,7 +71,8 @@ object ReadAloud {
 
     @Synchronized
     fun upReadAloudClass() {
-        stop(appCtx)
+        // Initial engine setup must leave foreground music for the service to take over.
+        if (BaseReadAloudService.isRun) stop(appCtx)
         aloudClass = getReadAloudClass()
     }
 
@@ -145,6 +146,7 @@ object ReadAloud {
     }
 
     fun stop(context: Context) {
+        io.legado.app.help.bgm.BgmPlaybackController.releaseForegroundPlayback()
         if (BaseReadAloudService.isRun) {
             val intent = Intent(context, aloudClass)
             intent.action = IntentAction.stop

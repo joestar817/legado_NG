@@ -220,7 +220,7 @@ class HomeViewModel(
 
     /** Collected only while the home page is resumed; each collection reads an initial snapshot. */
     internal suspend fun observeReadingRecords() {
-        appDb.invalidationTracker.createFlow("readRecord").conflate().collect {
+        appDb.invalidationTracker.createFlow("readRecord", "readingTimeTotal").conflate().collect {
             refreshReadingState()
         }
     }
@@ -231,7 +231,7 @@ class HomeViewModel(
                 appDb.withTransaction {
                     val dao = appDb.readRecordDao
                     HomeReadingState(
-                        totalReadTime = dao.homeTotalReadTime,
+                        totalReadTime = appDb.readingTimeTotalDao.totalReadTime,
                         recordCount = dao.recordCount,
                         recentRecords = dao.recentForHome.map { record ->
                             HomeReadingRecord(record.bookName, record.readTime, record.lastRead)

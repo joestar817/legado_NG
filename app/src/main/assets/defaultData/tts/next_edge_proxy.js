@@ -4,7 +4,7 @@
 // @uuid next_edge_proxy
 // @author Legado
 // @url http://5.45.99.149:8075/tts
-// @enabled true
+// @enabled false
 // @cookieJar false
 // @audioType audio/mpeg
 // @defaultSpeed 50

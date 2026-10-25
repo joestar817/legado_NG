@@ -3,6 +3,7 @@ package io.legado.app.ui.book.read.config
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -11,16 +12,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.data.entities.Book
 import io.legado.app.help.config.EpubLayoutPreferences
-import io.legado.app.ui.book.read.rememberReadDrawerThemeProfile
-import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
-import io.legado.app.ui.design.components.compose.NgDrawerDefaults
+import io.legado.app.ui.book.read.readFloatingGlassStyle
+import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.theme.NgTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,7 +33,7 @@ internal fun EpubLayoutSheet(
     onDismiss: () -> Unit,
 ) {
     val maxHeight = minOf(READ_MORE_CONFIG_WINDOW_HEIGHT_DP.dp, LocalConfiguration.current.screenHeightDp.dp)
-    val appearance = NgDrawerDefaults.rememberAppearance().copy(horizontalMarginDp = 0, cornerRadiusDp = 20)
+    val nestedScrollInteropConnection = rememberNestedScrollInteropConnection()
     var choices by remember(book.bookUrl) { mutableStateOf(EpubLayoutPreferences.read(book.bookUrl)) }
     fun change(key: String, value: Boolean) {
         EpubLayoutPreferences.set(book.bookUrl, key, value)
@@ -45,10 +47,11 @@ internal fun EpubLayoutSheet(
         containerColor = Color.Transparent, shape = RectangleShape, dragHandle = null,
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
-        NgBottomDrawerSurface(
-            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(top = 8.dp),
-            appearance = appearance,
-            themeProfile = rememberReadDrawerThemeProfile(),
+        NgGlassSurface(
+            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(top = 8.dp)
+                .nestedScroll(nestedScrollInteropConnection),
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            style = readFloatingGlassStyle(),
         ) {
             val contentColor = Color(NgTheme.colors.onSurface)
             Column(

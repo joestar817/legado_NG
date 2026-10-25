@@ -30,12 +30,15 @@
     <string name="home_style_storybook">绘本书屋</string>
     <string name="home_style_paper">纸页叶影</string>
     <string name="home_style_night">夜灯书桌</string>
+    <string name="home_style_white">亮白卡片</string>
     <string name="home_variant_storybook_small">绘本书屋 · 小窗口</string>
     <string name="home_variant_storybook_large">绘本书屋 · 大窗口</string>
     <string name="home_variant_paper_small">纸页叶影 · 小窗口</string>
     <string name="home_variant_paper_large">纸页叶影 · 大窗口</string>
     <string name="home_variant_night_small">夜灯书桌 · 小窗口</string>
     <string name="home_variant_night_large">夜灯书桌 · 大窗口</string>
+    <string name="home_variant_white_small">亮白卡片 · 小窗口</string>
+    <string name="home_variant_white_large">亮白卡片 · 大窗口</string>
     <string name="home_move_widget_up">上移</string>
     <string name="home_move_widget_down">下移</string>
     <string name="home_edit">编辑</string>

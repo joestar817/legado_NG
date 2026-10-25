@@ -77,9 +77,16 @@ class EpubReaderGesturesTest {
 
     @Test
     fun fastUpwardReleaseContinuesAcrossMultipleScreensAndFinishesOnce() {
-        flickUp()
+        assertFalse(gestures.isActive)
+        touch(MotionEvent.ACTION_DOWN, 200f, 850f)
+        assertTrue("A held pointer must defer background window updates even before movement", gestures.isActive)
+        repeat(3) { move(200f, 700f - it * 150f) }
+        assertTrue("Dragging must keep the reader interaction active", gestures.isActive)
+        release(200f, 400f)
+        assertTrue("Lifting the pointer must not mark continuing momentum as idle", gestures.isActive)
         val dragged = deltas.sumOf { it.second.toDouble() }
         advance(12_000)
+        assertFalse("Natural momentum completion must allow deferred window updates", gestures.isActive)
         val distance = deltas.sumOf { it.second.toDouble() }
         assertTrue("Release should add more than one screen of motion", distance - dragged > 1000)
         assertTrue(deltas.all { it.second >= 0 })
@@ -134,9 +141,11 @@ class EpubReaderGesturesTest {
     @Test
     fun cancellationNeverLaunchesMomentumOrCompletesABoundaryTurn() {
         touch(MotionEvent.ACTION_DOWN, 200f, 850f)
+        assertTrue(gestures.isActive)
         move(200f, 700f)
         move(200f, 550f)
         touch(MotionEvent.ACTION_CANCEL, 200f, 550f)
+        assertFalse("A cancelled pointer sequence must no longer block idle work", gestures.isActive)
         val count = deltas.size
         advance(1000)
         assertEquals(count, deltas.size)
@@ -147,9 +156,11 @@ class EpubReaderGesturesTest {
     @Test
     fun reentrantCancellationDoesNotCompleteTheOldFling() {
         flickUp()
+        assertTrue(gestures.isActive)
         acceptsScroll = false
         beforeScroll = { gestures.cancel() }
         advance(100)
+        assertFalse("Cancelling from a scroll callback must release the active fling", gestures.isActive)
         assertEquals(1, flingsStopped)
         assertEquals(0, scrollsFinished)
     }

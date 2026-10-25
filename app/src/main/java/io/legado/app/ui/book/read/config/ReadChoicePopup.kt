@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
@@ -35,6 +36,8 @@ import io.legado.app.ui.design.components.compose.NgGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.theme.NgTheme
+
+internal enum class ReadChoicePopupVariant { STANDARD, ADAPTIVE }
 
 @Composable
 internal fun ReadChoicePopup(
@@ -47,6 +50,7 @@ internal fun ReadChoicePopup(
     style: NgGlassStyle = readFloatingGlassStyle(),
     role: NgMaterialRole = NgMaterialRole.SOFT_SURFACE,
     scrollable: Boolean = false,
+    variant: ReadChoicePopupVariant = ReadChoicePopupVariant.STANDARD,
 ) {
     val contentColor = Color(NgTheme.colors.onSurface)
     val density = LocalDensity.current
@@ -76,6 +80,7 @@ internal fun ReadChoicePopup(
                         onSelected = onSelected,
                         style = style,
                         role = role,
+                        variant = variant,
                         scrollMaxHeight = (maxHeight - 16.dp).coerceAtLeast(0.dp),
                     )
                 }
@@ -88,6 +93,7 @@ internal fun ReadChoicePopup(
                     onSelected = onSelected,
                     style = style,
                     role = role,
+                    variant = variant,
                 )
             }
         }
@@ -103,13 +109,17 @@ private fun ReadChoicePopupContent(
     onSelected: (String) -> Unit,
     style: NgGlassStyle,
     role: NgMaterialRole,
+    variant: ReadChoicePopupVariant,
     scrollMaxHeight: Dp? = null,
 ) {
     val items: @Composable ColumnScope.() -> Unit = {
         options.forEach { option ->
             DropdownMenuItem(
                 modifier = Modifier
-                    .height(42.dp)
+                    .then(
+                        if (variant == ReadChoicePopupVariant.ADAPTIVE) Modifier.heightIn(min = 42.dp)
+                        else Modifier.height(42.dp)
+                    )
                     .semantics {
                         selected = option.value == selectedValue
                     },
@@ -122,6 +132,8 @@ private fun ReadChoicePopupContent(
                             contentColor
                         },
                         fontSize = 14.sp,
+                        lineHeight = if (variant == ReadChoicePopupVariant.ADAPTIVE) 20.sp
+                            else TextUnit.Unspecified,
                         fontWeight = if (option.value == selectedValue) {
                             FontWeight.Medium
                         } else {

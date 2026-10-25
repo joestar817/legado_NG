@@ -392,13 +392,14 @@ class HomeWidgetMutationTest {
             widgets[2].copy(variantId = "night-large"),
             widgets[3].copy(variantId = "night-small"),
         ), night)
-        listOf("basic", "storybook", "night").forEach { style ->
+        listOf("basic", "storybook", "night", "white").forEach { style ->
             val changed = changeHomeWidgetSuite(night, style)!!
             assertEquals(widgets.map { it.id to it.typeId }, changed.map { it.id to it.typeId })
             assertEquals(widgets.map { HomeWidgetCatalog.variant(it)!!.size },
                 changed.map { HomeWidgetCatalog.variant(it)!!.size })
             assertEquals(style, homeWidgetCommonStyle(changed))
             assertEquals(HomeWidgetSize.LARGE, HomeWidgetCatalog.variant(changed.first())!!.size)
+            assertEquals(changed, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(changed)))
         }
         assertEquals(listOf("story-large", "small", "story-large", "night-small"), widgets.map { it.variantId })
     }

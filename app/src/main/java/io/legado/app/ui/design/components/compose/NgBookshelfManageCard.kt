@@ -5,8 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +26,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.help.config.BookshelfCardStyle
 import io.legado.app.ui.design.components.NgStatusTagSpec
 import io.legado.app.ui.design.components.NgStatusTagStyle
 import io.legado.app.ui.design.theme.NgTheme
@@ -56,6 +60,7 @@ enum class NgBookshelfManageCardVariant {
  *
  * 与通用 [NgManagementListCard] 分离，避免书架的选中描边、长按详情和拖动手柄
  * 改变供应商、朗读引擎等既有管理列表的圆角与结构。
+ * 封面卡显式传入 [appearance] 时共用书架材质；未传入时保留原白卡。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -65,6 +70,7 @@ fun NgBookshelfManageCard(
     metadataText: String,
     modifier: Modifier = Modifier,
     variant: NgBookshelfManageCardVariant = NgBookshelfManageCardVariant.CONTAINED_CARD,
+    appearance: BookshelfCardStyle? = null,
     cacheText: String? = null,
     /** 该书缓存占用的可读大小，如 "3.2 MB"；为 null 时不显示。 */
     cacheSizeText: String? = null,
@@ -80,6 +86,7 @@ fun NgBookshelfManageCard(
     cacheActionContent: (@Composable () -> Unit)? = null,
     dragHandleContentDescription: String,
     dragHandleModifier: Modifier = Modifier,
+    dragHandleEnabled: Boolean = true,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -102,12 +109,14 @@ fun NgBookshelfManageCard(
             selected = selected,
             dimmed = dimmed,
             showDragHandle = showDragHandle,
+            appearance = appearance,
             coverContent = requireNotNull(coverContent) {
                 "COVER_CARD variant requires coverContent"
             },
             cacheActionContent = cacheActionContent,
             dragHandleContentDescription = dragHandleContentDescription,
             dragHandleModifier = dragHandleModifier,
+            dragHandleEnabled = dragHandleEnabled,
             modifier = modifier,
             onClick = onClick,
             onLongClick = onLongClick,
@@ -310,16 +319,20 @@ private fun NgBookshelfManageCoverCard(
     selected: Boolean,
     dimmed: Boolean,
     showDragHandle: Boolean,
+    appearance: BookshelfCardStyle?,
     coverContent: @Composable () -> Unit,
     cacheActionContent: (@Composable () -> Unit)?,
     dragHandleContentDescription: String,
     dragHandleModifier: Modifier,
+    dragHandleEnabled: Boolean,
     modifier: Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(dimensionResource(R.dimen.ng_radius_s))
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val radius = dimensionResource(R.dimen.ng_radius_s)
+    val shape = RoundedCornerShape(radius)
     val coverShape = RoundedCornerShape(9.dp)
     val selectedOutline = Color(NgTheme.colors.primary)
     val metadataColor = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.68f)
@@ -330,30 +343,29 @@ private fun NgBookshelfManageCoverCard(
     // 选中卡的底色:先铺卡片本色,再叠一层极浅主色,等价于设计稿里的 #FFF8F6,且跟随主题。
     val selectedTint = Color(NgTheme.colors.primary).copy(alpha = 0.08f)
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            // 高度固定:进度条并入环钮后,卡片不再随是否已缓存而变高,列表行距恒定。
-            .height(82.dp)
-            .then(if (dimmed) Modifier.alpha(0.58f) else Modifier)
-            .clip(shape)
-            .background(cardColor)
-            .then(if (selected) Modifier.background(selectedTint) else Modifier)
-            .then(
-                if (selected) {
-                    Modifier.border(2.2.dp, selectedOutline, shape)
-                } else {
-                    Modifier
-                }
-            )
-            .semantics { this.selected = selected }
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-                onLongClick = onLongClick,
-            ),
-    ) {
+    val cardModifier = modifier
+        .fillMaxWidth()
+        // 高度固定:进度条并入环钮后,卡片不再随是否已缓存而变高,列表行距恒定。
+        .height(82.dp)
+        .then(if (dimmed) Modifier.alpha(0.58f) else Modifier)
+        .clip(shape)
+        // 选中卡的底色:先铺卡片本色,再叠一层极浅主色,等价于设计稿里的 #FFF8F6,且跟随主题。
+        .then(if (selected) Modifier.background(selectedTint) else Modifier)
+        .then(
+            if (selected) {
+                Modifier.border(2.2.dp, selectedOutline, shape)
+            } else {
+                Modifier
+            }
+        )
+        .semantics { this.selected = selected }
+        .combinedClickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick,
+            onLongClick = onLongClick,
+        )
+    val cardContent: @Composable BoxScope.() -> Unit = {
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -440,11 +452,13 @@ private fun NgBookshelfManageCoverCard(
                             // 章数是「进度」,用主色加粗;体积是参考值,留给次要色。
                             Text(
                                 text = cacheText,
+                                modifier = Modifier.weight(1f, fill = false),
                                 color = Color(NgTheme.colors.primary),
                                 fontSize = 12.sp,
                                 lineHeight = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         if (!cacheSizeText.isNullOrBlank()) {
@@ -496,7 +510,9 @@ private fun NgBookshelfManageCoverCard(
                     modifier = dragHandleModifier
                         .width(28.dp)
                         .fillMaxHeight()
-                        .semantics { contentDescription = dragHandleContentDescription },
+                        .semantics {
+                            if (dragHandleEnabled) contentDescription = dragHandleContentDescription
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -506,11 +522,22 @@ private fun NgBookshelfManageCoverCard(
                         tint = if (selected) {
                             Color(NgTheme.colors.primary)
                         } else {
-                            metadataColor.copy(alpha = 0.62f)
+                            metadataColor.copy(alpha = if (dragHandleEnabled) 0.62f else 0.24f)
                         },
                     )
                 }
             }
         }
+    }
+    if (appearance == null) {
+        Box(modifier = cardModifier.background(cardColor), content = cardContent)
+    } else {
+        NgBookshelfCardSurface(
+            appearance = appearance,
+            pressed = isPressed,
+            cornerRadius = radius,
+            modifier = cardModifier,
+            content = cardContent,
+        )
     }
 }

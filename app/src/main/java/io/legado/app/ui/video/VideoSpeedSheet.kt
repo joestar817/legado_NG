@@ -19,6 +19,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.legado.app.ui.design.components.compose.NgDrawerDragHandle
+import io.legado.app.ui.design.components.compose.NgDrawerDragHandleVariant
 
 private val VideoSpeedRows = listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f, 2.5f, 3f).chunked(4)
 
@@ -39,15 +41,14 @@ internal fun VideoSpeedSheet(
         contentColor = colors.content,
         tonalElevation = 0.dp,
         contentWindowInsets = { WindowInsets.safeDrawing },
-        dragHandle = {
-            Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(32.dp, 4.dp)
-                .background(colors.content.copy(alpha = .2f), RoundedCornerShape(2.dp)))
-        },
+        dragHandle = null,
     ) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-            .padding(start = 18.dp, end = 18.dp, bottom = 24.dp)) {
-            Text("倍速", Modifier.padding(top = 8.dp, bottom = 18.dp),
-                fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            .padding(start = 18.dp, end = 18.dp, bottom = 16.dp)) {
+            NgDrawerDragHandle(Modifier.padding(top = 8.dp), variant = NgDrawerDragHandleVariant.COMPACT)
+            Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
+                Text("倍速", color = colors.content, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            }
             Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 VideoSpeedRows.forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -55,7 +56,7 @@ internal fun VideoSpeedSheet(
                             val selected = currentSpeed == speed
                             Box(Modifier.weight(1f).heightIn(min = 48.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(if (selected) colors.accent else colors.cell)
+                                .background(if (selected) colors.selectedContainer else colors.cell)
                                 .selectable(selected, role = Role.RadioButton, onClick = { onSelect(speed) })
                                 .padding(horizontal = 4.dp, vertical = 12.dp),
                                 contentAlignment = Alignment.Center) {

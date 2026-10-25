@@ -76,6 +76,47 @@ class BookReadStyleSessionTest {
         assertEquals(29, BookReadStyleSession.decode(fresh.config.independentReadStyle)!!.textSize)
     }
 
+    @Test fun readingBoundBookForExportUsesUnsavedMemoryAndRespectsFollowGlobal() {
+        val owner = book("a")
+        session.bind(owner)
+        session.use(ReadBookConfig.Config(textSize = 25))
+        val stale = book("a", owner.config.independentReadStyle)
+        val before = stored.toMap()
+        session.config!!.textSize = 33
+
+        assertSame(session.config, session.configFor(stale))
+        assertEquals(33, session.configFor(stale)!!.textSize)
+        assertEquals(before, stored)
+        assertEquals(25, BookReadStyleSession.decode(stale.config.independentReadStyle)!!.textSize)
+
+        session.followGlobal()
+        val afterFollowGlobal = stored.toMap()
+        assertNull(session.configFor(stale))
+        assertEquals(afterFollowGlobal, stored)
+        assertEquals(25, BookReadStyleSession.decode(stale.config.independentReadStyle)!!.textSize)
+    }
+
+    @Test fun readingOtherBookForExportDoesNotBindPersistOrCreateConfig() {
+        session.bind(book("a"))
+        session.use(ReadBookConfig.Config(textSize = 25))
+        val active = session.config
+        val other = book("b", GSON.toJson(ReadBookConfig.Config(textSize = 31)))
+        val before = stored.toMap()
+        val exported = session.configFor(other)!!
+        assertEquals(31, exported.textSize)
+        exported.textSize = 40
+        assertSame(active, session.config)
+        assertEquals(25, session.config!!.textSize)
+        assertEquals(before, stored)
+        assertEquals(31, BookReadStyleSession.decode(other.config.independentReadStyle)!!.textSize)
+
+        val noConfig = Book(bookUrl = "c")
+        assertNull(noConfig.readConfig)
+        assertNull(session.configFor(noConfig))
+        assertNull(noConfig.readConfig)
+        assertSame(active, session.config)
+    }
+
     @Test fun processRestartRestoresConfigFromBookJson() {
         val owner = book("a")
         session.bind(owner)

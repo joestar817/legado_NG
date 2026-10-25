@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
@@ -42,6 +44,7 @@ import io.legado.app.help.config.ReadAloudPlayerDisplaySettings
 import io.legado.app.model.AudioPlay
 import io.legado.app.service.AudioPlayService
 import io.legado.app.ui.book.read.aloud.ListeningActionRow
+import io.legado.app.ui.book.read.aloud.ListeningBgmRow
 import io.legado.app.ui.book.read.aloud.ListeningDivider
 import io.legado.app.ui.book.read.aloud.ListeningSettingsGroup
 import io.legado.app.ui.book.read.aloud.ReadAloudComposeBottomSheet
@@ -363,6 +366,8 @@ private fun AudioMoreSheet(
     onOpenMotion: () -> Unit,
     onAction: (AudioPlayMoreAction) -> Unit,
 ) {
+    val bgmContext = LocalContext.current
+    val bgmSettings by io.legado.app.help.bgm.BgmRepository.settings.collectAsState()
     val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.60f).dp
     var wakeLock by remember(wakeLockEnabled) { mutableStateOf(wakeLockEnabled) }
     NgBottomDrawerSurface(modifier = Modifier.fillMaxWidth()) {
@@ -493,6 +498,15 @@ private fun AudioMoreSheet(
                     ListeningSettingsGroup(
                         title = stringResource(R.string.audio_player_playback_actions),
                     ) {
+                        ListeningBgmRow(
+                            title = stringResource(R.string.bgm_title),
+                            summary = bgmSettings.currentTrack?.let { if (bgmSettings.enabled) it.title else "已关闭" } ?: "未选择音乐",
+                            checked = bgmSettings.enabled,
+                            enabled = bgmSettings.queue.isNotEmpty(),
+                            onOpenLibrary = { io.legado.app.ui.book.bgm.BgmActivity.selectForPlayback(bgmContext) },
+                            onCheckedChange = { io.legado.app.help.bgm.BgmRepository.setEnabled(it) },
+                        )
+                        ListeningDivider()
                         NgFormSwitchSettingRow(
                             title = stringResource(R.string.audio_play_wake_lock),
                             summary = stringResource(R.string.audio_play_wake_lock_summary),

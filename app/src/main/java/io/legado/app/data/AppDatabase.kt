@@ -26,6 +26,7 @@ import io.legado.app.data.dao.DictRuleDao
 import io.legado.app.data.dao.DailyReadingRecordDao
 import io.legado.app.data.dao.KeyboardAssistsDao
 import io.legado.app.data.dao.ReadRecordDao
+import io.legado.app.data.dao.ReadingTimeTotalDao
 import io.legado.app.data.dao.ReplaceRuleDao
 import io.legado.app.data.dao.RssArticleDao
 import io.legado.app.data.dao.RssReadRecordDao
@@ -63,6 +64,7 @@ import io.legado.app.data.entities.DictRule
 import io.legado.app.data.entities.DailyReadingRecord
 import io.legado.app.data.entities.KeyboardAssist
 import io.legado.app.data.entities.ReadRecord
+import io.legado.app.data.entities.ReadingTimeTotal
 import io.legado.app.data.entities.ReplaceRule
 import io.legado.app.data.entities.RssArticle
 import io.legado.app.data.entities.RssReadRecord
@@ -90,7 +92,7 @@ val appDb by lazy {
 }
 
 @Database(
-    version = 119,
+    version = 120,
     exportSchema = true,
     entities = [Book::class, BookGroup::class, BookSource::class, BookChapter::class,
         ReplaceRule::class, SearchBook::class, SearchKeyword::class, Cookie::class,
@@ -102,7 +104,8 @@ val appDb by lazy {
         AiChatConversation::class, AiChatMessageNode::class, AiSkill::class,
         AgentMemory::class, AgentToolResultArtifact::class,
         AgentToolExecutionIntent::class, AgentToolReceiptAcknowledgement::class,
-        TtsVoiceEntity::class, TtsEngineRuntimeEntity::class, DailyReadingRecord::class, BookUpdate::class],
+        TtsVoiceEntity::class, TtsEngineRuntimeEntity::class, DailyReadingRecord::class,
+        ReadingTimeTotal::class, BookUpdate::class],
     views = [BookSourcePart::class],
     autoMigrations = [
         AutoMigration(from = 43, to = 44),
@@ -182,6 +185,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract val txtTocRuleDao: TxtTocRuleDao
     abstract val readRecordDao: ReadRecordDao
     abstract val dailyReadingRecordDao: DailyReadingRecordDao
+    abstract val readingTimeTotalDao: ReadingTimeTotalDao
     abstract val cacheDao: CacheDao
     abstract val ruleSubDao: RuleSubDao
     abstract val dictRuleDao: DictRuleDao

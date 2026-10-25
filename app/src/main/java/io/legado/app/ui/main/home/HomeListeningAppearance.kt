@@ -39,6 +39,7 @@ internal data class HomeListeningAppearance(
     @param:DrawableRes val texture: Int,
 )
 
+@Composable
 internal fun homeListeningAppearance(variant: HomeWidgetVariant): HomeListeningAppearance? =
     homeListeningSkinPalette(variant.styleId)?.let { palette ->
         val night = variant.styleId == "night"
@@ -49,11 +50,13 @@ internal fun homeListeningAppearance(variant: HomeWidgetVariant): HomeListeningA
     }
 
 /** Restore listening's established colors without restyling the reading component. */
+@Composable
 internal fun homeListeningSkinPalette(styleId: String): HomeListeningPalette? = when (styleId) {
     "storybook" -> HomeListeningPalette(Color(0xFF102D21), Color(0xFF727069), Color(0xFF28664F),
         Color.White, Color(0xFFFCFAEA), Color(0xFF52574E))
     "night" -> HomeListeningPalette(Color(0xFFFFF1D2), Color(0xFF9CB7DE), Color(0xFFF3B953),
         Color(0xFF12233C), Color(0xFF2B3750), Color(0xFFFFF0D9), Color(0xFFFFAFA0))
+    "white" -> homeWidgetSkinPalette(styleId)
     else -> null
 }
 
@@ -71,7 +74,17 @@ internal fun HomeWidgetSurface(
 ) {
     val palette = if (listening) homeListeningSkinPalette(variant.styleId) else homeWidgetSkinPalette(variant.styleId)
     val surfaceModifier = modifier.heightIn(min = minimumHeight)
-    if (palette == null) {
+    if (variant.styleId == "white") {
+        NgVisualSurface(
+            modifier = surfaceModifier, role = NgMaterialRole.CONTENT,
+            cornerRadius = HomeWidgetSkinCornerRadius,
+            style = homeWhiteWidgetSurfaceStyle(requireNotNull(palette).foreground),
+            visualSystemOverride = NgVisualSystem.TRANSPARENT_GLASS,
+            contentPadding = PaddingValues(0.dp),
+            surfaceDecoration = { HomeWhiteWidgetEdge(Modifier.matchParentSize()) },
+            content = content,
+        )
+    } else if (palette == null) {
         NgGlassSurface(
             modifier = surfaceModifier,
             shape = RoundedCornerShape(HomeWidgetSkinCornerRadius),

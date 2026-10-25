@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import com.google.gson.JsonObject
 import com.google.gson.JsonArray
+import com.google.gson.JsonParser
 import io.legado.app.constant.PreferKey
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -19,6 +20,96 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 class ReadStylePackageManagerTest {
+    @Test
+    fun `export bundles header image and keeps its layout metadata without changing source`() {
+        val image = byteArrayOf(1, 3, 5, 7)
+        val imagePath = "assets://decorations/header.png"
+        val config = ReadBookConfig.Config(
+            bgType = 0,
+            headerImage = imagePath,
+            headerImageEnabled = true,
+            headerImageWidth = 1920,
+            headerImageHeight = 540,
+            titleFont = "",
+            titleSegType = 1,
+            titleSegScaling = 1.4f,
+        )
+        val opened = mutableListOf<String>()
+        val output = ByteArrayOutputStream()
+
+        val result = ReadStylePackageManager.export(
+            config, output, File(temporaryFolder.root, "header-export"),
+            { reference ->
+                opened += reference
+                if (reference == imagePath) image.inputStream() else null
+            },
+        )
+        val entries = unzip(output.toByteArray())
+        val json = JsonParser.parseString(entries.getValue("readConfig.json").decodeToString()).asJsonObject
+        val bundledImage = json.get("headerImage").asString
+
+        assertTrue(result.warnings.isEmpty())
+        assertEquals(listOf(imagePath), opened)
+        assertEquals(setOf("readConfig.json", bundledImage), entries.keys)
+        assertTrue(bundledImage.startsWith("read_header_image_"))
+        assertArrayEquals(image, entries.getValue(bundledImage))
+        assertTrue(json.get("headerImageEnabled").asBoolean)
+        assertEquals(1920, json.get("headerImageWidth").asInt)
+        assertEquals(540, json.get("headerImageHeight").asInt)
+        assertEquals(1.4f, json.get("titleSegScaling").asFloat, 0f)
+        assertEquals(imagePath, config.headerImage)
+        assertTrue(config.headerImageEnabled)
+    }
+
+    @Test
+    fun `legacy package without header image keeps zero reserved dimensions`() {
+        val result = ReadStylePackageManager.import(
+            zipOf("readConfig.json" to """{"bgType":0,"titleSize":5}""".toByteArray()).inputStream(),
+            "without-header", temporaryFolder.newFolder(),
+        )
+
+        assertFalse(result.config.headerImageEnabled)
+        assertEquals("", result.config.headerImage)
+        assertEquals(0, result.config.headerImageWidth)
+        assertEquals(0, result.config.headerImageHeight)
+        assertEquals(5, result.config.titleSize)
+        assertTrue(result.warnings.isEmpty())
+    }
+
+    @Test
+    fun `missing optional header image cannot leave an enabled empty area`() {
+        val result = ReadStylePackageManager.import(
+            zipOf("readConfig.json" to """{
+                "bgType":0,"headerImage":"missing.png","headerImageEnabled":true,
+                "headerImageWidth":1920,"headerImageHeight":540
+            }""".trimIndent().toByteArray()).inputStream(),
+            "missing-header", temporaryFolder.newFolder(),
+        )
+
+        assertFalse(result.config.headerImageEnabled)
+        assertEquals("", result.config.headerImage)
+        assertEquals(0, result.config.headerImageWidth)
+        assertEquals(0, result.config.headerImageHeight)
+        assertTrue(result.warnings.any { it.contains("页眉图片") })
+    }
+
+    @Test
+    fun `missing optional footer image cannot leave an enabled empty area`() {
+        val result = ReadStylePackageManager.import(
+            zipOf("readConfig.json" to """{
+                "bgType":0,"footerImage":"missing.png","footerImageEnabled":true,
+                "footerImageWidth":1080,"footerImageHeight":120
+            }""".trimIndent().toByteArray()).inputStream(),
+            "missing-footer", temporaryFolder.newFolder(),
+        )
+
+        assertFalse(result.config.footerImageEnabled)
+        assertEquals("", result.config.footerImage)
+        assertEquals(0, result.config.footerImageWidth)
+        assertEquals(0, result.config.footerImageHeight)
+        assertTrue(result.warnings.any { it.contains("页脚图片") })
+    }
+
     @Test
     fun `bundles builtin background all four fonts and reader preferences`() {
         val image = byteArrayOf(1, 2, 3)
@@ -176,6 +267,10 @@ class ReadStylePackageManagerTest {
             npRight = 0.22f,
             npTop = 0.32f,
             npBottom = 0.42f,
+            textColorNight = 0, bgColorNight = 0x33000000, underlineColorNight = 123,
+            nightFollowDay = false, textColorNightMode = ReadHighlightRule.NIGHT_DEFAULT,
+            bgColorNightMode = ReadHighlightRule.NIGHT_CUSTOM,
+            underlineColorNightMode = ReadHighlightRule.NIGHT_FOLLOW_DAY,
         )
         val config = ReadBookConfig.Config(
             name = "full-md3",

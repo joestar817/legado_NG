@@ -14,7 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 
-/** Page/chapter checkpoints and session boundaries feed both views of the same reading record. */
+/** Per-book activity and global elapsed intervals are committed together at session boundaries. */
 internal object ReadingRecordTracker {
     private val lock = Any()
     private val accumulator = ReadingRecordAccumulator(AppConfig.enableReadRecord)
@@ -36,6 +36,7 @@ internal object ReadingRecordTracker {
                             appDb.dailyReadingRecordDao.addTimes(batch.days.map { (day, duration) ->
                                 DailyReadingRecord(epochDay = day, readTime = duration)
                             })
+                            appDb.readingTimeTotalDao.addTime(batch.days.values.sum())
                         }
                         synchronized(lock) { accumulator.acknowledge(batch) }
                         failureReported = false

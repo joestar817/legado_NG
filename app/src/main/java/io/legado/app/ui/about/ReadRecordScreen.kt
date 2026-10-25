@@ -172,7 +172,7 @@ internal fun ReadRecordScreen(
 
     if (clearAllDialogVisible) {
         ReadRecordConfirmationDialog(
-            message = stringResource(R.string.sure_del),
+            message = stringResource(R.string.read_record_clear_books_confirm),
             onDismiss = onClearAllDismiss,
             onConfirm = onClearAllConfirm,
         )

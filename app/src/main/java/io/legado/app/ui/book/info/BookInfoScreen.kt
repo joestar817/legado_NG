@@ -74,7 +74,9 @@ import androidx.compose.ui.window.DialogProperties
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.SearchBook
+import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.isLocal
+import io.legado.app.help.book.menuCapabilities
 import io.legado.app.help.book.isLocalTxt
 import io.legado.app.ui.book.search.SearchResultCard
 import io.legado.app.ui.design.components.NgButtonVariant
@@ -116,6 +118,7 @@ internal data class BookInfoUiState(
     val loginAvailable: Boolean = false,
     val showToc: Boolean = true,
     val showCache: Boolean = true,
+    val hasClearableCache: Boolean = false,
     val showListen: Boolean = false,
     val primaryActionIsPlay: Boolean = false,
     val cache: BookInfoCacheUiState = BookInfoCacheUiState(),
@@ -488,7 +491,7 @@ private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMe
                 dividerBefore = true,
                 children = buildList {
                     add(BookInfoMenuAction.Top.item(R.string.to_top, R.drawable.ic_arrow_drop_up))
-                    if (state.sourceAvailable) {
+                    if (state.sourceAvailable && book?.menuCapabilities?.update == true) {
                         add(
                             BookInfoMenuAction.CanUpdate.item(
                                 R.string.allow_update,
@@ -581,6 +584,7 @@ private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMe
                         BookInfoMenuAction.ClearCache.item(
                             R.string.clear_cache,
                             R.drawable.ic_clear_all,
+                            enabled = state.hasClearableCache,
                         ),
                     )
                     add(BookInfoMenuAction.Log.item(R.string.log, R.drawable.ic_cfg_about))
@@ -600,11 +604,13 @@ private fun BookInfoMenuAction.item(
     titleRes: Int,
     iconRes: Int,
     checked: Boolean = false,
+    enabled: Boolean = true,
 ): NgExpandableActionMenuItem = NgExpandableActionMenuItem(
     itemId = itemId,
     titleRes = titleRes,
     iconRes = iconRes,
     checked = checked,
+    enabled = enabled,
 )
 
 @Composable
@@ -811,8 +817,8 @@ private fun BookInfoMetaRows(
     BookInfoMetaRow(
         iconRes = R.drawable.ic_web_outline,
         text = state.originText,
-        textModifier = Modifier.clickable { onEvent(BookInfoUiEvent.OriginClick) },
-        trailingIconRes = R.drawable.ic_exchange,
+        textModifier = Modifier.clickable(enabled = state.sourceAvailable) { onEvent(BookInfoUiEvent.OriginClick) },
+        trailingIconRes = R.drawable.ic_exchange.takeIf { state.book?.menuCapabilities?.changeSource == true },
         trailingDescription = stringResource(R.string.change_origin),
         onTrailingClick = { onEvent(BookInfoUiEvent.ChangeSource) },
     )
@@ -899,19 +905,30 @@ private fun BookInfoCacheRow(
             tint = colorResource(R.color.tv_text_summary),
             modifier = Modifier.size(20.dp),
         )
-        Text(
-            text = stringResource(R.string.book_cache_label),
-            modifier = Modifier.padding(start = 8.dp),
-            color = colorResource(R.color.tv_text_summary),
-            fontSize = 14.sp,
-            maxLines = 1,
-        )
-        BookInfoCacheProgress(
-            cache = state.cache,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 4.dp, end = 8.dp),
-        )
+        if (state.book?.isEpub == true) {
+            Text(
+                text = stringResource(R.string.epub_parsed_cache_count, state.cache.cached.toString()),
+                modifier = Modifier.weight(1f).padding(start = 8.dp, end = 8.dp),
+                color = colorResource(R.color.tv_text_summary),
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Text(
+                text = stringResource(R.string.book_cache_label),
+                modifier = Modifier.padding(start = 8.dp),
+                color = colorResource(R.color.tv_text_summary),
+                fontSize = 14.sp,
+                maxLines = 1,
+            )
+            BookInfoCacheProgress(
+                cache = state.cache,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 4.dp, end = 8.dp),
+            )
+        }
         IconButton(
             onClick = { onEvent(BookInfoUiEvent.CacheBook) },
             enabled = state.cache.enabled,

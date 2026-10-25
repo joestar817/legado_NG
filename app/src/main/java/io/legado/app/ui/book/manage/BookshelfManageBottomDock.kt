@@ -21,6 +21,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.data.entities.Book
+import io.legado.app.help.book.menuCapabilities
+import io.legado.app.model.localBook.canExtractOriginalCover
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgFlatActionRail
@@ -51,10 +54,26 @@ internal enum class BookshelfManageDockAction {
     DELETE
 }
 
+internal fun BookshelfManageDockAction.isApplicable(book: Book, hasCache: Boolean): Boolean {
+    val capabilities = book.menuCapabilities
+    return when (this) {
+        BookshelfManageDockAction.CACHE -> capabilities.download
+        BookshelfManageDockAction.EXPORT_CONTENT -> capabilities.export
+        BookshelfManageDockAction.EXPORT_SOURCE,
+        BookshelfManageDockAction.CHANGE_SOURCE -> capabilities.changeSource
+        BookshelfManageDockAction.ENABLE_UPDATE,
+        BookshelfManageDockAction.DISABLE_UPDATE -> capabilities.update
+        BookshelfManageDockAction.UPDATE_COVER -> canExtractOriginalCover(book)
+        BookshelfManageDockAction.CLEAR_CACHE -> hasCache
+        else -> true
+    }
+}
+
 @Composable
 internal fun BookshelfManageBottomDock(
     selectedCount: Int,
     totalCount: Int,
+    eligibleCounts: Map<BookshelfManageDockAction, Int>,
     modifier: Modifier = Modifier,
     onSelectAll: () -> Unit,
     onInvertSelection: () -> Unit,
@@ -128,7 +147,10 @@ internal fun BookshelfManageBottomDock(
                         NgExpandableActionMenu(
                             expanded = menuState.expanded,
                             onDismissRequest = menuState::onDismissRequest,
-                            items = dockMoreItems(selectedCount),
+                            items = dockMoreItems(selectedCount).map { item ->
+                                item.copy(enabled = item.enabled &&
+                                    (eligibleCounts[item.toDockAction()] ?: 0) > 0)
+                            },
                             onItemClick = { item ->
                                 menuState.close()
                                 onAction(item.toDockAction())

@@ -17,12 +17,10 @@ import io.legado.app.exception.EmptyFileException
 import io.legado.app.exception.NoBooksDirException
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.exception.TocEmptyException
-import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.book.EpubContentEntities
 import io.legado.app.help.book.addType
-import io.legado.app.help.book.archiveName
 import io.legado.app.help.book.getArchiveUri
 import io.legado.app.help.book.getLocalUri
 import io.legado.app.help.book.getRemoteUrl
@@ -34,9 +32,11 @@ import io.legado.app.help.book.isUmd
 import io.legado.app.help.book.removeLocalUriCache
 import io.legado.app.help.book.simulatedTotalChapterNum
 import io.legado.app.help.config.AppConfig
-import io.legado.app.lib.webdav.WebDav
-import io.legado.app.lib.webdav.WebDavException
 import io.legado.app.model.BookCacheManager
+import io.legado.app.model.remote.WebDavBookLocation
+import io.legado.app.model.remote.WebDavBookTransfer
+import io.legado.app.model.remote.WebDavBookChoice
+import io.legado.app.model.remote.webDavBookManager
 import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.utils.ArchiveUtils
 import io.legado.app.utils.FileDoc
@@ -253,24 +253,14 @@ object LocalBook {
     fun importFile(uri: Uri): Book {
         val bookUrl: String
         //updateTime变量不要修改,否则会导致读取不到缓存
-        val (fileName, _, _, updateTime, _) = FileDoc.fromUri(uri, false).apply {
+        FileDoc.fromUri(uri, false).apply {
             if (size == 0L) throw EmptyFileException("Unexpected empty File")
 
             bookUrl = toString()
         }
         var book = appDb.bookDao.getBook(bookUrl)
         if (book == null) {
-            val nameAuthor = analyzeNameAuthor(fileName)
-            book = Book(
-                type = BookType.text or BookType.local,
-                bookUrl = bookUrl,
-                name = nameAuthor.first,
-                author = nameAuthor.second,
-                originName = fileName,
-                latestChapterTime = updateTime,
-                order = appDb.bookDao.minOrder - 1
-            )
-            upBookInfo(book)
+            book = inspectFile(uri)
             appDb.bookDao.insert(book)
         } else {
             deleteBook(book, false)
@@ -281,6 +271,22 @@ object LocalBook {
             appDb.bookChapterDao.delByBook(bookUrl)
         }
         return book
+    }
+
+    /** Read metadata without inserting: remote imports must resolve collisions before writing. */
+    internal fun inspectFile(uri: Uri): Book {
+        val file = FileDoc.fromUri(uri, false)
+        if (file.size == 0L) throw EmptyFileException("Unexpected empty File")
+        val (name, author) = analyzeNameAuthor(file.name)
+        return Book(
+            type = BookType.text or BookType.local,
+            bookUrl = file.toString(),
+            name = name,
+            author = author,
+            originName = file.name,
+            latestChapterTime = file.lastModified,
+            order = appDb.bookDao.minOrder - 1,
+        ).also(::upBookInfo)
     }
 
     fun upBookInfo(book: Book) {
@@ -602,31 +608,25 @@ object LocalBook {
         try {
             AppConfig.defaultBookTreeUri
                 ?: throw NoBooksDirException()
-            // 兼容旧版链接
-            val webdav: WebDav = kotlin.runCatching {
-                WebDav.fromPath(webDavUrl)
-            }.getOrElse {
-                AppWebDav.authorization?.let { WebDav(webDavUrl, it) }
-                    ?: throw WebDavException("Unexpected defaultBookWebDav")
+            val fileUri = runBlocking {
+                val location = WebDavBookLocation.fromBook(localBook)!!
+                val manager = webDavBookManager(location.serverId)
+                val remote = manager.getRemoteBook(location.path) ?: error("云端文件已不存在")
+                WebDavBookTransfer(manager).download(remote, false,
+                    ask = { WebDavBookChoice.SAVE_COPY }, progress = { _, _ -> }).uri
             }
-            val inputStream = runBlocking {
-                webdav.downloadInputStream()
-            }
-            inputStream.use {
-                if (localBook.isArchive) {
-                    // 压缩包
-                    val archiveUri = saveBookFile(it, localBook.archiveName)
-                    val newBook = importArchiveFile(archiveUri, localBook.originName) { name ->
-                        name.contains(localBook.originName)
-                    }.first()
-                    localBook.origin = newBook.origin
-                    localBook.bookUrl = newBook.bookUrl
-                } else {
-                    // txt epub pdf umd
-                    val fileUri = saveBookFile(it, localBook.originName)
-                    localBook.bookUrl = FileDoc.fromUri(fileUri, false).toString()
-                    localBook.save()
-                }
+            if (localBook.isArchive) {
+                // 压缩包
+                val newBook = importArchiveFile(fileUri, localBook.originName) { name ->
+                    name.contains(localBook.originName)
+                }.first()
+                localBook.origin = newBook.origin
+                localBook.bookUrl = newBook.bookUrl
+            } else {
+                // txt epub pdf umd
+                localBook.bookUrl = FileDoc.fromUri(fileUri, false).toString()
+                localBook.originName = FileDoc.fromUri(fileUri, false).name
+                localBook.save()
             }
             return true
         } catch (e: Exception) {

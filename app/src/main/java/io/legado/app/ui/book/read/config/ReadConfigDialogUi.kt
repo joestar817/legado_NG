@@ -9,12 +9,14 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,7 +42,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -94,12 +98,16 @@ internal fun ReadConfigDock(
     height: Dp = 42.dp,
     contentColor: Color? = null,
     accessibilityLabel: String? = null,
+    variant: ReadConfigDockVariant = ReadConfigDockVariant.STANDARD,
+    secondaryLabels: List<String> = emptyList(),
 ) {
     if (labels.isEmpty()) return
     val colors = NgTheme.colors
     val unselectedContentColor = contentColor ?: Color(colors.onSurface)
     val selected = selectedIndex.coerceIn(labels.indices)
-    val selectedContentColor = if (ColorUtils.calculateLuminance(colors.primary) > 0.5) {
+    val selectedContentColor = if (variant == ReadConfigDockVariant.POSITION_SUMMARY) {
+        Color(colors.onPrimary)
+    } else if (ColorUtils.calculateLuminance(colors.primary) > 0.5) {
         Color.Black
     } else {
         Color.White
@@ -133,23 +141,49 @@ internal fun ReadConfigDock(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = label,
-                    modifier = Modifier.padding(horizontal = 10.dp),
-                    color = if (isSelected) selectedContentColor else unselectedContentColor,
-                    style = TextStyle(
-                        fontFamily = NgTheme.fontFamily,
-                        fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        platformStyle = PlatformTextStyle(includeFontPadding = false),
-                    ),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                )
+                if (variant == ReadConfigDockVariant.POSITION_SUMMARY) {
+                    Column(
+                        Modifier.padding(horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (isSelected) selectedContentColor else unselectedContentColor,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = secondaryLabels.getOrElse(index) { "" },
+                            color = if (isSelected) selectedContentColor else Color(colors.onSurfaceVariant),
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                } else {
+                    Text(
+                        text = label,
+                        modifier = Modifier.padding(horizontal = 10.dp),
+                        color = if (isSelected) selectedContentColor else unselectedContentColor,
+                        style = TextStyle(
+                            fontFamily = NgTheme.fontFamily,
+                            fontSize = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            platformStyle = PlatformTextStyle(includeFontPadding = false),
+                        ),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
 }
+
+internal enum class ReadConfigDockVariant { STANDARD, POSITION_SUMMARY }
 
 @Composable
 internal fun ReadConfigSliderRow(
@@ -348,12 +382,14 @@ internal fun ReadConfigSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    variant: ReadConfigSwitchRowVariant = ReadConfigSwitchRowVariant.STANDARD,
 ) {
     val colors = NgTheme.colors
+    val compact = variant == ReadConfigSwitchRowVariant.READ_INFO_COMPACT
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .then(if (compact) Modifier.heightIn(min = 44.dp) else Modifier.height(40.dp))
             .clickable { onCheckedChange(!checked) },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -362,11 +398,15 @@ internal fun ReadConfigSwitchRow(
             text = title,
             color = Color(colors.onSurface),
             fontSize = 14.sp,
+            lineHeight = if (compact) 20.sp else TextUnit.Unspecified,
         )
         NgSwitchControl(
             checked = checked,
             onCheckedChange = onCheckedChange,
-            modifier = Modifier.size(width = 52.dp, height = 36.dp),
+            modifier = if (compact) Modifier.size(width = 44.dp, height = 28.dp)
+                else Modifier.size(width = 52.dp, height = 36.dp),
         )
     }
 }
+
+internal enum class ReadConfigSwitchRowVariant { STANDARD, READ_INFO_COMPACT }

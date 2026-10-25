@@ -51,6 +51,8 @@ enum class NgFloatingTabBarVariant {
     SOLID_LIGHT_CONTENT,
     SOLID_WHITE_CONTENT,
     MANGA_SETTINGS,
+    /** 短抽屉中的双模式切换：白色选中项、强调色文字。 */
+    DRAWER_SELECTION,
 }
 enum class NgFloatingTabBarSize { STANDARD, COMPACT }
 
@@ -63,18 +65,22 @@ fun NgFloatingTabBar(
     modifier: Modifier = Modifier,
     variant: NgFloatingTabBarVariant = NgFloatingTabBarVariant.STANDARD,
     size: NgFloatingTabBarSize = NgFloatingTabBarSize.STANDARD,
+    enabled: Boolean = true,
 ) {
     items.forEach { item ->
         require(item.text != null || !item.contentDescription.isNullOrBlank()) {
             "Icon-only NgFloatingTabSpec requires a contentDescription"
         }
     }
-    val outerShape = RoundedCornerShape(12.dp)
-    val height = if (size == NgFloatingTabBarSize.COMPACT) 40.dp else 48.dp
+    val drawerSelection = variant == NgFloatingTabBarVariant.DRAWER_SELECTION
+    val outerShape = RoundedCornerShape(if (drawerSelection) 14.dp else 12.dp)
+    val height = if (drawerSelection) 43.dp
+        else if (size == NgFloatingTabBarSize.COMPACT) 40.dp else 48.dp
     val tabs: @Composable RowScope.() -> Unit = {
         items.forEachIndexed { index, item ->
             val selected = index == selectedIndex.coerceIn(items.indices)
             val contentColor = when {
+                drawerSelection && !selected -> Color(NgTheme.colors.onSurfaceVariant)
                 !selected -> Color(NgTheme.colors.onSurface)
                 variant == NgFloatingTabBarVariant.MANGA_SETTINGS -> Color(NgTheme.colors.onPrimary)
                 variant == NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT ||
@@ -83,6 +89,7 @@ fun NgFloatingTabBar(
             }
             val selectedContainerColor = when (variant) {
                 NgFloatingTabBarVariant.STANDARD -> Color(NgTheme.colors.selectedContainer)
+                NgFloatingTabBarVariant.DRAWER_SELECTION -> ngDrawerContentCardColor()
                 NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT,
                 NgFloatingTabBarVariant.SOLID_WHITE_CONTENT,
                 NgFloatingTabBarVariant.MANGA_SETTINGS -> Color(NgTheme.colors.primary)
@@ -91,7 +98,7 @@ fun NgFloatingTabBar(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(if (drawerSelection) 11.dp else 10.dp))
                     .then(
                         if (selected) {
                             Modifier.background(selectedContainerColor)
@@ -101,6 +108,7 @@ fun NgFloatingTabBar(
                     )
                     .selectable(
                         selected = selected,
+                        enabled = enabled,
                         role = if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) Role.RadioButton else Role.Tab,
                         onClick = { onTabSelected(index) }
                     )
@@ -139,9 +147,10 @@ fun NgFloatingTabBar(
                     Text(
                         text = label,
                         color = contentColor,
-                        fontSize = if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) 14.sp else 13.sp,
+                        fontSize = if (drawerSelection || variant == NgFloatingTabBarVariant.MANGA_SETTINGS) 14.sp else 13.sp,
                         lineHeight = if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) TextUnit.Unspecified else 15.sp,
-                        fontWeight = if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) null
+                        fontWeight = if (drawerSelection && selected) FontWeight.SemiBold
+                            else if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) null
                             else if (selected) FontWeight.Bold else FontWeight.Normal,
                         textAlign = if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) TextAlign.Unspecified else TextAlign.Center,
                         maxLines = if (item.count != null && !item.text.isNullOrEmpty()) 2 else 1,
@@ -170,13 +179,14 @@ fun NgFloatingTabBar(
             )
         }
 
-        NgFloatingTabBarVariant.MANGA_SETTINGS -> Row(
+        NgFloatingTabBarVariant.MANGA_SETTINGS,
+        NgFloatingTabBarVariant.DRAWER_SELECTION -> Row(
             modifier = modifier
                 .fillMaxWidth()
                 .height(height)
                 .clip(outerShape)
                 .background(Color(NgTheme.colors.onSurface).copy(alpha = 0.06f))
-                .padding(3.dp)
+                .padding(if (drawerSelection) 4.dp else 3.dp)
                 .selectableGroup(),
             verticalAlignment = Alignment.CenterVertically,
             content = tabs,

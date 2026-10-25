@@ -89,7 +89,7 @@ fun NgFileEntryIcon(
 @Composable
 fun NgFileSelectionCheckbox(
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+    onCheckedChange: ((Boolean) -> Unit)?,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     variant: NgFileSelectionCheckboxVariant = NgFileSelectionCheckboxVariant.STANDARD,

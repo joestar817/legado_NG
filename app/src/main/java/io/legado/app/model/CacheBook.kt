@@ -12,6 +12,7 @@ import io.legado.app.exception.ConcurrentException
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isLocal
+import io.legado.app.help.book.menuCapabilities
 import io.legado.app.help.cache.ReadingPaceController
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.CompositeCoroutine
@@ -54,6 +55,7 @@ object CacheBook {
     @Synchronized
     fun getOrCreate(bookUrl: String): CacheBookModel? {
         val book = appDb.bookDao.getBook(bookUrl) ?: return null
+        if (!book.menuCapabilities.download) return null
         val bookSource = appDb.bookSourceDao.getBookSource(book.origin) ?: return null
         updateBookSource(bookSource)
         var cacheBook = cacheBookMap[bookUrl]
@@ -93,7 +95,7 @@ object CacheBook {
     }
 
     fun start(context: Context, book: Book, start: Int, end: Int) {
-        if (!book.isLocal) {
+        if (book.menuCapabilities.download) {
             context.startService<CacheBookService> {
                 action = IntentAction.start
                 putExtra("bookUrl", book.bookUrl)

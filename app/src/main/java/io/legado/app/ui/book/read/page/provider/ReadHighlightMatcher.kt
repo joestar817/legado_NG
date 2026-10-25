@@ -165,6 +165,9 @@ internal class ReadHighlightMatcher(rules: List<ReadHighlightRule>) {
             npRight = npRight,
             npTop = npTop,
             npBottom = npBottom,
+            nightColors = colors(isNight = true).takeUnless {
+                it.textColor == textColor && it.bgColor == bgColor && it.underlineColor == underlineColor
+            },
         )
     }
 

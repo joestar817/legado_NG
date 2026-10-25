@@ -3,13 +3,13 @@ package io.legado.app.ui.book.read.config
 import android.content.DialogInterface
 import android.graphics.Color
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +23,7 @@ import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.widget.dialog.applyNgDialogWindow
@@ -37,14 +38,21 @@ class PaddingConfigDialog : BaseComposeDialogFragment() {
     }
 
     private lateinit var composeView: ComposeView
+    private var previewRegistered = false
 
     override fun onStart() {
         super.onStart()
         applyNgDialogWindow(marginDp = 20, dimAmount = 0.4f)
-        composeView.post { repositionAboveDrawer() }
+        dialog?.window?.setGravity(Gravity.CENTER)
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
+        if (!previewRegistered) {
+            (activity as? ReadBookActivity)?.let {
+                it.beginReadConfigPreview()
+                previewRegistered = true
+            }
+        }
         composeView = view as ComposeView
         composeView.setBackgroundColor(Color.TRANSPARENT)
         composeView.setViewCompositionStrategy(
@@ -61,8 +69,13 @@ class PaddingConfigDialog : BaseComposeDialogFragment() {
     }
 
     override fun onDismiss(dialog: DialogInterface) {
-        super.onDismiss(dialog)
         ReadBookConfig.save()
+        if (previewRegistered) {
+            (activity as? ReadBookActivity)?.endReadConfigPreview()
+            previewRegistered = false
+        }
+        super.onDismiss(dialog)
+        returnToReadStyleAdjustOnDismiss()
     }
 
     @Composable
@@ -82,10 +95,6 @@ class PaddingConfigDialog : BaseComposeDialogFragment() {
         var footerRight by remember { mutableIntStateOf(ReadBookConfig.footerPaddingRight) }
         var headerLine by remember { mutableStateOf(ReadBookConfig.showHeaderLine) }
         var footerLine by remember { mutableStateOf(ReadBookConfig.showFooterLine) }
-
-        LaunchedEffect(section) {
-            composeView.post { repositionAboveDrawer() }
-        }
 
         ReadConfigDialogSurface(
             contentPadding = PaddingValues(
@@ -254,9 +263,5 @@ class PaddingConfigDialog : BaseComposeDialogFragment() {
             valueRange = 0..100,
             onValueChange = onRight,
         )
-    }
-
-    private fun repositionAboveDrawer() {
-        parentFragment?.view?.let { ReadDrawerStyle.positionDialogAbove(dialog, it) }
     }
 }

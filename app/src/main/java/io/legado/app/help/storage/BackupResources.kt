@@ -77,6 +77,7 @@ internal object BackupResources {
                             book.addProperty("customCoverUrl", collector.copy(ref))
                         }
                     }
+                    collectBookReadStyleResources(book, collector::copy)
                 }
                 file.writeText(books.toString())
             }
@@ -87,30 +88,13 @@ internal object BackupResources {
                 val json = JsonParser.parseString(file.readText())
                 val configs = if (json.isJsonArray) json.asJsonArray.toList() else listOf(json)
                 configs.forEach { element ->
-                    val config = element.asJsonObject
-                    listOf("", "Night", "EInk").forEach { suffix ->
-                        val typeKey = "bgType$suffix"
-                        val valueKey = "bgStr$suffix"
-                        val type = config.get(typeKey)?.asInt ?: 0
-                        // Type 1 is an APK asset. Keep both its name and type for the reader.
-                        if (type == 2) {
-                            val value = config.get(valueKey).asString
-                            val ref = if ('/' !in value && ':' !in value) File(appCtx.externalFiles, "bg/$value").path else value
-                            config.addProperty(valueKey, collector.copy(ref))
-                        }
-                    }
-                    listOf("textFont", "titleFont", "headerFont", "footerFont").forEach { key ->
-                        config.get(key)?.takeIf { !it.isJsonNull && it.asString.isNotBlank() }?.let {
-                            config.addProperty(key, collector.copy(it.asString))
-                        }
-                    }
-                    config.getAsJsonArray("highlightRules")?.let { collectRules(it, collector) }
+                    collectReadStyleResources(element.asJsonObject, collector::copy)
                 }
                 file.writeText(json.toString())
             }
             val file = File(root, ReadHighlightRuleStore.fileName)
             val rules = JsonParser.parseString(file.readText()).asJsonArray
-            collectRules(rules, collector)
+            collectRules(rules, collector::copy)
             file.writeText(rules.toString())
         }
         if (BackupModule.APPEARANCE.id in modules) {
@@ -181,12 +165,12 @@ internal object BackupResources {
         return prefs
     }
 
-    private fun collectRules(rules: JsonArray, collector: Collector) {
+    private fun collectRules(rules: JsonArray, copy: (String) -> String) {
         rules.forEach { element ->
             val rule = element.asJsonObject
             listOf("bgImage", "fontPath").forEach { key ->
                 rule.get(key)?.takeIf { !it.isJsonNull && it.asString.isNotBlank() }?.let {
-                    rule.addProperty(key, collector.copy(it.asString))
+                    rule.addProperty(key, copy(it.asString))
                 }
             }
         }
@@ -337,6 +321,46 @@ internal object BackupResources {
         collectDrawerProfileImages(profile, copy)
     }
 
+    internal fun collectBookReadStyleResources(book: JsonObject, copy: (String) -> String) {
+        val readConfig = book.get("readConfig")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+        val storedStyle = readConfig.get("independentReadStyle")
+            ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: return
+        val style = parseStoredReadStyle(storedStyle) ?: return
+        val original = style.deepCopy()
+        collectReadStyleResources(style, copy)
+        if (style != original) readConfig.addProperty("independentReadStyle", style.toString())
+    }
+
+    private fun parseStoredReadStyle(value: String): JsonObject? = runCatching {
+        JsonParser.parseString(value).takeIf { it.isJsonObject }?.asJsonObject
+    }.getOrNull()
+
+    /** Shared presets and effective per-book styles carry the same reader-owned resources. */
+    private fun collectReadStyleResources(
+        config: JsonObject,
+        copy: (String) -> String,
+        resolveRelativeBackground: Boolean = true,
+    ) {
+        listOf("", "Night", "EInk").forEach { suffix ->
+            // Type 1 belongs to the APK; both its name and type remain unchanged.
+            if (config.get("bgType$suffix")?.asInt == 2) {
+                val key = "bgStr$suffix"
+                config.get(key)?.takeIf { !it.isJsonNull && it.asString.isNotBlank() }?.asString?.let { value ->
+                    val reference = if (resolveRelativeBackground && '/' !in value && ':' !in value) {
+                        File(appCtx.externalFiles, "bg/$value").path
+                    } else value
+                    config.addProperty(key, copy(reference))
+                }
+            }
+        }
+        listOf("textFont", "titleFont", "headerFont", "footerFont", "headerImage", "footerImage").forEach { key ->
+            config.get(key)?.takeIf { !it.isJsonNull && it.asString.isNotBlank() }?.let {
+                config.addProperty(key, copy(it.asString))
+            }
+        }
+        config.getAsJsonArray("highlightRules")?.let { collectRules(it, copy) }
+    }
+
     internal fun collectDrawerProfileImages(profile: JsonObject, copy: (String) -> String) {
         listOf("light", "dark").forEach { mode ->
             val style = profile.get(mode)?.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
@@ -347,7 +371,7 @@ internal object BackupResources {
     }
 
     internal fun transform(value: JsonElement, replace: (String) -> String): JsonElement {
-        val fields = setOf("bgStr", "bgStrNight", "bgStrEInk", "textFont", "titleFont", "headerFont",
+        val fields = setOf("bgStr", "bgStrNight", "bgStrEInk", "textFont", "titleFont", "headerFont", "headerImage", "footerImage",
             "footerFont", "bgImage", "fontPath", "backgroundImgPath", "customCoverUrl", "path",
             "packageRootPath", "lightImages", "darkImages", "imagePath")
         fun visit(node: JsonElement, field: String?): JsonElement = when {
@@ -355,6 +379,14 @@ internal object BackupResources {
                 node.asJsonObject.entrySet().forEach { (key, child) -> add(key, visit(child, key)) }
             }
             node.isJsonArray -> JsonArray().apply { node.asJsonArray.forEach { add(visit(it, field)) } }
+            field == "independentReadStyle" && node.isJsonPrimitive && node.asJsonPrimitive.isString -> {
+                val style = parseStoredReadStyle(node.asString)
+                if (style == null) node else {
+                    val original = style.deepCopy()
+                    collectReadStyleResources(style, replace, resolveRelativeBackground = false)
+                    if (style == original) node else JsonPrimitive(style.toString())
+                }
+            }
             field in fields && node.isJsonPrimitive && node.asJsonPrimitive.isString -> JsonPrimitive(replace(node.asString))
             else -> node
         }

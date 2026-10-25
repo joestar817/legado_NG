@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import io.legado.app.help.tts.TtsSpeedPolicy
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
+import io.legado.app.ui.design.components.compose.LocalNgDrawerInheritThemeProfile
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSlider
@@ -54,13 +56,15 @@ import kotlin.math.roundToInt
 /**
  * 听书 Compose 抽屉的宿主边界。
  *
- * 这里只处理 BottomSheet 窗口和拖拽行为；颜色、材质、边距和圆角全部交给
- * [NgBottomDrawerSurface]，避免播放器重新维护一套抽屉外观。
+ * 这里只处理 BottomSheet 窗口和拖拽行为；封面／场景色板不继承全局抽屉背景，
+ * 材质、边距和圆角仍交给 [NgBottomDrawerSurface]。
  */
 internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment() {
 
     private var listeningThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
     private var listeningThemeJob: Job? = null
+
+    protected open val usePlayerPalette: Boolean = false
 
     protected open fun listeningBook() = ReadBook.book
 
@@ -90,19 +94,13 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
         val book = listeningBook()
         val sourceOrigin = listeningSourceOrigin()
         listeningThemeJob?.cancel()
-        listeningThemeSnapshot = ReadAloudPlayerTheme.initialDrawerSnapshot(
-            context = safeContext,
-            book = book,
-            sourceOrigin = sourceOrigin,
-            settings = settings,
-        )
+        listeningThemeSnapshot = if (usePlayerPalette) {
+            ReadAloudPlayerTheme.initialSnapshot(safeContext, book, sourceOrigin, settings)
+        } else ReadAloudPlayerTheme.initialDrawerSnapshot(safeContext, book, sourceOrigin, settings)
         listeningThemeJob = viewLifecycleOwner.lifecycleScope.launch {
-            listeningThemeSnapshot = ReadAloudPlayerTheme.resolveDrawerSnapshot(
-                context = safeContext,
-                book = book,
-                sourceOrigin = sourceOrigin,
-                settings = settings,
-            )
+            listeningThemeSnapshot = if (usePlayerPalette) {
+                ReadAloudPlayerTheme.resolveSnapshot(safeContext, book, sourceOrigin, settings)
+            } else ReadAloudPlayerTheme.resolveDrawerSnapshot(safeContext, book, sourceOrigin, settings)
         }
     }
 
@@ -111,8 +109,12 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
         NgAppTheme(
             snapshot = listeningThemeSnapshot,
             updateSystemBars = false,
-            content = content,
-        )
+        ) {
+            CompositionLocalProvider(
+                LocalNgDrawerInheritThemeProfile provides false,
+                content = content,
+            )
+        }
     }
 
     override fun onStart() {

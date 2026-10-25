@@ -62,9 +62,13 @@ private val LocalNgDrawerContentCardStyle = staticCompositionLocalOf {
 private val LocalNgDrawerHasThemeProfile = staticCompositionLocalOf { false }
 private val LocalNgDrawerHasBackgroundImage = compositionLocalOf { false }
 
+/** Hosts with their own palette can opt out of the global drawer background profile. */
+internal val LocalNgDrawerInheritThemeProfile = staticCompositionLocalOf { true }
+
 /** Observe current drawer settings; theme previews may explicitly override this profile. */
 @Composable
 fun rememberNgDrawerThemeProfile(): NgThemeDrawerProfile? {
+    if (!LocalNgDrawerInheritThemeProfile.current) return null
     val context = LocalContext.current
     val state by remember(context) { NgDrawerProfileStore.observe(context) }.collectAsState()
     return state.profile

@@ -16,6 +16,7 @@ import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.EpubLayoutPreferences
+import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.ui.book.read.page.ContentTextView
@@ -104,6 +105,7 @@ internal class EpubLayoutController(
     private var selection: ReaderSelection? = null
     private var selectionAnchor: Pair<Int, Int>? = null
     private var selectionRevision = 0L
+    private var pendingSelectionHit: Long? = null
     private var selectionFinished = false
     private var aloudSignature = ""
     private var aloudPaintSignature = ""
@@ -265,9 +267,9 @@ internal class EpubLayoutController(
                 textChapter = value; chapter = value.chapter; preparedContent = preparedChapters[value.chapter.index]
                 requestedPosition = position()
             }
-            if (!loading && (isScroll() || autoPaging() || options().optBoolean("fixed")) && neighboringChapters().any {
-                it.isCompleted && preparedChapters[it.chapter.index]?.chapter !== it && failedNeighbors[it.chapter.index] !== it
-            }) showChapter(book)
+            if (!loading && hasUnpreparedWindowNeighbors()) showChapter(book,
+                retainWindowPosition = documents.getOrNull(documentIndex)?.chapter === value &&
+                position() == reportedPosition)
             // Equal offsets in different chapters are not the same reading location. A window
             // callback may already have displayed this chapter; a TOC jump still needs a seek.
             else if (chapterChanged && documents.getOrNull(documentIndex)?.chapter !== value ||
@@ -291,6 +293,13 @@ internal class EpubLayoutController(
         }
         if (!loading && preparedContent != null) scheduleWarm()
     }
+
+    private fun hasUnpreparedWindowNeighbors() =
+        selection == null && selectionAnchor == null && pendingSelectionHit == null && gestures?.isActive != true &&
+        surface?.hasPendingScroll != true && pendingInteractions.isEmpty() &&
+        (isScroll() || autoPaging() || options().optBoolean("fixed")) && neighboringChapters().any {
+            it.isCompleted && preparedChapters[it.chapter.index]?.chapter !== it && failedNeighbors[it.chapter.index] !== it
+        }
 
     private fun attachSurface() {
         val publication = snapshot?.publicationSession ?: return
@@ -425,7 +434,7 @@ internal class EpubLayoutController(
             },
             cancelScroll = next::cancelScroll,
             onFlingStart = scrollAnimationStart,
-            onFlingStop = scrollAnimationStop,
+            onFlingStop = { scrollAnimationStop(); host.post { continueTurns() } },
         )
     }
 
@@ -526,7 +535,10 @@ internal class EpubLayoutController(
         val translated = MotionEvent.obtain(event)
         try {
             translated.offsetLocation(-view.left.toFloat(), -view.top.toFloat())
-            return gestures?.onTouch(view, translated) ?: true
+            val handled = gestures?.onTouch(view, translated) ?: true
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL ||
+                event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) host.post { continueTurns() }
+            return handled
         } finally {
             translated.recycle()
         }
@@ -601,7 +613,7 @@ internal class EpubLayoutController(
         } else showChapter(book)
     }
 
-    private fun showChapter(book: Book) {
+    private fun showChapter(book: Book, retainWindowPosition: Boolean = false) {
         val mine = ++contentGeneration
         contentJob?.cancel()
         mappingWrite?.cancel()
@@ -664,19 +676,34 @@ internal class EpubLayoutController(
                 do {
                     if (closed || mine != contentGeneration || current !== textChapter) return@launch
                     val candidates = if (window) neighboringChapters().filter { it.isCompleted } else emptyList()
-                    if (candidates.isNotEmpty()) withContext(Dispatchers.Default) {
-                        val work = currentCoroutineContext()
-                        candidates.forEach { candidate ->
-                            work.ensureActive()
-                            if (loaded[candidate.chapter.index]?.chapter !== candidate && failed[candidate.chapter.index] !== candidate) {
-                                val prepared = previous[candidate.chapter.index]?.takeIf { it.chapter === candidate }
-                                    ?: try { EpubPreparedContent.create(book, candidate, session,
-                                        matcher = io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher(highlightRules),
-                                        checkCancelled = { work.ensureActive() }) }
-                                    catch (cancelled: CancellationException) { throw cancelled }
-                                    catch (_: Exception) { failed[candidate.chapter.index] = candidate; null }
-                                if (prepared != null) loaded[candidate.chapter.index] = prepared
-                            }
+                    candidates.forEach { candidate ->
+                        currentCoroutineContext().ensureActive()
+                        if (loaded[candidate.chapter.index]?.chapter !== candidate && failed[candidate.chapter.index] !== candidate) {
+                            val prepared = previous[candidate.chapter.index]?.takeIf { it.chapter === candidate }
+                                ?: try {
+                                    // The slot belongs to Main. Reuse its exact projection before
+                                    // starting background work for a newly completed neighbour.
+                                    val key = PreparationKey(candidate, session, sourceRevision, styleGeneration,
+                                        highlightRevision, book.getDelTag(Book.hTag), book.getDelTag(Book.rubyTag))
+                                    val cached = contentSlot.find(key)?.takeUnless { it.isCancelled }?.let {
+                                        try { it.await() }
+                                        catch (cancelled: CancellationException) {
+                                            // A speculative size-budget cancellation does not cancel
+                                            // this window owner, which still needs the neighbour.
+                                            currentCoroutineContext().ensureActive()
+                                            null
+                                        }
+                                    }
+                                    cached ?: withContext(Dispatchers.Default) {
+                                        val work = currentCoroutineContext()
+                                        EpubPreparedContent.create(book, candidate, session,
+                                            matcher = io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher(highlightRules),
+                                            checkCancelled = { work.ensureActive() })
+                                    }
+                                }
+                                catch (cancelled: CancellationException) { throw cancelled }
+                                catch (_: Exception) { failed[candidate.chapter.index] = candidate; null }
+                            if (prepared != null) loaded[candidate.chapter.index] = prepared
                         }
                     }
                     val available = loaded.values.flatMap { it.documents }.map { it.spineIndex }.toSet()
@@ -700,7 +727,7 @@ internal class EpubLayoutController(
                 if (pending != null) pendingChapterLink = null
                 if (linked >= 0) { openAtEnd = false; documentIndex = linked; openDocument(fragment = pending?.second?.fragment) }
                 else if (openAtEnd) { openAtEnd = false; openDocument(last = true) }
-                else openDocument(offset = requestedPosition)
+                else openDocument(offset = requestedPosition, retainWindowPosition = retainWindowPosition)
                 val record = content.cacheRecord
                 if (record != null) {
                     val ticket = mappingRevision
@@ -797,6 +824,7 @@ internal class EpubLayoutController(
             .put("paragraphSpacingPx", ChapterProvider.contentPaintTextHeight * ReadBookConfig.paragraphSpacing / 10f / metrics.density)
             .put("indentPx", ChapterProvider.indentCharWidth * ReadBookConfig.paragraphIndent.length / metrics.density)
             .put("title", JSONObject()
+                .put("hidden", ReadBookConfig.titleMode == 2)
                 .put("color", EpubCharStyles.cssColor(ReadBookConfig.resolvedTitleColor))
                 .put("fontSize", ChapterProvider.titlePaint.textSize / metrics.density)
                 .put("weight", if (android.os.Build.VERSION.SDK_INT >= 28) ChapterProvider.titlePaint.typeface?.weight ?: 400
@@ -809,6 +837,11 @@ internal class EpubLayoutController(
                 .put("top", ReadBookConfig.titleTopSpacing).put("bottom", ReadBookConfig.titleBottomSpacing))
         val fixed = item?.let { publication.layoutFor(it) == EpubLayout.FIXED } ?: false
         val value = JSONObject().put("fixed", fixed)
+            .put("ngHighlightNight", ReadBookConfig.isNightTheme)
+            // PageView owns decorations for both per-book and global reading styles.
+            .put("ngNativePageDecorations", boundBook?.let {
+                it.bookUrl == ReadBook.book?.bookUrl
+            } == true)
             .put("fullLineUnderline", if (ReadBookConfig.fullLineUnderlineEnabled) JSONObject()
                 .put("color", EpubCharStyles.cssColor(ReadBookConfig.resolvedUnderlineColor))
                 .put("width", ReadBookConfig.underlineHeight / metrics.density)
@@ -983,7 +1016,8 @@ internal class EpubLayoutController(
         }
     }
 
-    private fun openDocument(last: Boolean = false, fragment: String? = null, offset: Int? = null) {
+    private fun openDocument(last: Boolean = false, fragment: String? = null, offset: Int? = null,
+                             retainWindowPosition: Boolean = false) {
         val document = documents.getOrNull(documentIndex) ?: return
         val publication = snapshot?.publicationSession?.publication ?: return
         val pair = EpubSpreadLayout.fixedRun(publication, document.spineIndex, host.width > host.height)
@@ -995,7 +1029,7 @@ internal class EpubLayoutController(
             else {
                 requestedPosition = offset ?: document.first
                 openAtEnd = last
-                boundBook?.let(::showChapter)
+                boundBook?.let { showChapter(it) }
             }
             return
         }
@@ -1003,6 +1037,7 @@ internal class EpubLayoutController(
         view.documents(documents)
         view.content(document.location.path, document.html, document.payload)
         view.open(document.location.copy(fragment = fragment ?: document.location.fragment), options(last).apply {
+            if (retainWindowPosition) put("retainWindowPosition", true)
             put("fragment", fragment ?: JSONObject.NULL)
             offset?.let { put("textOffset", it) }
         })
@@ -1027,7 +1062,7 @@ internal class EpubLayoutController(
                 .firstOrNull { spread -> spread.pagesInReadingOrder(false).any { it.occurrence == document.spineIndex } }
             val available = documents.map { it.spineIndex }.toSet()
             if (pair != null && pair.pagesInReadingOrder(false).any { it.occurrence !in available }) {
-                boundBook?.let(::showChapter)
+                boundBook?.let { showChapter(it) }
                 return
             }
         }
@@ -1039,8 +1074,11 @@ internal class EpubLayoutController(
         val view = surface ?: return
         if (initial) { cancelTurn(); clearSelection(); selectionFinished = false }
         val mine = ++selectionRevision
+        pendingSelectionHit = mine
         view.interact(JSONObject().put("action", "hit").put("nearest", !initial)
             .put("x", css(x)).put("y", css(y))) { result ->
+            if (pendingSelectionHit == mine) pendingSelectionHit = null
+            host.post { continueTurns() }
             if (mine != selectionRevision || result == null) return@interact
             if (initial && !result.isNull("image")) {
                 view.resolve(result.getString("image"))?.let {
@@ -1175,12 +1213,13 @@ internal class EpubLayoutController(
 
     fun clearSelection() {
         selectionRevision++
+        pendingSelectionHit = null
         selectionAnchor = null
         selectionFinished = false
         if (selection != null || pendingSearchSelection != null) clearFrames()
         pendingSearchSelection = null
         selection = null
-        surface?.interact(JSONObject().put("action", "clear")) {}
+        surface?.interact(JSONObject().put("action", "clear")) { host.post { continueTurns() } }
         selectionChanged(null, false)
     }
 
@@ -1363,7 +1402,15 @@ internal class EpubLayoutController(
         when {
             pendingTurns.isNotEmpty() -> pendingTurns.startNext(::startTurn)
             pendingInteractions.isNotEmpty() -> pendingInteractions.removeFirst().invoke()
-            else -> scheduleWarm()
+            else -> {
+                val book = boundBook
+                // A neighbour can finish while a window is loading and its bind notification
+                // is ignored. Recheck after ready, without overtaking turns or seeking back.
+                if (book != null && documents.getOrNull(documentIndex)?.chapter === textChapter &&
+                    position() == reportedPosition && hasUnpreparedWindowNeighbors()) {
+                    showChapter(book, retainWindowPosition = true)
+                } else scheduleWarm()
+            }
         }
     }
 
@@ -1552,7 +1599,7 @@ internal class EpubLayoutController(
                 if (delta != 0) turnChapter(delta, request.timing)
                 else {
                     requestedPosition = target.first
-                    boundBook?.let(::showChapter)
+                    boundBook?.let { showChapter(it) }
                 }
                 return true
             }
@@ -1733,7 +1780,7 @@ internal class EpubLayoutController(
         if (neighboringChapters().any { it.chapter.index == current.chapter.index + 1 &&
                 preparedChapters[it.chapter.index]?.chapter !== it }) {
             if (neighboringChapters().any { it.chapter.index == current.chapter.index + 1 && it.isCompleted }) {
-                boundBook?.let(::showChapter)
+                boundBook?.let { showChapter(it) }
             }
             return
         }
@@ -1800,6 +1847,7 @@ internal class EpubLayoutController(
         pageTextRequest++
         pendingReadAloud = null
         selectionRevision++
+        pendingSelectionHit = null
         selectionAnchor = null
         generation++
         contentGeneration++

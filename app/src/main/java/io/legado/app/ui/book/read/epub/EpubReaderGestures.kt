@@ -41,6 +41,7 @@ internal class EpubReaderGestures(
     private var scroller: Scroller? = null
     private var flingView: View? = null
     private var flingTask: Runnable? = null
+    val isActive: Boolean get() = down || flingTask != null
     private val longPressTask = Runnable {
         if (down && !moved) {
             longPressed = true

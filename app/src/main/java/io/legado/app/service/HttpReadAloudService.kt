@@ -199,6 +199,7 @@ class HttpReadAloudService : BaseReadAloudService(),
     }
 
     override fun playStop() {
+        onBgmSpeechWaiting()
         updatePreparationStage(BaseReadAloudService.PREPARATION_NONE)
         exoPlayer.stop()
         playIndexJob?.cancel()
@@ -1901,6 +1902,9 @@ class HttpReadAloudService : BaseReadAloudService(),
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         super.onIsPlayingChanged(isPlaying)
+        if (ownsPlaybackState() && isPlaying == exoPlayer.isPlaying) {
+            if (isPlaying) onBgmSpeechStarted() else onBgmSpeechWaiting()
+        }
         if (isPreparingReadAloud) {
             // Position preparation gates progress publication, not actual elapsed audio.
             if (ownsPlaybackState() && isPlaying == exoPlayer.isPlaying) {

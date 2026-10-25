@@ -17,6 +17,7 @@ import androidx.activity.addCallback
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.RequestOptions
@@ -84,7 +85,13 @@ import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import io.legado.app.ui.design.components.NgDialogVariant
+import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.lib.permission.Permissions
 import io.legado.app.lib.permission.PermissionsCompat
 
@@ -100,6 +107,8 @@ class VideoPlayerActivity : VMBaseActivity<ComposeActivityBinding, VideoPlayerVi
     private var handedOff = false
     private var initialPresentation = false
     private var orientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    private var windowedCutoutMode: Int? = null
+    private var immersiveWindowApplied = false
     private var initIntroView = false
     private val introTextView by lazy {
         initIntroView = true
@@ -159,6 +168,7 @@ class VideoPlayerActivity : VMBaseActivity<ComposeActivityBinding, VideoPlayerVi
         savedInstanceState?.getString("videoPresentation")?.let {
             presentation = runCatching { VideoPresentation.valueOf(it) }.getOrDefault(VideoPresentation.WINDOW)
             initialPresentation = true
+            setupSystemBar()
         }
         VideoPlay.book?.takeIf { book ->
             val intro = book.getDisplayIntro().orEmpty()
@@ -170,17 +180,21 @@ class VideoPlayerActivity : VMBaseActivity<ComposeActivityBinding, VideoPlayerVi
                 VideoPlayerScreen(this, presentation, revision, introContainer, ::changePresentation,
                     { onBackPressedDispatcher.onBackPressed() }, ::handleAction, ::selectEpisode)
                 if (showShelfConfirm) Dialog({ showShelfConfirm = false }) {
-                    NgDialog(getString(R.string.add_to_bookshelf), actions = {
-                        NgDialogTextActionButton(getString(R.string.no), {
+                    NgDialog(getString(R.string.add_to_bookshelf), variant = NgDialogVariant.CLASSIC_CONFIRMATION,
+                        titleFontSize = 18.sp, titleFontWeight = FontWeight.Medium, actions = {
+                        NgDialogTextActionButton(getString(R.string.video_shelf_decline), {
                             showShelfConfirm = false; callBackBookEnd()
                             viewModel.removeFromBookshelf { super.finish() }
-                        })
-                        NgDialogTextActionButton(getString(R.string.ok), {
+                        }, secondary = true)
+                        NgDialogTextActionButton(getString(R.string.add), {
                             VideoPlay.book?.removeType(BookType.notShelf)
                             VideoPlay.book?.save(); VideoPlay.inBookshelf = true
                             setResult(RESULT_OK); showShelfConfirm = false
                         })
-                    }) { Text(getString(R.string.check_add_bookshelf, VideoPlay.book?.name.orEmpty())) }
+                    }) {
+                        Text(VideoPlay.book?.name.orEmpty(), color = Color(NgTheme.colors.onSurface),
+                            fontSize = 14.sp, lineHeight = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
         }
@@ -230,7 +244,7 @@ class VideoPlayerActivity : VMBaseActivity<ComposeActivityBinding, VideoPlayerVi
             }
         }
         presentation = mode
-        toggleSystemBar(mode == VideoPresentation.WINDOW)
+        setupSystemBar()
         requestedOrientation = when (mode) {
             VideoPresentation.WINDOW -> orientation
             VideoPresentation.IMMERSIVE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
@@ -238,9 +252,37 @@ class VideoPlayerActivity : VMBaseActivity<ComposeActivityBinding, VideoPlayerVi
                 else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
     }
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        toggleSystemBar(presentation == VideoPresentation.WINDOW)
+    override fun setupSystemBar() {
+        val windowed = presentation == VideoPresentation.WINDOW
+        if (windowed && immersiveWindowApplied) {
+            // 分屏时 Base 不执行 fullScreen，也要恢复进入沉浸前的窗口适配。
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+        }
+        super.setupSystemBar()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val attributes = window.attributes
+            val cutoutMode = if (windowed) {
+                windowedCutoutMode ?: attributes.layoutInDisplayCutoutMode
+            } else {
+                if (windowedCutoutMode == null) {
+                    windowedCutoutMode = attributes.layoutInDisplayCutoutMode
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+            if (attributes.layoutInDisplayCutoutMode != cutoutMode) {
+                attributes.layoutInDisplayCutoutMode = cutoutMode
+                window.attributes = attributes
+            }
+        }
+        if (!windowed) {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+        }
+        immersiveWindowApplied = !windowed
+        toggleSystemBar(windowed)
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("videoPresentation", presentation.name)
