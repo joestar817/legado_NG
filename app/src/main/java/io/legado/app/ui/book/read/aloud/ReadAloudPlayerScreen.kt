@@ -18,24 +18,33 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -78,6 +87,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -152,6 +162,7 @@ internal sealed interface ReadAloudPlayerAction {
 @Composable
 internal fun ReadAloudPlayerScreen(
     state: ReadAloudPlayerUiState,
+    windowEnvironment: ListeningWindowEnvironment,
     onAction: (ReadAloudPlayerAction) -> Unit,
 ) {
     val context = LocalContext.current
@@ -162,7 +173,10 @@ internal fun ReadAloudPlayerScreen(
         path = state.coverPath,
         sourceOrigin = state.sourceOrigin,
     )
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val twoPane = shouldUseListeningTwoPane(windowEnvironment, maxWidth.value, maxHeight.value)
+        val fontScale = LocalDensity.current.fontScale
+        val compactCover = maxHeight < 820.dp + (50f * (fontScale - 1f).coerceAtLeast(0f)).dp
         Box(modifier = Modifier.fillMaxSize()) {
             ListeningPlayerBackground(
                 artwork = artwork,
@@ -185,11 +199,13 @@ internal fun ReadAloudPlayerScreen(
         PlayerContent(
             state = state,
             artwork = artwork,
+            twoPane = twoPane,
+            compactCover = compactCover,
             onAction = onAction,
         )
         PlayerTopBar(
             selectedPage = state.page,
-            showPageIndicator = state.displaySettings.showPageIndicator,
+            showPageIndicator = state.displaySettings.showPageIndicator && !twoPane,
             onClose = { onAction(ReadAloudPlayerAction.Close) },
             onOpenBgm = { onAction(ReadAloudPlayerAction.BackgroundMusic) },
         )
@@ -420,14 +436,19 @@ internal fun ListeningBgmEntry(
 private fun PlayerContent(
     state: ReadAloudPlayerUiState,
     artwork: ImageBitmap?,
+    twoPane: Boolean,
+    compactCover: Boolean,
     onAction: (ReadAloudPlayerAction) -> Unit,
 ) {
     var horizontalDrag by remember { mutableFloatStateOf(0f) }
+    val textListState = rememberLazyListState()
+    val bottomPadding = WindowInsets.navigationBars.asPaddingValues()
+        .calculateBottomPadding().coerceAtLeast(16.dp)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(state.page, state.displaySettings.showPageIndicator) {
-                if (!state.displaySettings.showPageIndicator) return@pointerInput
+            .pointerInput(state.page, state.displaySettings.showPageIndicator, twoPane) {
+                if (twoPane || !state.displaySettings.showPageIndicator) return@pointerInput
                 detectHorizontalDragGestures(
                     onDragStart = { horizontalDrag = 0f },
                     onHorizontalDrag = { _, amount -> horizontalDrag += amount },
@@ -450,25 +471,138 @@ private fun PlayerContent(
                 )
             },
     ) {
+        if (twoPane) {
+            PlayerTwoPane(
+                state = state,
+                artwork = artwork,
+                textListState = textListState,
+                bottomPadding = bottomPadding,
+                onAction = onAction,
+            )
+            return@Box
+        }
         Crossfade(
             targetState = state.page,
             animationSpec = tween(durationMillis = 260),
             label = "readAloudPlayerPage",
         ) { page ->
             when (page) {
-                ReadAloudPlayerPage.COVER -> PlayerCoverPage(
-                    state = state,
-                    artwork = artwork,
-                    onCoverClick = { onAction(ReadAloudPlayerAction.OpenBookInfo) },
-                    onAction = onAction,
-                )
+                ReadAloudPlayerPage.COVER -> if (compactCover) {
+                    PlayerConstrainedCoverPage(
+                        state = state,
+                        artwork = artwork,
+                        contentPadding = PaddingValues(
+                            start = 28.dp, top = 76.dp, end = 28.dp, bottom = bottomPadding,
+                        ),
+                        onAction = onAction,
+                    )
+                } else {
+                    PlayerCoverPage(
+                        state = state,
+                        artwork = artwork,
+                        onCoverClick = { onAction(ReadAloudPlayerAction.OpenBookInfo) },
+                        onAction = onAction,
+                    )
+                }
                 ReadAloudPlayerPage.TEXT -> PlayerTextPage(
                     state = state,
                     artwork = artwork,
+                    textListState = textListState,
                     onAction = onAction,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PlayerTwoPane(
+    state: ReadAloudPlayerUiState,
+    artwork: ImageBitmap?,
+    textListState: LazyListState,
+    bottomPadding: Dp,
+    onAction: (ReadAloudPlayerAction) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxSize()
+            .padding(start = 28.dp, top = 76.dp, end = 28.dp, bottom = bottomPadding),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        PlayerConstrainedCoverPage(
+            state = state,
+            artwork = artwork,
+            modifier = Modifier.weight(0.4f),
+            onAction = onAction,
+        )
+        PlayerTextScene(
+            state = state,
+            artwork = artwork,
+            listState = textListState,
+            modifier = Modifier.weight(0.6f),
+        )
+    }
+}
+
+/** Measure the controls first; the upper content can shrink or scroll. */
+@Composable
+private fun PlayerConstrainedCoverPage(
+    state: ReadAloudPlayerUiState,
+    artwork: ImageBitmap?,
+    onAction: (ReadAloudPlayerAction) -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+) {
+    val display = state.displaySettings
+    val fontScale = LocalDensity.current.fontScale
+    Column(
+        modifier = modifier.fillMaxSize().padding(contentPadding),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val coverHeight = (maxHeight * 0.45f).coerceIn(96.dp, 216.dp)
+            val titleHeight = if (display.showBookName) (50f * fontScale).dp + 10.dp else 35.dp
+            val summaryHeight = (maxHeight - coverHeight - titleHeight - 12.dp)
+                .coerceIn(96.dp, 212.dp)
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                if (display.showCover) {
+                    PlayerCover(
+                        artwork = artwork,
+                        fallbackTitle = if (display.showBookName) state.bookName else "",
+                        fallbackAuthor = state.bookAuthor,
+                        useNoCoverFallback = state.coverPath.isNullOrBlank(),
+                        contentDescription = state.bookName,
+                        modifier = Modifier.size(width = coverHeight * (152f / 216f), height = coverHeight)
+                            .clickable { onAction(ReadAloudPlayerAction.OpenBookInfo) },
+                        cornerRadius = 10.dp,
+                        ambientGlow = true,
+                    )
+                } else {
+                    Spacer(Modifier.size(width = coverHeight * (152f / 216f), height = coverHeight))
+                }
+                if (display.showBookName) {
+                    Text(
+                        text = state.bookName,
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        color = Color(NgTheme.colors.onSurface),
+                        fontSize = 20.sp,
+                        lineHeight = 25.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else Spacer(Modifier.height(35.dp))
+                if (display.showSubtitle) {
+                    PlayerCoverInfoCard(state, Modifier.padding(top = 12.dp), height = summaryHeight)
+                }
+            }
+        }
+        PlayerControls(state, onAction)
     }
 }
 
@@ -529,28 +663,7 @@ private fun PlayerCoverPage(
                 modifier = Modifier.padding(top = 12.dp),
             )
         }
-        PlayerQuickActions(
-            state = state,
-            onAction = onAction,
-            modifier = Modifier.padding(top = 10.dp),
-        )
-        PlayerProgress(
-            state = state,
-            onAction = onAction,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        PlayerControlDock(
-            state = state,
-            onAction = onAction,
-            modifier = Modifier
-                .offset(y = (-4).dp)
-                .padding(top = 4.dp),
-        )
-        PlayerVoicePill(
-            label = state.engineLabel,
-            onClick = { onAction(ReadAloudPlayerAction.Voice) },
-            modifier = Modifier.padding(top = 2.dp),
-        )
+        PlayerControls(state, onAction)
     }
 }
 
@@ -558,6 +671,7 @@ private fun PlayerCoverPage(
 private fun PlayerTextPage(
     state: ReadAloudPlayerUiState,
     artwork: ImageBitmap?,
+    textListState: LazyListState,
     onAction: (ReadAloudPlayerAction) -> Unit,
 ) {
     Column(
@@ -569,42 +683,36 @@ private fun PlayerTextPage(
         PlayerTextScene(
             state = state,
             artwork = artwork,
+            listState = textListState,
             modifier = Modifier.weight(1f),
         )
-        PlayerQuickActions(
-            state = state,
-            onAction = onAction,
-            modifier = Modifier.padding(top = 10.dp),
-        )
-        PlayerProgress(
-            state = state,
-            onAction = onAction,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        PlayerControlDock(
-            state = state,
-            onAction = onAction,
-            modifier = Modifier
-                .offset(y = (-4).dp)
-                .padding(top = 4.dp),
-        )
-        PlayerVoicePill(
-            label = state.engineLabel,
-            onClick = { onAction(ReadAloudPlayerAction.Voice) },
-            modifier = Modifier.padding(top = 2.dp),
-        )
+        PlayerControls(state, onAction)
     }
+}
+
+/** Emit the original four children directly to retain the regular page's spacing. */
+@Composable
+private fun PlayerControls(state: ReadAloudPlayerUiState, onAction: (ReadAloudPlayerAction) -> Unit) {
+    PlayerQuickActions(state, onAction, Modifier.padding(top = 10.dp))
+    PlayerProgress(state, onAction, Modifier.padding(top = 4.dp))
+    PlayerControlDock(state, onAction, Modifier.offset(y = (-4).dp).padding(top = 4.dp))
+    PlayerVoicePill(
+        label = state.engineLabel,
+        onClick = { onAction(ReadAloudPlayerAction.Voice) },
+        modifier = Modifier.padding(top = 2.dp),
+    )
 }
 
 @Composable
 private fun PlayerCoverInfoCard(
     state: ReadAloudPlayerUiState,
     modifier: Modifier = Modifier,
+    height: Dp = 212.dp,
 ) {
     PlayerTranslucentSurface(
         modifier = modifier
             .fillMaxWidth()
-            .height(212.dp),
+            .height(height),
         shape = RoundedCornerShape(8.dp),
         containerAlpha = 0.42f,
         elevation = 7.dp,
@@ -665,10 +773,10 @@ private fun PlayerProgress(
 private fun PlayerTextScene(
     state: ReadAloudPlayerUiState,
     artwork: ImageBitmap?,
+    listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
     val display = state.displaySettings
-    val listState = rememberLazyListState()
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val activeParagraphStyle = TextStyle(

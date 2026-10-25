@@ -1,8 +1,13 @@
 package io.legado.app.ui.book.read.aloud
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.graphics.Point
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -58,6 +63,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     override val binding by viewBinding(ComposeActivityBinding::inflate)
 
     private var uiState by mutableStateOf(ReadAloudPlayerUiState())
+    private var windowEnvironment by mutableStateOf(ListeningWindowEnvironment())
     private var playerThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
     private var playerThemeJob: Job? = null
     private var playerThemeKey: String? = null
@@ -88,6 +94,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
+        refreshListeningWindowEnvironment()
         refreshListeningTheme(force = true)
         initContent()
         refreshStaticState()
@@ -110,10 +117,43 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     override fun onResume() {
         super.onResume()
+        refreshListeningWindowEnvironment()
         ReadAloudMiniPlayer.detach(this)
         refreshStaticState()
         refreshVoiceLabelIfDirty()
         refreshPreparationState()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        refreshListeningWindowEnvironment()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.N)
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode)
+        refreshListeningWindowEnvironment(isInMultiWindowMode)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun refreshListeningWindowEnvironment(
+        multiWindow: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode,
+    ) {
+        val maximumSize = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            windowManager.maximumWindowMetrics.bounds.let { Point(it.width(), it.height()) }
+        } else Point().also { windowManager.defaultDisplay.getRealSize(it) }
+        val environment = ListeningWindowEnvironment(
+            largeDisplay = isLargeListeningDisplay(
+                maximumSize.x, maximumSize.y, resources.configuration.densityDpi,
+            ),
+            multiWindow = multiWindow,
+        )
+        windowEnvironment = environment
+        val orientation = if (shouldLockListeningPortrait(environment)) {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        if (requestedOrientation != orientation) requestedOrientation = orientation
     }
 
     private fun initContent() {
@@ -124,6 +164,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             NgAppTheme(snapshot = playerThemeSnapshot) {
                 ReadAloudPlayerScreen(
                     state = uiState,
+                    windowEnvironment = windowEnvironment,
                     onAction = ::handleAction,
                 )
             }
