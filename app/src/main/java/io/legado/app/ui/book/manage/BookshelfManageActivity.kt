@@ -22,6 +22,7 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookGroup
 import io.legado.app.data.entities.BookSource
 import io.legado.app.help.book.contains
+import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.menuCapabilities
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig

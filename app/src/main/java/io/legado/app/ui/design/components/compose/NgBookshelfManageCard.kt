@@ -349,15 +349,6 @@ private fun NgBookshelfManageCoverCard(
         .height(82.dp)
         .then(if (dimmed) Modifier.alpha(0.58f) else Modifier)
         .clip(shape)
-        // 选中卡的底色:先铺卡片本色,再叠一层极浅主色,等价于设计稿里的 #FFF8F6,且跟随主题。
-        .then(if (selected) Modifier.background(selectedTint) else Modifier)
-        .then(
-            if (selected) {
-                Modifier.border(2.2.dp, selectedOutline, shape)
-            } else {
-                Modifier
-            }
-        )
         .semantics { this.selected = selected }
         .combinedClickable(
             interactionSource = interactionSource,
@@ -365,6 +356,14 @@ private fun NgBookshelfManageCoverCard(
             onClick = onClick,
             onLongClick = onLongClick,
         )
+    // 选中叠加层画在卡片底/材质之上:先极浅主色底(等价设计稿 #FFF8F6,跟随主题),再描边。
+    val selectionOverlay = if (selected) {
+        Modifier
+            .background(selectedTint)
+            .border(2.2.dp, selectedOutline, shape)
+    } else {
+        Modifier
+    }
     val cardContent: @Composable BoxScope.() -> Unit = {
         Row(
             modifier = Modifier
@@ -530,14 +529,24 @@ private fun NgBookshelfManageCoverCard(
         }
     }
     if (appearance == null) {
-        Box(modifier = cardModifier.background(cardColor), content = cardContent)
+        Box(modifier = cardModifier.background(cardColor).then(selectionOverlay), content = cardContent)
     } else {
-        NgBookshelfCardSurface(
-            appearance = appearance,
-            pressed = isPressed,
-            cornerRadius = radius,
-            modifier = cardModifier,
-            content = cardContent,
-        )
+        Box(modifier = cardModifier.then(if (selected) Modifier.background(selectedTint) else Modifier)) {
+            NgBookshelfCardSurface(
+                appearance = appearance,
+                pressed = isPressed,
+                cornerRadius = radius,
+                modifier = Modifier.matchParentSize(),
+                content = cardContent,
+            )
+            // 选中描边压在材质之上,否则会被玻璃底盖掉。
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .border(2.2.dp, selectedOutline, shape),
+                )
+            }
+        }
     }
 }
