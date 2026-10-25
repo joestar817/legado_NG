@@ -1,10 +1,10 @@
 // @name Next Edge TTS
 // @schema 1
-// @version 1.0.10
+// @version 1.0.11
 // @uuid next_edge_proxy
 // @author Legado
-// @url http://5.45.99.149:8075/tts
-// @enabled false
+// @url https://libretts.is-an.org/api/tts
+// @enabled true
 // @cookieJar false
 // @audioType audio/mpeg
 // @defaultSpeed 50
@@ -12,7 +12,7 @@
 // @defaultPitch 50
 // @sampleText 前不见古人，后不见来者。念天地之悠悠，独怆然而涕下。
 // @capabilities style_tags,emotion,synthesis_speed,synthesis_pitch
-// @description 第三方 Edge TTS 中转调试模板，发音人画像和 styles 参考 Edge VoiceTag 与 Azure Speech 文档。
+// @description 通过 LibreTTS 合成语音，发音人画像和 styles 参考 Edge VoiceTag 与 Azure Speech 文档。
 
 var STYLE_NAMES;
 
@@ -119,10 +119,7 @@ function expressiveStyleAliases() {
     return EXPRESSIVE_STYLE_ALIASES;
 }
 
-var API_OPTIONS = [
-    { label: "5.45.99.149", value: "http://5.45.99.149:8075/tts" },
-    { label: "146.56.188.115", value: "http://146.56.188.115:8080/tts" }
-];
+var API_URL = "https://libretts.is-an.org/api/tts";
 
 var VOICES;
 
@@ -256,13 +253,6 @@ function voiceCatalog() {
 
 function options() {
     return [
-        {
-            key: "api",
-            label: "接口",
-            type: "select",
-            defaultValue: "http://5.45.99.149:8075/tts",
-            values: API_OPTIONS
-        },
         { key: "timeout", label: "超时秒数", type: "number", defaultValue: "30" }
     ];
 }
@@ -322,7 +312,6 @@ function appendAll(target, values) {
 }
 
 function synthesize(text, voice, params, options, ctx) {
-    var api = String(options.api || "http://5.45.99.149:8075/tts").replace(/\/+$/, "");
     var voiceId = String((voice && voice.id) || "zh-CN-YunxiNeural");
     var style = selectedStyleValue(voice) || automaticStyleValue(voice, ctx);
     var rate = clamp((normalizedParam(params, "speed") - 50) * 2, -100, 100);
@@ -332,11 +321,11 @@ function synthesize(text, voice, params, options, ctx) {
         "v=" + encodeURIComponent(voiceId),
         "r=" + encodeURIComponent(rate),
         "p=" + encodeURIComponent(pitch),
-        "s=" + encodeURIComponent(style),
-        "api_key="
+        "style=" + encodeURIComponent(style),
+        "o=mp3"
     ].join("&");
     return {
-        url: api + "?" + query,
+        url: API_URL + "?" + query,
         method: "GET",
         audioContentType: "audio/mpeg",
         timeout: Number(options.timeout || 30),

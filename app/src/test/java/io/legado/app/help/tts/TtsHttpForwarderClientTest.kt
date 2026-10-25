@@ -1,9 +1,11 @@
 package io.legado.app.help.tts
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.JsonSyntaxException
 import io.legado.app.constant.AppPattern
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.htmlunit.corejs.javascript.Context
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -455,13 +457,15 @@ class TtsHttpForwarderClientTest {
         assertEquals(TtsEngineStore.NEXT_EDGE_PROXY_ID, engine.id)
         assertEquals("Next Edge TTS", engine.name)
         assertEquals(TtsEngineType.SCRIPT, engine.type)
-        assertEquals(false, engine.enabled)
+        assertEquals(true, engine.enabled)
         assertEquals("audio/mpeg", engine.contentType)
-        assertEquals("http://5.45.99.149:8075/tts", engine.baseUrl)
+        assertEquals("https://libretts.is-an.org/api/tts", engine.baseUrl)
         assertTrue(engine.supportsVoiceFetch())
-        assertTrue(engine.script.contains("// @version 1.0.10"))
+        assertTrue(engine.script.contains("// @version 1.0.11"))
         assertTrue(engine.script.contains("function voiceCatalog()"))
-        assertTrue(engine.script.contains("defaultValue: \"http://5.45.99.149:8075/tts\""))
+        assertFalse(engine.script.contains("key: \"api\""))
+        assertFalse(engine.script.contains("5.45.99.149"))
+        assertFalse(engine.script.contains("146.56.188.115"))
         assertFalse(engine.script.contains("36.248.181.23"))
         assertTrue(engine.supportsCapability(TtsEngineCapability.STYLE_TAGS))
         assertTrue(engine.supportsCapability(TtsEngineCapability.EMOTION))
@@ -507,6 +511,67 @@ class TtsHttpForwarderClientTest {
                 voices
             )
         )
+    }
+
+    @Test
+    fun nextEdgeLibreTtsRequestEncodesTextAndUsesFixedEndpoint() {
+        val text = "字面文本：{{1+1}}，@Js:，<js>1+1</js>，& +?，😀"
+        val request = evaluateNextEdgeScript(
+            "synthesize(${Gson().toJson(text)}, null, {}, " +
+                "{api:'http://5.45.99.149:8075/tts',timeout:'45'}, {})"
+        )
+        val url = request["url"].asString.toHttpUrl()
+
+        assertEquals("https", url.scheme)
+        assertEquals("libretts.is-an.org", url.host)
+        assertEquals("/api/tts", url.encodedPath)
+        assertEquals(setOf("t", "v", "r", "p", "style", "o"), url.queryParameterNames)
+        assertEquals(text, url.queryParameter("t"))
+        assertEquals(TtsEngineStore.NEXT_EDGE_DEFAULT_VOICE_ID, url.queryParameter("v"))
+        assertEquals("0", url.queryParameter("r"))
+        assertEquals("0", url.queryParameter("p"))
+        assertEquals("", url.queryParameter("style"))
+        assertEquals("mp3", url.queryParameter("o"))
+        assertEquals("GET", request["method"].asString)
+        assertEquals("audio/mpeg", request["audioContentType"].asString)
+        assertEquals(45, request["timeout"].asInt)
+        assertEquals(1, request["retry"].asInt)
+        assertFalse(AppPattern.JS_PATTERN.matcher(request["url"].asString).find())
+        assertFalse(AppPattern.EXP_PATTERN.matcher(request["url"].asString).find())
+    }
+
+    @Test
+    fun nextEdgeLibreTtsManualStyleTakesPriorityOverExpressiveContext() {
+        listOf("selected_style:{value:'sad'}", "style_value:'sad'").forEach { style ->
+            val request = evaluateNextEdgeScript(
+                "synthesize('手选风格', {id:'zh-CN-XiaoxiaoNeural',$style," +
+                    "extra:{azure_styles:['sad','cheerful']}}, " +
+                    "{speed:80,pitch:20}, {}, {synthesis:{expressive:{emotion:'开心'}}})"
+            )
+            val url = request["url"].asString.toHttpUrl()
+
+            assertEquals("zh-CN-XiaoxiaoNeural", url.queryParameter("v"))
+            assertEquals("sad", url.queryParameter("style"))
+            assertEquals("60", url.queryParameter("r"))
+            assertEquals("-60", url.queryParameter("p"))
+            assertNull(url.queryParameter("s"))
+        }
+    }
+
+    @Test
+    fun nextEdgeLibreTtsAutomaticStyleRespectsVoiceSupportAndParamBounds() {
+        listOf("['cheerful']" to "cheerful", "[]" to "").forEach { (styles, expected) ->
+            val request = evaluateNextEdgeScript(
+                "synthesize('自动风格', {id:'zh-CN-YunxiNeural'," +
+                    "extra:{azure_styles:$styles}}, {speed:1000,pitch:-100}, {}, " +
+                    "{synthesis:{expressive:{emotion:'开心'}}})"
+            )
+            val url = request["url"].asString.toHttpUrl()
+
+            assertEquals(expected, url.queryParameter("style"))
+            assertEquals("100", url.queryParameter("r"))
+            assertEquals("-100", url.queryParameter("p"))
+        }
     }
 
     @Test
@@ -620,15 +685,17 @@ class TtsHttpForwarderClientTest {
     @Test
     fun nextEdgeLazyCatalogUpgradePreservesExistingVoiceDirectory() {
         val upgraded = scriptEngineFromAssetFile("next_edge_proxy.js")
-        val saved = upgraded.copy(
-            script = upgraded.script.replace("// @version 1.0.10", "// @version 1.0.9")
-        )
+        listOf("1.0.8", "1.0.9", "1.0.10").forEach { version ->
+            val saved = upgraded.copy(
+                script = upgraded.script.replaceFirst("// @version 1.0.11", "// @version $version")
+            )
 
-        assertTrue(TtsEngineStore.preservesVoiceCatalogOnDefaultUpgrade(saved, upgraded))
+            assertTrue(TtsEngineStore.preservesVoiceCatalogOnDefaultUpgrade(saved, upgraded))
+        }
         assertFalse(
             TtsEngineStore.preservesVoiceCatalogOnDefaultUpgrade(
-                saved = saved.copy(
-                    script = saved.script.replace("// @version 1.0.9", "// @version 1.0.7")
+                saved = upgraded.copy(
+                    script = upgraded.script.replaceFirst("// @version 1.0.11", "// @version 1.0.7")
                 ),
                 upgraded = upgraded
             )
@@ -703,7 +770,7 @@ class TtsHttpForwarderClientTest {
         val nextEdge = scriptEngineFromAssetFile("next_edge_proxy.js")
         val savedNextEdge = TtsEngineStore.scriptEngineFromScript(
             nextEdge.script
-                .replace("// @version 1.0.10", "// @version 1.0.5")
+                .replace("// @version 1.0.11", "// @version 1.0.5")
                 .replace(Regex("// @capabilities style_tags,emotion\\r?\\n"), "")
         )!!
         val updatedNextEdge = TtsEngineStore.updateDefaultScriptForTest(savedNextEdge, nextEdge)
@@ -727,29 +794,55 @@ class TtsHttpForwarderClientTest {
     }
 
     @Test
-    fun nextEdgeProxyEndpointUpgradeReplacesOnlyRetiredDefault() {
+    fun nextEdgeLibreTtsUpgradePreservesUserSettingsWithoutMigratingStoredEndpoint() {
         val builtIn = scriptEngineFromAssetFile("next_edge_proxy.js")
-        val saved = TtsEngineStore.scriptEngineFromScript(
-            builtIn.script.replace("// @version 1.0.10", "// @version 1.0.6")
-        )!!.copy(
-            enabled = false,
-            optionValues = mapOf(
-                "api" to "http://36.248.181.23:22335/tts",
-                "timeout" to "45"
+        for (patchVersion in 0..10) {
+            val saved = builtIn.copy(
+                script = builtIn.script.replaceFirst(
+                    "// @version 1.0.11", "// @version 1.0.$patchVersion"
+                ),
+                name = "我的 Edge",
+                baseUrl = "http://146.56.188.115:8080/tts",
+                enabled = patchVersion % 2 == 0,
+                activeVoiceId = "zh-CN-XiaoxiaoNeural",
+                disabledVoiceIds = listOf("zh-CN-YunjianNeural"),
+                optionValues = mapOf(
+                    "api" to "http://146.56.188.115:8080/tts",
+                    "timeout" to "45"
+                )
             )
+
+            val updated = TtsEngineStore.updateDefaultScriptForTest(saved, builtIn)
+
+            assertEquals(builtIn.script, updated.script)
+            assertEquals(builtIn.baseUrl, updated.baseUrl)
+            assertEquals(saved.name, updated.name)
+            assertEquals(saved.enabled, updated.enabled)
+            assertEquals(saved.activeVoiceId, updated.activeVoiceId)
+            assertEquals(saved.disabledVoiceIds, updated.disabledVoiceIds)
+            assertEquals(saved.optionValues, updated.optionValues)
+        }
+        val options = evaluateNextEdgeScript("({schema:options()})")["schema"].asJsonArray
+        val optionSchema = Gson().fromJson(options, Array<TtsScriptOption>::class.java).toList()
+        val savedOptions = builtIn.copy(
+            optionValues = mapOf("api" to "http://example.com/tts", "timeout" to "45")
         )
 
-        val updated = TtsEngineStore.updateDefaultScriptForTest(saved, builtIn)
+        assertEquals(listOf("timeout"), optionSchema.map { it.safeKey })
+        assertEquals(mapOf("timeout" to "45"), savedOptions.effectiveOptionValues(optionSchema))
+    }
 
-        assertEquals(false, updated.enabled)
-        assertEquals("http://5.45.99.149:8075/tts", updated.optionValues["api"])
-        assertEquals("45", updated.optionValues["timeout"])
+    @Test
+    fun nextEdgeLibreTtsUpgradeDoesNotDowngradeFutureScriptVersion() {
+        val builtIn = scriptEngineFromAssetFile("next_edge_proxy.js")
+        listOf("1.0.11", "1.0.12", "1.0.100", "2.0.0").forEach { version ->
+            val saved = builtIn.copy(
+                script = builtIn.script.replaceFirst("// @version 1.0.11", "// @version $version") +
+                    "\n// retained script"
+            )
 
-        val customEndpoint = TtsEngineStore.updateDefaultScriptForTest(
-            saved.copy(optionValues = saved.optionValues + ("api" to "http://example.com/tts")),
-            builtIn
-        )
-        assertEquals("http://example.com/tts", customEndpoint.optionValues["api"])
+            assertEquals(saved.script, TtsEngineStore.updateDefaultScriptForTest(saved, builtIn).script)
+        }
     }
 
     @Test
@@ -1226,6 +1319,24 @@ class TtsHttpForwarderClientTest {
         )
 
         assertEquals(true, TtsEngineStore.normalizeEditedEngine(parsed, engine).isFailure)
+    }
+
+    private fun evaluateNextEdgeScript(expression: String): JsonObject {
+        val engine = scriptEngineFromAssetFile("next_edge_proxy.js")
+        val context = Context.enter()
+        return try {
+            context.optimizationLevel = -1
+            context.languageVersion = Context.VERSION_ES6
+            val scope = context.initStandardObjects()
+            context.evaluateString(scope, engine.script, "next_edge_proxy.js", 1, null)
+            JsonParser.parseString(
+                Context.toString(
+                    context.evaluateString(scope, "JSON.stringify($expression);", "next-edge-test", 1, null)
+                )
+            ).asJsonObject
+        } finally {
+            Context.exit()
+        }
     }
 
     private fun scriptEngineFromAssetFile(fileName: String): TtsEngineSetting {
