@@ -17,7 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import io.legado.app.R
 import io.legado.app.help.bgm.MusicPlaylist
 import io.legado.app.help.bgm.MusicTrack
@@ -77,7 +76,7 @@ internal fun BgmPlaylistDialog(
         removing -> "移出"
         else -> title
     }
-    Dialog(onDismissRequest = onDismiss) {
+    NgPaneDialog(onDismissRequest = onDismiss) {
         BoxWithConstraints(Modifier.fillMaxWidth().imePadding()) {
             val bodyHeight = if (confirming) (maxHeight - 128.dp).coerceIn(0.dp, 400.dp)
                 else (maxHeight - 144.dp).coerceIn(80.dp, 400.dp)

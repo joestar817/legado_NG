@@ -42,6 +42,7 @@ import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.design.components.compose.LocalNgDrawerInheritThemeProfile
+import io.legado.app.ui.design.components.compose.LocalNgPaneBounds
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSlider
@@ -65,6 +66,7 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
     private var listeningThemeJob: Job? = null
 
     protected open val usePlayerPalette: Boolean = false
+    protected open val useMusicPane: Boolean = false
 
     protected open fun listeningBook() = ReadBook.book
 
@@ -112,6 +114,7 @@ internal abstract class ReadAloudComposeBottomSheet : BottomSheetDialogFragment(
         ) {
             CompositionLocalProvider(
                 LocalNgDrawerInheritThemeProfile provides false,
+                LocalNgPaneBounds provides (activity as? ReadAloudPlayerActivity)?.listeningPaneBounds(useMusicPane),
                 content = content,
             )
         }

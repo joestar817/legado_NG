@@ -1,5 +1,7 @@
 package io.legado.app.ui.book.read.aloud
 
+import androidx.compose.ui.unit.IntRect
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,5 +55,36 @@ class ListeningLayoutPolicyTest {
         assertTrue(isLargeListeningDisplay(1200, 1920, 320))
         assertTrue(isLargeListeningDisplay(1920, 1200, 320))
         assertFalse(isLargeListeningDisplay(1199, 1920, 320))
+    }
+
+    @Test
+    fun tabletPaneBoundsMeetAtTheCenterOfTheExistingContentGap() {
+        val layout = calculateListeningPaneLayout(0, 0, 1137, 684, 1f)
+
+        assertEquals(IntRect(0, 0, 463, 684), layout.controls)
+        assertEquals(IntRect(463, 0, 1137, 684), layout.music)
+        assertEquals(layout.controls.right, layout.music.left)
+        assertEquals(1137, layout.controls.width + layout.music.width)
+    }
+
+    @Test
+    fun paneBoundsPreserveWindowOffsetsAndScaleWithDisplayDensity() {
+        val layout = calculateListeningPaneLayout(37, 24, 2274, 1368, 2f)
+
+        assertEquals(IntRect(37, 24, 963, 1392), layout.controls)
+        assertEquals(IntRect(963, 24, 2311, 1392), layout.music)
+        assertEquals(layout.controls.right, layout.music.left)
+        assertEquals(2274, layout.controls.width + layout.music.width)
+    }
+
+    @Test
+    fun fractionalDensityUsesTheActualRoundedPaddingAndOddPixelGap() {
+        // At 1.3x: 36px margins, 31px gap and a 396px left content area.
+        val layout = calculateListeningPaneLayout(-8, 31, 1092, 624, 1.3f)
+
+        assertEquals(IntRect(-8, 31, 440, 655), layout.controls)
+        assertEquals(IntRect(440, 31, 1084, 655), layout.music)
+        assertEquals(layout.controls.right, layout.music.left)
+        assertEquals(1092, layout.controls.width + layout.music.width)
     }
 }

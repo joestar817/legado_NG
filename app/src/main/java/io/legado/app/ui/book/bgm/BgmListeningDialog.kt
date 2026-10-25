@@ -13,6 +13,8 @@ import io.legado.app.ui.book.read.aloud.ReadAloudComposeBottomSheet
 
 /** Only the selection/preview UI is hosted here; the listening service owns BGM playback. */
 internal class BgmListeningDialog : ReadAloudComposeBottomSheet() {
+    override val useMusicPane: Boolean = true
+
     private val model by viewModels<BgmViewModel>()
     private var preview: BgmPreviewController? = null
 

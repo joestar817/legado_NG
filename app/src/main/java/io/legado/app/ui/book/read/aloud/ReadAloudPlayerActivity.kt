@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.IntRect
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
@@ -64,6 +65,8 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     private var uiState by mutableStateOf(ReadAloudPlayerUiState())
     private var windowEnvironment by mutableStateOf(ListeningWindowEnvironment())
+    private var paneLayout by mutableStateOf<ListeningPaneLayout?>(null)
+    private var paneDialogHost: ReadAloudPaneDialogHost? = null
     private var playerThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
     private var playerThemeJob: Job? = null
     private var playerThemeKey: String? = null
@@ -95,6 +98,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         refreshListeningWindowEnvironment()
+        paneDialogHost = ReadAloudPaneDialogHost(supportFragmentManager, ::listeningPaneBounds)
         refreshListeningTheme(force = true)
         initContent()
         refreshStaticState()
@@ -165,10 +169,20 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
                 ReadAloudPlayerScreen(
                     state = uiState,
                     windowEnvironment = windowEnvironment,
+                    onPaneLayoutChanged = ::updatePaneLayout,
                     onAction = ::handleAction,
                 )
             }
         }
+    }
+
+    internal fun listeningPaneBounds(music: Boolean): IntRect? =
+        paneLayout?.let { if (music) it.music else it.controls }
+
+    private fun updatePaneLayout(layout: ListeningPaneLayout?) {
+        if (paneLayout == layout) return
+        paneLayout = layout
+        paneDialogHost?.refresh()
     }
 
     private fun refreshListeningTheme(
@@ -1001,6 +1015,8 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     override fun onDestroy() {
+        paneDialogHost?.dispose()
+        paneDialogHost = null
         playerThemeJob?.cancel()
         voiceLabelJob?.cancel()
         clearPendingBufferProgress()

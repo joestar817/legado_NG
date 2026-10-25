@@ -43,13 +43,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import io.legado.app.R
 import io.legado.app.help.bgm.MusicPlatform
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
+import io.legado.app.ui.design.components.compose.NgPaneDialog
 import io.legado.app.ui.design.components.compose.NgFlatActionRail
 import io.legado.app.ui.design.components.compose.NgFlatActionRailItem
 import io.legado.app.ui.design.components.compose.NgFlatActionRailVariant
@@ -86,7 +86,7 @@ internal fun BgmAccountDialog(
     val showProfile = loggedIn && profileState != null
     val canSubmit = !busy && phoneState.codeSent && phoneState.phone.isNotBlank() &&
         phoneState.countryCode.isNotBlank() && phoneState.code.isNotBlank()
-    Dialog(onDismissRequest = onDismiss) {
+    NgPaneDialog(onDismissRequest = onDismiss) {
         BoxWithConstraints(Modifier.fillMaxWidth().imePadding()) {
             // Keep the primary action reachable when the keyboard reduces the dialog height.
             val bodyHeight = if (showProfile) (maxHeight - 128.dp).coerceIn(0.dp, 440.dp)

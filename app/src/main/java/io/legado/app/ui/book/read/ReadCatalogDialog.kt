@@ -58,6 +58,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -89,6 +90,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentManager
@@ -113,6 +115,7 @@ import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.bookmark.AllBookmarkFilter
 import io.legado.app.ui.book.bookmark.BookmarkNoteFilter
 import io.legado.app.ui.book.bookmark.buildAllBookmarkCollection
+import io.legado.app.ui.design.components.compose.LocalNgPaneBounds
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
 import io.legado.app.ui.design.components.compose.NgDrawerThemeProvider
@@ -185,6 +188,8 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
         CatalogDrawerVisualStyle.LISTENING
 
     protected open fun useMangaPanelTheme(): Boolean = false
+
+    protected open fun catalogPaneBounds(): IntRect? = null
 
     protected open fun catalogWindowTheme(): NgThemeSnapshot =
         ReadDrawerStyle.themeSnapshot(requireContext())
@@ -297,15 +302,17 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
                     onBookmarkDelete = ::deleteBookmark,
                 )
             }
-            if (useMangaPanelTheme()) {
-                NgDrawerThemeProvider(
-                    snapshot = requireNotNull(catalogThemeSnapshot),
-                    contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
-                    hasThemeProfile = false,
-                    content = catalogContent,
-                )
-            } else {
-                NgAppTheme(snapshot = catalogThemeSnapshot, updateSystemBars = false, content = catalogContent)
+            CompositionLocalProvider(LocalNgPaneBounds provides catalogPaneBounds()) {
+                if (useMangaPanelTheme()) {
+                    NgDrawerThemeProvider(
+                        snapshot = requireNotNull(catalogThemeSnapshot),
+                        contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
+                        hasThemeProfile = false,
+                        content = catalogContent,
+                    )
+                } else {
+                    NgAppTheme(snapshot = catalogThemeSnapshot, updateSystemBars = false, content = catalogContent)
+                }
             }
         }
         loadCatalogData(book)

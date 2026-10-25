@@ -38,6 +38,7 @@ import io.legado.app.help.bgm.BgmPlaybackStatus
 import io.legado.app.help.bgm.BgmRepository
 import io.legado.app.help.bgm.BgmSettings
 import io.legado.app.ui.design.components.compose.NgFormPanel
+import io.legado.app.ui.design.components.compose.LocalNgPaneBounds
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.theme.NgTheme
@@ -163,13 +164,22 @@ private fun ListeningVolume(savedVolume: Float) {
             ListeningVolumeIcon(volume == 0f)
         }
         if (open) {
-            val margin = with(LocalDensity.current) { 12.dp.roundToPx() }
-            val gap = with(LocalDensity.current) { 8.dp.roundToPx() }
-            val position = remember(margin, gap) { ListeningVolumePosition(margin, gap) }
+            val density = LocalDensity.current
+            val pane = LocalNgPaneBounds.current
+            val paneSize = pane?.let { IntSize(it.width, it.height) }
+            val margin = with(density) { 12.dp.roundToPx() }
+            val gap = with(density) { 8.dp.roundToPx() }
+            val position = remember(margin, gap, paneSize) { ListeningVolumePosition(margin, gap, paneSize) }
+            val popupWidth = if (pane == null) 64.dp else 64.dp.coerceAtMost(
+                (with(density) { pane.width.toDp() } - 24.dp).coerceAtLeast(1.dp)
+            )
+            val popupHeight = if (pane == null) 216.dp else 216.dp.coerceAtMost(
+                (with(density) { pane.height.toDp() } - 24.dp).coerceAtLeast(1.dp)
+            )
             Popup(position, onDismissRequest = { open = false },
                 properties = PopupProperties(focusable = true, dismissOnBackPress = true, dismissOnClickOutside = true)) {
-                NgFormPanel(Modifier.width(64.dp)) {
-                    Column(Modifier.fillMaxWidth().height(216.dp).padding(top = 8.dp, bottom = 4.dp),
+                NgFormPanel(Modifier.width(popupWidth)) {
+                    Column(Modifier.fillMaxWidth().height(popupHeight).padding(top = 8.dp, bottom = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("${(volume * 100).roundToInt()}%", color = Color(NgTheme.colors.onSurfaceVariant),
                             fontSize = 11.sp, lineHeight = 20.sp, maxLines = 1,
@@ -259,11 +269,18 @@ private fun ListeningVolumeIcon(muted: Boolean) {
     }
 }
 
-private class ListeningVolumePosition(private val margin: Int, private val gap: Int) : PopupPositionProvider {
+private class ListeningVolumePosition(
+    private val margin: Int,
+    private val gap: Int,
+    private val paneSize: IntSize? = null,
+) : PopupPositionProvider {
     override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection,
         popupContentSize: IntSize): IntOffset {
-        val maxX = (windowSize.width - margin - popupContentSize.width).coerceAtLeast(margin)
-        val maxY = (windowSize.height - margin - popupContentSize.height).coerceAtLeast(margin)
+        val availableSize = paneSize?.let {
+            IntSize(minOf(it.width, windowSize.width), minOf(it.height, windowSize.height))
+        } ?: windowSize
+        val maxX = (availableSize.width - margin - popupContentSize.width).coerceAtLeast(margin)
+        val maxY = (availableSize.height - margin - popupContentSize.height).coerceAtLeast(margin)
         val x = anchorBounds.center.x - popupContentSize.width / 2
         return IntOffset(x.coerceIn(margin, maxX),
             (anchorBounds.top - gap - popupContentSize.height).coerceIn(margin, maxY))

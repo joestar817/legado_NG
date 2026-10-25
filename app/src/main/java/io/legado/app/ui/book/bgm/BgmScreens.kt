@@ -35,7 +35,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.bumptech.glide.integration.compose.ExperimentalGlideComposeApi
 import com.bumptech.glide.integration.compose.GlideImage
 import io.legado.app.R
@@ -440,7 +439,7 @@ internal fun BgmQueueContent(settings: BgmSettings, onBack: () -> Unit,
 @Composable
 internal fun BgmConfirmDialog(title: String, message: String, confirmText: String,
     onConfirm: () -> Unit, onDismiss: () -> Unit, cancelText: String? = "取消") {
-    Dialog(onDismissRequest = onDismiss) {
+    NgPaneDialog(onDismissRequest = onDismiss) {
         NgDialog(title, actions = {
             if (cancelText != null) NgDialogTextActionButton(cancelText, onDismiss, secondary = true)
             NgDialogTextActionButton(confirmText, onConfirm)

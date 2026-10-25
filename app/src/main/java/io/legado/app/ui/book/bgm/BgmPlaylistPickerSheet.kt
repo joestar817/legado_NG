@@ -61,6 +61,7 @@ internal fun BgmPlaylistPickerSheet(
         contentColor = Color(NgTheme.colors.onSurface),
         shape = RectangleShape,
     ) {
+        NgPaneWindowEffect()
         NgBottomDrawerSurface(
             modifier = Modifier.fillMaxWidth().height(drawerHeight),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,

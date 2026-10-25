@@ -41,6 +41,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,7 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import io.legado.app.ui.design.components.compose.NgPaneDialog
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.constant.EventBus
@@ -1160,7 +1161,7 @@ private fun ReadAloudClearCacheConfirmationDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    NgPaneDialog(onDismissRequest = onDismiss) {
         NgDialog(
             title = "清理朗读缓存",
             variant = NgDialogVariant.CONFIRMATION,
@@ -1409,6 +1410,7 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
                 player.invalidateVoiceLabel()
             },
             onDismissed = { voiceParamsDialog = null },
+            paneBounds = derivedStateOf { player.listeningPaneBounds(music = false) },
         )
     }
 

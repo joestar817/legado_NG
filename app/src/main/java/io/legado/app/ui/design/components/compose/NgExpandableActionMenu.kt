@@ -3,7 +3,10 @@ package io.legado.app.ui.design.components.compose
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.annotation.DrawableRes
 import androidx.annotation.IdRes
 import androidx.annotation.StringRes
@@ -14,11 +17,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
@@ -46,6 +52,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -175,7 +183,12 @@ fun NgExpandableActionMenu(
         NgExpandableActionMenuWidthVariant.CONTENT,
 ) {
     val contentWidth = rememberNgExpandableActionMenuContentWidth(items)
-    val resolvedWidth = width ?: widthVariant.width ?: contentWidth
+    val pane = LocalNgPaneBounds.current
+    val density = LocalDensity.current
+    val requestedWidth = width ?: widthVariant.width ?: contentWidth
+    val resolvedWidth = if (pane == null) requestedWidth else requestedWidth.coerceAtMost(
+        (with(density) { pane.width.toDp() } - 16.dp).coerceAtLeast(1.dp)
+    )
     var expandedItemIds by remember(items, defaultExpandedItemIds) {
         mutableStateOf(defaultExpandedItemIds)
     }
@@ -263,7 +276,7 @@ fun NgExpandableActionMenu(
         return
     }
 
-    DropdownMenu(
+    NgPaneAwareDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         offset = offset,
@@ -329,14 +342,22 @@ private fun NgBottomPointerExpandableActionMenu(
             windowMarginPx = windowMarginPx,
         )
     }
+    val pane = LocalNgPaneBounds.current
+    val paneSize = pane?.let { IntSize(it.width, it.height) }
+    val scopedPositionProvider = remember(positionProvider, paneSize) {
+        if (paneSize == null) positionProvider else NgPanePopupPositionProvider(positionProvider, paneSize)
+    }
+    val paneHeightModifier = if (pane == null) Modifier else Modifier.heightIn(
+        max = (with(density) { pane.height.toDp() } - 16.dp).coerceAtLeast(1.dp),
+    )
 
     Popup(
-        popupPositionProvider = positionProvider,
+        popupPositionProvider = scopedPositionProvider,
         onDismissRequest = onDismissRequest,
         properties = properties,
     ) {
         Surface(
-            modifier = modifier.width(width),
+            modifier = modifier.width(width).then(paneHeightModifier),
             shape = shape,
             color = containerColor,
             contentColor = Color(NgTheme.colors.onSurface),
@@ -390,7 +411,7 @@ private fun NgDrillInExpandableActionMenu(
     val visibleItems = activeParent?.children ?: items
     val shape = RoundedCornerShape(NgTheme.shapes.largeDp.dp)
 
-    DropdownMenu(
+    NgPaneAwareDropdownMenu(
         expanded = expanded,
         onDismissRequest = {
             activeParentId = null
@@ -424,6 +445,153 @@ private fun NgDrillInExpandableActionMenu(
             onItemClick = onItemClick,
             rowMinHeight = rowMinHeight
         )
+    }
+}
+
+@Composable
+private fun NgPaneAwareDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier,
+    offset: DpOffset,
+    shape: Shape,
+    containerColor: Color,
+    tonalElevation: Dp,
+    shadowElevation: Dp,
+    properties: PopupProperties,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val pane = LocalNgPaneBounds.current
+    if (pane == null) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = onDismissRequest,
+            modifier = modifier,
+            offset = offset,
+            shape = shape,
+            containerColor = containerColor,
+            tonalElevation = tonalElevation,
+            shadowElevation = shadowElevation,
+            properties = properties,
+            content = content,
+        )
+        return
+    }
+    // Compose 1.7.6 uses the visible display frame for Popup's windowSize, even in a narrow Dialog.
+    // Use window-local pane dimensions; anchorBounds already uses positionInWindow coordinates.
+    val density = LocalDensity.current
+    val paneSize = IntSize(pane.width, pane.height)
+    val expandedState = remember { MutableTransitionState(false) }
+    expandedState.targetState = expanded
+    if (!expandedState.currentState && !expandedState.targetState) return
+    val transformOrigin = remember { mutableStateOf(TransformOrigin.Center) }
+    val horizontalOffset = with(density) { offset.x.roundToPx() }
+    val verticalOffset = with(density) { offset.y.roundToPx() }
+    val margin = with(density) { 48.dp.roundToPx() }
+    val positionProvider = remember(paneSize, horizontalOffset, verticalOffset, margin) {
+        NgPaneDropdownPositionProvider(paneSize, horizontalOffset, verticalOffset, margin) { origin ->
+            transformOrigin.value = origin
+        }
+    }
+    @Suppress("DEPRECATION")
+    val transition = updateTransition(expandedState, "NgPaneDropdownMenu")
+    val scale by transition.animateFloat(
+        transitionSpec = {
+            if (false isTransitioningTo true) tween(120, easing = LinearOutSlowInEasing)
+            else tween(1, delayMillis = 74)
+        },
+        label = "scale",
+    ) { if (it) 1f else 0.8f }
+    val alpha by transition.animateFloat(
+        transitionSpec = { tween(if (false isTransitioningTo true) 30 else 75) },
+        label = "alpha",
+    ) { if (it) 1f else 0f }
+    val maxHeight = (with(density) { pane.height.toDp() } - 96.dp).coerceAtLeast(1.dp)
+    Popup(positionProvider, onDismissRequest = onDismissRequest, properties = properties) {
+        Surface(
+            modifier = Modifier.graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+                this.transformOrigin = transformOrigin.value
+            },
+            shape = shape,
+            color = containerColor,
+            tonalElevation = tonalElevation,
+            shadowElevation = shadowElevation,
+        ) {
+            Column(
+                modifier = modifier.heightIn(max = maxHeight)
+                    .verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+private class NgPanePopupPositionProvider(
+    private val delegate: PopupPositionProvider,
+    private val paneSize: IntSize,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val availableSize = IntSize(minOf(paneSize.width, windowSize.width), minOf(paneSize.height, windowSize.height))
+        val position = delegate.calculatePosition(anchorBounds, availableSize, layoutDirection, popupContentSize)
+        return IntOffset(
+            position.x.coerceIn(0, (availableSize.width - popupContentSize.width).coerceAtLeast(0)),
+            position.y.coerceIn(0, (availableSize.height - popupContentSize.height).coerceAtLeast(0)),
+        )
+    }
+}
+
+private class NgPaneDropdownPositionProvider(
+    private val paneSize: IntSize,
+    private val horizontalOffset: Int,
+    private val verticalOffset: Int,
+    private val margin: Int,
+    private val onTransformOrigin: (TransformOrigin) -> Unit,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val availableSize = IntSize(minOf(paneSize.width, windowSize.width), minOf(paneSize.height, windowSize.height))
+        val signedOffset = if (layoutDirection == LayoutDirection.Ltr) horizontalOffset else -horizontalOffset
+        val fromLeft = anchorBounds.left + signedOffset
+        val fromRight = anchorBounds.right - popupContentSize.width + signedOffset
+        val maxX = (availableSize.width - popupContentSize.width).coerceAtLeast(0)
+        val edgeX = if (anchorBounds.center.x < availableSize.width / 2) 0 else maxX
+        val candidates = if (layoutDirection == LayoutDirection.Ltr) {
+            listOf(fromLeft, fromRight, edgeX)
+        } else listOf(fromRight, fromLeft, edgeX)
+        val x = candidates.firstOrNull { it in 0..maxX } ?: edgeX
+        val maxY = (availableSize.height - popupContentSize.height - margin).coerceAtLeast(0)
+        val minY = margin.coerceAtMost(maxY)
+        val below = anchorBounds.bottom + verticalOffset
+        val above = anchorBounds.top - popupContentSize.height + verticalOffset
+        val center = anchorBounds.top - popupContentSize.height / 2 + verticalOffset
+        val edgeY = if (anchorBounds.center.y < availableSize.height / 2) minY else maxY
+        val y = listOf(below, above, center).firstOrNull { it in minY..maxY } ?: edgeY
+        val pivotX = when {
+            x >= anchorBounds.right -> 0f
+            x + popupContentSize.width <= anchorBounds.left -> 1f
+            else -> ((maxOf(x, anchorBounds.left) + minOf(x + popupContentSize.width, anchorBounds.right)) / 2f - x) /
+                popupContentSize.width.coerceAtLeast(1)
+        }
+        val pivotY = when {
+            y >= anchorBounds.bottom -> 0f
+            y + popupContentSize.height <= anchorBounds.top -> 1f
+            else -> ((maxOf(y, anchorBounds.top) + minOf(y + popupContentSize.height, anchorBounds.bottom)) / 2f - y) /
+                popupContentSize.height.coerceAtLeast(1)
+        }
+        onTransformOrigin(TransformOrigin(pivotX.coerceIn(0f, 1f), pivotY.coerceIn(0f, 1f)))
+        return IntOffset(x, y)
     }
 }
 
@@ -463,8 +631,13 @@ private fun NgSideSlideExpandableActionMenu(
             horizontalSlideFraction = { slideFraction.value }
         )
     }
-    val maxHeight = (LocalConfiguration.current.screenHeightDp.dp - 220.dp)
-        .coerceAtLeast(rowMinHeight)
+    val pane = LocalNgPaneBounds.current
+    val availableHeight = pane?.let { with(density) { it.height.toDp() } }
+        ?: LocalConfiguration.current.screenHeightDp.dp
+    val requestedHeight = (availableHeight - 220.dp).coerceAtLeast(rowMinHeight)
+    val maxHeight = if (pane == null) requestedHeight else requestedHeight.coerceAtMost(
+        (availableHeight - 16.dp).coerceAtLeast(1.dp)
+    )
 
     LaunchedEffect(expanded) {
         if (expanded) {
@@ -490,11 +663,7 @@ private fun NgSideSlideExpandableActionMenu(
     }
 
     if (expanded || popupVisible) {
-        Popup(
-            popupPositionProvider = positionProvider,
-            onDismissRequest = onDismissRequest,
-            properties = properties
-        ) {
+        val menuContent: @Composable () -> Unit = {
             val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
             Column(
                 modifier = Modifier
@@ -540,6 +709,52 @@ private fun NgSideSlideExpandableActionMenu(
                             onClick = onDismissRequest
                         )
                 )
+            }
+        }
+        if (pane == null) {
+            Popup(positionProvider, onDismissRequest = onDismissRequest, properties = properties) {
+                menuContent()
+            }
+        } else {
+            val paneSize = IntSize(pane.width, pane.height)
+            val menuSize = with(density) { IntSize(width.roundToPx(), maxHeight.roundToPx()) }
+            val menuOffset = remember { mutableStateOf(IntOffset.Zero) }
+            val panePositionProvider = remember(paneSize, menuSize, positionProvider) {
+                object : PopupPositionProvider {
+                    override fun calculatePosition(
+                        anchorBounds: IntRect,
+                        windowSize: IntSize,
+                        layoutDirection: LayoutDirection,
+                        popupContentSize: IntSize,
+                    ): IntOffset {
+                        val availableSize = IntSize(
+                            minOf(paneSize.width, windowSize.width),
+                            minOf(paneSize.height, windowSize.height),
+                        )
+                        val visibleMenuSize = IntSize(
+                            minOf(menuSize.width, availableSize.width),
+                            minOf(menuSize.height, availableSize.height),
+                        )
+                        menuOffset.value = positionProvider.calculatePosition(
+                            anchorBounds, availableSize, layoutDirection, visibleMenuSize,
+                        )
+                        return IntOffset.Zero
+                    }
+                }
+            }
+            Popup(panePositionProvider, onDismissRequest = onDismissRequest, properties = properties) {
+                Box(
+                    Modifier.size(
+                        with(density) { pane.width.toDp() },
+                        with(density) { pane.height.toDp() },
+                    ).clipToBounds().clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismissRequest,
+                    )
+                ) {
+                    Box(Modifier.offset { menuOffset.value }) { menuContent() }
+                }
             }
         }
     }

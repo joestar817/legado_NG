@@ -30,11 +30,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.legado.app.help.bgm.qq.QqPhoneVerification
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
+import io.legado.app.ui.design.components.compose.NgPaneDialog
 import io.legado.app.ui.design.theme.NgTheme
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
@@ -55,7 +55,7 @@ internal fun BgmPhoneVerificationDialog(
     val currentPage = remember(verification.id) { AtomicReference<String?>(null) }
     val verified by rememberUpdatedState(onVerified)
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    NgPaneDialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp).imePadding()) {
             val bodyHeight = (maxHeight - 172.dp).coerceIn(0.dp, 440.dp)
             NgDialog(title = "安全验证", actions = {

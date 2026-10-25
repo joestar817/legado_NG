@@ -18,6 +18,9 @@ internal class ReadAloudCatalogDialog : CatalogDrawerDialog() {
 
     override fun isLocalBook(): Boolean = ReadBook.isLocalBook
 
+    override fun catalogPaneBounds() =
+        (activity as? ReadAloudPlayerActivity)?.listeningPaneBounds(music = false)
+
     override fun initialCatalogTheme(book: Book): NgThemeSnapshot? =
         ReadAloudPlayerTheme.initialDrawerSnapshot(
             context = requireContext(),
