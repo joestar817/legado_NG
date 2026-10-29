@@ -548,7 +548,20 @@ class ReadView(context: Context, attrs: AttributeSet) :
         else if (start) curPage.selectStartMove(x, y) else curPage.selectEndMove(x, y)
     }
 
-    fun finishSelectionHandleDrag() { epubLayout?.finishSelectionDrag() }
+    fun beginSelectionHandleDrag(start: Boolean) {
+        epubLayout?.takeIf { it.active }?.beginSelectionHandleDrag(start)
+    }
+
+    fun cancelSelectionHandleDrag() {
+        epubLayout?.takeIf { it.active }?.cancelSelectionHandleDrag()
+    }
+
+    /** EPUB publishes its menu after the final endpoint is ready. */
+    fun finishSelectionHandleDrag(): Boolean {
+        val layout = epubLayout?.takeIf { it.active } ?: return false
+        layout.finishSelectionDrag()
+        return true
+    }
 
     fun setSelectionHighlightTransparent(transparent: Boolean) {
         epubLayout?.setSelectionHighlightTransparent(transparent)

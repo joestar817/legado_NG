@@ -107,6 +107,10 @@ internal class EpubLayoutController(
     private var selectionRevision = 0L
     private var pendingSelectionHit: Long? = null
     private var selectionFinished = false
+    private var selectionDrag: EpubSelectionDrag? = null
+    private var selectionEdgeTask: Runnable? = null
+    private var selectionNavigationTimeout: Runnable? = null
+    private var selectionHandleActive = false
     private var aloudSignature = ""
     private var aloudPaintSignature = ""
     private var fontWarningSignature = ""
@@ -188,6 +192,25 @@ internal class EpubLayoutController(
             return
         }
         boundBook = book
+        // The original ReadBook loader owns a chapter transition requested by a drag.
+        // Its first callback may have no chapter, or a not-yet-complete TextChapter.
+        val selectionTarget = selectionDrag?.chapterTarget
+        if (bookUrl == book.bookUrl && selectionTarget != null &&
+            (value == null || value.chapter.index == selectionTarget)) {
+            if (textChapter !== value) {
+                contentGeneration++
+                contentJob?.cancel()
+                loading = false
+                chapter = value?.chapter
+                textChapter = value
+                preparedContent = null
+                reportedPosition = -1
+                requestedPosition = position()
+            }
+            if (value?.isCompleted == true && !loading && preparedContent == null)
+                showChapter(book, selectionNavigation = true)
+            return
+        }
         // Completion notifications of a failed revision must not start a retry loop.
         if (renderFailed && bookUrl == book.bookUrl) {
             if (value === textChapter && position() == requestedPosition) return
@@ -261,7 +284,8 @@ internal class EpubLayoutController(
                     withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { opened?.close() }
                 }
             }
-        } else if (value != null && preparedChapters[value.chapter.index]?.chapter === value) {
+        } else if (value != null && preparedChapters[value.chapter.index]?.chapter === value &&
+            documents.any { it.chapter === value }) {
             val chapterChanged = textChapter !== value
             if (chapterChanged) {
                 textChapter = value; chapter = value.chapter; preparedContent = preparedChapters[value.chapter.index]
@@ -354,6 +378,15 @@ internal class EpubLayoutController(
                 syncAloudHighlight()
                 speechFollowPosition?.let(::followReadAloud)
                 applySearchSelection()
+                val drag = selectionDrag
+                if (drag?.awaitingViewport == true) {
+                    selectionNavigationTimeout?.let(host::removeCallbacks)
+                    selectionNavigationTimeout = null
+                    drag.awaitingViewport = false
+                    drag.inFlight = false
+                    drag.chapterTarget = null
+                    requestSelectionHit(drag, state.optJSONObject("selectionHit"))
+                } else if (selection != null) renderSelection()
                 pendingReadAloud?.takeIf { it.first == textChapter?.chapter?.index }?.let {
                     pendingReadAloud = null
                     host.post { whenChapterReady(it.first, it.second) }
@@ -401,7 +434,10 @@ internal class EpubLayoutController(
             },
             longPress = { x, y -> hitSelection(x, y, initial = true) },
             extend = { x, y -> hitSelection(x, y, initial = false) },
-            finishSelection = ::finishSelectionDrag,
+            finishSelection = { x, y ->
+                selectionDrag?.takeIf { it.moved }?.update(x, y)
+                finishSelectionDrag()
+            },
             swipe = { direction ->
                 interactReady(JSONObject().put("action", "gallerySwipe").put("x", css(downX))
                     .put("y", css(downY)).put("start", direction < 0)) { result ->
@@ -432,7 +468,7 @@ internal class EpubLayoutController(
                     next.readyState?.let { it.optBoolean("scrolled") &&
                         kotlin.math.abs(it.optDouble("scrollOvershoot", 0.0)) <= 48 } == true
             },
-            cancelScroll = next::cancelScroll,
+            cancelScroll = { stopSelectionDrag(); next.cancelScroll() },
             onFlingStart = scrollAnimationStart,
             onFlingStop = { scrollAnimationStop(); host.post { continueTurns() } },
         )
@@ -613,7 +649,7 @@ internal class EpubLayoutController(
         } else showChapter(book)
     }
 
-    private fun showChapter(book: Book, retainWindowPosition: Boolean = false) {
+    private fun showChapter(book: Book, retainWindowPosition: Boolean = false, selectionNavigation: Boolean = false) {
         val mine = ++contentGeneration
         contentJob?.cancel()
         mappingWrite?.cancel()
@@ -643,7 +679,12 @@ internal class EpubLayoutController(
         val previous = preparedChapters
         val highlightRules = ReadBookConfig.highlightRules.map { it.copy() }
         preparedContent = null
-        selection = null
+        if (!selectionNavigation) {
+            stopSelectionDrag()
+            selection = null
+            selectionAnchor = null
+            selectionFinished = false
+        }
         loading = true
         val openingDocument = openingPreparation()?.openingDocument(book, session)
             ?: EpubOpeningMappingCache.openingDocument(book, current, sourceRevision)
@@ -716,7 +757,9 @@ internal class EpubLayoutController(
                 if (closed || mine != contentGeneration || current !== textChapter) return@launch
                 content.publishMapping(book, sourceRevision)
                 preparedContent = content
-                preparedChapters = loaded
+                // Keep source mappings for the one active logical selection, while the
+                // renderer itself continues to receive only its ordinary bounded window.
+                preparedChapters = retainedSelectionChapters(previous) + loaded
                 failedNeighbors = failed
                 documents = loaded.values.sortedBy { it.chapter.chapter.index }.flatMap { it.documents }
                 documentIndex = documents.indexOf(if (openAtEnd) content.documents.last() else content.documents[content.documentAt(requestedPosition)])
@@ -911,7 +954,7 @@ internal class EpubLayoutController(
         cancelTurn()
         if (snapshot != null && documents.getOrNull(documentIndex) != null) {
             val value = options()
-            if (reflow) surface?.restyle(value)
+            if (reflow) { stopSelectionDrag(); surface?.restyle(value) }
             else surface?.setHighlights(value.getJSONArray("highlights"))
             scheduleWarm()
         }
@@ -1037,6 +1080,8 @@ internal class EpubLayoutController(
         view.documents(documents)
         view.content(document.location.path, document.html, document.payload)
         view.open(document.location.copy(fragment = fragment ?: document.location.fragment), options(last).apply {
+            if (!isScroll() && !optBoolean("fixed") && selectionDrag?.awaitingViewport == true)
+                selectionProjection()?.let { put("selectionProjection", it) }
             if (retainWindowPosition) put("retainWindowPosition", true)
             put("fragment", fragment ?: JSONObject.NULL)
             offset?.let { put("textOffset", it) }
@@ -1071,40 +1116,194 @@ internal class EpubLayoutController(
     }
 
     private fun hitSelection(x: Float, y: Float, initial: Boolean) {
+        if (!initial) {
+            val drag = selectionDrag ?: return
+            if (!drag.pressed) return
+            drag.update(x, y)
+            selectionEdgeTask?.let(host::removeCallbacks)
+            selectionEdgeTask = null
+            requestSelectionHit(drag)
+            return
+        }
+        cancelTurn()
+        clearSelection()
+        val drag = EpubSelectionDrag(x, y).apply { initialHit = true }
+        selectionDrag = drag
+        requestSelectionHit(drag)
+    }
+
+    private fun requestSelectionHit(drag: EpubSelectionDrag, projected: JSONObject? = null) {
+        if (selectionDrag !== drag || drag.inFlight || drag.awaitingViewport) return
         val view = surface ?: return
-        if (initial) { cancelTurn(); clearSelection(); selectionFinished = false }
+        if (view.readyState == null) { stopSelectionDrag(); return }
+        val initial = drag.initialHit
+        drag.initialHit = false
+        if (!drag.pressed) drag.finalHit = false
+        val pointerRevision = drag.pointerRevision
+        val x = drag.x
+        val y = drag.y
+        drag.inFlight = true
         val mine = ++selectionRevision
         pendingSelectionHit = mine
-        view.interact(JSONObject().put("action", "hit").put("nearest", !initial)
-            .put("x", css(x)).put("y", css(y))) { result ->
+        val consume: (JSONObject?) -> Unit = consume@ { result ->
             if (pendingSelectionHit == mine) pendingSelectionHit = null
             host.post { continueTurns() }
-            if (mine != selectionRevision || result == null) return@interact
-            if (initial && !result.isNull("image")) {
+            if (mine != selectionRevision || selectionDrag !== drag) return@consume
+            drag.inFlight = false
+            if (initial && result?.isNull("image") == false) {
                 view.resolve(result.getString("image"))?.let {
                     imageLongPress(x + view.left, y + view.top, it.path)
                 }
-                return@interact
+                stopSelectionDrag()
+                return@consume
             }
-            if (!selectionEnabled) return@interact
-            val document = documents.getOrNull(result.optInt("index", documentIndex)) ?: return@interact
-            val text = document.text
-            val offset = result.optInt("offset", -1)
-            if (offset !in 0..text.length) return@interact
-            val chapterIndex = document.chapter.chapter.index
-            if (initial) {
-                if (text.isEmpty()) return@interact
-                val at = offset.coerceAtMost(text.lastIndex)
-                val from = if (at == 0) 0 else text.lastIndexOf('\n', at - 1) + 1
-                val to = text.indexOf('\n', at).takeIf { it >= 0 } ?: text.length
-                val word = readerWordBoundary(text.substring(from, to), at - from) ?: return@interact
-                selectionAnchor = chapterIndex to from + word.first
-                setSelectionEnd(chapterIndex, from + word.last + 1)
-            } else setSelectionEnd(chapterIndex, offset)
+            if (!selectionEnabled) { stopSelectionDrag(); return@consume }
+            val document = result?.let { documents.getOrNull(it.optInt("index", documentIndex)) }
+            val offset = result?.optInt("offset", -1) ?: -1
+            if (document != null && offset in 0..document.text.length) {
+                val text = document.text
+                val chapterIndex = document.chapter.chapter.index
+                if (initial && text.isNotEmpty()) {
+                    val at = offset.coerceAtMost(text.lastIndex)
+                    val from = if (at == 0) 0 else text.lastIndexOf('\n', at - 1) + 1
+                    val to = text.indexOf('\n', at).takeIf { it >= 0 } ?: text.length
+                    readerWordBoundary(text.substring(from, to), at - from)?.let { word ->
+                        selectionAnchor = chapterIndex to from + word.first
+                        setSelectionEnd(chapterIndex, from + word.last + 1)
+                    }
+                } else if (!initial && drag.pointerRevision == pointerRevision)
+                    setSelectionEnd(chapterIndex, offset, result?.optJSONObject("selection"))
+            }
+            drag.updateEdge(if (!initial && drag.pointerRevision == pointerRevision) result?.optInt("edge") ?: 0 else 0,
+                android.os.SystemClock.uptimeMillis())
+            when {
+                !drag.pressed && !drag.finalHit -> completeSelectionDrag(drag)
+                drag.pointerRevision != pointerRevision || !drag.pressed -> requestSelectionHit(drag)
+                else -> scheduleSelectionEdge(drag)
+            }
+        }
+        if (!initial && projected?.optString("token") == view.readyState?.optString("token") &&
+            projected?.optLong("pointerRevision", -1) == pointerRevision) consume(projected)
+        else view.interact(JSONObject().put("action", "hit").put("nearest", !initial)
+            .put("x", css(x)).put("y", css(y)), consume)
+    }
+
+    /** Renderer projection only; the native anchor and source range remain authoritative. */
+    private fun selectionProjection(): JSONObject? {
+        val drag = selectionDrag ?: return null
+        val anchor = selectionAnchor ?: return null
+        if (isScroll()) return null
+        val anchors = JSONArray()
+        documents.forEachIndexed { index, document ->
+            val fixed = when {
+                anchor.first < document.chapter.chapter.index -> document.first
+                anchor.first > document.chapter.chapter.index -> document.last
+                else -> anchor.second.coerceIn(document.first, document.last)
+            }
+            anchors.put(JSONObject().put("index", index).put("anchor", fixed)
+                .put("from", document.first).put("to", document.last))
+        }
+        return JSONObject().put("x", css(drag.x)).put("y", css(drag.y))
+            .put("pointerRevision", drag.pointerRevision).put("anchors", anchors)
+    }
+
+    private fun scheduleSelectionEdge(drag: EpubSelectionDrag) {
+        selectionEdgeTask?.let(host::removeCallbacks)
+        selectionEdgeTask = null
+        if (selectionDrag !== drag || !drag.pressed || drag.edge == 0 || selection == null) return
+        val task = Runnable {
+            selectionEdgeTask = null
+            if (selectionDrag !== drag || !drag.pressed) return@Runnable
+            if (drag.canAdvance(android.os.SystemClock.uptimeMillis())) advanceSelectionViewport(drag)
+            else if (!drag.inFlight && !drag.awaitingViewport) scheduleSelectionEdge(drag)
+        }
+        selectionEdgeTask = task
+        host.postDelayed(task, 80)
+    }
+
+    private fun advanceSelectionViewport(drag: EpubSelectionDrag) {
+        val view = surface ?: return
+        val state = view.readyState ?: return
+        if (selectionDrag !== drag || selection == null || loading || state.optString("mode") == "FIXED") return
+        val direction = drag.edge
+        drag.didAdvance(android.os.SystemClock.uptimeMillis(), if (state.optBoolean("scrolled")) 80L else 350L)
+        drag.awaitingViewport = true
+        selectionRevision++
+        pendingSelectionHit = null
+        clearFrames()
+        val scrolled = state.optBoolean("scrolled")
+        val atBoundary = if (scrolled) state.optBoolean(if (direction > 0) "atEnd" else "atStart")
+            else state.optInt("pageIndex") + direction !in 0 until state.optInt("pageCount")
+        if (!atBoundary) {
+            if (scrolled) {
+                view.scroll(32f * direction)
+                // scroll publishes through the same onReady/token handshake as ordinary dragging.
+            } else view.move(state.optInt("pageIndex") + direction, preserveSelection = true,
+                selectionProjection = selectionProjection())
+        } else {
+            val target = if (scrolled) (if (direction > 0) documents.size else -1) else documentIndex + direction
+            val document = documents.getOrNull(target)
+            if (document != null) {
+                view.move(0, JSONObject().put("index", target)
+                    .put("textOffset", if (direction > 0) document.first else document.last), preserveSelection = true,
+                    selectionProjection = selectionProjection())
+            } else {
+                val boundary = if (direction > 0) documents.lastOrNull() else documents.firstOrNull()
+                val targetChapter = boundary?.chapter?.chapter?.index?.plus(direction)
+                if (targetChapter == null || targetChapter !in 0 until (boundBook?.totalChapterNum ?: 0)) {
+                    drag.awaitingViewport = false
+                    drag.updateEdge(0, android.os.SystemClock.uptimeMillis())
+                    return
+                }
+                drag.chapterTarget = targetChapter
+                openAtEnd = direction < 0
+                chapterTurn(targetChapter - (chapter?.index ?: targetChapter - direction))
+            }
+        }
+        if (selectionDrag === drag && drag.awaitingViewport) {
+            val timeout = Runnable { if (selectionDrag === drag && drag.awaitingViewport) stopSelectionDrag() }
+            selectionNavigationTimeout = timeout
+            host.postDelayed(timeout, 25_000)
         }
     }
 
-    private fun setSelectionEnd(chapterIndex: Int, offset: Int) {
+    /** Only mappings still needed by the active range/anchor survive a window replacement. */
+    private fun retainedSelectionChapters(values: Map<Int, EpubPreparedContent>): Map<Int, EpubPreparedContent> {
+        val value = selection ?: return emptyMap()
+        val anchor = selectionAnchor?.first ?: value.chapterIndex
+        val target = selectionDrag?.chapterTarget ?: value.endChapterIndex
+        val from = minOf(value.chapterIndex, anchor, target)
+        val to = maxOf(value.endChapterIndex, anchor, target)
+        return values.filterKeys { it in from..to }
+    }
+
+    private fun releaseSelectionChapters() {
+        val visible = documents.map { it.chapter.chapter.index }.toSet()
+        preparedChapters = preparedChapters.filterKeys { it in visible } + retainedSelectionChapters(preparedChapters)
+    }
+
+    private fun stopSelectionDrag() {
+        if (selectionDrag?.awaitingViewport == true)
+            surface?.interact(JSONObject().put("action", "clear")) {}
+        selectionEdgeTask?.let(host::removeCallbacks)
+        selectionEdgeTask = null
+        selectionNavigationTimeout?.let(host::removeCallbacks)
+        selectionNavigationTimeout = null
+        selectionDrag = null
+        selectionHandleActive = false
+        selectionRevision++
+        pendingSelectionHit = null
+        releaseSelectionChapters()
+    }
+
+    private fun completeSelectionDrag(drag: EpubSelectionDrag) {
+        if (selectionDrag !== drag) return
+        stopSelectionDrag()
+        selectionFinished = true
+        renderSelection()
+    }
+
+    private fun setSelectionEnd(chapterIndex: Int, offset: Int, geometry: JSONObject? = null) {
         val anchor = selectionAnchor ?: return
         val point = chapterIndex to offset
         val forward = point.first > anchor.first || point.first == anchor.first && point.second >= anchor.second
@@ -1118,13 +1317,19 @@ internal class EpubLayoutController(
         }
         if (text.isEmpty()) return
         selection = ReaderSelection(from.first, from.second, chapters.first().chapter.title, text, to.first, to.second)
-        renderSelection()
+        releaseSelectionChapters()
+        if (geometry == null) renderSelection() else {
+            surface?.let { view -> geometry.put("leftPx", view.left).put("topPx", view.top) }
+            selectionChanged(geometry, false)
+            clearFrames()
+        }
     }
 
     private fun renderSelection() {
         val value = selection ?: return
         val view = surface ?: return
         val mine = selectionRevision
+        val finished = selectionFinished
         val ranges = JSONArray()
         documents.forEachIndexed { index, document ->
             val chapterIndex = document.chapter.chapter.index
@@ -1138,15 +1343,25 @@ internal class EpubLayoutController(
             if (mine != selectionRevision || selection !== value) return@interact
             result?.optJSONObject("selection")?.let { geometry ->
                 geometry.put("leftPx", view.left).put("topPx", view.top)
-                selectionChanged(geometry, selectionFinished)
+                selectionChanged(geometry, finished)
             }
         }
         clearFrames()
     }
 
     fun finishSelectionDrag() {
-        selectionFinished = true
-        renderSelection()
+        val drag = selectionDrag
+        if (drag != null) {
+            selectionEdgeTask?.let(host::removeCallbacks)
+            selectionEdgeTask = null
+            drag.finish()
+            if (!drag.inFlight && !drag.awaitingViewport && !drag.finalHit) completeSelectionDrag(drag)
+            else requestSelectionHit(drag)
+        } else if (selectionHandleActive) {
+            stopSelectionDrag()
+            selectionFinished = true
+            renderSelection()
+        }
     }
 
     fun showSearchResult(chapter: TextChapter, from: Int, length: Int) {
@@ -1199,19 +1414,31 @@ internal class EpubLayoutController(
         } else null, finished)
     }
 
-    fun moveSelection(start: Boolean, x: Float, y: Float) {
-        val view = surface ?: return
+    fun beginSelectionHandleDrag(start: Boolean) {
+        stopSelectionDrag()
         val selected = selection ?: return
-        if (selectionFinished) selectionAnchor = null
-        if (selectionAnchor == null) selectionAnchor = if (start)
-            selected.endChapterIndex to selected.endChapterPosition else selected.chapterIndex to selected.chapterPosition
+        selectionHandleActive = true
+        selectionAnchor = if (start) selected.endChapterIndex to selected.endChapterPosition
+            else selected.chapterIndex to selected.chapterPosition
         selectionFinished = false
+    }
+
+    fun cancelSelectionHandleDrag() { stopSelectionDrag() }
+
+    fun moveSelection(start: Boolean, x: Float, y: Float) {
+        if (!selectionHandleActive) return
+        val view = surface ?: return
         val location = IntArray(2)
         view.getLocationOnScreen(location)
-        hitSelection(x - location[0], y - location[1], initial = false)
+        val localX = x - location[0]
+        val localY = y - location[1]
+        val drag = selectionDrag ?: EpubSelectionDrag(localX, localY).also { selectionDrag = it }
+        if (!drag.pressed) return
+        hitSelection(localX, localY, initial = false)
     }
 
     fun clearSelection() {
+        stopSelectionDrag()
         selectionRevision++
         pendingSelectionHit = null
         selectionAnchor = null
@@ -1219,6 +1446,7 @@ internal class EpubLayoutController(
         if (selection != null || pendingSearchSelection != null) clearFrames()
         pendingSearchSelection = null
         selection = null
+        releaseSelectionChapters()
         surface?.interact(JSONObject().put("action", "clear")) { host.post { continueTurns() } }
         selectionChanged(null, false)
     }
@@ -1320,12 +1548,14 @@ internal class EpubLayoutController(
 
     fun refreshHighlightRules(): Boolean {
         if (closed || !active) return false
+        stopSelectionDrag()
         if (!loading) contentSlot.clear()
         val mine = ++highlightRevision
         pendingHighlightUpdate = true
         val current = preparedContent ?: return true
         if (loading || surface?.state == null) return true
         val previous = preparedChapters
+        val window = documents
         val content = contentGeneration
         val matcher = io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher(ReadBookConfig.highlightRules)
         cancelTurn()
@@ -1334,10 +1564,17 @@ internal class EpubLayoutController(
                 val updated = withContext(Dispatchers.Default) {
                     previous.mapValues { (_, chapter) -> chapter.withHighlightStyles(matcher) }
                 }
-                if (closed || mine != highlightRevision || content != contentGeneration || preparedContent !== current) return@launch
+                if (closed || mine != highlightRevision || content != contentGeneration || preparedContent !== current || documents !== window) return@launch
+                val updatedWindow = window.map { document ->
+                    checkNotNull(updated[document.chapter.chapter.index]?.documents?.firstOrNull {
+                        it.chapter === document.chapter && it.payload.getString("key") == document.payload.getString("key") &&
+                            it.spineIndex == document.spineIndex && it.first == document.first && it.last == document.last
+                    }) { "EPUB 高亮窗口已变更" }
+                }
                 preparedChapters = updated
+                releaseSelectionChapters()
                 preparedContent = updated[current.chapter.chapter.index]
-                documents = updated.values.sortedBy { it.chapter.chapter.index }.flatMap { it.documents }
+                documents = updatedWindow
                 pendingHighlightUpdate = false
                 surface?.updateStyles(documents)
             } catch (error: Exception) {
@@ -1351,6 +1588,7 @@ internal class EpubLayoutController(
     }
 
     fun restyle() {
+        stopSelectionDrag()
         if (!loading) contentSlot.clear()
         cancelTurn()
         val mine = ++styleGeneration
@@ -1795,6 +2033,7 @@ internal class EpubLayoutController(
     fun cancelAutoPage() { if (autoPaging()) return; cancelTurn() }
 
     fun stopScroll() {
+        stopSelectionDrag()
         gestures?.cancel()
         surface?.cancelScroll()
     }
@@ -1835,6 +2074,7 @@ internal class EpubLayoutController(
     private fun css(px: Float) = px / host.resources.displayMetrics.density
 
     private fun releasePublication() {
+        stopSelectionDrag()
         contentJob?.cancel()
         contentJob = null
         contentSlot.clear()

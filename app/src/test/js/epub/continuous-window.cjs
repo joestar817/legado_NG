@@ -14,7 +14,7 @@ function documentList(names) {
         path: `${name}.xhtml`, occurrence, title: name
     }));
 }
-function fixture() {
+function fixture(layout = {}) {
     const frames = [], flows = [], holds = new Set(), styleHolds = new Set(), heldFrames = [];
     let sequence = 0, holdNextFrame = false;
     function element(type) {
@@ -36,7 +36,7 @@ function fixture() {
         Object.defineProperty(node, 'firstChild', { get: () => node.children[0] || null });
         if (type !== 'iframe') return node;
         node.scroll = 0; node.anchor = 0; node.selection = 0; node.configurations = [];
-        node.cancelled = 0; node.handlers = {}; node.styleUpdates = [];
+        node.cancelled = 0; node.handlers = {}; node.styleUpdates = []; node.interactions = [];
         node.contentDocument = { contentType: 'application/xhtml+xml',
             addEventListener(event, callback) { (node.handlers[event] ||= []).push(callback); } };
         node.contentWindow = { frame: node, location: { href: 'about:blank' },
@@ -54,7 +54,7 @@ function fixture() {
                 return { reflow: false };
             },
             state: () => ({ status: 'ready', token: node.token, scrolled: true,
-                mode: 'HORIZONTAL', scrollAxis: 'y', scrollSign: 1,
+                mode: layout.mode || 'HORIZONTAL', scrollAxis: layout.axis || 'y', scrollSign: layout.sign || 1,
                 scrollLength: 1000, scrollOffset: node.scroll, location: { textOffset: node.anchor },
                 textLength: 1000, hasSelectableText: true, chapterBoundaries: [] }),
             scrollBy(delta) { node.scroll += delta; },
@@ -64,7 +64,12 @@ function fixture() {
             setHighlights(values) { node.highlights = copy(values); },
             setSelectionTransparent(value) { node.transparent = value; },
             pauseMedia() {}, cancelConfiguration() { node.cancelled++; },
-            interact(value) { if (value.action === 'clear') node.selection = 0; return {}; }
+            interact(value) {
+                node.interactions.push(copy(value));
+                if (value.action === 'clear') node.selection = 0;
+                if (value.action === 'hit') return { offset: 37, edge: 0 };
+                return {};
+            }
         };
         Object.defineProperty(node, 'src', { set(value) {
             node.contentWindow.location.href = value; queueMicrotask(() => node.onload?.());
@@ -108,6 +113,56 @@ function fixture() {
 
 (async () => {
     let checks = 0;
+    // Only an existing nearest drag can route outside the visible text clips.
+    // Child coordinates are clamped; original pointer and safe bounds stay separate.
+    {
+        const f = fixture();
+        const value = f.options(['a', 'b'], { readerInsets: { left: 10, top: 15, right: 10, bottom: 20 } });
+        await f.configure(value); const a = f.current('a');
+        const hit = (x, y, nearest) => f.api.interact({ token: value.token, action: 'hit', x, y, nearest });
+        assert.equal(hit(-5, 100, false), null);
+        assert.equal(a.interactions.filter(call => call.action === 'hit').length, 0);
+        const inside = hit(89.9, 79.9, true);
+        assert.deepEqual(copy(inside.selectionBounds), { left: 10, top: 15, right: 90, bottom: 80 });
+        assert.equal(a.interactions.at(-1).x, 89.9); assert.equal(a.interactions.at(-1).y, 79.9);
+        const outside = hit(-5, 100, true), call = a.interactions.at(-1);
+        assert.equal(outside.offset, 37); assert.equal(outside.index, 0);
+        assert.equal(call.x, 10.5); assert.equal(call.y, 79.5);
+        assert.deepEqual(call.edgePoint, { x: -5, y: 100 });
+        assert.deepEqual(call.edgeBounds, { left: 10, top: 15, right: 90, bottom: 80 });
+        assert.equal(a.interactions.some(call => ['select', 'extend', 'beginDrag'].includes(call.action)), false);
+        f.close(); checks++;
+    }
+    // Two clips can be visible simultaneously, including reverse horizontal flow.
+    // Nearest chooses the physical target without confusing its original window index.
+    for (const layout of [{}, { axis: 'x', sign: 1, mode: 'VERTICAL_LR' },
+        { axis: 'x', sign: -1, mode: 'VERTICAL_RL' }]) {
+        const f = fixture(layout), value = f.options(['a', 'b'], { offset: 950 });
+        await f.configure(value);
+        const x = layout.axis === 'x' ? layout.sign < 0 ? -1 : 100 : 50;
+        const y = layout.axis === 'x' ? 50 : 100;
+        const hit = f.api.interact({ token: value.token, action: 'hit', nearest: true, x, y });
+        assert.equal(hit.index, 1); assert.equal(hit.document.path, 'b.xhtml');
+        const call = f.current('b').interactions.at(-1);
+        assert.ok(call.x >= 0 && call.x < 100); assert.ok(call.y >= 0 && call.y < 100);
+        assert.ok(call.edgePoint.x !== call.x || call.edgePoint.y !== call.y);
+        f.close(); checks++;
+    }
+    // Root preserveSelection reaches continuous move through the real container;
+    // default navigation and ordinary window configure retain their clear/reset contract.
+    for (const preserveSelection of [false, true]) {
+        const f = fixture(); await f.configure(f.options(['a', 'b'])); const a = f.current('a'); a.selection = 1;
+        await f.api.move({ token: 'selection-move', delta: 1, preserveSelection });
+        assert.equal(a.selection, preserveSelection ? 1 : 0);
+        assert.equal(f.api.state().offset, 100);
+        if (preserveSelection) {
+            const next = f.options(['a', 'b', 'c'], { retainWindowPosition: true, preserveSelection: true });
+            assert.equal(await f.flows[0].updateWindow(next, next.documents), false);
+            assert.equal(f.current('a'), a); assert.equal(a.selection, 1);
+            await f.configure(next); assert.notEqual(f.current('a'), a);
+        }
+        f.close(); checks++;
+    }
     // Window expansion in both directions keeps the actual iframe and its laid-out child.
     {
         const f = fixture();

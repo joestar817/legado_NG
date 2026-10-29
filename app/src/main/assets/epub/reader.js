@@ -485,6 +485,7 @@
         return true; // A swipe at either end stays in the gallery, never unexpectedly turns the book.
     }
     function clearSelection() {
+        delete state.selectionHit;
         selectedRange = null; dragAnchor = null;
         window.getSelection().removeAllRanges();
         if (selectionLayer) selectionLayer.replaceChildren();
@@ -573,6 +574,7 @@
         return result;
     }
     function showSelection(range) {
+        delete state.selectionHit;
         selectedRange = range;
         var result = selectionResult();
         var selection = window.getSelection(); selection.removeAllRanges();
@@ -580,12 +582,42 @@
         paintSelection();
         return result;
     }
-    function selectionEdge(x, y) {
-        if (!selectedRange || state.mode === 'FIXED') return 0;
+    function selectionEdge(x, y, bounds) {
+        if (state.mode === 'FIXED') return 0;
+        bounds = bounds || { left: 0, top: 0, right: viewportWidth, bottom: viewportHeight };
         var edge = 24;
-        if (state.mode === 'VERTICAL_RL') return x < edge ? 1 : x > viewportWidth - edge ? -1 : 0;
-        if (state.mode === 'VERTICAL_LR') return x > viewportWidth - edge ? 1 : x < edge ? -1 : 0;
-        return y > viewportHeight - edge ? 1 : y < edge ? -1 : 0;
+        if (state.mode === 'VERTICAL_RL') return x < bounds.left + edge ? 1 : x > bounds.right - edge ? -1 : 0;
+        if (state.mode === 'VERTICAL_LR') return x > bounds.right - edge ? 1 : x < bounds.left + edge ? -1 : 0;
+        return y > bounds.bottom - edge ? 1 : y < bounds.top + edge ? -1 : 0;
+    }
+    function selectionHit(value) {
+        var hit = document.elementFromPoint(value.x, value.y);
+        var picture = hit && hit.closest('img,svg');
+        if (picture && !value.nearest) {
+            var image = picture.localName === 'img' ? picture : picture.querySelector('image');
+            var url = image && (image.getAttribute('src') || image.getAttribute('href') || image.getAttributeNS('http://www.w3.org/1999/xlink', 'href'));
+            if (url) return { token: state.token, image: new URL(url, document.baseURI).href };
+        }
+        var point = caret(value.x, value.y) || (value.nearest ? nearestVisibleCaret(value.x, value.y) : null);
+        if (point && !value.nearest) point = rangeCaret(point.node, value.x, value.y) || point;
+        var pointer = value.edgePoint || value;
+        return { token: state.token, offset: point ? textOffset(point.node,
+            !value.nearest && Number.isInteger(point.hitOffset) ? point.hitOffset : point.offset, false) : -1,
+            edge: value.nearest ? selectionEdge(pointer.x, pointer.y, value.edgeBounds) : 0 };
+    }
+    // The fixed endpoint comes from the native owner for this document. This is
+    // only its first-frame projection; Kotlin accepts the returned source hit.
+    function projectSelection(value) {
+        if (!value || state.mode === 'FIXED' || state.scrolled ||
+            !Number.isInteger(value.anchor) || !Number.isInteger(value.from) || !Number.isInteger(value.to) ||
+            value.from < 0 || value.to > sourceText.length || value.anchor < value.from || value.anchor > value.to) return null;
+        var hit = selectionHit(Object.assign({}, value, { nearest: true }));
+        hit.pointerRevision = value.pointerRevision;
+        if (hit.offset >= value.from && hit.offset <= value.to && hit.offset !== value.anchor) {
+            var range = highlightRange({ from: Math.min(value.anchor, hit.offset), to: Math.max(value.anchor, hit.offset) });
+            if (range) hit.selection = showSelection(range);
+        }
+        return hit;
     }
     var visibleCaretNodes = null, visibleCaretKey = '';
     function nearestVisibleCaret(x, y) {
@@ -660,19 +692,8 @@
                 return part ? interact(Object.assign({}, part, { token: value.token, action: 'setRange', anchor: part.from }))
                     : (clearSelection(), { token: value.token, selection: null });
             }
-            if (value.action === 'hit') {
-                var hit = document.elementFromPoint(value.x, value.y);
-                var picture = hit && hit.closest('img,svg');
-                if (picture && !value.nearest) {
-                    var image = picture.localName === 'img' ? picture : picture.querySelector('image');
-                    var url = image && (image.getAttribute('src') || image.getAttribute('href') || image.getAttributeNS('http://www.w3.org/1999/xlink', 'href'));
-                    if (url) return { token: state.token, image: new URL(url, document.baseURI).href };
-                }
-                var point = caret(value.x, value.y) || (value.nearest ? nearestVisibleCaret(value.x, value.y) : null);
-                if (point && !value.nearest) point = rangeCaret(point.node, value.x, value.y) || point;
-                return { token: state.token, offset: point ? textOffset(point.node,
-                    !value.nearest && Number.isInteger(point.hitOffset) ? point.hitOffset : point.offset, false) : -1 };
-            }
+            if (value.action === 'hit') return selectionHit(value);
+            if (value.action === 'projectSelection') return projectSelection(value);
             if (value.action === 'tap') {
                 if (selectedRange) { clearSelection(); return { token: state.token, dismissed: true }; }
                 var note = noteHitRects.map(function (r) {
@@ -766,7 +787,7 @@
             if (value.action === 'select') clearSelection();
             var point = caret(value.x, value.y);
             if (!point && value.action === 'extend' && dragAnchor) point = nearestVisibleCaret(value.x, value.y);
-            if (!point) return { token: state.token, selection: selectionResult(), edge: value.action === 'extend' ? selectionEdge(value.x, value.y) : 0 };
+            if (!point) return { token: state.token, selection: selectionResult(), edge: value.action === 'extend' && selectedRange ? selectionEdge(value.x, value.y) : 0 };
             var range = document.createRange();
             if (value.action === 'select') {
                 var offset = Math.min(point.offset, point.node.length - 1), start = offset, end = offset + 1;
@@ -784,7 +805,7 @@
                 var first = before ? moving : dragAnchor, last = before ? dragAnchor : moving;
                 range.setStart(first.startContainer, first.startOffset); range.setEnd(last.startContainer, last.startOffset);
             } else return { token: state.token, selection: selectionResult() };
-            return { token: state.token, selection: showSelection(range), edge: value.action === 'extend' ? selectionEdge(value.x, value.y) : 0 };
+            return { token: state.token, selection: showSelection(range), edge: value.action === 'extend' && selectedRange ? selectionEdge(value.x, value.y) : 0 };
         } catch (error) {
             clearSelection(); return { token: state.token, error: String(error.message || error) };
         }
@@ -1270,6 +1291,7 @@
         }
     }
     async function configure(value) {
+        delete state.selectionHit;
         // This path is admitted by the native OPF manifest check, never inferred from book CSS.
         // A selector gate also covers documents staged before their per-book options are known.
         var decorationPath = value.ngNativePageDecorationCssPath;
@@ -1751,6 +1773,7 @@
         if (!value.preserveScroll) pauseMedia();
         state.token = value.token;
         state.status = 'loading';
+        delete state.selectionHit;
         try {
             // A source location owns the destination. Keep the current viewport if it cannot be restored.
             if (!value.preserveScroll && (state.mode === 'FIXED' || !value.location && value.textOffset == null))
@@ -1759,6 +1782,12 @@
             delete state.timings;
             if (value.location) restoreAnchor(locationAnchor(value.location), trace && trace.location, value.location.textOffset);
             if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset), trace && trace.text, value.textOffset);
+            if (value.preserveSelection) {
+                // Transforms are already applied: retire old SVG coordinates and
+                // extend the native fixed-end projection before yielding a frame.
+                paintHighlights();
+                state.selectionHit = projectSelection(value.selectionProjection);
+            }
             if (trace) {
                 trace.afterPage = state.pageIndex;
                 try { window.console.debug('EpubAloudTrace ' + JSON.stringify(trace)); } catch (_) {}

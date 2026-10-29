@@ -814,8 +814,14 @@ class ReadBookActivity : BaseReadBookActivity(),
         if (!binding.readView.isTextSelected) {
             return false
         }
-        when (event.action) {
-            MotionEvent.ACTION_DOWN -> textActionMenu.dismiss()
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                textActionMenu.dismiss()
+                when (v.id) {
+                    R.id.cursor_left -> readView.beginSelectionHandleDrag(!readView.curPage.getReverseStartCursor())
+                    R.id.cursor_right -> readView.beginSelectionHandleDrag(readView.curPage.getReverseEndCursor())
+                }
+            }
             MotionEvent.ACTION_MOVE -> {
                 when (v.id) {
                     R.id.cursor_left -> if (!readView.curPage.getReverseStartCursor()) {
@@ -845,10 +851,12 @@ class ReadBookActivity : BaseReadBookActivity(),
             }
 
             MotionEvent.ACTION_UP -> {
-                readView.finishSelectionHandleDrag()
+                val waitsForEndpoint = readView.finishSelectionHandleDrag()
                 readView.curPage.resetReverseCursor()
-                showTextActionMenu()
+                if (!waitsForEndpoint) showTextActionMenu()
             }
+
+            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> readView.cancelSelectionHandleDrag()
         }
         return true
     }

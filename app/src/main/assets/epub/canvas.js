@@ -156,10 +156,13 @@
                 throw new Error('EPUB chapter resource did not return a document');
             api = window.__ngEpubInstall(iframe.contentWindow); bindLinks();
         }
+        var selectionMove = null;
         async function configure(value) {
+            selectionMove = value;
             var mine = ++revision, saved = api && value.preservePosition ? api.captureLocation() : null;
             if (backdrop) window.__ngEpubCancelBackground(backdrop);
-            options = value; documents = value.documents || documents; status = { status: 'loading', token: value.token };
+            options = Object.assign({}, value); delete options.selectionProjection;
+            documents = value.documents || documents; status = { status: 'loading', token: value.token };
             try {
                 var index = Number.isInteger(value.index) ? value.index : 0;
                 if (!api || index !== current) await load(index, mine);
@@ -183,31 +186,56 @@
                         viewportFull: local.fullViewport })); check(mine); local = api.state();
                 }
                 if (local.status !== 'ready') throw new Error(local.error || 'EPUB chapter layout failed');
-                await repaint(); check(mine); iframe.style.opacity = '1';
+                await repaint(); check(mine);
+                var projection = selectionProjection(value);
+                var projected = projection && api.interact(Object.assign({}, projection,
+                    { token: api.state().token, action: 'projectSelection' }));
                 api.setHighlights(highlights.filter(function (mark) { return mark.occurrence == null || mark.occurrence === occurrence; }));
                 api.setSelectionTransparent(selectionTransparent);
-                status = { status: 'ready', token: value.token };
+                status = { status: 'ready', token: value.token, selectionHit: projected || null };
+                iframe.style.opacity = '1';
             } catch (error) { if (!closed && mine === revision) status = { status: 'error', token: value.token, error: String(error.message || error) }; }
         }
         async function move(value) {
             if (!api) return;
+            selectionMove = value;
             var target = value.location && Number.isInteger(value.location.index) ? value.location.index : value.index;
             if (Number.isInteger(target) && target !== current)
                 return configure(Object.assign({}, options, value, { index: target, preservePosition: false }));
             var mine = ++revision;
             options = Object.assign({}, options, { token: value.token }); status = { status: 'loading', token: value.token };
             try {
-                await api.move(value); check(mine);
+                var projection = selectionProjection(value);
+                await api.move(Object.assign({}, value, { selectionProjection: projection })); check(mine);
                 var local = api.state(); if (local.status !== 'ready') throw new Error(local.error || 'EPUB navigation failed');
-                await repaint(); check(mine); status = { status: 'ready', token: value.token };
+                await repaint(); check(mine);
+                var finalProjection = selectionProjection(value), projected = null;
+                if (projection && finalProjection && JSON.stringify(projection.edgeBounds) !== JSON.stringify(finalProjection.edgeBounds))
+                    projected = api.interact(Object.assign({}, finalProjection, { token: local.token, action: 'projectSelection' }));
+                status = { status: 'ready', token: value.token, selectionHit: projected };
             } catch (error) { if (!closed && mine === revision) status = { status: 'error', token: value.token, error: String(error.message || error) }; }
         }
         function translate(r) { return Object.assign({}, r, { left: r.left + rect.left, right: r.right + rect.left,
             top: r.top + rect.top, bottom: r.bottom + rect.top }); }
+        function selectionProjection(value) {
+            var projection = value.selectionProjection;
+            var anchor = projection && (projection.anchors || []).find(function (part) { return part.index === current; });
+            if (!anchor) return null;
+            var clip = contentRect || rect;
+            return Object.assign({}, anchor, { x: projection.x - rect.left, y: projection.y - rect.top,
+                pointerRevision: projection.pointerRevision,
+                edgeBounds: { left: clip.left - rect.left, top: clip.top - rect.top,
+                    right: clip.left + clip.width - rect.left, bottom: clip.top + clip.height - rect.top } });
+        }
         function state() {
             var local = api ? api.state() : {};
             var clip = contentRect || rect;
+            var hit = status.selectionHit || local.selectionHit;
+            if (hit) hit = Object.assign({}, hit, { token: status.token, index: current,
+                selection: hit.selection && Object.assign({}, hit.selection,
+                    { start: translate(hit.selection.start), end: translate(hit.selection.end) }) });
             return Object.assign({}, local, status, { canvas: true, fullViewport: true, index: current,
+                selectionHit: hit || null,
                 document: documents[current], documentRect: contentRect || rect, canvasDocumentKey: documents[current] && documents[current].url,
                 warnings: (local.warnings || []).concat(window.__ngEpubBackgroundWarnings(backdrop)),
                 media: (local.media || []).map(function (item) { var r = translate(item);
@@ -218,7 +246,16 @@
                 }), bleedRects: (local.bleedRects || []).map(translate) });
         }
         function interact(value) {
-            if (!api || value.token !== status.token || status.status !== 'ready') return null;
+            if (value.token !== status.token) return null;
+            if (value.action === 'clear' || value.action === 'clearRange') {
+                if (selectionMove) delete selectionMove.selectionProjection;
+                delete status.selectionHit;
+                if (api) api.interact({ token: api.state().token, action: 'clear' });
+                return { token: value.token };
+            }
+            if (!api || status.status !== 'ready') return null;
+            if (['clear', 'clearRange', 'setRange', 'setRanges', 'select', 'extend', 'tap'].includes(value.action))
+                delete status.selectionHit;
             var pointer = ['tap', 'select', 'gallerySwipe', 'activate'].includes(value.action) || value.action === 'hit' && !value.nearest;
             var clip = contentRect || rect;
             if (pointer && (value.x < clip.left || value.x >= clip.left + clip.width || value.y < clip.top || value.y >= clip.top + clip.height))
@@ -227,12 +264,16 @@
                 ranges: (value.ranges || []).filter(function (range) { return range.index === current; }) });
             if (value.action === 'aloud') value = Object.assign({}, value, {
                 range: (value.ranges || []).find(function (range) { return range.index === current; }) || value.range || null });
+            var bounds = { left: clip.left, top: clip.top, right: clip.left + clip.width, bottom: clip.top + clip.height };
             var result = api.interact(Object.assign({}, value, { token: api.state().token, index: current,
-                x: (value.x || 0) - rect.left, y: (value.y || 0) - rect.top }));
+                x: (value.x || 0) - rect.left, y: (value.y || 0) - rect.top,
+                edgeBounds: { left: bounds.left - rect.left, top: bounds.top - rect.top,
+                    right: bounds.right - rect.left, bottom: bounds.bottom - rect.top } }));
             if (!result) return result;
             if (result.selection) result.selection = Object.assign({}, result.selection, {
                 start: translate(result.selection.start), end: translate(result.selection.end) });
             if (result.highlightRect) result.highlightRect = translate(result.highlightRect);
+            if (value.action === 'hit') result.selectionBounds = bounds;
             return Object.assign({}, result, { token: value.token, index: current, document: documents[current] });
         }
         return Object.freeze({ configure: configure, move: move, state: state, interact: interact,

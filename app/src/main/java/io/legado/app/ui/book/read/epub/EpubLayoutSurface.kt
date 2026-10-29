@@ -396,12 +396,14 @@ internal class EpubLayoutSurface(
         }
     }
 
-    fun move(page: Int, location: JSONObject? = null, reason: String = "page") {
+    fun move(page: Int, location: JSONObject? = null, reason: String = "page", preserveSelection: Boolean = false,
+             selectionProjection: JSONObject? = null) {
         if (closed || state == null) return
         val beforePage = state?.optInt("pageIndex", -1)
         startup = EpubStartupTiming(if (onViewportRequired != null) "visible-move" else "preparation-move")
         val token = begin()
-        val value = JSONObject().put("token", token).put("page", page)
+        val value = JSONObject().put("token", token).put("page", page).put("preserveSelection", preserveSelection)
+            .put("selectionProjection", selectionProjection ?: JSONObject.NULL)
         location?.let { value.put("location", it) }
         if (io.legado.app.BuildConfig.DEBUG && onViewportRequired != null) {
             value.put("debugAloudTrace", true).put("debugTraceReason", reason)
@@ -466,20 +468,23 @@ internal class EpubLayoutSurface(
         return ordered(layout)
     }
 
-    fun advance(direction: Int) {
+    fun advance(direction: Int, preserveSelection: Boolean = false) {
         if (closed || state == null) return
         startup = EpubStartupTiming(if (onViewportRequired != null) "visible-move" else "preparation-move")
         val token = begin()
-        val value = JSONObject().put("token", token).put("delta", direction)
+        val value = JSONObject().put("token", token).put("delta", direction).put("preserveSelection", preserveSelection)
         webView.evaluateJavascript("$api.move($value)", null)
         awaitLayout(token)
     }
 
     fun interact(value: JSONObject, callback: (JSONObject?) -> Unit) {
         val token = revision.toString()
-        if (closed || state?.optString("token") != token) { callback(null); return }
+        val action = value.optString("action")
+        val clear = action == "clear" || action == "clearRange"
+        if (clear) options.remove("selectionProjection")
+        if (closed || !loaded || !clear && state?.optString("token") != token) { callback(null); return }
         // This is the current paint payload, also consumed by prepared animation pages.
-        if (value.optString("action") == "aloud") options.put("aloud", JSONObject(value.toString()))
+        if (action == "aloud") options.put("aloud", JSONObject(value.toString()))
         value.put("token", token)
         var delivered = false
         lateinit var deliver: (JSONObject?) -> Unit
@@ -494,7 +499,10 @@ internal class EpubLayoutSurface(
         }
         pendingInteractions.add(deliver)
         main.postDelayed(timeout, 25_000)
-        webView.evaluateJavascript("$api.interact($value)") { raw ->
+        // A cancellation can arrive while a viewport is still preparing. It must
+        // retire that render request rather than wait for a now-obsolete ready.
+        val request = if (clear) "Object.assign($value,{token:$api.state().token})" else value.toString()
+        webView.evaluateJavascript("$api && $api.interact($request)") { raw ->
             deliver(if (!closed && revision.toString() == token) runCatching { JSONObject(raw) }.getOrNull() else null)
         }
     }
@@ -640,6 +648,7 @@ internal class EpubLayoutSurface(
     }
 
     private fun publishState(report: JSONObject) {
+        options.remove("selectionProjection")
         watchdog.cancel()
         startup?.mark("publish")
         startup = null

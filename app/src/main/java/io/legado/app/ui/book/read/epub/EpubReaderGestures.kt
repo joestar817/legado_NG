@@ -15,7 +15,7 @@ internal class EpubReaderGestures(
     private val tap: (Float, Float) -> Unit,
     private val longPress: (Float, Float) -> Unit,
     private val extend: (Float, Float) -> Unit,
-    private val finishSelection: () -> Unit,
+    private val finishSelection: (Float, Float) -> Unit,
     private val swipe: (Int) -> Unit,
     private val cancelSelection: () -> Unit,
     private val scroll: (Float, Float) -> Boolean = { _, _ -> false },
@@ -78,7 +78,7 @@ internal class EpubReaderGestures(
             MotionEvent.ACTION_UP -> if (down) {
                 handler.removeCallbacks(longPressTask)
                 down = false
-                if (selecting) finishSelection()
+                if (selecting) finishSelection(event.x, event.y)
                 else if (scrolling) { scrolling = false; startFling(view) }
                 else if (!moved && !longPressed) tap(event.x, event.y)
                 else {
