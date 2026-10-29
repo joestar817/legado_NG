@@ -3,18 +3,26 @@ package io.legado.app.ui.about
 import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.StringRes
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.BuildConfig
 import io.legado.app.R
 import io.legado.app.base.BaseActivity
+import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.constant.AppConst.appInfo
 import io.legado.app.constant.AppLog
-import io.legado.app.databinding.ActivityAboutBinding
 import io.legado.app.help.CrashHandler
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.update.AppUpdate
+import io.legado.app.ui.design.components.compose.NgFloatingTitleToolbar
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.widget.dialog.MarkdownTextDrawer
 import io.legado.app.ui.widget.dialog.WaitDialog
@@ -36,9 +44,9 @@ import kotlinx.coroutines.delay
 import splitties.init.appCtx
 import java.io.File
 
-class AboutActivity : BaseActivity<ActivityAboutBinding>() {
+class AboutActivity : BaseActivity<ComposeActivityBinding>() {
 
-    override val binding by viewBinding(ActivityAboutBinding::inflate)
+    override val binding by viewBinding(ComposeActivityBinding::inflate)
 
     private val waitDialog by lazy {
         WaitDialog(this)
@@ -50,25 +58,34 @@ class AboutActivity : BaseActivity<ActivityAboutBinding>() {
         )
         binding.composeView.setContent {
             NgAppTheme {
-                AboutScreen(
-                    versionName = appInfo.versionName,
-                    onContributorsClick = { openUrl(R.string.contributors_url) },
-                    onCheckUpdateClick = ::checkUpdate,
-                    onCheckUpdateLongClick = if (BuildConfig.DEBUG) ::showLatestRelease else null,
-                    onTelegramClick = { openUrl(R.string.telegram_group_url) },
-                    onPrivacyPolicyClick = {
-                        showMdFile(getString(R.string.privacy_policy), "privacyPolicy.md")
-                    },
-                    onLicenseClick = {
-                        showMdFile(getString(R.string.license), "LICENSE.md")
-                    },
-                    onDisclaimerClick = {
-                        showMdFile(getString(R.string.disclaimer), "disclaimer.md")
-                    },
-                    onCrashLogClick = { showDialogFragment<CrashLogsDialog>() },
-                    onSaveLogClick = ::saveLog,
-                    onCreateHeapDumpClick = ::createHeapDump,
-                )
+                Column(modifier = Modifier.fillMaxSize()) {
+                    NgFloatingTitleToolbar(
+                        title = stringResource(R.string.about),
+                        onBack = ::onHomeNavigationSelected,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        AboutScreen(
+                            versionName = appInfo.versionName,
+                            onContributorsClick = { openUrl(R.string.contributors_url) },
+                            onCheckUpdateClick = ::checkUpdate,
+                            onCheckUpdateLongClick = if (BuildConfig.DEBUG) ::showLatestRelease else null,
+                            onTelegramClick = { openUrl(R.string.telegram_group_url) },
+                            onPrivacyPolicyClick = {
+                                showMdFile(getString(R.string.privacy_policy), "privacyPolicy.md")
+                            },
+                            onLicenseClick = {
+                                showMdFile(getString(R.string.license), "LICENSE.md")
+                            },
+                            onDisclaimerClick = {
+                                showMdFile(getString(R.string.disclaimer), "disclaimer.md")
+                            },
+                            onCrashLogClick = { showDialogFragment<CrashLogsDialog>() },
+                            onSaveLogClick = ::saveLog,
+                            onCreateHeapDumpClick = ::createHeapDump,
+                        )
+                    }
+                }
             }
         }
     }
