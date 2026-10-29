@@ -31,6 +31,7 @@ import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.onEachParallel
 import io.legado.app.utils.postEvent
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -167,9 +168,15 @@ object BookHelp {
         content: String
     ) {
         try {
-            saveText(book, bookChapter, content)
-            //saveImages(bookSource, book, bookChapter, content)
-            postEvent(EventBus.SAVE_CONTENT, Pair(book, bookChapter))
+            withChapterCachePublication(book.bookUrl) {
+                val currentChapter = appDb.bookChapterDao.getChapterByUrl(book.bookUrl, bookChapter.url)
+                    ?: bookChapter
+                saveText(book, currentChapter, content)
+                // Preserve the request's chapter object: cache queue completion still owns its index.
+                postEvent(EventBus.SAVE_CONTENT, Pair(book, currentChapter))
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
             AppLog.put("保存正文失败 ${book.name} ${bookChapter.title}", e)
@@ -233,8 +240,30 @@ object BookHelp {
         book: Book,
         src: String,
         chapter: BookChapter? = null
+    ) = saveImageInternal(bookSource, book, src, chapter, strict = false)
+
+    /** 后台缓存必须拿到有效文件，不能把阅读时的容错返回当成下载成功。 */
+    internal suspend fun saveImageForCache(
+        bookSource: BookSource?,
+        book: Book,
+        src: String,
+        chapter: BookChapter? = null
+    ) = saveImageInternal(bookSource, book, src, chapter, strict = true)
+
+    private suspend fun saveImageInternal(
+        bookSource: BookSource?,
+        book: Book,
+        src: String,
+        chapter: BookChapter?,
+        strict: Boolean,
     ) {
-        if (isImageExist(book, src)) {
+        fun hasCachedImage() = if (strict) {
+            getCachedBookImage(book, src) != null
+        } else {
+            isImageExist(book, src)
+        }
+        if (strict) currentCoroutineContext().ensureActive()
+        if (hasCachedImage()) {
             return
         }
         val mutex = synchronized(this) {
@@ -242,7 +271,7 @@ object BookHelp {
         }
         mutex.lock()
         try {
-            if (isImageExist(book, src)) {
+            if (hasCachedImage()) {
                 return
             }
             val analyzeUrl = AnalyzeUrl(
@@ -250,11 +279,16 @@ object BookHelp {
             )
             val bytes = analyzeUrl.getByteArrayAwait()
             //某些图片被加密，需要进一步解密
-            runScriptWithContext {
+            val decoded = runScriptWithContext {
                 ImageUtils.decode(
                     src, bytes, isCover = false, bookSource, book
                 )
-            }?.let {
+            }
+            if (strict) {
+                if (decoded == null) throw IOException("漫画图片解密失败")
+                writeImageForCache(book, src, decoded)
+                currentCoroutineContext().ensureActive()
+            } else decoded?.let {
                 if (!checkImage(it)) {
                     // 如果部分图片失效，每次进入正文都会花很长时间再次获取图片数据
                     // 所以无论如何都要将数据写入到文件里
@@ -265,6 +299,7 @@ object BookHelp {
             }
         } catch (e: Exception) {
             currentCoroutineContext().ensureActive()
+            if (strict) throw e
             val msg = "${book.name} ${chapter?.title} 图片 $src 下载失败\n${e.localizedMessage}"
             AppLog.put(msg, e)
         } finally {
@@ -285,6 +320,34 @@ object BookHelp {
     @Synchronized
     fun writeImage(book: Book, src: String, bytes: ByteArray) {
         getImage(book, src).createFileIfNotExist().writeBytes(bytes)
+    }
+
+    private fun writeImageForCache(book: Book, src: String, bytes: ByteArray) {
+        val file = getImage(book, src)
+        val parent = file.parentFile ?: throw IOException("无法创建图片缓存目录")
+        if (!parent.isDirectory && !parent.mkdirs() && !parent.isDirectory) {
+            throw IOException("无法创建图片缓存目录")
+        }
+        val temporary = File.createTempFile(".${file.name}.", ".tmp", parent)
+        try {
+            temporary.writeBytes(bytes)
+            if (getCachedBookImage(temporary) == null) {
+                throw IOException("图片下载后校验失败")
+            }
+            synchronized(this) {
+                if (getCachedBookImage(file) != null) return
+                // 同目录完成后才替换目标，失败的写入不会留下可被误认的半张图片。
+                if (!temporary.renameTo(file)) {
+                    // 部分文件系统不能直接覆盖已有文件，只移除已确认无效的单个图片。
+                    if (file.exists() && (!file.isFile || !file.delete())) {
+                        throw IOException("无法替换无效的图片缓存")
+                    }
+                    if (!temporary.renameTo(file)) throw IOException("无法保存图片缓存")
+                }
+            }
+        } finally {
+            temporary.delete()
+        }
     }
 
     @Synchronized

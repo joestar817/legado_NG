@@ -150,14 +150,14 @@ class BooksFragment() : BaseFragment(0),
         viewLifecycleOwner.lifecycleScope.launch {
             val chapterChanged = result[2] as Boolean
             val updatedBook = withContext(IO) {
-                book.copy().apply {
+                appDb.bookDao.getBook(book.bookUrl)?.apply {
                     durChapterIndex = result[0] as Int
                     durChapterPos = result[1] as Int
                     durVolumeIndex = result[3] as Int
                     chapterInVolumeIndex = result[4] as Int
                     appDb.bookDao.update(this)
                 }
-            }
+            } ?: return@launch
             startActivityForBook(updatedBook) {
                 putExtra("chapterChanged", chapterChanged)
                 val bookmarkTime = result.getOrNull(5) as? Long ?: -1L

@@ -9,6 +9,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
 import io.legado.app.exception.NoStackTraceException
+import io.legado.app.help.book.ChapterCacheFileMove
 import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.model.analyzeRule.AnalyzeUrl.Companion.getMediaItem
 import io.legado.app.utils.FileUtils
@@ -314,6 +315,34 @@ object AudioDownloadCache {
     private fun manifestFile(book: Book, chapter: BookChapter): File {
         val identity = "${book.origin}\u0000${book.bookUrl}\u0000${chapter.index}\u0000${chapter.url}"
         return File(manifestFolder(book), "${MD5Utils.md5Encode(identity)}.json")
+    }
+
+    /** Keep the actual Media3 keys: playback and clearing already consume manifest.parts. */
+    internal fun chapterReorderMoves(
+        book: Book,
+        oldChapters: List<BookChapter>,
+        newChapters: List<BookChapter>,
+    ): List<ChapterCacheFileMove> {
+        val newByUrl = newChapters.associateBy(BookChapter::url)
+        return oldChapters.mapNotNull { old ->
+            val new = newByUrl.getValue(old.url)
+            val source = manifestFile(book, old)
+            val target = manifestFile(book, new)
+            if (source == target && old.getFileName() == new.getFileName()) return@mapNotNull null
+            val replacement = if (source.exists()) {
+                val manifest = readManifest(source)
+                    ?: throw IOException("无法读取音频缓存清单：$source")
+                if (manifest.version != MANIFEST_VERSION || manifest.sourceUrl != book.origin ||
+                    manifest.bookUrl != book.bookUrl || manifest.chapterUrl != old.url ||
+                    manifest.chapterIndex != old.index || manifest.chapterFileName != old.getFileName()
+                ) {
+                    throw IOException("音频缓存清单与章节不匹配：$source")
+                }
+                GSON.toJson(manifest.copy(chapterIndex = new.index, chapterFileName = new.getFileName()))
+                    .toByteArray(Charsets.UTF_8)
+            } else null
+            ChapterCacheFileMove(source, target, replacement)
+        }
     }
 
     private fun manifestFolder(book: Book): File {

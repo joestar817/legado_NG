@@ -15,6 +15,7 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.model.ReadBook
 import io.legado.app.model.localBook.LocalBook
 import io.legado.app.help.book.simulatedTotalChapterNum
+import io.legado.app.help.book.reverseBookChapterOrder
 import io.legado.app.utils.FileDoc
 import io.legado.app.utils.GSON
 import io.legado.app.utils.createFileIfNotExist
@@ -28,6 +29,10 @@ import kotlinx.coroutines.withContext
 class TocViewModel(application: Application) : BaseViewModel(application) {
     var bookUrl: String = ""
     var bookData = MutableLiveData<Book>()
+    var isReversing = false
+        private set
+    var chapterOrderChanged = false
+        private set
 
     fun initBook(bookUrl: String) {
         this.bookUrl = bookUrl
@@ -55,19 +60,18 @@ class TocViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    fun reverseToc(success: (book: Book) -> Unit) {
+    fun reverseToc() {
+        if (isReversing || bookData.value == null) return
+        isReversing = true
         execute {
-            bookData.value?.apply {
-                setReverseToc(!getReverseToc())
-                val toc = appDb.bookChapterDao.getChapterList(bookUrl)
-                val newToc = toc.reversed()
-                newToc.forEachIndexed { index, bookChapter ->
-                    bookChapter.index = index
-                }
-                appDb.bookChapterDao.insert(*newToc.toTypedArray())
-            }
+            reverseBookChapterOrder(bookUrl)
         }.onSuccess {
-            it?.let(success)
+            chapterOrderChanged = true
+            bookData.value = it
+        }.onError {
+            AppLog.put("目录反序失败\n${it.localizedMessage}", it, true)
+        }.onFinally {
+            isReversing = false
         }
     }
 

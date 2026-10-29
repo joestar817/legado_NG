@@ -146,19 +146,23 @@ class BookInfoActivity :
         it?.let {
             viewModel.getBook(false)?.let { book ->
                 lifecycleScope.launch {
-                    withContext(IO) {
+                    val updatedBook = withContext(IO) {
+                        val latestBook = appDb.bookDao.getBook(book.bookUrl)
+                            ?: return@withContext null
                         val durChapterIndex = it[0] as Int
                         val durChapterPos = it[1] as Int
                         val durVolumeIndex = it[3] as Int
                         val chapterInVolumeIndex = it[4] as Int
-                        book.durChapterIndex = durChapterIndex
-                        book.durChapterPos = durChapterPos
-                        chapterChanged = it[2] as Boolean
-                        book.durVolumeIndex = durVolumeIndex
-                        book.chapterInVolumeIndex = chapterInVolumeIndex
-                        appDb.bookDao.update(book)
-                    }
-                    startReadActivity(book, it.getOrNull(5) as? Long ?: -1L)
+                        latestBook.durChapterIndex = durChapterIndex
+                        latestBook.durChapterPos = durChapterPos
+                        latestBook.durVolumeIndex = durVolumeIndex
+                        latestBook.chapterInVolumeIndex = chapterInVolumeIndex
+                        appDb.bookDao.update(latestBook)
+                        latestBook
+                    } ?: return@launch
+                    chapterChanged = it[2] as Boolean
+                    viewModel.bookData.value = updatedBook
+                    startReadActivity(updatedBook, it.getOrNull(5) as? Long ?: -1L)
                 }
             }
         } ?: let {

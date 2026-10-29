@@ -23,6 +23,7 @@ import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isLocalModified
 import io.legado.app.help.book.removeType
 import io.legado.app.help.book.simulatedTotalChapterNum
+import io.legado.app.help.book.withChapterCachePublication
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.model.ImageProvider
@@ -494,12 +495,26 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
      * 保存内容
      */
     fun saveContent(book: Book, content: String) {
+        val chapterIndex = ReadBook.durChapterIndex
+        val generation = ReadBook.captureLoadGeneration(book.bookUrl) ?: return
+        val chapterUrl = ReadBook.curTextChapter?.chapter
+            ?.takeIf { it.bookUrl == book.bookUrl && it.index == chapterIndex }
+            ?.url
         execute {
-            appDb.bookChapterDao.getChapter(book.bookUrl, ReadBook.durChapterIndex)
-                ?.let { chapter ->
-                    BookHelp.saveText(book, chapter, content)
-                    ReadBook.loadContent(ReadBook.durChapterIndex, resetPageOffset = false)
-                }
+            val saved = withChapterCachePublication(book.bookUrl) {
+                val chapter = if (chapterUrl != null) {
+                    appDb.bookChapterDao.getChapterByUrl(book.bookUrl, chapterUrl)
+                } else if (ReadBook.isLoadCurrent(book.bookUrl, generation)) {
+                    // A loading/error page may have no TextChapter; only trust its unchanged epoch.
+                    appDb.bookChapterDao.getChapter(book.bookUrl, chapterIndex)
+                } else null
+                if (chapter == null) return@withChapterCachePublication false
+                BookHelp.saveText(book, chapter, content)
+                true
+            }
+            if (saved && ReadBook.book?.bookUrl == book.bookUrl) {
+                ReadBook.loadContent(ReadBook.durChapterIndex, resetPageOffset = false)
+            }
         }
     }
 
@@ -507,16 +522,31 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
      * 反转内容
      */
     fun reverseContent(book: Book) {
+        val chapterIndex = ReadBook.durChapterIndex
+        val generation = ReadBook.captureLoadGeneration(book.bookUrl) ?: return
+        val chapterUrl = ReadBook.curTextChapter?.chapter
+            ?.takeIf { it.bookUrl == book.bookUrl && it.index == chapterIndex }
+            ?.url
         execute {
-            val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, ReadBook.durChapterIndex)
-                ?: return@execute
-            val content = BookHelp.getContent(book, chapter) ?: return@execute
-            val stringBuilder = StringBuilder()
-            content.toStringArray().forEach {
-                stringBuilder.insert(0, it)
+            val saved = withChapterCachePublication(book.bookUrl) {
+                val chapter = if (chapterUrl != null) {
+                    appDb.bookChapterDao.getChapterByUrl(book.bookUrl, chapterUrl)
+                } else if (ReadBook.isLoadCurrent(book.bookUrl, generation)) {
+                    appDb.bookChapterDao.getChapter(book.bookUrl, chapterIndex)
+                } else null
+                if (chapter == null) return@withChapterCachePublication false
+                val content = BookHelp.getContent(book, chapter)
+                    ?: return@withChapterCachePublication false
+                val stringBuilder = StringBuilder()
+                content.toStringArray().forEach {
+                    stringBuilder.insert(0, it)
+                }
+                BookHelp.saveText(book, chapter, stringBuilder.toString())
+                true
             }
-            BookHelp.saveText(book, chapter, stringBuilder.toString())
-            ReadBook.loadContent(ReadBook.durChapterIndex, resetPageOffset = false)
+            if (saved && ReadBook.book?.bookUrl == book.bookUrl) {
+                ReadBook.loadContent(ReadBook.durChapterIndex, resetPageOffset = false)
+            }
         }
     }
 
