@@ -15,6 +15,7 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.view.Gravity
+import android.view.View
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.DrawableUtils
 import androidx.core.graphics.drawable.DrawableCompat
@@ -22,7 +23,8 @@ import io.legado.app.lib.theme.TintHelper
 import kotlin.math.max
 
 /**
- * Draws the existing AppCompat switch assets without hosting a View.
+ * Keeps the existing AppCompat switch assets and geometry. Only the native ripple
+ * needs a View background RenderNode; Compose still owns the control itself.
  *
  * The geometry follows SwitchCompat 1.7.1 with showText=false, including the optical
  * insets and thumb shadow. Compact controls keep that geometry inside their old
@@ -36,6 +38,7 @@ internal class NgSwitchArtwork(
     private var thumb: Drawable?
     private var track: Drawable?
     private val background: Drawable?
+    private var rippleHost: NgSwitchRippleHost? = null
     private val splitTrack: Boolean
     private val gravity: Int
     private val paddingLeft: Int
@@ -114,22 +117,23 @@ internal class NgSwitchArtwork(
         }
     }
 
-    fun attach(onInvalidate: () -> Unit) {
+    fun attach(owner: View, onInvalidate: () -> Unit) {
         this.onInvalidate = onInvalidate
         thumb?.callback = this
         track?.callback = this
-        background?.callback = this
+        rippleHost = background?.let { NgSwitchRippleHost.attach(owner, it, onInvalidate) }
+        applyState()
     }
 
     fun dispose() {
         onInvalidate = null
+        rippleHost?.dispose()
+        rippleHost = null
         handler.removeCallbacksAndMessages(this)
         thumb?.callback = null
         track?.callback = null
-        background?.callback = null
         thumb?.jumpToCurrentState()
         track?.jumpToCurrentState()
-        background?.jumpToCurrentState()
     }
 
     fun updateTint(primary: Int, isDark: Boolean) {
@@ -229,7 +233,9 @@ internal class NgSwitchArtwork(
 
     @Suppress("DEPRECATION")
     fun draw(canvas: Canvas) {
-        background?.draw(canvas)
+        background?.let {
+            rippleHost?.drawRipple(canvas, it.bounds.width(), it.bounds.height(), drawableState)
+        }
         track?.let {
             if (splitTrack && thumb != null) {
                 thumb!!.copyBounds(clipBounds)
