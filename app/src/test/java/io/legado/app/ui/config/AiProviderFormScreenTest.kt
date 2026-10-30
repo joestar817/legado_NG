@@ -27,6 +27,49 @@ class AiProviderFormScreenTest {
     }
 
     @Test
+    fun `custom provider auto name follows base url while untouched`() {
+        val source = AiProviderFormScreenState(
+            providerId = "custom_openai_1",
+            builtIn = false,
+            name = "api.openai.com",
+            baseUrl = "https://api.openai.com/v1"
+        )
+
+        val renamed = source.withAutoNameForBaseUrl("https://proxy.example.com/v1")
+
+        assertEquals("proxy.example.com", renamed.name)
+        assertEquals("https://api.openai.com/v1", renamed.baseUrl)
+    }
+
+    @Test
+    fun `custom provider manual name is not overwritten by base url edits`() {
+        val source = AiProviderFormScreenState(
+            providerId = "custom_openai_1",
+            builtIn = false,
+            name = "My Proxy",
+            baseUrl = "https://api.openai.com/v1"
+        )
+
+        val renamed = source.withAutoNameForBaseUrl("https://proxy.example.com/v1")
+
+        assertEquals("My Proxy", renamed.name)
+    }
+
+    @Test
+    fun `built in provider name is never auto renamed`() {
+        val source = AiProviderFormScreenState(
+            providerId = "openai",
+            builtIn = true,
+            name = "api.openai.com",
+            baseUrl = "https://api.openai.com/v1"
+        )
+
+        val renamed = source.withAutoNameForBaseUrl("https://proxy.example.com/v1")
+
+        assertEquals("api.openai.com", renamed.name)
+    }
+
+    @Test
     fun `custom endpoint toggles preserve entered endpoint values`() {
         val source = AiProviderFormScreenState(
             useCustomBalanceUrl = true,

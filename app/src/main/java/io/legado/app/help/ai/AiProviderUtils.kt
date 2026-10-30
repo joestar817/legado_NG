@@ -33,6 +33,23 @@ internal fun String.ensureStartSlash(): String {
     return if (startsWith("/")) this else "/$this"
 }
 
+internal fun aiProviderHost(baseUrl: String): String {
+    val trimmed = baseUrl.trim()
+    if (trimmed.isEmpty()) {
+        return ""
+    }
+    val host = runCatching { java.net.URI(trimmed).host }.getOrNull()
+    if (!host.isNullOrBlank()) {
+        return host
+    }
+    return trimmed
+        .removePrefix("https://")
+        .removePrefix("http://")
+        .substringBefore('/')
+        .substringBefore('?')
+        .substringBefore('#')
+}
+
 internal fun buildAiApiEndpoint(baseUrl: String, apiPath: String): String {
     val api = apiPath.trim()
     check(api.isNotBlank()) { "API path is empty" }

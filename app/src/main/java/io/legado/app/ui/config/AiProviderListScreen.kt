@@ -71,9 +71,12 @@ internal data class AiProviderListScreenState(
 internal data class AiProviderListItemUiModel(
     val id: String,
     val name: String,
+    val summary: String = "",
     @param:DrawableRes val iconRes: Int,
     val enabled: Boolean,
     val modelCountText: String,
+    val modelCountWarning: Boolean = false,
+    val keyConfigured: Boolean = true,
     val reorderable: Boolean = true,
     val deletable: Boolean = false
 )
@@ -180,6 +183,7 @@ internal fun AiProviderListScreen(
                     ) {
                         NgManagementListCard(
                             title = provider.name,
+                            summary = provider.summary.ifBlank { null },
                             containerColor = colorResource(
                                 R.color.ng_translucent_management_card_surface
                             ),
@@ -187,26 +191,43 @@ internal fun AiProviderListScreen(
                                 R.color.ng_translucent_management_card_stroke
                             ),
                             borderWidth = 0.6.dp,
-                            detailTags = listOf(
-                                NgStatusTagSpec(
-                                    text = stringResource(
-                                        if (provider.enabled) {
-                                            R.string.enabled
+                            detailTags = buildList {
+                                add(
+                                    NgStatusTagSpec(
+                                        text = stringResource(
+                                            if (provider.enabled) {
+                                                R.string.enabled
+                                            } else {
+                                                R.string.disabled
+                                            }
+                                        ),
+                                        variant = if (provider.enabled) {
+                                            NgStatusTagVariant.SUCCESS
                                         } else {
-                                            R.string.disabled
+                                            NgStatusTagVariant.WARNING
                                         }
-                                    ),
-                                    variant = if (provider.enabled) {
-                                        NgStatusTagVariant.SUCCESS
-                                    } else {
-                                        NgStatusTagVariant.WARNING
-                                    }
-                                ),
-                                NgStatusTagSpec(
-                                    text = provider.modelCountText,
-                                    variant = NgStatusTagVariant.INFO
+                                    )
                                 )
-                            ),
+                                if (provider.keyConfigured) {
+                                    add(
+                                        NgStatusTagSpec(
+                                            text = provider.modelCountText,
+                                            variant = if (provider.modelCountWarning) {
+                                                NgStatusTagVariant.WARNING
+                                            } else {
+                                                NgStatusTagVariant.INFO
+                                            }
+                                        )
+                                    )
+                                } else {
+                                    add(
+                                        NgStatusTagSpec(
+                                            text = stringResource(R.string.ai_provider_no_api_key),
+                                            variant = NgStatusTagVariant.WARNING
+                                        )
+                                    )
+                                }
+                            },
                             trailingContent = if (canReorder) {
                                 {
                                     NgManagementTrailingIcon(

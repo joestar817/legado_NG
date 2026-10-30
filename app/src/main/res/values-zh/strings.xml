@@ -662,6 +662,12 @@
     <string name="ai_balance_json_path">余额 JSON 路径</string>
     <string name="ai_balance_json_path_summary">例如：data.total_credits</string>
     <string name="ai_provider_saved">提供商已保存</string>
+    <string name="ai_provider_reset">重置设置</string>
+    <string name="ai_provider_reset_message">将恢复默认名称和接口配置（Base URL、路径、超时、自定义接口地址）；保留 API Key、启用状态和已获取的模型。手动命名的自定义提供商名称会保留。</string>
+    <string name="ai_provider_reset_done">提供商设置已重置</string>
+    <string name="ai_provider_no_api_key">未配置 Key</string>
+    <string name="ai_provider_models_not_fetched">未获取模型</string>
+    <string name="ai_model_restore_capabilities">按模型名重新识别</string>
     <string name="ai_active_provider">当前使用</string>
     <string name="ai_api_key_required">请先填写 API Key</string>
     <string name="ai_model_reasoning_only">仅返回推理内容：%s</string>
