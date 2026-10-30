@@ -83,6 +83,7 @@
     <string name="character_avatar_uri">Avatar URI</string>
     <string name="character_portrait_uri">Character portrait URI</string>
     <string name="character_image_prompt">Image generation prompt</string>
+    <string name="character_image_prompt_hint">Used for AI image generation; optional</string>
     <string name="character_gender_male">Male</string>
     <string name="character_gender_female">Female</string>
     <string name="character_gender_unknown">Unknown gender</string>
@@ -739,6 +740,7 @@
     <string name="pt_hide_status_bar">Hide status bar</string>
     <string name="ps_hide_status_bar">Hide system navigation bar when reading</string>
     <string name="read_aloud">Speech</string>
+    <string name="create_character_card">Character card</string>
     <string name="book_info_listen">Listen</string>
     <string name="read_aloud_t">Speaking</string>
     <string name="read_aloud_s">Click to open the Reading</string>

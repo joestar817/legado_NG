@@ -23,6 +23,10 @@
         android:title="@string/read_aloud" />
 
     <item
+        android:id="@+id/menu_character_card"
+        android:title="@string/create_character_card" />
+
+    <item
         android:id="@+id/menu_dict"
         android:title="@string/dict" />
 

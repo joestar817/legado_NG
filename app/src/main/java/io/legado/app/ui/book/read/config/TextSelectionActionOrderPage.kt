@@ -146,6 +146,7 @@ private fun TextSelectionBuiltInAction.iconRes(): Int = when (this) {
     TextSelectionBuiltInAction.HIGHLIGHT -> R.drawable.ic_text_highlight
     TextSelectionBuiltInAction.SEARCH -> R.drawable.ic_search
     TextSelectionBuiltInAction.READ_ALOUD -> R.drawable.ic_read_aloud
+    TextSelectionBuiltInAction.CHARACTER_CARD -> R.drawable.ic_bookshelf_action_user
     TextSelectionBuiltInAction.DICTIONARY -> R.drawable.ic_translate
     TextSelectionBuiltInAction.BROWSER -> R.drawable.ic_web_outline
     TextSelectionBuiltInAction.SHARE -> R.drawable.ic_share

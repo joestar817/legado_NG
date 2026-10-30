@@ -800,6 +800,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
         R.id.menu_copy -> R.drawable.ic_copy
         R.id.menu_bookmark -> R.drawable.ic_text_highlight
         R.id.menu_aloud -> R.drawable.ic_read_aloud
+        R.id.menu_character_card -> R.drawable.ic_bookshelf_action_user
         R.id.menu_dict -> R.drawable.ic_translate
         R.id.menu_search_content -> R.drawable.ic_search
         R.id.menu_browser -> R.drawable.ic_web_outline
