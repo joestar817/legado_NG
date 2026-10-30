@@ -17,6 +17,7 @@ import io.legado.app.data.entities.ReadRecordShow
 import io.legado.app.data.entities.ReplaceRule
 import io.legado.app.data.entities.SearchBook
 import io.legado.app.help.book.BookHelp
+import io.legado.app.help.book.ContentProcessor
 import io.legado.app.help.book.isAudio
 import io.legado.app.help.book.isImage
 import io.legado.app.help.book.isLocal
@@ -46,8 +47,18 @@ object BookshelfMcpTools {
     private const val MAX_SNIPPET_CHAPTERS = 80
     private const val DEFAULT_CHAPTER_LIST_LIMIT = 100
     private const val MAX_CHAPTER_LIST_LIMIT = 300
+    private const val DEFAULT_TEXT_SEARCH_MATCHED_CHAPTERS = 200
+    private const val MAX_TEXT_SEARCH_MATCHED_CHAPTERS = 500
+    private const val DEFAULT_TEXT_SEARCH_SNIPPETS_PER_CHAPTER = 2
+    private const val MAX_TEXT_SEARCH_SNIPPETS_PER_CHAPTER = 5
+    private const val DEFAULT_TEXT_SEARCH_CONTEXT_CHARS = 30
+    private const val MAX_TEXT_SEARCH_CONTEXT_CHARS = 200
+    private const val DEFAULT_TEXT_SEARCH_TIME_BUDGET_MS = 15_000
+    private const val MAX_TEXT_SEARCH_TIME_BUDGET_MS = 60_000
     private const val MAX_CACHE_STATUS_CHAPTERS = 500
     private const val DRAFT_REPLACE_RULE_GROUP = "AI草稿"
+    private val snippetHtmlTagRegex = Regex("<[^>]{0,300}>")
+    private val snippetWhitespaceRegex = Regex("\\s+")
 
     fun tools(): List<Map<String, Any>> {
         return listOf(
@@ -205,6 +216,35 @@ object BookshelfMcpTools {
                     "tail_chars" to numberSchema("Default 200, max 2000. Characters from chapter end after AI sanitization."),
                     "include_title" to booleanSchema("Include chapter titles in the aggregate text, default true"),
                     "max_total_chars" to numberSchema("Default 20000, max 120000. Caps aggregate snippet text and per-item included snippet fields.")
+                )
+            ),
+            tool(
+                name = "bookshelf_text_search",
+                description = "Locate keywords or regexes inside one book's cached/local chapter text and return a compact chapter hit list. " +
+                    "Use this before reading a whole book: pass a character name plus all aliases in one call, then read only the chapters that matched. " +
+                    "This never triggers network fetching and returns no chapter body unless include_snippets=true.",
+                properties = mapOf(
+                    "work_key" to stringSchema("Stable work identity. Prefer this when available."),
+                    "book_url" to stringSchema("Current Book.bookUrl. Source-specific and may change after changing source."),
+                    "name" to stringSchema("Book.name"),
+                    "author" to stringSchema("Book.author"),
+                    "query" to stringSchema("Single keyword or regex. Prefer queries when a character has aliases."),
+                    "queries" to mapOf(
+                        "type" to "array",
+                        "description" to "Up to 10 keywords or regexes. A character name plus aliases is the intended use.",
+                        "items" to mapOf("type" to "string"),
+                        "maxItems" to 10
+                    ),
+                    "regex" to booleanSchema("Treat query/queries as regular expressions, default false."),
+                    "ignore_case" to booleanSchema("Default true."),
+                    "start_chapter_index" to numberSchema("Inclusive scan start, default 0"),
+                    "end_chapter_index" to numberSchema("Inclusive scan end. Omit to scan to the last chapter."),
+                    "max_matched_chapters" to numberSchema("Default 200, max 500. Stop scanning once this many chapters matched."),
+                    "include_snippets" to booleanSchema("Default false. Keep false to save tokens; enable only to verify a hit is a person rather than a word collision."),
+                    "snippet_chars" to numberSchema("Context characters on each side, default 30, max 200."),
+                    "snippets_per_chapter" to numberSchema("Default 2, max 5, per query."),
+                    "time_budget_ms" to numberSchema("Default 15000, max 60000. Returns partial results when exceeded."),
+                    "apply_replace" to booleanSchema("Default false. Apply this book's replace/purify rules before matching.")
                 )
             ),
             tool(
@@ -533,6 +573,7 @@ object BookshelfMcpTools {
             "bookshelf_chapter_content_get" -> getChapterContent(arguments)
             "bookshelf_text_window_get" -> getTextWindow(arguments)
             "bookshelf_chapter_snippets_get" -> getChapterSnippets(arguments)
+            "bookshelf_text_search" -> searchText(arguments)
             "bookshelf_cache_status_get" -> getCacheStatus(arguments)
             "bookshelf_cache_download" -> downloadCache(arguments)
             "bookshelf_cache_clear" -> clearCache(arguments)
@@ -984,6 +1025,7 @@ object BookshelfMcpTools {
             items.add(
                 mapOf(
                     "index" to chapter.index,
+                    "chapter_number" to (chapter.index + 1),
                     "title" to chapter.title,
                     "has_content" to (rawContent != null),
                     "content_chars" to (block?.length ?: 0),
@@ -1075,6 +1117,7 @@ object BookshelfMcpTools {
             items.add(
                 mapOf(
                     "index" to chapter.index,
+                    "chapter_number" to (chapter.index + 1),
                     "title" to chapter.title,
                     "has_content" to hasContent,
                     "head" to head,
@@ -1124,6 +1167,210 @@ object BookshelfMcpTools {
         )
     }
 
+    private fun searchText(arguments: JsonObject): Map<String, Any?> {
+        val book = resolveBook(arguments)
+            ?: return notFound(
+                "native://bookshelf/textSearch",
+                "未找到书籍，请检查 work_key、book_url 或 name/author"
+            )
+        val queries = linkedSetOf<String>().apply {
+            arguments.get("query").asStringOrNull()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let(::add)
+            arguments.get("queries").asStringListOrNull()?.forEach { query ->
+                query.trim().takeIf { it.isNotEmpty() }?.let(::add)
+            }
+        }.toList()
+        require(queries.isNotEmpty()) { "query or queries is required" }
+        require(queries.size <= 10) { "queries supports at most 10 items" }
+
+        val regex = arguments.get("regex").asBooleanOrNull() ?: false
+        val ignoreCase = arguments.get("ignore_case").asBooleanOrNull() ?: true
+        val compiledQueries = queries.map { McpTextQuery.compile(it, regex, ignoreCase) }
+        val startIndex = (arguments.get("start_chapter_index").asIntOrNull() ?: 0)
+            .coerceAtLeast(0)
+        val endIndex = arguments.get("end_chapter_index").asIntOrNull()
+        val maxMatchedChapters = (arguments.get("max_matched_chapters").asIntOrNull()
+            ?: DEFAULT_TEXT_SEARCH_MATCHED_CHAPTERS)
+            .coerceIn(1, MAX_TEXT_SEARCH_MATCHED_CHAPTERS)
+        val includeSnippets = arguments.get("include_snippets").asBooleanOrNull() ?: false
+        val snippetChars = (arguments.get("snippet_chars").asIntOrNull()
+            ?: DEFAULT_TEXT_SEARCH_CONTEXT_CHARS)
+            .coerceIn(0, MAX_TEXT_SEARCH_CONTEXT_CHARS)
+        val snippetsPerChapter = (arguments.get("snippets_per_chapter").asIntOrNull()
+            ?: DEFAULT_TEXT_SEARCH_SNIPPETS_PER_CHAPTER)
+            .coerceIn(1, MAX_TEXT_SEARCH_SNIPPETS_PER_CHAPTER)
+        val timeBudgetMs = (arguments.get("time_budget_ms").asIntOrNull()
+            ?: DEFAULT_TEXT_SEARCH_TIME_BUDGET_MS)
+            .coerceIn(1_000, MAX_TEXT_SEARCH_TIME_BUDGET_MS)
+        val applyReplace = arguments.get("apply_replace").asBooleanOrNull() ?: false
+
+        val allChapters = appDb.bookChapterDao.getChapterList(book.bookUrl)
+        val targetChapters = allChapters.filter { chapter ->
+            chapter.index >= startIndex &&
+                (endIndex == null || chapter.index <= endIndex) &&
+                !chapter.isVolume
+        }
+        val startedAt = System.currentTimeMillis()
+        val processor = if (applyReplace) {
+            ContentProcessor.get(book).apply { upReplaceRules() }
+        } else {
+            null
+        }
+        val chapterHits = mutableListOf<Map<String, Any?>>()
+        val queryStats = compiledQueries.associateWith { intArrayOf(0, 0) }
+        var scannedChapters = 0
+        var missingChapters = 0
+        var lastScannedIndex: Int? = null
+        var stoppedByLimit = false
+        var stoppedByTime = false
+
+        for (chapter in targetChapters) {
+            if (chapterHits.size >= maxMatchedChapters) {
+                stoppedByLimit = true
+                break
+            }
+            if (System.currentTimeMillis() - startedAt >= timeBudgetMs.toLong()) {
+                stoppedByTime = true
+                break
+            }
+            lastScannedIndex = chapter.index
+            scannedChapters++
+            val rawContent = BookHelp.getContent(book, chapter)
+            if (rawContent.isNullOrBlank()) {
+                missingChapters++
+                continue
+            }
+            val content = try {
+                if (processor != null) {
+                    processor.getContent(
+                        book = book,
+                        chapter = chapter,
+                        content = rawContent,
+                        includeTitle = false,
+                        useReplace = true,
+                        chineseConvert = false,
+                        reSegment = false
+                    ).toString()
+                } else {
+                    McpTextSanitizer.forModel(rawContent)
+                }
+            } catch (e: Exception) {
+                missingChapters++
+                continue
+            }
+            val counts = linkedMapOf<String, Int>()
+            compiledQueries.forEach { query ->
+                val count = query.count(content)
+                if (count > 0) {
+                    counts[query.text] = count
+                    queryStats.getValue(query).let { stat ->
+                        stat[0]++
+                        stat[1] += count
+                    }
+                }
+            }
+            if (counts.isEmpty()) continue
+            chapterHits.add(
+                buildMap<String, Any?> {
+                    put("index", chapter.index)
+                    put("chapter_number", chapter.index + 1)
+                    put("title", chapter.title)
+                    put("count", counts.values.sum())
+                    put("hits", counts)
+                    if (includeSnippets) {
+                        val snippets = mutableListOf<Map<String, Any?>>()
+                        compiledQueries.forEach { query ->
+                            if (counts[query.text] == null) return@forEach
+                            query.snippets(content, snippetsPerChapter, snippetChars)
+                                .forEach { snippet ->
+                                    val text = snippet.stripSnippetMarkup()
+                                    if (text.isNotEmpty()) {
+                                        snippets.add(
+                                            mapOf(
+                                                "query" to query.text,
+                                                "text" to text
+                                            )
+                                        )
+                                    }
+                                }
+                        }
+                        if (snippets.isNotEmpty()) {
+                            put("snippets", snippets)
+                        }
+                    }
+                }
+            )
+        }
+
+        val lastTargetIndex = targetChapters.lastOrNull()?.index
+        val truncated = stoppedByLimit || stoppedByTime
+        val hasMore = truncated &&
+            lastTargetIndex != null &&
+            (lastScannedIndex == null || lastScannedIndex < lastTargetIndex)
+        val totalMatches = queryStats.values.sumOf { it[1] }
+        val warnings = buildList {
+            if (missingChapters > 0) {
+                add("有 $missingChapters 章正文未缓存或无法读取，已跳过；MCP 不会主动联网抓取正文")
+            }
+            if (stoppedByTime) {
+                add("已达到时间预算 ${timeBudgetMs}ms，结果可能不完整")
+            }
+            if (stoppedByLimit) {
+                add("已达到命中章节上限 $maxMatchedChapters，结果可能不完整")
+            }
+            if (hasMore && lastScannedIndex != null) {
+                add("使用 next_start_chapter_index=${lastScannedIndex + 1} 继续扫描")
+            }
+            if (totalMatches == 0) {
+                add("未找到匹配；请确认相关章节已缓存，或尝试别名/正则")
+            }
+            if (applyReplace) {
+                add("匹配基于套用本书净化规则后的文本，片段位置与原始缓存文件可能存在偏移")
+            }
+        }
+        return toolResult(
+            ok = true,
+            upstreamEndpoint = "native://bookshelf/textSearch",
+            normalizedData = mapOf(
+                "book" to book.toMcpSummary(),
+                "queries" to compiledQueries.map { query ->
+                    val stat = queryStats.getValue(query)
+                    mapOf(
+                        "query" to query.text,
+                        "matched_chapters" to stat[0],
+                        "total_matches" to stat[1],
+                        "chapter_indexes" to chapterHits.mapNotNull { hit ->
+                            val hits = hit["hits"] as? Map<*, *>
+                            if (hits?.containsKey(query.text) == true) hit["index"] else null
+                        }
+                    )
+                },
+                "regex" to regex,
+                "ignore_case" to ignoreCase,
+                "apply_replace" to applyReplace,
+                "start_chapter_index" to startIndex,
+                "end_chapter_index" to endIndex,
+                "scanned_chapters" to scannedChapters,
+                "scanned_through_chapter_index" to lastScannedIndex,
+                "total_chapters" to allChapters.size,
+                "cached_chapters_scanned" to (scannedChapters - missingChapters),
+                "missing_chapters" to missingChapters,
+                "matched_chapters" to chapterHits.size,
+                "total_matches" to totalMatches,
+                "chapters" to chapterHits,
+                "has_more" to hasMore,
+                "next_start_chapter_index" to if (hasMore) lastScannedIndex?.plus(1) else null,
+                "truncated_by_matched_chapter_limit" to stoppedByLimit,
+                "truncated_by_time_budget" to stoppedByTime,
+                "include_snippets" to includeSnippets,
+                "sanitized_for_ai" to true
+            ),
+            warnings = warnings
+        )
+    }
+
     private fun getCacheStatus(arguments: JsonObject): Map<String, Any?> {
         val book = resolveBook(arguments)
             ?: return notFound("native://bookshelf/cacheStatus", "未找到书籍，请检查 work_key、book_url 或 name/author")
@@ -1147,12 +1394,15 @@ object BookshelfMcpTools {
             }
             mapOf(
                 "index" to chapter.index,
+                "chapter_number" to (chapter.index + 1),
                 "title" to chapter.title,
                 "has_content" to hasCache,
                 "is_volume" to chapter.isVolume
             )
         }
         val cachedCount = statuses.count { it["has_content"] == true }
+        val truncated = end - start > statuses.size
+        val nextStart = if (truncated) page.lastOrNull()?.index?.plus(1) else null
         return toolResult(
             ok = true,
             upstreamEndpoint = "native://bookshelf/cacheStatus",
@@ -1164,7 +1414,8 @@ object BookshelfMcpTools {
                 "returned" to statuses.size,
                 "cached_count" to cachedCount,
                 "missing_count" to (statuses.size - cachedCount),
-                "truncated_by_mcp" to (end - start > statuses.size),
+                "truncated_by_mcp" to truncated,
+                "next_start" to nextStart,
                 "chapters" to statuses
             )
         )
@@ -2159,6 +2410,7 @@ object BookshelfMcpTools {
     ): Map<String, Any?> {
         val map = linkedMapOf<String, Any?>(
             "index" to index,
+            "chapter_number" to (index + 1),
             "title" to title,
             "is_volume" to isVolume,
             "is_vip" to isVip,
@@ -2342,6 +2594,12 @@ object BookshelfMcpTools {
         }.getOrElse {
             value.split(',', '，').map { item -> item.trim() }.filter { it.isNotEmpty() }
         }
+    }
+
+    private fun String.stripSnippetMarkup(): String {
+        return snippetHtmlTagRegex.replace(this, "")
+            .replace(snippetWhitespaceRegex, " ")
+            .trim()
     }
 
     private fun String?.limitText(maxChars: Int): LimitedText {

@@ -73,6 +73,7 @@ EXPECTED_TOOLS = {
     "bookshelf_chapter_list",
     "bookshelf_chapter_content_get",
     "bookshelf_text_window_get",
+    "bookshelf_text_search",
     "bookshelf_cache_status_get",
     "bookshelf_cache_download",
     "bookshelf_cache_clear",
@@ -756,6 +757,68 @@ class NativeMcpApiTest(unittest.TestCase):
             )
             self.assert_tool_ok_shape(window)
             self.assertIn("text", window["normalized_data"])
+
+    def test_18b_bookshelf_text_search(self) -> None:
+        if not self.first_book_url:
+            self.skipTest("No bookshelf book available")
+
+        missing = self.client.call_tool(
+            "bookshelf_text_search",
+            {"book_url": "__mcp_missing_book__", "query": "的"},
+        )
+        self.assert_tool_ok_shape(missing)
+        self.assertFalse(missing["ok"])
+
+        result = self.client.call_tool(
+            "bookshelf_text_search",
+            {
+                "book_url": self.first_book_url,
+                "query": "的",
+                "max_matched_chapters": 5,
+                "time_budget_ms": 5000,
+            },
+        )
+        self.assert_tool_ok_shape(result)
+        self.assertTrue(result["ok"], result.get("warnings"))
+        data = result["normalized_data"]
+        for field in (
+            "queries",
+            "scanned_chapters",
+            "scanned_through_chapter_index",
+            "total_chapters",
+            "matched_chapters",
+            "total_matches",
+            "chapters",
+            "has_more",
+        ):
+            self.assertIn(field, data)
+        self.assertIsInstance(data["queries"], list)
+        self.assertLessEqual(data["matched_chapters"], data["total_chapters"])
+        self.assertIsInstance(data["chapters"], list)
+        for chapter in data["chapters"]:
+            self.assertIn("index", chapter)
+            self.assertIn("title", chapter)
+            self.assertIn("count", chapter)
+            self.assertIn("hits", chapter)
+            self.assertNotIn("content", chapter)
+
+        if data["chapters"]:
+            with_snippets = self.client.call_tool(
+                "bookshelf_text_search",
+                {
+                    "book_url": self.first_book_url,
+                    "query": "的",
+                    "max_matched_chapters": 1,
+                    "include_snippets": True,
+                    "snippet_chars": 10,
+                    "time_budget_ms": 5000,
+                },
+            )
+            self.assert_tool_ok_shape(with_snippets)
+            self.assertTrue(with_snippets["ok"], with_snippets.get("warnings"))
+            chapter = with_snippets["normalized_data"]["chapters"][0]
+            self.assertIn("snippets", chapter)
+            self.assertIsInstance(chapter["snippets"], list)
 
     def test_19_bookshelf_write_tools(self) -> None:
         if not Config.write:
