@@ -665,6 +665,12 @@
     <string name="ai_balance_json_path">Balance JSON path</string>
     <string name="ai_balance_json_path_summary">For example: data.total_credits</string>
     <string name="ai_provider_saved">Provider saved</string>
+    <string name="ai_provider_reset">Reset settings</string>
+    <string name="ai_provider_reset_message">Restores the default name and endpoint configuration (Base URL, paths, timeout, custom endpoints). Keeps the API key, enabled state, and fetched models. Manually named custom providers keep their name.</string>
+    <string name="ai_provider_reset_done">Provider settings reset</string>
+    <string name="ai_provider_no_api_key">No API key</string>
+    <string name="ai_provider_models_not_fetched">No models fetched</string>
+    <string name="ai_model_restore_capabilities">Detect from model name</string>
     <string name="ai_active_provider">Active provider</string>
     <string name="ai_api_key_required">Please fill API key first</string>
     <string name="ai_model_reasoning_only">Reasoning only: %s</string>

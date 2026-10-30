@@ -16,6 +16,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+import io.legado.app.help.ai.aiProviderHost
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgFormActionGroup
@@ -78,6 +79,7 @@ sealed interface AiProviderFormScreenAction {
 
     data object TestConnectionRequested : AiProviderFormScreenAction
     data object QueryBalanceRequested : AiProviderFormScreenAction
+    data object ResetRequested : AiProviderFormScreenAction
     data object DeleteRequested : AiProviderFormScreenAction
 }
 
@@ -95,6 +97,20 @@ internal fun AiProviderFormScreenState.withField(
         AiProviderFormField.BALANCE_JSON_PATH -> copy(balanceJsonPath = value)
         AiProviderFormField.MODELS_URL -> copy(modelsUrl = value)
     }
+}
+
+/**
+ * 自定义提供商的默认名称来自 Base URL host。修改 Base URL 时，仅当名称仍是
+ * 自动生成的 host 才同步更新，避免覆盖用户手动填写的名称。
+ */
+internal fun AiProviderFormScreenState.withAutoNameForBaseUrl(
+    baseUrl: String
+): AiProviderFormScreenState {
+    if (builtIn || name != aiProviderHost(this.baseUrl)) {
+        return this
+    }
+    val host = aiProviderHost(baseUrl)
+    return if (host.isBlank()) this else copy(name = host)
 }
 
 internal fun AiProviderFormScreenState.withToggle(
@@ -300,6 +316,15 @@ fun AiProviderFormScreen(
                     appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
                 )
             }
+            NgFormActionButton(
+                text = stringResource(R.string.ai_provider_reset),
+                onClick = {
+                    focusManager.clearFocus()
+                    onAction(AiProviderFormScreenAction.ResetRequested)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
+            )
             if (!state.builtIn) {
                 NgFormActionButton(
                     text = stringResource(R.string.ai_delete_provider),
