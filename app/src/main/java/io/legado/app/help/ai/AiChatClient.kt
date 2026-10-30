@@ -203,6 +203,9 @@ class AiChatClient {
         ))
         val toolTrace = mutableListOf<String>()
         var lastUsage: AiChatUsage? = null
+        var totalPromptTokens = 0
+        var totalCompletionTokens = 0
+        var hasUsage = false
         var lastModel: String? = null
         var lastReasoning: String? = null
         var lastFinishReason: String? = null
@@ -319,6 +322,11 @@ class AiChatClient {
             }
             lastModel = completion.model
             lastUsage = completion.usage
+            completion.usage?.let { usage ->
+                hasUsage = true
+                usage.promptTokens?.let { totalPromptTokens += it }
+                usage.completionTokens?.let { totalCompletionTokens += it }
+            }
             lastReasoning = completion.reasoning
             lastFinishReason = completion.finishReason
             stepNumber += 1
@@ -412,7 +420,15 @@ class AiChatClient {
                     reasoning = lastReasoning,
                     model = lastModel ?: model.id,
                     finishReason = lastFinishReason,
-                    usage = lastUsage,
+                    usage = if (hasUsage) {
+                        AiChatUsage(
+                            promptTokens = totalPromptTokens,
+                            completionTokens = totalCompletionTokens,
+                            totalTokens = totalPromptTokens + totalCompletionTokens
+                        )
+                    } else {
+                        lastUsage
+                    },
                     toolTrace = toolTrace,
                     toolReceipts = toolReceipts.toList(),
                     memoryTrace = memoryTrace.toList(),
