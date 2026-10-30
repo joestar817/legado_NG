@@ -13,6 +13,7 @@ enum class TextSelectionBuiltInAction(val key: String, val menuId: Int, val titl
     HIGHLIGHT("highlight", R.id.menu_bookmark, R.string.text_highlight),
     SEARCH("search", R.id.menu_search_content, R.string.search),
     READ_ALOUD("read_aloud", R.id.menu_aloud, R.string.read_aloud),
+    CHARACTER_CARD("character_card", R.id.menu_character_card, R.string.create_character_card),
     DICTIONARY("dictionary", R.id.menu_dict, R.string.dict),
     BROWSER("browser", R.id.menu_browser, R.string.browser),
     SHARE("share", R.id.menu_share_str, R.string.share),
@@ -29,7 +30,16 @@ object TextSelectionActionOrder {
     fun load(): List<TextSelectionBuiltInAction> {
         val keys = appCtx.getPrefString(PREF_KEY).orEmpty().split(',')
         val saved = keys.mapNotNull { key -> TextSelectionBuiltInAction.entries.find { it.key == key } }
-        return (saved + TextSelectionBuiltInAction.entries).distinct()
+        val merged = (saved + TextSelectionBuiltInAction.entries).distinct().toMutableList()
+        // Existing users saved an order before CHARACTER_CARD existed. Put the new
+        // action right after read-aloud once, then let the user reorder it normally.
+        if (saved.isNotEmpty() && TextSelectionBuiltInAction.CHARACTER_CARD !in saved) {
+            merged.remove(TextSelectionBuiltInAction.CHARACTER_CARD)
+            val readAloudIndex = merged.indexOf(TextSelectionBuiltInAction.READ_ALOUD)
+            val insertIndex = if (readAloudIndex >= 0) readAloudIndex + 1 else merged.size
+            merged.add(insertIndex, TextSelectionBuiltInAction.CHARACTER_CARD)
+        }
+        return merged
     }
 
     fun save(actions: List<TextSelectionBuiltInAction>, disabledKeys: Set<String>) {

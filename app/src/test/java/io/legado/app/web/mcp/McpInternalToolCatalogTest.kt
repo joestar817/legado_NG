@@ -96,6 +96,10 @@ class McpInternalToolCatalogTest {
             McpToolSideEffect.READ,
             McpInternalToolCatalog.sideEffectOf("bookshelf_chapter_snippets_get")
         )
+        assertEquals(
+            McpToolSideEffect.READ,
+            McpInternalToolCatalog.sideEffectOf("bookshelf_text_search")
+        )
         assertTrue(
             McpInternalToolCatalog.requiresUserConfirmation(
                 toolName = "custom_tool",
@@ -173,6 +177,7 @@ class McpInternalToolCatalogTest {
             "bookshelf_chapter_content_get",
             "bookshelf_text_window_get",
             "bookshelf_chapter_snippets_get",
+            "bookshelf_text_search",
             "bookshelf_cache_status_get",
             "bookshelf_cache_download",
             "bookshelf_cache_clear",
