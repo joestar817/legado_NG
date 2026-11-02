@@ -204,6 +204,7 @@ class RhinoBookSourceClassPolicyTest {
             "io.legado.app.help.ai.AiProviderStore",
             "io.legado.app.help.AppWebDav",
             "io.legado.app.help.tts.TtsEngineStore",
+            "io.legado.app.model.ReadBook",
             "io.legado.app.help.http.NetworkLog",
             "io.legado.app.help.config.AppConfig",
             "io.legado.app.help.config.ReadBookConfig",

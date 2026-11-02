@@ -51,8 +51,11 @@ import io.legado.app.utils.observeEvent
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -81,6 +84,8 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     private var switchingChapter = false
     private var switchingVoice = false
     private var loadingChapterContent = false
+    private var chapterSwitchRevision = 0L
+    private var chapterSwitchJob: Job? = null
     private var playButtonLoading = false
     private var pendingPlayState: Boolean? = null
     private var pendingPlayCommandDispatched = false
@@ -519,7 +524,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     private fun dispatchPendingPlayCommandIfPossible() {
         val playing = pendingPlayState ?: return
-        if (pendingPlayCommandDispatched || !BaseReadAloudService.isRun) return
+        if (loadingChapterContent || pendingPlayCommandDispatched || !BaseReadAloudService.isRun) return
         pendingPlayCommandDispatched = true
         runCatching {
             if (playing) ReadAloud.resume(this) else ReadAloud.pause(this)
@@ -543,15 +548,22 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         val chapterIndex = ReadBook.durChapterIndex
         val chapterPos = ReadBook.durChapterPos
         val wasRun = BaseReadAloudService.isRun
+        val playAfterSwitch = wantsPlayback()
+        cancelChapterSwitch()
+        val revision = chapterSwitchRevision
+        pendingPlayState = playAfterSwitch
+        pendingPlayCommandDispatched = true
         switchingChapter = true
+        loadingChapterContent = true
+        setPlayButtonLoading(true)
         if (wasRun) {
-            setPlayButtonLoading(true)
             ReadAloud.stop(this)
         }
         resetChapterUi("正在准备朗读")
         toastOnUi("正在刷新当前章节")
-        lifecycleScope.launch {
-            val result = runCatching {
+        chapterSwitchJob = lifecycleScope.launch(start = CoroutineStart.LAZY) {
+            var started = false
+            try {
                 withContext(IO) {
                     if (ReadBook.bookSource != null) {
                         appDb.bookChapterDao.getChapter(book.bookUrl, chapterIndex)?.let {
@@ -559,6 +571,8 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
                         }
                     }
                 }
+                ensureActive()
+                if (revision != chapterSwitchRevision || ReadBook.book?.bookUrl != book.bookUrl) return@launch
                 ReadBook.msg = null
                 ReadBook.clearTextChapter()
                 ReadBook.removeLoading(chapterIndex)
@@ -566,38 +580,50 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
                 ReadBook.durChapterPos = chapterPos.coerceAtLeast(0)
                 ReadBook.saveRead()
                 ReadBook.loadContentAwait(chapterIndex, upContent = false, resetPageOffset = false)
-            }
-            if (!result.isSuccess) {
-                toastOnUi("刷新失败：${result.exceptionOrNull()?.localizedMessage ?: "未知错误"}")
-                switchingChapter = false
-                settlePlayState(false)
-                return@launch
-            }
-            val chapter = ReadBook.curTextChapter?.takeIf { it.isCompleted }
-            if (chapter == null) {
-                toastOnUi("刷新失败：章节内容未加载")
-                switchingChapter = false
-                settlePlayState(false)
+                ensureActive()
+                if (revision != chapterSwitchRevision || ReadBook.book?.bookUrl != book.bookUrl) return@launch
+                val chapter = checkNotNull(ReadBook.curTextChapter?.takeIf { it.isCompleted }) {
+                    "章节内容未加载"
+                }
+                ReadBook.durChapterPos = ReadBook.durChapterPos.coerceIn(0, chapter.getContent().length)
+                loadingChapterContent = false
+                resetParagraphCache()
                 refreshStaticState()
-                return@launch
+                refreshProgress(ReadBook.durChapterPos)
+                val play = wantsPlayback()
+                if (wasRun) {
+                    resumeReadAloudAfterReload(play)
+                    pendingPlayCommandDispatched = play
+                    if (!play) dispatchPendingPlayCommandIfPossible()
+                } else if (play) {
+                    ReadBook.readAloud(play = true, startPos = currentPageStartPos())
+                    pendingPlayCommandDispatched = true
+                } else {
+                    settlePlayState(false)
+                }
+                started = true
+                binding.root.postDelayed({
+                    if (revision == chapterSwitchRevision) finishChapterSwitch()
+                }, 1200L)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (revision == chapterSwitchRevision && !isFinishing && !isDestroyed) {
+                    toastOnUi("刷新失败：${error.localizedMessage ?: "未知错误"}")
+                }
+            } finally {
+                if (revision == chapterSwitchRevision) {
+                    chapterSwitchJob = null
+                    loadingChapterContent = false
+                    if (!started) {
+                        switchingChapter = false
+                        settlePlayState(false)
+                        refreshStaticState()
+                    }
+                }
             }
-            ReadBook.durChapterPos = ReadBook.durChapterPos.coerceIn(0, chapter.getContent().length)
-            resetParagraphCache()
-            refreshStaticState()
-            refreshProgress(ReadBook.durChapterPos)
-            if (wasRun) {
-                resumeReadAloudAfterReload(wantsPlayback())
-            } else if (pendingPlayState == true) {
-                ReadBook.readAloud(
-                    play = true,
-                    startPos = currentPageStartPos(),
-                )
-                pendingPlayCommandDispatched = true
-            } else {
-                setPlayButtonLoading(false)
-            }
-            binding.root.postDelayed(::finishChapterSwitch, 1200L)
         }
+        chapterSwitchJob?.start()
     }
 
     private fun startReadAloudAfterContentReady() {
@@ -730,22 +756,70 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     fun openChapterFromCatalog(chapterIndex: Int) {
         if (chapterIndex == ReadBook.durChapterIndex) return
+        val bookUrl = ReadBook.book?.bookUrl ?: return
+        if (chapterIndex !in 0 until ReadBook.chapterSize) return
         val wasRun = BaseReadAloudService.isRun
+        val playAfterSwitch = wantsPlayback()
+        cancelChapterSwitch()
+        val revision = ++chapterSwitchRevision
+        // STOP describes the old service, not the user's intent for the new chapter.
+        pendingPlayState = playAfterSwitch
+        pendingPlayCommandDispatched = true
         switchingChapter = true
+        loadingChapterContent = true
+        setPlayButtonLoading(true)
         if (wasRun) {
             ReadAloud.stop(this)
         }
         resetChapterUi("正在加载章节")
-        ReadBook.openChapter(chapterIndex, durChapterPos = 0, upContent = false) {
-            refreshStaticState()
-            refreshProgress(0)
-            ReadBook.readAloud(
-                play = wantsPlayback(),
-                startPos = 0,
-                engineVerified = wasRun,
-            )
-            binding.root.postDelayed(::finishChapterSwitch, 800L)
+        chapterSwitchJob = lifecycleScope.launch(start = CoroutineStart.LAZY) {
+            var started = false
+            try {
+                ReadBook.openChapterForReadAloud(chapterIndex)
+                ensureActive()
+                if (revision != chapterSwitchRevision || isFinishing || isDestroyed ||
+                    ReadBook.book?.bookUrl != bookUrl || ReadBook.durChapterIndex != chapterIndex
+                ) return@launch
+                loadingChapterContent = false
+                refreshStaticState()
+                refreshProgress(0)
+                val play = wantsPlayback()
+                ReadBook.readAloud(play = play, startPos = 0, engineVerified = wasRun)
+                pendingPlayCommandDispatched = play
+                if (!play) dispatchPendingPlayCommandIfPossible()
+                started = true
+                binding.root.postDelayed({
+                    if (revision == chapterSwitchRevision) finishChapterSwitch()
+                }, 800L)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (revision == chapterSwitchRevision && !isFinishing && !isDestroyed) {
+                    toastOnUi("加载章节失败：${error.localizedMessage ?: "未知错误"}")
+                }
+            } finally {
+                if (revision == chapterSwitchRevision) {
+                    chapterSwitchJob = null
+                    loadingChapterContent = false
+                    if (!started) {
+                        switchingChapter = false
+                        settlePlayState(false)
+                        refreshStaticState()
+                    }
+                }
+            }
         }
+        chapterSwitchJob?.start()
+    }
+
+    private fun cancelChapterSwitch() {
+        chapterSwitchRevision++
+        chapterSwitchJob?.let {
+            it.cancel()
+            loadingChapterContent = false
+            switchingChapter = false
+        }
+        chapterSwitchJob = null
     }
 
     fun runVoiceSwitch(block: () -> Unit) {
@@ -760,6 +834,11 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
 
     private fun finishChapterSwitch() {
         switchingChapter = false
+        if (!BaseReadAloudService.isRun) {
+            settlePlayState(false)
+        } else {
+            dispatchPendingPlayCommandIfPossible()
+        }
         refreshPreparationState()
     }
 
@@ -973,6 +1052,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
             enqueueParagraphBufferProgress(it)
         }
         observeEvent<Int>(EventBus.READ_ALOUD_DS) {
+            dispatchPendingPlayCommandIfPossible()
             refreshStaticState()
         }
     }
@@ -1015,6 +1095,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     override fun onDestroy() {
+        cancelChapterSwitch()
         paneDialogHost?.dispose()
         paneDialogHost = null
         playerThemeJob?.cancel()

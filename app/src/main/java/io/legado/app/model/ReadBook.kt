@@ -85,6 +85,7 @@ object ReadBook : CoroutineScope by MainScope() {
     private var advanceAfterTocReorder: (() -> Unit)? = null
     private val progressNavigationVersion = AtomicLong()
     private val chapterLoadingJobs = ConcurrentHashMap<Int, Coroutine<*>>()
+    private val chapterLoadCompletions = ChapterLoadCompletions()
     private val prevChapterLoadingLock = Mutex()
     private val curChapterLoadingLock = Mutex()
     private val nextChapterLoadingLock = Mutex()
@@ -221,6 +222,7 @@ object ReadBook : CoroutineScope by MainScope() {
     fun setProgress(progress: BookProgress) {
         if (tocOrderPausedBookUrl != null && tocOrderPausedBookUrl == book?.bookUrl) return
         progressNavigationVersion.incrementAndGet()
+        chapterLoadCompletions.cancelAll()
         pendingBookmarkNavigation = null
         if (progress.durChapterIndex < chapterSize &&
             (durChapterIndex != progress.durChapterIndex
@@ -251,6 +253,7 @@ object ReadBook : CoroutineScope by MainScope() {
     }
 
     fun clearTextChapter() {
+        chapterLoadCompletions.cancelAll()
         pendingBookmarkNavigation = null
         clearExpiredChapterLoadingJob(true)
         prevTextChapter = null
@@ -587,6 +590,7 @@ object ReadBook : CoroutineScope by MainScope() {
     fun skipToPage(index: Int, success: (() -> Unit)? = null) {
         if (tocOrderPausedBookUrl != null && tocOrderPausedBookUrl == book?.bookUrl) return
         progressNavigationVersion.incrementAndGet()
+        chapterLoadCompletions.cancelAll()
         pendingBookmarkNavigation = null
         durChapterPos = curTextChapter?.getReadLength(index) ?: index
         callBack?.upContent {
@@ -653,11 +657,13 @@ object ReadBook : CoroutineScope by MainScope() {
         upContent: Boolean,
         success: (() -> Unit)?,
         bookmark: Bookmark?,
+        onOpened: (() -> Unit)? = null,
     ) {
         if (tocOrderPausedBookUrl != null && tocOrderPausedBookUrl == book?.bookUrl) return
         if (index < chapterSize) {
             // 即使跳到相同位置，也不能再应用跳转前发出的同步结果。
             progressNavigationVersion.incrementAndGet()
+            chapterLoadCompletions.cancelAll()
             clearTextChapter()
             if (upContent) callBack?.upContent()
             durChapterIndex = index
@@ -666,10 +672,51 @@ object ReadBook : CoroutineScope by MainScope() {
                 book?.let { PendingBookmarkNavigation(it.bookUrl, loadEpoch.current, callBack, target) }
             }
             saveRead()
+            onOpened?.invoke()
             loadContent(resetPageOffset = true) {
                 success?.invoke()
             }
         }
+    }
+
+    /** Wait for the existing loader, including pre-downloads that already own this chapter. */
+    internal suspend fun openChapterForReadAloud(index: Int) {
+        lateinit var request: ProgressSyncToken
+        var registration: Pair<ChapterLoadCompletions.Key, CompletableDeferred<Unit>>? = null
+        try {
+            synchronized(this) {
+                val targetBook = book ?: error("当前书籍为空")
+                if (index !in 0 until chapterSize || tocOrderPausedBookUrl == targetBook.bookUrl) {
+                    throw CancellationException("Reader changed")
+                }
+                openChapter(index, 0, false, null, null, onOpened = {
+                    request = checkNotNull(captureProgressSync(targetBook))
+                    val key = ChapterLoadCompletions.Key(targetBook.bookUrl, request.loadGeneration, index)
+                    registration = key to chapterLoadCompletions.register(key)
+                })
+            }
+            val (_, completion) = checkNotNull(registration)
+            completion.await()
+            if (!isProgressSyncCurrent(request) || durChapterIndex != index) {
+                throw CancellationException("Reader changed")
+            }
+            ensureLoadCurrent(request.book, request.loadGeneration)
+        } finally {
+            registration?.let { (key, completion) -> chapterLoadCompletions.unregister(key, completion) }
+        }
+    }
+
+    @Synchronized
+    private fun completeChapterLoad(book: Book, generation: Long, index: Int, failure: Throwable? = null) {
+        if (!isLoadCurrent(book.bookUrl, generation)) return
+        val result = failure ?: when {
+            index != durChapterIndex -> CancellationException("Reader changed")
+            curTextChapter?.let { it.isCompleted && it.chapter.index == index } != true ->
+                IllegalStateException("章节内容未加载")
+            (downloadFailChapters[index] ?: 0) > 0 -> IllegalStateException("获取正文失败")
+            else -> null
+        }
+        chapterLoadCompletions.complete(ChapterLoadCompletions.Key(book.bookUrl, generation, index), result)
     }
 
     /** False means a requested highlight still has no visible range in the published layout. */
@@ -824,7 +871,10 @@ object ReadBook : CoroutineScope by MainScope() {
         Coroutine.async(this) {
             val startup = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("content-read-$index") else null
             ensureLoadCurrent(book, generation)
-            val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index) ?: return@async
+            val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index) ?: run {
+                completeChapterLoad(book, generation, index, IllegalStateException("章节不存在"))
+                return@async
+            }
             if (addLoading(index, book, generation)) {
                 try {
                     startup?.mark("before-content")
@@ -845,6 +895,7 @@ object ReadBook : CoroutineScope by MainScope() {
             }
         }.onError {
             if (it !is CancellationException) AppLog.put("加载正文出错\n${it.localizedMessage}")
+            completeChapterLoad(book, generation, index, it)
         }
     }
 
@@ -858,16 +909,21 @@ object ReadBook : CoroutineScope by MainScope() {
         withContext(IO) {
             if (addLoading(index, book, generation)) {
                 try {
-                    val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index) ?: return@withContext
+                    val chapter = appDb.bookChapterDao.getChapter(book.bookUrl, index) ?: run {
+                        completeChapterLoad(book, generation, index, IllegalStateException("章节不存在"))
+                        return@withContext
+                    }
                     val content = BookHelp.getContent(book, chapter) ?: downloadAwait(book, chapter, generation)
                     ensureActive()
                     ensureLoadCurrent(book, generation)
                     contentLoadFinishAwait(book, chapter, content, upContent, resetPageOffset, generation)
                     withCurrentLoad(book, generation) { success?.invoke() }
                 } catch (e: CancellationException) {
+                    completeChapterLoad(book, generation, index, e)
                     throw e
                 } catch (e: Exception) {
                     AppLog.put("加载正文出错\n${e.localizedMessage}")
+                    completeChapterLoad(book, generation, index, e)
                 } finally {
                     removeLoading(index, book, generation)
                 }
@@ -908,6 +964,7 @@ object ReadBook : CoroutineScope by MainScope() {
             val msg = if (book.isLocal) "无内容" else "没有书源"
             contentLoadFinish(book, chapter, "加载正文失败\n$msg",
                 resetPageOffset = resetPageOffset, generation = generation)
+            completeChapterLoad(book, generation, chapter.index, IllegalStateException(msg))
         }
     }
 
@@ -1008,6 +1065,7 @@ object ReadBook : CoroutineScope by MainScope() {
         if (!isLoadCurrent(book.bookUrl, generation) || chapter.bookUrl != book.bookUrl) return
         removeLoading(chapter.index)
         if (canceled || chapter.index !in durChapterIndex - 1..durChapterIndex + 1) {
+            completeChapterLoad(book, generation, chapter.index, CancellationException("Reader changed"))
             return
         }
         chapterLoadingJobs[chapter.index]?.cancel()
@@ -1084,14 +1142,23 @@ object ReadBook : CoroutineScope by MainScope() {
             }
 
             return@async
-        }.onError {
+        }
+        job.onError {
+            if (chapterLoadingJobs[chapter.index] === job) {
+                completeChapterLoad(book, generation, chapter.index, it)
+            }
             if (it is CancellationException) {
                 return@onError
             }
             AppLog.put("ChapterProvider ERROR", it)
             appCtx.toastOnUi("ChapterProvider ERROR:\n${it.stackTraceStr}")
         }.onSuccess {
-            withCurrentLoad(book, generation) { success?.invoke() }
+            withCurrentLoad(book, generation) {
+                success?.invoke()
+                if (chapterLoadingJobs[chapter.index] === job) {
+                    completeChapterLoad(book, generation, chapter.index)
+                }
+            }
         }
         chapterLoadingJobs[chapter.index] = job
         job.start()
@@ -1178,11 +1245,14 @@ object ReadBook : CoroutineScope by MainScope() {
                 }
             }
         }.onFailure {
+            completeChapterLoad(book, generation, chapter.index, it)
             if (it is CancellationException) {
                 throw it
             }
             AppLog.put("ChapterProvider ERROR", it)
             appCtx.toastOnUi("ChapterProvider ERROR:\n${it.stackTraceStr}")
+        }.onSuccess {
+            completeChapterLoad(book, generation, chapter.index)
         }
     }
 
@@ -1350,6 +1420,7 @@ object ReadBook : CoroutineScope by MainScope() {
     @Synchronized
     private fun releaseAndCancel() {
         pendingBookmarkNavigation = null
+        chapterLoadCompletions.cancelAll()
         loadEpoch.invalidate()
         msg = null
         preDownloadTask?.cancel()
