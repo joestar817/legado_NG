@@ -665,6 +665,7 @@
     <string name="ai_balance_json_path">Balance JSON path</string>
     <string name="ai_balance_json_path_summary">For example: data.total_credits</string>
     <string name="ai_provider_saved">Provider saved</string>
+    <string name="ai_model_restore_capabilities">Detect from model name</string>
     <string name="ai_active_provider">Active provider</string>
     <string name="ai_api_key_required">Please fill API key first</string>
     <string name="ai_model_reasoning_only">Reasoning only: %s</string>

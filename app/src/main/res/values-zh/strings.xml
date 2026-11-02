@@ -662,6 +662,7 @@
     <string name="ai_balance_json_path">余额 JSON 路径</string>
     <string name="ai_balance_json_path_summary">例如：data.total_credits</string>
     <string name="ai_provider_saved">提供商已保存</string>
+    <string name="ai_model_restore_capabilities">按模型名重新识别</string>
     <string name="ai_active_provider">当前使用</string>
     <string name="ai_api_key_required">请先填写 API Key</string>
     <string name="ai_model_reasoning_only">仅返回推理内容：%s</string>
