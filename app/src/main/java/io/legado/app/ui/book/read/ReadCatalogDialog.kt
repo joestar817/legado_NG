@@ -97,7 +97,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentManager
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -206,7 +205,12 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         if (visualStyle() == CatalogDrawerVisualStyle.READING_COMPACT_SIDE) {
             ComponentDialog(requireContext(), R.style.AppTheme_CompactCatalog).also {
-                it.window?.let { window -> WindowCompat.setDecorFitsSystemWindows(window, false) }
+                it.window?.let { window ->
+                    WindowCompat.setDecorFitsSystemWindows(window, false)
+                    (activity as? BaseReadBookActivity)?.applySystemBarVisibility(
+                        window, hideStatusBarForOverlay = true,
+                    )
+                }
             }
         } else {
             super.onCreateDialog(savedInstanceState)
@@ -350,9 +354,11 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
                 WindowCompat.setDecorFitsSystemWindows(this, false)
                 statusBarColor = AndroidColor.TRANSPARENT
                 navigationBarColor = AndroidColor.TRANSPARENT
+                (activity as? BaseReadBookActivity)?.applySystemBarVisibility(
+                    this, hideStatusBarForOverlay = true,
+                )
                 WindowCompat.getInsetsController(this, decorView).apply {
                     isAppearanceLightStatusBars = !catalogWindowTheme().isDark
-                    hide(WindowInsetsCompat.Type.statusBars())
                 }
                 setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             }
@@ -552,6 +558,9 @@ internal open class ReadCatalogDialog : CatalogDrawerDialog() {
         if (readActivity.bottomDialog > 0) return false
         readActivity.bottomDialog += 1
         bottomDialogRegistered = true
+        if (visualStyle() == CatalogDrawerVisualStyle.READING_COMPACT_SIDE) {
+            readActivity.setCatalogStatusBarHidden(true)
+        }
         return true
     }
 
@@ -559,6 +568,9 @@ internal open class ReadCatalogDialog : CatalogDrawerDialog() {
         if (!bottomDialogRegistered) return
         (activity as? ReadBookActivity)?.let {
             it.bottomDialog = (it.bottomDialog - 1).coerceAtLeast(0)
+            if (visualStyle() == CatalogDrawerVisualStyle.READING_COMPACT_SIDE) {
+                it.setCatalogStatusBarHidden(false)
+            }
         }
         bottomDialogRegistered = false
     }

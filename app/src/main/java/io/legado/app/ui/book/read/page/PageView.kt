@@ -26,6 +26,7 @@ import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadTipConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.ReadBookActivity
+import io.legado.app.ui.book.read.applyReadStatusBarPadding
 import io.legado.app.ui.book.read.page.api.ReaderSelection
 import io.legado.app.ui.book.read.page.entities.TextLine
 import io.legado.app.ui.book.read.page.entities.TextPage
@@ -34,7 +35,6 @@ import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.ui.widget.BatteryView
 import io.legado.app.utils.activity
 import io.legado.app.utils.applyNavigationBarPadding
-import io.legado.app.utils.applyStatusBarPadding
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.gone
 import io.legado.app.utils.setOnApplyWindowInsetsListenerCompat
@@ -101,7 +101,7 @@ class PageView(context: Context) : FrameLayout(context) {
                     readBookActivity?.finish()
                 }
             }
-            binding.vwStatusBar.applyStatusBarPadding()
+            binding.vwStatusBar.applyReadStatusBarPadding()
             binding.vwNavigationBar.applyNavigationBarPadding()
         }
     }
