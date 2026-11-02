@@ -88,6 +88,7 @@ class QqAccountProfileParserTest {
         assertThrows(MusicProviderException::class.java) {
             QqAccountProfileParser.membership(JSONObject("""{"identity":{"level":8}}"""))
         }
+    }
 
     @Test fun membershipKeepsOfficialTypeAndRejectsForeignImageOrigins() {
         val membership = QqAccountProfileParser.membership(JSONObject("""{
