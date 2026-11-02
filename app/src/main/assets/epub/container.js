@@ -144,6 +144,11 @@
                     return;
                 }
             }
+            if (flow && flowMode === 'canvas' && value.containerMode === 'canvas') {
+                // The canvas reconciles document identities and retires its old iframe only
+                // after the replacement is ready. Keep that owner when neighbours change.
+                documents = value.documents; key = nextKey;
+            }
             if (key !== nextKey || flowMode !== value.containerMode || !flow) {
                 clear(); documents = value.documents; key = nextKey;
                 if (value.containerMode === 'continuous') flow = window.__ngEpubCreateContinuous(host, documents);
@@ -264,6 +269,9 @@
         return result && Object.assign({}, result, { token: value.token, index: entry.index });
     }
     window.__ngEpubContainer = Object.freeze({ configure: configure, updateStyles: updateStyles, move: move, state: state, interact: interact,
+        preloadDocument: function (value) {
+            return flowMode === 'canvas' && flow && flow.preloadDocument ? flow.preloadDocument(value) : Promise.resolve(false);
+        },
         setLinkHandler: function (handler) { linkHandler = typeof handler === 'function' ? handler : null;
             if (flow) flow.setLinkHandler(linkHandler); },
         cancelConfiguration: function () { scrollTask = null; revision++; pending.forEach(function (cancel) { cancel(); }); pending.clear();

@@ -663,6 +663,10 @@
         var glyph = measure(next);
         return glyph && glyph.rects.length ? glyph : probe;
     }
+    function hasTapTargets() {
+        return !!selectedRange || noteHitRects.length > 0 || highlightRects.length > 0 ||
+            triggerObservers.size > 0 || document.getElementsByTagNameNS('*', 'a').length > 0;
+    }
     function interact(value) {
         if (value.token !== state.token) return null;
         if (value.action === 'clear' || value.action === 'clearRange') { clearSelection(); return { token: state.token }; }
@@ -1158,7 +1162,7 @@
         });
     }
     function pauseMedia() { document.querySelectorAll('video,audio').forEach(function (el) { el.pause(); }); }
-    function frame(timing) { return new Promise(function (resolve) {
+    function frame(timing, nativeCaptureFence) { return new Promise(function (resolve) {
         var began = performance.now();
         function ready() {
             var elapsed = performance.now() - began;
@@ -1167,7 +1171,7 @@
         }
         // A service-owned measurement document has no visible frame. Its caller needs
         // computed DOM geometry after resources settle, not a claim of painted pixels.
-        if (options && options.measurementOnly) window.setTimeout(ready, 0);
+        if ((options && options.measurementOnly) || nativeCaptureFence) window.setTimeout(ready, 0);
         else requestAnimationFrame(ready);
     }); }
     function layoutTimings(frameTiming, resourcesMs, layoutMs) {
@@ -1199,6 +1203,15 @@
             });
         })));
         return Promise.race([settled, aborted]).finally(function () { resourceWaits.delete(cancel); cleanups.forEach(function (cleanup) { cleanup(); }); });
+    }
+    function prepareScrollLayer() {
+        if (!state.scrolled) return;
+        var hint = getComputedStyle(body).willChange;
+        var properties = hint === 'auto' ? [] : hint.split(',').map(function (value) { return value.trim(); });
+        if (!properties.includes('transform')) {
+            properties.push('transform');
+            body.style.setProperty('will-change', properties.join(', '), body.style.getPropertyPriority('will-change'));
+        }
     }
     function place(page) {
         // There is one page offset only, never native scroll plus a CSS transform.
@@ -1743,6 +1756,9 @@
             if (value.location) restoreAnchor(locationAnchor(value.location), null, value.location.textOffset);
             if (value.textOffset != null) restoreAnchor(textPoint(value.textOffset), null, value.textOffset);
             var restored = restoreAnchor(anchor);
+            // The settled body already scrolls by transform. Keep its raster layer
+            // reusable instead of repainting the text tiles on every scroll update.
+            prepareScrollLayer();
             await frame(frameTiming); await frame(frameTiming);
             if (mine !== generation) return;
             readingAnchor = restored ? anchor : captureAnchor();
@@ -1792,7 +1808,9 @@
                 trace.afterPage = state.pageIndex;
                 try { window.console.debug('EpubAloudTrace ' + JSON.stringify(trace)); } catch (_) {}
             }
-            await frame(frameTiming); await frame(frameTiming);
+            // Only the private capture owner supplies this flag after retaining its
+            // settled geometry. Native visual-state and pixel markers still fence paint.
+            await frame(frameTiming, value.nativeCaptureFence); await frame(frameTiming, value.nativeCaptureFence);
             if (mine === generation) {
                 readingAnchor = captureAnchor();
                 state.timings = layoutTimings(frameTiming, 0, performance.now() - began);
@@ -1821,7 +1839,7 @@
                 return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, sides: value.sides }; });
             var inset = options && options.readerInsets || {};
             function visible(r) { return r.right > 0 && r.left < viewportWidth && r.bottom > 0 && r.top < viewportHeight; }
-            return Object.assign({}, state, { status: state.status,
+            return Object.assign({}, state, { status: state.status, hasTapTargets: hasTapTargets(),
             hideHeader: !!state.cover || bleedRects.some(function (r) { return visible(r) && r.sides.includes('top') && r.top < (inset.top || 0); }),
             hideFooter: !!state.cover || bleedRects.some(function (r) { return visible(r) && r.sides.includes('bottom') && r.bottom > viewportHeight - (inset.bottom || 0); }),
             media: mediaState(), location: sourceLocation(), textLength: sourceText.length, chapterBoundaries: chapterBoundaries,

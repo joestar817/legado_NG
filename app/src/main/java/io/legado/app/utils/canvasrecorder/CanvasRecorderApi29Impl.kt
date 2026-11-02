@@ -1,6 +1,7 @@
 package io.legado.app.utils.canvasrecorder
 
 import android.graphics.Canvas
+import android.graphics.Bitmap
 import android.graphics.Picture
 import android.graphics.RenderNode
 import android.os.Build
@@ -59,11 +60,29 @@ class CanvasRecorderApi29Impl : BaseCanvasRecorder() {
         }
     }
 
+    /** Explicit software consumers may request pixels from a picture containing GPU images. */
+    fun snapshotBitmap(): Bitmap {
+        val bitmap = renderBitmap()
+        if (bitmap.config != Bitmap.Config.HARDWARE) return bitmap
+        try { return checkNotNull(bitmap.copy(Bitmap.Config.ARGB_8888, false)) }
+        finally { bitmap.recycle() }
+    }
+
+    /** Preserve the hardware result when the picture requires GPU images. */
+    fun renderBitmap(): Bitmap = Bitmap.createBitmap(checkNotNull(picture))
+
+    /** An independent completed display list; the receiver may hand it to one worker. */
+    fun snapshotPicture(): Picture = Picture(checkNotNull(picture))
+
     override fun recycle() {
         super.recycle()
         if (renderNode == null || picture == null) return
         renderNodePool.recycle(renderNode!!)
         renderNode = null
+        // Pooling the Picture must not retain old bitmap/native-buffer commands after
+        // the owner's source leases have been released.
+        picture!!.beginRecording(1, 1)
+        picture!!.endRecording()
         picturePool.recycle(picture!!)
         picture = null
     }

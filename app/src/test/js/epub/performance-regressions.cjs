@@ -95,4 +95,51 @@ async function contentReuse() {
     assert.equal(pendingSignal.aborted, true); assert.equal(applied, count);
     console.log('configure: same revision fetches once; new revision reloads; cancelled fetch cannot apply');
 }
-(async () => { await resourceCancellation(); await contentReuse(); })().catch(error => { console.error(error); process.exitCode = 1; });
+async function captureFence() {
+    let raf = 0, timers = 0;
+    const c = vm.createContext({ Promise, performance, options: {},
+        requestAnimationFrame(callback) { raf++; queueMicrotask(callback); },
+        window: { setTimeout(callback) { timers++; queueMicrotask(callback); } } });
+    vm.runInContext(section(reader, '    function frame(timing', '    function layoutTimings('), c);
+    const timing = () => ({ total: 0, max: 0, count: 0 });
+    await c.frame(timing());
+    assert.equal(raf, 1); assert.equal(timers, 0);
+    await c.frame(timing(), true);
+    assert.equal(raf, 1); assert.equal(timers, 1);
+    await c.frame(timing());
+    assert.equal(raf, 2, 'A subsequent foreground frame must still wait for rAF');
+    const move = section(reader, '    async function move(value)', '    window.__ngEpub =');
+    const flags = [];
+    const m = vm.createContext({ Promise, performance, generation: 0, state: { pageIndex: 0, mode: 'REFLOWABLE' },
+        readingAnchor: null, cancelConfiguration() { m.generation++; }, clearSelection() {}, pauseMedia() {},
+        place(page) { m.state.pageIndex = page; }, locate() {}, captureAnchor() { return {}; },
+        paintHighlights() {}, layoutTimings() { return {}; }, frame: async (_, flag) => { flags.push(flag); } });
+    vm.runInContext(move, m);
+    await m.move({ token: 'capture', page: 3, nativeCaptureFence: true });
+    assert.equal(m.state.status, 'ready'); assert.equal(m.state.pageIndex, 3);
+    assert.deepEqual(flags, [true, true]); flags.length = 0;
+    await m.move({ token: 'visible', page: 4 });
+    assert.equal(m.state.status, 'ready'); assert.equal(m.state.pageIndex, 4);
+    assert.deepEqual(flags, [undefined, undefined]);
+    console.log('capture fence: private seeks can defer paint to native; foreground/configure retain rAF');
+}
+async function captureReadyNotification() {
+    const surface = fs.readFileSync('app/src/main/java/io/legado/app/ui/book/read/epub/EpubLayoutSurface.kt', 'utf8');
+    const script = surface.match(/\(function\(\)\{var notify=function\(\)\{window\.__ngEpubCaptureReady[\s\S]*?\}\)\(\)/)[0]
+        .replace(/\$token/g, 'owned-revision').replace(/\$api/g, 'api').replace(/\$value/g, '{}');
+    for (const failed of [false, true]) {
+        const events = [];
+        let settle;
+        const waiting = new Promise((resolve, reject) => { settle = () => failed ? reject(new Error('layout failed')) : resolve(); });
+        const c = vm.createContext({ Promise, api: { move() { events.push('move'); return waiting; } },
+            window: { __ngEpubCaptureReady: { postMessage(token) { events.push(token); } } } });
+        vm.runInContext(script, c);
+        await Promise.resolve();
+        assert.deepEqual(events, ['move'], 'Native must not query an unsettled parent canvas');
+        settle();
+        for (let i=0;i<5;i++) await Promise.resolve();
+        assert.deepEqual(events, ['move', 'owned-revision'], 'Both completion and failure notify the native state validator once');
+    }
+    console.log('capture readiness: settled outer move notifies its owned revision once; native still validates state/errors');
+}
+(async () => { await resourceCancellation(); await contentReuse(); await captureFence(); await captureReadyNotification(); })().catch(error => { console.error(error); process.exitCode = 1; });

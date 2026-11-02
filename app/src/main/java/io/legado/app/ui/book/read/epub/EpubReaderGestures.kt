@@ -150,6 +150,13 @@ internal class EpubReaderGestures(
         velocity = null
     }
 
+    /** A late result for an earlier tap must not erase a newer pointer's DOWN. */
+    fun cancelForQueuedTap() {
+        if (!down || moved || selecting || longPressed) { cancel(); return }
+        stopFling()
+        cancelScroll()
+    }
+
     fun cancel() {
         stopFling()
         cancelScroll()

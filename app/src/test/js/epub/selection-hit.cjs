@@ -28,6 +28,69 @@ function reader(mode = 'HORIZONTAL') {
 }
 
 let checks = 0;
+// This capability only describes an empty tap result. Existing tap actions still
+// own links, triggers, notes, highlights and selection dismissal.
+{
+    const capability = source.slice(source.indexOf('    function hasTapTargets()'), source.indexOf('    function interact(value)'));
+    assert.ok(capability.includes('getElementsByTagNameNS'));
+    function fixture() {
+        const f = reader(), c = f.context;
+        Object.assign(c, { selectedRange: null, noteHitRects: [], highlightRects: [], triggerObservers: new Set(), anchors: [] });
+        c.document.getElementsByTagNameNS = (namespace, localName) => {
+            assert.equal(namespace, '*'); assert.equal(localName, 'a');
+            return c.anchors;
+        };
+        return { ...f, hasTargets: () => vm.runInNewContext(`${capability}\nhasTapTargets();`, c),
+            tap: () => f.api.interact({ token: 'child', action: 'tap', x: 12, y: 12 }) };
+    }
+    {
+        const f = fixture();
+        assert.equal(f.hasTargets(), false); assert.equal(f.tap().href, null); checks++;
+    }
+    for (const [namespace, prefix] of [['http://www.w3.org/1999/xhtml', null], ['http://www.w3.org/2000/svg', 'svg']]) {
+        const f = fixture(), link = { localName: 'a', namespaceURI: namespace, prefix,
+            getAttribute: name => name === 'href' && !prefix ? 'next.xhtml' : null,
+            getAttributeNS: (ns, name) => ns === 'http://www.w3.org/1999/xlink' && name === 'href' ? 'next.xhtml' : null };
+        f.context.anchors.push(link);
+        f.context.picture = { localName: 'span', parentElement: link };
+        assert.equal(f.hasTargets(), true);
+        assert.equal(f.tap().href, 'https://epub.test/next.xhtml'); checks++;
+    }
+    {
+        const f = fixture();
+        f.context.noteHitRects.push({ id: 'note', left: 0, top: 0, right: 24, bottom: 24, touch: 48, order: 0 });
+        assert.equal(f.hasTargets(), true); assert.equal(f.tap().highlight, 'note'); checks++;
+    }
+    {
+        const f = fixture();
+        f.context.highlightRects.push({ rect: { left: 0, top: 0, right: 24, bottom: 24 }, value: { id: 'mark' } });
+        assert.equal(f.hasTargets(), true); assert.equal(f.tap().highlight, 'mark'); checks++;
+    }
+    {
+        const f = fixture(); let clicked = 0;
+        const trigger = { dispatchEvent(event) { assert.equal(event.type, 'click'); clicked++; } };
+        f.context.MouseEvent = function (type) { this.type = type; };
+        f.context.picture = trigger; f.context.triggerObservers.add(trigger);
+        assert.equal(f.hasTargets(), true); assert.equal(f.tap().handled, true); assert.equal(clicked, 1); checks++;
+    }
+    {
+        const f = fixture(); f.context.selectedRange = {};
+        f.context.clearSelection = () => { f.context.selectedRange = null; };
+        assert.equal(f.hasTargets(), true); assert.equal(f.tap().dismissed, true);
+        assert.equal(f.hasTargets(), false); checks++;
+    }
+    {
+        const f = fixture(), c = f.context;
+        Object.assign(c, { activeBleeds: [], options: {}, mediaState: () => [], sourceLocation: () => ({}),
+            sourceText: '', chapterBoundaries: [], galleries: [], galleryIndexes: new Map() });
+        const start = source.indexOf('        state: function () {');
+        const stateFunction = source.slice(start + '        state: '.length, source.indexOf('} });', start) + 1);
+        const api = vm.runInNewContext(`${capability}\n({state:${stateFunction}});`, c);
+        assert.equal(api.state().hasTapTargets, false);
+        c.anchors.push({ localName: 'a', namespaceURI: 'http://www.w3.org/2000/svg' });
+        assert.equal(api.state().hasTapTargets, true); checks++;
+    }
+}
 for (const [mode, points] of [
     ['HORIZONTAL', [[200, 590, 1], [200, 35, -1], [200, 300, 0]]],
     ['VERTICAL_LR', [[385, 300, 1], [15, 300, -1], [200, 300, 0]]],
@@ -149,7 +212,7 @@ const projection = { anchor: 20, from: 0, to: 120, x: 200, y: 790, pointerRevisi
         contentRect: { left: 10, top: 35, width: 300, height: 460 },
         documents: [{}, {}, { path: 'chapter.xhtml', url: 'doc2' }],
         api: { state: () => ({ status: 'ready', selectionHit: local }) },
-        status: { status: 'ready', token: 'outer' }, backdrop: null,
+        status: { status: 'ready', token: 'outer' }, backdrop: null, documentPreloaded: false, preloadedLayoutReused: false,
         window: { __ngEpubBackgroundWarnings: () => [] } };
     const code = canvas.slice(canvas.indexOf('        function translate('), canvas.indexOf('        function interact(value)'));
     const api = vm.runInNewContext(`${code}\n({ state, selectionProjection });`, context);
@@ -199,10 +262,11 @@ async function firstFrameProjection() {
         assert.equal(f.context.state.status, 'ready'); assert.equal(f.context.state.token, 'next'); checks++;
     }
     for (const cancel of [false, true]) {
-        const events = [], context = { revision: 0, backdrop: null, current: 0, documents: [], options: {}, status: {}, selectionMove: null,
+        const events = [], context = { revision: 0, configurationKey: null, backdrop: null, current: 0,
+            documents: [{ identity: 'chapter', path: 'chapter.xhtml', contentUrl: 'content' }], options: {}, status: {}, selectionMove: null,
             rect: { left: 10, top: 20, width: 300, height: 500 }, contentRect: null,
             host: { style: {} }, highlights: [], selectionTransparent: false,
-            resize() {}, check() {}, repaint: async () => events.push('repaint'),
+            resize() {}, check() {}, releaseRetainedFrame() {}, repaint: async () => events.push('repaint'),
             api: { configure: async () => events.push('layout'), state: () => ({ token: 'child', status: 'ready' }),
                 interact(value) { if (value.action === 'clear') { events.push('clear'); return { token: 'child' }; }
                     assert.equal(value.action, 'projectSelection'); assert.equal(value.anchor, 20);
@@ -211,11 +275,11 @@ async function firstFrameProjection() {
             iframe: { style: { set opacity(value) { if (value === '1') events.push('visible'); } } }
         };
         const helper = canvas.slice(canvas.indexOf('        function selectionProjection('), canvas.indexOf('        function state()'));
-        const configure = canvas.slice(canvas.indexOf('        async function configure(value)'), canvas.indexOf('        async function move(value)'));
+        const configure = canvas.slice(canvas.indexOf('        function layoutKey(config)'), canvas.indexOf('        async function move(value)'));
         const interact = canvas.slice(canvas.indexOf('        function interact(value)'), canvas.indexOf('        return Object.freeze({ configure:'));
         const api = vm.runInNewContext(`${helper}\n${configure}\n${interact}\n({ configure, interact });`, context);
         const pending = api.configure({ token: 'outer', index: 0, width: 320, height: 600,
-            documents: [{ path: 'chapter.xhtml', contentUrl: 'content' }], selectionProjection: {
+            documents: [{ identity: 'chapter', path: 'chapter.xhtml', contentUrl: 'content' }], selectionProjection: {
                 x: 110, y: 490, pointerRevision: 5, anchors: [{ index: 0, anchor: 20, from: 0, to: 120 }] } });
         if (cancel) api.interact({ token: 'outer', action: 'clear' });
         await pending;
