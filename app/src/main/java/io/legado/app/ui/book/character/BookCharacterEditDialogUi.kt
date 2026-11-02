@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,6 +63,7 @@ import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.utils.sendToClip
 
 @Composable
 internal fun BookCharacterEditDialogContent(
@@ -80,6 +82,7 @@ internal fun BookCharacterEditDialogContent(
     var gender by rememberSaveable { mutableStateOf(initialValue.gender) }
     var roleTag by rememberSaveable { mutableStateOf(initialValue.roleTag) }
     var intro by rememberSaveable { mutableStateOf(initialValue.intro.orEmpty()) }
+    var imagePrompt by rememberSaveable { mutableStateOf(initialValue.imagePrompt.orEmpty()) }
     val genderOptions = remember(context) {
         BookCharacterLabels.genderValues.map { value ->
             CharacterFormSelectOption(value, BookCharacterLabels.genderLabel(context, value))
@@ -121,6 +124,7 @@ internal fun BookCharacterEditDialogContent(
                             gender = gender,
                             roleTag = roleTag,
                             intro = intro.trim().ifBlank { null },
+                            imagePrompt = imagePrompt.trim().ifBlank { null },
                         )
                     )
                 },
@@ -185,6 +189,21 @@ internal fun BookCharacterEditDialogContent(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                 modifier = Modifier.padding(top = 16.dp),
             )
+            CharacterFormTextField(
+                label = stringResource(R.string.character_image_prompt),
+                value = imagePrompt,
+                onValueChange = { imagePrompt = it },
+                placeholder = stringResource(R.string.character_image_prompt_hint),
+                fieldHeight = 116.dp,
+                singleLine = false,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                modifier = Modifier.padding(top = 16.dp),
+                labelAction = if (imagePrompt.isNotBlank()) {
+                    { ImagePromptCopyAction(imagePrompt) }
+                } else {
+                    null
+                },
+            )
         }
     }
 }
@@ -199,6 +218,7 @@ private fun CharacterFormTextField(
     fieldHeight: Dp = 56.dp,
     singleLine: Boolean = true,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    labelAction: (@Composable () -> Unit)? = null,
 ) {
     val colors = NgTheme.colors
     val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
@@ -208,7 +228,11 @@ private fun CharacterFormTextField(
     val borderWidth = if (focused) 1.5.dp else 1.dp
 
     Column(modifier = modifier.fillMaxWidth()) {
-        CharacterFormLabel(label)
+        if (labelAction == null) {
+            CharacterFormLabel(label)
+        } else {
+            CharacterFormLabelWithAction(label, labelAction)
+        }
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -365,6 +389,55 @@ private fun CharacterFormLabel(text: String) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
+}
+
+@Composable
+private fun CharacterFormLabelWithAction(
+    text: String,
+    action: @Composable () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.weight(1f),
+            color = Color(NgTheme.colors.onSurfaceVariant),
+            fontSize = 13.sp,
+            lineHeight = 17.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        action()
+    }
+}
+
+@Composable
+private fun ImagePromptCopyAction(text: String) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { context.sendToClip(text) }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_copy),
+            contentDescription = stringResource(android.R.string.copy),
+            modifier = Modifier.size(14.dp),
+            tint = Color(NgTheme.colors.primary),
+        )
+        Text(
+            text = stringResource(android.R.string.copy),
+            color = Color(NgTheme.colors.primary),
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 4.dp),
+        )
+    }
 }
 
 private data class CharacterFormSelectOption(

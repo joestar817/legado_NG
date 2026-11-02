@@ -11,7 +11,8 @@ data class BookCharacterFormValue(
     val aliases: List<String>,
     val gender: String,
     val roleTag: String,
-    val intro: String?
+    val intro: String?,
+    val imagePrompt: String? = null
 )
 
 internal fun initialCharacterFormValue(
@@ -27,6 +28,7 @@ internal fun initialCharacterFormValue(
             roleTag = character.roleTag.takeIf { it in BookCharacterLabels.roleValues }
                 ?: BookCharacter.RoleTag.UNKNOWN,
             intro = character.displayIntro(),
+            imagePrompt = character.imagePrompt,
         )
     }
     if (castRole != null) {
@@ -76,6 +78,7 @@ object BookCharacterEditor {
             identity = null
             aliasesJson = mergedAliases.takeIf { it.isNotEmpty() }?.let(GSON::toJson)
             intro = value.intro
+            imagePrompt = value.imagePrompt?.trim()?.ifBlank { null }
             shortIntro = null
             updatedAt = now
         }

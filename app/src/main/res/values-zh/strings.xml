@@ -81,6 +81,7 @@
     <string name="character_avatar_uri">头像 URI</string>
     <string name="character_portrait_uri">人物立绘 URI</string>
     <string name="character_image_prompt">生图提示词</string>
+    <string name="character_image_prompt_hint">用于 AI 生图，可留空</string>
     <string name="character_gender_male">男</string>
     <string name="character_gender_female">女</string>
     <string name="character_gender_unknown">未知</string>
