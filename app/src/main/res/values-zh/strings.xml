@@ -667,7 +667,6 @@
     <string name="ai_provider_reset_done">提供商设置已重置</string>
     <string name="ai_provider_no_api_key">未配置 Key</string>
     <string name="ai_provider_models_not_fetched">未获取模型</string>
-    <string name="ai_model_restore_capabilities">按模型名重新识别</string>
     <string name="ai_active_provider">当前使用</string>
     <string name="ai_api_key_required">请先填写 API Key</string>
     <string name="ai_model_reasoning_only">仅返回推理内容：%s</string>
