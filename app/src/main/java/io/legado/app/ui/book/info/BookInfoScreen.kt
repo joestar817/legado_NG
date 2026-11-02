@@ -17,6 +17,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -33,7 +34,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -44,7 +44,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,6 +64,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -252,11 +252,6 @@ internal fun BookInfoScreen(
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     NgWindowLiquidGlassBackdropHost(
         modifier = Modifier.fillMaxSize(),
-        backgroundOverlay = if (isLandscape) {
-            Color(NgTheme.colors.background)
-        } else {
-            Color.Transparent
-        },
     ) {
         if (isLandscape) {
             BookInfoLandscape(state = state, introView = introView, onEvent = onEvent)
@@ -325,7 +320,7 @@ private fun BookInfoPortrait(
                 }
             }
         }
-        BookInfoBottomActions(state = state, isLandscape = false, onEvent = onEvent)
+        BookInfoBottomActions(state = state, onEvent = onEvent)
     }
 }
 
@@ -341,57 +336,59 @@ private fun BookInfoLandscape(
         leftState.scrollToItem(0)
         rightState.scrollToItem(0)
     }
-    Column(modifier = Modifier.fillMaxSize()) {
-        BookInfoTopBar(state = state, onEvent = onEvent)
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(NgTheme.colors.background)),
-        ) {
-            LazyColumn(
-                state = leftState,
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val contentWidth = maxWidth.coerceAtMost(1280.dp)
+        val horizontalPadding = if (contentWidth >= 840.dp) 24.dp else 16.dp
+        val paneSpacing = if (contentWidth >= 840.dp) 20.dp else 16.dp
+        val paneWidth = (contentWidth - horizontalPadding * 2 - paneSpacing).coerceAtLeast(0.dp)
+        val summaryWidth = (paneWidth * 0.38f)
+            .coerceIn(280.dp, 400.dp)
+            .coerceAtMost(paneWidth * 0.46f)
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            BookInfoTopBar(state = state, onEvent = onEvent)
+            Row(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                state.book?.let { book ->
-                    item(key = "landCover") {
-                        BookInfoLandscapeHeader(state = state, book = book, onEvent = onEvent)
-                    }
-                    item(key = "landMeta") {
-                        BookInfoLandscapeMeta(state = state, onEvent = onEvent)
-                    }
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .padding(vertical = 16.dp)
-                    .width(1.dp)
-                    .background(colorResource(R.color.bg_divider_line)),
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1.5f)
-                    .fillMaxHeight(),
+                    .width(contentWidth)
+                    .align(Alignment.CenterHorizontally)
+                    .padding(
+                        start = horizontalPadding,
+                        top = 12.dp,
+                        end = horizontalPadding,
+                        bottom = 8.dp,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(paneSpacing),
             ) {
                 LazyColumn(
+                    state = leftState,
+                    modifier = Modifier.width(summaryWidth).fillMaxHeight(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    state.book?.let { book ->
+                        item(key = "landCover") {
+                            BookInfoHeroCard(
+                                state = state,
+                                book = book,
+                                onEvent = onEvent,
+                                variant = BookInfoHeroVariant.LANDSCAPE,
+                            )
+                        }
+                        item(key = "landMeta") {
+                            BookInfoMetaCard(state = state, onEvent = onEvent)
+                        }
+                    }
+                }
+                LazyColumn(
                     state = rightState,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 16.dp,
-                        top = 8.dp,
-                        end = 16.dp,
-                        bottom = 12.dp,
-                    ),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     state.book?.let {
                         item(key = "landIntro") {
-                            BookInfoIntro(state = state, introView = introView, withSurface = false)
+                            BookInfoIntro(state = state, introView = introView, withSurface = true)
                         }
                         if (state.charactersVisible) {
                             item(key = "landCharacters") {
@@ -405,8 +402,13 @@ private fun BookInfoLandscape(
                         }
                     }
                 }
-                BookInfoBottomActions(state = state, isLandscape = true, onEvent = onEvent)
             }
+            BookInfoBottomActions(
+                state = state,
+                onEvent = onEvent,
+                modifier = Modifier.width(contentWidth).align(Alignment.CenterHorizontally),
+                horizontalPadding = horizontalPadding,
+            )
         }
     }
 }
@@ -579,12 +581,16 @@ private fun BookInfoToolbarIcon(
     }
 }
 
+private enum class BookInfoHeroVariant { PORTRAIT, LANDSCAPE }
+
 @Composable
 private fun BookInfoHeroCard(
     state: BookInfoUiState,
     book: Book,
     onEvent: (BookInfoUiEvent) -> Unit,
+    variant: BookInfoHeroVariant = BookInfoHeroVariant.PORTRAIT,
 ) {
+    val landscape = variant == BookInfoHeroVariant.LANDSCAPE
     BookInfoCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             NgBookCover(
@@ -593,7 +599,10 @@ private fun BookInfoHeroCard(
                 contentDescription = stringResource(R.string.img_cover),
                 revision = state.coverRevision,
                 modifier = Modifier
-                    .size(width = 78.dp, height = 104.dp)
+                    .size(
+                        width = if (landscape) 96.dp else 78.dp,
+                        height = if (landscape) 128.dp else 104.dp,
+                    )
                     .combinedClickable(
                         onClick = { onEvent(BookInfoUiEvent.CoverClick) },
                         onLongClick = { onEvent(BookInfoUiEvent.CoverLongClick) },
@@ -605,16 +614,17 @@ private fun BookInfoHeroCard(
                     text = book.name,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .basicMarquee()
+                        .then(if (landscape) Modifier else Modifier.basicMarquee())
                         .combinedClickable(
                             onClick = { onEvent(BookInfoUiEvent.NameClick) },
                             onLongClick = { onEvent(BookInfoUiEvent.NameLongClick) },
                         ),
                     color = colorResource(R.color.primaryText),
-                    fontSize = 17.sp,
-                    lineHeight = 22.sp,
+                    fontSize = if (landscape) 18.sp else 17.sp,
+                    lineHeight = if (landscape) 24.sp else 22.sp,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    maxLines = if (landscape) 2 else 1,
+                    overflow = if (landscape) TextOverflow.Ellipsis else TextOverflow.Clip,
                 )
                 Text(
                     text = book.getRealAuthor(),
@@ -634,65 +644,6 @@ private fun BookInfoHeroCard(
                 BookInfoTags(tags = state.tags, onEvent = onEvent)
             }
         }
-    }
-}
-
-@Composable
-private fun BookInfoLandscapeHeader(
-    state: BookInfoUiState,
-    book: Book,
-    onEvent: (BookInfoUiEvent) -> Unit,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(
-            shape = RoundedCornerShape(5.dp),
-            color = Color(NgTheme.colors.background),
-            shadowElevation = 8.dp,
-        ) {
-            NgBookCover(
-                book = book,
-                coverRadius = 5,
-                contentDescription = stringResource(R.string.img_cover),
-                revision = state.coverRevision,
-                modifier = Modifier
-                    .size(width = 165.dp, height = 240.dp)
-                    .combinedClickable(
-                        onClick = { onEvent(BookInfoUiEvent.CoverClick) },
-                        onLongClick = { onEvent(BookInfoUiEvent.CoverLongClick) },
-                    ),
-            )
-        }
-        Text(
-            text = book.name,
-            modifier = Modifier
-                .padding(top = 8.dp)
-                .widthIn(max = 260.dp)
-                .basicMarquee()
-                .combinedClickable(
-                    onClick = { onEvent(BookInfoUiEvent.NameClick) },
-                    onLongClick = { onEvent(BookInfoUiEvent.NameLongClick) },
-                ),
-            color = colorResource(R.color.primaryText),
-            fontSize = 20.sp,
-            lineHeight = 25.sp,
-            maxLines = 1,
-        )
-        Text(
-            text = book.getRealAuthor(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp, bottom = 12.dp)
-                .combinedClickable(
-                    onClick = { onEvent(BookInfoUiEvent.AuthorClick) },
-                    onLongClick = { onEvent(BookInfoUiEvent.AuthorLongClick) },
-                ),
-            color = colorResource(R.color.tv_text_summary),
-            fontSize = 14.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        BookInfoTags(tags = state.tags, onEvent = onEvent)
     }
 }
 
@@ -744,16 +695,6 @@ private fun BookInfoMetaCard(
             bottom = 12.dp,
         ),
     ) {
-        BookInfoMetaRows(state = state, onEvent = onEvent)
-    }
-}
-
-@Composable
-private fun BookInfoLandscapeMeta(
-    state: BookInfoUiState,
-    onEvent: (BookInfoUiEvent) -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
         BookInfoMetaRows(state = state, onEvent = onEvent)
     }
 }
@@ -1241,34 +1182,22 @@ private fun BookInfoOtherWorksMessage(text: String) {
 @Composable
 private fun BookInfoBottomActions(
     state: BookInfoUiState,
-    isLandscape: Boolean,
     onEvent: (BookInfoUiEvent) -> Unit,
+    modifier: Modifier = Modifier,
+    horizontalPadding: Dp = 16.dp,
 ) {
-    val surfaceVariant = if (isLandscape) {
-        NgActionBarButtonSurfaceVariant.THEMED
-    } else {
-        NgActionBarButtonSurfaceVariant.LIGHT_GLASS
-    }
+    val surfaceVariant = NgActionBarButtonSurfaceVariant.LIGHT_GLASS
     val secondarySurfaceVariant = if (NgTheme.snapshot.isDark) {
         NgActionBarButtonSurfaceVariant.THEMED_HIGH_CONTRAST
     } else {
         surfaceVariant
     }
-    val barModifier = if (isLandscape) {
-        Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .height(44.dp)
-            .background(colorResource(R.color.background_menu))
-    } else {
-        Modifier
+    Row(
+        modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .height(58.dp)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    }
-    Row(
-        modifier = barModifier,
+            .padding(horizontal = horizontalPadding, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
