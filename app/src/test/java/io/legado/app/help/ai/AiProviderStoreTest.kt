@@ -4,6 +4,9 @@ import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.legado.app.constant.PreferKey
+import io.legado.app.ui.config.displayModels
+import io.legado.app.ui.config.effectiveAvailableModelIds
+import io.legado.app.ui.config.safeId
 import io.legado.app.utils.GSON
 import io.legado.app.utils.defaultSharedPreferences
 import org.junit.Assert.assertEquals
@@ -97,6 +100,41 @@ class AiProviderStoreTest {
             assertEquals(listOf("custom-model"), reset.models.map { it.id })
             assertEquals(listOf("custom-model"), reset.availableModelIds)
             assertTrue(reset.availableModelSelectionInitialized)
+            assertEquals(listOf("custom-model"), reset.displayModels().map { it.safeId() })
+            assertEquals(listOf("custom-model"), reset.effectiveAvailableModelIds())
+        }
+    }
+
+    @Test
+    fun `reset custom provider keeps models and selected model`() {
+        withRestoredProviders {
+            preferences().edit().remove(PreferKey.aiProvidersJson).commit()
+            val custom = AiProviderStore.createCustomProvider(AiProviderType.OPENAI)
+            AiProviderStore.saveProvider(
+                custom.copy(
+                    apiKey = "secret",
+                    enabled = false,
+                    model = "custom-model",
+                    models = listOf(AiModel("custom-model")),
+                    availableModelIds = listOf("custom-model"),
+                    availableModelSelectionInitialized = true
+                )
+            )
+
+            val reset = requireNotNull(AiProviderStore.resetProvider(custom.id))
+
+            assertEquals("secret", reset.apiKey)
+            assertFalse(reset.enabled)
+            assertEquals("custom-model", reset.model)
+            assertEquals(listOf("custom-model"), reset.displayModels().map { it.safeId() })
+            assertEquals(listOf("custom-model"), reset.effectiveAvailableModelIds())
+        }
+    }
+
+    @Test
+    fun `reset unknown provider returns null`() {
+        withRestoredProviders {
+            org.junit.Assert.assertNull(AiProviderStore.resetProvider("missing-provider"))
         }
     }
 
