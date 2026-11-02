@@ -64,7 +64,15 @@
     <string name="book_other_works">Other works</string>
     <string name="book_info_play">Play</string>
     <string name="auto_load_book_other_works">Load related</string>
-    <string name="book_info_menu_book_management">Book management</string>
+    <string name="book_info_settings">Book settings</string>
+    <string name="book_info_settings_book">This book</string>
+    <string name="book_info_settings_general">All book details</string>
+    <string name="book_info_settings_variables">Variables</string>
+    <string name="book_info_settings_source_shared">Shared by this source</string>
+    <string name="book_info_delete_confirmation">Confirm before deleting</string>
+    <string name="book_info_auto_load_related">Auto-load other works</string>
+    <string name="ng_form_row_expanded">Expanded</string>
+    <string name="ng_form_row_collapsed">Collapsed</string>
     <string name="book_info_menu_source_and_links">Source and links</string>
     <string name="book_info_menu_data_and_diagnostics">Data and diagnostics</string>
     <string name="book_other_works_idle">Tap refresh to search this author\'s other books.</string>

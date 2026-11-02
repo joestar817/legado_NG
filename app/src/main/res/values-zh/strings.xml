@@ -62,7 +62,15 @@
     <string name="book_other_works">其它作品</string>
     <string name="book_info_play">播放</string>
     <string name="auto_load_book_other_works">加载相关</string>
-    <string name="book_info_menu_book_management">书籍管理</string>
+    <string name="book_info_settings">书籍设置</string>
+    <string name="book_info_settings_book">本书设置</string>
+    <string name="book_info_settings_general">详情页通用</string>
+    <string name="book_info_settings_variables">变量设置</string>
+    <string name="book_info_settings_source_shared">同书源共用</string>
+    <string name="book_info_delete_confirmation">删除前确认</string>
+    <string name="book_info_auto_load_related">自动加载其他作品</string>
+    <string name="ng_form_row_expanded">已展开</string>
+    <string name="ng_form_row_collapsed">已折叠</string>
     <string name="book_info_menu_source_and_links">书源与链接</string>
     <string name="book_info_menu_data_and_diagnostics">数据与诊断</string>
     <string name="book_other_works_idle">点击右侧刷新，查找该作者的其它作品。</string>

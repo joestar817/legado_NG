@@ -48,6 +48,8 @@
 | 短抽屉选择面板（Trial） | `NgDrawerDragHandle(COMPACT)` + `NgCompactDrawerHeader` + `NgCompactDrawerSelectionPanel` | 书架移动到分组 | 顶部使用 12dp 公共紧凑提示线，标题在 38dp 标题栏中严格居中；所有选项共享单个中性卡面，52dp 行高、无分隔线、无独立卡片和取消按钮；业务页面只提供数据与点击事件 |
 | 少量互斥选项卡（Trial） | `NgChoiceCard` | 书架管理导出格式 | 两到三个互斥选项使用并列卡片表达，整卡可点并保留明确选中反馈；业务页面只传标题、摘要、状态和事件，不单独手搓卡面 |
 | 紧凑展开设置项（Trial） | `NgExpandableSettingsItem(COMPACT)` | 书架管理导出高级设置 | 折叠时只保留单行标题、摘要和箭头；展开后承载低频格式设置，不把高级选项平铺到主流程 |
+| 连续表单展开行（Trial） | `NgFormExpandableRow` | 书籍详情变量编辑 | 复用导航行的 44dp 行高、14sp 标题和 20dp 箭头；上下箭头表示展开状态，内容在同一分组卡片内向下展开、内缩 14dp，不叠加独立设置卡片；变量输入复用原下划线编辑内容，统一由抽屉“完成”提交，仍待实机验收 |
+| 抽屉变量输入与说明（Trial） | `NgFormField(DRAWER_UNDERLINE)` + `NgInfoTooltipButton` | 书籍详情变量编辑 | 72dp 下划线输入保留原单行编辑行为；信息图标位于输入区右下角、独立占位，点击显示可滚动／选择文字的说明气泡，点击外部或返回关闭；默认变量弹窗继续使用原32dp输入与下方说明，不改公共默认值，仍待实机验收 |
 | 可展开选择列表（Trial） | `NgExpandableSectionHeader` + `NgExpandableChildGroup` + `NgExpandableChildRow` | AI 功能选择 | 分组标题卡与展开内容统一使用 `ng_surface_card` 亮白承载面；右侧计数列只显示数量，写操作等风险含义放进说明文字，不得用含义不清的单字 Badge 挤乱数字对齐 |
 | 状态 Tag | `NgStatusTagView` | Provider、TTS 引擎、Prompt／Skill | 标题下状态使用 24dp `REGULAR`；标题行右侧短元数据使用 20dp `COMPACT`，不混用尺寸职责 |
 
@@ -216,6 +218,7 @@ Reading NG 不限定只能使用 Material Symbols Rounded。图标可以来自�
 统一要求：
 
 - 同一组件内使用相同的视觉尺寸、viewBox、留白和线宽；来源不同不能导致图标忽大忽小。
+- 书籍详情更多菜单的主项与子项沿用 20dp 图标槽，图形在 24 单位视口内按最长边 18 单位等比居中；保留原图形比例，分享、置顶等内部留白差异在菜单专用资源中校准，不改其它页面使用的原资源。
 - 工具栏图标使用 48dp 点击区域；常规内容图标使用统一容器，当前设置入口基准为 36dp 容器和 7dp 内边距。
 - 主题设置抽屉的恢复、分享、保存等头部操作统一使用 44／48dp 触控区、36dp 可见圆形承载面和 20dp 图标；承载色沿用听书播放器顶部按钮的 `#88FFFFF9` 半透明暖白，不使用 `surfaceContainer` 灰底。
 - Provider Logo 保留品牌原色，不强制套主题 tint；通用操作图标跟随 `ng_on_surface` 或当前主题强调色。

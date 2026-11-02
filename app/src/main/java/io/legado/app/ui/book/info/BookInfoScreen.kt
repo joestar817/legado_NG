@@ -77,7 +77,6 @@ import io.legado.app.data.entities.SearchBook
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.menuCapabilities
-import io.legado.app.help.book.isLocalTxt
 import io.legado.app.ui.book.search.SearchResultCard
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
@@ -196,6 +195,7 @@ internal enum class BookInfoMenuAction(val itemId: Int) {
     Log(0x730F),
     NetworkLog(0x7310),
     AutoLoadOtherWorks(0x7311),
+    Settings(0x7312),
     ;
 
     companion object {
@@ -474,58 +474,21 @@ private fun BookInfoMoreMenu(
     }
 }
 
-@Composable
-private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMenuItem> {
+internal fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMenuItem> {
     val book = state.book
     return buildList {
         if (state.inBookshelf) {
-            add(BookInfoMenuAction.Edit.item(R.string.edit, R.drawable.ic_edit))
+            add(BookInfoMenuAction.Edit.item(R.string.edit, R.drawable.ic_bgm_menu_edit))
         }
-        add(BookInfoMenuAction.Refresh.item(R.string.refresh, R.drawable.ic_refresh_black_24dp))
-        add(BookInfoMenuAction.Share.item(R.string.share, R.drawable.ic_share))
+        add(BookInfoMenuAction.Refresh.item(R.string.refresh, R.drawable.ic_bgm_menu_refresh))
+        add(BookInfoMenuAction.Share.item(R.string.share, R.drawable.ic_book_info_menu_share))
+        add(BookInfoMenuAction.Top.item(R.string.to_top, R.drawable.ic_book_info_menu_top))
         add(
             NgExpandableActionMenuItem(
-                itemId = MENU_BOOK_MANAGEMENT,
-                titleRes = R.string.book_info_menu_book_management,
-                iconRes = R.drawable.ic_settings,
+                itemId = BookInfoMenuAction.Settings.itemId,
+                titleRes = R.string.book_info_settings,
+                iconRes = R.drawable.ic_book_info_menu_settings,
                 dividerBefore = true,
-                children = buildList {
-                    add(BookInfoMenuAction.Top.item(R.string.to_top, R.drawable.ic_arrow_drop_up))
-                    if (state.sourceAvailable && book?.menuCapabilities?.update == true) {
-                        add(
-                            BookInfoMenuAction.CanUpdate.item(
-                                R.string.allow_update,
-                                R.drawable.ic_update,
-                                checked = book?.canUpdate ?: true,
-                            ),
-                        )
-                    }
-                    if (book?.isLocalTxt == true) {
-                        add(
-                            BookInfoMenuAction.SplitLongChapter.item(
-                                R.string.split_long_chapter,
-                                R.drawable.ic_chapter_list,
-                                checked = book.getSplitLongChapter(),
-                            ),
-                        )
-                    }
-                    add(
-                        BookInfoMenuAction.DeleteAlert.item(
-                            R.string.delete_alert,
-                            R.drawable.ic_outline_delete,
-                            checked = state.deleteAlertEnabled,
-                        ),
-                    )
-                    if (state.otherWorksVisible) {
-                        add(
-                            BookInfoMenuAction.AutoLoadOtherWorks.item(
-                                R.string.auto_load_book_other_works,
-                                R.drawable.ic_refresh_black_24dp,
-                                checked = state.autoLoadOtherWorks,
-                            ),
-                        )
-                    }
-                },
             ),
         )
         add(
@@ -535,32 +498,18 @@ private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMe
                 iconRes = R.drawable.ic_web_outline,
                 children = buildList {
                     if (state.loginAvailable) {
-                        add(BookInfoMenuAction.Login.item(R.string.login, R.drawable.ic_lock_outline))
-                    }
-                    if (state.sourceAvailable) {
-                        add(
-                            BookInfoMenuAction.SetSourceVariable.item(
-                                R.string.set_source_variable,
-                                R.drawable.ic_code,
-                            ),
-                        )
-                        add(
-                            BookInfoMenuAction.SetBookVariable.item(
-                                R.string.set_book_variable,
-                                R.drawable.ic_code,
-                            ),
-                        )
+                        add(BookInfoMenuAction.Login.item(R.string.login, R.drawable.ic_book_info_menu_login))
                     }
                     add(
                         BookInfoMenuAction.CopyBookUrl.item(
                             R.string.copy_book_url,
-                            R.drawable.ic_copy,
+                            R.drawable.ic_book_info_menu_copy,
                         ),
                     )
                     add(
                         BookInfoMenuAction.CopyTocUrl.item(
                             R.string.copy_toc_url,
-                            R.drawable.ic_copy,
+                            R.drawable.ic_book_info_menu_copy,
                         ),
                     )
                 },
@@ -576,14 +525,14 @@ private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMe
                         add(
                             BookInfoMenuAction.Upload.item(
                                 R.string.upload_to_remote,
-                                R.drawable.ic_outline_cloud_24,
+                                R.drawable.ic_book_info_menu_upload,
                             ),
                         )
                     }
                     add(
                         BookInfoMenuAction.ClearCache.item(
                             R.string.clear_cache,
-                            R.drawable.ic_clear_all,
+                            R.drawable.ic_book_info_menu_clear_cache,
                             enabled = state.hasClearableCache,
                         ),
                     )
@@ -591,7 +540,7 @@ private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMe
                     add(
                         BookInfoMenuAction.NetworkLog.item(
                             R.string.network_request_log,
-                            R.drawable.ic_network_check,
+                            R.drawable.ic_book_info_menu_network,
                         ),
                     )
                 },
@@ -1549,6 +1498,5 @@ private fun BookInfoUnsupportedFileDialog(
     }
 }
 
-private const val MENU_BOOK_MANAGEMENT = 0x7381
 private const val MENU_SOURCE_AND_LINKS = 0x7382
 private const val MENU_DATA_AND_DIAGNOSTICS = 0x7383

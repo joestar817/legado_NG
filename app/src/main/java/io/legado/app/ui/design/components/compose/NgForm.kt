@@ -1,5 +1,10 @@
 package io.legado.app.ui.design.components.compose
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +31,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -54,6 +62,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -333,6 +342,46 @@ fun NgFormNavigationRow(
             modifier = Modifier.size(20.dp),
             tint = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = contentAlpha),
         )
+    }
+}
+
+/** 连续表单内的展开行，复用导航行的密度与文字，不另铺设置卡片。 */
+@Composable
+fun NgFormExpandableRow(
+    title: String,
+    value: String,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val expansionState = stringResource(
+        if (expanded) R.string.ng_form_row_expanded else R.string.ng_form_row_collapsed,
+    )
+    Column(modifier = modifier.fillMaxWidth()) {
+        NgFormNavigationRow(
+            title = title,
+            value = value,
+            onClick = { onExpandedChange(!expanded) },
+            arrowIcon = rememberVectorPainter(
+                if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+            ),
+            enabled = enabled,
+            modifier = Modifier.semantics {
+                stateDescription = if (value.isBlank()) expansionState else "$value, $expansionState"
+            },
+        )
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
+                content = content,
+            )
+        }
     }
 }
 
@@ -878,6 +927,7 @@ enum class NgFormFieldVariant {
     INLINE_UNDERLINE,
     LABELED_UNDERLINE,
     DIALOG_UNDERLINE,
+    DRAWER_UNDERLINE,
 }
 
 /**
@@ -938,10 +988,12 @@ fun NgFormField(
     val compact = density == NgFormDensity.COMPACT
     val inlineUnderlined = variant == NgFormFieldVariant.INLINE_UNDERLINE
     val dialogUnderlined = variant == NgFormFieldVariant.DIALOG_UNDERLINE
-    val plainUnderlined = variant == NgFormFieldVariant.PLAIN_UNDERLINE || dialogUnderlined
+    val drawerUnderlined = variant == NgFormFieldVariant.DRAWER_UNDERLINE
+    val plainUnderlined = variant == NgFormFieldVariant.PLAIN_UNDERLINE || dialogUnderlined || drawerUnderlined
     val labeledUnderlined = variant == NgFormFieldVariant.LABELED_UNDERLINE
     val underlined = inlineUnderlined || plainUnderlined || labeledUnderlined
     val fieldHeight = when {
+        drawerUnderlined -> 72.dp
         dialogUnderlined -> 44.dp
         underlined || compact -> 32.dp
         else -> 34.dp
