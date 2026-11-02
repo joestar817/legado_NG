@@ -13,6 +13,7 @@ enum class TextSelectionBuiltInAction(val key: String, val menuId: Int, val titl
     HIGHLIGHT("highlight", R.id.menu_bookmark, R.string.text_highlight),
     SEARCH("search", R.id.menu_search_content, R.string.search),
     READ_ALOUD("read_aloud", R.id.menu_aloud, R.string.read_aloud),
+    CHARACTER_CARD("character_card", R.id.menu_character_card, R.string.create_character_card),
     DICTIONARY("dictionary", R.id.menu_dict, R.string.dict),
     BROWSER("browser", R.id.menu_browser, R.string.browser),
     SHARE("share", R.id.menu_share_str, R.string.share),
@@ -29,6 +30,8 @@ object TextSelectionActionOrder {
     fun load(): List<TextSelectionBuiltInAction> {
         val keys = appCtx.getPrefString(PREF_KEY).orEmpty().split(',')
         val saved = keys.mapNotNull { key -> TextSelectionBuiltInAction.entries.find { it.key == key } }
+        // No migration of previously saved orders: new actions simply append after
+        // the saved ones and users can reorder them in settings.
         return (saved + TextSelectionBuiltInAction.entries).distinct()
     }
 

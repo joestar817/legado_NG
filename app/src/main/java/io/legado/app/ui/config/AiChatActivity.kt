@@ -299,10 +299,12 @@ class AiChatActivity : AppCompatActivity() {
         const val EXTRA_LOADED_SKILL_IDS = "loaded_skill_ids"
         const val EXTRA_CONTEXT_ATTACHMENTS = "context_attachments"
         const val EXTRA_MODE_ENTRY_CONTEXT = "mode_entry_context"
+        const val EXTRA_INITIAL_INPUT = "initial_input"
         const val EXTRA_EXPAND_SUGGESTIONS = "expand_suggestions"
         const val ENTRY_BOOKSHELF = "bookshelf"
         const val ENTRY_BOOK_DETAIL = "book_detail"
         const val ENTRY_BOOK_SCAN = "book_scan"
+        const val ENTRY_TEXT_SELECTION = "text_selection"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -509,6 +511,12 @@ private fun AiChatRoute(onBack: () -> Unit) {
             ?.getStringArrayListExtra(AiChatActivity.EXTRA_LOADED_SKILL_IDS)
             .orEmpty()
     }
+    val initialInput = remember {
+        (context as? AiChatActivity)
+            ?.intent
+            ?.getStringExtra(AiChatActivity.EXTRA_INITIAL_INPUT)
+            .orEmpty()
+    }
     val preloadContextAttachments = remember {
         buildIntentContextInputAttachments(
             (context as? AiChatActivity)
@@ -581,7 +589,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
             }
         )
     }
-    var input by remember { mutableStateOf("") }
+    var input by remember { mutableStateOf(initialInput) }
     var sending by remember { mutableStateOf(false) }
     var sendingJob by remember { mutableStateOf<Job?>(null) }
     var activeLoadingMessageId by remember { mutableStateOf<String?>(null) }

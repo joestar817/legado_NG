@@ -2,6 +2,7 @@ package io.legado.app.help.ai.runtime
 
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import io.legado.app.help.ai.AiConfig
 
 internal data class MemoryFlushConfig(
     val watchTools: Set<String>,
@@ -122,6 +123,10 @@ private class MemoryFlushHook(
     private val pendingReceiptIds = linkedSetOf<String>()
 
     override fun onEvent(event: AgentHookEvent): AgentHookResult {
+        // AI memory can be disabled independently of the Skill. In that mode the
+        // agent_memory_* tools are no-ops, so enforcing pending receipts would block
+        // the turn forever and surface misleading warnings.
+        if (!AiConfig.memoryEnabled) return AgentHookResult.Continue
         if (event.phase == AgentHookPhase.TURN_RESUMED) {
             pendingReceiptIds.clear()
             pendingReceiptIds.addAll(event.pendingReceiptIds)

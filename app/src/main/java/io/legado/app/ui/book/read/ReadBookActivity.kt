@@ -80,6 +80,7 @@ import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.bookmark.BookmarkDialog
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.changesource.ChangeChapterSourceDialog
+import io.legado.app.ui.book.info.BookAiAssistantLauncher
 import io.legado.app.ui.book.info.BookInfoActivity
 import io.legado.app.ui.book.read.aloud.ReadAloudLauncher
 import io.legado.app.ui.book.read.aloud.ReadAloudMiniPlayer
@@ -934,6 +935,11 @@ class ReadBookActivity : BaseReadBookActivity(),
                 else -> speak(selectedText)
             }
 
+            R.id.menu_character_card -> {
+                startCharacterCardFromSelection()
+                return true
+            }
+
             R.id.menu_bookmark -> binding.readView.let {
                 val bookmark = it.createBookmark()
                 if (bookmark == null) {
@@ -989,6 +995,38 @@ class ReadBookActivity : BaseReadBookActivity(),
                 target.paragraphOffset, target.selectedTextPrefix,
             )
         )
+    }
+
+    private fun startCharacterCardFromSelection() {
+        val book = ReadBook.book
+        if (book == null) {
+            toastOnUi("未找到当前书籍")
+            return
+        }
+        val name = normalizeSelectedCharacterName(selectedText)
+        if (name == null) {
+            toastOnUi("请只选择一个角色名字")
+            return
+        }
+        BookAiAssistantLauncher.openCharacterCardFromSelection(
+            context = this,
+            book = book,
+            selectedName = name,
+            chapterIndex = ReadBook.durChapterIndex,
+            chapterTitle = ReadBook.curTextChapter?.title ?: book.durChapterTitle,
+        )
+    }
+
+    private fun normalizeSelectedCharacterName(text: String): String? {
+        val name = text.trim()
+            .trim(
+                '“', '”', '"', '‘', '’', '「', '」', '『', '』',
+                '（', '）', '(', ')', '【', '】', '[', ']'
+            )
+            .trim()
+        if (name.isBlank() || name.length > 24 || name.contains('\n')) return null
+        if (name.any { it in "，。！？；：、,.!?;:" }) return null
+        return name
     }
 
     override suspend fun onTextHighlightCreate(): Bookmark? {
