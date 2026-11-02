@@ -83,6 +83,7 @@
     <string name="character_avatar_uri">Avatar URI</string>
     <string name="character_portrait_uri">Character portrait URI</string>
     <string name="character_image_prompt">Image generation prompt</string>
+    <string name="character_image_prompt_hint">Used for AI image generation; optional</string>
     <string name="character_gender_male">Male</string>
     <string name="character_gender_female">Female</string>
     <string name="character_gender_unknown">Unknown gender</string>
