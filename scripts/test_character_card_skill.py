@@ -19,7 +19,7 @@ class CharacterCardSkillPolicyTest(unittest.TestCase):
         cls.skill = SKILL_PATH.read_text(encoding="utf-8")
 
     def test_apply_batches_all_character_writes_before_results(self):
-        self.assertIn("version: 27", self.skill)
+        self.assertIn("version: 28", self.skill)
         self.assertIn("同一次助手工具调用批次中一次性发出", self.skill)
         self.assertIn("只进行一次写操作确认", self.skill)
 
@@ -36,6 +36,14 @@ class CharacterCardSkillPolicyTest(unittest.TestCase):
         self.assertIn("不再询问", self.skill)
         self.assertIn("默认使用当前书", self.skill)
         self.assertIn("更新已有", self.skill)
+
+    def test_same_name_updates_existing_card_without_duplicates(self):
+        self.assertIn("更新已有 / 跳过", self.skill)
+        self.assertNotIn("新建为不同角色", self.skill)
+        self.assertIn("更新时复用已有 `id`", self.skill)
+        self.assertIn("用新证据更新 / 跳过", self.skill)
+        self.assertIn("同一作品里的同名不同人物暂不支持分别建卡", self.skill)
+        self.assertIn("`workKey + name`", self.skill)
 
     def test_discovery_mode_is_explicit(self):
         self.assertIn("发现模式（discovery）", self.skill)

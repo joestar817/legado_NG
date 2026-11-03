@@ -3,7 +3,7 @@ id: character_card_generate
 name: 角色卡生成
 description: 基于指定书籍和章节范围采样阅读原文，生成主要角色的待审核角色卡。
 scope: AGENT
-version: 27
+version: 28
 suggestions: 给当前书生成角色卡|从上次继续扫描角色卡|指定章节范围生成角色卡
 mcp_capabilities: bookshelf.query|bookshelf.read_content|bookshelf.search_content|bookshelf.cache_status|bookshelf.manage_characters|ai.memory
 conversation_group: 书籍相关
@@ -42,7 +42,7 @@ hook.core.memory_flush: {"watch_tools":["bookshelf_text_window_get","bookshelf_c
 - 目标角色固定为该角色，只生成 1 张卡；除非用户明确要求“顺便分析其他角色”，否则不扩展。
 - 不再询问“开头重扫 / 当前附近 / 指定范围”，默认使用当前书**已缓存章节**。
 - 默认 `balanced`；用户明确要求快速/深入时才切换。
-- 先查已有角色卡：同名或别名命中时，进入“更新已有 / 跳过 / 新建为不同角色”确认，不直接新建重复卡。
+- 先查已有角色卡：同名或别名命中时，进入“更新已有 / 跳过”确认，不直接新建重复卡；更新时复用已有 `id`。
 - 搜索优先：`bookshelf_text_search` 一次传入主名 + 全部别名；命中章节前后各补 1 章，只读这些连续窗口。
 - 找不到命中时，先说明“已缓存章节中未找到该名字”，再建议补充别名、扩大缓存或指定范围；不要猜。
 
@@ -231,8 +231,9 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 预览前用 `bookshelf_character_list` 比对已有角色卡：
 
 - 同名或别名命中 → 标记“更新已有”，应用时传已有卡片 `id`。
-- 同名但证据冲突 → 让用户选择“更新 / 跳过 / 新建为不同角色”。
+- 同名但证据冲突 → 让用户选择“用新证据更新 / 跳过”；更新时同样复用已有 `id`。
 - 没有命中 → 标记“新建”。
+- 同一作品里的同名不同人物暂不支持分别建卡：工具按 `workKey + name` 匹配，传 `id=0` 或省略 `id` 仍会更新原卡。遇到这种情况先说明限制，不要用别名绕过或重复写入。
 
 ### 5.2 预览与应用之间的硬门禁
 
@@ -292,7 +293,7 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 }
 ```
 
-- `id`：更新已有卡片时必传；新建时为 0 或省略。
+- `id`：更新已有卡片时必传；新建时省略或传 0，但同一作品已有同名卡时仍会更新原卡。
 - `name`：正文中最稳定、最明确的姓名；不要把别名当主名。
 - `intro`：人物介绍，长度不限；只写正文支持或高度稳定的信息，不为凑长度编造。
 - `avatar_uri`/`portrait_uri`：默认 null，除非用户或工具明确提供 URI。
