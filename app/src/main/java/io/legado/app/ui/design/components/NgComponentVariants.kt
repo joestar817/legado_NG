@@ -68,6 +68,7 @@ enum class NgManagementListCardVariant {
     DEFAULT,
     COMPACT_GRID,
     MULTILINE_SUMMARY,
+    PROVIDER_TWO_ROW,
 }
 
 enum class NgFilterChipGroupVariant {

@@ -18,7 +18,6 @@ import io.legado.app.help.ai.AiChatEntryStyle
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsIcon
 import io.legado.app.ui.design.components.compose.NgSettingsItem
-import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
 
 internal data class AiConfigMenuScreenState(
     val providerSummary: String = "",
@@ -40,9 +39,8 @@ internal fun AiConfigMenuScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
-            .padding(top = 16.dp)
+            .padding(top = 8.dp)
     ) {
-        NgSettingsSectionLabel(stringResource(R.string.ai_settings_section_features))
         NgSettingsGroup {
             AiConfigMenuEntry(
                 title = stringResource(R.string.ai_provider_menu),

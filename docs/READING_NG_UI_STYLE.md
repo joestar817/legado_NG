@@ -52,6 +52,7 @@
 | 抽屉变量输入与说明（Trial） | `NgFormField(DRAWER_UNDERLINE)` + `NgInfoTooltipButton` | 书籍详情变量编辑 | 72dp 下划线输入保留原单行编辑行为；信息图标位于输入区右下角、独立占位，点击显示可滚动／选择文字的说明气泡，点击外部或返回关闭；默认变量弹窗继续使用原32dp输入与下方说明，不改公共默认值，仍待实机验收 |
 | 可展开选择列表（Trial） | `NgExpandableSectionHeader` + `NgExpandableChildGroup` + `NgExpandableChildRow` | AI 功能选择 | 分组标题卡与展开内容统一使用 `ng_surface_card` 亮白承载面；右侧计数列只显示数量，写操作等风险含义放进说明文字，不得用含义不清的单字 Badge 挤乱数字对齐 |
 | 状态 Tag | `NgStatusTagView` | Provider、TTS 引擎、Prompt／Skill | 标题下状态使用 24dp `REGULAR`；标题行右侧短元数据使用 20dp `COMPACT`，不混用尺寸职责 |
+| 提供商双行 Tag | `NgManagementListCard(PROVIDER_TWO_ROW)` + `summaryTag` | AI 提供商列表 | 所有提供商统一使用有底色的状态Tag，复用20dp高、11sp字号、单侧8dp内边距的COMPACT样式；名称字号不变，名称先按自然宽度排版，状态Tag使用剩余宽度，名称/Tag及Tag之间间距4dp。首行仍保留24dp布局高度，蓝色20dp COMPACT域名Tag在第二行，行距6dp，上下内边距各10dp，保持原70dp两行高度及36dp拖动槽；不因Tag缩小压低卡片。无独立域名摘要（例如自定义名称即host）的项仍名称首行、状态Tag第二行，host不重复展示。状态Tag单个最多120dp，空间不足时优先省略状态文字；极长名称仍受整行宽度限制。移除Xiaomi文字样式例外；其它管理卡与Tag默认尺寸不变。菜单保留原“显示已禁用”即时勾选切换 |
 
 以上能力已经可以在同类页面复用，但仍按页面逐项验收。表单字段、Dialog、图片和通用状态页尚未完成同等级验收，不得因已存在类名或 Catalog 示例就标记为全局稳定。
 

@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -141,6 +142,7 @@ private fun AiProviderConfigTab(
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
+    val focusManager = LocalFocusManager.current
     Column(
         modifier = modifier
             .fillMaxWidth(),
@@ -153,6 +155,16 @@ private fun AiProviderConfigTab(
                 .padding(horizontal = 16.dp),
             titleLeadingContent = {
                 ProviderToolbarIcon(state.providerIconRes)
+            },
+            trailingContent = {
+                NgFloatingToolbarActionButton(
+                    iconRes = R.drawable.ic_restore,
+                    contentDescription = stringResource(R.string.ai_provider_reset),
+                    onClick = {
+                        focusManager.clearFocus()
+                        onFormAction(AiProviderFormScreenAction.ResetRequested)
+                    },
+                )
             },
         )
         Column(

@@ -321,15 +321,6 @@ fun AiProviderFormScreen(
                     appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
                 )
             }
-            NgFormActionButton(
-                text = stringResource(R.string.ai_provider_reset),
-                onClick = {
-                    focusManager.clearFocus()
-                    onAction(AiProviderFormScreenAction.ResetRequested)
-                },
-                modifier = Modifier.fillMaxWidth(),
-                appearance = NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS,
-            )
             if (!state.builtIn) {
                 NgFormActionButton(
                     text = stringResource(R.string.ai_delete_provider),
