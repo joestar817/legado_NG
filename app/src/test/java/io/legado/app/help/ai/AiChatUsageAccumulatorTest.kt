@@ -127,4 +127,76 @@ class AiChatUsageAccumulatorTest {
         assertEquals(0, result?.completionTokens)
         assertEquals(0, result?.totalTokens)
     }
+
+    @Test
+    fun totalOnlyCallMarksPromptAndCompletionSubtotalsAsPartial() {
+        val accumulator = AiChatUsageAccumulator()
+        accumulator.add(AiChatUsage(100, 20, 120))
+        accumulator.add(AiChatUsage(null, null, 230))
+
+        assertEquals(AiChatUsage(100, 20, 350), accumulator.result())
+        assertEquals(0, accumulator.callsWithoutUsage)
+        assertTrue(accumulator.hasPartialCoverage)
+    }
+
+    @Test
+    fun promptOnlyCallMarksCompletionAndTotalSubtotalsAsPartial() {
+        val accumulator = AiChatUsageAccumulator()
+        accumulator.add(AiChatUsage(100, 20, 120))
+        accumulator.add(AiChatUsage(200, null, null))
+
+        assertEquals(AiChatUsage(300, 20, 120), accumulator.result())
+        assertTrue(accumulator.hasPartialCoverage)
+    }
+
+    @Test
+    fun complementaryMissingFieldsDoNotInventACallTotal() {
+        val accumulator = AiChatUsageAccumulator()
+        accumulator.add(AiChatUsage(100, null, null))
+        accumulator.add(AiChatUsage(null, 20, null))
+
+        assertEquals(AiChatUsage(100, 20, null), accumulator.result())
+        assertTrue(accumulator.hasPartialCoverage)
+    }
+
+    @Test
+    fun zeroSubtotalIsPartialWhenAnotherCallOnlyReportsTotal() {
+        val accumulator = AiChatUsageAccumulator()
+        accumulator.add(AiChatUsage(0, 0, 0))
+        accumulator.add(AiChatUsage(null, null, 120))
+
+        assertEquals(AiChatUsage(0, 0, 120), accumulator.result())
+        assertTrue(accumulator.hasPartialCoverage)
+    }
+
+    @Test
+    fun laterCompleteUsageDoesNotEraseEarlierMissingFields() {
+        val accumulator = AiChatUsageAccumulator()
+        accumulator.add(AiChatUsage(null, null, 230))
+        assertFalse(accumulator.hasPartialCoverage)
+        accumulator.add(AiChatUsage(100, 20, 120))
+
+        assertEquals(AiChatUsage(100, 20, 350), accumulator.result())
+        assertTrue(accumulator.hasPartialCoverage)
+    }
+
+    @Test
+    fun consistentlyTotalOnlyUsageIsCompleteForTheReportedField() {
+        val accumulator = AiChatUsageAccumulator()
+        accumulator.add(AiChatUsage(null, null, 120))
+        accumulator.add(AiChatUsage(null, null, 230))
+
+        assertEquals(AiChatUsage(null, null, 350), accumulator.result())
+        assertFalse(accumulator.hasPartialCoverage)
+    }
+
+    @Test
+    fun providerTotalAndDerivedTotalAreBothFullyCovered() {
+        val accumulator = AiChatUsageAccumulator()
+        accumulator.add(AiChatUsage(100, 20, 150))
+        accumulator.add(AiChatUsage(50, 10, null))
+
+        assertEquals(AiChatUsage(150, 30, 210), accumulator.result())
+        assertFalse(accumulator.hasPartialCoverage)
+    }
 }

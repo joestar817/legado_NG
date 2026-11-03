@@ -202,7 +202,6 @@ class AiChatClient {
             )
         ))
         val toolTrace = mutableListOf<String>()
-        var lastUsage: AiChatUsage? = null
         val usageAccumulator = AiChatUsageAccumulator()
         var lastModel: String? = null
         var lastReasoning: String? = null
@@ -319,7 +318,6 @@ class AiChatClient {
                 throw error
             }
             lastModel = completion.model
-            lastUsage = completion.usage
             usageAccumulator.add(completion.usage)
             lastReasoning = completion.reasoning
             lastFinishReason = completion.finishReason
@@ -414,13 +412,12 @@ class AiChatClient {
                     reasoning = lastReasoning,
                     model = lastModel ?: model.id,
                     finishReason = lastFinishReason,
-                    usage = usageAccumulator.result() ?: lastUsage,
+                    usage = usageAccumulator.result(),
                     toolTrace = toolTrace,
                     toolReceipts = toolReceipts.toList(),
                     memoryTrace = memoryTrace.toList(),
                     warnings = if (usageAccumulator.hasPartialCoverage) {
-                        warnings + "本轮有 ${usageAccumulator.callsWithoutUsage} 次模型调用未返回用量，" +
-                            "token 统计仅包含已返回的部分"
+                        warnings + "本轮用量统计不完整，仅包含已返回的部分"
                     } else {
                         warnings
                     },
@@ -1783,7 +1780,8 @@ data class AiMemoryTraceItem(
  * Accumulates provider usage across every model call in one turn.
  *
  * Usage fields are tracked independently because providers may report only some of
- * them. A missing field means "unknown", not zero: it stays `null` in the result.
+ * them. Fields never reported stay `null`; partially reported fields retain their
+ * known subtotal and set [hasPartialCoverage] so the caller can label it.
  * `total_tokens` uses the provider-reported value when present; otherwise it is
  * derived per call from prompt + completion only when both are known.
  */
@@ -1791,9 +1789,9 @@ internal class AiChatUsageAccumulator {
     private var promptTokens = 0
     private var completionTokens = 0
     private var totalTokens = 0
-    private var promptReported = false
-    private var completionReported = false
-    private var totalReported = false
+    private var promptReports = 0
+    private var completionReports = 0
+    private var totalReports = 0
 
     var callsWithUsage = 0
         private set
@@ -1801,9 +1799,14 @@ internal class AiChatUsageAccumulator {
     var callsWithoutUsage = 0
         private set
 
-    /** True when at least one call reported usage and at least one did not. */
+    /** True when any reported field omits one or more model calls. */
     val hasPartialCoverage: Boolean
-        get() = callsWithUsage > 0 && callsWithoutUsage > 0
+        get() {
+            val callCount = callsWithUsage + callsWithoutUsage
+            return promptReports in 1 until callCount ||
+                completionReports in 1 until callCount ||
+                totalReports in 1 until callCount
+        }
 
     fun add(usage: AiChatUsage?) {
         val prompt = usage?.promptTokens
@@ -1815,11 +1818,11 @@ internal class AiChatUsageAccumulator {
         }
         callsWithUsage++
         if (prompt != null) {
-            promptReported = true
+            promptReports++
             promptTokens += prompt
         }
         if (completion != null) {
-            completionReported = true
+            completionReports++
             completionTokens += completion
         }
         val callTotal = reportedTotal ?: if (prompt != null && completion != null) {
@@ -1828,7 +1831,7 @@ internal class AiChatUsageAccumulator {
             null
         }
         if (callTotal != null) {
-            totalReported = true
+            totalReports++
             totalTokens += callTotal
         }
     }
@@ -1836,9 +1839,9 @@ internal class AiChatUsageAccumulator {
     fun result(): AiChatUsage? {
         if (callsWithUsage == 0) return null
         return AiChatUsage(
-            promptTokens = promptTokens.takeIf { promptReported },
-            completionTokens = completionTokens.takeIf { completionReported },
-            totalTokens = totalTokens.takeIf { totalReported }
+            promptTokens = promptTokens.takeIf { promptReports > 0 },
+            completionTokens = completionTokens.takeIf { completionReports > 0 },
+            totalTokens = totalTokens.takeIf { totalReports > 0 }
         )
     }
 }
