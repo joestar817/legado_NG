@@ -3,7 +3,7 @@ id: character_card_generate
 name: 角色卡生成
 description: 基于指定书籍和章节范围采样阅读原文，生成主要角色的待审核角色卡。
 scope: AGENT
-version: 28
+version: 29
 suggestions: 给当前书生成角色卡|从上次继续扫描角色卡|指定章节范围生成角色卡
 mcp_capabilities: bookshelf.query|bookshelf.read_content|bookshelf.search_content|bookshelf.cache_status|bookshelf.manage_characters|ai.memory
 conversation_group: 书籍相关
@@ -129,7 +129,7 @@ deep 均匀窗口：`start_i = start + round(i*(rangeSize-8)/6)`，`i=0..6`。
 - 同一章节不要同时用 `bookshelf_text_window_get` 和 `bookshelf_chapter_snippets_get`；优先窗口，片段只用于核对同名/别名。每 4 个片段折算 1 章追读预算，单轮最多 5 个片段；片段和窗口的章节数合并计入追读预算。
 - 默认 `apply_replace=false`；用户明确要求按净化后文本搜索时才打开。
 - 范围默认当前书已缓存章节；已知范围时用 `start_chapter_index`/`end_chapter_index` 收窄。
-- 短别名是主名子串时会重复计数（例如“松浦”与“松浦源一郎”）。用 `chapter_indexes` 的并集判断章节覆盖，`total_matches` 只用于单别名内部排序；短姓氏/别名必须用片段或正文确认，不能只看计数。
+- 短别名是主名子串时会重复计数。用 `chapter_indexes` 的并集判断章节覆盖，`total_matches` 只用于单别名内部排序；短姓氏/别名必须用片段或正文确认，不能只看计数。
 - `missing_chapters` 大于 0 时说明覆盖不足；`has_more=true` 时用 `next_start_chapter_index` 继续，不要把一页当全书。
 - 搜索结果只用于选章；角色卡事实仍来自实际读取的连续正文。
 

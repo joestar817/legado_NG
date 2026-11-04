@@ -19,7 +19,7 @@ class CharacterCardSkillPolicyTest(unittest.TestCase):
         cls.skill = SKILL_PATH.read_text(encoding="utf-8")
 
     def test_apply_batches_all_character_writes_before_results(self):
-        self.assertIn("version: 28", self.skill)
+        self.assertIn("version: 29", self.skill)
         self.assertIn("同一次助手工具调用批次中一次性发出", self.skill)
         self.assertIn("只进行一次写操作确认", self.skill)
 
