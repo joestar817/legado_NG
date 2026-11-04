@@ -11,6 +11,14 @@ class CoverPageDelegate(readView: ReadView) : HorizontalPageDelegate(readView) {
 
     override fun onDraw(canvas: Canvas) {
         if (!isRunning) return
+        val frames = readView.externalPageFrames
+        if (frames != null) {
+            renderer.draw(canvas, touchX - startX, mDirection,
+                frames.second.width.toFloat(), frames.second.height.toFloat(),
+                current = { frames.first.draw(it) },
+                adjacent = { frames.second.draw(it) })
+            return
+        }
         renderer.draw(canvas, touchX - startX, mDirection,
             nextRecorder.width.toFloat(), nextRecorder.height.toFloat(),
             current = { curRecorder.draw(it) },
@@ -18,8 +26,8 @@ class CoverPageDelegate(readView: ReadView) : HorizontalPageDelegate(readView) {
     }
 
     override fun setBitmap() {
-        if (readView.externalPageSnapshots != null) {
-            super.setBitmap()
+        // ReadView already owns and prepares the external frames until handoff.
+        if (readView.externalPageFrames != null) {
             return
         }
         when (mDirection) {

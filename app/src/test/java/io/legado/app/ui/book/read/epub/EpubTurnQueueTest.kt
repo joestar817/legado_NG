@@ -58,4 +58,38 @@ class EpubTurnQueueTest {
         assertEquals(1, starts)
         assertFalse(queue.isNotEmpty())
     }
+
+    @Test
+    fun delayedHitKeepsItsInputOrderBeforeLaterKnownTurn() {
+        val queue = EpubTurnQueue<Int>(naturalOrder())
+        queue.add(3)
+        queue.add(1)
+        queue.add(2)
+        val started = arrayListOf<Int>()
+        repeat(3) { queue.startNext { started.add(it); true } }
+        assertEquals(listOf(1, 2, 3), started)
+    }
+
+    @Test
+    fun activeHeadIsNotMistakenForQueuedInterruption() {
+        val queue = EpubTurnQueue<Turn>()
+        val active = Turn(1)
+        queue.add(active)
+        queue.startNext {
+            assertFalse(queue.hasOtherThan(active))
+            queue.add(Turn(-1))
+            assertTrue(queue.hasOtherThan(active))
+            true
+        }
+        assertEquals(-1, queue.peek()?.direction)
+    }
+
+    @Test
+    fun earlierReentrantInputDoesNotReplayAcceptedHead() {
+        val queue = EpubTurnQueue<Int>(naturalOrder())
+        queue.add(2)
+        queue.startNext { queue.add(1); true }
+        queue.startNext { assertEquals(1, it); true }
+        assertFalse(queue.isNotEmpty())
+    }
 }

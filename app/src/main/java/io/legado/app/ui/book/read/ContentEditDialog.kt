@@ -73,6 +73,7 @@ import io.legado.app.help.book.ContentPositionMap
 import io.legado.app.help.book.isEpub
 import io.legado.app.model.localBook.EpubFile
 import io.legado.app.help.book.isLocal
+import io.legado.app.help.book.withChapterCachePublication
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.github.rosemoe.sora.event.ContentChangeEvent
@@ -286,13 +287,18 @@ class ContentEditDialog : DialogFragment() {
     private fun save() {
         val content = currentEditorContent()
         val positions = viewModel.positions?.copy()?.takeIf { it.text == content }
+        val book = ReadBook.book?.takeIf { it.bookUrl == viewModel.contentBookUrl } ?: return
+        val chapterUrl = viewModel.contentChapterUrl ?: return
         Coroutine.async {
-            val book = ReadBook.book ?: return@async
-            val chapter = appDb.bookChapterDao
-                .getChapter(book.bookUrl, chapterIndex)
-                ?: return@async
-            BookHelp.saveText(book, chapter, content, positions)
-            ReadBook.loadContent(chapterIndex, resetPageOffset = false)
+            val saved = withChapterCachePublication(book.bookUrl) {
+                val chapter = appDb.bookChapterDao.getChapterByUrl(book.bookUrl, chapterUrl)
+                    ?: return@withChapterCachePublication false
+                BookHelp.saveText(book, chapter, content, positions)
+                true
+            }
+            if (saved && ReadBook.book?.bookUrl == book.bookUrl) {
+                ReadBook.loadContent(ReadBook.durChapterIndex, resetPageOffset = false)
+            }
         }
     }
 
@@ -300,6 +306,10 @@ class ContentEditDialog : DialogFragment() {
         val loadStateLiveData = MutableLiveData<Boolean>()
         var content: String? = null
         var draftContent: String? = null
+        internal var contentBookUrl: String? = null
+            private set
+        internal var contentChapterUrl: String? = null
+            private set
         internal var positions: ContentPositionMap? = null
             private set
 
@@ -316,9 +326,13 @@ class ContentEditDialog : DialogFragment() {
         fun initContent(chapterIndex: Int, reset: Boolean = false, success: (String) -> Unit) {
             execute {
                 val book = ReadBook.book ?: return@execute null
-                val chapter = appDb.bookChapterDao
-                    .getChapter(book.bookUrl, chapterIndex)
-                    ?: return@execute null
+                val chapter = if (contentBookUrl == book.bookUrl && contentChapterUrl != null) {
+                    appDb.bookChapterDao.getChapterByUrl(book.bookUrl, contentChapterUrl!!)
+                } else {
+                    appDb.bookChapterDao.getChapter(book.bookUrl, chapterIndex)
+                } ?: return@execute null
+                contentBookUrl = book.bookUrl
+                contentChapterUrl = chapter.url
                 if (reset) {
                     content = null
                     draftContent = null

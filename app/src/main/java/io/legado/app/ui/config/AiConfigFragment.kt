@@ -319,6 +319,15 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         }
     }
 
+    internal fun usesFloatingSettingsTitleBar(): Boolean = when (currentPage) {
+        Page.MAIN,
+        Page.PURIFY_MODEL_SETTINGS,
+        Page.READ_ALOUD_MODEL_SETTINGS,
+        Page.ASSISTANT_MODEL_SETTINGS,
+        Page.PURIFY_SETTINGS -> true
+        else -> false
+    }
+
     private fun setPageTitle(title: CharSequence) {
         clearPageActions()
         activity?.title = title
@@ -326,6 +335,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             titleBar.isVisible = true
             titleBar.title = title
         }
+        (activity as? ConfigActivity)?.refreshTitleBarChrome(this)
     }
 
     private fun setPageTitle(resId: Int) {

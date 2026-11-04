@@ -528,13 +528,14 @@ private fun ExploreShowTopBar(
             NgFloatingToolbarBackButton(onClick = onBack, width = 32.dp)
             Text(
                 text = sourceName,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                color = colorResource(R.color.primaryText),
+                modifier = Modifier.weight(1f).padding(start = 14.dp, end = 8.dp),
+                color = colorResource(R.color.ng_search_content),
                 fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
+                lineHeight = 21.sp,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Start
             )
             ExploreToolbarButton(
                 iconRes = R.drawable.ic_grid_menu,

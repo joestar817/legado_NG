@@ -64,7 +64,15 @@
     <string name="book_other_works">Other works</string>
     <string name="book_info_play">Play</string>
     <string name="auto_load_book_other_works">Load related</string>
-    <string name="book_info_menu_book_management">Book management</string>
+    <string name="book_info_settings">Book settings</string>
+    <string name="book_info_settings_book">This book</string>
+    <string name="book_info_settings_general">All book details</string>
+    <string name="book_info_settings_variables">Variables</string>
+    <string name="book_info_settings_source_shared">Shared by this source</string>
+    <string name="book_info_delete_confirmation">Confirm before deleting</string>
+    <string name="book_info_auto_load_related">Auto-load other works</string>
+    <string name="ng_form_row_expanded">Expanded</string>
+    <string name="ng_form_row_collapsed">Collapsed</string>
     <string name="book_info_menu_source_and_links">Source and links</string>
     <string name="book_info_menu_data_and_diagnostics">Data and diagnostics</string>
     <string name="book_other_works_idle">Tap refresh to search this author\'s other books.</string>
@@ -667,6 +675,7 @@
     <string name="ai_balance_json_path_summary">For example: data.total_credits</string>
     <string name="ai_provider_saved">Provider saved</string>
     <string name="ai_model_restore_capabilities">Detect from model name</string>
+    <string name="ai_model_restore_capabilities_message">Replace the current model type, input/output formats, and capabilities. Changes take effect after saving.</string>
     <string name="ai_provider_reset">Reset settings</string>
     <string name="ai_provider_reset_message">Restores the default name and endpoint configuration (Base URL, paths, timeout, custom endpoints). Keeps the API key, enabled state, and fetched models. Manually named custom providers keep their name.</string>
     <string name="ai_provider_reset_done">Provider settings reset</string>

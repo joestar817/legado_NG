@@ -82,14 +82,16 @@ fun NgManagementListCard(
     titleColor: Color? = null,
     titleFontFamily: FontFamily? = null,
     size: NgManagementListCardSize = NgManagementListCardSize.STANDARD,
+    summaryTag: NgStatusTagSpec? = null,
     leading: @Composable () -> Unit
 ) {
     require(headerTags.size <= 2) { "Management card supports at most 2 header tags" }
     require(detailTags.size <= 3) { "Management card supports at most 3 detail tags" }
     val isCompactGrid = variant == NgManagementListCardVariant.COMPACT_GRID
     val isMultilineSummary = variant == NgManagementListCardVariant.MULTILINE_SUMMARY
+    val isProviderTwoRow = variant == NgManagementListCardVariant.PROVIDER_TWO_ROW
     val compactLine = size == NgManagementListCardSize.COMPACT_SINGLE_LINE
-    require(!compactLine || (summary.isNullOrEmpty() && headerTags.isEmpty() && detailTags.isEmpty()))
+    require(!compactLine || (summary.isNullOrEmpty() && headerTags.isEmpty() && detailTags.isEmpty() && summaryTag == null))
     val shape = RoundedCornerShape(
         if (compactLine) 12.dp else if (isCompactGrid) NgTheme.shapes.smallDp.dp else NgTheme.shapes.largeDp.dp
     )
@@ -157,10 +159,14 @@ fun NgManagementListCard(
                 ),
             verticalArrangement = Arrangement.Center
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = if (isProviderTwoRow) Modifier.heightIn(min = 24.dp) else Modifier,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     text = title,
-                    modifier = Modifier.weight(1f),
+                    // 提供商名称先按自然宽度排版，状态 Tag 使用剩余宽度。
+                    modifier = if (isProviderTwoRow) Modifier else Modifier.weight(1f),
                     color = titleColor ?: colorResource(R.color.ng_on_surface),
                     fontFamily = titleFontFamily,
                     fontSize = if (compactLine) 16.sp else if (isCompactGrid) {
@@ -175,13 +181,22 @@ fun NgManagementListCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 if (headerTags.isNotEmpty()) {
-                    Spacer(Modifier.width(8.dp))
-                    NgStatusTagRow(tags = headerTags, header = true)
+                    Spacer(Modifier.width(if (isProviderTwoRow) 4.dp else 8.dp))
+                    NgStatusTagRow(
+                        tags = headerTags,
+                        header = true,
+                        modifier = if (isProviderTwoRow) Modifier.weight(1f, fill = false) else Modifier,
+                        providerRow = isProviderTwoRow,
+                    )
                 }
             }
             if (detailTags.isNotEmpty()) {
                 Spacer(Modifier.height(if (isCompactGrid) 3.dp else 6.dp))
-                NgStatusTagRow(tags = detailTags, header = false)
+                NgStatusTagRow(tags = detailTags, header = false, providerRow = isProviderTwoRow)
+            }
+            if (summaryTag != null) {
+                Spacer(Modifier.height(if (isProviderTwoRow) 6.dp else 4.dp))
+                NgStatusTag(spec = summaryTag)
             }
             if (!summary.isNullOrBlank()) {
                 Spacer(Modifier.height(if (isCompactGrid) 1.dp else 4.dp))
@@ -354,29 +369,32 @@ fun NgManagementLeadingText(
 }
 
 @Composable
-private fun NgStatusTagRow(tags: List<NgStatusTagSpec>, header: Boolean) {
+private fun NgStatusTagRow(
+    tags: List<NgStatusTagSpec>,
+    header: Boolean,
+    modifier: Modifier = Modifier,
+    providerRow: Boolean = false,
+) {
     if (header) {
         require(tags.all { it.style == NgStatusTagStyle.COMPACT }) {
             "Header tags must use COMPACT style"
         }
     }
     Row(
-        modifier = if (header) {
-            Modifier
-                .widthIn(max = 198.dp)
-                .clipToBounds()
-        } else {
-            Modifier
-                .fillMaxWidth()
-                .clipToBounds()
-        },
+        modifier = modifier
+            .then(
+                if (!header) Modifier.fillMaxWidth()
+                else if (providerRow) Modifier
+                else Modifier.widthIn(max = 198.dp)
+            )
+            .clipToBounds(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         tags.forEachIndexed { index, tag ->
             if (index > 0) {
                 Spacer(
                     Modifier.width(
-                        when (tag.style) {
+                        if (providerRow) 4.dp else when (tag.style) {
                             NgStatusTagStyle.INLINE -> 4.dp
                             NgStatusTagStyle.COMPACT -> 6.dp
                             NgStatusTagStyle.REGULAR,
@@ -385,17 +403,15 @@ private fun NgStatusTagRow(tags: List<NgStatusTagSpec>, header: Boolean) {
                     )
                 )
             }
-            NgStatusTag(
-                spec = tag,
-                modifier = Modifier.widthIn(
-                    max = when (tag.style) {
-                        NgStatusTagStyle.INLINE -> 72.dp
-                        NgStatusTagStyle.COMPACT -> 96.dp
-                        NgStatusTagStyle.REGULAR,
-                        NgStatusTagStyle.TTS_ROLE -> 120.dp
-                    }
-                )
+            val tagModifier = Modifier.widthIn(
+                max = if (providerRow) 120.dp else when (tag.style) {
+                    NgStatusTagStyle.INLINE -> 72.dp
+                    NgStatusTagStyle.COMPACT -> 96.dp
+                    NgStatusTagStyle.REGULAR,
+                    NgStatusTagStyle.TTS_ROLE -> 120.dp
+                }
             )
+            NgStatusTag(spec = tag, modifier = tagModifier)
         }
     }
 }

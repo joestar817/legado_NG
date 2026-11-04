@@ -2,10 +2,13 @@ package io.legado.app.ui.widget.dialog
 
 import android.os.Bundle
 import android.view.View
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -17,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
@@ -31,6 +35,7 @@ import io.legado.app.ui.design.components.compose.NgCompactEditorDialog
 import io.legado.app.ui.design.components.compose.NgFormDensity
 import io.legado.app.ui.design.components.compose.NgFormField
 import io.legado.app.ui.design.components.compose.NgFormFieldVariant
+import io.legado.app.ui.design.components.compose.NgInfoTooltipButton
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 
@@ -126,20 +131,52 @@ private fun VariableDialogContent(
             }
         },
     ) {
-        Text(
-            text = stringResource(R.string.variable_value),
-            modifier = Modifier.fillMaxWidth(),
-            color = Color(NgTheme.colors.primary),
-            fontSize = 13.sp,
-            lineHeight = 17.sp,
-        )
-        NgFormField(
-            label = "",
-            value = variable,
-            onValueChange = onVariableChange,
-            density = NgFormDensity.COMPACT,
-            variant = NgFormFieldVariant.PLAIN_UNDERLINE,
-        )
+        VariableEditorContent(variable, comment, onVariableChange)
+    }
+}
+
+internal enum class VariableEditorContentVariant {
+    DIALOG,
+    DRAWER,
+}
+
+/** 默认弹窗保持原样；抽屉使用加高输入和按需显示的说明。 */
+@Composable
+internal fun VariableEditorContent(
+    variable: String,
+    comment: String,
+    onVariableChange: (String) -> Unit,
+    variant: VariableEditorContentVariant = VariableEditorContentVariant.DIALOG,
+) {
+    val drawer = variant == VariableEditorContentVariant.DRAWER
+    Text(
+        text = stringResource(R.string.variable_value),
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(NgTheme.colors.primary),
+        fontSize = 13.sp,
+        lineHeight = 17.sp,
+    )
+    NgFormField(
+        label = "",
+        value = variable,
+        onValueChange = onVariableChange,
+        density = NgFormDensity.COMPACT,
+        variant = if (drawer) NgFormFieldVariant.DRAWER_UNDERLINE else NgFormFieldVariant.PLAIN_UNDERLINE,
+        trailingContent = if (drawer) {
+            {
+                Box(
+                    modifier = Modifier.fillMaxHeight().padding(bottom = 2.dp),
+                    contentAlignment = Alignment.BottomEnd,
+                ) {
+                    NgInfoTooltipButton(
+                        text = comment,
+                        contentDescription = stringResource(R.string.variable_comment),
+                    )
+                }
+            }
+        } else null,
+    )
+    if (!drawer) {
         Spacer(Modifier.height(12.dp))
         Text(
             text = stringResource(R.string.variable_comment),

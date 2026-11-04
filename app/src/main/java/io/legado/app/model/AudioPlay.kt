@@ -29,12 +29,15 @@ import io.legado.app.utils.postEvent
 import io.legado.app.utils.startService
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
@@ -89,7 +92,87 @@ object AudioPlay : CoroutineScope by MainScope() {
     private val loadingChapterOwners = mutableMapOf<Int, LoadingChapterRequest>()
     private var playbackRequestOwner: Any? = null
     private var historyRequestOwner: Any? = null
+    @Volatile
+    private var tocOrderPausedBookUrl: String? = null
+    private var tocOrderPausedChapterUrl: String? = null
+    private var resumeUrlLoadAfterTocReorder = false
+    private var advanceAfterTocReorder = false
+    private val metadataWrites = mutableMapOf<CompletableDeferred<Unit>, String>()
     val executor = globalExecutor
+
+    /** 只暂停地址解析和旧索引写入，正在播放的媒体保持不动；从外部 Main scope 调用。 */
+    internal suspend fun pauseForTocReorder(bookUrl: String): Boolean {
+        val (jobs, writes) = synchronized(this) {
+            if (book?.bookUrl != bookUrl) return false
+            tocOrderPausedBookUrl = bookUrl
+            tocOrderPausedChapterUrl = durChapter?.url
+                ?: appDb.bookChapterDao.getChapter(bookUrl, durChapterIndex)?.url
+            resumeUrlLoadAfterTocReorder = loadingState.value && durPlayUrl.isEmpty()
+            advanceAfterTocReorder = false
+            playbackRequestOwner = null
+            historyRequestOwner = null
+            loadingChapters.clear()
+            loadingChapterOwners.clear()
+            upLoading(false)
+            val pending = coroutineContext[Job]?.children?.toList().orEmpty()
+            pending.forEach { it.cancel() }
+            pending to metadataWrites.filterValues { it == bookUrl }.keys.toList()
+        }
+        jobs.joinAll()
+        writes.forEach { it.await() }
+        return true
+    }
+
+    /** 同一章节 URL 只改变序号/目录元数据，保留媒体地址、缓存键和实时播放位置。 */
+    @Synchronized
+    internal fun resumeAfterTocReorder(updatedBook: Book) {
+        if (tocOrderPausedBookUrl != updatedBook.bookUrl) return
+        val chapterUrl = tocOrderPausedChapterUrl
+        val reloadUrl = resumeUrlLoadAfterTocReorder
+        val advance = advanceAfterTocReorder
+        tocOrderPausedBookUrl = null
+        tocOrderPausedChapterUrl = null
+        resumeUrlLoadAfterTocReorder = false
+        advanceAfterTocReorder = false
+        if (book?.bookUrl != updatedBook.bookUrl) return
+        val chapter = appDb.bookChapterDao.getChapter(updatedBook.bookUrl, updatedBook.durChapterIndex)
+            ?.takeIf { chapterUrl == null || it.url == chapterUrl }
+            ?: chapterUrl?.let { url ->
+                appDb.bookChapterDao.getChapterList(updatedBook.bookUrl).firstOrNull { it.url == url }
+            }
+        if (chapter == null) {
+            AppLog.put("重排后未找到当前音频章节，保留正在播放的媒体")
+            return
+        }
+        updatedBook.durChapterIndex = chapter.index
+        updatedBook.durChapterPos = durChapterPos
+        book = updatedBook
+        chapterSize = updatedBook.totalChapterNum
+        simulatedChapterSize = updatedBook.simulatedTotalChapterNum()
+        durChapterIndex = chapter.index
+        durChapter = chapter
+        postEvent(EventBus.AUDIO_SUB_TITLE, chapter.title)
+        postEvent(EventBus.AUDIO_SIZE, durAudioSize)
+        postEvent(EventBus.AUDIO_PROGRESS, durChapterPos)
+        when {
+            advance -> next()
+            reloadUrl -> loadPlayUrl()
+        }
+    }
+
+    private fun writeMetadata(bookUrl: String, action: suspend () -> Unit) {
+        synchronized(this) {
+            if (tocOrderPausedBookUrl == bookUrl) return
+            val completed = CompletableDeferred<Unit>()
+            metadataWrites[completed] = bookUrl
+            Coroutine.async {
+                if (tocOrderPausedBookUrl != bookUrl) action()
+            }.invokeOnCompletion {
+                synchronized(this) { metadataWrites.remove(completed) }
+                completed.complete(Unit)
+            }
+        }
+    }
 
     fun changePlayMode() {
         playMode = playMode.next()
@@ -155,6 +238,7 @@ object AudioPlay : CoroutineScope by MainScope() {
 
     private fun addLoading(index: Int, owner: Any, bookUrl: String?): Boolean {
         synchronized(this) {
+            if (bookUrl != null && tocOrderPausedBookUrl == bookUrl) return false
             if (loadingChapters.contains(index)) {
                 val existing = loadingChapterOwners[index]
                 if (existing != null && existing.bookUrl == bookUrl) {
@@ -210,6 +294,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun loadOrUpPlayUrl() {
+        if (tocOrderPausedBookUrl == book?.bookUrl) return
         invalidateHistoryRequest()
         if (durPlayUrl.isEmpty()) {
             loadPlayUrl()
@@ -225,6 +310,7 @@ object AudioPlay : CoroutineScope by MainScope() {
      * 保留 [durChapterIndex] 与 [durChapterPos]，避免通过重新选章才能恢复播放。
      */
     fun playFromSavedProgress(): Boolean {
+        if (tocOrderPausedBookUrl == book?.bookUrl) return false
         invalidateHistoryRequest()
         val canReuseActivePlayback = AudioPlayService.isRun &&
                 durPlayUrl.isNotEmpty() &&
@@ -248,6 +334,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     internal suspend fun playFromSavedProgress(restoreGuard: () -> Boolean): Boolean = withContext(Main) {
         if (!restoreGuard()) return@withContext false
         val targetBook = book ?: return@withContext false
+        if (tocOrderPausedBookUrl == targetBook.bookUrl) return@withContext false
         val targetSource = bookSource ?: return@withContext false
         val targetChapter = durChapter ?: return@withContext false
         val targetIndex = durChapterIndex
@@ -457,7 +544,9 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun skipTo(index: Int) {
+        if (tocOrderPausedBookUrl == book?.bookUrl) return
         Coroutine.async {
+            if (tocOrderPausedBookUrl == book?.bookUrl) return@async
             stopPlay()
             if (index in 0..<simulatedChapterSize) {
                 durChapterIndex = index
@@ -472,7 +561,9 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun prev() {
+        if (tocOrderPausedBookUrl == book?.bookUrl) return
         Coroutine.async {
+            if (tocOrderPausedBookUrl == book?.bookUrl) return@async
             stopPlay()
             if (durChapterIndex > 0) {
                 durChapterIndex -= 1
@@ -487,6 +578,10 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun next() {
+        if (tocOrderPausedBookUrl == book?.bookUrl) {
+            advanceAfterTocReorder = true
+            return
+        }
         stopPlay()
         upReadTime()
         when (playMode) {
@@ -569,7 +664,7 @@ object AudioPlay : CoroutineScope by MainScope() {
 
     fun saveRead(first: Boolean = false) {
         val book = book ?: return
-        Coroutine.async {
+        writeMetadata(book.bookUrl) {
             book.lastCheckCount = 0
             val durTime = System.currentTimeMillis()
             book.durChapterTime = durTime
@@ -595,7 +690,7 @@ object AudioPlay : CoroutineScope by MainScope() {
      */
     fun saveDurChapter(audioSize: Long) {
         val chapter = durChapter ?: return
-        Coroutine.async {
+        writeMetadata(chapter.bookUrl) {
             durAudioSize = audioSize.toInt()
             chapter.end = audioSize
             chapter.update()

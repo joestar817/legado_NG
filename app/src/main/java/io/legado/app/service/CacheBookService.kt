@@ -104,11 +104,20 @@ class CacheBookService : BaseService() {
     private fun addDownloadData(bookUrl: String?, start: Int, end: Int) {
         bookUrl ?: return
         execute {
-            val cacheBook = CacheBook.getOrCreate(bookUrl) ?: return@execute
-            val chapterCount = appDb.bookChapterDao.getChapterCount(bookUrl)
+            val (cacheBook, needsToc) = synchronized(CacheBook) {
+                val model = CacheBook.getOrCreate(bookUrl) ?: return@execute
+                val needsToc = appDb.bookChapterDao.getChapterCount(bookUrl) == 0
+                if (needsToc) {
+                    model.setLoading()
+                } else {
+                    val endIndex = if (end < 0) model.book.lastChapterIndex
+                    else min(end, model.book.lastChapterIndex)
+                    model.addDownload(start, endIndex)
+                }
+                model to needsToc
+            }
             val book = cacheBook.book
-            if (chapterCount == 0) {
-                cacheBook.setLoading()
+            if (needsToc) {
                 mutex.withLock {
                     val name = book.name
                     if (book.tocUrl.isEmpty()) {
@@ -135,13 +144,10 @@ class CacheBookService : BaseService() {
                     }
                     book.update()
                 }
+                val endIndex = if (end < 0) book.lastChapterIndex
+                else min(end, book.lastChapterIndex)
+                cacheBook.addDownload(start, endIndex)
             }
-            val end2 = if (end < 0) {
-                book.lastChapterIndex
-            } else {
-                min(end, book.lastChapterIndex)
-            }
-            cacheBook.addDownload(start, end2)
             notificationContent = CacheBook.downloadSummary
             upCacheBookNotification()
         }.onFinally {

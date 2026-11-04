@@ -60,8 +60,10 @@ internal class EpubLayoutController(
     private val requestViewport: (Boolean) -> Unit,
     private val reportError: (String) -> Unit,
     private val nativeFrame: () -> Bitmap,
+    private val nativeBackground: (Canvas) -> Unit,
+    private val recordAnimationFrames: () -> Boolean,
     private val nativeChrome: (Canvas, Boolean, Boolean) -> Unit,
-    private val animate: (Bitmap, Bitmap, Int, () -> Unit) -> Unit,
+    private val animate: (EpubAnimationFrames, Int, () -> Unit, () -> Unit) -> Unit,
     private val finishAnimation: () -> Unit,
     private val completeAnimation: () -> Unit,
     private val animationsEnabled: () -> Boolean,
@@ -107,6 +109,10 @@ internal class EpubLayoutController(
     private var selectionRevision = 0L
     private var pendingSelectionHit: Long? = null
     private var selectionFinished = false
+    private var selectionDrag: EpubSelectionDrag? = null
+    private var selectionEdgeTask: Runnable? = null
+    private var selectionNavigationTimeout: Runnable? = null
+    private var selectionHandleActive = false
     private var aloudSignature = ""
     private var aloudPaintSignature = ""
     private var fontWarningSignature = ""
@@ -151,30 +157,47 @@ internal class EpubLayoutController(
     private var preparation: EpubPreparedTurn? = null
     private var turning = false
     private var committing = false
+    private val turnHandoff = EpubTurnHandoff()
     private var preparationFrame: Bitmap? = null
+    private var pendingAnimation: EpubAnimationFrames? = null
     private var turnTimeout: Runnable? = null
     private val frames = EpubFrameWindow<EpubCapturedFrame>(maxBytes = 48L * 1024 * 1024,
         sizeOf = { it.bitmap.allocationByteCount.toLong() }) { it.close() }
     private var borrowedFrames = emptyList<EpubFrameWindow.Lease<EpubCapturedFrame>>()
     private var frameEpoch = 0L
+    private var preparationEpoch = 0L
     private var frameDocument = -1
+    private class TurnFrameTarget(val documentKey: String, val key: Int, val frame: EpubCapturedFrame,
+                                  val sourceDocumentKey: String, val sourceKey: Int, val sourceFrame: EpubCapturedFrame)
+    private var pendingTurnFrame: TurnFrameTarget? = null
     private var preparationWorking = false
     private var anticipatedPage: Int? = null
     private var lastDirection = 1
-    private class TurnRequest(val direction: Int, receivedAt: Long) {
+    private class TurnRequest(val direction: Int, receivedAt: Long, val sequence: Long) {
         val timing = EpubStartupTiming("turn", receivedAt)
         var waiting = false
     }
-    private val pendingTurns = EpubTurnQueue<TurnRequest>()
+    private val pendingTurns = EpubTurnQueue<TurnRequest>(compareBy { it.sequence })
+    private var activeTurn: TurnRequest? = null
+    private var inputSequence = 0L
+    private var inputTicket: Long? = null
+    private var interactionEpoch = 0L
+    private var activeInteraction: Long? = null
     private var inputReceivedAt: Long? = null
+    private var pointerReceivedAt: Long? = null
     private var turnTiming: EpubStartupTiming? = null
     private var chapterTiming: EpubStartupTiming? = null
     private var awaitingAnimationDraw = false
     private var turnPhase = "等待准备"
     private var visibleInteractionToken: String? = null
+    private var visibleInteractionTarget: Pair<String, Int>? = null
+    private var visibleInteractionEpoch = -1L
+    private var committedTapToken: String? = null
+    private var committedTapTarget: Pair<String, Int>? = null
     private var warmingPage: Pair<Int, Int>? = null
     private var warmingPaint = ""
-    private val pendingInteractions = java.util.ArrayDeque<() -> Unit>()
+    private class PendingInteraction(val sequence: Long, val run: () -> Unit)
+    private val pendingInteractions = java.util.ArrayDeque<PendingInteraction>()
     private val warmTask = Runnable { warmFrames() }
     private val warmWatchdog = EpubRenderWatchdog({ task, delay -> host.postDelayed(task, delay); Unit }, host::removeCallbacks)
     var active = false
@@ -188,6 +211,25 @@ internal class EpubLayoutController(
             return
         }
         boundBook = book
+        // The original ReadBook loader owns a chapter transition requested by a drag.
+        // Its first callback may have no chapter, or a not-yet-complete TextChapter.
+        val selectionTarget = selectionDrag?.chapterTarget
+        if (bookUrl == book.bookUrl && selectionTarget != null &&
+            (value == null || value.chapter.index == selectionTarget)) {
+            if (textChapter !== value) {
+                contentGeneration++
+                contentJob?.cancel()
+                loading = false
+                chapter = value?.chapter
+                textChapter = value
+                preparedContent = null
+                reportedPosition = -1
+                requestedPosition = position()
+            }
+            if (value?.isCompleted == true && !loading && preparedContent == null)
+                showChapter(book, selectionNavigation = true)
+            return
+        }
         // Completion notifications of a failed revision must not start a retry loop.
         if (renderFailed && bookUrl == book.bookUrl) {
             if (value === textChapter && position() == requestedPosition) return
@@ -203,7 +245,10 @@ internal class EpubLayoutController(
         // manual turn is waiting to commit. A new book/chapter still binds normally.
         if (bookUrl == book.bookUrl && value === textChapter && preparedContent != null &&
             (turning || pendingTurns.isNotEmpty() ||
-                chapterTurnTarget != null && chapterTurnTarget == value?.chapter?.index)) return
+                chapterTurnTarget != null && chapterTurnTarget == value?.chapter?.index)) {
+            prepareNeighbor()
+            return
+        }
         if (bookUrl != book.bookUrl) {
             releasePublication()
             active = true
@@ -261,13 +306,14 @@ internal class EpubLayoutController(
                     withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { opened?.close() }
                 }
             }
-        } else if (value != null && preparedChapters[value.chapter.index]?.chapter === value) {
+        } else if (value != null && preparedChapters[value.chapter.index]?.chapter === value &&
+            documents.any { it.chapter === value }) {
             val chapterChanged = textChapter !== value
             if (chapterChanged) {
                 textChapter = value; chapter = value.chapter; preparedContent = preparedChapters[value.chapter.index]
                 requestedPosition = position()
             }
-            if (!loading && hasUnpreparedWindowNeighbors()) showChapter(book,
+            if (!loading && (chapterChanged || contentJob?.isActive != true) && hasUnpreparedWindowNeighbors()) showChapter(book,
                 retainWindowPosition = documents.getOrNull(documentIndex)?.chapter === value &&
                 position() == reportedPosition)
             // Equal offsets in different chapters are not the same reading location. A window
@@ -296,16 +342,23 @@ internal class EpubLayoutController(
 
     private fun hasUnpreparedWindowNeighbors() =
         selection == null && selectionAnchor == null && pendingSelectionHit == null && gestures?.isActive != true &&
-        surface?.hasPendingScroll != true && pendingInteractions.isEmpty() &&
-        (isScroll() || autoPaging() || options().optBoolean("fixed")) && neighboringChapters().any {
-            it.isCompleted && preparedChapters[it.chapter.index]?.chapter !== it && failedNeighbors[it.chapter.index] !== it
+        surface?.hasPendingScroll != true && activeInteraction == null && pendingInteractions.isEmpty() &&
+        neighboringChapters().any {
+            it.isCompleted && preparedChapters[it.chapter.index]?.chapter !== it && failedNeighbors[it.chapter.index] !== it &&
+                (it.sourceParagraphs.sumOf { paragraph -> paragraph.length.toLong() } <= 1_000_000 ||
+                    isScroll() || autoPaging() || options().optBoolean("fixed"))
         }
 
     private fun attachSurface() {
         val publication = snapshot?.publicationSession ?: return
         visibleChromeMask = 0
-        val onReady: (JSONObject) -> Unit = ready@ { state ->
+        lateinit var onReady: (JSONObject) -> Unit
+        onReady = ready@ { state ->
                 if (preparedContent?.chapter !== textChapter || preparedContent == null) return@ready
+                if (turnHandoff.deferReady { onReady(state) }) {
+                    if (turning && !committing) scheduleWarm()
+                    return@ready
+                }
                 visibleChromeMask = (if (state.optBoolean("hideHeader")) 1 else 0) or
                     (if (state.optBoolean("hideFooter")) 2 else 0)
                 host.invalidate()
@@ -323,7 +376,12 @@ internal class EpubLayoutController(
                 if (fontWarning.isNotEmpty() && fontWarning != fontWarningSignature) reportError(fontWarning)
                 fontWarningSignature = fontWarning
                 if (state.has("index")) documentIndex = state.optInt("readingIndex", state.optInt("index")).coerceIn(documents.indices)
-                if (frameDocument != documentIndex) clearFrames()
+                visibleInteractionTarget = documents[documentIndex].payload.getString("key") to state.optInt("pageIndex", -1)
+                visibleInteractionEpoch = interactionEpoch
+                if (pendingTurnFrame != null || frameDocument != documentIndex) {
+                    if (!promoteTurnFrame(state)) clearFrames()
+                }
+                pendingTurnFrame = null
                 reportPage(state.optInt("displayPageIndex", state.optInt("pageIndex")) + 1,
                     state.optInt("displayPageCount", state.optInt("pageCount")),
                     state.optBoolean("cover") || state.optBoolean("fullViewport") || state.optBoolean("bleed"))
@@ -349,11 +407,23 @@ internal class EpubLayoutController(
                     turnTiming?.mark("visible-ready")
                     turnTiming = null
                     awaitingAnimationDraw = false
+                    activeTurn = null
                 }
+                committedTapToken = null
+                committedTapTarget = null
                 anticipatedPage = null
                 syncAloudHighlight()
                 speechFollowPosition?.let(::followReadAloud)
                 applySearchSelection()
+                val drag = selectionDrag
+                if (drag?.awaitingViewport == true) {
+                    selectionNavigationTimeout?.let(host::removeCallbacks)
+                    selectionNavigationTimeout = null
+                    drag.awaitingViewport = false
+                    drag.inFlight = false
+                    drag.chapterTarget = null
+                    requestSelectionHit(drag, state.optJSONObject("selectionHit"))
+                } else if (selection != null) renderSelection()
                 pendingReadAloud?.takeIf { it.first == textChapter?.chapter?.index }?.let {
                     pendingReadAloud = null
                     host.post { whenChapterReady(it.first, it.second) }
@@ -375,10 +445,11 @@ internal class EpubLayoutController(
         gestures = EpubReaderGestures(
             ViewConfiguration.get(host.context).scaledTouchSlop,
             tap = { x, y ->
-                val receivedAt = android.os.SystemClock.elapsedRealtime()
+                val receivedAt = pointerReceivedAt ?: android.os.SystemClock.elapsedRealtime()
                 val timing = EpubStartupTiming("tap", receivedAt)
                 interactReady(JSONObject().put("action", "tap").put("x", css(x)).put("y", css(y))) { result ->
-                    timing.mark(if (result == null) "hit-cancelled" else "hit-ready")
+                    if (result?.optBoolean("retainedChapterBlank") == true) timing.mark("chapter-blank-retained")
+                    timing.mark(if (result == null) "hit-cancelled" else if (result.optBoolean("nativeBlank")) "hit-ready native-blank" else "hit-ready")
                     if (result == null) return@interactReady
                     if (result.optBoolean("handled")) { clearFrames(); scheduleWarm(); return@interactReady }
                     if (result.optBoolean("dismissed")) { clearSelection(); return@interactReady }
@@ -401,7 +472,10 @@ internal class EpubLayoutController(
             },
             longPress = { x, y -> hitSelection(x, y, initial = true) },
             extend = { x, y -> hitSelection(x, y, initial = false) },
-            finishSelection = ::finishSelectionDrag,
+            finishSelection = { x, y ->
+                selectionDrag?.takeIf { it.moved }?.update(x, y)
+                finishSelectionDrag()
+            },
             swipe = { direction ->
                 interactReady(JSONObject().put("action", "gallerySwipe").put("x", css(downX))
                     .put("y", css(downY)).put("start", direction < 0)) { result ->
@@ -432,7 +506,7 @@ internal class EpubLayoutController(
                     next.readyState?.let { it.optBoolean("scrolled") &&
                         kotlin.math.abs(it.optDouble("scrollOvershoot", 0.0)) <= 48 } == true
             },
-            cancelScroll = next::cancelScroll,
+            cancelScroll = { stopSelectionDrag(); next.cancelScroll() },
             onFlingStart = scrollAnimationStart,
             onFlingStop = { scrollAnimationStop(); host.post { continueTurns() } },
         )
@@ -514,6 +588,14 @@ internal class EpubLayoutController(
         }
     }
 
+    private fun traceIgnoredTouch(event: MotionEvent, reason: String) {
+        if (!io.legado.app.BuildConfig.DEBUG || event.actionMasked != MotionEvent.ACTION_UP) return
+        val receivedAt = android.os.SystemClock.elapsedRealtime() -
+            (android.os.SystemClock.uptimeMillis() - event.eventTime).coerceAtLeast(0)
+        EpubStartupTiming("pointer-suppressed", receivedAt).mark(
+            "$reason loading=$loading contentReady=${preparedContent != null} chapterTarget=${chapterTurnTarget != null}")
+    }
+
     fun touch(event: MotionEvent): Boolean {
         if (renderFailed) {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) { downX = event.x; downY = event.y }
@@ -524,8 +606,14 @@ internal class EpubLayoutController(
             }
             return true
         }
-        if ((loading || preparedContent == null) && chapterTurnTarget == null) return true
-        val view = surface ?: return true
+        if ((loading || preparedContent == null) && chapterTurnTarget == null) {
+            traceIgnoredTouch(event, "not-ready")
+            return true
+        }
+        val view = surface ?: run {
+            traceIgnoredTouch(event, "surface-missing")
+            return true
+        }
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             if (turning && !committing) completeAnimation()
             view.beginScroll()
@@ -533,6 +621,11 @@ internal class EpubLayoutController(
             downY = event.y - view.top
         }
         val translated = MotionEvent.obtain(event)
+        val previousTime = pointerReceivedAt
+        if (event.actionMasked == MotionEvent.ACTION_UP) pointerReceivedAt = android.os.SystemClock.elapsedRealtime() -
+            (android.os.SystemClock.uptimeMillis() - event.eventTime).coerceAtLeast(0)
+        if (io.legado.app.BuildConfig.DEBUG && event.actionMasked == MotionEvent.ACTION_UP)
+            EpubStartupTiming("pointer", pointerReceivedAt!!).mark("up")
         try {
             translated.offsetLocation(-view.left.toFloat(), -view.top.toFloat())
             val handled = gestures?.onTouch(view, translated) ?: true
@@ -540,6 +633,7 @@ internal class EpubLayoutController(
                 event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) host.post { continueTurns() }
             return handled
         } finally {
+            pointerReceivedAt = previousTime
             translated.recycle()
         }
     }
@@ -613,15 +707,34 @@ internal class EpubLayoutController(
         } else showChapter(book)
     }
 
-    private fun showChapter(book: Book, retainWindowPosition: Boolean = false) {
+    private fun showChapter(book: Book, retainWindowPosition: Boolean = false, selectionNavigation: Boolean = false) {
         val mine = ++contentGeneration
         contentJob?.cancel()
         mappingWrite?.cancel()
         mappingRevision = EpubMappingPersistence.next()
         val current = textChapter
-        cancelTurn(keepChapterTurn = chapterTurnTarget != null && chapterTurnTarget == current?.chapter?.index)
-        if (current == null) return
-        val session = snapshot?.publicationSession ?: return
+        val session = snapshot?.publicationSession
+        val view = surface
+        val displayed = documents.getOrNull(documentIndex)
+        // A neighbour projection does not replace the currently displayed chapter. Keep
+        // its input owner while preparing; the existing ready gate still owns publication.
+        val retained = preparedContent?.takeIf {
+            retainWindowPosition && !selectionNavigation && !autoPaging() && current != null && current.isCompleted && session != null && view != null &&
+                it.chapter === current && displayed != null && displayed.chapter === current && position() == reportedPosition &&
+                chapterTurnTarget == null && !openAtEnd && pendingChapterLink == null &&
+                session.publication.spine.getOrNull(displayed.spineIndex)?.let { item ->
+                    session.publication.layoutFor(item) != EpubLayout.FIXED
+                } == true
+        }
+        if (retained == null)
+            cancelTurn(keepChapterTurn = chapterTurnTarget != null && chapterTurnTarget == current?.chapter?.index)
+        if (current == null || session == null) return
+        val style = styleGeneration
+        val highlight = highlightRevision
+        val epoch = interactionEpoch
+        val scrolling = isScroll()
+        val refresh = if (retained != null && io.legado.app.BuildConfig.DEBUG)
+            EpubStartupTiming("window-refresh").apply { mark("prepare-retained") } else null
         val sourceRevision = snapshot?.identity?.contentRevision
         val publication = session.publication
         // Let the existing reader finish its book/file initialization before starting Chromium.
@@ -642,12 +755,19 @@ internal class EpubLayoutController(
         if (!current.isCompleted) return
         val previous = preparedChapters
         val highlightRules = ReadBookConfig.highlightRules.map { it.copy() }
-        preparedContent = null
-        selection = null
-        loading = true
+        if (retained == null) {
+            preparedContent = null
+            if (!selectionNavigation) {
+                stopSelectionDrag()
+                selection = null
+                selectionAnchor = null
+                selectionFinished = false
+            }
+            loading = true
+        }
         val openingDocument = openingPreparation()?.openingDocument(book, session)
             ?: EpubOpeningMappingCache.openingDocument(book, current, sourceRevision)
-        if (!isScroll()) openingDocument?.let { document ->
+        if (retained == null && !isScroll()) openingDocument?.let { document ->
             val item = publication.spine.firstOrNull { publication.resourcesById[it.idref]?.location?.path == document.location.path }
             if (item != null && publication.layoutFor(item) != EpubLayout.FIXED) {
                 surface?.stage(document.location, document.html)
@@ -675,7 +795,8 @@ internal class EpubLayoutController(
                 val deadline = android.os.SystemClock.uptimeMillis() + 25_000
                 do {
                     if (closed || mine != contentGeneration || current !== textChapter) return@launch
-                    val candidates = if (window) neighboringChapters().filter { it.isCompleted } else emptyList()
+                    val candidates = neighboringChapters().filter { it.isCompleted &&
+                        (window || it.sourceParagraphs.sumOf { paragraph -> paragraph.length.toLong() } <= 1_000_000) }
                     candidates.forEach { candidate ->
                         currentCoroutineContext().ensureActive()
                         if (loaded[candidate.chapter.index]?.chapter !== candidate && failed[candidate.chapter.index] !== candidate) {
@@ -713,10 +834,32 @@ internal class EpubLayoutController(
                     // result; do not extract/process a parallel copy of their business content.
                     delay(32)
                 } while (true)
+                if (retained != null) {
+                    refresh?.mark("projection-ready")
+                    while (true) {
+                        if (closed || mine != contentGeneration || current !== textChapter || preparedContent !== retained || surface !== view ||
+                            style != styleGeneration || highlight != highlightRevision || epoch != interactionEpoch ||
+                            scrolling != isScroll() || autoPaging()) return@launch
+                        // An UP received during preparation still belongs to the original
+                        // viewport. Drain it through the ordinary queue before changing windows.
+                        if (!loading && !turning && !committing && !pageTextMeasuring && chapterTurnTarget == null &&
+                            !turnHandoff.waitingForMove && activeInteraction == null && pendingInteractions.isEmpty() &&
+                            pendingTurns.peek() == null && surface?.readyState != null && surface?.hasPendingScroll == false &&
+                            gestures?.isActive != true && selection == null && selectionAnchor == null &&
+                            selectionDrag == null && pendingSelectionHit == null && pendingSearchSelection == null &&
+                            pendingChapterLink == null && !pendingHighlightUpdate && !openAtEnd) break
+                        delay(16)
+                    }
+                }
                 if (closed || mine != contentGeneration || current !== textChapter) return@launch
                 content.publishMapping(book, sourceRevision)
+                // A completed bounded window can prune/reindex neighbours. Retire its
+                // old pixel keys at publication without invalidating accepted input tickets.
+                if (retained != null) clearFrames()
                 preparedContent = content
-                preparedChapters = loaded
+                // Keep source mappings for the one active logical selection, while the
+                // renderer itself continues to receive only its ordinary bounded window.
+                preparedChapters = retainedSelectionChapters(previous) + loaded
                 failedNeighbors = failed
                 documents = loaded.values.sortedBy { it.chapter.chapter.index }.flatMap { it.documents }
                 documentIndex = documents.indexOf(if (openAtEnd) content.documents.last() else content.documents[content.documentAt(requestedPosition)])
@@ -728,6 +871,7 @@ internal class EpubLayoutController(
                 if (linked >= 0) { openAtEnd = false; documentIndex = linked; openDocument(fragment = pending?.second?.fragment) }
                 else if (openAtEnd) { openAtEnd = false; openDocument(last = true) }
                 else openDocument(offset = requestedPosition, retainWindowPosition = retainWindowPosition)
+                refresh?.mark("window-submitted")
                 val record = content.cacheRecord
                 if (record != null) {
                     val ticket = mappingRevision
@@ -748,6 +892,7 @@ internal class EpubLayoutController(
                 if (mine == contentGeneration) {
                     loading = false
                     if (!closed && textChapter !== current) showChapter(book)
+                    else if (retained != null && !closed) host.post { continueTurns() }
                 }
             }
         }
@@ -780,9 +925,52 @@ internal class EpubLayoutController(
     }
 
     private fun prepareNeighbor() {
-        if (closed || loading || turning || chapterTurnTarget != null || pageTextMeasuring || !host.isShown ||
-            pendingTurns.isNotEmpty() || pendingInteractions.isNotEmpty()) return
+        if (closed || loading || chapterTurnTarget != null || pageTextMeasuring || !host.isShown ||
+            activeInteraction != null || pendingInteractions.isNotEmpty()) return
         val current = preparedContent?.chapter ?: return
+        val ready = surface?.readyState
+        val idle = !turning && pendingTurns.peek() == null
+        var prelayout = false
+        // Manual no-animation turns need the same complete target layout. Loading
+        // only its HTML still leaves reader styles and pagination on the foreground move.
+        if (ready != null && (animationsEnabled() && recordAnimationFrames() ||
+                !animationsEnabled() && !autoPaging()) && !isScroll() &&
+            selection == null && selectionDrag == null && gestures?.isActive != true) {
+            val target = documentIndex + lastDirection
+            if (target in documents.indices) {
+                prelayout = surface?.preloadPreparedDocument(documents, target, "$styleGeneration/$highlightRevision/$aloudPaintSignature") {
+                    val previous = documentIndex
+                    documentIndex = target
+                    try { options() } finally { documentIndex = previous }
+                } == true
+            }
+        }
+        // A complete target layout keeps its single inactive frame. Unsupported
+        // targets retain the original idle-only runtime preload.
+        if (!prelayout && idle && ready != null && selection == null && selectionDrag == null && gestures?.isActive != true) {
+            val page = ready.optInt("pageIndex")
+            val target = when {
+                page <= 1 && documentIndex > 0 -> documentIndex - 1
+                page >= ready.optInt("pageCount") - 2 && documentIndex + 1 < documents.size -> documentIndex + 1
+                else -> documentIndex + lastDirection
+            }
+            if (target in documents.indices) surface?.preloadDocument(target)
+        }
+        if (animationsEnabled() && recordAnimationFrames() && !isScroll() && selection == null &&
+            selectionDrag == null && gestures?.isActive != true && !preparationWorking) {
+            val target = documentIndex + lastDirection
+            if (target in documents.indices) {
+                preparation?.preloadDocument(documents, target, "$styleGeneration/$highlightRevision/$aloudPaintSignature") {
+                    val previous = documentIndex
+                    documentIndex = target
+                    try { options() } finally { documentIndex = previous }
+                }
+            }
+        }
+        if (!idle && (selection != null || selectionDrag != null || gestures?.isActive == true)) return
+        // The foreground/window job already owns any awaited slot. Do not replace
+        // its projection with another speculative native build while it is suspended.
+        if (contentJob?.isActive == true) return
         val book = boundBook ?: return
         val opened = snapshot ?: return
         val target = neighboringChapters().firstOrNull {
@@ -794,6 +982,8 @@ internal class EpubLayoutController(
             highlightRevision, book.getDelTag(Book.hTag), book.getDelTag(Book.rubyTag))
         if (contentSlot.find(key) != null) return
         if (target.sourceParagraphs.sumOf { it.length.toLong() } > 1_000_000) return
+        if (io.legado.app.BuildConfig.DEBUG)
+            android.util.Log.d("EpubStartup", "neighbor-prefetch chapter=${target.chapter.index} busy=${!idle}")
         prepareContent(book, target, opened.publicationSession, opened.identity.contentRevision)
     }
 
@@ -911,7 +1101,7 @@ internal class EpubLayoutController(
         cancelTurn()
         if (snapshot != null && documents.getOrNull(documentIndex) != null) {
             val value = options()
-            if (reflow) surface?.restyle(value)
+            if (reflow) { stopSelectionDrag(); surface?.restyle(value) }
             else surface?.setHighlights(value.getJSONArray("highlights"))
             scheduleWarm()
         }
@@ -943,6 +1133,9 @@ internal class EpubLayoutController(
         aloudSignature = signature
         val paintChanged = paintSignature != aloudPaintSignature
         aloudPaintSignature = paintSignature
+        // The ready surface already fenced this empty paint in awaitLayout. Re-sending
+        // it adds an idle JS interaction that delays both taps and capture snapshots.
+        if (!paintChanged && ranges.length() == 0 && view.hasConfirmedEmptyAloudPaint()) return
         view.interact(JSONObject().put("action", "aloud").put("ranges", ranges)
             .put("range", (0 until ranges.length()).map { ranges.getJSONObject(it) }
                 .firstOrNull { it.optInt("index") == documentIndex } ?: JSONObject.NULL)) {}
@@ -1035,8 +1228,10 @@ internal class EpubLayoutController(
         }
         val view = surface ?: return
         view.documents(documents)
-        view.content(document.location.path, document.html, document.payload)
+        view.content(document.location.path, document.html, document.payload, document.payloadJson)
         view.open(document.location.copy(fragment = fragment ?: document.location.fragment), options(last).apply {
+            if (!isScroll() && !optBoolean("fixed") && selectionDrag?.awaitingViewport == true)
+                selectionProjection()?.let { put("selectionProjection", it) }
             if (retainWindowPosition) put("retainWindowPosition", true)
             put("fragment", fragment ?: JSONObject.NULL)
             offset?.let { put("textOffset", it) }
@@ -1071,40 +1266,194 @@ internal class EpubLayoutController(
     }
 
     private fun hitSelection(x: Float, y: Float, initial: Boolean) {
+        if (!initial) {
+            val drag = selectionDrag ?: return
+            if (!drag.pressed) return
+            drag.update(x, y)
+            selectionEdgeTask?.let(host::removeCallbacks)
+            selectionEdgeTask = null
+            requestSelectionHit(drag)
+            return
+        }
+        cancelTurn()
+        clearSelection()
+        val drag = EpubSelectionDrag(x, y).apply { initialHit = true }
+        selectionDrag = drag
+        requestSelectionHit(drag)
+    }
+
+    private fun requestSelectionHit(drag: EpubSelectionDrag, projected: JSONObject? = null) {
+        if (selectionDrag !== drag || drag.inFlight || drag.awaitingViewport) return
         val view = surface ?: return
-        if (initial) { cancelTurn(); clearSelection(); selectionFinished = false }
+        if (view.readyState == null) { stopSelectionDrag(); return }
+        val initial = drag.initialHit
+        drag.initialHit = false
+        if (!drag.pressed) drag.finalHit = false
+        val pointerRevision = drag.pointerRevision
+        val x = drag.x
+        val y = drag.y
+        drag.inFlight = true
         val mine = ++selectionRevision
         pendingSelectionHit = mine
-        view.interact(JSONObject().put("action", "hit").put("nearest", !initial)
-            .put("x", css(x)).put("y", css(y))) { result ->
+        val consume: (JSONObject?) -> Unit = consume@ { result ->
             if (pendingSelectionHit == mine) pendingSelectionHit = null
             host.post { continueTurns() }
-            if (mine != selectionRevision || result == null) return@interact
-            if (initial && !result.isNull("image")) {
+            if (mine != selectionRevision || selectionDrag !== drag) return@consume
+            drag.inFlight = false
+            if (initial && result?.isNull("image") == false) {
                 view.resolve(result.getString("image"))?.let {
                     imageLongPress(x + view.left, y + view.top, it.path)
                 }
-                return@interact
+                stopSelectionDrag()
+                return@consume
             }
-            if (!selectionEnabled) return@interact
-            val document = documents.getOrNull(result.optInt("index", documentIndex)) ?: return@interact
-            val text = document.text
-            val offset = result.optInt("offset", -1)
-            if (offset !in 0..text.length) return@interact
-            val chapterIndex = document.chapter.chapter.index
-            if (initial) {
-                if (text.isEmpty()) return@interact
-                val at = offset.coerceAtMost(text.lastIndex)
-                val from = if (at == 0) 0 else text.lastIndexOf('\n', at - 1) + 1
-                val to = text.indexOf('\n', at).takeIf { it >= 0 } ?: text.length
-                val word = readerWordBoundary(text.substring(from, to), at - from) ?: return@interact
-                selectionAnchor = chapterIndex to from + word.first
-                setSelectionEnd(chapterIndex, from + word.last + 1)
-            } else setSelectionEnd(chapterIndex, offset)
+            if (!selectionEnabled) { stopSelectionDrag(); return@consume }
+            val document = result?.let { documents.getOrNull(it.optInt("index", documentIndex)) }
+            val offset = result?.optInt("offset", -1) ?: -1
+            if (document != null && offset in 0..document.text.length) {
+                val text = document.text
+                val chapterIndex = document.chapter.chapter.index
+                if (initial && text.isNotEmpty()) {
+                    val at = offset.coerceAtMost(text.lastIndex)
+                    val from = if (at == 0) 0 else text.lastIndexOf('\n', at - 1) + 1
+                    val to = text.indexOf('\n', at).takeIf { it >= 0 } ?: text.length
+                    readerWordBoundary(text.substring(from, to), at - from)?.let { word ->
+                        selectionAnchor = chapterIndex to from + word.first
+                        setSelectionEnd(chapterIndex, from + word.last + 1)
+                    }
+                } else if (!initial && drag.pointerRevision == pointerRevision)
+                    setSelectionEnd(chapterIndex, offset, result?.optJSONObject("selection"))
+            }
+            drag.updateEdge(if (!initial && drag.pointerRevision == pointerRevision) result?.optInt("edge") ?: 0 else 0,
+                android.os.SystemClock.uptimeMillis())
+            when {
+                !drag.pressed && !drag.finalHit -> completeSelectionDrag(drag)
+                drag.pointerRevision != pointerRevision || !drag.pressed -> requestSelectionHit(drag)
+                else -> scheduleSelectionEdge(drag)
+            }
+        }
+        if (!initial && projected?.optString("token") == view.readyState?.optString("token") &&
+            projected?.optLong("pointerRevision", -1) == pointerRevision) consume(projected)
+        else view.interact(JSONObject().put("action", "hit").put("nearest", !initial)
+            .put("x", css(x)).put("y", css(y)), consume)
+    }
+
+    /** Renderer projection only; the native anchor and source range remain authoritative. */
+    private fun selectionProjection(): JSONObject? {
+        val drag = selectionDrag ?: return null
+        val anchor = selectionAnchor ?: return null
+        if (isScroll()) return null
+        val anchors = JSONArray()
+        documents.forEachIndexed { index, document ->
+            val fixed = when {
+                anchor.first < document.chapter.chapter.index -> document.first
+                anchor.first > document.chapter.chapter.index -> document.last
+                else -> anchor.second.coerceIn(document.first, document.last)
+            }
+            anchors.put(JSONObject().put("index", index).put("anchor", fixed)
+                .put("from", document.first).put("to", document.last))
+        }
+        return JSONObject().put("x", css(drag.x)).put("y", css(drag.y))
+            .put("pointerRevision", drag.pointerRevision).put("anchors", anchors)
+    }
+
+    private fun scheduleSelectionEdge(drag: EpubSelectionDrag) {
+        selectionEdgeTask?.let(host::removeCallbacks)
+        selectionEdgeTask = null
+        if (selectionDrag !== drag || !drag.pressed || drag.edge == 0 || selection == null) return
+        val task = Runnable {
+            selectionEdgeTask = null
+            if (selectionDrag !== drag || !drag.pressed) return@Runnable
+            if (drag.canAdvance(android.os.SystemClock.uptimeMillis())) advanceSelectionViewport(drag)
+            else if (!drag.inFlight && !drag.awaitingViewport) scheduleSelectionEdge(drag)
+        }
+        selectionEdgeTask = task
+        host.postDelayed(task, 80)
+    }
+
+    private fun advanceSelectionViewport(drag: EpubSelectionDrag) {
+        val view = surface ?: return
+        val state = view.readyState ?: return
+        if (selectionDrag !== drag || selection == null || loading || state.optString("mode") == "FIXED") return
+        val direction = drag.edge
+        drag.didAdvance(android.os.SystemClock.uptimeMillis(), if (state.optBoolean("scrolled")) 80L else 350L)
+        drag.awaitingViewport = true
+        selectionRevision++
+        pendingSelectionHit = null
+        clearFrames()
+        val scrolled = state.optBoolean("scrolled")
+        val atBoundary = if (scrolled) state.optBoolean(if (direction > 0) "atEnd" else "atStart")
+            else state.optInt("pageIndex") + direction !in 0 until state.optInt("pageCount")
+        if (!atBoundary) {
+            if (scrolled) {
+                view.scroll(32f * direction)
+                // scroll publishes through the same onReady/token handshake as ordinary dragging.
+            } else view.move(state.optInt("pageIndex") + direction, preserveSelection = true,
+                selectionProjection = selectionProjection())
+        } else {
+            val target = if (scrolled) (if (direction > 0) documents.size else -1) else documentIndex + direction
+            val document = documents.getOrNull(target)
+            if (document != null) {
+                view.move(0, JSONObject().put("index", target)
+                    .put("textOffset", if (direction > 0) document.first else document.last), preserveSelection = true,
+                    selectionProjection = selectionProjection())
+            } else {
+                val boundary = if (direction > 0) documents.lastOrNull() else documents.firstOrNull()
+                val targetChapter = boundary?.chapter?.chapter?.index?.plus(direction)
+                if (targetChapter == null || targetChapter !in 0 until (boundBook?.totalChapterNum ?: 0)) {
+                    drag.awaitingViewport = false
+                    drag.updateEdge(0, android.os.SystemClock.uptimeMillis())
+                    return
+                }
+                drag.chapterTarget = targetChapter
+                openAtEnd = direction < 0
+                chapterTurn(targetChapter - (chapter?.index ?: targetChapter - direction))
+            }
+        }
+        if (selectionDrag === drag && drag.awaitingViewport) {
+            val timeout = Runnable { if (selectionDrag === drag && drag.awaitingViewport) stopSelectionDrag() }
+            selectionNavigationTimeout = timeout
+            host.postDelayed(timeout, 25_000)
         }
     }
 
-    private fun setSelectionEnd(chapterIndex: Int, offset: Int) {
+    /** Only mappings still needed by the active range/anchor survive a window replacement. */
+    private fun retainedSelectionChapters(values: Map<Int, EpubPreparedContent>): Map<Int, EpubPreparedContent> {
+        val value = selection ?: return emptyMap()
+        val anchor = selectionAnchor?.first ?: value.chapterIndex
+        val target = selectionDrag?.chapterTarget ?: value.endChapterIndex
+        val from = minOf(value.chapterIndex, anchor, target)
+        val to = maxOf(value.endChapterIndex, anchor, target)
+        return values.filterKeys { it in from..to }
+    }
+
+    private fun releaseSelectionChapters() {
+        val visible = documents.map { it.chapter.chapter.index }.toSet()
+        preparedChapters = preparedChapters.filterKeys { it in visible } + retainedSelectionChapters(preparedChapters)
+    }
+
+    private fun stopSelectionDrag() {
+        if (selectionDrag?.awaitingViewport == true)
+            surface?.interact(JSONObject().put("action", "clear")) {}
+        selectionEdgeTask?.let(host::removeCallbacks)
+        selectionEdgeTask = null
+        selectionNavigationTimeout?.let(host::removeCallbacks)
+        selectionNavigationTimeout = null
+        selectionDrag = null
+        selectionHandleActive = false
+        selectionRevision++
+        pendingSelectionHit = null
+        releaseSelectionChapters()
+    }
+
+    private fun completeSelectionDrag(drag: EpubSelectionDrag) {
+        if (selectionDrag !== drag) return
+        stopSelectionDrag()
+        selectionFinished = true
+        renderSelection()
+    }
+
+    private fun setSelectionEnd(chapterIndex: Int, offset: Int, geometry: JSONObject? = null) {
         val anchor = selectionAnchor ?: return
         val point = chapterIndex to offset
         val forward = point.first > anchor.first || point.first == anchor.first && point.second >= anchor.second
@@ -1118,13 +1467,19 @@ internal class EpubLayoutController(
         }
         if (text.isEmpty()) return
         selection = ReaderSelection(from.first, from.second, chapters.first().chapter.title, text, to.first, to.second)
-        renderSelection()
+        releaseSelectionChapters()
+        if (geometry == null) renderSelection() else {
+            surface?.let { view -> geometry.put("leftPx", view.left).put("topPx", view.top) }
+            selectionChanged(geometry, false)
+            clearFrames()
+        }
     }
 
     private fun renderSelection() {
         val value = selection ?: return
         val view = surface ?: return
         val mine = selectionRevision
+        val finished = selectionFinished
         val ranges = JSONArray()
         documents.forEachIndexed { index, document ->
             val chapterIndex = document.chapter.chapter.index
@@ -1138,15 +1493,25 @@ internal class EpubLayoutController(
             if (mine != selectionRevision || selection !== value) return@interact
             result?.optJSONObject("selection")?.let { geometry ->
                 geometry.put("leftPx", view.left).put("topPx", view.top)
-                selectionChanged(geometry, selectionFinished)
+                selectionChanged(geometry, finished)
             }
         }
         clearFrames()
     }
 
     fun finishSelectionDrag() {
-        selectionFinished = true
-        renderSelection()
+        val drag = selectionDrag
+        if (drag != null) {
+            selectionEdgeTask?.let(host::removeCallbacks)
+            selectionEdgeTask = null
+            drag.finish()
+            if (!drag.inFlight && !drag.awaitingViewport && !drag.finalHit) completeSelectionDrag(drag)
+            else requestSelectionHit(drag)
+        } else if (selectionHandleActive) {
+            stopSelectionDrag()
+            selectionFinished = true
+            renderSelection()
+        }
     }
 
     fun showSearchResult(chapter: TextChapter, from: Int, length: Int) {
@@ -1199,19 +1564,31 @@ internal class EpubLayoutController(
         } else null, finished)
     }
 
-    fun moveSelection(start: Boolean, x: Float, y: Float) {
-        val view = surface ?: return
+    fun beginSelectionHandleDrag(start: Boolean) {
+        stopSelectionDrag()
         val selected = selection ?: return
-        if (selectionFinished) selectionAnchor = null
-        if (selectionAnchor == null) selectionAnchor = if (start)
-            selected.endChapterIndex to selected.endChapterPosition else selected.chapterIndex to selected.chapterPosition
+        selectionHandleActive = true
+        selectionAnchor = if (start) selected.endChapterIndex to selected.endChapterPosition
+            else selected.chapterIndex to selected.chapterPosition
         selectionFinished = false
+    }
+
+    fun cancelSelectionHandleDrag() { stopSelectionDrag() }
+
+    fun moveSelection(start: Boolean, x: Float, y: Float) {
+        if (!selectionHandleActive) return
+        val view = surface ?: return
         val location = IntArray(2)
         view.getLocationOnScreen(location)
-        hitSelection(x - location[0], y - location[1], initial = false)
+        val localX = x - location[0]
+        val localY = y - location[1]
+        val drag = selectionDrag ?: EpubSelectionDrag(localX, localY).also { selectionDrag = it }
+        if (!drag.pressed) return
+        hitSelection(localX, localY, initial = false)
     }
 
     fun clearSelection() {
+        stopSelectionDrag()
         selectionRevision++
         pendingSelectionHit = null
         selectionAnchor = null
@@ -1219,6 +1596,7 @@ internal class EpubLayoutController(
         if (selection != null || pendingSearchSelection != null) clearFrames()
         pendingSearchSelection = null
         selection = null
+        releaseSelectionChapters()
         surface?.interact(JSONObject().put("action", "clear")) { host.post { continueTurns() } }
         selectionChanged(null, false)
     }
@@ -1320,12 +1698,14 @@ internal class EpubLayoutController(
 
     fun refreshHighlightRules(): Boolean {
         if (closed || !active) return false
+        stopSelectionDrag()
         if (!loading) contentSlot.clear()
         val mine = ++highlightRevision
         pendingHighlightUpdate = true
         val current = preparedContent ?: return true
         if (loading || surface?.state == null) return true
         val previous = preparedChapters
+        val window = documents
         val content = contentGeneration
         val matcher = io.legado.app.ui.book.read.page.provider.ReadHighlightMatcher(ReadBookConfig.highlightRules)
         cancelTurn()
@@ -1334,10 +1714,17 @@ internal class EpubLayoutController(
                 val updated = withContext(Dispatchers.Default) {
                     previous.mapValues { (_, chapter) -> chapter.withHighlightStyles(matcher) }
                 }
-                if (closed || mine != highlightRevision || content != contentGeneration || preparedContent !== current) return@launch
+                if (closed || mine != highlightRevision || content != contentGeneration || preparedContent !== current || documents !== window) return@launch
+                val updatedWindow = window.map { document ->
+                    checkNotNull(updated[document.chapter.chapter.index]?.documents?.firstOrNull {
+                        it.chapter === document.chapter && it.payload.getString("key") == document.payload.getString("key") &&
+                            it.spineIndex == document.spineIndex && it.first == document.first && it.last == document.last
+                    }) { "EPUB 高亮窗口已变更" }
+                }
                 preparedChapters = updated
+                releaseSelectionChapters()
                 preparedContent = updated[current.chapter.chapter.index]
-                documents = updated.values.sortedBy { it.chapter.chapter.index }.flatMap { it.documents }
+                documents = updatedWindow
                 pendingHighlightUpdate = false
                 surface?.updateStyles(documents)
             } catch (error: Exception) {
@@ -1351,6 +1738,7 @@ internal class EpubLayoutController(
     }
 
     fun restyle() {
+        stopSelectionDrag()
         if (!loading) contentSlot.clear()
         cancelTurn()
         val mine = ++styleGeneration
@@ -1380,38 +1768,193 @@ internal class EpubLayoutController(
     private fun interactReady(value: JSONObject, callback: (JSONObject?) -> Unit) {
         if (renderFailed) { callback(null); return }
         val view = surface ?: run { callback(null); return }
-        val deliver: (JSONObject?) -> Unit = { result ->
-            callback(result)
-            if (!turning) host.post { continueTurns() }
+        val sequence = ++inputSequence
+        val epoch = interactionEpoch
+        // DOWN can already have completed to the frozen target. Bind its UP to that exact
+        // document/page, including a harmless neighbour-window reconciliation of its token.
+        val visibleToken = if (value.optString("action") == "tap") committedTapToken ?: visibleInteractionToken
+            else visibleInteractionToken
+        val displayedTarget = if (value.optString("action") == "tap") committedTapTarget ?:
+            visibleInteractionTarget.takeIf { visibleInteractionEpoch == epoch } else null
+        fun hasBlankTapContext(): Boolean = value.optString("action") == "tap" && displayedTarget != null &&
+            !closed && !renderFailed && !pageTextMeasuring && !isScroll() && !autoPaging() &&
+            selection == null && selectionAnchor == null && selectionDrag == null && pendingSelectionHit == null &&
+            pendingSearchSelection == null
+        fun canResolveBlankTap(): Boolean = hasBlankTapContext() && !loading && chapterTurnTarget == null &&
+            view.canResolveBlankTap(checkNotNull(displayedTarget).first)
+        // An older queued turn can replace the canvas document before this hit is drained.
+        // Keep only the existing negative proof for the viewport that received this UP.
+        val confirmedBlankTap = visibleToken != null &&
+            hasBlankTapContext() && view.canResolveBlankTap(checkNotNull(displayedTarget).first)
+        val blankViewport = if (confirmedBlankTap) Rect(view.left, view.top, view.right, view.bottom) else null
+        val blankHostWidth = host.width
+        val blankHostHeight = host.height
+        var delivered = false
+        val deliver: (JSONObject?) -> Unit = deliver@ { result ->
+            if (delivered) return@deliver
+            delivered = true
+            if (activeInteraction == sequence) activeInteraction = null
+            val previous = inputTicket
+            inputTicket = sequence
+            try { callback(result.takeIf { epoch == interactionEpoch }) }
+            finally { inputTicket = previous }
+            host.post { continueTurns() }
         }
-        if (loading || view.readyState == null || committing) {
-            val visibleToken = visibleInteractionToken
-            pendingInteractions.addLast {
-                // A coordinate that has not been hit-tested is not a turn intent. Never hit
-                // a new chapter's link/image using coordinates received over an old page.
-                if (view === surface && visibleToken != null && visibleToken == visibleInteractionToken)
-                    view.interact(value, deliver)
-                else deliver(null)
+        val interaction = PendingInteraction(sequence) {
+            activeInteraction = sequence
+            val targetMatches = displayedTarget != null && displayedTarget.second >= 0 &&
+                documents.getOrNull(documentIndex)?.payload?.optString("key") == displayedTarget.first &&
+                view.readyState?.optInt("pageIndex", -1) == displayedTarget.second
+            val sameOwner = epoch == interactionEpoch && view === surface
+            if (sameOwner &&
+                (visibleToken != null && visibleToken == visibleInteractionToken || targetMatches))
+                view.interact(value, deliver)
+            else if (sameOwner && confirmedBlankTap && hasBlankTapContext() &&
+                blankViewport?.let { it.left == view.left && it.top == view.top && it.right == view.right && it.bottom == view.bottom } == true &&
+                host.width == blankHostWidth && host.height == blankHostHeight)
+                deliver(JSONObject().put("token", visibleToken).put("href", JSONObject.NULL)
+                    .put("nativeBlank", true).put("retainedChapterBlank", true))
+            else deliver(null)
+        }
+        if (activeInteraction == null && pendingInteractions.isEmpty() && canResolveBlankTap()) {
+            activeInteraction = sequence
+            // Keep the asynchronous callback boundary and the original input ticket/turn queue.
+            // A selection or document change before this message restores the ordinary hit test.
+            host.post {
+                when {
+                    epoch != interactionEpoch || view !== surface || closed -> deliver(null)
+                    canResolveBlankTap() -> deliver(JSONObject().put("token", visibleToken).put("href", JSONObject.NULL).put("nativeBlank", true))
+                    else -> {
+                        if (activeInteraction == sequence) activeInteraction = null
+                        pendingInteractions.addFirst(interaction)
+                        continueTurns()
+                    }
+                }
             }
-        } else view.interact(value, deliver)
+            return
+        }
+        pendingInteractions.addLast(interaction)
+        continueTurns()
     }
 
     private fun continueTurns() {
-        if (closed || renderFailed || loading || turning || pageTextMeasuring || chapterTurnTarget != null ||
-            preparedContent == null || surface?.readyState == null) return
+        if (closed || renderFailed || loading || pageTextMeasuring || chapterTurnTarget != null ||
+            turnHandoff.waitingForMove || activeInteraction != null || preparedContent == null || surface?.readyState == null) return
+        val interaction = pendingInteractions.peekFirst()
+        val request = pendingTurns.peek()
+        // Resolve coordinates while their displayed viewport still exists. Their callbacks
+        // keep their input tickets, so accepted turns still execute in input order. Starting
+        // an older resolved turn here would invalidate later taps received on this same page.
+        if (interaction != null) {
+            pendingInteractions.removeFirst().run()
+            return
+        }
+        if (turning) return
         when {
-            pendingTurns.isNotEmpty() -> pendingTurns.startNext(::startTurn)
-            pendingInteractions.isNotEmpty() -> pendingInteractions.removeFirst().invoke()
+            request != null -> {
+                // This existing bounded projection must not depend on the pixel producer getting ahead.
+                if (request.direction == lastDirection && animationsEnabled() && recordAnimationFrames() && !isScroll()) prepareNeighbor()
+                if (reconcileQueuedWindow(request)) return
+                var started = false
+                pendingTurns.startNext { started = startTurn(it); started }
+                // A blocked producer has not changed the displayed viewport. Resolve later
+                // coordinates there now; their resulting intents retain their input order.
+                if (!started && pendingInteractions.isNotEmpty()) pendingInteractions.removeFirst().run()
+                else if (started && pendingInteractions.isNotEmpty()) host.post { continueTurns() }
+            }
             else -> {
                 val book = boundBook
                 // A neighbour can finish while a window is loading and its bind notification
                 // is ignored. Recheck after ready, without overtaking turns or seeking back.
-                if (book != null && documents.getOrNull(documentIndex)?.chapter === textChapter &&
+                if (book != null && contentJob?.isActive != true && documents.getOrNull(documentIndex)?.chapter === textChapter &&
                     position() == reportedPosition && hasUnpreparedWindowNeighbors()) {
                     showChapter(book, retainWindowPosition = true)
                 } else scheduleWarm()
             }
         }
+    }
+
+    /** Consume only a completed native projection, retaining the displayed page and input queue. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun reconcileQueuedWindow(request: TurnRequest): Boolean {
+        val preparing = preparationWorking || preparation?.hasPendingJob == true
+        if (closed || loading || turning || committing || pageTextMeasuring ||
+            chapterTurnTarget != null || pendingTurnFrame != null ||
+            activeInteraction != null || pendingInteractions.isNotEmpty() || selection != null ||
+            selectionAnchor != null || selectionDrag != null || pendingSelectionHit != null ||
+            pendingSearchSelection != null || pendingChapterLink != null || pendingHighlightUpdate ||
+            speechFollowPosition != null || pendingReadAloud != null || aloudPaintSignature != "[]" ||
+            textHighlights.isNotEmpty() || gestures?.isActive == true ||
+            autoPaging() || isScroll() || !animationsEnabled() || !recordAnimationFrames() ||
+            !host.isShown || request.direction != lastDirection) return false
+        val current = preparedContent ?: return false
+        val native = textChapter ?: return false
+        val view = surface ?: return false
+        val state = view.readyState ?: return false
+        val oldIndex = documentIndex
+        val displayed = documents.getOrNull(oldIndex) ?: return false
+        if (current.chapter !== native || displayed.chapter !== native || position() != reportedPosition ||
+            view.isLayoutRequested || view.width <= 0 || view.height <= 0 ||
+            view.width.toLong() * view.height * 8 > 48L * 1024 * 1024 || view.hasPendingScroll ||
+            state.optString("status") != "ready" || state.optBoolean("busy") ||
+            state.optString("mode") != "HORIZONTAL" || !state.optBoolean("canvas") ||
+            state.optBoolean("cover") || state.optBoolean("scrolled") ||
+            (state.optJSONArray("media")?.length() ?: -1) != 0 ||
+            (state.optJSONArray("galleryIndexes")?.length() ?: -1) != 0 ||
+            documents.getOrNull(oldIndex + request.direction) != null) return false
+        if (preparing) {
+            val warming = warmingPage ?: return false
+            // A current-document capture can finish against the unchanged prefix.
+            // Foreground snapshot queries and cross-document jobs retain the old guard.
+            if (request.direction != 1 || !preparationWorking || preparation?.hasPendingJob != true ||
+                warming.first != oldIndex || warming.second <= state.optInt("pageIndex") ||
+                warming.second >= state.optInt("pageCount") || warmingPaint != aloudPaintSignature ||
+                frameDocument != oldIndex || frames[state.optInt("pageIndex")] == null) return false
+        }
+        val neighbors = neighboringChapters()
+        val target = neighbors.firstOrNull {
+            it.isCompleted && it.chapter.index == native.chapter.index + request.direction
+        } ?: return false
+        if (preparedChapters[target.chapter.index]?.chapter === target) return false
+        val book = boundBook ?: return false
+        val opened = snapshot ?: return false
+        val key = PreparationKey(target, opened.publicationSession, opened.identity.contentRevision,
+            styleGeneration, highlightRevision, book.getDelTag(Book.hTag), book.getDelTag(Book.rubyTag))
+        val completed = contentSlot.find(key)?.takeIf { it.isCompleted && !it.isCancelled } ?: return false
+        val next = runCatching { completed.getCompleted() }.getOrNull()?.takeIf { it.chapter === target } ?: return false
+        // Repeated spine paths and annotation geometry keep their original reconciliation lifecycle.
+        if (next.documents.any { it.location.path == displayed.location.path }) return false
+        val prepared = preparedChapters.filterValues { value ->
+            value === current || neighbors.any { it.isCompleted && value.chapter === it }
+        } + (target.chapter.index to next)
+        val updated = prepared.values.sortedBy { it.chapter.chapter.index }.flatMap { it.documents }
+        if (updated.map { it.location.path }.distinct().size != updated.size) return false
+        val index = updated.indexOfFirst { it === displayed }
+        if (index < 0 || updated.size == documents.size && updated.indices.all { updated[it] === documents[it] }) return false
+        if (preparing && (index != oldIndex || updated.size <= documents.size ||
+                documents.indices.any { updated[it] !== documents[it] })) return false
+        // Negative cache keys name the two adjacent document identities, not their window indexes.
+        // Only an absent neighbour may be added; every existing cached neighbour must remain exact.
+        if (listOf(-1, 1).any { step ->
+                documents.getOrNull(oldIndex + step)?.let { it !== updated.getOrNull(index + step) } == true
+            } || frameDocument >= 0 && frameDocument != oldIndex) return false
+        val producer = preparation
+        val producerEpoch = preparationEpoch
+        val cachedEpoch = frameEpoch
+        if (preparing) request.timing.mark("neighbor-window-overlap")
+        request.timing.mark("neighbor-window-reconcile")
+        preparedChapters = prepared
+        failedNeighbors = failedNeighbors - target.chapter.index
+        documents = updated
+        documentIndex = index
+        if (frameDocument == oldIndex) frameDocument = index
+        // Existing canvas reconciliation retains the settled transform and original onReady path.
+        // Its revision gate pauses consumption, while incoming intents keep their original tickets.
+        openDocument(offset = reportedPosition, retainWindowPosition = true)
+        if (preparing) request.timing.mark(if (preparation === producer && preparationEpoch == producerEpoch &&
+                frameEpoch == cachedEpoch && preparation?.hasPendingJob == true) "neighbor-window-work-retained"
+            else "neighbor-window-work-changed")
+        return true
     }
 
     private fun scheduleWarm() {
@@ -1421,17 +1964,20 @@ internal class EpubLayoutController(
 
     private fun clearFrames(keepPreparedDocument: Boolean = false, releaseHost: Boolean = false) {
         host.removeCallbacks(warmTask)
+        pendingTurnFrame = null
         frames.clear()
         // Paint changes do not change document geometry. Let an in-flight warm
         // capture finish; its paint signature below prevents publishing old ink.
         if (keepPreparedDocument) return
+        frameEpoch++
         frameDocument = -1
         cancelPreparation(releaseHost)
     }
 
     private fun cancelPreparation(releaseHost: Boolean = false) {
+        val wasWorking = preparationWorking || preparation?.hasPendingJob == true
         warmWatchdog.cancel()
-        frameEpoch++
+        preparationEpoch++
         preparationWorking = false
         warmingPage = null
         borrowedFrames.forEach { it.close() }
@@ -1439,19 +1985,68 @@ internal class EpubLayoutController(
         if (releaseHost) {
             preparation?.close()
             preparation = null
-        } else preparation?.cancel()
+        } else if (wasWorking) preparation?.cancel()
+        // An idle preparer has no outstanding callback to cancel. Retain its settled layout;
+        // movePrepared still checks content, documents, fonts, viewport and effective options.
     }
 
-    private fun preparer(current: EpubLayoutSurface, chrome: Bitmap): EpubPreparedTurn {
+    private fun promoteTurnFrame(state: JSONObject): Boolean {
+        val target = pendingTurnFrame ?: return false
+        val page = state.optInt("pageIndex", -1)
+        if (page < 0 || target.frame.pageIndex != page ||
+            documents.getOrNull(documentIndex)?.payload?.optString("key") != target.documentKey ||
+            frames[target.key] !== target.frame) return false
+        val step = if (target.key == -1) 1 else -1
+        val previousKey = if (step > 0) -2 else -1
+        val retainSource = target.sourceKey >= 0 && target.sourceFrame.pageIndex == target.sourceKey &&
+            target.sourceFrame.staticPage && target.frame.staticPage && target.sourceFrame.canvas && target.frame.canvas &&
+            target.sourceFrame.bitmap.width == target.frame.bitmap.width && target.sourceFrame.bitmap.height == target.frame.bitmap.height &&
+            frameDocument == documentIndex - step &&
+            documents.getOrNull(frameDocument)?.payload?.optString("key") == target.sourceDocumentKey &&
+            frames[target.sourceKey] === target.sourceFrame
+        cancelPreparation()
+        // Move the old edge first: a one-page chapter's source key can be the new page zero.
+        // This transfers its existing cache entry and leases, without allocating another frame.
+        val retainedSource = retainSource && frames.rekey(target.sourceKey, previousKey)
+        if (!frames.rekey(target.key, page)) return false
+        val retained = mutableSetOf(page)
+        if (retainedSource) {
+            retained.add(previousKey)
+            turnTiming?.mark("boundary-source-retained")
+        }
+        // Carry only the adjacent document's already completed lookahead frames.
+        // Their negative keys still belong to this exact source window and epoch.
+        val keys = if (step > 0) listOf(-3, -5) else listOf(-4, -6)
+        keys.forEachIndexed { offset, key ->
+            val extra = frames[key]
+            val expected = page + step * (offset + 1)
+            if (expected in 0 until state.optInt("pageCount") && extra?.pageIndex == expected &&
+                frames.rekey(key, expected)) retained.add(expected)
+        }
+        frames.retain(retained)
+        frameEpoch++
+        frameDocument = documentIndex
+        turnTiming?.mark("boundary-frame-promoted")
+        return true
+    }
+
+    private fun preparer(current: EpubLayoutSurface, chrome: Bitmap?): EpubPreparedTurn {
         val viewport = Rect(current.left, current.top, current.right, current.bottom)
+        val hardwareFrames = chrome == null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+        val width = chrome?.width ?: host.width
+        val height = chrome?.height ?: host.height
         preparation?.let {
-            if (it.matches(chrome.width, chrome.height, viewport)) return it
+            if (it.matches(width, height, viewport, hardwareFrames)) return it
             it.close()
             preparation = null
         }
         return EpubPreparedTurn(host.context, snapshot!!.publicationSession,
-            chrome.width, chrome.height, viewport,
-            onError = { error ->
+            width, height, viewport, hardwareFrames, nativeBackground,
+            onError = failure@ { error ->
+                if (warmingPage != null && turning) {
+                    cancelPreparation(releaseHost = true)
+                    return@failure
+                }
                 val requested = turning || pendingTurns.isNotEmpty() || pageTextMeasuring
                 clearFrames(releaseHost = true)
                 if (requested) {
@@ -1463,19 +2058,37 @@ internal class EpubLayoutController(
                 ?.takeIf { it.location.path == location.path }?.let {
                     view.readerFont(readerFontBytes)
                     view.titleFont(titleFontBytes)
-                    view.documents(documents)
-                    view.content(it.location.path, it.html, it.payload)
+                    view.preparedDocuments(documents, configuration.optInt("index", -1))
+                    view.content(it.location.path, it.html, it.payload, it.payloadJson)
                 } },
         ).also { preparation = it }
     }
 
-    private fun warmFrames() {
+    private fun warmFrames(capturedOptions: JSONObject? = null) {
+        // The boundary frames keep the old window's identity until original onReady commits it.
+        if (pendingTurnFrame != null) return
         val current = surface ?: return
         val state = current.readyState ?: return
-        if (closed || loading || turning || committing || preparationWorking || pageTextMeasuring || !host.isShown || chapterTurnTarget != null || pendingTurns.isNotEmpty() ||
-            pendingInteractions.isNotEmpty() || preparedContent == null ||
+        // The overlap owner can snapshot the settled source before starting its live move.
+        // Its frozen frames stay leased even if a queued input has already ended the animation.
+        val beforeLiveMove = capturedOptions != null
+        if (!beforeLiveMove && turnHandoff.waitingForMove) {
+            // The turn already owns a source snapshot. A scheduled warm query here would
+            // race it, claim preparationWorking, then be cancelled by that turn's move.
+            turnTiming?.mark("warm-await-owned-snapshot")
+            return
+        }
+        val animating = turning && (!committing || beforeLiveMove) && (beforeLiveMove || !awaitingAnimationDraw) &&
+            anticipatedPage != null && (recordAnimationFrames() || beforeLiveMove)
+        if (closed || loading || turning && !animating || committing && !beforeLiveMove || preparationWorking || pageTextMeasuring || !host.isShown || chapterTurnTarget != null ||
+            pendingTurns.isNotEmpty() && !animating || activeInteraction != null ||
+            pendingInteractions.isNotEmpty() && !beforeLiveMove || preparedContent == null ||
             current.isLayoutRequested || current.width <= 0 || current.height <= 0) return
-        if (!animationsEnabled() || isScroll() || state.optString("mode") == "FIXED" ||
+        // A plain manual no-animation move uses the live prelaid document. Creating
+        // an unused pixel producer at its edge can block input on the UI thread.
+        val manualNoAnimation = !animationsEnabled() && !autoPaging() && selection == null && selectionDrag == null &&
+            speechFollowPosition == null && pendingReadAloud == null && aloudPaintSignature == "[]"
+        if (manualNoAnimation || (!animationsEnabled() && !recordAnimationFrames()) || isScroll() || state.optString("mode") == "FIXED" ||
             (state.optJSONArray("media")?.length() ?: 0) > 0 ||
             current.width.toLong() * current.height * 8 > 48L * 1024 * 1024) { prepareNeighbor(); return }
         val page = state.optInt("pageIndex")
@@ -1484,19 +2097,33 @@ internal class EpubLayoutController(
         // At most four full-resolution frames, with fewer on large displays (48 MiB budget).
         val capacity = (48L * 1024 * 1024 / (current.width.toLong() * current.height * 4)).toInt().coerceAtMost(4)
         if (capacity < 2) return
-        val window = listOf(center, center + lastDirection, center - lastDirection, center + 2 * lastDirection)
-            .filter { it in 0 until count }.distinct().take(capacity)
+        val window = epubWarmTargets(documentIndex, center, count, documents.size, lastDirection, capacity,
+            boundaryOnly = !animationsEnabled())
         if (frameDocument != documentIndex) { clearFrames(); frameDocument = documentIndex }
-        frames.retain(window.toSet())
-        val target = window.firstOrNull { frames[it] == null } ?: run { prepareNeighbor(); return }
-        if (window.take(2).all { frames[it] != null }) prepareNeighbor()
-        val mine = frameEpoch
+        frames.retain(window.map { it.key }.toSet())
+        val target = window.firstOrNull {
+            frames[it.key] == null && (!it.last || it.page == -1 ||
+                frames[-2]?.pageIndex?.let { last -> last + it.page + 1 >= 0 } == true)
+        } ?: run { prepareNeighbor(); return }
+        // Leave speculative reverse reflow for idle. Starting it before this live
+        // move competes with the foreground renderer without serving the turn.
+        if (beforeLiveMove && target.document != documentIndex &&
+            (target.document - documentIndex) * lastDirection < 0) return
+        val targetPage = if (target.last && target.page < -1) checkNotNull(frames[-2]).pageIndex + target.page + 1
+            else target.page
+        if (!frames.makeRoom(current.width.toLong() * current.height * 4, keep = window.map { it.key }.toSet())) {
+            scheduleWarm()
+            return
+        }
+        if (window.take(2).all { frames[it.key] != null }) prepareNeighbor()
+        val mine = preparationEpoch
         val doc = documentIndex
         val paint = aloudPaintSignature
-        warmingPage = doc to target
+        warmingPage = target.document to targetPage
         warmingPaint = paint
         preparationWorking = true
         warmWatchdog.arm {
+            if (turning) { cancelPreparation(releaseHost = true); return@arm }
             val requested = pendingTurns.isNotEmpty()
             clearFrames(releaseHost = true)
             if (requested) {
@@ -1504,51 +2131,119 @@ internal class EpubLayoutController(
                 reportError("EPUB 翻页画面准备超时，请重试")
             }
         }
-        current.captureOptions { captured ->
-            if (closed || mine != frameEpoch) return@captureOptions
+        val capture: (JSONObject?) -> Unit = capture@ { captured ->
+            if (closed || mine != preparationEpoch) return@capture
             if (captured == null) {
                 warmWatchdog.cancel()
                 preparationWorking = false
                 warmingPage = null
                 if (pendingTurns.isNotEmpty()) host.post { continueTurns() }
-                return@captureOptions
+                return@capture
             }
-            val config = JSONObject(captured.toString()).apply {
+            // captureOptions transfers a fresh deep copy to this callback. Its only
+            // consumer changes these top-level seek fields before the private job owns it.
+            val config = (if (target.document == doc) captured else {
+                documentIndex = target.document
+                try { options(last = target.last).put("aloud", captured.optJSONObject("aloud") ?: JSONObject.NULL) }
+                finally { documentIndex = doc }
+            }).apply {
                 remove("location"); remove("textOffset"); remove("spreadPage")
-                put("page", target); put("last", false); put("preservePosition", false)
+                put("page", targetPage); put("last", target.last && target.page == -1); put("preservePosition", false)
             }
-            val chrome = nativeFrame()
+            val chrome = if (recordAnimationFrames()) null else nativeFrame()
             val prepared = preparer(current, chrome)
-            prepared.capturePage(chrome, documents[doc].location, config) { frame ->
-                if (closed || mine != frameEpoch) { frame.close(); return@capturePage }
+            prepared.capturePage(chrome, documents[target.document].location, config,
+                allowBufferQualification = { !turning && pendingTurns.peek() == null && animationsEnabled() && recordAnimationFrames() }) { frame ->
+                if (closed || mine != preparationEpoch) { frame.close(); return@capturePage }
                 warmWatchdog.cancel()
                 preparationWorking = false
                 warmingPage = null
-                if (paint == aloudPaintSignature) frames.put(target, frame) else frame.close()
-                if (pendingTurns.isNotEmpty() && !turning) host.post { continueTurns() }
-                else scheduleWarm()
+                if (paint == aloudPaintSignature) {
+                    frames.put(target.key, frame)
+                    if (recordAnimationFrames() && frames[target.key] === frame) frame.bitmap.prepareToDraw()
+                } else frame.close()
+                if (pendingTurns.isNotEmpty() && !turning) {
+                    // Consume the completed animated source before a previously posted speculative warm.
+                    if (animationsEnabled() && recordAnimationFrames()) host.removeCallbacks(warmTask)
+                    host.post { continueTurns() }
+                } else scheduleWarm()
             }
-            chrome.recycle()
+            chrome?.recycle()
         }
+        if (capturedOptions != null) capture(capturedOptions) else current.captureOptions(capture)
     }
 
-    private fun drawFrame(canvas: Canvas, frame: EpubCapturedFrame, current: EpubLayoutSurface) {
+    private fun drawFrame(canvas: Canvas, frame: EpubCapturedFrame, current: EpubLayoutSurface, recording: Boolean = false) {
         val saved = canvas.save()
         canvas.translate(current.left.toFloat(), current.top.toFloat())
         frame.clip?.let(canvas::clipRect)
-        canvas.drawBitmap(frame.bitmap, 0f, 0f, null)
+        if (!recording && !canvas.isHardwareAccelerated &&
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && frame.bitmap.config == Bitmap.Config.HARDWARE) {
+            // The original software consumers (for example simulation/auto paging) still
+            // require pixels. Hardware page animations never enter this conversion.
+            val pixels = checkNotNull(frame.bitmap.copy(Bitmap.Config.ARGB_8888, false))
+            try { canvas.drawBitmap(pixels, 0f, 0f, null) } finally { pixels.recycle() }
+        } else canvas.drawBitmap(frame.bitmap, 0f, 0f, null)
         canvas.restoreToCount(saved)
         if (frame.canvas) nativeChrome(canvas, frame.hideHeader, frame.hideFooter)
     }
 
+    private fun cachedAnimationFrames(before: EpubCapturedFrame, after: EpubCapturedFrame,
+        current: EpubLayoutSurface, beforeKey: Int, afterKey: Int): EpubAnimationFrames {
+        val leases = listOfNotNull(frames.acquire(beforeKey), frames.acquire(afterKey))
+        if (leases.size != 2) {
+            leases.forEach { it.close() }
+            error("EPUB cached animation lost its source frames")
+        }
+        return composeAnimationFrames(before, after, current, leases)
+    }
+
+    private fun composeAnimationFrames(before: EpubCapturedFrame, after: EpubCapturedFrame,
+        current: EpubLayoutSurface, leases: List<EpubFrameWindow.Lease<EpubCapturedFrame>>): EpubAnimationFrames {
+        if (!recordAnimationFrames() || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+            try {
+                val chrome = nativeFrame()
+                val next = chrome.copy(Bitmap.Config.ARGB_8888, true)
+                drawFrame(Canvas(chrome), before, current)
+                drawFrame(Canvas(next), after, current)
+                return EpubAnimationFrames(EpubAnimationFrames.Frame.raster(chrome), EpubAnimationFrames.Frame.raster(next))
+            } finally { leases.forEach { it.close() } }
+        }
+        var first: EpubAnimationFrames.Frame? = null
+        try {
+            fun body(frame: EpubCapturedFrame): Bitmap? = frame.bitmap.takeIf {
+                frame.staticPage && frame.canvas && android.graphics.Color.alpha(ReadBookConfig.bgMeanColor) == 255 &&
+                    current.left == 0 && current.top == 0 && current.width == host.width && current.height == host.height &&
+                    it.width == host.width && it.height == host.height &&
+                    (frame.clip == null || frame.clip.contains(0, 0, host.width, host.height))
+            }
+            first = EpubAnimationFrames.Frame.record(host.width, host.height, body(before)) { canvas ->
+                nativeBackground(canvas)
+                drawFrame(canvas, before, current, recording = true)
+            }
+            val second = EpubAnimationFrames.Frame.record(host.width, host.height, body(after)) { canvas ->
+                nativeBackground(canvas)
+                drawFrame(canvas, after, current, recording = true)
+            }
+            return EpubAnimationFrames(first, second) { leases.forEach { it.close() } }
+        } catch (error: Throwable) {
+            try { first?.close() } finally { leases.forEach { it.close() } }
+            throw error
+        }
+    }
+
     fun turn(direction: Int) {
-        stopScroll()
+        if (inputTicket != null) {
+            stopSelectionDrag()
+            gestures?.cancelForQueuedTap()
+            surface?.cancelScroll()
+        } else stopScroll()
         speechFollowRevision++
         speechFollowPosition = null
         if (closed) return
         if (renderFailed) { retryRendering(); return }
         if ((loading || preparedContent == null) && chapterTurnTarget == null) return
-        val request = TurnRequest(direction, inputReceivedAt ?: android.os.SystemClock.elapsedRealtime())
+        val request = TurnRequest(direction, inputReceivedAt ?: android.os.SystemClock.elapsedRealtime(), inputTicket ?: ++inputSequence)
         request.timing.mark("enqueued")
         pendingTurns.add(request)
         if (turning && !committing) completeAnimation()
@@ -1608,16 +2303,13 @@ internal class EpubLayoutController(
         if (current.width <= 0 || current.height <= 0) return false
         val originalIndex = documentIndex
         val beforeFrame = if (frameDocument == originalIndex) frames[state.optInt("pageIndex")] else null
-        val afterFrame = if (frameDocument == targetDocument && targetDocument == originalIndex) frames[index] else null
-        if (beforeFrame != null && afterFrame != null && preparationWorking && warmingPage != null) {
-            // A cache hit needs no capture. Do not keep speculative GL/WebView work competing
-            // with this animation, or let its watchdog invalidate the accepted turn's epoch.
-            request.timing.mark("cancel-unneeded-warm")
-            cancelPreparation()
-        }
+        val afterKey = if (targetDocument == originalIndex) index else if (direction > 0) -1 else -2
+        val afterFrame = if (frameDocument == originalIndex) frames[afterKey] else null
+        if (beforeFrame != null && afterFrame != null && preparationWorking && warmingPage != null)
+            request.timing.mark("keep-inflight-warm")
         if (animationsEnabled() && (beforeFrame == null || afterFrame == null) && preparationWorking) {
             val needed = warmingPaint == aloudPaintSignature && (warmingPage == (originalIndex to state.optInt("pageIndex")) ||
-                warmingPage == (targetDocument to index))
+                warmingPage == (targetDocument to if (targetDocument == originalIndex) index else if (direction > 0) 0 else -1))
             if (needed || warmingPage == null) {
                 if (!request.waiting) { request.timing.mark("wait-required-frame"); request.waiting = true }
                 return false
@@ -1625,7 +2317,21 @@ internal class EpubLayoutController(
             request.timing.mark("cancel-unrelated-warm")
             cancelPreparation()
         }
+        val recordedTurn = animationsEnabled() && recordAnimationFrames() &&
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
+            state.optString("mode") != "FIXED" &&
+            (state.optJSONArray("media")?.length() ?: 0) == 0 &&
+            current.width.toLong() * current.height * 8 <= 48L * 1024 * 1024
+        val missingFrames = (if (beforeFrame == null) 1 else 0) + (if (afterFrame == null) 1 else 0)
+        if (recordedTurn && missingFrames > 0 && !frames.makeRoom(
+                current.width.toLong() * current.height * 4 * missingFrames, missingFrames,
+                setOf(state.optInt("pageIndex"), afterKey))) {
+            if (!request.waiting) { request.timing.mark("wait-frame-budget"); request.waiting = true }
+            host.postOnAnimation { continueTurns() }
+            return false
+        }
         request.timing.mark("start cached=${beforeFrame != null && afterFrame != null}")
+        activeTurn = request
         turnTiming = request.timing
         turnPhase = "读取页面状态"
         val requestedAt = android.os.SystemClock.uptimeMillis()
@@ -1640,43 +2346,80 @@ internal class EpubLayoutController(
                 reportError("EPUB 翻页画面准备超时（$phase）")
             }
         }.also { host.postDelayed(it, 25_000) }
-        if (!animationsEnabled()) {
+        if (!animationsEnabled() && (!recordAnimationFrames() || beforeFrame == null || afterFrame == null)) {
             turnPhase = "等待页面显示"
             committing = true
             documentIndex = targetDocument
             if (targetDocument == originalIndex) current.move(index)
             else openDocument(last = direction < 0)
+            // Match the animated commit path: a subsequent UP belongs to this
+            // requested viewport and must wait for its original ready/token checks.
+            committedTapToken = current.requestedToken
+            committedTapTarget = documents[targetDocument].payload.getString("key") to
+                if (targetDocument == originalIndex) index else if (direction > 0) 0 else -1
             return true
         }
         if (beforeFrame != null && afterFrame != null) {
-            val chrome = nativeFrame()
-            val after = chrome.copy(Bitmap.Config.ARGB_8888, true)
-            drawFrame(Canvas(chrome), beforeFrame, current)
-            drawFrame(Canvas(after), afterFrame, current)
-            anticipatedPage = index
-            if (io.legado.app.BuildConfig.DEBUG) android.util.Log.d("EpubTurnFrames",
-                "cached=true prepareMs=${android.os.SystemClock.uptimeMillis() - requestedAt}")
-            turnTiming?.mark("animation-request")
-            awaitingAnimationDraw = true
-            animateAndMove(chrome, after, direction) { current.move(index) }
-            scheduleWarm()
+            // Freeze and lease both sources before the asynchronous cross-document options
+            // request; a useful warm capture may publish into the window while it is pending.
+            val drawings = cachedAnimationFrames(beforeFrame, afterFrame, current, state.optInt("pageIndex"), afterKey)
+            pendingAnimation = drawings
+            val publish: (JSONObject?) -> Unit = publish@ { captured ->
+                if (closed || mine != generation || requestEpoch != frameEpoch || !turning) {
+                    if (pendingAnimation === drawings) pendingAnimation = null
+                    drawings.close()
+                    return@publish
+                }
+                if (targetDocument != originalIndex && captured == null) {
+                    cancelTurn()
+                    return@publish
+                }
+                val targetOptions = if (targetDocument != originalIndex) {
+                    documentIndex = targetDocument
+                    try { options(last = direction < 0).put("page", 0)
+                        .put("aloud", captured?.optJSONObject("aloud") ?: JSONObject.NULL) }
+                    finally { documentIndex = originalIndex }
+                } else null
+                anticipatedPage = if (targetDocument == originalIndex) index else null
+                if (io.legado.app.BuildConfig.DEBUG) android.util.Log.d("EpubTurnFrames",
+                    "cached=true prepareMs=${android.os.SystemClock.uptimeMillis() - requestedAt}")
+                turnTiming?.mark("animation-request")
+                awaitingAnimationDraw = true
+                pendingAnimation = null // Ownership moves to the existing animation host.
+                if (targetDocument != originalIndex)
+                    pendingTurnFrame = TurnFrameTarget(documents[targetDocument].payload.getString("key"), afterKey, afterFrame,
+                        documents[originalIndex].payload.getString("key"), state.optInt("pageIndex"), beforeFrame)
+                animateAndMove(drawings, direction, documents[targetDocument].payload.getString("key") to afterFrame.pageIndex) {
+                    if (targetDocument == originalIndex) current.move(index)
+                    else {
+                        documentIndex = targetDocument
+                        val document = documents[targetDocument]
+                        current.content(document.location.path, document.html, document.payload, document.payloadJson)
+                        current.open(document.location, targetOptions!!)
+                    }
+                }
+                scheduleWarm()
+            }
+            if (targetDocument == originalIndex) publish(null)
+            else current.confirmedCaptureOptions()?.let(publish) ?: current.captureOptions(publish)
             return true
         }
         // Paint changes can retire cached frames while the missing side is still rendering.
         // Keep those borrowed sources alive until composition finishes or this turn is cancelled.
         borrowedFrames = listOfNotNull(
             if (beforeFrame != null) frames.acquire(state.optInt("pageIndex")) else null,
-            if (afterFrame != null) frames.acquire(index) else null,
+            if (afterFrame != null) frames.acquire(afterKey) else null,
         )
         preparationWorking = true
+        val captureEpoch = preparationEpoch
         current.captureOptions { beforeOptions ->
-            if (closed || mine != generation || requestEpoch != frameEpoch || !turning) return@captureOptions
+            if (closed || mine != generation || requestEpoch != frameEpoch || captureEpoch != preparationEpoch || !turning) return@captureOptions
             if (beforeOptions == null) {
                 cancelTurn()
                 reportError("EPUB 页面状态尚未就绪，请重试翻页")
                 return@captureOptions
             }
-            val chrome = nativeFrame()
+            val chrome = if (recordedTurn) null else nativeFrame()
             preparationFrame = chrome
             turnPhase = "捕获翻页画面"
             val prepared = preparer(current, chrome)
@@ -1689,48 +2432,83 @@ internal class EpubLayoutController(
             val from = documents[originalIndex].location
             val to = documents[targetDocument].location
             val deliver: (EpubCapturedFrame, EpubCapturedFrame) -> Unit = delivery@ { oldBody, newBody ->
-                if (closed || mine != generation || requestEpoch != frameEpoch || !turning) {
+                if (closed || mine != generation || requestEpoch != frameEpoch || captureEpoch != preparationEpoch || !turning) {
                     // Cached frames remain owned by the window, including cancellation.
                     if (oldBody !== beforeFrame) oldBody.close()
                     if (newBody !== afterFrame) newBody.close()
                     return@delivery
                 }
-                val after = chrome.copy(Bitmap.Config.ARGB_8888, true)
-                drawFrame(Canvas(chrome), oldBody, current)
-                drawFrame(Canvas(after), newBody, current)
                 preparationWorking = false
-                if (targetDocument == originalIndex && state.optString("mode") != "FIXED" &&
+                val cacheable = targetDocument == originalIndex && state.optString("mode") != "FIXED" &&
                     (state.optJSONArray("media")?.length() ?: 0) == 0 &&
-                    current.width.toLong() * current.height * 8 <= 48L * 1024 * 1024) {
+                    current.width.toLong() * current.height * 8 <= 48L * 1024 * 1024
+                val drawings: EpubAnimationFrames
+                if (recordedTurn) {
+                    // New and borrowed sources use the same factory. Reserve before capture,
+                    // then hold every source (including retired paint) until the live handoff.
+                    val sources = borrowedFrames.toMutableList()
+                    borrowedFrames = emptyList()
                     frameDocument = originalIndex
-                    if (oldBody !== beforeFrame) frames.put(state.optInt("pageIndex"), oldBody)
-                    if (newBody !== afterFrame) frames.put(index, newBody)
-                    anticipatedPage = index
+                    if (oldBody !== beforeFrame) {
+                        frames.put(state.optInt("pageIndex"), oldBody)
+                        frames.acquire(state.optInt("pageIndex"))?.let(sources::add)
+                    }
+                    if (newBody !== afterFrame) {
+                        frames.put(afterKey, newBody)
+                        frames.acquire(afterKey)?.let(sources::add)
+                    }
+                    if (sources.size != 2) {
+                        sources.forEach { it.close() }
+                        cancelTurn()
+                        return@delivery
+                    }
+                    drawings = composeAnimationFrames(oldBody, newBody, current, sources)
+                    chrome?.recycle()
+                    if (targetDocument != originalIndex)
+                        pendingTurnFrame = TurnFrameTarget(documents[targetDocument].payload.getString("key"), afterKey, newBody,
+                            documents[originalIndex].payload.getString("key"), state.optInt("pageIndex"), oldBody)
+                    else if (!cacheable) { frames.clear(); frameDocument = -1 }
                 } else {
-                    if (oldBody !== beforeFrame) oldBody.close()
-                    if (newBody !== afterFrame) newBody.close()
+                    val before = checkNotNull(chrome)
+                    val after = before.copy(Bitmap.Config.ARGB_8888, true)
+                    drawFrame(Canvas(before), oldBody, current)
+                    drawFrame(Canvas(after), newBody, current)
+                    drawings = EpubAnimationFrames(EpubAnimationFrames.Frame.raster(before), EpubAnimationFrames.Frame.raster(after))
+                    if (cacheable) {
+                        frameDocument = originalIndex
+                        if (oldBody !== beforeFrame) frames.put(state.optInt("pageIndex"), oldBody)
+                        if (newBody !== afterFrame) frames.put(index, newBody)
+                    } else {
+                        if (oldBody !== beforeFrame) oldBody.close()
+                        if (newBody !== afterFrame) newBody.close()
+                    }
                 }
+                if (cacheable) anticipatedPage = index
                 borrowedFrames.forEach { it.close() }
                 borrowedFrames = emptyList()
                 preparationFrame = null // Ownership moves to the existing animation host.
                 turnTiming?.mark("animation-request")
                 awaitingAnimationDraw = true
-                if (targetDocument == originalIndex) animateAndMove(chrome, after, direction) { current.move(index) }
+                if (targetDocument == originalIndex) animateAndMove(drawings, direction,
+                    documents[originalIndex].payload.getString("key") to newBody.pageIndex) { current.move(index) }
                 else {
                     turnPhase = "等待动画结束"
-                    animate(chrome, after, direction) {
+                    animate(drawings, direction, {}) {
                         if (!closed && mine == generation && requestEpoch == frameEpoch && turning) {
                             turnPhase = "等待页面显示"
                             committing = true
                             documentIndex = targetDocument
                             val document = documents[targetDocument]
-                            current.content(to.path, document.html, document.payload)
+                            current.content(to.path, document.html, document.payload, document.payloadJson)
                             current.open(to, targetOptions)
+                            committedTapToken = current.requestedToken
+                            committedTapTarget = document.payload.getString("key") to newBody.pageIndex
                         }
                     }
                 }
                 if (io.legado.app.BuildConfig.DEBUG) android.util.Log.d("EpubTurnFrames",
-                    "cached=false prepareMs=${android.os.SystemClock.uptimeMillis() - requestedAt}")
+                    "cached=false recorded=${drawings.recorded} ownedFrames=${frames.ownedCount} ownedBytes=${frames.ownedBytes} " +
+                        "prepareMs=${android.os.SystemClock.uptimeMillis() - requestedAt}")
                 scheduleWarm()
             }
             // A click can arrive between two warm captures. Only render the missing
@@ -1748,19 +2526,68 @@ internal class EpubLayoutController(
         if (awaitingAnimationDraw) {
             awaitingAnimationDraw = false
             turnTiming?.mark("animation-draw")
+            val request = activeTurn
+            if (pendingTurns.hasOtherThan(request)) host.post {
+                if (turning && !committing && activeTurn === request) {
+                    turnTiming?.mark("complete-for-queued-input")
+                    completeAnimation()
+                }
+            }
+            scheduleWarm()
         }
     }
 
-    private fun animateAndMove(before: Bitmap, after: Bitmap, direction: Int, move: () -> Unit) {
+    private fun animateAndMove(frames: EpubAnimationFrames, direction: Int,
+        tapTarget: Pair<String, Int>? = null, move: () -> Unit) {
         val epoch = frameEpoch
         turnPhase = "等待动画结束"
-        // Keep the visible WebView on the source until the original animation owner finishes.
-        // ReadView suppresses live child drawing under these frames; moving early races that gate.
-        animate(before, after, direction) {
+        val state = surface?.readyState
+        val sameDocument = tapTarget?.first == documents.getOrNull(documentIndex)?.payload?.optString("key")
+        val staticBoundary = state != null && state.optString("mode") == "HORIZONTAL" && !state.optBoolean("cover") &&
+            (state.optJSONArray("galleryIndexes")?.length() ?: 0) == 0 &&
+            pendingTurnFrame?.let { it.documentKey == tapTarget?.first && it.frame.staticPage } == true
+        val canOverlap = animationsEnabled() && !autoPaging() && !isScroll() &&
+            state != null && state.optString("mode") != "FIXED" && (state.optJSONArray("media")?.length() ?: 0) == 0 &&
+            tapTarget != null && tapTarget.second >= 0 &&
+            (sameDocument || staticBoundary)
+        var ticket: Long? = null
+        // The existing owner installs the frozen drawings before move starts. Keep its
+        // original timing, and publish business state only after both completion signals.
+        val started: () -> Unit = started@ {
+            if (closed || !turning || frameEpoch != epoch || !canOverlap ||
+                selection != null || selectionAnchor != null || selectionDrag != null || pendingSelectionHit != null ||
+                pendingSearchSelection != null || gestures?.isActive == true ||
+                activeInteraction != null || pendingInteractions.isNotEmpty()) return@started
+            // A delayed GPU preparation must not block coordinate hit tests on the old page.
+            // Join the handoff only now, after the animation host owns its actual frames.
+            val activeTicket = turnHandoff.begin()
+            ticket = activeTicket
+            val current = surface ?: return@started
+            val capture: (JSONObject?) -> Unit = capture@ { captured ->
+                if (closed || !turning || frameEpoch != epoch || !turnHandoff.isCurrent(activeTicket)) return@capture
+                // Start useful preparation while the source token is still valid. Starting
+                // move first clears readyState and cancels this otherwise harmless snapshot.
+                if (captured != null && sameDocument) warmFrames(captured)
+                if (closed || !turning || frameEpoch != epoch || !turnHandoff.isCurrent(activeTicket)) return@capture
+                if (!turnHandoff.startMove(activeTicket)) return@capture
+                turnTiming?.mark("live-move-overlapped")
+                move()
+                if (committing) committedTapToken = surface?.requestedToken
+            }
+            val captured = current.confirmedCaptureOptions()
+            if (captured != null) {
+                turnTiming?.mark("source-snapshot-reused")
+                capture(captured)
+            } else current.captureOptions(capture)
+        }
+        animate(frames, direction, started) {
             if (!closed && turning && frameEpoch == epoch) {
                 turnPhase = "等待页面显示"
                 committing = true
-                move()
+                if (ticket == null) move()
+                committedTapToken = surface?.requestedToken
+                committedTapTarget = tapTarget
+                ticket?.let(turnHandoff::finishAnimation)
             }
         }
     }
@@ -1795,6 +2622,7 @@ internal class EpubLayoutController(
     fun cancelAutoPage() { if (autoPaging()) return; cancelTurn() }
 
     fun stopScroll() {
+        stopSelectionDrag()
         gestures?.cancel()
         surface?.cancelScroll()
     }
@@ -1810,12 +2638,16 @@ internal class EpubLayoutController(
     }
 
     private fun cancelTurn(keepChapterTurn: Boolean = false) {
+        turnHandoff.cancel()
         pageTextRequest++
         pageTextMeasuring = false
         turnTimeout?.let(host::removeCallbacks)
         turnTimeout = null
         turning = false
         committing = false
+        committedTapToken = null
+        committedTapTarget = null
+        activeTurn = null
         turnTiming?.mark("cancelled")
         turnTiming = null
         awaitingAnimationDraw = false
@@ -1826,15 +2658,20 @@ internal class EpubLayoutController(
             chapterTiming = null
             pendingTurns.clear()
             pendingInteractions.clear()
+            interactionEpoch++
+            activeInteraction = null
         }
         preparationFrame?.recycle()
         preparationFrame = null
+        pendingAnimation?.close()
+        pendingAnimation = null
         finishAnimation()
     }
 
     private fun css(px: Float) = px / host.resources.displayMetrics.density
 
     private fun releasePublication() {
+        stopSelectionDrag()
         contentJob?.cancel()
         contentJob = null
         contentSlot.clear()

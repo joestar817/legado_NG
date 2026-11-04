@@ -115,5 +115,15 @@ function viewport(fixture) {
         assert.deepEqual(fixture.frames, [{ page, scroll }, { page, scroll }]);
         assert.deepEqual(fixture.effects, value.preserveScroll ? ['selection'] : ['selection', 'media']);
     }
-    console.log('Anchor navigation: 647/649 no-flash contract, 7 failure cases with logs on/off, exact scroll rollback and 13 navigation contracts passed.');
+    // Selection navigation is explicit at the move root; nesting the flag in a
+    // source location must never silently change ordinary navigation semantics.
+    for (const value of [{ page: 15 }, { preserveScroll: true }, { location: { textOffset: 649 } }]) {
+        const fixture = await run(source, {}, { ...value, preserveSelection: true });
+        assert.equal(fixture.effects.includes('selection'), false);
+        const ordinary = await run(source, {}, value);
+        assert.equal(ordinary.effects.includes('selection'), true);
+    }
+    const nested = await run(source, {}, { location: { textOffset: 649, preserveSelection: true } });
+    assert.equal(nested.effects.includes('selection'), true);
+    console.log('Anchor navigation: 647/649 no-flash contract, 7 failure cases with logs on/off, exact scroll rollback, 13 navigation and 7 selection-preservation contracts passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

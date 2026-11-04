@@ -7,6 +7,12 @@ import io.legado.app.ui.book.read.page.entities.PageDirection
 
 class SlidePageDelegate(readView: ReadView) : HorizontalPageDelegate(readView) {
 
+    override fun setBitmap() {
+        // ReadView already owns and prepares the external frames until handoff.
+        if (readView.externalPageFrames != null) return
+        super.setBitmap()
+    }
+
     override fun onAnimStart(animationSpeed: Int) {
         val distanceX: Float
         when (mDirection) {
@@ -39,19 +45,24 @@ class SlidePageDelegate(readView: ReadView) : HorizontalPageDelegate(readView) {
         ) return
         val distanceX = if (offsetX > 0) offsetX - viewWidth else offsetX + viewWidth
         if (!isRunning) return
+        val frames = readView.externalPageFrames
         if (mDirection == PageDirection.PREV) {
             canvas.withTranslation(distanceX + viewWidth) {
-                curRecorder.draw(this)
+                if (frames != null) frames.first.draw(this)
+                else curRecorder.draw(this)
             }
             canvas.withTranslation(distanceX) {
-                prevRecorder.draw(this)
+                if (frames != null) frames.second.draw(this)
+                else prevRecorder.draw(this)
             }
         } else if (mDirection == PageDirection.NEXT) {
             canvas.withTranslation(distanceX) {
-                nextRecorder.draw(this)
+                if (frames != null) frames.second.draw(this)
+                else nextRecorder.draw(this)
             }
             canvas.withTranslation(distanceX - viewWidth) {
-                curRecorder.draw(this)
+                if (frames != null) frames.first.draw(this)
+                else curRecorder.draw(this)
             }
         }
     }

@@ -124,8 +124,8 @@ private fun NgSwitchControlContent(
     val minimumFlingVelocity = nativeConfiguration.scaledMinimumFlingVelocity.toFloat()
     var artworkRevision by remember(artwork) { mutableIntStateOf(0) }
 
-    DisposableEffect(artwork) {
-        artwork.attach { artworkRevision++ }
+    DisposableEffect(artwork, view) {
+        artwork.attach(view) { artworkRevision++ }
         onDispose { artwork.dispose() }
     }
     LaunchedEffect(state.checked, state.dragging, state.settleGeneration) {

@@ -30,6 +30,7 @@ import io.legado.app.help.book.isSameNameAuthor
 import io.legado.app.help.book.isWebFile
 import io.legado.app.help.book.removeType
 import io.legado.app.help.book.updateTo
+import io.legado.app.help.book.withChapterCachePublication
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.source.SourceInteractionBlockedException
 import io.legado.app.help.source.SourceInteractionPolicy
@@ -441,26 +442,36 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                 context.toastOnUi(R.string.error_no_source)
                 return
             }
+            val requestBookUrl = book.bookUrl
+            val requestReverseToc = book.getReverseToc()
             WebBook.getBookInfo(scope, bookSource, book, canReName = canReName)
-                .onSuccess(IO) {
-                    val dbBook = appDb.bookDao.getBook(book.name, book.author)
-                    if (!inBookshelf && dbBook != null && !dbBook.isNotShelf && dbBook.origin == book.origin) {
-                        /**
-                         * book 来自搜索时(inBookshelf == false)，搜索的书名不存在于书架，但是加载详情后，书名更新，存在同名书籍
-                         * 此时 book 的数据会与数据库中的不同，需要更新 #3652 #4619
-                         * book 加载详情后虽然书名作者相同，但是又可能不是数据库中(书源不同)的那本书 #3149
-                         */
-                        dbBook.updateTo(it)
-                        inBookshelf = true
-                    }
-                    bookData.postValue(it)
-                    if (inBookshelf) {
-                        it.save()
-                    }
-                    if (it.isWebFile) {
-                        loadWebFile(it)
-                    } else {
-                        loadChapter(it, runPreUpdateJs, isFromBookInfo = true)
+                .onSuccess(IO) { loadedBook ->
+                    withChapterCachePublication(requestBookUrl) {
+                        val latest = appDb.bookDao.getBook(requestBookUrl)
+                        if (latest != null && latest.getReverseToc() != requestReverseToc) {
+                            bookData.postValue(latest)
+                            chapterListData.postValue(appDb.bookChapterDao.getChapterList(latest.bookUrl))
+                            return@withChapterCachePublication
+                        }
+                        val dbBook = appDb.bookDao.getBook(book.name, book.author)
+                        if (!inBookshelf && dbBook != null && !dbBook.isNotShelf && dbBook.origin == book.origin) {
+                            /**
+                             * book 来自搜索时(inBookshelf == false)，搜索的书名不存在于书架，但是加载详情后，书名更新，存在同名书籍
+                             * 此时 book 的数据会与数据库中的不同，需要更新 #3652 #4619
+                             * book 加载详情后虽然书名作者相同，但是又可能不是数据库中(书源不同)的那本书 #3149
+                             */
+                            dbBook.updateTo(loadedBook)
+                            inBookshelf = true
+                        }
+                        bookData.postValue(loadedBook)
+                        if (inBookshelf) {
+                            loadedBook.save()
+                        }
+                        if (loadedBook.isWebFile) {
+                            loadWebFile(loadedBook)
+                        } else {
+                            loadChapter(loadedBook, runPreUpdateJs, isFromBookInfo = true)
+                        }
                     }
                 }.onError {
                     AppLog.put("获取书籍信息失败\n${it.localizedMessage}", it)
@@ -475,15 +486,24 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
         scope: CoroutineScope = viewModelScope,
         isFromBookInfo: Boolean = false
     ) {
+        val requestBookUrl = book.bookUrl
+        val requestReverseToc = book.getReverseToc()
         if (book.isLocal) {
             execute(scope) {
-                LocalBook.getChapterList(book).let {
+                val chapters = LocalBook.getChapterList(book)
+                withChapterCachePublication(requestBookUrl) {
+                    val latest = appDb.bookDao.getBook(requestBookUrl)
+                    if (latest != null && latest.getReverseToc() != requestReverseToc) {
+                        bookData.postValue(latest)
+                        chapterListData.postValue(appDb.bookChapterDao.getChapterList(latest.bookUrl))
+                        return@withChapterCachePublication
+                    }
                     appDb.bookDao.update(book)
                     appDb.bookChapterDao.delByBook(book.bookUrl)
-                    appDb.bookChapterDao.insert(*it.toTypedArray())
+                    appDb.bookChapterDao.insert(*chapters.toTypedArray())
                     ReadBook.onChapterListUpdated(book)
                     bookData.postValue(book)
-                    chapterListData.postValue(it)
+                    chapterListData.postValue(chapters)
                 }
             }.onError {
                 context.toastOnUi("LoadTocError:${it.localizedMessage}")
@@ -496,22 +516,30 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
             }
             val oldBook = book.copy()
             WebBook.getChapterList(scope, bookSource, book, runPreUpdateJs, isFromBookInfo = isFromBookInfo)
-                .onSuccess(IO) {
-                    if (inBookshelf) {
-                        book.removeType(BookType.updateError)
-                        appDb.bookDao.replace(oldBook, book)
-                        /**
-                         * runPreUpdateJs 有可能会修改 book 的 bookUrl
-                         */
-                        if (oldBook.bookUrl != book.bookUrl) {
-                            BookHelp.updateCacheFolder(oldBook, book)
+                .onSuccess(IO) { chapters ->
+                    withChapterCachePublication(requestBookUrl) {
+                        val latest = appDb.bookDao.getBook(requestBookUrl)
+                        if (latest != null && latest.getReverseToc() != requestReverseToc) {
+                            bookData.postValue(latest)
+                            chapterListData.postValue(appDb.bookChapterDao.getChapterList(latest.bookUrl))
+                            return@withChapterCachePublication
                         }
-                        appDb.bookChapterDao.delByBook(oldBook.bookUrl)
-                        appDb.bookChapterDao.insert(*it.toTypedArray())
-                        ReadBook.onChapterListUpdated(book)
+                        if (inBookshelf) {
+                            book.removeType(BookType.updateError)
+                            appDb.bookDao.replace(oldBook, book)
+                            /**
+                             * runPreUpdateJs 有可能会修改 book 的 bookUrl
+                             */
+                            if (oldBook.bookUrl != book.bookUrl) {
+                                BookHelp.updateCacheFolder(oldBook, book)
+                            }
+                            appDb.bookChapterDao.delByBook(oldBook.bookUrl)
+                            appDb.bookChapterDao.insert(*chapters.toTypedArray())
+                            ReadBook.onChapterListUpdated(book)
+                        }
+                        bookData.postValue(book)
+                        chapterListData.postValue(chapters)
                     }
-                    bookData.postValue(book)
-                    chapterListData.postValue(it)
                 }.onError {
                     chapterListData.postValue(emptyList())
                     AppLog.put("获取目录失败\n${it.localizedMessage}", it)

@@ -99,6 +99,15 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
             isLocalTxt = book.isLocalTxt,
         )
         loadCachedFiles(book)
+        if (viewModel.chapterOrderChanged) {
+            setResult(RESULT_OK, Intent().apply {
+                putExtra("index", book.durChapterIndex)
+                putExtra("chapterPos", book.durChapterPos)
+                putExtra("chapterChanged", true)
+                putExtra("durVolumeIndex", book.durVolumeIndex)
+                putExtra("chapterInVolumeIndex", book.chapterInVolumeIndex)
+            })
+        }
         if (uiState.selectedTab == TOC_TAB_BOOKMARKS) {
             observeBookmarks()
         } else {
@@ -292,14 +301,7 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
     }
 
     private fun reverseToc() {
-        viewModel.reverseToc { book ->
-            uiState = uiState.copy(book = book.copy())
-            loadChapters()
-            setResult(RESULT_OK, Intent().apply {
-                putExtra("index", book.durChapterIndex)
-                putExtra("chapterPos", 0)
-            })
-        }
+        viewModel.reverseToc()
     }
 
     override fun onTocRegexDialogResult(tocRegex: String) {
@@ -324,7 +326,9 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
     }
 
     private fun openChapter(bookChapter: BookChapter) {
+        if (viewModel.isReversing) return
         val book = viewModel.bookData.value ?: return
+        val keepChapterPosition = viewModel.chapterOrderChanged && bookChapter.index == book.durChapterIndex
         if (book.isVideo) {
             val chapters = fullChapterList.ifEmpty { uiState.chapters.map { it.chapter } }
             val volumes = chapters.filter(BookChapter::isVolume)
@@ -350,25 +354,29 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
                 RESULT_OK,
                 Intent()
                     .putExtra("index", bookChapter.index)
-                    .putExtra("chapterChanged", bookChapter.index != book.durChapterIndex)
+                    .putExtra("chapterChanged", viewModel.chapterOrderChanged || bookChapter.index != book.durChapterIndex)
                     .putExtra("durVolumeIndex", durVolumeIndex)
-                    .putExtra("chapterInVolumeIndex", chapterInVolumeIndex),
+                    .putExtra("chapterInVolumeIndex", chapterInVolumeIndex)
+                    .apply { if (keepChapterPosition) putExtra("chapterPos", book.durChapterPos) },
             )
         } else {
             setResult(
                 RESULT_OK,
                 Intent()
                     .putExtra("index", bookChapter.index)
-                    .putExtra("chapterChanged", bookChapter.index != book.durChapterIndex),
+                    .putExtra("chapterChanged", viewModel.chapterOrderChanged || bookChapter.index != book.durChapterIndex)
+                    .apply { if (keepChapterPosition) putExtra("chapterPos", book.durChapterPos) },
             )
         }
         finish()
     }
 
     private fun openBookmark(bookmark: Bookmark) {
+        if (viewModel.isReversing) return
         setResult(RESULT_OK, Intent().apply {
             putExtra("index", bookmark.chapterIndex)
             putExtra("chapterPos", if (bookmark.isTextHighlight) 0 else bookmark.chapterPos)
+            putExtra("chapterChanged", viewModel.chapterOrderChanged)
             if (bookmark.isTextHighlight) putExtra("bookmarkTime", bookmark.time)
         })
         finish()

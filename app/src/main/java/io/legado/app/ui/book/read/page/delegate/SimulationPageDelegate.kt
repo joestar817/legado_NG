@@ -19,7 +19,7 @@ class SimulationPageDelegate(readView: ReadView) : HorizontalPageDelegate(readVi
     override fun setBitmap() {
         // ReadView owns these stable frames until the animation handoff ends.
         // Drawing them directly avoids two more full-screen copies per turn.
-        if (readView.externalPageSnapshots != null) return
+        if (readView.externalPageFrames != null) return
         when (mDirection) {
             PageDirection.PREV -> {
                 prevBitmap = prevPage.screenshot(prevBitmap, canvas)
@@ -124,11 +124,15 @@ class SimulationPageDelegate(readView: ReadView) : HorizontalPageDelegate(readVi
 
     override fun onDraw(canvas: Canvas) {
         if (!isRunning) return
+        if (mDirection == PageDirection.NONE) return
+        renderer.backgroundColor = ReadBookConfig.bgMeanColor
+        readView.externalPageFrames?.takeIf { it.curlPages }?.let {
+            renderer.drawPages(canvas, it.first, it.second, mDirection, touchX, touchY)
+            return
+        }
         val frames = readView.externalPageSnapshots
         val current = frames?.first ?: curBitmap
         val adjacent = frames?.second ?: if (mDirection == PageDirection.PREV) prevBitmap else nextBitmap
-        if (mDirection == PageDirection.NONE) return
-        renderer.backgroundColor = ReadBookConfig.bgMeanColor
         renderer.draw(canvas, current, adjacent, mDirection, touchX, touchY)
     }
 }

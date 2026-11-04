@@ -17,6 +17,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -33,7 +34,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -44,7 +44,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,6 +64,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,7 +77,6 @@ import io.legado.app.data.entities.SearchBook
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.menuCapabilities
-import io.legado.app.help.book.isLocalTxt
 import io.legado.app.ui.book.search.SearchResultCard
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
@@ -196,6 +195,7 @@ internal enum class BookInfoMenuAction(val itemId: Int) {
     Log(0x730F),
     NetworkLog(0x7310),
     AutoLoadOtherWorks(0x7311),
+    Settings(0x7312),
     ;
 
     companion object {
@@ -252,11 +252,6 @@ internal fun BookInfoScreen(
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     NgWindowLiquidGlassBackdropHost(
         modifier = Modifier.fillMaxSize(),
-        backgroundOverlay = if (isLandscape) {
-            Color(NgTheme.colors.background)
-        } else {
-            Color.Transparent
-        },
     ) {
         if (isLandscape) {
             BookInfoLandscape(state = state, introView = introView, onEvent = onEvent)
@@ -325,7 +320,7 @@ private fun BookInfoPortrait(
                 }
             }
         }
-        BookInfoBottomActions(state = state, isLandscape = false, onEvent = onEvent)
+        BookInfoBottomActions(state = state, onEvent = onEvent)
     }
 }
 
@@ -341,57 +336,59 @@ private fun BookInfoLandscape(
         leftState.scrollToItem(0)
         rightState.scrollToItem(0)
     }
-    Column(modifier = Modifier.fillMaxSize()) {
-        BookInfoTopBar(state = state, onEvent = onEvent)
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(NgTheme.colors.background)),
-        ) {
-            LazyColumn(
-                state = leftState,
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val contentWidth = maxWidth.coerceAtMost(1280.dp)
+        val horizontalPadding = if (contentWidth >= 840.dp) 24.dp else 16.dp
+        val paneSpacing = if (contentWidth >= 840.dp) 20.dp else 16.dp
+        val paneWidth = (contentWidth - horizontalPadding * 2 - paneSpacing).coerceAtLeast(0.dp)
+        val summaryWidth = (paneWidth * 0.38f)
+            .coerceIn(280.dp, 400.dp)
+            .coerceAtMost(paneWidth * 0.46f)
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            BookInfoTopBar(state = state, onEvent = onEvent)
+            Row(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                state.book?.let { book ->
-                    item(key = "landCover") {
-                        BookInfoLandscapeHeader(state = state, book = book, onEvent = onEvent)
-                    }
-                    item(key = "landMeta") {
-                        BookInfoLandscapeMeta(state = state, onEvent = onEvent)
-                    }
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .padding(vertical = 16.dp)
-                    .width(1.dp)
-                    .background(colorResource(R.color.bg_divider_line)),
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1.5f)
-                    .fillMaxHeight(),
+                    .width(contentWidth)
+                    .align(Alignment.CenterHorizontally)
+                    .padding(
+                        start = horizontalPadding,
+                        top = 12.dp,
+                        end = horizontalPadding,
+                        bottom = 8.dp,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(paneSpacing),
             ) {
                 LazyColumn(
+                    state = leftState,
+                    modifier = Modifier.width(summaryWidth).fillMaxHeight(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    state.book?.let { book ->
+                        item(key = "landCover") {
+                            BookInfoHeroCard(
+                                state = state,
+                                book = book,
+                                onEvent = onEvent,
+                                variant = BookInfoHeroVariant.LANDSCAPE,
+                            )
+                        }
+                        item(key = "landMeta") {
+                            BookInfoMetaCard(state = state, onEvent = onEvent)
+                        }
+                    }
+                }
+                LazyColumn(
                     state = rightState,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 16.dp,
-                        top = 8.dp,
-                        end = 16.dp,
-                        bottom = 12.dp,
-                    ),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     state.book?.let {
                         item(key = "landIntro") {
-                            BookInfoIntro(state = state, introView = introView, withSurface = false)
+                            BookInfoIntro(state = state, introView = introView, withSurface = true)
                         }
                         if (state.charactersVisible) {
                             item(key = "landCharacters") {
@@ -405,8 +402,13 @@ private fun BookInfoLandscape(
                         }
                     }
                 }
-                BookInfoBottomActions(state = state, isLandscape = true, onEvent = onEvent)
             }
+            BookInfoBottomActions(
+                state = state,
+                onEvent = onEvent,
+                modifier = Modifier.width(contentWidth).align(Alignment.CenterHorizontally),
+                horizontalPadding = horizontalPadding,
+            )
         }
     }
 }
@@ -474,58 +476,21 @@ private fun BookInfoMoreMenu(
     }
 }
 
-@Composable
-private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMenuItem> {
+internal fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMenuItem> {
     val book = state.book
     return buildList {
         if (state.inBookshelf) {
-            add(BookInfoMenuAction.Edit.item(R.string.edit, R.drawable.ic_edit))
+            add(BookInfoMenuAction.Edit.item(R.string.edit, R.drawable.ic_bgm_menu_edit))
         }
-        add(BookInfoMenuAction.Refresh.item(R.string.refresh, R.drawable.ic_refresh_black_24dp))
-        add(BookInfoMenuAction.Share.item(R.string.share, R.drawable.ic_share))
+        add(BookInfoMenuAction.Refresh.item(R.string.refresh, R.drawable.ic_bgm_menu_refresh))
+        add(BookInfoMenuAction.Share.item(R.string.share, R.drawable.ic_book_info_menu_share))
+        add(BookInfoMenuAction.Top.item(R.string.to_top, R.drawable.ic_book_info_menu_top))
         add(
             NgExpandableActionMenuItem(
-                itemId = MENU_BOOK_MANAGEMENT,
-                titleRes = R.string.book_info_menu_book_management,
-                iconRes = R.drawable.ic_settings,
+                itemId = BookInfoMenuAction.Settings.itemId,
+                titleRes = R.string.book_info_settings,
+                iconRes = R.drawable.ic_book_info_menu_settings,
                 dividerBefore = true,
-                children = buildList {
-                    add(BookInfoMenuAction.Top.item(R.string.to_top, R.drawable.ic_arrow_drop_up))
-                    if (state.sourceAvailable && book?.menuCapabilities?.update == true) {
-                        add(
-                            BookInfoMenuAction.CanUpdate.item(
-                                R.string.allow_update,
-                                R.drawable.ic_update,
-                                checked = book?.canUpdate ?: true,
-                            ),
-                        )
-                    }
-                    if (book?.isLocalTxt == true) {
-                        add(
-                            BookInfoMenuAction.SplitLongChapter.item(
-                                R.string.split_long_chapter,
-                                R.drawable.ic_chapter_list,
-                                checked = book.getSplitLongChapter(),
-                            ),
-                        )
-                    }
-                    add(
-                        BookInfoMenuAction.DeleteAlert.item(
-                            R.string.delete_alert,
-                            R.drawable.ic_outline_delete,
-                            checked = state.deleteAlertEnabled,
-                        ),
-                    )
-                    if (state.otherWorksVisible) {
-                        add(
-                            BookInfoMenuAction.AutoLoadOtherWorks.item(
-                                R.string.auto_load_book_other_works,
-                                R.drawable.ic_refresh_black_24dp,
-                                checked = state.autoLoadOtherWorks,
-                            ),
-                        )
-                    }
-                },
             ),
         )
         add(
@@ -535,32 +500,18 @@ private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMe
                 iconRes = R.drawable.ic_web_outline,
                 children = buildList {
                     if (state.loginAvailable) {
-                        add(BookInfoMenuAction.Login.item(R.string.login, R.drawable.ic_lock_outline))
-                    }
-                    if (state.sourceAvailable) {
-                        add(
-                            BookInfoMenuAction.SetSourceVariable.item(
-                                R.string.set_source_variable,
-                                R.drawable.ic_code,
-                            ),
-                        )
-                        add(
-                            BookInfoMenuAction.SetBookVariable.item(
-                                R.string.set_book_variable,
-                                R.drawable.ic_code,
-                            ),
-                        )
+                        add(BookInfoMenuAction.Login.item(R.string.login, R.drawable.ic_book_info_menu_login))
                     }
                     add(
                         BookInfoMenuAction.CopyBookUrl.item(
                             R.string.copy_book_url,
-                            R.drawable.ic_copy,
+                            R.drawable.ic_book_info_menu_copy,
                         ),
                     )
                     add(
                         BookInfoMenuAction.CopyTocUrl.item(
                             R.string.copy_toc_url,
-                            R.drawable.ic_copy,
+                            R.drawable.ic_book_info_menu_copy,
                         ),
                     )
                 },
@@ -576,14 +527,14 @@ private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMe
                         add(
                             BookInfoMenuAction.Upload.item(
                                 R.string.upload_to_remote,
-                                R.drawable.ic_outline_cloud_24,
+                                R.drawable.ic_book_info_menu_upload,
                             ),
                         )
                     }
                     add(
                         BookInfoMenuAction.ClearCache.item(
                             R.string.clear_cache,
-                            R.drawable.ic_clear_all,
+                            R.drawable.ic_book_info_menu_clear_cache,
                             enabled = state.hasClearableCache,
                         ),
                     )
@@ -591,7 +542,7 @@ private fun bookInfoMenuItems(state: BookInfoUiState): List<NgExpandableActionMe
                     add(
                         BookInfoMenuAction.NetworkLog.item(
                             R.string.network_request_log,
-                            R.drawable.ic_network_check,
+                            R.drawable.ic_book_info_menu_network,
                         ),
                     )
                 },
@@ -630,12 +581,16 @@ private fun BookInfoToolbarIcon(
     }
 }
 
+private enum class BookInfoHeroVariant { PORTRAIT, LANDSCAPE }
+
 @Composable
 private fun BookInfoHeroCard(
     state: BookInfoUiState,
     book: Book,
     onEvent: (BookInfoUiEvent) -> Unit,
+    variant: BookInfoHeroVariant = BookInfoHeroVariant.PORTRAIT,
 ) {
+    val landscape = variant == BookInfoHeroVariant.LANDSCAPE
     BookInfoCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             NgBookCover(
@@ -644,7 +599,10 @@ private fun BookInfoHeroCard(
                 contentDescription = stringResource(R.string.img_cover),
                 revision = state.coverRevision,
                 modifier = Modifier
-                    .size(width = 78.dp, height = 104.dp)
+                    .size(
+                        width = if (landscape) 96.dp else 78.dp,
+                        height = if (landscape) 128.dp else 104.dp,
+                    )
                     .combinedClickable(
                         onClick = { onEvent(BookInfoUiEvent.CoverClick) },
                         onLongClick = { onEvent(BookInfoUiEvent.CoverLongClick) },
@@ -656,16 +614,17 @@ private fun BookInfoHeroCard(
                     text = book.name,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .basicMarquee()
+                        .then(if (landscape) Modifier else Modifier.basicMarquee())
                         .combinedClickable(
                             onClick = { onEvent(BookInfoUiEvent.NameClick) },
                             onLongClick = { onEvent(BookInfoUiEvent.NameLongClick) },
                         ),
                     color = colorResource(R.color.primaryText),
-                    fontSize = 17.sp,
-                    lineHeight = 22.sp,
+                    fontSize = if (landscape) 18.sp else 17.sp,
+                    lineHeight = if (landscape) 24.sp else 22.sp,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    maxLines = if (landscape) 2 else 1,
+                    overflow = if (landscape) TextOverflow.Ellipsis else TextOverflow.Clip,
                 )
                 Text(
                     text = book.getRealAuthor(),
@@ -685,65 +644,6 @@ private fun BookInfoHeroCard(
                 BookInfoTags(tags = state.tags, onEvent = onEvent)
             }
         }
-    }
-}
-
-@Composable
-private fun BookInfoLandscapeHeader(
-    state: BookInfoUiState,
-    book: Book,
-    onEvent: (BookInfoUiEvent) -> Unit,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(
-            shape = RoundedCornerShape(5.dp),
-            color = Color(NgTheme.colors.background),
-            shadowElevation = 8.dp,
-        ) {
-            NgBookCover(
-                book = book,
-                coverRadius = 5,
-                contentDescription = stringResource(R.string.img_cover),
-                revision = state.coverRevision,
-                modifier = Modifier
-                    .size(width = 165.dp, height = 240.dp)
-                    .combinedClickable(
-                        onClick = { onEvent(BookInfoUiEvent.CoverClick) },
-                        onLongClick = { onEvent(BookInfoUiEvent.CoverLongClick) },
-                    ),
-            )
-        }
-        Text(
-            text = book.name,
-            modifier = Modifier
-                .padding(top = 8.dp)
-                .widthIn(max = 260.dp)
-                .basicMarquee()
-                .combinedClickable(
-                    onClick = { onEvent(BookInfoUiEvent.NameClick) },
-                    onLongClick = { onEvent(BookInfoUiEvent.NameLongClick) },
-                ),
-            color = colorResource(R.color.primaryText),
-            fontSize = 20.sp,
-            lineHeight = 25.sp,
-            maxLines = 1,
-        )
-        Text(
-            text = book.getRealAuthor(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp, bottom = 12.dp)
-                .combinedClickable(
-                    onClick = { onEvent(BookInfoUiEvent.AuthorClick) },
-                    onLongClick = { onEvent(BookInfoUiEvent.AuthorLongClick) },
-                ),
-            color = colorResource(R.color.tv_text_summary),
-            fontSize = 14.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        BookInfoTags(tags = state.tags, onEvent = onEvent)
     }
 }
 
@@ -795,16 +695,6 @@ private fun BookInfoMetaCard(
             bottom = 12.dp,
         ),
     ) {
-        BookInfoMetaRows(state = state, onEvent = onEvent)
-    }
-}
-
-@Composable
-private fun BookInfoLandscapeMeta(
-    state: BookInfoUiState,
-    onEvent: (BookInfoUiEvent) -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
         BookInfoMetaRows(state = state, onEvent = onEvent)
     }
 }
@@ -1292,34 +1182,22 @@ private fun BookInfoOtherWorksMessage(text: String) {
 @Composable
 private fun BookInfoBottomActions(
     state: BookInfoUiState,
-    isLandscape: Boolean,
     onEvent: (BookInfoUiEvent) -> Unit,
+    modifier: Modifier = Modifier,
+    horizontalPadding: Dp = 16.dp,
 ) {
-    val surfaceVariant = if (isLandscape) {
-        NgActionBarButtonSurfaceVariant.THEMED
-    } else {
-        NgActionBarButtonSurfaceVariant.LIGHT_GLASS
-    }
+    val surfaceVariant = NgActionBarButtonSurfaceVariant.LIGHT_GLASS
     val secondarySurfaceVariant = if (NgTheme.snapshot.isDark) {
         NgActionBarButtonSurfaceVariant.THEMED_HIGH_CONTRAST
     } else {
         surfaceVariant
     }
-    val barModifier = if (isLandscape) {
-        Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .height(44.dp)
-            .background(colorResource(R.color.background_menu))
-    } else {
-        Modifier
+    Row(
+        modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .height(58.dp)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    }
-    Row(
-        modifier = barModifier,
+            .padding(horizontal = horizontalPadding, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1549,6 +1427,5 @@ private fun BookInfoUnsupportedFileDialog(
     }
 }
 
-private const val MENU_BOOK_MANAGEMENT = 0x7381
 private const val MENU_SOURCE_AND_LINKS = 0x7382
 private const val MENU_DATA_AND_DIAGNOSTICS = 0x7383

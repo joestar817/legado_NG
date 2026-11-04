@@ -62,6 +62,7 @@ fun NgLongDrawerHeader(
     onQuaternaryActionClick: (() -> Unit)? = null,
     centerTitle: Boolean = false,
     modifier: Modifier = Modifier,
+    navigationActive: Boolean = false,
 ) {
     val colors = NgTheme.colors
     val hasSecondaryAction = secondaryActionIconRes != null && onSecondaryActionClick != null
@@ -78,7 +79,7 @@ fun NgLongDrawerHeader(
                     DrawerHeaderIconSlot(
                         iconRes = navigationIconRes.takeIf { index == 0 },
                         contentDescription = navigationContentDescription.takeIf { index == 0 },
-                        active = false,
+                        active = navigationActive,
                         onClick = onNavigationClick.takeIf { index == 0 },
                     )
                 }
@@ -86,7 +87,7 @@ fun NgLongDrawerHeader(
                 DrawerHeaderIconSlot(
                     iconRes = navigationIconRes,
                     contentDescription = navigationContentDescription,
-                    active = false,
+                    active = navigationActive,
                     onClick = onNavigationClick,
                 )
             }

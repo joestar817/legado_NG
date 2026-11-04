@@ -65,7 +65,7 @@ internal fun AiPurifyModelSettingsScreen(
     state: AiPurifyModelSettingsScreenState,
     onAction: (AiPurifyModelSettingsAction) -> Unit,
 ) {
-    AiSingleGroupSettingsScreen(sectionTitle = stringResource(R.string.ai_purify)) {
+    AiSingleGroupSettingsScreen {
         AiSettingsEntry(
             title = stringResource(R.string.ai_purify_model_setting),
             summary = state.modelSummary,
@@ -112,7 +112,7 @@ internal fun AiReadAloudModelSettingsScreen(
     onAction: (AiReadAloudModelSettingsAction) -> Unit,
 ) {
     var preloadExpanded by rememberSaveable { mutableStateOf(false) }
-    AiSingleGroupSettingsScreen(sectionTitle = stringResource(R.string.ai_read_aloud)) {
+    AiSingleGroupSettingsScreen {
         AiSettingsEntry(
             title = stringResource(R.string.ai_read_aloud_storyboard_model_setting),
             summary = state.modelSummary,
@@ -194,7 +194,7 @@ internal fun AiAssistantModelSettingsScreen(
     state: AiAssistantModelSettingsScreenState,
     onAction: (AiAssistantModelSettingsAction) -> Unit,
 ) {
-    AiSingleGroupSettingsScreen(sectionTitle = stringResource(R.string.ai_assistant)) {
+    AiSingleGroupSettingsScreen {
         AiSettingsEntry(
             title = stringResource(R.string.ai_assistant_model_setting),
             summary = state.modelSummary,
@@ -491,7 +491,6 @@ internal fun AiPurifySettingsScreen(
 
 @Composable
 private fun AiSingleGroupSettingsScreen(
-    sectionTitle: String,
     content: @Composable () -> Unit,
 ) {
     Column(
@@ -501,7 +500,6 @@ private fun AiSingleGroupSettingsScreen(
             .padding(horizontal = 16.dp)
             .padding(top = 8.dp, bottom = 20.dp),
     ) {
-        NgSettingsSectionLabel(sectionTitle)
         NgSettingsGroup { content() }
     }
 }

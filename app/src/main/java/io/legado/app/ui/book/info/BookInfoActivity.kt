@@ -104,7 +104,6 @@ import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.main.bookshelf.BookshelfBookGroupSheet
 import io.legado.app.ui.video.VideoPlayerActivity
 import io.legado.app.ui.widget.dialog.PhotoDialog
-import io.legado.app.ui.widget.dialog.VariableDialog
 import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.utils.ConvertUtils
 import io.legado.app.utils.FileDoc
@@ -139,26 +138,29 @@ import kotlinx.coroutines.withContext
 class BookInfoActivity :
     VMBaseActivity<ComposeActivityBinding, BookInfoViewModel>(toolBarTheme = Theme.Dark),
     ChangeBookSourceDialog.CallBack,
-    ChangeCoverDialog.CallBack,
-    VariableDialog.Callback {
+    ChangeCoverDialog.CallBack {
 
     private val tocActivityResult = registerForActivityResult(TocActivityResult()) {
         it?.let {
             viewModel.getBook(false)?.let { book ->
                 lifecycleScope.launch {
-                    withContext(IO) {
+                    val updatedBook = withContext(IO) {
+                        val latestBook = appDb.bookDao.getBook(book.bookUrl)
+                            ?: return@withContext null
                         val durChapterIndex = it[0] as Int
                         val durChapterPos = it[1] as Int
                         val durVolumeIndex = it[3] as Int
                         val chapterInVolumeIndex = it[4] as Int
-                        book.durChapterIndex = durChapterIndex
-                        book.durChapterPos = durChapterPos
-                        chapterChanged = it[2] as Boolean
-                        book.durVolumeIndex = durVolumeIndex
-                        book.chapterInVolumeIndex = chapterInVolumeIndex
-                        appDb.bookDao.update(book)
-                    }
-                    startReadActivity(book, it.getOrNull(5) as? Long ?: -1L)
+                        latestBook.durChapterIndex = durChapterIndex
+                        latestBook.durChapterPos = durChapterPos
+                        latestBook.durVolumeIndex = durVolumeIndex
+                        latestBook.chapterInVolumeIndex = chapterInVolumeIndex
+                        appDb.bookDao.update(latestBook)
+                        latestBook
+                    } ?: return@launch
+                    chapterChanged = it[2] as Boolean
+                    viewModel.bookData.value = updatedBook
+                    startReadActivity(updatedBook, it.getOrNull(5) as? Long ?: -1L)
                 }
             }
         } ?: let {
@@ -230,6 +232,10 @@ class BookInfoActivity :
         ),
         referentialEqualityPolicy(),
     )
+    internal val bookInfoSettingsState: BookInfoUiState
+        get() = uiState
+    internal val bookInfoSettingsSourceKey: String?
+        get() = viewModel.bookSource?.getKey()
     private var pendingWebFileSuccess: ((Book) -> Unit)? = null
     private var pendingArchiveUri: Uri? = null
     private var pendingUnsupportedWebFile: BookInfoViewModel.WebFile? = null
@@ -376,6 +382,7 @@ class BookInfoActivity :
 
     private fun handleBookInfoMenuAction(action: BookInfoMenuAction) {
         when (action) {
+            BookInfoMenuAction.Settings -> showBookInfoSettings()
             BookInfoMenuAction.Edit -> viewModel.getBook()?.let {
                 infoEditResult.launch { putExtra("bookUrl", it.bookUrl) }
             }
@@ -390,8 +397,8 @@ class BookInfoActivity :
                 }
             }
             BookInfoMenuAction.Top -> viewModel.topBook()
-            BookInfoMenuAction.SetSourceVariable -> setSourceVariable()
-            BookInfoMenuAction.SetBookVariable -> setBookVariable()
+            BookInfoMenuAction.SetSourceVariable -> showBookInfoSettings(BookInfoVariableKind.Source)
+            BookInfoMenuAction.SetBookVariable -> showBookInfoSettings(BookInfoVariableKind.Book)
             BookInfoMenuAction.CopyBookUrl -> copyBookUrl()
             BookInfoMenuAction.CopyTocUrl -> copyTocUrl()
             BookInfoMenuAction.CanUpdate -> toggleCanUpdate()
@@ -418,6 +425,21 @@ class BookInfoActivity :
                 uiState = uiState.copy(autoLoadOtherWorks = enabled)
                 viewModel.setAutoLoadOtherWorks(enabled)
             }
+        }
+    }
+
+    internal fun onBookInfoSettingsAction(bookUrl: String, action: BookInfoMenuAction) {
+        if (viewModel.getBook(false)?.bookUrl == bookUrl) {
+            handleBookInfoMenuAction(action)
+        }
+    }
+
+    private fun showBookInfoSettings(initialVariable: BookInfoVariableKind? = null) {
+        val current = viewModel.getBook(false) ?: return
+        if (supportFragmentManager.findFragmentByTag(BookInfoSettingsDialog.TAG) != null) return
+        showDialogFragment<BookInfoSettingsDialog> {
+            putString(BookInfoSettingsDialog.ARG_BOOK_URL, current.bookUrl)
+            putString(BookInfoSettingsDialog.ARG_INITIAL_VARIABLE, initialVariable?.name)
         }
     }
 
@@ -1419,60 +1441,54 @@ class BookInfoActivity :
         }
     }
 
-    private fun setSourceVariable() {
-        lifecycleScope.launch {
-            val source = viewModel.bookSource
-            if (source == null) {
-                toastOnUi("书源不存在")
-                return@launch
-            }
-            val comment =
-                source.getDisplayVariableComment("源变量可在js中通过source.getVariable()获取")
-            val variable = withContext(IO) { source.getVariable() }
-            showDialogFragment(
-                VariableDialog(
-                    getString(R.string.set_source_variable),
-                    source.getKey(),
-                    variable,
-                    comment
-                )
+    internal suspend fun loadBookInfoVariables(
+        bookUrl: String,
+        sourceKey: String,
+    ): BookInfoVariableDraft? {
+        val current = viewModel.getBook(false) ?: return null
+        val source = viewModel.bookSource ?: return null
+        if (current.bookUrl != bookUrl || source.getKey() != sourceKey) return null
+        val draft = withContext(IO) {
+            BookInfoVariableDraft(
+                bookUrl = bookUrl,
+                sourceKey = sourceKey,
+                initialBookValue = current.getCustomVariable(),
+                initialSourceValue = source.getVariable(),
+                bookComment = source.getDisplayVariableComment(
+                    """书籍变量可在js中通过book.getVariable("custom")获取""",
+                ),
+                sourceComment = source.getDisplayVariableComment("源变量可在js中通过source.getVariable()获取"),
             )
+        }
+        return draft.takeIf {
+            viewModel.getBook(false) === current && viewModel.bookSource === source &&
+                draft.matchesContext(current.bookUrl, source.getKey())
         }
     }
 
-    private fun setBookVariable() {
-        lifecycleScope.launch {
-            val source = viewModel.bookSource
-            if (source == null) {
-                toastOnUi("书源不存在")
-                return@launch
-            }
-            val book = viewModel.getBook() ?: return@launch
-            val variable = withContext(IO) { book.getCustomVariable() }
-            val comment = source.getDisplayVariableComment(
-                """书籍变量可在js中通过book.getVariable("custom")获取"""
-            )
-            showDialogFragment(
-                VariableDialog(
-                    getString(R.string.set_book_variable),
-                    book.bookUrl,
-                    variable,
-                    comment
-                )
-            )
-        }
-    }
-
-    override fun setVariable(key: String, variable: String?) {
-        when (key) {
-            viewModel.bookSource?.getKey() -> viewModel.bookSource?.setVariable(variable)
-            viewModel.bookData.value?.bookUrl -> viewModel.bookData.value?.let {
-                it.putCustomVariable(variable)
-                if (viewModel.inBookshelf) {
-                    viewModel.saveBook(it)
+    internal fun saveBookInfoVariables(
+        draft: BookInfoVariableDraft,
+        onCommitted: (BookInfoVariableDraft) -> Unit,
+    ): Boolean {
+        val current = viewModel.getBook(false) ?: return false
+        val source = viewModel.bookSource ?: return false
+        return commitBookInfoVariableDraft(
+            draft = draft,
+            isCurrent = {
+                viewModel.getBook(false) === current && viewModel.bookSource === source &&
+                    draft.matchesContext(current.bookUrl, source.getKey())
+            },
+            write = { kind, value ->
+                when (kind) {
+                    BookInfoVariableKind.Book -> {
+                        current.putCustomVariable(value)
+                        if (viewModel.inBookshelf) viewModel.saveBook(current)
+                    }
+                    BookInfoVariableKind.Source -> source.setVariable(value)
                 }
-            }
-        }
+            },
+            onCommitted = onCommitted,
+        )
     }
 
     private fun deleteBook() {

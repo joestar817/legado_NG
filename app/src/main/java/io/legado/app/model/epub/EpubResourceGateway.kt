@@ -23,7 +23,10 @@ internal class EpubResourceGateway(
     @Volatile private var documentPath: String? = null
     private val containerPath = "__ng_reader_${UUID.randomUUID()}/index.html"
     private val contentPath = "__ng_reader_${UUID.randomUUID()}/content.json"
-    private data class DocumentContent(val path: String, val html: ByteArray, val data: ByteArray, val revision: Long = 0L) {
+    private data class DocumentContent(val path: String, val html: ByteArray, val data: ByteArray,
+                                       val htmlSource: String, val dataSource: String, val revision: Long = 0L) {
+        fun matches(path: String, html: String, data: String) =
+            this.path == path && htmlSource == html && dataSource == data
         fun same(other: DocumentContent?) = other != null && path == other.path &&
             html.contentEquals(other.html) && data.contentEquals(other.data)
     }
@@ -81,9 +84,12 @@ internal class EpubResourceGateway(
         var nextRevision = documentsRevision
         val next = values.associate { (key, path, value) ->
             require(key.matches(Regex("[a-zA-Z0-9-]+")))
-            val content = DocumentContent(path, value.first.toByteArray(Charsets.UTF_8), value.second.toByteArray(Charsets.UTF_8))
             val retained = previous[key]
-            key to if (content.same(retained)) retained!! else content.copy(revision = ++nextRevision)
+            key to if (retained != null && retained.matches(path, value.first, value.second)) retained else {
+                val content = DocumentContent(path, value.first.toByteArray(Charsets.UTF_8), value.second.toByteArray(Charsets.UTF_8),
+                    value.first, value.second)
+                if (content.same(retained)) retained!! else content.copy(revision = ++nextRevision)
+            }
         }
         if (next != previous) {
             documentsRevision = nextRevision
@@ -93,7 +99,8 @@ internal class EpubResourceGateway(
 
     fun setContent(path: String, html: String, data: String) {
         check(!closed)
-        val next = DocumentContent(path, html.toByteArray(Charsets.UTF_8), data.toByteArray(Charsets.UTF_8))
+        if (content?.matches(path, html, data) == true) return
+        val next = DocumentContent(path, html.toByteArray(Charsets.UTF_8), data.toByteArray(Charsets.UTF_8), html, data)
         if (!next.same(content)) { content = next; contentRevision++ }
     }
     /** App-owned top-level document; publication resources never supply this shell. */

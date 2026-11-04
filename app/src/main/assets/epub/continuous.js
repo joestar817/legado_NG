@@ -651,11 +651,24 @@
                 });
                 return { token: token, selection: selected.length ? { start: selected[0].start, end: selected[selected.length - 1].end } : null };
             }
-            var entry;
+            var entry, nearest = value.action === 'hit' && value.nearest;
+            var clips = visible.map(function (i) { return entries.get(i); }).filter(function (e) {
+                return e && e.clip && e.clip.width > 0 && e.clip.height > 0;
+            });
             if (['tap', 'select', 'gallerySwipe', 'activate', 'hit'].includes(value.action)) {
-                entry = visible.map(function (i) { return entries.get(i); }).find(function (e) {
+                entry = clips.find(function (e) {
                     var c = e.clip; return value.x >= c.left && value.x < c.left + c.width && value.y >= c.top && value.y < c.top + c.height;
                 });
+                // Dragging may leave the safe content rectangle. Route only nearest hit
+                // to its closest visible source; initial selection/image hits stay strict.
+                if (!entry && nearest) {
+                    var distance = Infinity;
+                    clips.forEach(function (e) {
+                        var c = e.clip, dx = Math.max(c.left - value.x, 0, value.x - c.left - c.width);
+                        var dy = Math.max(c.top - value.y, 0, value.y - c.top - c.height), d = dx * dx + dy * dy;
+                        if (d < distance) { entry = e; distance = d; }
+                    });
+                }
                 if (entry) {
                     if (value.action === 'select') entries.forEach(function (e) {
                         if (e !== entry) e.api.interact({ token: e.api.state().token, action: 'clear' });
@@ -674,6 +687,10 @@
                 { token: entry.api.state().token })), { token: token, index: entry.index, document: documents[entry.index] });
             if (!entry || !entry.clip) return null;
             var c = entry.clip, result;
+            var bounds = { left: Math.min.apply(null, clips.map(function (e) { return e.clip.left; })),
+                top: Math.min.apply(null, clips.map(function (e) { return e.clip.top; })),
+                right: Math.max.apply(null, clips.map(function (e) { return e.clip.left + e.clip.width; })),
+                bottom: Math.max.apply(null, clips.map(function (e) { return e.clip.top + e.clip.height; })) };
             if (value.action === 'activate' || value.action === 'activeSource') result = {};
             if (value.action === 'extend') {
                 var position = axis === 'x' ? value.x : value.y;
@@ -686,9 +703,20 @@
                         edge: direction, documentBoundary: true });
                 }
             }
+            var x = value.x || 0, y = value.y || 0;
+            if (nearest) {
+                if (x < c.left) x = c.left + Math.min(0.5, c.width / 2);
+                else if (x >= c.left + c.width) x = c.left + c.width - Math.min(0.5, c.width / 2);
+                if (y < c.top) y = c.top + Math.min(0.5, c.height / 2);
+                else if (y >= c.top + c.height) y = c.top + c.height - Math.min(0.5, c.height / 2);
+            }
             if (!result) result = entry.api.interact(Object.assign({}, value, { token: entry.api.state().token,
-                x: (value.x || 0) - c.left - c.translateX, y: (value.y || 0) - c.top - c.translateY }));
+                x: x - c.left - c.translateX, y: y - c.top - c.translateY,
+                edgePoint: { x: (value.x || 0) - c.left - c.translateX, y: (value.y || 0) - c.top - c.translateY },
+                edgeBounds: { left: bounds.left - c.left - c.translateX, top: bounds.top - c.top - c.translateY,
+                    right: bounds.right - c.left - c.translateX, bottom: bounds.bottom - c.top - c.translateY } }));
             if (!result) return null;
+            if (value.action === 'hit') result.selectionBounds = bounds;
             if (result.selection) ['start', 'end'].forEach(function (key) {
                 var r = result.selection[key]; r.left += c.left + c.translateX; r.right += c.left + c.translateX;
                 r.top += c.top + c.translateY; r.bottom += c.top + c.translateY;

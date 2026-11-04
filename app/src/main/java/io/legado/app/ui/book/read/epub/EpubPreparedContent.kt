@@ -30,8 +30,9 @@ internal class EpubPreparedContent private constructor(
     private val cachePositions: ContentPositionMap? = null,
     val cacheRecord: EpubOpeningMappingFile.Record? = null,
 ) {
+    // Include both the payload graph estimate and its retained serialized snapshot.
     fun estimatedBytes(): Long = mapped.text.length * 2L + documents.sumOf {
-        it.html.length * 2L + it.payload.toString().length * 2L + it.styleFonts.values.sumOf { font -> font.size.toLong() }
+        it.html.length * 2L + it.payloadJson.length * 4L + it.styleFonts.values.sumOf { font -> font.size.toLong() }
     } + mapped.documents.sumOf { document -> document.nodes.sumOf { (it.starts.size + it.ends.size) * 4L } } +
         chapter.highlightInputs.asSequence().mapNotNull { it.context }.distinct().sumOf { it.text.length * 2L }
     /** Called only after the owner accepts this chapter; speculative work has no publication side effects. */
@@ -44,7 +45,11 @@ internal class EpubPreparedContent private constructor(
                         val styleFonts: Map<String, ByteArray> = emptyMap(),
                         val nineSlices: Map<String, io.legado.app.model.epub.EpubNineSliceImage> = emptyMap(),
                         val backgrounds: Map<String, io.legado.app.model.epub.EpubBackgroundImage> = emptyMap(),
-                        val titles: List<EpubTitleProjection> = emptyList())
+                        val titles: List<EpubTitleProjection> = emptyList()) {
+        // Projection payloads are immutable after preparation. A style copy supplies a
+        // new payload and computes its own snapshot before it reaches either surface.
+        val payloadJson: String = payload.toString()
+    }
 
     fun documentAt(position: Int): Int = documents.indexOfLast { it.first <= position }.coerceAtLeast(0)
 

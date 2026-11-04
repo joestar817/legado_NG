@@ -36,6 +36,8 @@ class EpubReaderGesturesTest {
     private var longPresses = 0
     private var extensions = 0
     private var selectionsFinished = 0
+    private var selectionFinishPoint: Pair<Float, Float>? = null
+    private var selectionsCancelled = 0
     private var scrollsFinished = 0
     private var flingsStarted = 0
     private var flingsStopped = 0
@@ -53,9 +55,9 @@ class EpubReaderGesturesTest {
             tap = { _, _ -> taps++ },
             longPress = { _, _ -> longPresses++ },
             extend = { _, _ -> extensions++ },
-            finishSelection = { selectionsFinished++ },
+            finishSelection = { x, y -> selectionsFinished++; selectionFinishPoint = x to y },
             swipe = { swipes++ },
-            cancelSelection = {},
+            cancelSelection = { selectionsCancelled++ },
             scroll = { dx, dy ->
                 beforeScroll?.invoke()
                 if (acceptsScroll) deltas.add(dx to dy)
@@ -202,6 +204,55 @@ class EpubReaderGesturesTest {
         assertEquals(1, taps)
         assertEquals(0, flingsStarted)
         assertEquals(0, scrollsFinished)
+    }
+
+    @Test
+    fun selectionFinishesAtUpEvenWhenThereWasNoMoveAtTheLastCoordinates() {
+        touch(MotionEvent.ACTION_DOWN, 200f, 500f)
+        advance(650)
+        move(200f, 700f)
+        touch(MotionEvent.ACTION_UP, 210f, 730f)
+        assertEquals(210f to 730f, selectionFinishPoint)
+        assertEquals(1, selectionsFinished)
+        assertTrue(deltas.isEmpty())
+        assertEquals(0, flingsStarted)
+    }
+
+    @Test
+    fun stationaryLongPressDoesNotSynthesizeAnExtendBeforeFinish() {
+        touch(MotionEvent.ACTION_DOWN, 200f, 500f)
+        advance(650)
+        touch(MotionEvent.ACTION_UP, 200f, 500f)
+        assertEquals(1, selectionsFinished)
+        assertEquals(0, extensions)
+        assertEquals(200f to 500f, selectionFinishPoint)
+    }
+
+    @Test
+    fun secondPointerCancelsSelectionAndLaterMoveUpCannotFinishIt() {
+        touch(MotionEvent.ACTION_DOWN, 200f, 500f)
+        advance(650)
+        move(200f, 700f)
+        touch(MotionEvent.ACTION_POINTER_DOWN, 200f, 700f)
+        move(200f, 800f)
+        touch(MotionEvent.ACTION_UP, 200f, 800f)
+        advance(1000)
+        assertEquals(1, selectionsCancelled)
+        assertEquals(1, extensions)
+        assertEquals(0, selectionsFinished)
+        assertEquals(0, flingsStarted)
+    }
+
+    @Test
+    fun cancelledSelectionNeverPublishesUpOrStartsMomentum() {
+        touch(MotionEvent.ACTION_DOWN, 200f, 500f)
+        advance(650)
+        move(200f, 700f)
+        touch(MotionEvent.ACTION_CANCEL, 200f, 700f)
+        touch(MotionEvent.ACTION_UP, 200f, 730f)
+        assertEquals(1, selectionsCancelled)
+        assertEquals(0, selectionsFinished)
+        assertEquals(0, flingsStarted)
     }
 
     private fun flickUp() {

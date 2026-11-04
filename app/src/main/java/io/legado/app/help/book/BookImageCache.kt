@@ -17,7 +17,8 @@ internal fun getCachedBookImage(file: File): File? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, bounds)
         file.takeIf {
-            (bounds.outWidth > 0 && bounds.outHeight > 0) || SvgUtils.getSize(file.path) != null
+            (bounds.outWidth > 0 && bounds.outHeight > 0) ||
+                file.inputStream().use { SvgUtils.getSize(it) } != null
         }
     } catch (_: IOException) {
         null

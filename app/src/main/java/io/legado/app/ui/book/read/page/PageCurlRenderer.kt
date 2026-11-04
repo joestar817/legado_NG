@@ -22,6 +22,9 @@ import kotlin.math.sin
 /** Shared curl geometry only; the caller owns frames, gestures and commit/cancel. */
 @Suppress("DEPRECATION")
 internal class PageCurlRenderer {
+    fun interface Page {
+        fun draw(canvas: Canvas, paint: Paint?)
+    }
     private var viewWidth = 0
     private var viewHeight = 0
     var backgroundColor: Int = android.graphics.Color.BLACK
@@ -150,18 +153,42 @@ internal class PageCurlRenderer {
 
     fun draw(canvas: Canvas, current: Bitmap?, adjacent: Bitmap?, direction: PageDirection,
         touchX: Float, touchY: Float, frameTransform: Matrix? = null) {
+        draw(canvas, current, adjacent, null, null, direction, touchX, touchY, frameTransform)
+    }
+
+    fun drawPages(canvas: Canvas, current: Page, adjacent: Page, direction: PageDirection,
+        touchX: Float, touchY: Float, frameTransform: Matrix? = null) {
+        draw(canvas, null, null, current, adjacent, direction, touchX, touchY, frameTransform)
+    }
+
+    private fun draw(canvas: Canvas, current: Bitmap?, adjacent: Bitmap?, currentPage: Page?, adjacentPage: Page?,
+        direction: PageDirection, touchX: Float, touchY: Float, frameTransform: Matrix?) {
         this.frameTransform = frameTransform
         calcPoints(touchX, touchY)
         val folded = if (direction == PageDirection.PREV) adjacent else current
         val underneath = if (direction == PageDirection.PREV) current else adjacent
-        drawCurrentPageArea(canvas, folded)
-        drawNextPageAreaAndShadow(canvas, underneath)
+        val foldedPage = if (direction == PageDirection.PREV) adjacentPage else currentPage
+        val underneathPage = if (direction == PageDirection.PREV) currentPage else adjacentPage
+        drawCurrentPageArea(canvas, folded, foldedPage)
+        drawNextPageAreaAndShadow(canvas, underneath, underneathPage)
         drawCurrentPageShadow(canvas)
-        drawCurrentBackArea(canvas, folded)
+        drawCurrentBackArea(canvas, folded, foldedPage)
     }
 
-    private fun drawFrame(canvas: Canvas, bitmap: Bitmap, fold: Matrix? = null, paint: Paint? = null) {
+    private fun drawFrame(canvas: Canvas, bitmap: Bitmap?, page: Page?, fold: Matrix? = null, paint: Paint? = null) {
         val transform = frameTransform
+        if (page != null) {
+            val saved = canvas.save()
+            try {
+                if (transform != null || fold != null) {
+                    bitmapMatrix.setConcat(fold ?: identity, transform ?: identity)
+                    canvas.concat(bitmapMatrix)
+                }
+                page.draw(canvas, paint)
+            } finally { canvas.restoreToCount(saved) }
+            return
+        }
+        bitmap ?: return
         if (transform != null) {
             bitmapMatrix.setConcat(fold ?: identity, transform)
             canvas.drawBitmap(bitmap, bitmapMatrix, paint)
@@ -174,9 +201,10 @@ internal class PageCurlRenderer {
      */
     private fun drawCurrentBackArea(
         canvas: Canvas,
-        bitmap: Bitmap?
+        bitmap: Bitmap?,
+        page: Page?
     ) {
-        bitmap ?: return
+        if (bitmap == null && page == null) return
         val i = ((mBezierStart1.x + mBezierControl1.x) / 2).toInt()
         val f1 = abs(i - mBezierControl1.x)
         val i1 = ((mBezierStart2.y + mBezierControl2.y) / 2).toInt()
@@ -225,7 +253,7 @@ internal class PageCurlRenderer {
         mMatrix.preTranslate(-mBezierControl1.x, -mBezierControl1.y)
         mMatrix.postTranslate(mBezierControl1.x, mBezierControl1.y)
         canvas.drawColor(backgroundColor)
-        drawFrame(canvas, bitmap, mMatrix, mPaint)
+        drawFrame(canvas, bitmap, page, mMatrix, mPaint)
         mPaint.colorFilter = null
         canvas.rotate(mDegrees, mBezierStart1.x, mBezierStart1.y)
         mFolderShadowDrawable.setBounds(
@@ -339,9 +367,10 @@ internal class PageCurlRenderer {
     //
     private fun drawNextPageAreaAndShadow(
         canvas: Canvas,
-        bitmap: Bitmap?
+        bitmap: Bitmap?,
+        page: Page?
     ) {
-        bitmap ?: return
+        if (bitmap == null && page == null) return
         mPath1.reset()
         mPath1.moveTo(mBezierStart1.x, mBezierStart1.y)
         mPath1.lineTo(mBezierVertex1.x, mBezierVertex1.y)
@@ -374,7 +403,7 @@ internal class PageCurlRenderer {
         } else {
             canvas.clipPath(mPath1, Region.Op.INTERSECT)
         }
-        drawFrame(canvas, bitmap)
+        drawFrame(canvas, bitmap, page)
         canvas.rotate(mDegrees, mBezierStart1.x, mBezierStart1.y)
         mBackShadowDrawable.setBounds(
             leftX, mBezierStart1.y.toInt(),
@@ -387,9 +416,10 @@ internal class PageCurlRenderer {
     //
     private fun drawCurrentPageArea(
         canvas: Canvas,
-        bitmap: Bitmap?
+        bitmap: Bitmap?,
+        page: Page?
     ) {
-        bitmap ?: return
+        if (bitmap == null && page == null) return
         mPath0.reset()
         mPath0.moveTo(mBezierStart1.x, mBezierStart1.y)
         mPath0.quadTo(mBezierControl1.x, mBezierControl1.y, mBezierEnd1.x, mBezierEnd1.y)
@@ -405,7 +435,7 @@ internal class PageCurlRenderer {
         } else {
             canvas.clipPath(mPath0, Region.Op.XOR)
         }
-        drawFrame(canvas, bitmap)
+        drawFrame(canvas, bitmap, page)
         canvas.restore()
     }
 

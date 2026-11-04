@@ -7,6 +7,8 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
@@ -27,6 +29,7 @@ import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.book.read.ContentEditDialog
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.epub.EpubLayoutController
+import io.legado.app.ui.book.read.epub.EpubAnimationFrames
 import io.legado.app.ui.book.read.epub.EpubStartupTiming
 import io.legado.app.ui.book.read.createBookmark
 import io.legado.app.ui.book.read.createTextHighlight
@@ -59,6 +62,7 @@ import io.legado.app.utils.longToastOnUi
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.throttle
 import io.legado.app.utils.getPrefBoolean
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 
 /**
@@ -91,49 +95,137 @@ class ReadView(context: Context, attrs: AttributeSet) :
     private val epubViewport = Rect()
     private var epubPointerSequence = false
     private var epubCover = false
-    internal var externalPageSnapshots: Pair<Bitmap, Bitmap>? = null
+    internal var externalPageFrames: EpubAnimationFrames? = null
         private set
+    internal val externalPageSnapshots: Pair<Bitmap, Bitmap>? get() = externalPageFrames?.snapshots
     private var externalAnimationCommit: (() -> Unit)? = null
     private var externalAnimationFinishing = false
+    private var pendingExternalFramePreparation: EpubAnimationFrames? = null
+    private var pendingExternalFrameRendering: AtomicBoolean? = null
+    private var nativeTapReceivedAt: Long? = null
+    private var nativeTurnTiming: io.legado.app.ui.book.read.epub.EpubStartupTiming? = null
+    private val retiredExternalFrames = mutableSetOf<EpubAnimationFrames>()
+    private val frameReleaseHandler = Handler(Looper.getMainLooper())
 
     private fun captureNativeFrame(): Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
         // Information is composed after the authored canvas, never underneath a translucent one.
         curPage.drawPageBackground(Canvas(it))
     }
 
-    private fun animateLayoutFrames(before: Bitmap, after: Bitmap, direction: Int, commit: () -> Unit) {
+    private fun animateLayoutFrames(prepared: EpubAnimationFrames, direction: Int, started: () -> Unit, commit: () -> Unit) {
         finishLayoutFrames()
         val delegate = pageDelegate as? HorizontalPageDelegate
         if (delegate == null) {
-            before.recycle(); after.recycle(); commit()
+            prepared.close(); started(); commit()
             return
         }
         delegate.abortAnim()
-        before.prepareToDraw()
-        after.prepareToDraw()
-        externalPageSnapshots = before to after
+        if (delegate is SimulationPageDelegate && prepared.recorded && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            pendingExternalFramePreparation = prepared
+            val rendering = AtomicBoolean(true)
+            pendingExternalFrameRendering = rendering
+            // Freeze the existing source immediately, as cover/slide already do. The live
+            // move can now overlap bitmap preparation without exposing an intermediate DOM.
+            externalPageFrames = prepared
+            externalAnimationCommit = commit
+            externalAnimationFinishing = false
+            invalidate()
+            val timing = EpubStartupTiming("curl-flatten")
+            val content = curPage.contentViewport
+            val bounds = Rect(0, 0, content.width, content.height)
+            offsetDescendantRectToMyCoords(content, bounds)
+            prepared.flattenForCurlAsync(rendering::get, submitted = {
+                if (pendingExternalFramePreparation === prepared && !externalAnimationFinishing) started()
+            }, headerHeight = bounds.top, footerHeight = height - bounds.bottom, foldedFirst = direction > 0) { result ->
+                if (pendingExternalFramePreparation !== prepared) {
+                    result.fold(onSuccess = ::retireLayoutFrames, onFailure = { retireLayoutFrames(prepared) })
+                    return@flattenForCurlAsync
+                }
+                pendingExternalFramePreparation = null
+                pendingExternalFrameRendering = null
+                if (externalAnimationFinishing) {
+                    // A repeated tap has already completed this turn using its recorded
+                    // target. Keep that handoff; a late raster must never restart the curl.
+                    result.onSuccess { frames ->
+                        frames.first.prepareToDraw()
+                        frames.second.prepareToDraw()
+                        externalPageFrames = frames
+                    }
+                    invalidate()
+                    return@flattenForCurlAsync
+                }
+                val frames = result.getOrElse { timing.mark("worker-unavailable"); prepared.flattenForCurl() }
+                timing.mark("ready shader=${frames.curlPages} hardware=${frames.first.bitmap?.config == Bitmap.Config.HARDWARE &&
+                    frames.second.bitmap?.config == Bitmap.Config.HARDWARE}")
+                startLayoutFrames(frames, delegate, direction, {}, commit)
+            }
+            return
+        }
+        val frames = if (delegate is SimulationPageDelegate && prepared.recorded) {
+            val timing = io.legado.app.ui.book.read.epub.EpubStartupTiming("curl-flatten")
+            prepared.flattenForCurl().also {
+                timing.mark("ready hardware=${it.first.bitmap?.config == Bitmap.Config.HARDWARE &&
+                    it.second.bitmap?.config == Bitmap.Config.HARDWARE}")
+            }
+        } else prepared
+        startLayoutFrames(frames, delegate, direction, started, commit)
+    }
+
+    private fun startLayoutFrames(frames: EpubAnimationFrames, delegate: HorizontalPageDelegate,
+                                  direction: Int, started: () -> Unit, commit: () -> Unit) {
+        frames.first.prepareToDraw()
+        frames.second.prepareToDraw()
+        externalPageFrames = frames
         externalAnimationCommit = commit
         externalAnimationFinishing = false
+        // The controller may move the live WebView only after both frozen frames are installed.
+        started()
+        if (delegate is NoAnimPageDelegate && !autoPager.isRunning) { completeLayoutFrames(); return }
         if (autoPager.isRunning && !AppConfig.isEInkMode) { invalidate(); return }
         delegate.startExternalAnimation(if (direction > 0) PageDirection.NEXT else PageDirection.PREV, defaultAnimationSpeed)
         invalidate()
     }
 
     private fun finishLayoutFrames() {
-        val frames = externalPageSnapshots ?: return
+        // The asynchronous producer retains its input until both GPU fences complete.
+        val preparing = pendingExternalFramePreparation
+        pendingExternalFrameRendering?.set(false)
+        pendingExternalFrameRendering = null
+        pendingExternalFramePreparation = null
+        val frames = externalPageFrames ?: return
         externalAnimationCommit = null
         // Abort while the external-frame guard is still installed; never advance native pages.
         (pageDelegate as? HorizontalPageDelegate)?.abortAnim()
-        externalPageSnapshots = null
+        externalPageFrames = null
         externalAnimationCommit = null
         externalAnimationFinishing = false
         (pageDelegate as? HorizontalPageDelegate)?.upRecorder()
-        post { frames.first.recycle(); frames.second.recycle() }
+        if (frames !== preparing) retireLayoutFrames(frames)
         invalidate()
+    }
+
+    private fun retireLayoutFrames(frames: EpubAnimationFrames) {
+        if (frames.needsFrameCommit && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            isHardwareAccelerated && isAttachedToWindow && isShown && viewTreeObserver.isAlive) {
+            // A pooled RenderNode must survive until the live handoff frame is submitted.
+            retiredExternalFrames.add(frames)
+            viewTreeObserver.registerFrameCommitCallback {
+                frameReleaseHandler.post { retiredExternalFrames.remove(frames); frames.close() }
+            }
+        } else frameReleaseHandler.post { frames.close() }
+        invalidate()
+    }
+
+    override fun onDetachedFromWindow() {
+        if (pendingExternalFramePreparation != null) finishLayoutFrames()
+        super.onDetachedFromWindow()
+        retiredExternalFrames.forEach { it.close() }
+        retiredExternalFrames.clear()
     }
 
     private fun completeLayoutFrames() {
         val commit = externalAnimationCommit ?: return
+        pendingExternalFrameRendering?.set(false)
         externalAnimationCommit = null
         externalAnimationFinishing = true
         // Like native repeated taps, complete the current turn before accepting the next one.
@@ -164,6 +256,11 @@ class ReadView(context: Context, attrs: AttributeSet) :
                 requestViewport = ::setEpubViewportFull,
                 reportError = { message -> context.longToastOnUi(message) },
                 nativeFrame = ::captureNativeFrame,
+                nativeBackground = { canvas -> curPage.drawPageBackground(canvas) },
+                recordAnimationFrames = { Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                    isHardwareAccelerated && !autoPager.isRunning &&
+                    (pageDelegate is CoverPageDelegate || pageDelegate is SlidePageDelegate ||
+                        pageDelegate is SimulationPageDelegate || pageDelegate is NoAnimPageDelegate) },
                 nativeChrome = { canvas, hideHeader, hideFooter ->
                     curPage.drawInformation(canvas, hideHeader, hideFooter)
                 },
@@ -360,18 +457,20 @@ class ReadView(context: Context, attrs: AttributeSet) :
     }
 
     override fun dispatchDraw(canvas: Canvas) {
-        val frames = externalPageSnapshots
+        val frames = externalPageFrames
         // The animation frames already contain the complete page and chrome.
         // Resume the live document for its existing visual commit at handoff.
         if (frames == null || externalAnimationFinishing) super.dispatchDraw(canvas)
         if (frames != null) {
-            canvas.drawBitmap(if (externalAnimationFinishing) frames.second else frames.first, 0f, 0f, null)
-            if (!externalAnimationFinishing && !autoPager.isRunning) {
+            (if (externalAnimationFinishing) frames.second else frames.first).draw(canvas)
+            if (!externalAnimationFinishing && pendingExternalFramePreparation == null && !autoPager.isRunning) {
                 pageDelegate?.onDraw(canvas)
                 epubLayout?.onAnimationFrame()
             }
         } else if (epubLayout?.active != true) {
             pageDelegate?.onDraw(canvas)
+            nativeTurnTiming?.mark("animation-draw")
+            nativeTurnTiming = null
         } else {
             epubLayout?.drawInformation(canvas)
         }
@@ -465,13 +564,17 @@ class ReadView(context: Context, attrs: AttributeSet) :
             }
 
             MotionEvent.ACTION_UP -> {
+                val receivedAt = android.os.SystemClock.elapsedRealtime() -
+                    (android.os.SystemClock.uptimeMillis() - event.eventTime).coerceAtLeast(0)
+                if (io.legado.app.BuildConfig.DEBUG) EpubStartupTiming("txt-pointer", receivedAt).mark("up")
                 removeCallbacks(longPressRunnable)
                 if (!pressDown) return true
                 pressDown = false
                 if (!pageDelegate!!.isMoved && !isMove) {
                     if (!longPressed && !pressOnTextSelected) {
                         if (!curPage.onClick(startX, startY, event.x, event.y)) {
-                            onSingleTapUp()
+                            nativeTapReceivedAt = receivedAt
+                            try { onSingleTapUp() } finally { nativeTapReceivedAt = null }
                         }
                         return true
                     }
@@ -548,7 +651,20 @@ class ReadView(context: Context, attrs: AttributeSet) :
         else if (start) curPage.selectStartMove(x, y) else curPage.selectEndMove(x, y)
     }
 
-    fun finishSelectionHandleDrag() { epubLayout?.finishSelectionDrag() }
+    fun beginSelectionHandleDrag(start: Boolean) {
+        epubLayout?.takeIf { it.active }?.beginSelectionHandleDrag(start)
+    }
+
+    fun cancelSelectionHandleDrag() {
+        epubLayout?.takeIf { it.active }?.cancelSelectionHandleDrag()
+    }
+
+    /** EPUB publishes its menu after the final endpoint is ready. */
+    fun finishSelectionHandleDrag(): Boolean {
+        val layout = epubLayout?.takeIf { it.active } ?: return false
+        layout.finishSelectionDrag()
+        return true
+    }
 
     fun setSelectionHighlightTransparent(transparent: Boolean) {
         epubLayout?.setSelectionHighlightTransparent(transparent)
@@ -806,7 +922,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
      * @param direction 翻页方向
      */
     fun fillPage(direction: PageDirection): Boolean {
-        if (externalPageSnapshots != null) {
+        if (externalPageFrames != null) {
             externalAnimationFinishing = true
             val commit = externalAnimationCommit
             externalAnimationCommit = null
@@ -1040,8 +1156,14 @@ class ReadView(context: Context, attrs: AttributeSet) :
     private fun turnPage(direction: Int) {
         val layout = epubLayout
         if (layout?.active == true) layout.turn(direction)
-        else if (direction > 0) pageDelegate?.nextPageByAnim(defaultAnimationSpeed)
-        else pageDelegate?.prevPageByAnim(defaultAnimationSpeed)
+        else {
+            if (io.legado.app.BuildConfig.DEBUG && nativeTapReceivedAt != null) {
+                nativeTurnTiming = io.legado.app.ui.book.read.epub.EpubStartupTiming("txt-turn", nativeTapReceivedAt!!)
+            }
+            if (direction > 0) pageDelegate?.nextPageByAnim(defaultAnimationSpeed)
+            else pageDelegate?.prevPageByAnim(defaultAnimationSpeed)
+            nativeTurnTiming?.mark("animation-request")
+        }
     }
 
     internal fun turnLayoutPage(direction: Int): Boolean {
@@ -1108,17 +1230,17 @@ class ReadView(context: Context, attrs: AttributeSet) :
 
     internal fun prepareAutoPage(): Boolean {
         val layout = epubLayout?.takeIf { it.active } ?: return true
-        if (externalPageSnapshots != null) return !externalAnimationFinishing
+        if (externalPageFrames != null) return !externalAnimationFinishing
         if (!layout.readyForAutoPage()) return false
         if (!layout.hasNextPage()) { callBack.autoPageStop(); return false }
         if (isScroll) return layout.readyForAutoPage()
-        if (externalPageSnapshots == null) layout.prepareAutoPage()
-        return externalPageSnapshots != null && !externalAnimationFinishing
+        if (externalPageFrames == null) layout.prepareAutoPage()
+        return externalPageFrames != null && !externalAnimationFinishing
     }
 
     internal fun drawAutoPage(canvas: Canvas): Boolean {
         if (epubLayout?.active != true) return false
-        externalPageSnapshots?.let { canvas.drawBitmap(it.second, 0f, 0f, null) }
+        externalPageFrames?.let { it.second.draw(canvas) }
         return true
     }
 

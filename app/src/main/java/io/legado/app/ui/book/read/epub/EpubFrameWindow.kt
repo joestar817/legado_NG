@@ -19,12 +19,36 @@ internal class EpubFrameWindow<T>(
         private set
     operator fun get(page: Int): T? = values[page]?.value
 
+    /** Reserve before the single producer allocates pixels; leased/retired frames still count. */
+    fun makeRoom(bytes: Long, count: Int = 1, keep: Set<Int> = emptySet()): Boolean {
+        require(bytes >= 0 && count >= 0)
+        if (count > maxCount || bytes > maxBytes) return false
+        fun fits() = ownedCount + count <= maxCount && ownedBytes <= maxBytes - bytes
+        val iterator = values.iterator()
+        while (!fits() && iterator.hasNext()) {
+            val entry = iterator.next()
+            if (entry.key in keep || entry.value.readers != 0) continue
+            iterator.remove()
+            retire(entry.value)
+        }
+        return fits()
+    }
+
     fun acquire(page: Int): Lease<T>? = values[page]?.let { entry ->
         entry.readers++
         Lease(entry.value) {
             entry.readers--
             if (!entry.cached && entry.readers == 0) disposeEntry(entry)
         }
+    }
+
+    /** Transfer an already captured chapter boundary without copying or changing its leases. */
+    fun rekey(from: Int, to: Int): Boolean {
+        if (from == to) return values.containsKey(from)
+        val entry = values.remove(from) ?: return false
+        values.remove(to)?.let(::retire)
+        values[to] = entry
+        return true
     }
 
     fun put(page: Int, value: T) {

@@ -202,7 +202,7 @@ class AiChatClient {
             )
         ))
         val toolTrace = mutableListOf<String>()
-        var lastUsage: AiChatUsage? = null
+        val usageAccumulator = AiChatUsageAccumulator()
         var lastModel: String? = null
         var lastReasoning: String? = null
         var lastFinishReason: String? = null
@@ -318,7 +318,7 @@ class AiChatClient {
                 throw error
             }
             lastModel = completion.model
-            lastUsage = completion.usage
+            usageAccumulator.add(completion.usage)
             lastReasoning = completion.reasoning
             lastFinishReason = completion.finishReason
             stepNumber += 1
@@ -412,11 +412,15 @@ class AiChatClient {
                     reasoning = lastReasoning,
                     model = lastModel ?: model.id,
                     finishReason = lastFinishReason,
-                    usage = lastUsage,
+                    usage = usageAccumulator.result(),
                     toolTrace = toolTrace,
                     toolReceipts = toolReceipts.toList(),
                     memoryTrace = memoryTrace.toList(),
-                    warnings = warnings,
+                    warnings = if (usageAccumulator.hasPartialCoverage) {
+                        warnings + "本轮用量统计不完整，仅包含已返回的部分"
+                    } else {
+                        warnings
+                    },
                     contextUsage = AiChatContextManager.usage(
                         contextMessages,
                         tools,
@@ -1769,6 +1773,76 @@ data class AiMemoryTraceItem(
         const val STATUS_RUNNING = "running"
         const val STATUS_SAVED = "saved"
         const val STATUS_FAILED = "failed"
+    }
+}
+
+/**
+ * Accumulates provider usage across every model call in one turn.
+ *
+ * Usage fields are tracked independently because providers may report only some of
+ * them. Fields never reported stay `null`; partially reported fields retain their
+ * known subtotal and set [hasPartialCoverage] so the caller can label it.
+ * `total_tokens` uses the provider-reported value when present; otherwise it is
+ * derived per call from prompt + completion only when both are known.
+ */
+internal class AiChatUsageAccumulator {
+    private var promptTokens = 0
+    private var completionTokens = 0
+    private var totalTokens = 0
+    private var promptReports = 0
+    private var completionReports = 0
+    private var totalReports = 0
+
+    var callsWithUsage = 0
+        private set
+
+    var callsWithoutUsage = 0
+        private set
+
+    /** True when any reported field omits one or more model calls. */
+    val hasPartialCoverage: Boolean
+        get() {
+            val callCount = callsWithUsage + callsWithoutUsage
+            return promptReports in 1 until callCount ||
+                completionReports in 1 until callCount ||
+                totalReports in 1 until callCount
+        }
+
+    fun add(usage: AiChatUsage?) {
+        val prompt = usage?.promptTokens
+        val completion = usage?.completionTokens
+        val reportedTotal = usage?.totalTokens
+        if (prompt == null && completion == null && reportedTotal == null) {
+            callsWithoutUsage++
+            return
+        }
+        callsWithUsage++
+        if (prompt != null) {
+            promptReports++
+            promptTokens += prompt
+        }
+        if (completion != null) {
+            completionReports++
+            completionTokens += completion
+        }
+        val callTotal = reportedTotal ?: if (prompt != null && completion != null) {
+            prompt + completion
+        } else {
+            null
+        }
+        if (callTotal != null) {
+            totalReports++
+            totalTokens += callTotal
+        }
+    }
+
+    fun result(): AiChatUsage? {
+        if (callsWithUsage == 0) return null
+        return AiChatUsage(
+            promptTokens = promptTokens.takeIf { promptReports > 0 },
+            completionTokens = completionTokens.takeIf { completionReports > 0 },
+            totalTokens = totalTokens.takeIf { totalReports > 0 }
+        )
     }
 }
 
