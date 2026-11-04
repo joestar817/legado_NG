@@ -43,6 +43,7 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.legado.app.R
 import io.legado.app.constant.AppLog
+import io.legado.app.data.entities.BookCharacter
 import io.legado.app.data.entities.Bookmark
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgThemeRuntimeAssets
@@ -93,6 +94,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
     private val currentPageState = mutableIntStateOf(0)
     private val moreMenuVisibleState = mutableStateOf(false)
     private val textHighlightState = mutableStateOf<Bookmark?>(null)
+    private val selectionCharacterState = mutableStateOf<BookCharacter?>(null)
     private val textHighlightPopupModeState = mutableStateOf(TextHighlightPopupMode.TOOLBAR)
     private val noteEditorVisibleState = mutableStateOf(false)
     private val noteDraftState = mutableStateOf("")
@@ -177,6 +179,11 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
                             iconBitmap = null,
                             onClick = { deleteTextHighlight(highlight) },
                         )
+                    } else if (
+                        item.itemId == R.id.menu_character_card &&
+                        selectionCharacterState.value != null
+                    ) {
+                        action.copy(title = context.getString(R.string.view_character_card))
                     } else action
                 }
             }
@@ -262,6 +269,12 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
         }
     }
 
+    fun setSelectionCharacterCard(character: BookCharacter?) {
+        selectionCharacterState.value = character
+    }
+
+    fun selectionCharacterCard(): BookCharacter? = selectionCharacterState.value
+
     fun show(
         view: View,
         windowHeight: Int,
@@ -320,6 +333,9 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
         textHighlightState.value = textHighlight
         textHighlightPopupModeState.value = initialTextHighlightPopupMode(textHighlight)
         noteEditorVisibleState.value = false
+        if (textHighlight != null) {
+            selectionCharacterState.value = null
+        }
         noteDraftState.value = textHighlight?.content.orEmpty()
         isFocusable = false
         if (textHighlight == null) {
