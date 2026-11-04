@@ -7,13 +7,13 @@ import splitties.init.appCtx
 
 /** 稳定功能标识用于偏好存储，资源 ID 仅用于当前版本菜单匹配。 */
 enum class TextSelectionBuiltInAction(val key: String, val menuId: Int, val titleRes: Int) {
-    CHARACTER_CARD("character_card", R.id.menu_character_card, R.string.create_character_card),
     REPLACE("replace", R.id.menu_replace, R.string.replace),
     AI_PURIFY("ai_purify", R.id.menu_ai_purify, R.string.ai_purify),
     COPY("copy", R.id.menu_copy, android.R.string.copy),
     HIGHLIGHT("highlight", R.id.menu_bookmark, R.string.text_highlight),
     SEARCH("search", R.id.menu_search_content, R.string.search),
     READ_ALOUD("read_aloud", R.id.menu_aloud, R.string.read_aloud),
+    CHARACTER_CARD("character_card", R.id.menu_character_card, R.string.create_character_card),
     DICTIONARY("dictionary", R.id.menu_dict, R.string.dict),
     BROWSER("browser", R.id.menu_browser, R.string.browser),
     SHARE("share", R.id.menu_share_str, R.string.share),
@@ -30,17 +30,9 @@ object TextSelectionActionOrder {
     fun load(): List<TextSelectionBuiltInAction> {
         val keys = appCtx.getPrefString(PREF_KEY).orEmpty().split(',')
         val saved = keys.mapNotNull { key -> TextSelectionBuiltInAction.entries.find { it.key == key } }
-        return mergeLatest(saved)
-    }
-
-    fun mergeLatest(saved: List<TextSelectionBuiltInAction>): List<TextSelectionBuiltInAction> {
-        // 已保存顺序的用户保持自定义；角色卡入口首次出现时置顶，方便正文选中后直接使用。
-        val actions = (saved + TextSelectionBuiltInAction.entries).distinct().toMutableList()
-        if (saved.isNotEmpty() && TextSelectionBuiltInAction.CHARACTER_CARD !in saved) {
-            actions.remove(TextSelectionBuiltInAction.CHARACTER_CARD)
-            actions.add(0, TextSelectionBuiltInAction.CHARACTER_CARD)
-        }
-        return actions
+        // No migration of previously saved orders: new actions simply append after
+        // the saved ones and users can reorder them in settings.
+        return (saved + TextSelectionBuiltInAction.entries).distinct()
     }
 
     fun save(actions: List<TextSelectionBuiltInAction>, disabledKeys: Set<String>) {

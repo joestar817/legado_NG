@@ -94,10 +94,7 @@ internal object ReadPresetPreferences {
             } ?: TextSelectionActionOrder.load()
             val disabled = settings.getAsJsonArray("toolbarDisabled")?.map { it.asString }?.toSet()
                 ?: TextSelectionActionOrder.disabledKeys()
-            TextSelectionActionOrder.save(
-                TextSelectionActionOrder.mergeLatest(order),
-                disabled,
-            )
+            TextSelectionActionOrder.save((order + TextSelectionBuiltInAction.entries).distinct(), disabled)
         }
         ReadBookConfig.hideStatusBar = appCtx.getPrefBoolean(PreferKey.hideStatusBar, false)
         ReadBookConfig.readBodyToLh = appCtx.getPrefBoolean(PreferKey.readBodyToLh, true)
