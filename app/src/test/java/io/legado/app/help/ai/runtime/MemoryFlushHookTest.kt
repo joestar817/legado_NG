@@ -9,7 +9,7 @@ class MemoryFlushHookTest {
 
     @Test
     fun readReceiptBlocksNextReadAndFinalizeUntilMemoryAcknowledgesIt() {
-        val runtime = AgentHookRegistry.createRuntime(listOf(binding()))
+        val runtime = runtime()
 
         val notice = runtime.dispatch(resultEvent(readReceipt("read-1"))).single().result
         assertTrue(notice is AgentHookResult.InjectNotice)
@@ -35,7 +35,7 @@ class MemoryFlushHookTest {
 
     @Test
     fun failedOrTruncatedReadDoesNotBecomePending() {
-        val runtime = AgentHookRegistry.createRuntime(listOf(binding()))
+        val runtime = runtime()
 
         runtime.dispatch(resultEvent(readReceipt("failed", ToolExecutionStatus.FAILED)))
         runtime.dispatch(resultEvent(readReceipt("truncated", resultTruncated = true)))
@@ -45,7 +45,7 @@ class MemoryFlushHookTest {
 
     @Test
     fun resumeRestoresOnlyConfiguredReadReceipts() {
-        val runtime = AgentHookRegistry.createRuntime(listOf(binding()))
+        val runtime = runtime()
         runtime.dispatch(
             AgentHookEvent(
                 eventId = "resume",
@@ -60,6 +60,75 @@ class MemoryFlushHookTest {
         assertBlocked(
             runtime.dispatch(boundaryEvent("after-resume", AgentHookPhase.BEFORE_COMPACTION)).single().result,
             "memory_flush_pending"
+        )
+    }
+
+    @Test
+    fun memoryDisabledSkipsReceiptTrackingAndBoundaryBlocks() {
+        val runtime = runtime(isMemoryEnabled = false)
+
+        runtime.dispatch(
+            AgentHookEvent(
+                eventId = "resume-disabled",
+                phase = AgentHookPhase.TURN_RESUMED,
+                conversationId = CONVERSATION_ID,
+                turnId = TURN_ID,
+                pendingReceiptIds = listOf("read-1")
+            )
+        )
+        assertTrue(runtime.snapshot().single().pendingReceiptIds.isEmpty())
+
+        assertEquals(
+            AgentHookResult.Continue,
+            runtime.dispatch(resultEvent(readReceipt("read-disabled"))).single().result
+        )
+        assertEquals(
+            AgentHookResult.Continue,
+            runtime.dispatch(proposedEvent("bookshelf_text_window_get")).single().result
+        )
+        assertEquals(
+            AgentHookResult.Continue,
+            runtime.dispatch(
+                boundaryEvent("disabled-finalize", AgentHookPhase.BEFORE_TURN_FINALIZE)
+            ).single().result
+        )
+        assertTrue(runtime.snapshot().single().pendingReceiptIds.isEmpty())
+    }
+
+    @Test
+    fun memoryGateFollowsSwitchChangesAtRuntime() {
+        var memoryEnabled = false
+        val binding = binding()
+        val runtime = AgentHookRuntime(
+            listOf(MemoryFlushHookFactory.create(binding.config) { memoryEnabled }),
+            MemoryFlushHookFactory.pendingReceiptToolNames(binding.config)
+        )
+
+        runtime.dispatch(resultEvent(readReceipt("read-disabled")))
+        assertTrue(runtime.snapshot().single().pendingReceiptIds.isEmpty())
+
+        memoryEnabled = true
+        val notice = runtime.dispatch(resultEvent(readReceipt("read-enabled"))).single().result
+        assertTrue(notice is AgentHookResult.InjectNotice)
+        assertEquals(listOf("read-enabled"), runtime.snapshot().single().pendingReceiptIds)
+        assertBlocked(
+            runtime.dispatch(boundaryEvent("enabled-finalize", AgentHookPhase.BEFORE_TURN_FINALIZE)).single().result,
+            "memory_flush_pending",
+            expectedPendingIds = listOf("read-enabled")
+        )
+
+        memoryEnabled = false
+        assertEquals(
+            AgentHookResult.Continue,
+            runtime.dispatch(boundaryEvent("disabled-again", AgentHookPhase.BEFORE_TURN_FINALIZE)).single().result
+        )
+    }
+
+    private fun runtime(isMemoryEnabled: Boolean = true): AgentHookRuntime {
+        val binding = binding()
+        return AgentHookRuntime(
+            listOf(MemoryFlushHookFactory.create(binding.config) { isMemoryEnabled }),
+            MemoryFlushHookFactory.pendingReceiptToolNames(binding.config)
         )
     }
 
@@ -139,10 +208,14 @@ class MemoryFlushHookTest {
         turnId = TURN_ID
     )
 
-    private fun assertBlocked(result: AgentHookResult, reasonCode: String) {
+    private fun assertBlocked(
+        result: AgentHookResult,
+        reasonCode: String,
+        expectedPendingIds: List<String> = listOf("read-1")
+    ) {
         assertTrue(result is AgentHookResult.BlockBoundary)
         assertEquals(reasonCode, (result as AgentHookResult.BlockBoundary).reasonCode)
-        assertEquals(listOf("read-1"), result.pendingReceiptIds)
+        assertEquals(expectedPendingIds, result.pendingReceiptIds)
     }
 
     private companion object {

@@ -2,6 +2,7 @@ package io.legado.app.help.ai.runtime
 
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import io.legado.app.help.ai.AiConfig
 
 internal data class MemoryFlushConfig(
     val watchTools: Set<String>,
@@ -52,7 +53,15 @@ internal object MemoryFlushHookFactory : AgentRuntimeHookFactory {
     }
 
     override fun create(config: JsonObject): AgentRuntimeHook {
-        return MemoryFlushHook(parseConfig(validateConfig(config)))
+        return create(config) { AiConfig.memoryEnabled }
+    }
+
+    /**
+     * 测试注入点：单元测试用普通 JUnit 运行，不能访问 Android 的 appCtx，
+     * 因此把记忆开关作为函数注入，生产路径仍读取 AiConfig.memoryEnabled。
+     */
+    internal fun create(config: JsonObject, isMemoryEnabled: () -> Boolean): AgentRuntimeHook {
+        return MemoryFlushHook(parseConfig(validateConfig(config)), isMemoryEnabled)
     }
 
     private fun parseConfig(config: JsonObject): MemoryFlushConfig {
@@ -113,7 +122,8 @@ internal object MemoryFlushHookFactory : AgentRuntimeHookFactory {
 }
 
 private class MemoryFlushHook(
-    private val config: MemoryFlushConfig
+    private val config: MemoryFlushConfig,
+    private val isMemoryEnabled: () -> Boolean = { AiConfig.memoryEnabled }
 ) : AgentRuntimeHook {
 
     override val id: String = MemoryFlushHookFactory.id
@@ -122,6 +132,10 @@ private class MemoryFlushHook(
     private val pendingReceiptIds = linkedSetOf<String>()
 
     override fun onEvent(event: AgentHookEvent): AgentHookResult {
+        // AI memory can be disabled independently of the Skill. In that mode the
+        // agent_memory_* tools are no-ops, so enforcing pending receipts would block
+        // the turn forever and surface misleading warnings.
+        if (!isMemoryEnabled()) return AgentHookResult.Continue
         if (event.phase == AgentHookPhase.TURN_RESUMED) {
             pendingReceiptIds.clear()
             pendingReceiptIds.addAll(event.pendingReceiptIds)

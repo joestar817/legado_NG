@@ -32,6 +32,8 @@ import io.legado.app.constant.Status
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
+import io.legado.app.data.entities.BookCharacter
+import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookProgress
 import io.legado.app.data.entities.BookSource
 import io.legado.app.data.entities.Bookmark
@@ -78,8 +80,10 @@ import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.bookmark.BookmarkDialog
+import io.legado.app.ui.book.character.BookCharacterEditDialog
 import io.legado.app.ui.book.changesource.ChangeBookSourceDialog
 import io.legado.app.ui.book.changesource.ChangeChapterSourceDialog
+import io.legado.app.ui.book.info.BookAiAssistantLauncher
 import io.legado.app.ui.book.info.BookInfoActivity
 import io.legado.app.ui.book.read.aloud.ReadAloudLauncher
 import io.legado.app.ui.book.read.aloud.ReadAloudMiniPlayer
@@ -225,6 +229,8 @@ class ReadBookActivity : BaseReadBookActivity(),
     private var observedTextHighlightBook: Pair<String, String>? = null
     private var activeTextHighlight: Bookmark? = null
     private val textHighlightWriteMutex = Mutex()
+    private var characterCardLookupJob: Job? = null
+    private var characterCardLookupGeneration = 0L
     private var tts: TTS? = null
     val textActionMenu: TextActionMenu by lazy {
         TextActionMenu(this, this)
@@ -817,6 +823,7 @@ class ReadBookActivity : BaseReadBookActivity(),
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 textActionMenu.dismiss()
+                cancelCharacterCardLookup()
                 when (v.id) {
                     R.id.cursor_left -> readView.beginSelectionHandleDrag(!readView.curPage.getReverseStartCursor())
                     R.id.cursor_right -> readView.beginSelectionHandleDrag(readView.curPage.getReverseEndCursor())
@@ -892,6 +899,7 @@ class ReadBookActivity : BaseReadBookActivity(),
      * 取消文字选择
      */
     override fun onCancelSelect() = binding.run {
+        cancelCharacterCardLookup()
         readView.setSelectionHighlightTransparent(false)
         cursorLeft.invisible()
         cursorRight.invisible()
@@ -909,13 +917,47 @@ class ReadBookActivity : BaseReadBookActivity(),
         val navigationBarHeight =
             if (!AppConfig.hideSystemNavigationBar && navigationBarGravity == Gravity.BOTTOM)
                 binding.navigationBar.height else 0
-        textActionMenu.show(
-            binding.textMenuPosition,
-            binding.root.height + navigationBarHeight,
-            binding.textMenuPosition.y.toInt(),
-            binding.cursorLeft.y.toInt() + binding.cursorLeft.height,
-            binding.cursorRight.y.toInt() + binding.cursorRight.height
-        )
+        val book = ReadBook.book
+        val workKey = book?.let { BookCharacterProfile.workKey(it.name, it.author) }
+        val text = selectedText
+        val generation = ++characterCardLookupGeneration
+        characterCardLookupJob?.cancel()
+        characterCardLookupJob = lifecycleScope.launch {
+            val character = if (workKey != null) {
+                withContext(IO) {
+                    try {
+                        CharacterCardSelection.match(
+                            text,
+                            appDb.bookCharacterDao.getCharacters(workKey),
+                        )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        AppLog.put("读取正文选中角色卡失败\n${error.localizedMessage}", error)
+                        null
+                    }
+                }
+            } else {
+                null
+            }
+            if (generation != characterCardLookupGeneration || !binding.readView.isTextSelected) {
+                return@launch
+            }
+            textActionMenu.setSelectionCharacterCard(character)
+            textActionMenu.show(
+                binding.textMenuPosition,
+                binding.root.height + navigationBarHeight,
+                binding.textMenuPosition.y.toInt(),
+                binding.cursorLeft.y.toInt() + binding.cursorLeft.height,
+                binding.cursorRight.y.toInt() + binding.cursorRight.height
+            )
+        }
+    }
+
+    private fun cancelCharacterCardLookup() {
+        characterCardLookupGeneration++
+        characterCardLookupJob?.cancel()
+        characterCardLookupJob = null
     }
 
     /**
@@ -940,6 +982,16 @@ class ReadBookActivity : BaseReadBookActivity(),
                     binding.readView.aloudStartSelect()
                 }
                 else -> speak(selectedText)
+            }
+
+            R.id.menu_character_card -> {
+                val character = textActionMenu.selectionCharacterCard()
+                if (character != null) {
+                    openCharacterCard(character)
+                } else {
+                    startCharacterCardFromSelection()
+                }
+                return true
             }
 
             R.id.menu_bookmark -> binding.readView.let {
@@ -996,6 +1048,32 @@ class ReadBookActivity : BaseReadBookActivity(),
                 target.chapterIndex, target.chapterTitle, target.paragraphIndex,
                 target.paragraphOffset, target.selectedTextPrefix,
             )
+        )
+    }
+
+    private fun openCharacterCard(character: BookCharacter) {
+        val book = ReadBook.book ?: return
+        val workKey = BookCharacterProfile.workKey(book.name, book.author)
+        showDialogFragment(BookCharacterEditDialog(workKey, character.id))
+    }
+
+    private fun startCharacterCardFromSelection() {
+        val book = ReadBook.book
+        if (book == null) {
+            toastOnUi("未找到当前书籍")
+            return
+        }
+        val name = CharacterCardSelection.normalizeSelectedName(selectedText)
+        if (name == null) {
+            toastOnUi("请只选择一个角色名字")
+            return
+        }
+        BookAiAssistantLauncher.openCharacterCardFromSelection(
+            context = this,
+            book = book,
+            selectedName = name,
+            chapterIndex = ReadBook.durChapterIndex,
+            chapterTitle = ReadBook.curTextChapter?.title ?: book.durChapterTitle,
         )
     }
 
