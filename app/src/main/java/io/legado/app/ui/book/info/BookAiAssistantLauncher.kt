@@ -75,7 +75,6 @@ object BookAiAssistantLauncher {
                     "先查已有角色卡，再用正文搜索定位该角色的章节，只读命中章节。" +
                     "采样完成后先展示待审核表格，等我确认后再写入。"
             )
-            putExtra(AiChatActivity.EXTRA_EXPAND_SUGGESTIONS, true)
         }
     }
 
