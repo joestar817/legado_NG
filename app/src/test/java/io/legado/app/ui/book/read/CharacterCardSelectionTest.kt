@@ -30,6 +30,33 @@ class CharacterCardSelectionTest {
     }
 
     @Test
+    fun exactNameTakesPrecedenceOverAnotherCharactersAlias() {
+        val liFeiYu = BookCharacter(id = 3L, name = "厉飞雨", aliasesJson = "[]")
+        assertEquals(
+            liFeiYu,
+            CharacterCardSelection.match("厉飞雨", listOf(hanLi, liFeiYu)),
+        )
+    }
+
+    @Test
+    fun exactNameMatchDoesNotDependOnCharacterOrder() {
+        val liFeiYu = BookCharacter(id = 3L, name = "厉飞雨", aliasesJson = "[]")
+        listOf(listOf(hanLi, liFeiYu), listOf(liFeiYu, hanLi)).forEach { ordered ->
+            assertEquals(liFeiYu, CharacterCardSelection.match("厉飞雨", ordered))
+        }
+    }
+
+    @Test
+    fun normalizedNameTakesPrecedenceOverAnotherCharactersAlias() {
+        val aliasOwner = BookCharacter(name = "Other", aliasesJson = "[\"li fei\"]")
+        val liFei = BookCharacter(name = "Li  Fei", aliasesJson = "[]")
+        assertEquals(
+            liFei,
+            CharacterCardSelection.match("“LI   FEI”", listOf(aliasOwner, liFei)),
+        )
+    }
+
+    @Test
     fun ignoresSurroundingQuotesAndBrackets() {
         assertEquals(hanLi, CharacterCardSelection.match("「韩立」", characters))
         assertEquals(hanLi, CharacterCardSelection.match("“韩立”", characters))
