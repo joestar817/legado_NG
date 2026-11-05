@@ -22,9 +22,10 @@ internal object CharacterCardSelection {
     fun match(selectedText: String, characters: List<BookCharacter>): BookCharacter? {
         val selectedKey = normalizeSelectedName(selectedText)?.let(::comparisonKey) ?: return null
         if (selectedKey.isEmpty()) return null
-        return characters.firstOrNull { character ->
-            character.matches(selectedKey)
-        }
+        // 主名优先于别名，且必须在整个列表中先完成主名匹配：
+        // 否则列表中靠前角色的别名会抢走靠后角色的精确主名。
+        return characters.firstOrNull { comparisonKey(it.name) == selectedKey }
+            ?: characters.firstOrNull { it.hasAlias(selectedKey) }
     }
 
     fun normalizeSelectedName(text: String): String? {
@@ -36,8 +37,7 @@ internal object CharacterCardSelection {
         return name
     }
 
-    private fun BookCharacter.matches(selectedKey: String): Boolean {
-        if (comparisonKey(name) == selectedKey) return true
+    private fun BookCharacter.hasAlias(selectedKey: String): Boolean {
         val aliases = aliasesJson
             ?.let { GSON.fromJsonObject<List<String>>(it).getOrNull() }
             .orEmpty()
