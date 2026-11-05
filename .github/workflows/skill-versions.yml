@@ -1,0 +1,60 @@
+name: Skill Versions
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skill-versions-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  skill-versions:
+    name: Skill version gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # 包含最新目标分支和候选合并提交；不把 token 留给 PR 脚本。
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Test skill version policy
+        run: python -m unittest discover -s scripts -p 'test_skill_versions.py' -v
+
+      - name: Test character card policy
+        run: python scripts/test_character_card_skill.py
+
+      - name: Check versions against the target branch
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.event.repository.default_branch }}
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          if [ "$EVENT_NAME" = push ]; then
+            # 新建 main 没有上一提交，只校验当前资源元数据。
+            base="$BEFORE_SHA"
+            if [[ "$base" =~ ^0+$ ]]; then
+              base=HEAD
+            fi
+            python scripts/check_skill_versions.py --base-ref "$base" --head-ref HEAD
+          else
+            base_branch="${BASE_BRANCH#refs/heads/}"
+            python scripts/check_skill_versions.py \
+              --base-ref "refs/remotes/origin/$base_branch" \
+              --head-ref HEAD --require-base-ancestor
+          fi

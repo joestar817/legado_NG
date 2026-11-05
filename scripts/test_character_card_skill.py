@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from check_skill_versions import MAX_VERSION, parse_skill
+
 
 SKILL_PATH = (
     Path(__file__).resolve().parents[1]
@@ -17,9 +19,13 @@ class CharacterCardSkillPolicyTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.skill = SKILL_PATH.read_text(encoding="utf-8")
+        cls.version = parse_skill(str(SKILL_PATH), cls.skill).version
+
+    def test_version_is_a_positive_app_compatible_integer(self):
+        self.assertGreater(self.version, 0)
+        self.assertLessEqual(self.version, MAX_VERSION)
 
     def test_apply_batches_all_character_writes_before_results(self):
-        self.assertIn("version: 29", self.skill)
         self.assertIn("同一次助手工具调用批次中一次性发出", self.skill)
         self.assertIn("只进行一次写操作确认", self.skill)
 
