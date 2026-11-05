@@ -38,6 +38,9 @@ jobs:
       - name: Test character card policy
         run: python scripts/test_character_card_skill.py
 
+      - name: Test verified Web publishing
+        run: python -m unittest discover -s scripts -p 'test_publish_verified_web.py' -v
+
       - name: Check versions against the target branch
         env:
           EVENT_NAME: ${{ github.event_name }}

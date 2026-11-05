@@ -11,6 +11,10 @@ on:
       - '**/modules/web/**'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -54,9 +58,21 @@ jobs:
           echo "APP_VER=$version" >> $GITHUB_ENV
 
       - name: push changes
+        id: web-assets
         if: ${{ github.event_name != 'pull_request' && github.repository == 'joestar817/legado_NG' }}
         uses: stefanzweifel/git-auto-commit-action@v7.0.0
         with:
           commit_message: Bump web ${{ env.APP_VER}}
           file_pattern: app/src/main/assets/web/vue/
+          # main 的生成物先进入临时分支，其它手动构建分支保持原目标。
+          branch: ${{ github.ref == 'refs/heads/main' && format('codex/web-assets-{0}-{1}', github.run_id, github.run_attempt) || github.ref_name }}
+          create_branch: true
+
+      - name: Verify and publish main assets
+        if: ${{ github.ref == 'refs/heads/main' && github.repository == 'joestar817/legado_NG' && steps.web-assets.outputs.changes_detected == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEB_PUBLISH_BRANCH: codex/web-assets-${{ github.run_id }}-${{ github.run_attempt }}
+          WEB_PUBLISH_COMMIT: ${{ steps.web-assets.outputs.commit_hash }}
+        run: python3 scripts/publish_verified_web.py
 
