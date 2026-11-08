@@ -82,8 +82,13 @@ internal object Md3ThemePackageInspector {
         require(manifestJson != null || legacyJson != null) {
             "主题包缺少 manifest.json 或 application_theme.json"
         }
-        require(manifestJson == null || legacyJson == null) {
-            "主题包同时包含两种清单，无法确定格式"
+        if (manifestJson != null && legacyJson != null) {
+            // A Reading NG export may include the source manifest among its assets.
+            val root = parseRoot(manifestJson, MANIFEST_NAME)
+            if (root.get("format")?.takeUnless { it.isJsonNull }?.asString == READING_NG_FORMAT) {
+                throw Md3ThemePackageNotRecognizedException()
+            }
+            error("主题包同时包含两种清单，无法确定格式")
         }
         return manifestJson?.let { inspectPortable(it, entries) }
             ?: inspectLegacy(requireNotNull(legacyJson), entries)
@@ -140,7 +145,7 @@ internal object Md3ThemePackageInspector {
 
         return Md3ThemePackageInspection(
             format = Md3ThemePackageFormat.PORTABLE_V1,
-            name = manifest.name?.trim()?.takeIf(String::isNotEmpty) ?: "MD3 主题",
+            name = manifest.name?.trim()?.takeIf(String::isNotEmpty) ?: DEFAULT_THEME_NAME,
             manifest = manifest,
             legacyRoot = null,
             rawManifestJson = rawJson,
@@ -173,7 +178,7 @@ internal object Md3ThemePackageInspector {
 
         val name = config.stringOrNull("name")
             ?: config.getAsJsonObject("dayTheme").stringOrNull("themeName")
-            ?: "旧版 MD3 主题"
+            ?: DEFAULT_THEME_NAME
         return Md3ThemePackageInspection(
             format = Md3ThemePackageFormat.LEGACY_APPLICATION_THEME_V1,
             name = name,
@@ -275,6 +280,7 @@ internal object Md3ThemePackageInspector {
     private fun JsonObject.stringOrNull(name: String): String? =
         get(name)?.takeUnless { it.isJsonNull }?.asString?.trim()?.takeIf(String::isNotEmpty)
 
+    private const val DEFAULT_THEME_NAME = "未命名主题"
     private const val MANIFEST_NAME = "manifest.json"
     private const val LEGACY_MANIFEST_NAME = "application_theme.json"
     private const val SUPPORTED_VERSION = 1

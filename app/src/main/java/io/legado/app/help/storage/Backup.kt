@@ -14,7 +14,6 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadHighlightRuleStore
-import io.legado.app.help.config.ThemeConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.model.BookCover
 import io.legado.app.utils.FileUtils
@@ -83,7 +82,6 @@ object Backup {
             DirectLinkUpload.ruleFileName,
             ReadBookConfig.configFileName,
             ReadBookConfig.shareConfigFileName,
-            ThemeConfig.configFileName,
             ReadHighlightRuleStore.fileName,
             BookCover.configFileName,
             "config.xml",
@@ -190,10 +188,6 @@ object Backup {
         }
         GSON.toJson(ReadHighlightRuleStore.allRules()).let {
             FileUtils.createFileIfNotExist(backupPath + File.separator + ReadHighlightRuleStore.fileName)
-                .writeText(it)
-        }
-        GSON.toJson(ThemeConfig.configList).let {
-            FileUtils.createFileIfNotExist(backupPath + File.separator + ThemeConfig.configFileName)
                 .writeText(it)
         }
         DirectLinkUpload.getConfig()?.let {

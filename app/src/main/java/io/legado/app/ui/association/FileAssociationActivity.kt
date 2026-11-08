@@ -88,7 +88,6 @@ class FileAssociationActivity :
                 "bookSource" -> showDialogFragment(ImportBookSourceDialog(it.second, true))
                 "rssSource" -> showDialogFragment(ImportRssSourceDialog(it.second, true))
                 "replaceRule" -> showDialogFragment(ImportReplaceRuleDialog(it.second, true))
-                "theme" -> showDialogFragment(ImportThemeDialog(it.second, true))
                 "txtRule" -> showDialogFragment(ImportTxtTocRuleDialog(it.second, true))
                 "dictRule" -> showDialogFragment(ImportDictRuleDialog(it.second, true))
             }

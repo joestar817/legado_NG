@@ -9,7 +9,6 @@ import com.google.gson.JsonPrimitive
 import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadHighlightRuleStore
-import io.legado.app.help.config.ThemeConfig
 import io.legado.app.utils.externalFiles
 import splitties.init.appCtx
 import java.io.File
@@ -98,15 +97,6 @@ internal object BackupResources {
             file.writeText(rules.toString())
         }
         if (BackupModule.APPEARANCE.id in modules) {
-            val themeFile = File(root, ThemeConfig.configFileName)
-            val legacyThemes = JsonParser.parseString(themeFile.readText()).asJsonArray
-            legacyThemes.forEach { element ->
-                val theme = element.asJsonObject
-                theme.get("backgroundImgPath")?.takeIf { !it.isJsonNull && it.asString.isNotBlank() }?.let {
-                    theme.addProperty("backgroundImgPath", collector.copy(it.asString))
-                }
-            }
-            themeFile.writeText(legacyThemes.toString())
             if (prefs["ngInterfaceFont.choice"] in listOf("system", "serif", "monospace")) prefs.remove("ngInterfaceFont.file")
             listOf(PreferKey.bgImage, PreferKey.bgImageN, "ngInterfaceFont.file").forEach { key ->
                 (prefs[key] as? String)?.takeIf(String::isNotBlank)?.let { prefs[key] = collector.copy(it) }
@@ -261,7 +251,10 @@ internal object BackupResources {
         require(modules.isNotEmpty() && modules.all { id -> BackupModule.entries.any { it.id == id } }) { "备份模块无效" }
         val entries = manifest.getAsJsonObject("files")
         entries.entrySet().forEach { (path, digest) ->
-            require(path.startsWith("$ASSETS/") || path == "config.xml" || BackupModules.fileModule(path).id in modules) {
+            // Older native appearance archives may carry this retired file. Check its
+            // integrity, but never parse or restore the legacy theme collection.
+            val retiredThemeEntry = path == "themeConfig.json" && BackupModule.APPEARANCE.id in modules
+            require(retiredThemeEntry || path.startsWith("$ASSETS/") || path == "config.xml" || BackupModules.fileModule(path).id in modules) {
                 "备份文件不属于已选模块：$path"
             }
             val resource = safeFile(root, path)
@@ -290,7 +283,7 @@ internal object BackupResources {
             require(safeFile(root, relative).exists()) { "备份资源缺失：$relative" }
             return safeFile(installed, relative).path
         }
-        val configs = listOf("bookshelf.json", ReadBookConfig.configFileName, ReadBookConfig.shareConfigFileName, ReadHighlightRuleStore.fileName, ThemeConfig.configFileName)
+        val configs = listOf("bookshelf.json", ReadBookConfig.configFileName, ReadBookConfig.shareConfigFileName, ReadHighlightRuleStore.fileName)
             .map { File(root, it) }.filter(File::isFile).associateWith { file ->
                 transform(JsonParser.parseString(file.readText()), ::resolve).toString()
             }
@@ -372,7 +365,7 @@ internal object BackupResources {
 
     internal fun transform(value: JsonElement, replace: (String) -> String): JsonElement {
         val fields = setOf("bgStr", "bgStrNight", "bgStrEInk", "textFont", "titleFont", "headerFont", "headerImage", "footerImage",
-            "footerFont", "bgImage", "fontPath", "backgroundImgPath", "customCoverUrl", "path",
+            "footerFont", "bgImage", "fontPath", "customCoverUrl", "path",
             "packageRootPath", "lightImages", "darkImages", "imagePath")
         fun visit(node: JsonElement, field: String?): JsonElement = when {
             node.isJsonObject -> JsonObject().apply {

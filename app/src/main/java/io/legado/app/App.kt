@@ -120,7 +120,6 @@ class App : Application() {
             BookHelp.clearInvalidCache()
             Backup.clearCache()
             ReadBookConfig.clearBgAndCache()
-//            ThemeConfig.clearBg() //每次手动切换主题时清理多余图片
             //初始化简繁转换引擎
             when (AppConfig.chineseConverterType) {
                 1 -> {

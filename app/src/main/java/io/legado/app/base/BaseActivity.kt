@@ -22,7 +22,7 @@ import io.legado.app.constant.AppConst
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.Theme
 import io.legado.app.help.config.AppConfig
-import io.legado.app.help.config.NgDynamicSceneTheme
+import io.legado.app.help.config.NgEffectThemeSelection
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.ThemeConfig
@@ -32,9 +32,8 @@ import io.legado.app.lib.theme.primaryColor
 import io.legado.app.lib.theme.transparentNavBar
 import io.legado.app.ui.book.read.aloud.ReadAloudMiniPlayer
 import io.legado.app.ui.design.components.view.NgBackdropSourceLayout
-import io.legado.app.ui.design.theme.NgThemeGradientDrawable
 import io.legado.app.ui.design.theme.NgThemeGradientHostView
-import io.legado.app.ui.design.theme.NgThemeSceneHostView
+import io.legado.app.ui.design.theme.NgEffectThemeHostView
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.widget.NgMenuPopup
 import io.legado.app.ui.widget.TitleBar
@@ -66,7 +65,7 @@ abstract class BaseActivity<VB : ViewBinding>(
 
     protected open val bindNgToolbarMenu: Boolean = true
 
-    private var ngThemeSceneHost: NgThemeSceneHostView? = null
+    private var ngThemeSceneHost: NgEffectThemeHostView? = null
     private var ngThemeScenePoster: ImageView? = null
     private var ngThemeGradientBackground: NgThemeGradientHostView? = null
 
@@ -164,7 +163,7 @@ abstract class BaseActivity<VB : ViewBinding>(
             isFocusable = false
             visibility = View.GONE
         }
-        val sceneHost = NgThemeSceneHostView(this)
+        val sceneHost = NgEffectThemeHostView(this)
         sceneSource.addView(gradientBackground)
         sceneSource.addView(scenePoster)
         sceneSource.addView(
@@ -273,10 +272,10 @@ abstract class BaseActivity<VB : ViewBinding>(
                 val gradientDrawable = ThemeConfig.getGradientBgImage(this)
                 val usesDynamicScene =
                     NgThemeModeStore.current(this) ==
-                        NgThemePresentationMode.DYNAMIC_SCENE
+                        NgThemePresentationMode.EFFECT_THEME
                 val scenePoster = ngThemeScenePoster
                 ngThemeGradientBackground?.run {
-                    setGradientDrawable(gradientDrawable as? NgThemeGradientDrawable)
+                    setGradientDrawable(gradientDrawable)
                     visibility = if (drawable == null && gradientDrawable != null) {
                         View.VISIBLE
                     } else {
@@ -358,14 +357,14 @@ abstract class BaseActivity<VB : ViewBinding>(
         ngThemeSceneHost?.run {
             val profile = if (
                 NgThemeModeStore.current(this@BaseActivity) ==
-                NgThemePresentationMode.DYNAMIC_SCENE
+                NgThemePresentationMode.EFFECT_THEME
             ) {
-                NgDynamicSceneTheme.sceneProfile(this@BaseActivity)
+                NgEffectThemeSelection.current(this@BaseActivity)
             } else {
                 null
             }
             bind(profile)
-            setHostActive(profile != null)
+            setHostActive(true)
         }
         ReadAloudMiniPlayer.attach(this)
     }

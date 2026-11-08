@@ -50,21 +50,6 @@ object NgColorConfigStore {
         ThemeConfig.applyTheme(context)
     }
 
-    /**
-     * 旧主题包仍写入四颜色槽位。应用主题包时将对应明暗槽位收进手动配色，
-     * 但不改背景图、透明度或主题模式。
-     */
-    fun adoptLegacyVariant(context: Context, isDark: Boolean) {
-        val current = current(context)
-        val adopted = current.copy(
-            mode = NgColorGenerationMode.MANUAL,
-            manualLight = if (isDark) current.manualLight else readLegacyManual(context, false),
-            manualDark = if (isDark) readLegacyManual(context, true) else current.manualDark
-        ).normalized()
-        persist(context, adopted)
-        mutableState.value = adopted
-    }
-
     private fun ensureInitialized(context: Context) {
         if (initialized) return
         synchronized(lock) {

@@ -23,11 +23,12 @@ internal data class NgCoverAlbum(
     @SerializedName("darkImages") val darkImages: List<String>,
 )
 
+@Keep
 internal data class NgCoverAlbumImport(
-    val ref: String,
-    val name: String,
-    val lightImages: List<String>,
-    val darkImages: List<String>,
+    @SerializedName("ref") val ref: String,
+    @SerializedName("name") val name: String,
+    @SerializedName("lightImages") val lightImages: List<String>,
+    @SerializedName("darkImages") val darkImages: List<String>,
 )
 
 internal data class NgImportedCoverAlbum(
@@ -92,6 +93,13 @@ internal object NgCoverAlbumStore {
         persist(context, updated)
         mutableState.value = updated
         true
+    }
+
+    internal fun packageImage(context: Context, albumId: String, path: String): File {
+        val directory = requireNotNull(albumDirectory(context, albumId)) { "封面图集目录无效" }
+        val file = File(path).canonicalFile
+        require(file.parentFile == directory && file.isFile) { "封面图集图片已丢失或越界" }
+        return file
     }
 
     fun importFromPackage(

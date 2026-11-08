@@ -80,7 +80,8 @@ private val WallpaperPreferenceKeys = setOf(
     PreferKey.bgImageN,
     PreferKey.themeMode,
     PreferKey.ngThemePresentationMode,
-    PreferKey.ngDynamicScenePreset,
+    PreferKey.ngCustomAppearanceEdited,
+    "ngActiveManagedThemeId.v1",
 )
 
 /** Called only from IO; Glide owns the later bounded decoding and bitmap cache. */
