@@ -1,0 +1,87 @@
+{
+  "format": "reading-ng-theme",
+  "version": 2,
+  "theme": {
+    "schemaVersion": 1,
+    "id": "effect.sakura",
+    "name": "湖畔樱花",
+    "colors": {
+      "mode": "MANUAL",
+      "lightSeed": -40449,
+      "darkSeed": -40449,
+      "paletteStyle": "TONAL_SPOT",
+      "contrast": "DEFAULT",
+      "colorSpec": "MATERIAL_3_2021",
+      "manualLight": {
+        "primary": -40449,
+        "secondary": -1,
+        "primaryText": -14869728,
+        "secondaryText": -14869728,
+        "background": -657931,
+        "labelContainer": -1118482
+      },
+      "manualDark": {
+        "primary": -40449,
+        "secondary": -13619152,
+        "primaryText": -461320,
+        "secondaryText": -461320,
+        "background": -14671580,
+        "labelContainer": -14013649
+      },
+      "lightTopBarTextMode": "LIGHT",
+      "darkTopBarTextMode": "LIGHT"
+    },
+    "lightBackground": {
+      "path": null,
+      "blur": 0
+    },
+    "darkBackground": {
+      "path": null,
+      "blur": 0
+    },
+    "transparentAppBars": true,
+    "barProfile": {
+      "useFloatingBottomBar": true,
+      "floatingBottomBarBottomDistancePx": 40,
+      "floatingBottomBarTransparency": 40,
+      "bookshelfTopBarStyle": 1,
+      "bookshelfFloatingDockTopDistancePx": 50,
+      "bookshelfFloatingDockTransparency": 40,
+      "bookshelfFloatingDockSearchPosition": 0
+    },
+    "effect": {
+      "apiVersion": 1,
+      "entryClass": "io.legado.themes.sakura.SakuraTheme",
+      "targets": [
+        "app"
+      ],
+      "minGlesVersion": 196608,
+      "lowRamAllowed": false,
+      "playerPalette": "theme",
+      "preview": "assets/preview.png",
+      "parameterSchema": [
+        {
+          "key": "intensity",
+          "label": "强度",
+          "type": "range",
+          "defaultValue": "100",
+          "min": 0,
+          "max": 100,
+          "step": 1
+        }
+      ]
+    },
+    "effectValues": {},
+    "publication": {
+      "versionCode": 2,
+      "versionName": "1.1",
+      "author": "阅读 NG"
+    }
+  },
+  "lightBackgroundAsset": "assets/listening_motion/cartoon/sakura/background.webp",
+  "darkBackgroundAsset": "assets/listening_motion/cartoon/sakura/background.webp",
+  "distributions": [
+    "theme",
+    "listening_effect"
+  ]
+}

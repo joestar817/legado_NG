@@ -1,0 +1,14 @@
+Mixkit stock video-derived asset notice
+
+The files under listening_motion/fire_flipbook/ are transformed luminance
+frame atlases derived from the following stock video:
+
+Title: Vertical video of blazing flames over a black backdrop
+Source: https://mixkit.co/free-stock-video/vertical-video-of-blazing-flames-over-a-black-backdrop-52284/
+License: Mixkit Stock Video Free License
+License page: https://mixkit.co/license/#videoFree
+License checked: 2026-08-27
+
+The source item page identifies the clip as available for commercial or
+personal use under the Mixkit Stock Video Free License. The original stock
+video is not included in this application.
