@@ -41,6 +41,7 @@ fun NgButton(
         NgButtonShapeVariant.PILL -> ButtonDefaults.shape
         NgButtonShapeVariant.ROUNDED -> RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
         NgButtonShapeVariant.SMALL_ROUNDED -> RoundedCornerShape(NgTheme.shapes.smallDp.dp)
+        NgButtonShapeVariant.COMPACT_ROUNDED -> RoundedCornerShape(10.dp)
     }
     when (variant) {
         NgButtonVariant.PRIMARY -> Button(

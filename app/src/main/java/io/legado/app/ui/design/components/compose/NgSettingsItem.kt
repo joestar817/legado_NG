@@ -132,6 +132,7 @@ fun NgCompactSettingsItem(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     summaryMaxLines: Int = 2,
+    customTrailing: (@Composable () -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     Row(
@@ -203,8 +204,8 @@ fun NgCompactSettingsItem(
                 enabled = enabled,
                 onCheckedChange = onCheckedChange,
             )
-            NgSettingsTrailing.VALUE,
-            NgSettingsTrailing.CUSTOM -> Unit
+            NgSettingsTrailing.VALUE -> Unit
+            NgSettingsTrailing.CUSTOM -> customTrailing?.invoke()
         }
     }
 }

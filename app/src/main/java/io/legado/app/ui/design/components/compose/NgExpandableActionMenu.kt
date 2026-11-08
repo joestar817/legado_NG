@@ -14,6 +14,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,6 +59,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,7 +82,11 @@ import io.legado.app.R
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
 
-enum class NgMenuSelectionStyle { INDICATOR, TEXT_ONLY }
+enum class NgMenuSelectionStyle { INDICATOR, TEXT_ONLY, COMPACT_CHECK }
+
+private val LeadingIconSlotSize = 20.dp
+private val CompactCheckSize = 14.dp
+private val CompactCheckSpacing = 4.dp
 
 @Immutable
 data class NgExpandableActionMenuItem(
@@ -95,12 +102,14 @@ data class NgExpandableActionMenuItem(
     val themedIconKind: NgThemedActionIconKind? = null,
     val enabled: Boolean = true,
     val navigation: Boolean = false,
+    val leadingIconSize: Dp = LeadingIconSlotSize,
 )
 
 enum class NgExpandableActionMenuVariant {
     DROPDOWN,
     SIDE_SLIDE,
-    DRILL_IN
+    DRILL_IN,
+    END_ANCHORED_DROPDOWN,
 }
 
 enum class NgExpandableActionMenuWidthVariant(val width: Dp?) {
@@ -144,7 +153,12 @@ internal fun rememberNgExpandableActionMenuContentWidth(
                 ).size.width.toFloat()
                 var fixedWidthDp = 24.dp
                 if (reserveIconSpace) fixedWidthDp += 30.dp
-                if (item.checked && item.selectionStyle == NgMenuSelectionStyle.INDICATOR) fixedWidthDp += 30.dp
+                fixedWidthDp += when (item.selectionStyle) {
+                    NgMenuSelectionStyle.INDICATOR -> if (item.checked) 30.dp else 0.dp
+                    NgMenuSelectionStyle.TEXT_ONLY -> 0.dp
+                    // Allow for separate pixel rounding of the compact row's slots.
+                    NgMenuSelectionStyle.COMPACT_CHECK -> CompactCheckSpacing + CompactCheckSize + 2.dp
+                }
                 if (item.children.isNotEmpty() || item.navigation) fixedWidthDp += 30.dp
                 val rowWidthPx = textWidthPx + with(density) { fixedWidthDp.toPx() }
                 maxOf(rowWidthPx, groupWidthPx(item.children))
@@ -181,11 +195,11 @@ fun NgExpandableActionMenu(
     sideSlideEndMargin: Dp = 8.dp,
     widthVariant: NgExpandableActionMenuWidthVariant =
         NgExpandableActionMenuWidthVariant.CONTENT,
+    sideSlideAnchorGap: Dp = 16.dp,
 ) {
-    val contentWidth = rememberNgExpandableActionMenuContentWidth(items)
     val pane = LocalNgPaneBounds.current
     val density = LocalDensity.current
-    val requestedWidth = width ?: widthVariant.width ?: contentWidth
+    val requestedWidth = width ?: widthVariant.width ?: rememberNgExpandableActionMenuContentWidth(items)
     val resolvedWidth = if (pane == null) requestedWidth else requestedWidth.coerceAtMost(
         (with(density) { pane.width.toDp() } - 16.dp).coerceAtLeast(1.dp)
     )
@@ -195,6 +209,7 @@ fun NgExpandableActionMenu(
 
     if (variant == NgExpandableActionMenuVariant.SIDE_SLIDE) {
         NgSideSlideExpandableActionMenu(
+            modifier = modifier,
             expanded = expanded,
             onDismissRequest = onDismissRequest,
             items = items,
@@ -212,6 +227,7 @@ fun NgExpandableActionMenu(
             menuContainerColor = menuContainerColor,
             properties = properties,
             endMargin = sideSlideEndMargin,
+            anchorGap = sideSlideAnchorGap,
             onFullyHidden = { expandedItemIds = defaultExpandedItemIds }
         )
         return
@@ -285,7 +301,8 @@ fun NgExpandableActionMenu(
         containerColor = containerColor,
         tonalElevation = 0.dp,
         shadowElevation = NgTheme.effects.overlayElevationDp.dp,
-        properties = properties
+        properties = properties,
+        endAnchored = variant == NgExpandableActionMenuVariant.END_ANCHORED_DROPDOWN,
     ) {
         NgExpandableActionMenuRows(
             items = items,
@@ -459,10 +476,11 @@ private fun NgPaneAwareDropdownMenu(
     tonalElevation: Dp,
     shadowElevation: Dp,
     properties: PopupProperties,
+    endAnchored: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val pane = LocalNgPaneBounds.current
-    if (pane == null) {
+    if (pane == null && !endAnchored) {
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = onDismissRequest,
@@ -480,17 +498,31 @@ private fun NgPaneAwareDropdownMenu(
     // Compose 1.7.6 uses the visible display frame for Popup's windowSize, even in a narrow Dialog.
     // Use window-local pane dimensions; anchorBounds already uses positionInWindow coordinates.
     val density = LocalDensity.current
-    val paneSize = IntSize(pane.width, pane.height)
+    val paneSize = pane?.let { IntSize(it.width, it.height) }
     val expandedState = remember { MutableTransitionState(false) }
     expandedState.targetState = expanded
     if (!expandedState.currentState && !expandedState.targetState) return
     val transformOrigin = remember { mutableStateOf(TransformOrigin.Center) }
+    // Let the position provider measure the available height before laying out the full list.
+    val anchoredHeightLimit = remember { mutableIntStateOf(1) }
     val horizontalOffset = with(density) { offset.x.roundToPx() }
     val verticalOffset = with(density) { offset.y.roundToPx() }
-    val margin = with(density) { 48.dp.roundToPx() }
-    val positionProvider = remember(paneSize, horizontalOffset, verticalOffset, margin) {
-        NgPaneDropdownPositionProvider(paneSize, horizontalOffset, verticalOffset, margin) { origin ->
-            transformOrigin.value = origin
+    val margin = with(density) { if (endAnchored) 8.dp.roundToPx() else 48.dp.roundToPx() }
+    val positionProvider = remember(endAnchored, paneSize, horizontalOffset, verticalOffset, margin) {
+        if (endAnchored) {
+            NgEndAnchoredDropdownPositionProvider(
+                paneSize = paneSize,
+                horizontalOffset = horizontalOffset,
+                gap = verticalOffset.coerceAtLeast(0),
+                margin = margin,
+            ) { heightLimit, origin ->
+                anchoredHeightLimit.intValue = heightLimit
+                transformOrigin.value = origin
+            }
+        } else {
+            NgPaneDropdownPositionProvider(checkNotNull(paneSize), horizontalOffset, verticalOffset, margin) { origin ->
+                transformOrigin.value = origin
+            }
         }
     }
     @Suppress("DEPRECATION")
@@ -506,7 +538,10 @@ private fun NgPaneAwareDropdownMenu(
         transitionSpec = { tween(if (false isTransitioningTo true) 30 else 75) },
         label = "alpha",
     ) { if (it) 1f else 0f }
-    val maxHeight = (with(density) { pane.height.toDp() } - 96.dp).coerceAtLeast(1.dp)
+    val maxHeight = with(density) {
+        if (endAnchored) anchoredHeightLimit.intValue.toDp()
+        else (checkNotNull(paneSize).height.toDp() - 96.dp).coerceAtLeast(1.dp)
+    }
     Popup(positionProvider, onDismissRequest = onDismissRequest, properties = properties) {
         Surface(
             modifier = Modifier.graphicsLayer {
@@ -526,6 +561,46 @@ private fun NgPaneAwareDropdownMenu(
                 content = content,
             )
         }
+    }
+}
+
+internal class NgEndAnchoredDropdownPositionProvider(
+    private val paneSize: IntSize?,
+    private val horizontalOffset: Int,
+    private val gap: Int,
+    private val margin: Int,
+    private val onPlacement: (heightLimit: Int, transformOrigin: TransformOrigin) -> Unit,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val width = minOf(windowSize.width, paneSize?.width ?: windowSize.width)
+        val height = minOf(windowSize.height, paneSize?.height ?: windowSize.height)
+        val horizontalSpace = (width - popupContentSize.width).coerceAtLeast(0)
+        val sideMargin = margin.coerceAtMost(horizontalSpace / 2)
+        val desiredX = when (layoutDirection) {
+            LayoutDirection.Ltr -> anchorBounds.right - popupContentSize.width + horizontalOffset
+            LayoutDirection.Rtl -> anchorBounds.left - horizontalOffset
+        }
+        val x = desiredX.coerceIn(sideMargin, horizontalSpace - sideMargin)
+
+        val belowTop = anchorBounds.bottom + gap
+        val aboveBottom = anchorBounds.top - gap
+        val belowHeight = (height - margin - belowTop).coerceAtLeast(0)
+        val aboveHeight = (aboveBottom - margin).coerceAtLeast(0)
+        val placeBelow = popupContentSize.height <= belowHeight || belowHeight >= aboveHeight
+        val y = if (placeBelow) belowTop else aboveBottom - popupContentSize.height
+
+        val pivotX = ((anchorBounds.center.x - x).toFloat() / popupContentSize.width.coerceAtLeast(1))
+            .coerceIn(0f, 1f)
+        onPlacement(
+            maxOf(belowHeight, aboveHeight),
+            TransformOrigin(pivotX, if (placeBelow) 0f else 1f),
+        )
+        return IntOffset(x, y)
     }
 }
 
@@ -597,6 +672,7 @@ private class NgPaneDropdownPositionProvider(
 
 @Composable
 private fun NgSideSlideExpandableActionMenu(
+    modifier: Modifier,
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     items: List<NgExpandableActionMenuItem>,
@@ -608,6 +684,7 @@ private fun NgSideSlideExpandableActionMenu(
     menuContainerColor: Color?,
     properties: PopupProperties,
     endMargin: Dp,
+    anchorGap: Dp,
     onFullyHidden: () -> Unit
 ) {
     val slideFraction = remember {
@@ -618,7 +695,7 @@ private fun NgSideSlideExpandableActionMenu(
     val durationMs = if (motion.enabled) motion.mediumDurationMs else 0
     val density = LocalDensity.current
     val endMarginPx = with(density) { endMargin.roundToPx() }
-    val anchorBottomOffsetPx = with(density) { 16.dp.roundToPx() }
+    val anchorBottomOffsetPx = with(density) { anchorGap.roundToPx() }
     // Popup observes snapshot reads made by its position provider. Keep this
     // provider stable so a submenu remeasure cannot recreate the slide source.
     val positionProvider = remember(
@@ -666,7 +743,7 @@ private fun NgSideSlideExpandableActionMenu(
         val menuContent: @Composable () -> Unit = {
             val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
             Column(
-                modifier = Modifier
+                modifier = modifier
                     .width(width)
                     .height(maxHeight)
             ) {
@@ -925,36 +1002,45 @@ private fun NgExpandableActionMenuRow(
         }
     ).copy(alpha = if (item.enabled) 1f else 0.38f)
     val themedIconKind = item.themedIconKind
+    val compactCheck = item.selectionStyle == NgMenuSelectionStyle.COMPACT_CHECK
+    val interaction = if (compactCheck) {
+        Modifier.selectable(
+            selected = item.checked,
+            enabled = item.enabled,
+            role = Role.RadioButton,
+            onClick = onClick,
+        )
+    } else {
+        Modifier.clickable(enabled = item.enabled, onClick = onClick)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = rowMinHeight)
-            .clickable(enabled = item.enabled, onClick = onClick)
+            .then(interaction)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (reserveIconSpace) {
-            if (themedIconKind == null) {
-                Box(
-                    modifier = Modifier.size(20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (item.iconRes != 0) {
-                        Icon(
-                            painter = painterResource(item.iconRes),
-                            contentDescription = null,
-                            tint = contentColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+            Box(
+                modifier = Modifier.size(LeadingIconSlotSize),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (themedIconKind != null) {
+                    NgThemedActionIcon(
+                        kind = themedIconKind,
+                        contentDescription = null,
+                        modifier = Modifier.size(item.leadingIconSize),
+                        tint = contentColor,
+                    )
+                } else if (item.iconRes != 0) {
+                    Icon(
+                        painter = painterResource(item.iconRes),
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.size(item.leadingIconSize),
+                    )
                 }
-            } else {
-                NgThemedActionIcon(
-                    kind = themedIconKind,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = contentColor
-                )
             }
             Spacer(Modifier.width(10.dp))
         }
@@ -966,7 +1052,19 @@ private fun NgExpandableActionMenuRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        if (item.checked && item.selectionStyle == NgMenuSelectionStyle.INDICATOR) {
+        if (compactCheck) {
+            Spacer(Modifier.width(CompactCheckSpacing))
+            Box(Modifier.size(CompactCheckSize)) {
+                if (item.checked) {
+                    Icon(
+                        painter = painterResource(R.drawable.ng_ic_popup_compact_check),
+                        contentDescription = null,
+                        tint = Color(NgTheme.colors.primary).copy(alpha = contentColor.alpha),
+                        modifier = Modifier.size(CompactCheckSize),
+                    )
+                }
+            }
+        } else if (item.checked && item.selectionStyle == NgMenuSelectionStyle.INDICATOR) {
             Spacer(Modifier.width(10.dp))
             Icon(
                 painter = painterResource(R.drawable.ng_ic_popup_selected),

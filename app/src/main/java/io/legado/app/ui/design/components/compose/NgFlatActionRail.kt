@@ -46,7 +46,11 @@ data class NgFlatActionRailItem(
     val label: String? = null,
     val contentDescription: String? = label,
     val enabled: Boolean = true,
-    val emphasized: Boolean = false
+    val emphasized: Boolean = false,
+    /** Semantic icon color only; the label and disabled interaction keep their normal state. */
+    val dangerIcon: Boolean = false,
+    /** Semantic label color only; disabled interaction is unchanged. */
+    val dangerLabel: Boolean = false,
 )
 
 enum class NgFlatActionRailVariant {
@@ -57,6 +61,8 @@ enum class NgFlatActionRailVariant {
     TEXT_MODE_PICKER,
     INLINE_MODE_PICKER,
     INLINE_DIVIDED,
+    /** Host-surface actions grouped by whitespace, without a container or dividers. */
+    INLINE_ACTIONS,
     FORM_TEXT_PICKER,
     /** 表单内的文字分页：透明底、文字等宽分区、标签宽度的选中下划线。 */
     FORM_UNDERLINE_TABS,
@@ -88,10 +94,11 @@ fun NgFlatActionRail(
     val textModePicker = variant == NgFlatActionRailVariant.TEXT_MODE_PICKER
     val inlineModePicker = variant == NgFlatActionRailVariant.INLINE_MODE_PICKER
     val inlineDivided = variant == NgFlatActionRailVariant.INLINE_DIVIDED
+    val inlineActions = variant == NgFlatActionRailVariant.INLINE_ACTIONS
     val formTextPicker = variant == NgFlatActionRailVariant.FORM_TEXT_PICKER
     val formUnderlineTabs = variant == NgFlatActionRailVariant.FORM_UNDERLINE_TABS
     val picker = modePicker || textModePicker || inlineModePicker || formTextPicker || formUnderlineTabs
-    val segmented = variant != NgFlatActionRailVariant.SPACED_COMPACT
+    val segmented = variant != NgFlatActionRailVariant.SPACED_COMPACT && !inlineActions
     val dividerColor = Color(NgTheme.colors.outlineVariant).copy(
         alpha = if (NgTheme.snapshot.isEInk) 1f else 0.32f
     )
@@ -103,6 +110,7 @@ fun NgFlatActionRail(
                     modePicker -> 58.dp
                     formUnderlineTabs -> 48.dp
                     textModePicker || formTextPicker -> 44.dp
+                    inlineActions -> 44.dp
                     inlineModePicker || inlineDivided -> 36.dp
                     compactSegmented -> 28.dp
                     else -> 36.dp
@@ -184,6 +192,7 @@ private fun NgFlatActionRailSegment(
     val textModePicker = variant == NgFlatActionRailVariant.TEXT_MODE_PICKER
     val inlineModePicker = variant == NgFlatActionRailVariant.INLINE_MODE_PICKER
     val inlineDivided = variant == NgFlatActionRailVariant.INLINE_DIVIDED
+    val inlineActions = variant == NgFlatActionRailVariant.INLINE_ACTIONS
     val formTextPicker = variant == NgFlatActionRailVariant.FORM_TEXT_PICKER
     val formUnderlineTabs = variant == NgFlatActionRailVariant.FORM_UNDERLINE_TABS
     val textOnlyPicker = textModePicker || formTextPicker || formUnderlineTabs
@@ -193,10 +202,12 @@ private fun NgFlatActionRailSegment(
         picker -> {
             if (item.emphasized) primaryColor else neutralColor
         }
-        inlineDivided -> if (item.emphasized) primaryColor else neutralColor
+        inlineDivided || inlineActions -> if (item.emphasized) primaryColor else neutralColor
         variant == NgFlatActionRailVariant.COMPACT_SEGMENTED -> neutralColor
         else -> primaryColor
     }
+    val iconColor = if (item.dangerIcon) Color(NgTheme.colors.error) else contentColor
+    val labelColor = if (item.dangerLabel) Color(NgTheme.colors.error) else contentColor
     val selectedContainer = Color(NgTheme.colors.selectedContainer).copy(
         alpha = when {
             NgTheme.snapshot.isEInk -> 1f
@@ -230,7 +241,7 @@ private fun NgFlatActionRailSegment(
                 ) {
                     Text(
                         text = item.label.orEmpty(),
-                        color = contentColor,
+                        color = labelColor,
                         fontSize = 16.sp,
                         lineHeight = 22.sp,
                         fontWeight = if (item.emphasized) FontWeight.Medium else FontWeight.Normal,
@@ -255,7 +266,7 @@ private fun NgFlatActionRailSegment(
                         Icon(
                             painter = painterResource(iconRes),
                             contentDescription = null,
-                            tint = contentColor,
+                            tint = iconColor,
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -282,7 +293,7 @@ private fun NgFlatActionRailSegment(
                     item.label?.let { label ->
                         Text(
                             text = label,
-                            color = contentColor,
+                            color = labelColor,
                             fontSize = 14.sp,
                             lineHeight = 18.sp,
                             fontWeight = FontWeight.Medium,
@@ -325,7 +336,7 @@ private fun NgFlatActionRailSegment(
                         Icon(
                             painter = painterResource(iconRes),
                             contentDescription = null,
-                            tint = contentColor,
+                            tint = iconColor,
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -333,7 +344,7 @@ private fun NgFlatActionRailSegment(
                         if (item.iconRes != null) Spacer(Modifier.height(2.dp))
                         Text(
                             text = label,
-                            color = contentColor,
+                            color = labelColor,
                             fontSize = if (textOnlyPicker) 14.sp else 12.sp,
                             lineHeight = if (textOnlyPicker) 18.sp else 15.sp,
                             fontWeight = FontWeight.Medium,
@@ -350,7 +361,7 @@ private fun NgFlatActionRailSegment(
                 .fillMaxHeight()
                 .clip(shape)
                 .then(
-                    if (item.emphasized && variant != NgFlatActionRailVariant.SPACED_COMPACT) {
+                    if (item.emphasized && variant != NgFlatActionRailVariant.SPACED_COMPACT && !inlineActions) {
                         Modifier.background(selectedContainer, shape)
                     } else {
                         Modifier
@@ -364,7 +375,7 @@ private fun NgFlatActionRailSegment(
                 Icon(
                     painter = painterResource(iconRes),
                     contentDescription = null,
-                    tint = contentColor,
+                    tint = iconColor,
                     modifier = Modifier.size(if (compactSegmented) 16.dp else 19.dp)
                 )
             }
@@ -374,7 +385,7 @@ private fun NgFlatActionRailSegment(
                 }
                 Text(
                     text = label,
-                    color = contentColor,
+                    color = labelColor,
                     fontSize = if (compactSegmented) 12.sp else 13.sp,
                     lineHeight = if (compactSegmented) 16.sp else 17.sp,
                     fontWeight = FontWeight.Medium,

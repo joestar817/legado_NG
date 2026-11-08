@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Button
@@ -108,6 +109,7 @@ data class NgFormSelectOption(
 enum class NgFormSelectMenuVariant {
     MATCH_ROW,
     END_ANCHORED_COMPACT,
+    END_ANCHORED_FILTER,
 }
 
 /** 带分组标题的紧凑行式表单容器。 */
@@ -405,13 +407,16 @@ fun NgFormSelectRow(
         ?: selectedValue
     val contentAlpha = if (enabled) 1f else 0.45f
     val rowWidth = with(layoutDensity) { rowWidthPx.toDp() }
+    val filter = menuVariant == NgFormSelectMenuVariant.END_ANCHORED_FILTER
     val menuWidth = when (menuVariant) {
         NgFormSelectMenuVariant.MATCH_ROW -> rowWidth
-        NgFormSelectMenuVariant.END_ANCHORED_COMPACT -> minOf(rowWidth, 156.dp)
+        NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
+        NgFormSelectMenuVariant.END_ANCHORED_FILTER -> minOf(rowWidth, 156.dp)
     }
     val menuOffset = when (menuVariant) {
         NgFormSelectMenuVariant.MATCH_ROW -> DpOffset.Zero
-        NgFormSelectMenuVariant.END_ANCHORED_COMPACT -> DpOffset(
+        NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
+        NgFormSelectMenuVariant.END_ANCHORED_FILTER -> DpOffset(
             x = (rowWidth - menuWidth).coerceAtLeast(0.dp),
             y = 0.dp,
         )
@@ -429,7 +434,7 @@ fun NgFormSelectRow(
                 .clickable(enabled = enabled && options.isNotEmpty()) { expanded = true }
                 .semantics {
                     role = Role.Button
-                    contentDescription = title
+                    contentDescription = if (filter) "类型筛选，$title" else title
                     stateDescription = selectedLabel
                 }
                 .padding(start = 14.dp, end = 10.dp),
@@ -446,8 +451,9 @@ fun NgFormSelectRow(
             )
             Text(
                 text = selectedLabel,
-                color = Color(colors.onSurfaceVariant).copy(alpha = contentAlpha),
-                fontSize = 13.sp,
+                color = Color(if (filter) colors.primary else colors.onSurfaceVariant).copy(alpha = contentAlpha),
+                fontSize = if (filter) 14.sp else 13.sp,
+                fontWeight = if (filter) FontWeight.Medium else null,
                 lineHeight = 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -456,7 +462,7 @@ fun NgFormSelectRow(
                 painter = arrowIcon,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = Color(colors.onSurfaceVariant).copy(alpha = contentAlpha),
+                tint = Color(if (filter) colors.primary else colors.onSurfaceVariant).copy(alpha = contentAlpha),
             )
         }
         DropdownMenu(
@@ -470,19 +476,26 @@ fun NgFormSelectRow(
             shadowElevation = 4.dp,
         ) {
             options.forEach { option ->
+                val selected = option.value == selectedValue
                 DropdownMenuItem(
                     modifier = Modifier
                         .height(44.dp)
-                        .semantics { selected = option.value == selectedValue },
+                        .semantics { this.selected = selected },
                     text = {
                         Text(
                             text = option.label,
-                            color = Color(colors.onSurface),
+                            color = Color(if (filter && selected) colors.primary else colors.onSurface),
                             fontSize = 15.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     },
+                    trailingIcon = if (filter && selected) {
+                        {
+                            Icon(Icons.Rounded.Check, contentDescription = null,
+                                modifier = Modifier.size(20.dp), tint = Color(colors.primary))
+                        }
+                    } else null,
                     onClick = {
                         expanded = false
                         onValueChange(option.value)
