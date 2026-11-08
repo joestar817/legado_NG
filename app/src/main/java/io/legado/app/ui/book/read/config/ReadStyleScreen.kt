@@ -58,6 +58,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -861,48 +863,40 @@ private fun EditorPage(
                     variant = NgSliderVariant.COMPACT,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text(
-                    text = stringResource(R.string.bg_image),
-                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                EditorNavigationRow(
+                    title = "阅读背景",
                     color = contentColor,
-                    fontSize = 15.sp,
+                    trailingContent = {
+                        val shape = RoundedCornerShape(8.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(width = 80.dp, height = 40.dp)
+                                .clip(shape)
+                                .background(Color(state.editorBackgroundColor))
+                                .border(0.7.dp, contentColor.copy(alpha = 0.18f), shape)
+                                .semantics { contentDescription = "当前背景预览" },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val background = state.editorPreviewBackground
+                            if (background != null) {
+                                Image(
+                                    bitmap = background,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else if (state.editorBackgroundType != 0) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_image),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp),
+                                    tint = contentColor.copy(alpha = 0.5f),
+                                )
+                            }
+                        }
+                    },
+                    onClick = actions.onSelectBackgroundImage,
                 )
-                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                    val tileWidth = (maxWidth - 25.dp) / 5f
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(84.dp),
-                        horizontalArrangement = Arrangement.spacedBy(BackgroundTileSpacing),
-                    ) {
-                        item(key = "custom") {
-                            EditorBackgroundTile(
-                                label = stringResource(R.string.select_image),
-                                background = null,
-                                selected = false,
-                                accentColor = indicatorColor,
-                                contentColor = contentColor,
-                                tileWidth = tileWidth,
-                                onClick = actions.onSelectBackgroundImage,
-                            )
-                        }
-                        items(
-                            items = state.editorBackgrounds,
-                            key = { item -> "${item.type}:${item.name}" },
-                        ) { item ->
-                            EditorBackgroundTile(
-                                label = item.label,
-                                background = item.background,
-                                selected = state.editorBackgroundType == item.type &&
-                                    state.editorBackgroundName == item.name,
-                                accentColor = indicatorColor,
-                                contentColor = contentColor,
-                                tileWidth = tileWidth,
-                                onClick = { actions.onSelectBackground(item.type, item.name) },
-                            )
-                        }
-                    }
-                }
                 Spacer(Modifier.height(14.dp))
                 ReadDivider(contentColor, horizontalPadding = 0.dp)
                 EditorSectionLabel(
@@ -1024,9 +1018,10 @@ private fun EditorNameRow(
 @Composable
 private fun EditorNavigationRow(
     title: String,
-    summary: String,
+    summary: String? = null,
     color: Color,
     enabled: Boolean = true,
+    trailingContent: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val rowColor = if (enabled) color else color.copy(alpha = 0.38f)
@@ -1043,11 +1038,15 @@ private fun EditorNavigationRow(
             color = rowColor,
             fontSize = 15.sp,
         )
-        Text(
-            text = summary,
-            color = rowColor.copy(alpha = if (enabled) 0.62f else 0.72f),
-            fontSize = 13.sp,
-        )
+        if (trailingContent != null) {
+            trailingContent()
+        } else if (summary != null) {
+            Text(
+                text = summary,
+                color = rowColor.copy(alpha = if (enabled) 0.62f else 0.72f),
+                fontSize = 13.sp,
+            )
+        }
         Icon(
             painter = painterResource(R.drawable.ic_chevron_right_20),
             contentDescription = null,

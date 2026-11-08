@@ -2,6 +2,7 @@ package io.legado.app.ui.pet
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -13,6 +14,7 @@ import io.legado.app.base.BaseActivity
 import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.help.pet.PetLocalManager
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.resource.ResourceCenterActivity
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.CancellationException
@@ -44,6 +46,9 @@ class PetManagerActivity : BaseActivity<ComposeActivityBinding>() {
                     onImport = { id ->
                         model.updateId = id
                         importZip.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                    },
+                    onMore = {
+                        startActivity(Intent(this, ResourceCenterActivity::class.java).putExtra("resourcePurpose", "PETS"))
                     },
                     onUse = model::use,
                     onUseFromDetail = model::useFromDetail,

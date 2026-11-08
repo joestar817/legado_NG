@@ -37,6 +37,7 @@ import io.legado.app.help.config.md3.Md3ThemeImportDraft
 import io.legado.app.help.config.md3.Md3ThemeImportManager
 import io.legado.app.help.config.md3.Md3ThemePackageNotRecognizedException
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.resource.ResourceCenterActivity
 import io.legado.app.utils.normalizeFileName
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.CreateDocumentContract
@@ -240,6 +241,11 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                         onConfirmThemePackageImport = ::installThemePackage,
                         onEffectApply = ::applyEffectTheme,
                         onEffectApplyStatic = ::applyStaticEffectTheme,
+                        onGetMore = {
+                            startActivity(Intent(requireContext(), ResourceCenterActivity::class.java)
+                                .putExtra("resourcePurpose", "APPEARANCE")
+                                .putExtra("resourceType", "theme"))
+                        },
                     )
                 }
             }

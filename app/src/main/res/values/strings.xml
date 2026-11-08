@@ -314,7 +314,7 @@
     <string name="rule_management_summary">Manage TXT catalog, replacement, and dictionary rules</string>
     <string name="browse_history">Browse history</string>
     <string name="setting">Settings</string>
-    <string name="settings_menu_summary">Appearance, interface, general, storage, and advanced settings</string>
+    <string name="settings_menu_summary">Interface, general, storage, and advanced settings</string>
     <string name="appearance_setting">Appearance</string>
     <string name="appearance_setting_summary">Themes, colors, fonts, and backgrounds</string>
     <string name="interface_layout_setting">Interface layout</string>

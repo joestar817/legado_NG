@@ -53,6 +53,7 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private const val PET_MENU_IMPORT = 1
+private const val PET_MENU_GET = 2
 
 internal fun PetLocalRecord.displayName() = manifest?.name ?: id
 internal fun PetLocalRecord.versionLabel() = info?.versionName ?: manifest?.versionCode?.toString() ?: "未知版本"
@@ -72,7 +73,7 @@ private fun PetLocalRecord.statusLabel(): String? = when (status) {
 @Composable
 internal fun PetManagerScreen(
     state: PetManagerState, initialId: String?, onBack: () -> Unit,
-    onImport: (String?) -> Unit,
+    onImport: (String?) -> Unit, onMore: () -> Unit,
     onUse: (petId: String) -> Unit, onUseFromDetail: (petId: String, requestId: String) -> Unit,
     onUseButton: () -> Unit, onEntryEnabledChanged: (Boolean) -> Unit, onReload: (String) -> Unit, onUninstall: (String) -> Unit,
     onExport: (String) -> Unit, onDiagnostic: (String) -> Unit,
@@ -112,6 +113,11 @@ internal fun PetManagerScreen(
                                 iconRes = R.drawable.ic_theme_menu_import,
                                 enabled = !state.busy,
                             ),
+                            NgExpandableActionMenuItem(
+                                itemId = PET_MENU_GET,
+                                titleRes = R.string.pet_get_pets,
+                                iconRes = R.drawable.ic_theme_menu_download,
+                            ),
                         )
                     }
                     NgFloatingToolbarActionButton(
@@ -133,6 +139,7 @@ internal fun PetManagerScreen(
                                 menuState.close()
                                 when (item.itemId) {
                                     PET_MENU_IMPORT -> onImport(null)
+                                    PET_MENU_GET -> onMore()
                                 }
                             }
                         },
@@ -157,6 +164,8 @@ internal fun PetManagerScreen(
                 Text("已安装 ${state.records.size} 项", Modifier.weight(1f),
                     color = Color(NgTheme.colors.onSurfaceVariant), fontSize = 13.sp, lineHeight = 18.sp,
                     fontWeight = FontWeight.Normal)
+                NgFormActionButton("${stringResource(R.string.pet_get_pets)} ›", onMore, appearance = NgFormActionButtonAppearance.TEXT,
+                    buttonHeight = 48.dp, textSize = 13.sp, textLineHeight = 18.sp)
             }
             if (state.busy || state.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Color(NgTheme.colors.primary))
             state.error?.let {

@@ -136,6 +136,7 @@ internal fun ThemeManagerScreen(
     onConfirmThemePackageImport: (Boolean) -> Unit,
     onEffectApply: (NgManagedTheme) -> Unit,
     onEffectApplyStatic: (NgManagedTheme) -> Unit,
+    onGetMore: () -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -160,6 +161,7 @@ internal fun ThemeManagerScreen(
                 onBack = onBack,
                 onSaveCurrent = { themeNameInitial = currentThemeName },
                 onImportPackage = onImportPackage,
+                onGetMore = onGetMore,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
             LazyColumn(
@@ -227,6 +229,13 @@ internal fun ThemeManagerScreen(
                                 text = stringResource(R.string.ng_theme_import_package),
                                 icon = ImageVector.vectorResource(R.drawable.ic_theme_menu_import),
                                 onClick = onImportPackage,
+                                modifier = Modifier.widthIn(min = 112.dp),
+                                variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
+                            )
+                            NgActionBarButton(
+                                text = stringResource(R.string.ng_theme_get_themes),
+                                icon = ImageVector.vectorResource(R.drawable.ic_theme_menu_download),
+                                onClick = onGetMore,
                                 modifier = Modifier.widthIn(min = 112.dp),
                                 variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
                             )
@@ -464,6 +473,7 @@ private fun ThemeManagerTopBar(
     onBack: () -> Unit,
     onSaveCurrent: () -> Unit,
     onImportPackage: () -> Unit,
+    onGetMore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val menuState = remember { NgPopupToggleState() }
@@ -478,6 +488,11 @@ private fun ThemeManagerTopBar(
                 itemId = THEME_ACTION_IMPORT_PACKAGE,
                 titleRes = R.string.ng_theme_import_package,
                 iconRes = R.drawable.ic_theme_menu_import,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = THEME_ACTION_GET_MORE,
+                titleRes = R.string.ng_theme_get_themes,
+                iconRes = R.drawable.ic_theme_menu_download,
             ),
         )
     }
@@ -508,6 +523,7 @@ private fun ThemeManagerTopBar(
                     when (item.itemId) {
                         THEME_ACTION_SAVE_CURRENT -> onSaveCurrent()
                         THEME_ACTION_IMPORT_PACKAGE -> onImportPackage()
+                        THEME_ACTION_GET_MORE -> onGetMore()
                     }
                 },
             )
@@ -517,6 +533,7 @@ private fun ThemeManagerTopBar(
 
 private const val THEME_ACTION_SAVE_CURRENT = 0x6E7401
 private const val THEME_ACTION_IMPORT_PACKAGE = 0x6E7402
+private const val THEME_ACTION_GET_MORE = 0x6E7403
 
 @Composable
 private fun ThemeColorPreview(theme: NgManagedTheme) {

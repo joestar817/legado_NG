@@ -1,14 +1,19 @@
 package io.legado.app.ui.book.read.config
 
 import androidx.lifecycle.ViewModel
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import io.legado.app.help.config.ReadAppearanceMode
 import io.legado.app.help.config.ReadBookConfig
 
 /** UI targets retain the original configuration objects across picker results and rotation. */
 internal class ReadStyleEditorSession : ViewModel() {
-    var presetMode: ReadAppearanceMode? = null
+    var presetMode: ReadAppearanceMode? by mutableStateOf(null)
     var highlightMode: Int? = null
     var backgroundTarget: ReadStyleEditTarget? = null
+    var backgroundLibraryTarget: ReadStyleEditTarget? = null
+    var importingBackground: Boolean by mutableStateOf(false)
     var colorTarget: ReadStyleEditTarget? = null
     var allowEInk: Boolean = false
 

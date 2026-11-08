@@ -312,8 +312,8 @@
     <string name="rule_management_summary">管理 TXT 目录、替换净化和字典规则</string>
     <string name="browse_history">浏览记录</string>
     <string name="setting">设置</string>
-    <string name="settings_menu_summary">外观、界面、通用、存储和高级设置</string>
-    <string name="appearance_setting">外观设置</string>
+    <string name="settings_menu_summary">界面、通用、存储和高级设置</string>
+    <string name="appearance_setting">外观</string>
     <string name="appearance_setting_summary">主题、颜色、字体和背景</string>
     <string name="interface_layout_setting">界面布局</string>
     <string name="interface_layout_setting_summary">主界面、底栏、书架顶栏和抽屉</string>

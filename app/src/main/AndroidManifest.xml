@@ -359,6 +359,11 @@
             android:configChanges="orientation|screenSize"
             android:hardwareAccelerated="true" />
         <activity
+            android:name=".ui.resource.ResourceCenterActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize"
+            android:hardwareAccelerated="true" />
+        <activity
             android:name=".ui.about.ReadRecordActivity"
             android:configChanges="orientation|screenSize"
             android:hardwareAccelerated="true" />
