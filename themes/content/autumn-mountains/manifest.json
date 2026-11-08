@@ -1,0 +1,59 @@
+{
+  "darkBackgroundAsset": "assets/background-dark.webp",
+  "format": "reading-ng-theme",
+  "lightBackgroundAsset": "assets/background-light.webp",
+  "theme": {
+    "barProfile": {
+      "bookshelfFloatingDockSearchPosition": 0,
+      "bookshelfFloatingDockTopDistancePx": 360,
+      "bookshelfFloatingDockTransparency": 40,
+      "bookshelfTopBarStyle": 1,
+      "floatingBottomBarBottomDistancePx": 40,
+      "floatingBottomBarTransparency": 40,
+      "useFloatingBottomBar": true
+    },
+    "colors": {
+      "colorSpec": "MATERIAL_3_2021",
+      "contrast": "DEFAULT",
+      "darkSeed": -9073228,
+      "darkTopBarTextMode": "LIGHT",
+      "lightSeed": -553370,
+      "lightTopBarTextMode": "AUTO",
+      "manualDark": {
+        "background": -15129037,
+        "labelContainer": -14273472,
+        "primary": -9073228,
+        "primaryText": -854536,
+        "secondary": -13681845,
+        "secondaryText": -4668724
+      },
+      "manualLight": {
+        "background": -657931,
+        "labelContainer": -1118482,
+        "primary": -553370,
+        "primaryText": -14869728,
+        "secondary": -1,
+        "secondaryText": -14869728
+      },
+      "mode": "MANUAL",
+      "paletteStyle": "TONAL_SPOT"
+    },
+    "darkBackground": {
+      "blur": 0
+    },
+    "effectValues": {},
+    "id": "ng.theme.autumn_mountains",
+    "lightBackground": {
+      "blur": 0
+    },
+    "name": "秋山书意",
+    "schemaVersion": 1,
+    "transparentAppBars": true,
+    "publication": {
+      "versionCode": 1,
+      "versionName": "1.0.0",
+      "author": "阅读 NG"
+    }
+  },
+  "version": 1
+}
