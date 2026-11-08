@@ -5,14 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.legado.app.help.pet.PetChoice
 import io.legado.app.R
 import io.legado.app.help.ai.AiChatEntryStyle
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
@@ -23,6 +20,7 @@ internal data class AiConfigMenuScreenState(
     val providerSummary: String = "",
     val skillSummary: String = "",
     val chatEntryStyle: AiChatEntryStyle = AiChatEntryStyle.NONE,
+    val installedPets: List<PetChoice> = emptyList(),
     val purifySummary: String = "",
     val assistantSummary: String = "",
     val readAloudSummary: String = ""
@@ -32,9 +30,12 @@ internal data class AiConfigMenuScreenState(
 internal fun AiConfigMenuScreen(
     state: AiConfigMenuScreenState,
     onOpenPage: (String) -> Unit,
-    onChatEntryStyleChanged: (AiChatEntryStyle) -> Unit,
+    onManagePets: () -> Unit,
 ) {
-    var showChatEntryPicker by rememberSaveable { mutableStateOf(false) }
+    val selectedPet = state.installedPets.firstOrNull { it.id == state.chatEntryStyle.id }
+    val builtinTitle = stringResource(
+        if (state.chatEntryStyle == AiChatEntryStyle.NONE) R.string.ai_chat_entry_none else R.string.ai_chat_entry_button
+    )
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -55,10 +56,10 @@ internal fun AiConfigMenuScreen(
                 onClick = { onOpenPage(AiConfigFragment.PAGE_PROMPTS) }
             )
             AiConfigMenuEntry(
-                title = stringResource(R.string.ai_chat_entry),
-                summary = stringResource(state.chatEntryStyle.titleRes),
+                title = stringResource(R.string.ai_chat_entry_menu),
+                summary = selectedPet?.name ?: builtinTitle,
                 iconRes = R.drawable.ic_ai_setting,
-                onClick = { showChatEntryPicker = true }
+                onClick = onManagePets
             )
             AiConfigMenuEntry(
                 title = stringResource(R.string.ai_purify),
@@ -79,20 +80,6 @@ internal fun AiConfigMenuScreen(
                 onClick = { onOpenPage(AiConfigFragment.PAGE_READ_ALOUD) }
             )
         }
-    }
-    if (showChatEntryPicker) {
-        ConfigChoiceDialog(
-            title = stringResource(R.string.ai_chat_entry),
-            options = AiChatEntryStyle.entries.map {
-                ConfigChoiceOption(label = stringResource(it.titleRes), value = it.id)
-            },
-            selectedValue = state.chatEntryStyle.id,
-            onDismissRequest = { showChatEntryPicker = false },
-            onSelected = { id ->
-                showChatEntryPicker = false
-                onChatEntryStyleChanged(AiChatEntryStyle.fromId(id))
-            },
-        )
     }
 }
 

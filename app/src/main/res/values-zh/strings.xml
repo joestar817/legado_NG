@@ -430,11 +430,12 @@
     <string name="ai_chat_fab">聊天悬浮按钮</string>
     <string name="ai_chat_fab_summary_off">已关闭，首页不显示入口</string>
     <string name="ai_chat_fab_summary_on">已开启，首页显示入口</string>
-    <string name="ai_chat_entry">首页聊天入口</string>
+    <string name="ai_chat_entry_menu">AI 入口(宠物)</string>
+    <string name="ai_chat_entry_enabled">显示入口</string>
+    <string name="pet_import_package">导入宠物</string>
+    <string name="pet_get_pets">获取宠物</string>
     <string name="ai_chat_entry_none">关闭</string>
     <string name="ai_chat_entry_button">悬浮按钮</string>
-    <string name="ai_chat_entry_gugugaga">咕咕嘎嘎</string>
-    <string name="ai_chat_entry_blue_fish">蓝色大肥鱼</string>
     <string name="ai_pet_open_chat">打开 AI 聊天</string>
     <string name="ai_chat_input_hint">输入消息与 AI 聊天</string>
     <string name="ai_chat_model_required">请先在模型设置中选择聊天模型</string>

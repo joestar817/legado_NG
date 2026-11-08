@@ -1,20 +1,20 @@
 package io.legado.app.help.ai
 
-import androidx.annotation.StringRes
-import io.legado.app.R
+import io.legado.app.help.pet.PetIdentity
 
-/** Stable entry IDs are persisted independently of their labels and visual assets. */
-enum class AiChatEntryStyle(
-    val id: String,
-    @param:StringRes val titleRes: Int,
-    val petAssetPath: String? = null,
-) {
-    NONE("none", R.string.ai_chat_entry_none),
-    BUTTON("button", R.string.ai_chat_entry_button),
-    GUGUGAGA("gugugaga", R.string.ai_chat_entry_gugugaga, "ai_pets/gugugaga"),
-    BLUE_FISH("blue_fish", R.string.ai_chat_entry_blue_fish, "ai_pets/blue_fish");
+/** Persist the user's selection independently of the installed plugin list. */
+@JvmInline
+value class AiChatEntryStyle private constructor(val id: String) {
+    val isPet: Boolean get() = this != NONE && this != BUTTON
 
     companion object {
-        fun fromId(id: String?): AiChatEntryStyle = entries.firstOrNull { it.id == id } ?: BUTTON
+        val NONE = AiChatEntryStyle("none")
+        val BUTTON = AiChatEntryStyle("button")
+
+        fun fromId(id: String?): AiChatEntryStyle = when {
+            id == NONE.id -> NONE
+            id != null && PetIdentity.valid(id) -> AiChatEntryStyle(id)
+            else -> BUTTON
+        }
     }
 }
