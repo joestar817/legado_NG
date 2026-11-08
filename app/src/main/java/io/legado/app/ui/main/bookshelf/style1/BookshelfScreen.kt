@@ -28,6 +28,7 @@ import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.ui.main.bookshelf.BookshelfContentToolbarActionButton
 import io.legado.app.ui.main.bookshelf.BookshelfContentToolbarMenuButton
+import io.legado.app.ui.main.bookshelf.BookshelfContentToolbarMenuOffset
 import io.legado.app.ui.main.bookshelf.BookshelfCompactToolbar
 import io.legado.app.ui.main.bookshelf.BookshelfDockGroup
 import io.legado.app.ui.main.bookshelf.BookshelfFloatingDock
@@ -162,6 +163,7 @@ private fun BookshelfContentToolbar(
         BookshelfSortMenuHost(
             onOpen = onOpenSortMenu,
             onItemClick = onSortMenuItemClick,
+            menuOffset = BookshelfContentToolbarMenuOffset,
         ) { openMenu ->
             BookshelfContentToolbarActionButton(
                 iconRes = R.drawable.ic_swap_vert,

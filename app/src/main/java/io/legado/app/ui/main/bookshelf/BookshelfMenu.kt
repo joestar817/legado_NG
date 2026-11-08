@@ -41,8 +41,18 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.theme.NgTheme
+
+internal val BookshelfToolbarMenuOffset = DpOffset(0.dp, 8.dp)
+private val BookshelfContentToolbarPillInset = 8.dp
+
+// The popup anchor includes the space outside the visible pill.
+internal val BookshelfContentToolbarMenuOffset = DpOffset(
+    x = BookshelfToolbarMenuOffset.x,
+    y = BookshelfToolbarMenuOffset.y - BookshelfContentToolbarPillInset,
+)
 
 internal fun bookshelfMenuItems(
     includeBrowseHistory: Boolean = false
@@ -150,6 +160,7 @@ internal fun BookshelfSortMenuHost(
     onOpen: () -> List<NgExpandableActionMenuItem>,
     onItemClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    menuOffset: DpOffset = BookshelfToolbarMenuOffset,
     anchor: @Composable BoxScope.((() -> Unit)) -> Unit,
 ) {
     val menuState = remember { NgPopupToggleState() }
@@ -163,7 +174,8 @@ internal fun BookshelfSortMenuHost(
             expanded = menuState.expanded,
             onDismissRequest = menuState::onDismissRequest,
             items = items,
-            offset = DpOffset(0.dp, (-6).dp),
+            offset = menuOffset,
+            variant = NgExpandableActionMenuVariant.END_ANCHORED_DROPDOWN,
             onItemClick = { item ->
                 menuState.close()
                 onItemClick(item.itemId)
@@ -177,7 +189,7 @@ internal fun BookshelfMenuHost(
     includeBrowseHistory: Boolean,
     onMenuItemClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    menuOffset: DpOffset = DpOffset.Zero,
+    menuOffset: DpOffset = BookshelfToolbarMenuOffset,
     anchor: @Composable BoxScope.((() -> Unit)) -> Unit
 ) {
     val menuState = remember { NgPopupToggleState() }
@@ -191,6 +203,7 @@ internal fun BookshelfMenuHost(
             onDismissRequest = menuState::onDismissRequest,
             items = items,
             offset = menuOffset,
+            variant = NgExpandableActionMenuVariant.END_ANCHORED_DROPDOWN,
             onItemClick = { item ->
                 menuState.close()
                 onMenuItemClick(item.itemId)
@@ -236,7 +249,7 @@ internal fun BookshelfContentToolbarMenuButton(
         includeBrowseHistory = true,
         onMenuItemClick = onMenuItemClick,
         modifier = modifier,
-        menuOffset = DpOffset(0.dp, (-6).dp)
+        menuOffset = BookshelfContentToolbarMenuOffset,
     ) { openMenu ->
         BookshelfContentToolbarActionContent(
             iconRes = R.drawable.ic_bookshelf_dock_more,
@@ -301,7 +314,7 @@ private fun BookshelfContentToolbarActionContent(
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .padding(vertical = 8.dp)
+                .padding(vertical = BookshelfContentToolbarPillInset)
                 .clip(RoundedCornerShape(12.dp))
                 .background(backgroundColor)
         )

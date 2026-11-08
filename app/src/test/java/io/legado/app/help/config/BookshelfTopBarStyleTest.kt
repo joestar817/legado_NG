@@ -6,6 +6,17 @@ import org.junit.Test
 class BookshelfTopBarStyleTest {
 
     @Test
+    fun regularBookshelfDefaultsToGroupNavigation() {
+        assertEquals(
+            BookshelfTopBarStyle.GROUP_NAVIGATION,
+            BookshelfTopBarStyle.resolveForLayout(
+                configuredStyle = BookshelfTopBarStyle.DEFAULT,
+                groupGridMode = false,
+            )
+        )
+    }
+
+    @Test
     fun restoresSupportedStyles() {
         BookshelfTopBarStyle.entries.forEach { style ->
             assertEquals(style, BookshelfTopBarStyle.fromValue(style.value))
@@ -71,6 +82,19 @@ class BookshelfTopBarStyleTest {
                 statusBarHeightPx = 72
             )
         )
+    }
+
+    @Test
+    fun defaultDockGapIsFortyPhysicalPixelsBelowStatusBar() {
+        val gapPx = BookshelfFloatingDockConfig.resolveTopDistancePx(
+            storedDistancePx = BookshelfFloatingDockConfig.DEFAULT_TOP_DISTANCE_PX,
+            screenWidthPx = 1116,
+            density = 3f,
+            statusBarHeightPx = 72
+        )
+
+        assertEquals(40, gapPx)
+        assertEquals(112, BookshelfFloatingDockConfig.screenTopDistancePx(gapPx, 72))
     }
 
     @Test

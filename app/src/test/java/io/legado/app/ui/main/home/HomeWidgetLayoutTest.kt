@@ -93,9 +93,9 @@ class HomeWidgetLayoutTest {
             }
             assertEquals(changed, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(changed)))
         }
-        assertEquals(listOf("default_updates", "default_listening", "default_reading", "default_calendar"),
+        assertEquals(listOf("default_updates", "default_listening", "default_reading"),
             HomeWidgetCatalog.defaults().map { it.id })
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"), HomeWidgetCatalog.defaults().map { it.variantId })
+        assertEquals(listOf("large", "large", "large"), HomeWidgetCatalog.defaults().map { it.variantId })
     }
 
     @Test
@@ -122,7 +122,7 @@ class HomeWidgetLayoutTest {
         )
         assertEquals(widgets, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(widgets)))
         assertEquals(listOf(2, 1, 1, 2, 1), widgets.map { HomeWidgetCatalog.variant(it)!!.size.columns })
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"), HomeWidgetCatalog.defaults().map { it.variantId })
+        assertEquals(listOf("large", "large", "large"), HomeWidgetCatalog.defaults().map { it.variantId })
     }
 
     @Test
@@ -143,8 +143,8 @@ class HomeWidgetLayoutTest {
             assertEquals(original.map { it.id }, changed.map { it.id })
             assertEquals(changed, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(changed)))
         }
-        assertEquals(listOf("default_updates", "default_listening", "default_reading", "default_calendar"), original.map { it.id })
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"), original.map { it.variantId })
+        assertEquals(listOf("default_updates", "default_listening", "default_reading"), original.map { it.id })
+        assertEquals(listOf("large", "large", "large"), original.map { it.variantId })
     }
 
     @Test
@@ -161,7 +161,7 @@ class HomeWidgetLayoutTest {
             }
             assertEquals(changed, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(changed)))
         }
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"), HomeWidgetCatalog.defaults().map { it.variantId })
+        assertEquals(listOf("large", "large", "large"), HomeWidgetCatalog.defaults().map { it.variantId })
     }
 
     @Test
@@ -176,7 +176,7 @@ class HomeWidgetLayoutTest {
             }
         }
         assertEquals(widgets, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(widgets)))
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"),
+        assertEquals(listOf("large", "large", "large"),
             HomeWidgetCatalog.defaults().map { it.variantId })
     }
 

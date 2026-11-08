@@ -299,12 +299,12 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         }
 
     val useFloatingBottomBar: Boolean
-        get() = appCtx.getPrefBoolean(PreferKey.useFloatingBottomBar, false)
+        get() = appCtx.getPrefBoolean(PreferKey.useFloatingBottomBar, true)
 
     var floatingBottomBarBottomDistancePx: Int
         get() = appCtx.getPrefInt(
             PreferKey.floatingBottomBarBottomDistancePx,
-            FloatingBottomBarConfig.AUTOMATIC_BOTTOM_DISTANCE_PX
+            FloatingBottomBarConfig.DEFAULT_BOTTOM_DISTANCE_PX
         )
         set(value) {
             appCtx.putPrefInt(PreferKey.floatingBottomBarBottomDistancePx, value)
@@ -448,7 +448,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         get() = BookshelfTopBarStyle.fromValue(
             appCtx.getPrefInt(
                 PreferKey.bookshelfTopBarStyle,
-                BookshelfTopBarStyle.COMPACT_TOOLBAR.value
+                BookshelfTopBarStyle.DEFAULT.value
             )
         )
         set(value) {
@@ -458,7 +458,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     var bookshelfFloatingDockTopDistancePx: Int
         get() = appCtx.getPrefInt(
             PreferKey.bookshelfFloatingDockTopDistancePx,
-            BookshelfFloatingDockConfig.AUTOMATIC_TOP_DISTANCE_PX
+            BookshelfFloatingDockConfig.DEFAULT_TOP_DISTANCE_PX
         )
         set(value) {
             appCtx.putPrefInt(PreferKey.bookshelfFloatingDockTopDistancePx, value)

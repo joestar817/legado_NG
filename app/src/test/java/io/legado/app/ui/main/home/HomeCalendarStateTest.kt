@@ -98,7 +98,12 @@ class HomeCalendarStateTest {
         assertEquals(state.readTime(date), state.copy(loadFailed = true).readTime(date))
     }
 
-    @Test fun `calendar exposes four large skins with one storybook large default`() {
+    @Test fun `a saved layout with the former default calendar still loads`() {
+        val widgets = HomeWidgetCatalog.defaults() + HomeWidgetInstance("default_calendar", "calendar", "large")
+        assertEquals(widgets, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(widgets)))
+    }
+
+    @Test fun `calendar exposes four large skins outside the default layout`() {
         val calendar = HomeWidgetCatalog.type("calendar")!!
         assertEquals(listOf("large", "story-large", "night-large", "white-large"), calendar.variants.map { it.id })
         assertEquals(listOf("basic", "storybook", "night", "white"), calendar.variants.map { it.styleId })
@@ -107,8 +112,7 @@ class HomeCalendarStateTest {
             assertNull(HomeWidgetCatalog.variantForSize("calendar", variant.id, HomeWidgetSize.SMALL))
             assertEquals(variant, HomeWidgetCatalog.variantForSize("calendar", variant.id, HomeWidgetSize.LARGE))
         }
-        assertEquals(listOf(HomeWidgetInstance("default_calendar", "calendar", "story-large")),
-            HomeWidgetCatalog.defaults().filter { it.typeId == "calendar" })
+        assertTrue(HomeWidgetCatalog.defaults().none { it.typeId == "calendar" })
         val widgets = HomeWidgetCatalog.defaults() + calendar.variants.mapIndexed { index, variant ->
             HomeWidgetInstance("calendar-$index", "calendar", variant.id)
         }

@@ -346,7 +346,7 @@ class HomeWidgetMutationTest {
             HomeWidgetInstance("listening", "listening", "story-small"),
         )
         assertEquals("storybook", homeWidgetCommonStyle(widgets))
-        assertEquals("storybook", homeWidgetCommonStyle(HomeWidgetCatalog.defaults()))
+        assertEquals("basic", homeWidgetCommonStyle(HomeWidgetCatalog.defaults()))
         assertEquals("night", homeWidgetCommonStyle(listOf(widgets[0].copy(variantId = "night-large"))))
     }
 
