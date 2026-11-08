@@ -6,15 +6,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.compose.ui.text.font.FontFamily
@@ -39,6 +43,7 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -141,49 +146,60 @@ class NgInterfaceFontComposeTest {
     }
 
     @Test
-    fun clickingSelectedCustomFontReloadsItsSourceDisablesSaveAndUsesTheSamePreviewForLabelAndSample() {
+    fun selectingCustomFontAutomaticallyAppliesItWithoutClosingTheDrawer() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         FontReloadFixture(context, useContentUri = true).use { fixture ->
             runBlocking {
                 val initial = NgInterfaceFontStore.load(context, fixture.choice, reloadFromSource = true)
-                NgInterfaceFontStore.save(context, fixture.choice, "selected-reload-font", initial.second)
+                NgInterfaceFontStore.save(context, fixture.choice, "selected-reload-font", initial)
             }
             val savedBefore = fixture.savedPreferences()
+            val revisionBefore = NgInterfaceFontStore.revision.value
             val visible = mutableStateOf(true)
             val dismissed = AtomicBoolean(false)
             composeRule.setContent {
                 NgAppTheme(updateSystemBars = false) {
+                    Text("live-interface-text")
                     if (visible.value) ThemeInterfaceFontEditorSheet {
                         dismissed.set(true)
                         visible.value = false
                     }
                 }
             }
-            waitForSaveEnabled(context)
+            waitForFontRow("selected-reload-font")
+            composeRule.onNodeWithContentDescription(context.getString(R.string.save)).assertDoesNotExist()
+            composeRule.onNodeWithContentDescription("字体管理").assertExists()
             fixture.replaceSource()
             fixture.provider.entered = CountDownLatch(1)
             fixture.provider.returned = CountDownLatch(1)
             fixture.provider.gate = CountDownLatch(1)
             try {
                 // Same URI/row: this is deliberately not a selection change.
-                composeRule.onNodeWithText("selected-reload-font").performClick()
+                composeRule.onNode(hasText("selected-reload-font") and isSelected()).performClick()
                 composeRule.waitUntil(5_000) { fixture.provider.entered.count == 0L }
-                composeRule.onNodeWithContentDescription(context.getString(R.string.save)).assertIsNotEnabled()
                 assertEquals(savedBefore, fixture.savedPreferences())
                 fixture.provider.gate!!.countDown()
-                waitForSaveEnabled(context)
-                val titleFont = layout("selected-reload-font").layoutInput.style.fontFamily
+                composeRule.waitUntil(5_000) {
+                    NgInterfaceFontStore.revision.value > revisionBefore
+                }
+                composeRule.waitForIdle()
+                assertFalse(dismissed.get())
+                assertTrue(visible.value)
+                composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(isSelected())
+                composeRule.onNode(hasText("selected-reload-font") and isSelected()).assertIsSelected()
+                val titleFont = selectedLayout("selected-reload-font").layoutInput.style.fontFamily
                 val sampleResults = mutableListOf<TextLayoutResult>()
-                composeRule.onAllNodesWithText("Aa", useUnmergedTree = true)[0]
+                composeRule.onNode(hasText("Aa") and hasAnyAncestor(isSelected()), useUnmergedTree = true)
                     .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
                         assertTrue(action(sampleResults))
                     }
                 assertSame(nativeTypeface(titleFont),
                     nativeTypeface(sampleResults.single().layoutInput.style.fontFamily))
-                composeRule.onNodeWithContentDescription(context.getString(R.string.save)).performClick()
-                composeRule.waitUntil(5_000) { dismissed.get() }
-                assertArrayEquals(fixture.updatedBytes,
-                    File(checkNotNull(preferences.getString("ngInterfaceFont.file", null))).readBytes())
+                assertSame(NgThemeRuntimeAssets.appTypeface(context),
+                    nativeTypeface(layout("live-interface-text").layoutInput.style.fontFamily))
+                assertNull(preferences.getString("ngInterfaceFont.file", null))
+                assertEquals(fixture.choice, preferences.getString("ngInterfaceFont.choice", null))
+                assertArrayEquals(fixture.updatedBytes, fixture.source.readBytes())
             } finally {
                 fixture.provider.gate?.countDown()
                 composeRule.runOnIdle { visible.value = false }
@@ -193,50 +209,93 @@ class NgInterfaceFontComposeTest {
     }
 
     @Test
-    fun newerSelectionWinsOverBlockedCustomReloadAndDismissWithoutSaveKeepsInstalledFont() {
+    fun newerSystemSelectionAppliesImmediatelyAndBlockedOldReloadCannotOverwriteIt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         FontReloadFixture(context, useContentUri = true).use { fixture ->
             runBlocking {
                 val initial = NgInterfaceFontStore.load(context, fixture.choice, reloadFromSource = true)
-                NgInterfaceFontStore.save(context, fixture.choice, "selected-reload-font", initial.second)
+                NgInterfaceFontStore.save(context, fixture.choice, "selected-reload-font", initial)
             }
             val savedBefore = fixture.savedPreferences()
             val visible = mutableStateOf(true)
             composeRule.setContent {
                 NgAppTheme(updateSystemBars = false) {
+                    Text("live-interface-text")
                     if (visible.value) ThemeInterfaceFontEditorSheet { visible.value = false }
                 }
             }
-            waitForSaveEnabled(context)
+            waitForFontRow("selected-reload-font")
             fixture.replaceSource()
             fixture.provider.entered = CountDownLatch(1)
             fixture.provider.returned = CountDownLatch(1)
             fixture.provider.gate = CountDownLatch(1)
             try {
-                composeRule.onNodeWithText("selected-reload-font").performClick()
+                composeRule.onNode(hasText("selected-reload-font") and isSelected()).performClick()
                 composeRule.waitUntil(5_000) { fixture.provider.entered.count == 0L }
-                composeRule.onNodeWithContentDescription(context.getString(R.string.save)).assertIsNotEnabled()
+                assertEquals(savedBefore, fixture.savedPreferences())
                 composeRule.onNodeWithText(context.getString(R.string.font_mode_system)).performClick()
                 val serifLabel = context.resources.getStringArray(R.array.system_typefaces)[1]
                 composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(1)
                 composeRule.onNodeWithText(serifLabel).performClick()
-                waitForSaveEnabled(context)
-                val latestPreview = layout(serifLabel).layoutInput.style.fontFamily
-                assertEquals(Typeface.SERIF, nativeTypeface(latestPreview))
+                composeRule.waitUntil(5_000) { preferences.getString("ngInterfaceFont.choice", null) == "serif" }
+                composeRule.waitForIdle()
+                val applied = fixture.savedPreferences()
+                composeRule.onNodeWithText(serifLabel).assertIsSelected()
+                assertEquals(Typeface.SERIF, nativeTypeface(layout("live-interface-text").layoutInput.style.fontFamily))
+                assertTrue(visible.value)
                 fixture.provider.gate!!.countDown()
                 composeRule.waitUntil(5_000) { fixture.provider.returned.count == 0L }
                 composeRule.waitForIdle()
-                assertEquals(nativeTypeface(latestPreview),
-                    nativeTypeface(layout(serifLabel).layoutInput.style.fontFamily))
-                assertEquals(savedBefore, fixture.savedPreferences())
-                // Cancel a fully loaded preview without persisting it.
+                assertEquals(Typeface.SERIF,
+                    nativeTypeface(layout("live-interface-text").layoutInput.style.fontFamily))
+                assertEquals(applied, fixture.savedPreferences())
+                // Closing is not a rollback now: the last successful selection remains installed.
                 composeRule.runOnIdle { visible.value = false }
                 composeRule.waitForIdle()
-                assertEquals(savedBefore, fixture.savedPreferences())
-                assertArrayEquals(fixture.originalBytes,
-                    File(checkNotNull(preferences.getString("ngInterfaceFont.file", null))).readBytes())
+                assertEquals(applied, fixture.savedPreferences())
             } finally {
                 fixture.provider.gate?.countDown()
+                composeRule.runOnIdle { visible.value = false }
+                composeRule.waitForIdle()
+            }
+        }
+    }
+
+    @Test
+    fun failedFontDoesNotReplaceTheSavedSelectionOrItsSelectedMark() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        FontReloadFixture(context, useContentUri = true).use { fixture ->
+            runBlocking {
+                val initial = NgInterfaceFontStore.load(context, fixture.choice, reloadFromSource = true)
+                NgInterfaceFontStore.save(context, fixture.choice, "selected-reload-font", initial)
+            }
+            File(fixture.source.parentFile, "broken.ttf").writeText("not a font")
+            val savedBefore = fixture.savedPreferences()
+            val visible = mutableStateOf(true)
+            composeRule.setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    Text("live-interface-text")
+                    if (visible.value) ThemeInterfaceFontEditorSheet { visible.value = false }
+                }
+            }
+            try {
+                waitForFontRow("selected-reload-font")
+                waitForFontRow("broken.ttf", selected = false)
+                composeRule.onNodeWithText("broken.ttf").performClick()
+                composeRule.waitUntil(5_000) {
+                    composeRule.onAllNodesWithText("字体无法应用：", substring = true)
+                        .fetchSemanticsNodes().isNotEmpty()
+                }
+                assertEquals(savedBefore, fixture.savedPreferences())
+                composeRule.onNodeWithText("broken.ttf").assert(!isSelected())
+                // The successful choice can be farther down when other local font fixtures exist.
+                composeRule.onNode(hasScrollToIndexAction())
+                    .performScrollToNode(isSelected())
+                composeRule.onNode(hasText("selected-reload-font") and isSelected()).assertIsSelected()
+                assertTrue(visible.value)
+                assertSame(NgThemeRuntimeAssets.appTypeface(context),
+                    nativeTypeface(layout("live-interface-text").layoutInput.style.fontFamily))
+            } finally {
                 composeRule.runOnIdle { visible.value = false }
                 composeRule.waitForIdle()
             }
@@ -247,10 +306,12 @@ class NgInterfaceFontComposeTest {
         createFontFamilyResolver(ApplicationProvider.getApplicationContext<Context>())
             .resolve(family).value as Typeface
 
-    private fun waitForSaveEnabled(context: Context) {
+    private fun waitForFontRow(label: String, selected: Boolean = true) {
+        val matcher = if (selected) hasText(label) and isSelected() else hasText(label)
         composeRule.waitUntil(5_000) {
             runCatching {
-                composeRule.onNodeWithContentDescription(context.getString(R.string.save)).assertIsEnabled()
+                composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(matcher)
+                composeRule.onNode(matcher).assertExists()
                 true
             }.getOrDefault(false)
         }
@@ -258,6 +319,15 @@ class NgInterfaceFontComposeTest {
     private fun layout(text: String): TextLayoutResult {
         val results = mutableListOf<TextLayoutResult>()
         composeRule.onNodeWithText(text, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(results))
+            }
+        return results.single()
+    }
+
+    private fun selectedLayout(text: String): TextLayoutResult {
+        val results = mutableListOf<TextLayoutResult>()
+        composeRule.onNode(hasText(text) and hasAnyAncestor(isSelected()), useUnmergedTree = true)
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
                 assertTrue(action(results))
             }

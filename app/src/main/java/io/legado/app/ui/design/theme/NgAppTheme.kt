@@ -31,6 +31,7 @@ import io.legado.app.help.config.NgColorConfigStore
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgThemeRuntimeAssets
+import io.legado.app.help.config.NgInterfaceFontStore
 import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.help.config.NgVisualSystemStore
 import io.legado.app.help.config.resolveThemeNightMode
@@ -139,8 +140,9 @@ fun NgAppTheme(
     val visualSystemFlow = remember(context) { NgVisualSystemStore.observe(context) }
     val observedVisualSystem by visualSystemFlow.collectAsState()
     val visualSystem = observedVisualSystem ?: NgVisualSystemStore.current(context)
+    val interfaceFontRevision by NgInterfaceFontStore.revision.collectAsState()
     val appTypeface = NgThemeRuntimeAssets.appTypeface(context)
-    val typography = remember(appTypeface) {
+    val typography = remember(appTypeface, interfaceFontRevision) {
         Typography().withFontFamily(appTypeface?.let(::interfaceFontFamily))
     }
     if (updateSystemBars) {

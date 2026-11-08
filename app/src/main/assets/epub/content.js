@@ -24,7 +24,7 @@
         var spans = [];
         (value.styleRanges || []).forEach(function (r) {
             var style = (value.charStyles || [])[r[2]] || {};
-            var font = JSON.stringify([style.font || null, style.weight == null ? null : style.weight, style.italic == null ? null : style.italic, style.nineSlice || null]);
+            var font = JSON.stringify([style.systemFont ? 'sans-serif' : style.font || null, style.weight == null ? null : style.weight, style.italic == null ? null : style.italic, style.nineSlice || null]);
             if (font === '[null,null,null,null]') return;
             var last = spans[spans.length - 1];
             if (last && last[1] === r[0] && last[2] === font) last[1] = r[1];
@@ -294,7 +294,8 @@
                 if (properties.size != null) css('font-size', properties.size + 'px');
                 if (properties.lineHeight != null) css('line-height', properties.lineHeight + 'px');
                 var loaded = fontCache.get(properties.font);
-                if (loaded) css('font-family', loaded.family);
+                if (properties.systemFont) css('font-family', 'sans-serif');
+                else if (loaded) css('font-family', loaded.family);
                 if (properties.italic != null) css('font-style', properties.italic ? 'italic' : 'normal');
                 if (properties.underline >= 1 && properties.underline <= 4) {
                     css('text-decoration-line', 'underline');

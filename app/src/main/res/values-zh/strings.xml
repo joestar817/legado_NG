@@ -2353,6 +2353,12 @@
     <string name="font_mode_system">系统字体</string>
     <string name="font_mode_custom">自定义</string>
     <string name="add_font_directory">选择字体目录</string>
+    <string name="font_delete_mode_title">删除字体</string>
+    <string name="font_delete_mode_empty">暂无自定义字体</string>
+    <string name="font_delete_confirmation_title">删除字体？</string>
+    <string name="font_delete_switch_summary">当前字体已被%1$s使用，删除后将改用系统默认字体。</string>
+    <string name="font_delete_usage_separator">、</string>
+    <string name="font_delete_and_switch">删除并切换</string>
     <string name="reading_padding">阅读边距</string>
     <string name="reading_information">阅读信息</string>
     <string name="show_header">显示页眉</string>

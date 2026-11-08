@@ -47,12 +47,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
+import androidx.lifecycle.Lifecycle
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadTipConfig
+import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.ReadFloatingAppearanceState
@@ -74,6 +78,7 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
         private const val SECTION_HEADER = 1
         private const val SECTION_FOOTER = 2
         private const val SECTION_STYLE = 3
+        private const val TITLE_FONT_TAG = "titleFont"
 
         private const val POSITION_LEFT = 0
         private const val POSITION_MIDDLE = 1
@@ -85,6 +90,37 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
     private lateinit var composeView: ComposeView
     private var externalRevision by mutableIntStateOf(0)
     private var previewRegistered = false
+
+    private val titleFontLifecycleCallbacks = object : FragmentManager.FragmentLifecycleCallbacks() {
+        override fun onFragmentStarted(fm: FragmentManager, fragment: Fragment) {
+            if (fragment !is FontSelectDialog || fragment.tag != TITLE_FONT_TAG) return
+            val ownerUrl = ReadBook.book?.bookUrl
+            fragment.setOnDismissListener {
+                val host = activity ?: return@setOnDismissListener
+                if (!isAdded || isRemoving || host.isFinishing || host.isDestroyed ||
+                    host.isChangingConfigurations || parentFragmentManager.isStateSaved ||
+                    !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                ) return@setOnDismissListener
+                if (ReadBook.book?.bookUrl != ownerUrl) {
+                    dismissAllowingStateLoss()
+                } else {
+                    dialog?.show()
+                }
+            }
+            // Keep this fragment and its scroll state; only the font window is visible.
+            dialog?.hide()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        childFragmentManager.registerFragmentLifecycleCallbacks(titleFontLifecycleCallbacks, false)
+    }
+
+    override fun onDestroy() {
+        childFragmentManager.unregisterFragmentLifecycleCallbacks(titleFontLifecycleCallbacks)
+        super.onDestroy()
+    }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         ComponentDialog(requireContext(), theme)
@@ -232,7 +268,7 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
                         ReadTitleSettingsContent(
                             revision = revision + externalRevision,
                             onSelectFont = {
-                                FontSelectDialog.forTitle().show(childFragmentManager, "titleFont")
+                                FontSelectDialog.forTitle().show(childFragmentManager, TITLE_FONT_TAG)
                             },
                             onSelectColor = { night ->
                                 activePicker = if (night) ColorPickerTarget.TITLE_NIGHT

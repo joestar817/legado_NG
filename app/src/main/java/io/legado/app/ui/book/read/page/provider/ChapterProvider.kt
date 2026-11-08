@@ -14,6 +14,7 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.help.book.BookContent
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.utils.RealPathUtil
@@ -220,6 +221,7 @@ object ChapterProvider {
     private fun getTypeface(fontPath: String): Typeface? {
         return kotlin.runCatching {
             when {
+                fontPath == SYSTEM_DEFAULT_FONT -> Typeface.DEFAULT
                 fontPath.startsWith("assets://") -> Typeface.createFromAsset(
                     appCtx.assets,
                     fontPath.removePrefix("assets://"),
@@ -300,7 +302,7 @@ object ChapterProvider {
     private fun needsCustomFontVariationBuilder(fontPath: String, weight: Int): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
             Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true) &&
-            fontPath.isNotBlank() && weight in 100..900
+            fontPath.isNotBlank() && fontPath != SYSTEM_DEFAULT_FONT && weight in 100..900
 
     private fun applyReaderFontWeight(
         base: Typeface?,
@@ -355,6 +357,7 @@ object ChapterProvider {
 
     fun loadOptionalTypeface(fontPath: String): Typeface? = runCatching {
         when {
+            fontPath == SYSTEM_DEFAULT_FONT -> Typeface.DEFAULT
             fontPath.startsWith("assets://") -> Typeface.createFromAsset(
                 appCtx.assets,
                 fontPath.removePrefix("assets://"),

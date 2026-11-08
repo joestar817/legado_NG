@@ -20,6 +20,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -262,10 +263,11 @@ internal fun ThemeConfigScreen(
                     onClick = onOpenFontScale,
                 )
                 NgCompactSettingsDivider()
+                val interfaceFontRevision by NgInterfaceFontStore.revision.collectAsState()
                 val fontChoice = NgInterfaceFontStore.choice(context)
                 val fontName = NgInterfaceFontStore.name(context)
                 val systemFontIndex = NgInterfaceFontStore.systemChoices.indexOf(fontChoice)
-                val fontSummary = remember(fontChoice, fontName, context) {
+                val fontSummary = remember(interfaceFontRevision, fontChoice, fontName, context) {
                     if (systemFontIndex >= 0) context.resources.getStringArray(R.array.system_typefaces)[systemFontIndex]
                     else fontName.ifBlank { context.getString(R.string.font_mode_custom) }
                 }

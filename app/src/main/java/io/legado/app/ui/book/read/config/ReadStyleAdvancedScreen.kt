@@ -49,7 +49,9 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -493,6 +495,7 @@ internal fun HighlightRuleEditorPage(
                     AdvancedFileRow(
                         title = stringResource(R.string.highlight_rule_font_file),
                         path = draft.fontPath,
+                        systemDefaultFont = draft.fontPath == SYSTEM_DEFAULT_FONT,
                         contentColor = contentColor,
                         accentColor = accentColor,
                         onSelect = actions.onSelectHighlightFont,
@@ -1154,10 +1157,14 @@ private fun AdvancedFileRow(
     accentColor: Color,
     onSelect: () -> Unit,
     onClear: () -> Unit,
+    systemDefaultFont: Boolean = false,
 ) {
-    val fileName = path?.substringAfterLast('/')?.substringAfterLast(':')
-        ?.takeIf(String::isNotBlank)
-        ?: stringResource(R.string.highlight_rule_no_file)
+    val fileName = if (systemDefaultFont) {
+        stringArrayResource(R.array.system_typefaces).first()
+    } else {
+        path?.substringAfterLast('/')?.substringAfterLast(':')?.takeIf(String::isNotBlank)
+            ?: stringResource(R.string.highlight_rule_no_file)
+    }
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,

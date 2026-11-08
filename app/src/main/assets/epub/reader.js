@@ -1421,7 +1421,8 @@
             });
         }
         if (features.title === false) {
-            var title = reader.title || {}, titleFamily = (title.hasFont ? 'NGTitleFont,' : '') + family;
+            var title = reader.title || {};
+            var titleFamily = title.systemFont ? 'sans-serif' : (title.hasFont ? 'NGTitleFont,' : '') + family;
             var segmentedTitles = window.__ngEpubContent ? new Set(window.__ngEpubContent.titleHeadings()) : new Set();
             Array.from(body.querySelectorAll(headingSelector)).forEach(function (heading) {
                 adjust(heading, { 'text-align': title.align || 'start',

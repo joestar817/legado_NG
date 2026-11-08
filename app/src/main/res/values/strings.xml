@@ -2453,6 +2453,12 @@
     <string name="font_mode_system">System fonts</string>
     <string name="font_mode_custom">Custom</string>
     <string name="add_font_directory">Choose font folder</string>
+    <string name="font_delete_mode_title">Delete fonts</string>
+    <string name="font_delete_mode_empty">No custom fonts</string>
+    <string name="font_delete_confirmation_title">Delete font?</string>
+    <string name="font_delete_switch_summary">This font is used by %1$s. Deleting it will switch those settings to the system default font.</string>
+    <string name="font_delete_usage_separator">", "</string>
+    <string name="font_delete_and_switch">Delete and switch</string>
     <string name="reading_padding">Reading margins</string>
     <string name="reading_information">Reading information</string>
     <string name="show_header">Show header</string>
