@@ -1,5 +1,7 @@
 package io.legado.app.help.update
 
+import io.legado.app.help.http.GitHubRelay
+
 import java.io.InputStream
 import java.net.URI
 import java.net.URLEncoder
@@ -7,25 +9,19 @@ import java.security.MessageDigest
 
 internal object AppUpdateRelay {
 
-    private const val API_RELAY_PREFIX = "https://gh-proxy.com/"
-    private const val DOWNLOAD_RELAY_PREFIX = "https://gh-proxy.com/"
     private const val STREAM_DOWNLOAD_URL = "https://download.githubcdn.com?url="
     private const val RELEASE_OWNER = "joestar817"
     private const val RELEASE_REPOSITORY = "legado_NG"
 
     fun apiCandidates(gitHubUrl: String): List<String> {
         require(isAllowedGitHubApiUrl(gitHubUrl)) { "不支持的 GitHub 更新接口" }
-        return listOf(API_RELAY_PREFIX + gitHubUrl, gitHubUrl)
+        return GitHubRelay.proxyFirst(gitHubUrl)
     }
 
     fun downloadCandidates(gitHubUrl: String, fileName: String): List<String> {
         require(isAllowedReleaseDownloadUrl(gitHubUrl, fileName)) { "不支持的 GitHub 下载地址" }
         val encodedUrl = URLEncoder.encode(gitHubUrl, Charsets.UTF_8.name())
-        return listOf(
-            STREAM_DOWNLOAD_URL + encodedUrl,
-            DOWNLOAD_RELAY_PREFIX + gitHubUrl,
-            gitHubUrl,
-        )
+        return listOf(STREAM_DOWNLOAD_URL + encodedUrl) + GitHubRelay.proxyFirst(gitHubUrl)
     }
 
     fun isAllowedReleaseDownloadUrl(url: String, fileName: String): Boolean {
