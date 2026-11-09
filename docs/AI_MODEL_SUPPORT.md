@@ -71,11 +71,12 @@
 
 ## 模型能力恢复入口（2026-11）
 
-模型编辑抽屉在「模型类型」下方新增「按模型名重新识别」，用于把改错的能力恢复为注册表推断值：
+模型编辑抽屉的标题栏左侧新增恢复图标（`ic_restore`，无障碍名称「按模型名重新识别」），用于把改错的能力恢复为注册表推断值：
 
 - 依据 `AiModelRegistry.capabilities(modelId)` 恢复模型类型、输入/输出模态、Tool/Reasoning 能力
-- 仅当模型 id 能命中注册表规则时显示入口；`AiModelRegistry.shouldClearDeclaredCapabilities()` 命中的模型不显示
-- 未知模型和空 id 不显示入口，避免把私有模型静默重置成聊天模型
+- 仅当模型 id 能命中注册表规则时显示图标；`AiModelRegistry.shouldClearDeclaredCapabilities()` 命中的模型不显示
+- 未知模型和空 id 不显示图标，避免把私有模型静默重置成聊天模型
+- 点击后弹出确认框，提示会覆盖当前的模型类型、输入输出和能力设置，保存后才生效
 - 只改能力字段，不修改显示名称
 - 真机验证：DeepSeek-V4.1-Flash 从「图像」恢复为「聊天 / 文本+图像输入 / 文本输出 / 工具调用+推理」
 
