@@ -23,6 +23,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
+import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgColorConfigStore
 import io.legado.app.help.config.NgThemeModeStore
@@ -33,9 +34,12 @@ import io.legado.app.help.config.ThemeConfig
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.design.theme.NgColorGenerationMode
+import io.legado.app.ui.design.theme.NgManualColorSet
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.design.theme.NgThemeSnapshot
+import io.legado.app.utils.defaultSharedPreferences
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.windowSize
 import splitties.systemservices.windowManager
@@ -44,6 +48,32 @@ import kotlin.math.roundToInt
 
 object ReadDrawerStyle {
     private const val DRAWER_AVOIDANCE_ANIMATION_DURATION = 180L
+
+    // 保留已验收的阅读夜间蓝色；仅用于尚未配置独立夜间颜色的多彩光场。
+    private val defaultIndependentNightColors = NgManualColorSet(
+        primary = 0xFF5CCBFF.toInt(),
+        secondary = 0xFF153A5B.toInt(),
+        primaryText = 0xFFF2F7FF.toInt(),
+        secondaryText = 0xFFB8D4E8.toInt(),
+        background = 0xFF06182D.toInt(),
+        labelContainer = 0xFF12314D.toInt(),
+    )
+
+    private val nightColorPreferenceKeys = arrayOf(
+        PreferKey.ngColorMode,
+        PreferKey.ngColorDarkSeed,
+        PreferKey.ngColorDarkPrimary,
+        PreferKey.ngColorDarkSecondary,
+        PreferKey.ngColorDarkPrimaryText,
+        PreferKey.ngColorDarkSecondaryText,
+        PreferKey.ngColorDarkBackground,
+        PreferKey.ngColorDarkLabel,
+        PreferKey.ngColorDarkTopBarTextMode,
+        PreferKey.cNPrimary,
+        PreferKey.cNAccent,
+        PreferKey.cNBackground,
+        PreferKey.cNBBackground,
+    )
 
     private val topRadius: Float
         get() = 18.dpToPx().toFloat()
@@ -96,7 +126,7 @@ object ReadDrawerStyle {
 
     /**
      * 阅读浮层使用背景取色时保持自己的日夜配色；跟随应用时采用当前应用配色。
-     * 柔光渐变只参与配色，不作为阅读页背景；墨水屏继续保留全局强制黑白。
+     * 柔光渐变和多彩光场只参与配色，不作为阅读页背景；墨水屏继续保留全局强制黑白。
      */
     fun themeSnapshot(
         context: Context,
@@ -110,15 +140,25 @@ object ReadDrawerStyle {
     } else {
         val effectiveColor = ReadBookConfig.effectiveReadFloatingColor()
         val seed = effectiveColor.seed
+        val presentation = NgThemeModeStore.current(context)
         val base = if (
             effectiveColor.followsApplication &&
-            NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT
+            (presentation == NgThemePresentationMode.SOFT_GRADIENT ||
+                presentation == NgThemePresentationMode.MULTICOLOR)
         ) {
             NgThemeResolver.resolve(context)
         } else {
+            val colors = NgColorConfigStore.current(context)
+            val useDefaultNightColors = presentation == NgThemePresentationMode.MULTICOLOR &&
+                ReadBookConfig.isNightTheme &&
+                !effectiveColor.followsApplication && seed == 0 &&
+                colors.mode == NgColorGenerationMode.MANUAL &&
+                nightColorPreferenceKeys.none(context.defaultSharedPreferences::contains)
             NgThemeResolver.resolve(
                 context = context,
-                colors = NgColorConfigStore.current(context),
+                colors = if (useDefaultNightColors) {
+                    colors.copy(manualDark = defaultIndependentNightColors)
+                } else colors,
                 isDark = ReadBookConfig.isNightTheme,
             )
         }

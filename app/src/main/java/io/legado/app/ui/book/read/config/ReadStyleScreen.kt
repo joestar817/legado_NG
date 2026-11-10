@@ -776,7 +776,7 @@ private fun EditorPage(
             mode = state.editorMode,
             allowEInk = state.allowEInkEditing,
             contentColor = contentColor,
-            accentColor = accentColor,
+            accentColor = indicatorColor,
             onBack = actions.onBack,
             onModeSelected = actions.onEditorModeChanged,
         )
