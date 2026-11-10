@@ -107,7 +107,35 @@ import kotlinx.coroutines.withContext
 
 internal const val READER_FONT_DIALOG_MARGIN_DP = 20
 
-private data class ReaderFontFile(val entry: FontFileEntry, val document: FileDoc)
+internal data class ReaderFontFile(val entry: FontFileEntry?, val document: FileDoc)
+
+internal fun readerFontFiles(
+    entries: List<FontFileEntry>,
+    selected: String,
+    preferred: String?,
+): List<ReaderFontFile> {
+    val selectedIdentity = FontUsageInspector.normalizePath(selected)
+    val listed = FontDirectoryCatalog.prioritize(entries, preferred).map { entry ->
+        val reference = if (entry.id == selectedIdentity) selected else entry.uri
+        val document = FileDoc(entry.name, false, entry.size, 0L, readerFontUri(reference))
+        ReaderFontFile(entry, document)
+    }
+    if (selectedIdentity == null || entries.any { it.id == selectedIdentity }) return listed
+
+    // Imported presets can use a font directly from their package, outside the library.
+    val uri = readerFontUri(selected)
+    if (uri.scheme != "file") return listed
+    val file = File(selectedIdentity)
+    if (!file.isFile || !file.canRead()) return listed
+    val current = ReaderFontFile(
+        entry = null,
+        document = FileDoc(file.nameWithoutExtension, false, file.length(), file.lastModified(), uri),
+    )
+    return if (preferred == null) listOf(current) + listed else listed + current
+}
+
+private fun readerFontUri(reference: String): Uri =
+    if (reference.startsWith('/')) Uri.fromFile(File(reference)) else Uri.parse(reference)
 
 /** 字体选择与单项删除共用一个弹窗。 */
 class FontSelectDialog : BaseComposeDialogFragment() {
@@ -253,6 +281,9 @@ class FontSelectDialog : BaseComposeDialogFragment() {
         var fontManager by rememberSaveable { mutableStateOf(false) }
         var returnToFontMode by rememberSaveable { mutableStateOf<Int?>(null) }
         val deletionMode = returnToFontMode != null
+        val visibleFonts = remember(customFonts, deletionMode) {
+            if (deletionMode) customFonts.filter { it.entry != null } else customFonts
+        }
         var pendingDeletion by remember { mutableStateOf<FontDeletionRequest?>(null) }
         var deletionBusy by remember { mutableStateOf(false) }
         val exitDeletionMode: () -> Unit = {
@@ -390,7 +421,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
                             )
                         }
                     }
-                } else if (customFonts.isEmpty()) {
+                } else if (visibleFonts.isEmpty()) {
                     Text(
                         text = stringResource(
                             when {
@@ -413,7 +444,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         itemsIndexed(
-                            items = customFonts,
+                            items = visibleFonts,
                             key = { _, item -> item.document.uri.toString() },
                         ) { _, item ->
                             val document = item.document
@@ -423,16 +454,15 @@ class FontSelectDialog : BaseComposeDialogFragment() {
                                 if (loadingFontFiles || fontManager) return@produceState
                                 value = loadTypeface(document)
                             }
-                            val onDelete: (() -> Unit)? = if (deletionMode) {
-                                { requestDeletion(item.entry) }
-                            } else null
+                            val deletionEntry = if (deletionMode) item.entry else null
+                            val onDelete: (() -> Unit)? = deletionEntry?.let { { requestDeletion(it) } }
                             FontRow(
                                 name = document.name,
                                 typeface = typeface,
                                 selected = document.toString() == selectedFontPath || document.uri.toString() == selectedFontPath,
                                 onClick = { selectCustomFont(document) },
                                 enabled = !loadingFontFiles && !fontManager &&
-                                    (!deletionMode || (item.entry.canDelete && !deletionBusy)),
+                                    (!deletionMode || (deletionEntry?.canDelete == true && !deletionBusy)),
                                 onDelete = onDelete,
                             )
                         }
@@ -617,15 +647,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
         loadingFontFiles = true
         val selected = selectedFontPath
         execute(scope = viewLifecycleOwner.lifecycleScope) {
-            val selectedIdentity = FontUsageInspector.normalizePath(selected)
-            FontDirectoryCatalog.prioritize(FontDirectoryCatalog.list(), preferredFontPath).map { entry ->
-                val uri = if (entry.id == selectedIdentity) selected else entry.uri
-                val document = FileDoc(
-                    entry.name, false, entry.size, 0L,
-                    if (uri.startsWith("/")) Uri.fromFile(File(uri)) else Uri.parse(uri),
-                )
-                ReaderFontFile(entry, document)
-            }
+            readerFontFiles(FontDirectoryCatalog.list(), selected, preferredFontPath)
         }.onSuccess {
             if (request == fontListRequest) {
                 // Publish the new rows before allowing previews to restart.
