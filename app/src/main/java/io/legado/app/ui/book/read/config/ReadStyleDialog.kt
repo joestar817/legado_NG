@@ -21,13 +21,18 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.toColorInt
 import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import com.github.liuyueyi.quick.transfer.constants.TransType
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
 import io.legado.app.help.DefaultData
+import io.legado.app.help.background.ReadingBackground
+import io.legado.app.help.background.ReadingBackgroundLibrary
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
@@ -51,7 +56,6 @@ import io.legado.app.utils.CreateDocumentContract
 import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.BitmapUtils
 import io.legado.app.utils.FileUtils
-import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.externalFiles
 import io.legado.app.utils.hexString
 import io.legado.app.utils.inputStream
@@ -66,6 +70,10 @@ import io.legado.app.utils.toastOnUi
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 private val EDITOR_FALLBACK_BG_COLOR = 0xFFF7F3EA.toInt()
@@ -94,6 +102,27 @@ private fun showReadStyleAdjust(
 }
 
 class ReadStyleDialog : BaseComposeDialogFragment() {
+
+    private val backgroundLibraryCallbacks = object : FragmentManager.FragmentLifecycleCallbacks() {
+        override fun onFragmentStarted(fm: FragmentManager, fragment: Fragment) {
+            if (fragment !is ReadingBackgroundDialog) return
+            fragment.setOnDismissListener {
+                val target = editorSession.backgroundLibraryTarget
+                editorSession.backgroundLibraryTarget = null
+                val host = activity ?: return@setOnDismissListener
+                if (!isAdded || isRemoving || host.isFinishing || host.isDestroyed || host.isChangingConfigurations ||
+                    parentFragmentManager.isStateSaved || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                ) return@setOnDismissListener
+                if (target?.bookUrl != ReadBook.book?.bookUrl) {
+                    dismissAllowingStateLoss()
+                    return@setOnDismissListener
+                }
+                dialog?.show()
+                refreshUi(reusePresetThumbnails = true)
+            }
+            dialog?.hide()
+        }
+    }
 
     private val callBack get() = activity as? ReadBookActivity
     private lateinit var composeView: ComposeView
@@ -155,8 +184,13 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
         val target = editorSession.backgroundTarget
         editorSession.backgroundTarget = null
         if (uri != null) {
-            if (target == null) toastOnUi(R.string.read_style_editor_target_lost)
+            if (target == null) {
+                editorSession.importingBackground = false
+                toastOnUi(R.string.read_style_editor_target_lost)
+            }
             else setBackgroundFromUri(uri, target)
+        } else {
+            editorSession.importingBackground = false
         }
     }
     private val selectHighlightBackground = registerForActivityResult(
@@ -168,7 +202,9 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        childFragmentManager.registerFragmentLifecycleCallbacks(backgroundLibraryCallbacks, false)
         if (arguments?.getBoolean(ARG_INITIAL_ADJUST) == true) page = ReadStylePage.ADJUST
+        if (editorSession.backgroundLibraryTarget != null) page = ReadStylePage.EDIT
         pendingHighlightExportName = savedInstanceState?.getString("pendingHighlightExportName")
         pendingPresetExportName = savedInstanceState?.getString("pendingPresetExportName")
         if (savedInstanceState?.containsKey("presetEditorMode") == true && editorSession.presetMode == null) {
@@ -201,6 +237,12 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
             }
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
+        if (childFragmentManager.fragments.any { it is ReadingBackgroundDialog && it.isAdded }) dialog?.hide()
+    }
+
+    override fun onDestroy() {
+        childFragmentManager.unregisterFragmentLifecycleCallbacks(backgroundLibraryCallbacks)
+        super.onDestroy()
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
@@ -377,10 +419,7 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
             updateEditorState { copy(editorBackgroundAlpha = safeAlpha) }
             postEvent(EventBus.UP_CONFIG, arrayListOf(3))
         },
-        onSelectBackgroundImage = {
-            editorSession.backgroundTarget = captureEditorTarget()
-            selectBackgroundImage.launch(arrayOf("image/*"))
-        },
+        onSelectBackgroundImage = ::openBackgroundLibrary,
         onSelectBackground = ::selectBackground,
         onFloatingColorSourceChanged = ::setFloatingColorSource,
         onPickFloatingColor = ::pickFloatingColor,
@@ -628,7 +667,7 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
             creatingPreset = creatingPreset,
             editorModeLabel = modeLabel,
             editorPreviewBackground = previewBackground,
-            editorBackgrounds = if (page.isEditorPage()) loadEditorBackgrounds() else emptyList(),
+            editorBackgrounds = emptyList(),
             editorBackgroundType = backgroundType,
             editorBackgroundName = backgroundName,
             editorTextColor = config.textColorForMode(mode),
@@ -941,6 +980,44 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
         postEditorBackgroundChanged(target)
     }
 
+    private fun openBackgroundLibrary() {
+        if (childFragmentManager.isStateSaved || childFragmentManager.findFragmentByTag("readingBackgrounds") != null) return
+        editorSession.backgroundLibraryTarget = captureEditorTarget()
+        ReadingBackgroundDialog().show(childFragmentManager, "readingBackgrounds")
+    }
+
+    internal fun backgroundLibraryTarget(): ReadStyleEditTarget? {
+        val original = editorSession.backgroundLibraryTarget ?: return null
+        if (original.bookUrl != ReadBook.book?.bookUrl || original.appearance !== ReadBookConfig.durConfig) return null
+        return ReadStyleEditTarget(original.appearance, original.layout, presetEditorMode, original.bookUrl)
+    }
+
+    internal fun backgroundLibraryAllowsEInk(): Boolean = editorSession.allowEInk
+
+    internal fun backgroundLibraryImporting(): Boolean = editorSession.importingBackground
+
+    internal fun setBackgroundLibraryMode(index: Int) {
+        if (backgroundLibraryTarget() == null || editorSession.importingBackground) return
+        editorSession.selectPresetMode(index)
+        refreshUi(reusePresetThumbnails = true)
+    }
+
+    internal fun importLibraryBackground() {
+        val target = backgroundLibraryTarget() ?: return
+        if (editorSession.importingBackground) return
+        editorSession.backgroundTarget = target
+        editorSession.importingBackground = true
+        selectBackgroundImage.launch(arrayOf("image/*"))
+    }
+
+    internal fun applyLibraryBackground(entry: ReadingBackground) {
+        val target = backgroundLibraryTarget() ?: return
+        target.appearance.setBackgroundForMode(entry.type, entry.reference, target.mode)
+        editorBackgroundCache = null
+        postEditorBackgroundChanged(target)
+        refreshUi(reusePresetThumbnails = true)
+    }
+
     private fun setFloatingColorSource(fromBackground: Boolean) {
         if (ReadBookConfig.floatingColorManagedGlobally || presetEditorMode == ReadAppearanceMode.EINK) return
         val target = captureEditorTarget()
@@ -1022,6 +1099,8 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
             if (config.backgroundTypeForMode(mode) == 2) addCustomBackground(config.backgroundForMode(mode))
         }
         ReadBookConfig.getAllPicBgStr().forEach(::addCustomBackground)
+        io.legado.app.help.resource.ResourceFiles.backgroundFiles()
+            .forEach { addCustomBackground(it.absolutePath) }
 
         val customItems = customBackgrounds.values.mapNotNull { reference ->
             runCatching {
@@ -1066,33 +1145,23 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
         }
 
     private fun setBackgroundFromUri(uri: Uri, target: ReadStyleEditTarget) {
-        if (!isSameBook(target)) return
-        readUri(uri) { fileDoc, inputStream ->
-            runCatching {
-                val suffix = if (fileDoc.name.contains(".9.png", true)) {
-                    ".9.png"
-                } else {
-                    ".${fileDoc.name.substringAfterLast('.', "jpg")}"
+        if (!isSameBook(target)) { editorSession.importingBackground = false; return }
+        val context = requireContext().applicationContext
+        lifecycleScope.launch {
+            try {
+                val fileName = withContext(Dispatchers.IO) { ReadingBackgroundLibrary.importImage(context, uri) }
+                if (isSameBook(target)) {
+                    target.appearance.setBackgroundForMode(2, fileName, target.mode)
+                    editorBackgroundCache = null
+                    postEditorBackgroundChanged(target)
+                    refreshUi(reusePresetThumbnails = true)
                 }
-                val fileName = uri.inputStream(requireContext()).getOrThrow().use {
-                    MD5Utils.md5Encode(it) + suffix
-                }
-                val file = FileUtils.createFileIfNotExist(
-                    requireContext().externalFiles,
-                    "bg",
-                    fileName,
-                )
-                FileOutputStream(file).use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-                if (!isSameBook(target)) return@runCatching
-                target.appearance.setBackgroundForMode(2, fileName, target.mode)
-            }.onSuccess {
-                editorBackgroundCache = null
-                postEditorBackgroundChanged(target)
-                composeView.post { refreshUi() }
-            }.onFailure {
-                toastOnUi(it.localizedMessage.orEmpty())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                toastOnUi(error.localizedMessage.orEmpty())
+            } finally {
+                editorSession.importingBackground = false
             }
         }
     }

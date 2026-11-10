@@ -93,6 +93,7 @@ fun NgFileSelectionCheckbox(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     variant: NgFileSelectionCheckboxVariant = NgFileSelectionCheckboxVariant.STANDARD,
+    checkmarkColor: Color = Color.White,
 ) {
     val colors = NgTheme.colors
     val checkbox: @Composable (Modifier) -> Unit = { checkboxModifier ->
@@ -103,7 +104,7 @@ fun NgFileSelectionCheckbox(
             modifier = checkboxModifier,
             colors = CheckboxDefaults.colors(
                 checkedColor = Color(colors.primary),
-                checkmarkColor = Color.White,
+                checkmarkColor = checkmarkColor,
                 uncheckedColor = Color(colors.onSurfaceVariant).copy(alpha = 0.62f),
                 disabledCheckedColor = Color(colors.primary).copy(alpha = 0.38f),
                 disabledUncheckedColor = Color(colors.onSurfaceVariant).copy(alpha = 0.28f),

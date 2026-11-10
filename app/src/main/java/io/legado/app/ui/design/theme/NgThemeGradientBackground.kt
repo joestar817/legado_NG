@@ -44,11 +44,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
-import io.legado.app.help.config.NgSoftGradientTheme
+import io.legado.app.help.config.ThemeConfig
 import io.legado.app.help.config.NgThemeGradientMotion
 import io.legado.app.help.config.NgThemeGradientProfile
-import io.legado.app.help.config.NgThemeModeStore
-import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.ui.design.components.view.NgBackdropSourceLayout
 import io.legado.app.utils.printOnDebug
 import kotlin.math.hypot
@@ -214,7 +212,7 @@ internal class NgThemeGradientDrawable(
 
 }
 
-/** Lightweight lifecycle-aware host for the soft-gradient background. */
+/** Shared backdrop host; only soft-gradient flow shadow schedules animation frames. */
 internal class NgThemeGradientHostView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -279,10 +277,10 @@ internal class NgThemeGradientHostView @JvmOverloads constructor(
         isFocusable = false
     }
 
-    fun setGradientDrawable(drawable: NgThemeGradientDrawable?) {
-        if (gradientDrawable === drawable) return
+    fun setGradientDrawable(drawable: Drawable?) {
+        if (this.drawable === drawable) return
         gradientDrawable?.clearFlowShadow()
-        gradientDrawable = drawable
+        gradientDrawable = drawable as? NgThemeGradientDrawable
         flowShadowUnavailable = false
         setImageDrawable(drawable)
         updateEnvironmentObservers()
@@ -540,12 +538,9 @@ internal fun NgThemeGradientBackground(
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
-    val profile = remember(context, configuration.uiMode) {
-        NgSoftGradientTheme.gradient(context).takeIf {
-            NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT
-        }
+    val drawable = remember(context, configuration.uiMode) {
+        ThemeConfig.getGradientBgImage(context)
     } ?: return
-    val drawable = remember(profile) { NgThemeGradientDrawable(profile) }
     val view = LocalView.current
     val lifecycleOwner = remember(view) { view.findViewTreeLifecycleOwner() }
     val backgroundHost = remember(context) {

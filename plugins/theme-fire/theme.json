@@ -1,0 +1,137 @@
+{
+  "format": "reading-ng-listening-effect",
+  "version": 2,
+  "theme": {
+    "schemaVersion": 1,
+    "id": "effect.fire",
+    "name": "火焰",
+    "colors": {
+      "mode": "MANUAL",
+      "lightSeed": -64231,
+      "darkSeed": -64231,
+      "paletteStyle": "TONAL_SPOT",
+      "contrast": "DEFAULT",
+      "colorSpec": "MATERIAL_3_2021",
+      "manualLight": {
+        "primary": -64231,
+        "secondary": -1,
+        "primaryText": -14869728,
+        "secondaryText": -14869728,
+        "background": -657931,
+        "labelContainer": -1118482
+      },
+      "manualDark": {
+        "primary": -64231,
+        "secondary": -13619152,
+        "primaryText": -461320,
+        "secondaryText": -461320,
+        "background": -14671580,
+        "labelContainer": -14013649
+      },
+      "lightTopBarTextMode": "LIGHT",
+      "darkTopBarTextMode": "LIGHT"
+    },
+    "lightBackground": {
+      "path": null,
+      "blur": 0
+    },
+    "darkBackground": {
+      "path": null,
+      "blur": 0
+    },
+    "transparentAppBars": true,
+    "barProfile": {
+      "useFloatingBottomBar": true,
+      "floatingBottomBarBottomDistancePx": 40,
+      "floatingBottomBarTransparency": 40,
+      "bookshelfTopBarStyle": 1,
+      "bookshelfFloatingDockTopDistancePx": 50,
+      "bookshelfFloatingDockTransparency": 40,
+      "bookshelfFloatingDockSearchPosition": 0
+    },
+    "effect": {
+      "apiVersion": 1,
+      "entryClass": "io.legado.themes.fire.FireTheme",
+      "targets": [
+        "player"
+      ],
+      "minGlesVersion": 196608,
+      "lowRamAllowed": true,
+      "playerPalette": "cover",
+      "preview": "assets/preview.png",
+      "parameterSchema": [
+        {
+          "key": "style",
+          "label": "样式",
+          "type": "choice",
+          "defaultValue": "godfire",
+          "options": [
+            {
+              "value": "godfire",
+              "label": "流焰"
+            },
+            {
+              "value": "inferno",
+              "label": "火幕"
+            },
+            {
+              "value": "rift",
+              "label": "裂变"
+            }
+          ]
+        },
+        {
+          "key": "intensity",
+          "label": "强度",
+          "type": "range",
+          "defaultValue": "40",
+          "min": 0,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "key": "colorMode",
+          "label": "配色",
+          "type": "choice",
+          "defaultValue": "cover",
+          "options": [
+            {
+              "value": "original",
+              "label": "原色"
+            },
+            {
+              "value": "cover",
+              "label": "跟随封面"
+            },
+            {
+              "value": "custom",
+              "label": "自定义"
+            }
+          ]
+        },
+        {
+          "key": "color",
+          "label": "自定义颜色",
+          "type": "color",
+          "defaultValue": "#FFD13A27"
+        }
+      ]
+    },
+    "effectValues": {},
+    "publication": {
+      "versionCode": 2,
+      "versionName": "1.1",
+      "author": "阅读 NG"
+    }
+  },
+  "lightBackgroundAsset": "assets/fallback.png",
+  "darkBackgroundAsset": "assets/fallback.png",
+  "build": {
+    "dependencies": [
+      "com.materialkolor:material-color-utilities-android:4.1.1"
+    ]
+  },
+  "distributions": [
+    "listening_effect"
+  ]
+}

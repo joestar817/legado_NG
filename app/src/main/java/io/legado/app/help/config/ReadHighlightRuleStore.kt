@@ -2,6 +2,8 @@ package io.legado.app.help.config
 
 import io.legado.app.constant.AppLog
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.font.resetDeletedFont
+import io.legado.app.help.resource.ResourceFiles
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonArray
@@ -209,6 +211,22 @@ internal object ReadHighlightRuleStore {
             rule.normalizedForStore().copy(position = index)
         })
         initialized = true
+    }
+
+    @Synchronized
+    internal fun resetDeletedFont(matches: (String?) -> Boolean): Boolean {
+        ensureInitialized()
+        val file = File(filePath)
+        ResourceFiles.readJson(file, Array<ReadHighlightRule>::class.java)?.let { stored ->
+            if (stored.any { matches(it.fontPath) }) {
+                ResourceFiles.writeJson(file, stored.map { it.resetDeletedFont(matches) })
+            }
+        }
+        val changed = rules.any { matches(it.fontPath) }
+        if (changed) {
+            rules.replaceAll { it.resetDeletedFont(matches) }
+        }
+        return changed
     }
 
     private fun ensureInitialized() {

@@ -279,6 +279,8 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.json.path)
     implementation(libs.jsoupxpath)
+    implementation(project(path: ':modules:pet-api'))
+    implementation(project(path: ':modules:effect-theme-api'))
     implementation(project(path: ':modules:book'))
     implementation(project(path: ':modules:rhino'))
     implementation(project(path: ':modules:quickjs-sandbox'))

@@ -7,16 +7,15 @@ import com.google.gson.annotations.SerializedName
 import io.legado.app.utils.GSON
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.util.UUID
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
+import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 @Keep
-private data class NgThemePackageManifest(
+internal data class NgThemePackageManifest(
     @SerializedName("format") val format: String,
     @SerializedName("version") val version: Int,
     @SerializedName("theme") val theme: NgManagedTheme,
@@ -24,297 +23,216 @@ private data class NgThemePackageManifest(
     @SerializedName("darkBackgroundAsset") val darkBackgroundAsset: String? = null,
     @SerializedName("lightDrawerImageAsset") val lightDrawerImageAsset: String? = null,
     @SerializedName("darkDrawerImageAsset") val darkDrawerImageAsset: String? = null,
+    @SerializedName("coverAlbums") val coverAlbums: List<NgCoverAlbumImport>? = null,
+    @SerializedName("selectedCoverAlbumRef") val selectedCoverAlbumRef: String? = null,
 )
 
 /** Reading NG 自有主题包；完整保留可选栏配置，MD3/旧 JSON 由兼容层按字段映射。 */
 internal object NgThemePackageManager {
 
     const val PACKAGE_DIR = "ng_theme_packages"
-    private const val BUILT_IN_DIR = "built-in"
-    private const val BUILT_IN_STAMP = ".app-update"
+    internal const val ARCHIVE_NAME = "package.zip"
+    // Generated for packages without an update ID and never written to a portable manifest.
+    internal const val ANONYMOUS_ID_PREFIX = "local.anonymous."
     private const val MANIFEST_NAME = "manifest.json"
-    private const val FORMAT = "reading-ng-theme"
     private const val VERSION = 1
-    private const val MAX_ENTRY_COUNT = 32
-    private const val MAX_ENTRY_BYTES = 32L * 1024 * 1024
-    private const val MAX_TOTAL_BYTES = 64L * 1024 * 1024
 
-    /**
-     * 内置主题和导入主题使用同一种已安装目录结构。
-     * APK 更新后重建内置包，运行期间只读取私有目录里的清单和资源。
-     */
-    fun installBuiltInThemes(
-        context: Context,
-        definitions: List<NgManagedTheme>,
-    ): List<NgManagedTheme> {
-        val root = File(File(context.filesDir, PACKAGE_DIR), BUILT_IN_DIR).apply { mkdirs() }
-        val updateToken = context.packageManager
-            .getPackageInfo(context.packageName, 0)
-            .lastUpdateTime
-            .toString()
-        val stamp = File(root, BUILT_IN_STAMP)
-        if (stamp.takeIf(File::isFile)?.readText() != updateToken) {
-            definitions.forEach { installBuiltInTheme(context, root, it) }
-            removeRetiredBuiltInThemes(root, definitions)
-            stamp.writeText(updateToken)
-        }
-        return definitions.map { definition ->
-            runCatching { readInstalledBuiltInTheme(root, definition.id) }
-                .getOrElse {
-                    installBuiltInTheme(context, root, definition)
-                    readInstalledBuiltInTheme(root, definition.id)
+    suspend fun inspectTheme(context: Context, uri: Uri,
+        kind: NgEffectPackageKind = NgEffectPackageKind.THEME,
+        findPrevious: Boolean = true): Result<NgPreparedThemeImport> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val file = NgThemeArchive.copyUri(context, uri)
+                try {
+                    val manifest = inspectArchive(file)
+                    require(NgEffectPackageKind.fromFormat(manifest.format) == kind) {
+                        if (kind == NgEffectPackageKind.THEME) "听书特效已内置，请在播放器的播放动效中选择" else "请选择听书特效 ZIP，主题包请在主题管理导入"
+                    }
+                    val hash = EffectThemeRuntime.sha256(file)
+                    val theme = manifest.theme
+                    val previous = if (findPrevious && theme.id.isNotEmpty()) {
+                        NgEffectPackageLibrary.current(context, kind).savedThemes.firstOrNull { it.id == theme.id }
+                    } else null
+                    require(previous == null || previous.isEffect == theme.isEffect) { "同一 ID 的主题类型不一致" }
+                    val action = if (kind == NgEffectPackageKind.LISTENING_EFFECT && previous != null &&
+                        previous.publication?.sha256 == hash && NgThemeArchive.hasMaterializedAssets(previous) &&
+                        EffectThemeRuntime.archive(previous)?.let { it.isFile && EffectThemeRuntime.sha256(it) == hash } == true
+                    ) NgThemeImportAction.NO_OP else themeImportAction(theme, previous)
+                    NgPreparedThemeImport(file, manifest, previous, hash, action)
+                } catch (error: Throwable) {
+                    file.parentFile?.deleteRecursively()
+                    throw error
                 }
+            }
+        }
+
+    internal fun inspectArchive(file: File): NgThemePackageManifest = NgThemeArchive.inspect(file)
+
+    internal fun themeImportAction(theme: NgManagedTheme, previous: NgManagedTheme?): NgThemeImportAction {
+        if (previous == null) return NgThemeImportAction.INSTALL
+        val incomingVersion = theme.publication?.versionCode
+        val installedVersion = previous.publication?.versionCode
+        return when {
+            incomingVersion == null || installedVersion == null -> NgThemeImportAction.REPLACE
+            incomingVersion > installedVersion -> NgThemeImportAction.UPDATE
+            incomingVersion < installedVersion -> NgThemeImportAction.DOWNGRADE
+            else -> NgThemeImportAction.REPLACE
         }
     }
 
-    private fun removeRetiredBuiltInThemes(
-        builtInRoot: File,
-        definitions: List<NgManagedTheme>,
-    ) {
-        val activeDirectoryNames = definitions.mapTo(hashSetOf()) { definition ->
-            builtInDirectoryName(definition.id)
+    suspend fun importTheme(context: Context, uri: Uri, saveToLibrary: Boolean = true,
+        kind: NgEffectPackageKind = NgEffectPackageKind.THEME): Result<NgManagedTheme> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val candidate = inspectTheme(context, uri, kind, findPrevious = saveToLibrary).getOrThrow()
+                try {
+                    candidate.commit(context, allowReplace = false, allowDowngrade = false,
+                        keepCustomizations = true, saveToLibrary = saveToLibrary)
+                } finally { candidate.discard() }
+            }
         }
-        builtInRoot.listFiles()
-            .orEmpty()
-            .filter { it.isDirectory && it.name !in activeDirectoryNames }
-            .forEach { retiredRoot ->
-                check(retiredRoot.deleteRecursively()) {
-                    "无法清理退役内置主题包: ${retiredRoot.name}"
-                }
+
+    suspend fun exportTheme(context: Context, theme: NgManagedTheme, uri: Uri): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val output = context.contentResolver.openOutputStream(uri, "wt") ?: error("无法创建主题包")
+                output.use { writeTheme(context, theme, it) }
             }
-    }
+        }
 
-    private fun builtInDirectoryName(themeId: String): String =
-        themeId.replace(Regex("[^A-Za-z0-9._-]"), "_")
-
-    suspend fun exportTheme(
-        context: Context,
-        theme: NgManagedTheme,
-        uri: Uri
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val backgroundEntries = linkedMapOf<String, ThemeAsset>()
-            fun registerBackground(path: String?, role: String): String? {
-                path?.takeIf(String::isNotBlank) ?: return null
-                val existing = backgroundEntries.values.firstOrNull { it.source == path }
-                if (existing != null) return existing.entryName
-                val extension = backgroundExtension(path)
-                val entryName = "assets/background-$role.$extension"
-                backgroundEntries[entryName] = ThemeAsset(path, entryName)
-                return entryName
+    /** Copies the compiled payload unchanged while writing this theme's effective configuration. */
+    internal fun writeTheme(context: Context, theme: NgManagedTheme, output: java.io.OutputStream) {
+        val kind = NgEffectPackageKind.of(theme)
+        kind.requireContent(theme)
+        val root = theme.packageRootPath?.let(::File)?.canonicalFile
+        val archive = EffectThemeRuntime.archive(theme)?.takeIf(File::isFile)?.let(::ZipFile)
+        if (theme.effect != null) require(archive != null) { "特效主题代码包缺失" }
+        try {
+            val backgrounds = linkedMapOf<String, ThemeAsset>()
+            fun register(path: String?, role: String): String? {
+                if (path.isNullOrBlank()) return null
+                backgrounds.values.firstOrNull { it.source == path }?.let { return it.entryName }
+                val entry = if (!path.startsWith("asset://") && root != null && File(path).canonicalFile.toPath().startsWith(root.toPath())) {
+                    File(path).canonicalFile.relativeTo(root).invariantSeparatorsPath
+                } else "assets/background-$role.${backgroundExtension(path)}"
+                require(isSafeThemeAssetPath(entry))
+                backgrounds[entry] = ThemeAsset(path, entry)
+                return entry
             }
-
-            val lightAsset = registerBackground(theme.lightBackground.path, "light")
-            val darkAsset = registerBackground(theme.darkBackground.path, "dark")
+            val light = register(theme.lightBackground.path, "light")
+            val dark = register(theme.darkBackground.path, "dark")
             val drawer = theme.drawerProfile?.normalized()
-            val lightDrawerAsset = registerBackground(drawer?.light?.imagePath, "drawer-light")
-            val darkDrawerAsset = registerBackground(drawer?.dark?.imagePath, "drawer-dark")
-            val portableTheme = theme.copy(
+            val lightDrawer = register(drawer?.light?.imagePath, "drawer-light")
+            val darkDrawer = register(drawer?.dark?.imagePath, "drawer-dark")
+            val selectedAlbumId = theme.coverProfile?.takeIf { it.applyAlbumSelection }?.albumId
+            val albumIds = (theme.ownedCoverAlbumIds.orEmpty() + listOfNotNull(selectedAlbumId)).distinct()
+            val coverAssets = linkedMapOf<String, File>()
+            val albumRefs = mutableMapOf<String, String>()
+            val coverAlbums = if (albumIds.isEmpty()) emptyList() else {
+                val albums = NgCoverAlbumStore.current(context).albums.associateBy { it.id }
+                val assetRoot = "assets/ng-cover-albums/${UUID.randomUUID()}"
+                albumIds.mapNotNull(albums::get).mapIndexed { index, album ->
+                    val ref = "album-${index + 1}"
+                    albumRefs[album.id] = ref
+                    fun assets(paths: List<String>, role: String): List<String> = paths.mapIndexed { imageIndex, path ->
+                        val source = NgCoverAlbumStore.packageImage(context, album.id, path)
+                        val asset = "$assetRoot/$ref/$role-${imageIndex + 1}.${backgroundExtension(source.name)}"
+                        coverAssets[asset] = source
+                        asset
+                    }
+                    NgCoverAlbumImport(ref, album.name, assets(album.lightImages, "day"), assets(album.darkImages, "night"))
+                }
+            }
+            val selectedAlbumRef = selectedAlbumId?.let {
+                requireNotNull(albumRefs[it]) { "主题所选封面图集已不存在" }
+            }
+            val portable = theme.copy(
                 packageRootPath = null,
                 lightBackground = theme.lightBackground.copy(path = null),
                 darkBackground = theme.darkBackground.copy(path = null),
                 drawerProfile = drawer?.withoutImagePaths(),
+                coverProfile = theme.coverProfile?.copy(albumId = null),
+                ownedCoverAlbumIds = null,
+                publication = theme.publication?.copy(sha256 = null, installedFingerprint = null,
+                    derived = theme.publication.derived || theme.isCustomized),
             )
-            val manifest = NgThemePackageManifest(
-                format = FORMAT,
-                version = VERSION,
-                theme = portableTheme,
-                lightBackgroundAsset = lightAsset,
-                darkBackgroundAsset = darkAsset,
-                lightDrawerImageAsset = lightDrawerAsset,
-                darkDrawerImageAsset = darkDrawerAsset,
-            )
-            val output = context.contentResolver.openOutputStream(uri, "wt")
-                ?: error("无法创建主题包")
+            val manifest = NgThemePackageManifest(kind.format, if (theme.effect == null) VERSION else 2,
+                portable, light, dark, lightDrawer, darkDrawer,
+                coverAlbums = coverAlbums.takeIf { it.isNotEmpty() }, selectedCoverAlbumRef = selectedAlbumRef)
+            val previousCoverAssets = archive?.let(NgThemeArchive::readManifest)?.coverAlbums.orEmpty()
+                .flatMapTo(hashSetOf()) { it.lightImages + it.darkImages }
+            val manifestJson = GSON.toJsonTree(manifest).asJsonObject
+            if (theme.id.isEmpty() || theme.id.startsWith(ANONYMOUS_ID_PREFIX)) {
+                manifestJson.getAsJsonObject("theme").remove("id")
+            }
             ZipOutputStream(BufferedOutputStream(output)).use { zip ->
+                val written = hashSetOf(MANIFEST_NAME)
                 zip.putNextEntry(ZipEntry(MANIFEST_NAME))
-                zip.write(GSON.toJson(manifest).toByteArray(Charsets.UTF_8))
-                zip.closeEntry()
-                backgroundEntries.values.forEach { asset ->
+                zip.write(GSON.toJson(manifestJson).toByteArray(Charsets.UTF_8)); zip.closeEntry()
+                archive?.entries()?.asSequence()?.filter {
+                    !it.isDirectory && it.name != MANIFEST_NAME && it.name !in backgrounds && it.name !in previousCoverAssets
+                }?.forEach { entry ->
+                    require(isSafeThemeAssetPath(entry.name) && written.add(entry.name))
+                    zip.putNextEntry(ZipEntry(entry.name))
+                    archive.getInputStream(entry).use { it.copyTo(zip) }; zip.closeEntry()
+                }
+                // Locally saved themes can own assets without an imported source ZIP.
+                if (archive == null && root != null) root.walkTopDown().filter { it.isFile }.forEach { file ->
+                    val name = file.relativeTo(root).invariantSeparatorsPath
+                    if (name != ARCHIVE_NAME && name !in backgrounds && written.add(name)) {
+                        require(isSafeThemeAssetPath(name))
+                        zip.putNextEntry(ZipEntry(name)); file.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+                    }
+                }
+                backgrounds.values.forEach { asset ->
+                    require(written.add(asset.entryName))
                     zip.putNextEntry(ZipEntry(asset.entryName))
-                    openThemeAsset(context, asset.source).use { input -> input.copyTo(zip) }
+                    openThemeAsset(context, asset.source).use { it.copyTo(zip) }; zip.closeEntry()
+                }
+                coverAssets.forEach { (name, file) ->
+                    require(written.add(name))
+                    zip.putNextEntry(ZipEntry(name))
+                    file.inputStream().use { it.copyTo(zip) }
                     zip.closeEntry()
                 }
             }
-        }
+        } finally { archive?.close() }
     }
 
-    suspend fun importTheme(context: Context, uri: Uri): Result<NgManagedTheme> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val tempRoot = File(context.cacheDir, "ng_theme_import/${UUID.randomUUID()}")
-                val installedRoot = File(
-                    File(context.filesDir, PACKAGE_DIR),
-                    UUID.randomUUID().toString()
-                )
-                try {
-                    extract(context, uri, tempRoot)
-                    val manifestFile = File(tempRoot, MANIFEST_NAME)
-                    require(manifestFile.isFile) { "主题包缺少 manifest.json" }
-                    val manifest = GSON.fromJson(
-                        manifestFile.readText(),
-                        NgThemePackageManifest::class.java
-                    ) ?: error("主题包清单为空")
-                    require(manifest.format == FORMAT && manifest.version == VERSION) {
-                        "不支持的主题包格式"
-                    }
-                    require(manifest.theme.schemaVersion == NG_MANAGED_THEME_SCHEMA_VERSION) {
-                        "不支持的主题数据版本"
-                    }
-                    check(tempRoot.copyRecursively(installedRoot, overwrite = false)) {
-                        "无法安装主题包资源"
-                    }
-                    val imported = manifest.theme.copy(
-                        id = "local.${UUID.randomUUID()}",
-                        name = NgThemeLibraryStore.uniqueName(context, manifest.theme.name),
-                        lightBackground = manifest.theme.lightBackground.copy(
-                            path = resolveInstalledAsset(installedRoot, manifest.lightBackgroundAsset)
-                        ),
-                        darkBackground = manifest.theme.darkBackground.copy(
-                            path = resolveInstalledAsset(installedRoot, manifest.darkBackgroundAsset)
-                        ),
-                        packageRootPath = installedRoot.absolutePath,
-                        drawerProfile = resolveInstalledDrawerProfile(installedRoot, manifest),
-                    ).normalized()
-                    NgThemeLibraryStore.addOrReplace(context, imported)
-                } catch (error: Throwable) {
-                    installedRoot.deleteRecursively()
-                    throw error
-                } finally {
-                    tempRoot.deleteRecursively()
-                }
-            }
-        }
-
-    private fun installBuiltInTheme(
-        context: Context,
-        builtInRoot: File,
-        definition: NgManagedTheme,
-    ) {
-        require(definition.isBuiltIn) { "内置主题 ID 非法" }
-        val directoryName = builtInDirectoryName(definition.id)
-        val installedRoot = File(builtInRoot, directoryName)
-        val stagingRoot = File(builtInRoot, ".$directoryName-${UUID.randomUUID()}")
-        try {
-            val backgroundEntries = linkedMapOf<String, ThemeAsset>()
-            fun registerBackground(path: String?, role: String): String? {
-                path?.takeIf(String::isNotBlank) ?: return null
-                backgroundEntries.values.firstOrNull { it.source == path }?.let {
-                    return it.entryName
-                }
-                val entryName = "assets/background-$role.${backgroundExtension(path)}"
-                backgroundEntries[entryName] = ThemeAsset(path, entryName)
-                return entryName
-            }
-
-            val lightAsset = registerBackground(definition.lightBackground.path, "light")
-            val darkAsset = registerBackground(definition.darkBackground.path, "dark")
-            val drawer = definition.drawerProfile?.normalized()
-            val lightDrawerAsset = registerBackground(drawer?.light?.imagePath, "drawer-light")
-            val darkDrawerAsset = registerBackground(drawer?.dark?.imagePath, "drawer-dark")
-            val manifest = NgThemePackageManifest(
-                format = FORMAT,
-                version = VERSION,
-                theme = definition.copy(
-                    packageRootPath = null,
-                    lightBackground = definition.lightBackground.copy(path = null),
-                    darkBackground = definition.darkBackground.copy(path = null),
-                    drawerProfile = drawer?.withoutImagePaths(),
-                ),
-                lightBackgroundAsset = lightAsset,
-                darkBackgroundAsset = darkAsset,
-                lightDrawerImageAsset = lightDrawerAsset,
-                darkDrawerImageAsset = darkDrawerAsset,
-            )
-            stagingRoot.mkdirs()
-            File(stagingRoot, MANIFEST_NAME).writeText(GSON.toJson(manifest))
-            backgroundEntries.values.forEach { asset ->
-                val target = File(stagingRoot, asset.entryName)
-                target.parentFile?.mkdirs()
-                openThemeAsset(context, asset.source).use { input ->
-                    target.outputStream().buffered().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-            if (installedRoot.exists()) {
-                check(installedRoot.deleteRecursively()) { "无法更新内置主题包" }
-            }
-            if (!stagingRoot.renameTo(installedRoot)) {
-                check(stagingRoot.copyRecursively(installedRoot, overwrite = false)) {
-                    "无法安装内置主题包"
-                }
-                stagingRoot.deleteRecursively()
-            }
-        } finally {
-            stagingRoot.deleteRecursively()
-        }
-    }
-
-    private fun readInstalledBuiltInTheme(root: File, themeId: String): NgManagedTheme {
-        val directoryName = builtInDirectoryName(themeId)
-        val installedRoot = File(root, directoryName)
-        val manifestFile = File(installedRoot, MANIFEST_NAME)
-        require(manifestFile.isFile) { "内置主题包缺少 manifest.json" }
-        val manifest = GSON.fromJson(
-            manifestFile.readText(),
-            NgThemePackageManifest::class.java,
-        ) ?: error("内置主题包清单为空")
-        require(
-            manifest.format == FORMAT &&
-                manifest.version == VERSION &&
-                manifest.theme.id == themeId &&
-                manifest.theme.isBuiltIn
-        ) { "内置主题包清单无效" }
-        return manifest.theme.copy(
-            lightBackground = manifest.theme.lightBackground.copy(
-                path = resolveInstalledAsset(installedRoot, manifest.lightBackgroundAsset),
-            ),
-            darkBackground = manifest.theme.darkBackground.copy(
-                path = resolveInstalledAsset(installedRoot, manifest.darkBackgroundAsset),
-            ),
-            packageRootPath = installedRoot.absolutePath,
-            drawerProfile = resolveInstalledDrawerProfile(installedRoot, manifest),
+    internal fun materializeTheme(root: File, manifest: NgThemePackageManifest, id: String, name: String): NgManagedTheme =
+        manifest.theme.copy(id = id, name = name, packageRootPath = root.absolutePath,
+            lightBackground = manifest.theme.lightBackground.copy(path = resolveInstalledAsset(root, manifest.lightBackgroundAsset)),
+            darkBackground = manifest.theme.darkBackground.copy(path = resolveInstalledAsset(root, manifest.darkBackgroundAsset)),
+            drawerProfile = resolveInstalledDrawerProfile(root, manifest),
         ).normalized()
-    }
 
-    private fun extract(context: Context, uri: Uri, root: File) {
-        root.mkdirs()
-        val canonicalRoot = root.canonicalFile
-        val input = context.contentResolver.openInputStream(uri)
-            ?: error("无法读取主题包")
-        var entryCount = 0
-        var totalBytes = 0L
-        ZipInputStream(BufferedInputStream(input)).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                entryCount++
-                require(entryCount <= MAX_ENTRY_COUNT) { "主题包文件数量过多" }
-                val target = File(canonicalRoot, entry.name).canonicalFile
-                require(target.toPath().startsWith(canonicalRoot.toPath())) {
-                    "主题包包含越界路径"
-                }
-                if (entry.isDirectory) {
-                    target.mkdirs()
-                } else {
-                    target.parentFile?.mkdirs()
-                    var entryBytes = 0L
-                    target.outputStream().buffered().use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        while (true) {
-                            val read = zip.read(buffer)
-                            if (read < 0) break
-                            entryBytes += read
-                            totalBytes += read
-                            require(entryBytes <= MAX_ENTRY_BYTES) { "主题包单个文件过大" }
-                            require(totalBytes <= MAX_TOTAL_BYTES) { "主题包体积过大" }
-                            output.write(buffer, 0, read)
-                        }
-                    }
-                }
-                zip.closeEntry()
+    /** Save-as owns every file; removing the original theme cannot invalidate the copy. */
+    internal fun copyOwnedTheme(context: Context, theme: NgManagedTheme): NgManagedTheme {
+        val old = theme.packageRootPath?.let(::File)?.canonicalFile ?: error("特效主题包缺失")
+        val kind = NgEffectPackageKind.of(theme)
+        require(old.isDirectory && old.parentFile == File(context.filesDir, kind.directory).canonicalFile)
+        val copied = File(File(context.filesDir, kind.directory), UUID.randomUUID().toString())
+        try {
+            check(copied.mkdirs())
+            old.walkTopDown().filter { it.isFile }.forEach { source ->
+                val target = File(copied, source.relativeTo(old).invariantSeparatorsPath)
+                if (source.name == ARCHIVE_NAME) NgThemeArchive.copyReadOnly(source, target)
+                else { target.parentFile?.mkdirs(); source.copyTo(target) }
             }
-        }
+            fun remap(path: String?): String? = path?.let { source ->
+                if (source.startsWith("asset://")) source else File(source).canonicalFile.let { file ->
+                    if (file.toPath().startsWith(old.toPath())) File(copied, file.relativeTo(old).path).absolutePath else source
+                }
+            }
+            return theme.copy(packageRootPath = copied.absolutePath,
+                lightBackground = theme.lightBackground.copy(path = remap(theme.lightBackground.path)),
+                darkBackground = theme.darkBackground.copy(path = remap(theme.darkBackground.path)),
+                drawerProfile = theme.drawerProfile?.let { drawer -> drawer.copy(
+                    light = drawer.light.copy(imagePath = remap(drawer.light.imagePath)),
+                    dark = drawer.dark.copy(imagePath = remap(drawer.dark.imagePath))) },
+                publication = theme.publication?.copy(derived = true),
+            )
+        } catch (error: Throwable) { copied.deleteRecursively(); throw error }
     }
 
     private fun resolveInstalledAsset(root: File, relativePath: String?): String? {
@@ -348,12 +266,12 @@ internal object NgThemePackageManager {
         )
     }
 
-    private fun openThemeAsset(context: Context, source: String) = when {
+    internal fun openThemeAsset(context: Context, source: String) = when {
         source.startsWith("asset://") -> context.assets.open(source.removePrefix("asset://"))
         else -> File(source).inputStream()
     }
 
-    private fun backgroundExtension(path: String): String {
+    internal fun backgroundExtension(path: String): String {
         val source = path.substringBefore('?').lowercase()
         return when {
             source.endsWith(".9.png") -> "9.png"

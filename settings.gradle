@@ -57,3 +57,6 @@ include ':app'
 include ':modules:book'
 include ':modules:rhino'
 include ':modules:quickjs-sandbox'
+include ':modules:pet-api'
+
+include ':modules:effect-theme-api'

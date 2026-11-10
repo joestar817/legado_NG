@@ -174,3 +174,7 @@ cn.hutool.core.util.**{*;}
     public <init>(android.content.Context, android.util.AttributeSet);
     public <init>(android.content.Context, android.util.AttributeSet, int);
 }
+
+# Pet package metadata is parsed reflectively. The shared ABI has its own consumer rules.
+-keep class io.legado.app.help.pet.PetPluginManifest { *; }
+-keep class io.legado.app.help.pet.InstalledPetPlugin { *; }

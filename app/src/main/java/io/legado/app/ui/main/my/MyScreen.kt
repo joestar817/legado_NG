@@ -33,10 +33,12 @@ import io.legado.app.ui.design.theme.NgTheme
 internal enum class MyMenuAction {
     BOOK_SOURCE,
     RULE,
+    RESOURCE_CENTER,
     AI,
     READ_ALOUD,
     SERVICE,
     BACKUP,
+    APPEARANCE,
     SETTINGS,
     BOOKMARK,
     READ_RECORD,
@@ -63,6 +65,12 @@ private val primaryItems = listOf(
         R.string.rule_management,
         R.string.rule_management_summary,
         R.drawable.ic_toc,
+    ),
+    MyMenuItem(
+        MyMenuAction.RESOURCE_CENTER,
+        R.string.resource_center,
+        R.string.resource_center_summary,
+        R.drawable.ic_resource_center,
     ),
     MyMenuItem(
         MyMenuAction.AI,
@@ -92,6 +100,12 @@ private val settingsItems = listOf(
         R.drawable.ic_cfg_backup,
     ),
     MyMenuItem(
+        MyMenuAction.APPEARANCE,
+        R.string.appearance_setting,
+        R.string.appearance_setting_summary,
+        R.drawable.ic_cfg_theme,
+    ),
+    MyMenuItem(
         MyMenuAction.SETTINGS,
         R.string.setting,
         R.string.settings_menu_summary,
@@ -116,7 +130,7 @@ private val otherItems = listOf(
         MyMenuAction.FILE_MANAGE,
         R.string.file_manage,
         R.string.file_manage_summary,
-        R.drawable.ic_folder_outline,
+        R.drawable.ic_cfg_file_manage,
     ),
     MyMenuItem(
         MyMenuAction.ABOUT,

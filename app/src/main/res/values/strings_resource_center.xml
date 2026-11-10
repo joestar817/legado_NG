@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="resource_center">资源中心</string>
+    <string name="resource_center_summary">从云端获取可用资源</string>
+    <string name="resource_center_refresh">刷新目录</string>
+    <string name="resource_center_repository">打开仓库</string>
+    <string name="resource_center_redownload">重新下载</string>
+    <string name="resource_center_local">前往资源设置</string>
+    <string name="resource_center_list_view">列表视图</string>
+    <string name="resource_center_grid_view">网格视图</string>
+</resources>

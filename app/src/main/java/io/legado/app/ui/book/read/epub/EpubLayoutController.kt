@@ -14,6 +14,7 @@ import io.legado.app.data.appDb
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.EpubLayoutPreferences
 import io.legado.app.model.ReadBook
@@ -1008,7 +1009,12 @@ internal class EpubLayoutController(
             .put("lineSpacing", ReadBookConfig.lineSpacingExtra / 10f)
             .put("paragraphSpacing", ReadBookConfig.paragraphSpacing / 10f)
             .put("hasFont", readerFontBytes != null)
-            .put("fontFamily", when (AppConfig.systemTypefaces) { 1 -> "serif"; 2 -> "monospace"; else -> "sans-serif" })
+            .put("fontFamily", when {
+                ReadBookConfig.textFont == SYSTEM_DEFAULT_FONT -> "sans-serif"
+                AppConfig.systemTypefaces == 1 -> "serif"
+                AppConfig.systemTypefaces == 2 -> "monospace"
+                else -> "sans-serif"
+            })
             .put("indent", ReadBookConfig.paragraphIndent.length)
             .put("lineHeight", ChapterProvider.contentPaintTextHeight * ReadBookConfig.lineSpacingExtra / 10f / metrics.density)
             .put("paragraphSpacingPx", ChapterProvider.contentPaintTextHeight * ReadBookConfig.paragraphSpacing / 10f / metrics.density)
@@ -1020,6 +1026,7 @@ internal class EpubLayoutController(
                 .put("weight", if (android.os.Build.VERSION.SDK_INT >= 28) ChapterProvider.titlePaint.typeface?.weight ?: 400
                     else if (ChapterProvider.titlePaint.typeface?.isBold == true) 700 else 400)
                 .put("hasFont", titleFontBytes != null && titleFontBytes !== readerFontBytes)
+                .put("systemFont", ReadBookConfig.titleFont == SYSTEM_DEFAULT_FONT)
                 .put("align", if (ReadBookConfig.titleMode == 1) "center" else "start")
                 .put("lineHeight", ChapterProvider.titlePaintTextHeight * ChapterProvider.titleLineSpacingExtra / metrics.density)
                 .put("subLineHeight", (ChapterProvider.titlePaintFontMetrics.bottom - ChapterProvider.titlePaintFontMetrics.top) *

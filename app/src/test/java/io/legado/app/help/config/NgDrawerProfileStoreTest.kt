@@ -76,7 +76,7 @@ class NgDrawerProfileStoreTest {
             dark = NgThemeDrawerStyle(backgroundColor = 0xFF123456.toInt()),
             source = "custom_color",
         ))
-        assertTrue(NgThemeLibraryStore.apply(context, NgBuiltInThemes.autumn.copy(drawerProfile = null)))
+        assertTrue(NgThemeLibraryStore.apply(context, NgThemeTestFixtures.autumn.copy(drawerProfile = null)))
         assertEquals(current, NgDrawerProfileStore.current(context))
     }
 
@@ -170,10 +170,10 @@ class NgDrawerProfileStoreTest {
         }
     }
 
-    private fun customTheme(image: String? = null): NgManagedTheme = NgBuiltInThemes.storybook.copy(
+    private fun customTheme(image: String? = null): NgManagedTheme = NgThemeTestFixtures.storybook.copy(
         id = "local.${UUID.randomUUID()}",
         name = "drawer-settings-${UUID.randomUUID()}",
-        drawerProfile = requireNotNull(NgBuiltInThemes.storybook.drawerProfile).let {
+        drawerProfile = requireNotNull(NgThemeTestFixtures.storybook.drawerProfile).let {
             it.copy(source = "custom_image", light = it.light.copy(imagePath = image))
         },
     )

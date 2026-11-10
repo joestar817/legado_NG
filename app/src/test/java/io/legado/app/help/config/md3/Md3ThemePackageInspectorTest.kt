@@ -87,6 +87,19 @@ class Md3ThemePackageInspectorTest {
         )
     }
 
+    @Test
+    fun `unnamed compatible packages use a neutral theme name`() {
+        val portable = inspectZip(
+            "manifest.json" to """{"formatVersion":1,"config":{}}""",
+        )
+        val legacy = inspectZip(
+            "application_theme.json" to """{"version":1,"config":{"dayTheme":{}}}""",
+        )
+
+        assertEquals("未命名主题", portable.name)
+        assertEquals(portable.name, legacy.name)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `unsafe archive path is rejected`() {
         inspectZip(
@@ -99,6 +112,14 @@ class Md3ThemePackageInspectorTest {
     fun `reading NG package is delegated to native importer`() {
         inspectZip(
             "manifest.json" to """{"format":"reading-ng-theme","version":1,"theme":{}}""",
+        )
+    }
+
+    @Test(expected = Md3ThemePackageNotRecognizedException::class)
+    fun `reading NG export can retain the compatible source manifest`() {
+        inspectZip(
+            "manifest.json" to """{"format":"reading-ng-theme","version":1,"theme":{}}""",
+            "application_theme.json" to """{"version":1,"config":{"dayTheme":{}}}""",
         )
     }
 

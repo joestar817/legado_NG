@@ -26,12 +26,6 @@ internal fun SettingsMenuScreen(onOpenPage: (String) -> Unit) {
     ) {
         NgSettingsGroup {
             SettingsMenuEntry(
-                title = stringResource(R.string.appearance_setting),
-                summary = stringResource(R.string.appearance_setting_summary),
-                iconRes = R.drawable.ic_cfg_theme,
-                onClick = { onOpenPage(ConfigTag.APPEARANCE_CONFIG) }
-            )
-            SettingsMenuEntry(
                 title = stringResource(R.string.interface_layout_setting),
                 summary = stringResource(R.string.interface_layout_setting_summary),
                 iconRes = R.drawable.ic_interface_setting,

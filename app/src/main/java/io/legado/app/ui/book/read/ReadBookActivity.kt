@@ -58,6 +58,7 @@ import io.legado.app.help.book.removeType
 import io.legado.app.help.book.update
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.resource.ResourceRepository
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.source.getSourceType
 import io.legado.app.help.storage.Backup
@@ -98,6 +99,9 @@ import io.legado.app.ui.book.read.config.AiPurifyRuleDetailDialogContent
 import io.legado.app.ui.book.read.config.AiPurifyRuleUi
 import io.legado.app.ui.book.read.config.MoreConfigDialog
 import io.legado.app.ui.book.read.config.ReadStyleDialog
+import io.legado.app.ui.font.FontSelectDialog
+import io.legado.app.ui.resource.ResourceFontDestination
+import io.legado.app.ui.resource.ResourceReaderFontRequest
 import io.legado.app.ui.book.read.config.showReadConfirmDialog
 import io.legado.app.ui.book.read.config.showReadComposeDialog
 import io.legado.app.ui.book.read.page.ContentTextView
@@ -252,6 +256,8 @@ class ReadBookActivity : BaseReadBookActivity(),
     private val timeBatteryReceiver = TimeBatteryReceiver()
     private var screenTimeOut: Long = 0
     private var loadStates: Boolean = false
+    private var resourceFontReady = false
+    private var resourceFontOpenJob: Job? = null
     private var replaceRuleRenderBatchDepth = 0
     private var replaceRuleRenderPending = false
     private var replaceRuleRenderResetPageOffset = false
@@ -333,7 +339,7 @@ class ReadBookActivity : BaseReadBookActivity(),
         super.onPostCreate(savedInstanceState)
         viewModel.initReadBookConfig(intent)
         binding.root.post {
-            viewModel.initData(intent)
+            initReaderData(intent)
             startEpubOpeningPreview()
         }
         justInitData = true
@@ -341,13 +347,33 @@ class ReadBookActivity : BaseReadBookActivity(),
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        resourceFontOpenJob?.cancel()
+        resourceFontReady = false
+        val fontRequest = ResourceReaderFontRequest.readFrom(intent)
+        ResourceReaderFontRequest.clear(this.intent)
+        fontRequest?.writeTo(this.intent)
+        if (intent.getBooleanExtra("resourceOpenReadStyle", false)) {
+            this.intent.putExtra("resourceOpenReadStyle", true)
+        }
         justInitData = true
         epubOpeningPreview?.close()
         epubOpeningPreview = null
         epubOpeningPreparation?.close()
         epubOpeningPreparation = io.legado.app.ui.book.read.epub.EpubOpeningPreparation(applicationContext, intent.getStringExtra("bookUrl"), ReadBook.curTextChapter)
-        viewModel.initData(intent)
+        initReaderData(intent)
         startEpubOpeningPreview()
+    }
+
+    private fun initReaderData(intent: Intent) {
+        val request = ResourceReaderFontRequest.readFrom(intent)
+        viewModel.initData(intent) {
+            if (request != null && ResourceReaderFontRequest.readFrom(this.intent) == request &&
+                ReadBook.book?.bookUrl == request.bookUrl
+            ) {
+                resourceFontReady = true
+                openResourceFontIfReady()
+            }
+        }
     }
 
     private fun startEpubOpeningPreview() {
@@ -390,7 +416,7 @@ class ReadBookActivity : BaseReadBookActivity(),
         if (bookChanged) {
             bookChanged = false
             ReadBook.callBack = this
-            viewModel.initData(intent)
+            initReaderData(intent)
             justInitData = true
         } else {
             //web端阅读时，app处于阅读界面，本地记录会覆盖web保存的进度，在此处恢复
@@ -411,6 +437,43 @@ class ReadBookActivity : BaseReadBookActivity(),
             if (AppConfig.syncBookProgressPlus && NetworkUtils.isAvailable() && !justInitData && ReadBook.inBookshelf) {
                 ReadBook.syncProgress({ progress -> sureNewProgress(progress) })
             }
+        }
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        openResourceFontIfReady()
+    }
+
+    private fun openResourceFontIfReady() {
+        if (!resourceFontReady || isFinishing || isDestroyed || supportFragmentManager.isStateSaved ||
+            !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || resourceFontOpenJob?.isActive == true
+        ) return
+        val request = ResourceReaderFontRequest.readFrom(intent) ?: return
+        if (ReadBook.book?.bookUrl != request.bookUrl) return
+        resourceFontOpenJob = lifecycleScope.launch {
+            val path = try {
+                ResourceRepository.installedFontPath(request.resourceId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (!resourceFontReady || isFinishing || isDestroyed || supportFragmentManager.isStateSaved ||
+                !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                ReadBook.book?.bookUrl != request.bookUrl || ResourceReaderFontRequest.readFrom(intent) != request
+            ) return@launch
+            ResourceReaderFontRequest.clear(intent)
+            if (path == null) {
+                toastOnUi("字体已不可用，请返回资源中心刷新")
+                return@launch
+            }
+            val dialog = when (request.destination) {
+                ResourceFontDestination.BODY -> FontSelectDialog.forReaderBody(path)
+                ResourceFontDestination.TITLE -> FontSelectDialog.forReaderTitle(path)
+                ResourceFontDestination.INTERFACE -> return@launch
+            }
+            dialog.show(supportFragmentManager, "resource-font")
         }
     }
 
@@ -2352,12 +2415,22 @@ class ReadBookActivity : BaseReadBookActivity(),
      */
     override fun contentLoadFinish() {
         ReadAloudMiniPlayer.preloadCover(this)
+        if (intent.getBooleanExtra("resourceOpenReadStyle", false)) {
+            intent.removeExtra("resourceOpenReadStyle")
+            binding.root.post {
+                if (!isFinishing && !supportFragmentManager.isStateSaved) {
+                    showDialogFragment<ReadStyleDialog>()
+                }
+            }
+        }
         val startReadAloud = intent.getBooleanExtra("readAloud", false)
         if (startReadAloud) {
             intent.removeExtra("readAloud")
             ReadBook.readAloud()
         }
         loadStates = true
+        resourceFontReady = true
+        binding.root.post { openResourceFontIfReady() }
     }
 
     /**

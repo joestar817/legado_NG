@@ -28,8 +28,10 @@ import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
 import org.junit.Test
@@ -157,10 +159,12 @@ class NgAppViewInflaterTest {
     private fun assertReloadLifecycle(useContentUri: Boolean) = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         FontReloadFixture(context, useContentUri).use { fixture ->
+            val outputFiles = fontOutputFiles(context)
             val first = NgInterfaceFontStore.load(context, fixture.choice, reloadFromSource = true)
-            NgInterfaceFontStore.save(context, fixture.choice, "original", first.second)
-            val installedBefore = checkNotNull(fixture.preferences.getString("ngInterfaceFont.file", null))
+            NgInterfaceFontStore.save(context, fixture.choice, "original", first)
             val savedBefore = fixture.savedPreferences()
+            assertNull(fixture.preferences.getString("ngInterfaceFont.file", null))
+            assertEquals(fixture.choice, NgInterfaceFontStore.choice(context))
             val originalTimestamp = fixture.source.lastModified()
             val originalLength = fixture.source.length()
             fixture.replaceSource()
@@ -168,45 +172,65 @@ class NgAppViewInflaterTest {
             assertEquals(originalLength, fixture.source.length())
 
             val refreshed = NgInterfaceFontStore.load(context, fixture.choice, reloadFromSource = true)
-            assertArrayEquals(fixture.updatedBytes, checkNotNull(refreshed.second).readBytes())
-            assertNotEquals(checkNotNull(first.second).name, checkNotNull(refreshed.second).name)
-            // Preview and cancellation are not persistence: even the same URI keeps its old copy.
+            assertNotEquals(first.fingerprint, refreshed.fingerprint)
+            assertEquals(if (useContentUri) null else fixture.source, refreshed.file)
+            // Loading and cancelling a candidate do not replace the already applied in-memory font.
             assertEquals(savedBefore, fixture.savedPreferences())
-            assertArrayEquals(fixture.originalBytes, File(installedBefore).readBytes())
-            assertArrayEquals(
-                fixture.originalBytes,
-                checkNotNull(NgInterfaceFontStore.load(context, fixture.choice).second).readBytes(),
-            )
+            assertSame(first.typeface, NgInterfaceFontStore.typeface(context))
+            assertEquals(first.fingerprint, NgInterfaceFontStore.load(context, fixture.choice).fingerprint)
 
-            NgInterfaceFontStore.save(context, fixture.choice, "updated", refreshed.second)
-            val installedAfter = checkNotNull(fixture.preferences.getString("ngInterfaceFont.file", null))
-            assertNotEquals(installedBefore, installedAfter)
-            assertArrayEquals(fixture.updatedBytes, File(installedAfter).readBytes())
+            NgInterfaceFontStore.save(context, fixture.choice, "updated", refreshed)
+            assertNull(fixture.preferences.getString("ngInterfaceFont.file", null))
             assertEquals(fixture.choice, NgInterfaceFontStore.choice(context))
             assertEquals("updated", NgInterfaceFontStore.name(context))
+            assertSame(refreshed.typeface, NgInterfaceFontStore.typeface(context))
 
             val savedAfter = fixture.savedPreferences()
             fixture.source.writeBytes(ByteArray(32))
-            val malformedSource = runCatching {
+            assertTrue("Malformed existing font must not silently decode as DEFAULT", runCatching {
                 NgInterfaceFontStore.load(context, fixture.choice, reloadFromSource = true)
-            }
-            assertTrue("Malformed existing font must not silently decode as DEFAULT", malformedSource.isFailure)
+            }.isFailure)
             assertEquals(savedAfter, fixture.savedPreferences())
-            assertArrayEquals(fixture.updatedBytes,
-                checkNotNull(NgInterfaceFontStore.load(context, fixture.choice).second).readBytes())
+            assertSame(refreshed.typeface, NgInterfaceFontStore.typeface(context))
             assertTrue(fixture.source.delete())
-            assertArrayEquals(
-                fixture.updatedBytes,
-                checkNotNull(NgInterfaceFontStore.load(context, fixture.choice).second).readBytes(),
-            )
-            val invalidSource = runCatching {
+            assertSame(refreshed.typeface, NgInterfaceFontStore.typeface(context))
+            assertTrue("Explicit reload must report the missing source", runCatching {
                 NgInterfaceFontStore.load(context, fixture.choice, reloadFromSource = true)
-            }
-            assertTrue("Explicit reload must report the missing source", invalidSource.isFailure)
+            }.isFailure)
             assertEquals(savedAfter, fixture.savedPreferences())
-            assertArrayEquals(fixture.updatedBytes, File(installedAfter).readBytes())
+            assertEquals(outputFiles, fontOutputFiles(context))
         }
     }
+
+    @Test
+    fun `existing explicit private copy stays usable until the user reselects its source`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        FontReloadFixture(context, useContentUri = true).use { fixture ->
+            val legacy = File(context.filesDir, "interface-fonts/legacy-${UUID.randomUUID()}.font")
+            legacy.parentFile!!.mkdirs()
+            legacy.writeBytes(fixture.originalBytes)
+            try {
+                fixture.preferences.edit().putString("ngInterfaceFont.choice", fixture.choice)
+                    .putString("ngInterfaceFont.file", legacy.path).putString("ngInterfaceFont.name", "旧字体").commit()
+                assertTrue(fixture.source.delete())
+                assertEquals(legacy, NgInterfaceFontStore.load(context, fixture.choice).file)
+                assertEquals(legacy.path, fixture.preferences.getString("ngInterfaceFont.file", null))
+                fixture.source.writeBytes(fixture.updatedBytes)
+                val direct = NgInterfaceFontStore.load(context, fixture.choice, reloadFromSource = true)
+                NgInterfaceFontStore.save(context, fixture.choice, "直接引用", direct)
+                assertNull(fixture.preferences.getString("ngInterfaceFont.file", null))
+                assertEquals(fixture.choice, NgInterfaceFontStore.choice(context))
+                assertTrue(legacy.isFile)
+                assertArrayEquals(fixture.originalBytes, legacy.readBytes())
+            } finally { legacy.delete() }
+        }
+    }
+
+    private fun fontOutputFiles(context: Context): Set<String> = listOf(
+        File(context.cacheDir, "interface-font-preview"), File(context.filesDir, "interface-fonts"),
+        File(context.getExternalFilesDir(null) ?: context.filesDir, "font"),
+    ).flatMap { root -> if (root.isDirectory) root.walkTopDown().filter(File::isFile).map { it.path }.toList() else emptyList() }.toSet()
+
 }
 
 /** Actual content-resolver reads, with a bounded gate for overlapping picker requests. */

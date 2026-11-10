@@ -22,10 +22,11 @@ import com.materialkolor.scheme.SchemeTonalSpot
 import com.materialkolor.scheme.SchemeVibrant
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
-import io.legado.app.help.config.NgDynamicSceneTheme
+import io.legado.app.help.config.NgEffectThemeSelection
 import io.legado.app.help.config.NgColorConfigStore
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientTheme
+import io.legado.app.help.config.NgMulticolorTheme
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.ThemeConfig
@@ -79,10 +80,24 @@ object NgThemeResolver {
                 ),
             )
         }
-        if (NgThemeModeStore.current(context) == NgThemePresentationMode.DYNAMIC_SCENE) {
+        if (NgThemeModeStore.current(context) == NgThemePresentationMode.MULTICOLOR) {
             return resolve(
                 context = context,
-                colors = NgDynamicSceneTheme.colors(context),
+                colors = NgMulticolorTheme.colors,
+                isDark = false,
+            ).let { snapshot ->
+                snapshot.copy(
+                    systemBars = snapshot.systemBars.copy(
+                        darkStatusBarIcons = true,
+                        darkNavigationBarIcons = true,
+                    ),
+                )
+            }
+        }
+        if (NgThemeModeStore.current(context) == NgThemePresentationMode.EFFECT_THEME) {
+            return resolve(
+                context = context,
+                colors = NgEffectThemeSelection.colors(context),
                 isDark = ThemeConfig.isDarkTheme(context),
             )
         }

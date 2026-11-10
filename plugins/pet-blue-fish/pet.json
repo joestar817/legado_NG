@@ -1,0 +1,15 @@
+{
+  "id": "blue_fish",
+  "name": "蓝色大肥鱼",
+  "versionCode": 3,
+  "entryClass": "io.legado.plugins.pets.blue_fish.BlueFishPlugin",
+  "sharedSources": [
+    "../pet-layered/src/main/java"
+  ],
+  "info": {
+    "versionName": "2.1",
+    "author": "阅读 NG",
+    "description": "蓝色大肥鱼，支持点击、拖动和多种日常动作。",
+    "preview": "pet-preview.png"
+  }
+}

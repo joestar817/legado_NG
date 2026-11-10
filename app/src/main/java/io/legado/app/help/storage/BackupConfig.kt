@@ -155,11 +155,10 @@ internal object BackupRestorePolicy {
 
     val themeConfigPreferenceKeys = setOf(
         PreferKey.ngThemePresentationMode,
+        PreferKey.ngCustomAppearanceEdited,
         PreferKey.ngStandardThemeMode,
+        PreferKey.ngCustomThemePresentationMode,
         PreferKey.ngInternalThemeMode,
-        PreferKey.ngDynamicScenePreset,
-        PreferKey.ngDynamicSceneSakuraColors,
-        PreferKey.ngDynamicSceneCatsColors,
         PreferKey.ngSoftGradientColor,
         PreferKey.ngSoftGradientColorMode,
         PreferKey.ngSoftGradientCustomColor,

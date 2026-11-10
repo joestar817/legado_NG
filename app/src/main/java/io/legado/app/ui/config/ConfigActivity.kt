@@ -15,14 +15,21 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
 import io.legado.app.constant.EventBus
 import io.legado.app.databinding.ActivityConfigBinding
+import io.legado.app.help.config.NgInterfaceFontStore
+import io.legado.app.help.config.NgThemeRuntimeAssets
 import io.legado.app.ui.design.components.compose.NgFloatingTitleToolbar
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.viewbindingdelegate.viewBinding
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 
 interface ConfigBackHandler {
     fun onConfigBackPressed(): Boolean
@@ -37,6 +44,13 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         initFloatingTitleBar()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                NgInterfaceFontStore.revision.collect {
+                    NgThemeRuntimeAssets.applyToolbarTypeface(binding.titleBar.toolbar)
+                }
+            }
+        }
         binding.titleBar.setNavigationOnClickListener {
             handleConfigBackPressed()
         }
@@ -68,7 +82,7 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
             ConfigTag.READ_ALOUD_CONFIG -> replaceFragment<ReadAloudConfigFragment>(configTag)
             ConfigTag.TTS_ENGINE_CONFIG -> replaceFragment<TtsEngineConfigFragment>(configTag)
             ConfigTag.DEFAULT_TTS_VOICE_CONFIG -> replaceFragment<DefaultTtsVoiceConfigFragment>(configTag)
-            ConfigTag.THEME_CONFIG -> replaceFragment<ThemeConfigFragment>(configTag)
+            ConfigTag.THEME_MANAGER -> replaceFragment<ThemeManagerFragment>(configTag)
             ConfigTag.BACKUP_CONFIG -> replaceFragment<BackupConfigFragment>(configTag)
             ConfigTag.COVER_CONFIG -> replaceFragment<CoverConfigFragment>(configTag)
             else -> finish()

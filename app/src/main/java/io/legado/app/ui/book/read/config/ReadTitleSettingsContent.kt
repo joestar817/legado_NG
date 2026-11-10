@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -49,6 +50,7 @@ import androidx.core.graphics.toColorInt
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.design.components.compose.NgFormField
 import io.legado.app.ui.design.components.compose.NgFormFieldVariant
@@ -161,9 +163,11 @@ internal fun ReadTitleSettingsContent(
     ReadTitleSectionHeading(stringResource(R.string.read_title_font_color))
     ReadTitleNavigationRow(
         title = stringResource(R.string.read_title_font),
-        value = config.titleFont.takeIf(String::isNotBlank)?.let { path ->
-            Uri.decode(path.substringAfterLast('/').substringAfterLast(':'))
-        } ?: stringResource(R.string.read_title_follow_body_font),
+        value = when (val path = config.titleFont) {
+            SYSTEM_DEFAULT_FONT -> stringArrayResource(R.array.system_typefaces).first()
+            "" -> stringResource(R.string.read_title_follow_body_font)
+            else -> Uri.decode(path.substringAfterLast('/').substringAfterLast(':'))
+        },
         onClick = onSelectFont,
     )
     val weight = when (config.titleBold) {

@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -80,6 +81,7 @@ import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgMaterialRole
@@ -248,7 +250,12 @@ internal fun HomeScreen(
                         expanded = menuState.expanded,
                         onDismissRequest = menuState::onDismissRequest,
                         items = menuItems,
+                        variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+                        sideSlideEndMargin = 16.dp,
+                        sideSlideAnchorGap = 8.dp,
+                        properties = PopupProperties(focusable = true, clippingEnabled = false),
                         onItemClick = { item ->
+                            if (!menuState.expanded) return@NgExpandableActionMenu
                             menuState.close()
                             when (item.itemId) {
                                 HOME_ADD_WIDGET_MENU_ITEM_ID -> {

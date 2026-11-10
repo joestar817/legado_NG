@@ -363,6 +363,10 @@ class TtsEngineConfigFragment : BaseFragment(0),
                 }
                 if (engineSnapshotGate.isCurrent(snapshotToken)) {
                     applyEngineSnapshot(allEngines)
+                    requireActivity().intent.getStringExtra("resourceEngineId")?.let { id ->
+                        requireActivity().intent.removeExtra("resourceEngineId")
+                        allEngines.firstOrNull { it.id == id }?.let(::showEngineDetail)
+                    }
                     prewarmNextEdgeOptions(allEngines)
                     voiceRefreshResult?.let { result ->
                         context?.toastOnUi("朗读引擎已刷新；${result.feedback()}")

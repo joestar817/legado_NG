@@ -1,0 +1,15 @@
+{
+  "id": "gugugaga",
+  "name": "咕嘎",
+  "versionCode": 4,
+  "entryClass": "io.legado.plugins.pets.gugugaga.GuguGagaPlugin",
+  "sharedSources": [
+    "../pet-layered/src/main/java"
+  ],
+  "info": {
+    "versionName": "2.2",
+    "author": "阅读 NG",
+    "description": "咕嘎宠物，支持点击、拖动和日常陪伴。",
+    "preview": "pet-preview.png"
+  }
+}

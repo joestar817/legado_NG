@@ -2,6 +2,7 @@ package io.legado.app.help.config
 
 import android.net.Uri
 import com.google.gson.JsonObject
+import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import io.legado.app.utils.GSON
 import io.legado.app.utils.externalFiles
 import splitties.init.appCtx
@@ -106,6 +107,9 @@ internal object ReadStylePackageManager {
                 contentNames[hash] = target.name
                 return target.name
             }
+            fun copyFont(reference: String?, prefix: String, label: String): String? =
+                if (reference == SYSTEM_DEFAULT_FONT) reference else copyResource(reference, prefix, label)
+
             fun exportBackground(index: Int, label: String) {
                 val type = when (index) {
                     0 -> portableConfig.bgType
@@ -136,18 +140,18 @@ internal object ReadStylePackageManager {
             exportBackground(0, "日间阅读背景")
             exportBackground(1, "夜间阅读背景")
             exportBackground(2, "墨水屏阅读背景")
-            portableConfig.textFont = copyResource(
+            portableConfig.textFont = copyFont(
                 portableConfig.textFont,
                 "read_font_text",
                 "正文字体",
             ).orEmpty()
-            portableConfig.titleFont = copyResource(
+            portableConfig.titleFont = copyFont(
                 portableConfig.titleFont,
                 "read_font_title",
                 "标题字体",
             ).orEmpty()
-            portableConfig.headerFont = copyResource(portableConfig.headerFont, "read_font_header", "页眉字体").orEmpty()
-            portableConfig.footerFont = copyResource(portableConfig.footerFont, "read_font_footer", "页脚字体").orEmpty()
+            portableConfig.headerFont = copyFont(portableConfig.headerFont, "read_font_header", "页眉字体").orEmpty()
+            portableConfig.footerFont = copyFont(portableConfig.footerFont, "read_font_footer", "页脚字体").orEmpty()
             portableConfig.headerImage = copyResource(
                 portableConfig.headerImage, "read_header_image", "页眉图片",
             ).orEmpty()
@@ -162,7 +166,7 @@ internal object ReadStylePackageManager {
                             "highlight_rule_bg_$index",
                             "高亮规则“${rule.name.ifBlank { rule.id }}”的背景图",
                         ),
-                        fontPath = copyResource(
+                        fontPath = copyFont(
                             rule.fontPath,
                             "highlight_rule_font_$index",
                             "高亮规则“${rule.name.ifBlank { rule.id }}”的字体",
@@ -353,10 +357,13 @@ internal object ReadStylePackageManager {
                 ?.absolutePath
         }
 
-        config.textFont = resolve(config.textFont, "正文字体").orEmpty()
-        config.titleFont = resolve(config.titleFont, "标题字体").orEmpty()
-        config.headerFont = resolve(config.headerFont, "页眉字体").orEmpty()
-        config.footerFont = resolve(config.footerFont, "页脚字体").orEmpty()
+        fun resolveFont(reference: String?, label: String): String? =
+            if (reference == SYSTEM_DEFAULT_FONT) reference else resolve(reference, label)
+
+        config.textFont = resolveFont(config.textFont, "正文字体").orEmpty()
+        config.titleFont = resolveFont(config.titleFont, "标题字体").orEmpty()
+        config.headerFont = resolveFont(config.headerFont, "页眉字体").orEmpty()
+        config.footerFont = resolveFont(config.footerFont, "页脚字体").orEmpty()
         fun resolveImage(reference: String, label: String): ReadHeaderImageStore.Image? {
             val path = resolve(reference, label) ?: return null
             val inspected = runCatching { ReadHeaderImageStore.inspect(File(path)) }
@@ -407,7 +414,7 @@ internal object ReadStylePackageManager {
             val bg = rule.bgImage?.let { resolve(it, "高亮规则背景图") }.also {
                 if (rule.bgImage != null && it == null) missingRuleBackgrounds++
             }
-            val font = rule.fontPath?.let { resolve(it, "高亮规则字体") }.also {
+            val font = resolveFont(rule.fontPath, "高亮规则字体").also {
                 if (rule.fontPath != null && it == null) missingRuleFonts++
             }
             rule.copy(bgImage = bg, fontPath = font)

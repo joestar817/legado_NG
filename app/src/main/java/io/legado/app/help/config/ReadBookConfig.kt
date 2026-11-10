@@ -18,6 +18,9 @@ import io.legado.app.help.DefaultData
 import io.legado.app.help.book.isImage
 import io.legado.app.help.globalExecutor
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.font.FontUsageInspector
+import io.legado.app.help.font.resetDeletedFont
+import io.legado.app.help.resource.ResourceFiles
 import io.legado.app.utils.BitmapUtils
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.GSON
@@ -91,10 +94,18 @@ object ReadBookConfig {
     val shareConfigFilePath = FileUtils.getPath(appCtx.filesDir, shareConfigFileName)
     val configList: ArrayList<Config> = arrayListOf()
     lateinit var shareConfig: Config
+    private val pendingBookStyles = mutableMapOf<String, String?>()
     private val bookStyle = BookReadStyleSession { bookUrl, style ->
-        globalExecutor.execute {
-            runCatching { appDb.bookDao.saveIndependentReadStyle(bookUrl, style) }
-                .onFailure { AppLog.put("保存本书预设失败", it) }
+        synchronized(this) {
+            val alreadyScheduled = pendingBookStyles.containsKey(bookUrl)
+            pendingBookStyles[bookUrl] = style
+            if (!alreadyScheduled) globalExecutor.execute {
+                synchronized(this) {
+                    val latest = pendingBookStyles.remove(bookUrl)
+                    runCatching { appDb.bookDao.saveIndependentReadStyle(bookUrl, latest) }
+                        .onFailure { AppLog.put("保存本书预设失败", it) }
+                }
+            }
         }
     }
     val onlyThisBook: Boolean get() = bookStyle.config != null
@@ -249,6 +260,37 @@ object ReadBookConfig {
         }
     }
 
+    internal fun resetDeletedFont(matches: (String?) -> Boolean): Boolean = synchronized(this) {
+        val presetsFile = File(configFilePath)
+        val shareFile = File(shareConfigFilePath)
+        if (presetsFile.isFile) {
+            val presets = FontUsageInspector.decodePresets(presetsFile.readText())
+            if (presets.count { it.resetDeletedFont(matches) } > 0) ResourceFiles.writeJson(presetsFile, presets)
+        }
+        if (shareFile.isFile) {
+            val shared = FontUsageInspector.decodePreset(shareFile.readText())
+            if (shared.resetDeletedFont(matches)) ResourceFiles.writeJson(shareFile, shared)
+        }
+        fun switchedStyle(serialized: String?): String? {
+            val preset = BookReadStyleSession.decode(serialized) ?: return null
+            return if (preset.resetDeletedFont(matches)) GSON.toJson(preset) else null
+        }
+        appDb.runInTransaction {
+            appDb.bookDao.all.forEach { book ->
+                switchedStyle(book.readConfig?.independentReadStyle)?.let { style ->
+                    appDb.bookDao.saveIndependentReadStyle(book.bookUrl, style)
+                }
+            }
+        }
+        pendingBookStyles.replaceAll { _, style -> switchedStyle(style) ?: style }
+        var activeChanged = (configList.toList() + shareConfig).count { it.resetDeletedFont(matches) } > 0
+        if (bookStyle.config?.resetDeletedFont(matches) == true) {
+            bookStyle.save()
+            activeChanged = true
+        }
+        activeChanged
+    }
+
     fun getAllPicBgStr(): ArrayList<String> {
         val list = arrayListOf<String>()
         (configList + listOfNotNull(bookStyle.config)).forEach {
@@ -291,7 +333,8 @@ object ReadBookConfig {
             }
         }
         appCtx.externalFiles.getFile("bg").listFiles()?.forEach {
-            if (!bgs.contains(it.absolutePath)) {
+            if (it.canonicalFile != io.legado.app.help.resource.ResourceFiles.backgrounds.canonicalFile &&
+                !bgs.contains(it.absolutePath)) {
                 it.delete()
             }
         }

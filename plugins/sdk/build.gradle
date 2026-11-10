@@ -1,0 +1,117 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+
+plugins {
+    id 'com.android.application' version '8.13.2'
+    id 'org.jetbrains.kotlin.android' version '2.3.10'
+}
+
+def sourceRoot = file(providers.gradleProperty('petProject').getOrElse('template')).canonicalFile
+def configFile = new File(sourceRoot, 'pet.json')
+def config = new JsonSlurper().parse(configFile, 'UTF-8')
+def allowed = ['id', 'name', 'versionCode', 'entryClass', 'sharedSources', 'info'] as Set
+if (!(config instanceof Map) || !allowed.containsAll(config.keySet()) ||
+    !(config.id instanceof String) || !(config.id ==~ /[a-z][a-z0-9_]{0,63}/) ||
+    config.id in ['none', 'button'] || !(config.name instanceof String) ||
+    !config.name.trim() || config.name.size() > 128 ||
+    !(config.versionCode instanceof Integer) || config.versionCode < 1 ||
+    !(config.entryClass instanceof String) ||
+    !(config.entryClass ==~ /(?:[A-Za-z_$][A-Za-z0-9_$]*\.)+[A-Za-z_$][A-Za-z0-9_$]*/)) {
+    throw new GradleException("Invalid plugin identity, entry or release version in ${configFile}")
+}
+def sharedRoots = config.get('sharedSources', [])
+if (!(sharedRoots instanceof List) || !sharedRoots.every { it instanceof String && new File(sourceRoot, it).isDirectory() }) {
+    throw new GradleException('sharedSources must list existing source directories')
+}
+def petInfoValidator = new GroovyClassLoader(getClass().classLoader).parseClass(file('gradle/PetInfo.groovy'))
+ext.petInfoValidator = petInfoValidator
+def packageInfo = config.containsKey('info') ? petInfoValidator.fromAuthor(config.info) : null
+petInfoValidator.validateAssets(sourceRoot, packageInfo)
+
+def sdkJar = file('lib/pet-api-2.0.0.jar')
+if (!sdkJar.isFile()) throw new GradleException('Build from the extracted pet-sdk-2.1.0 distribution')
+layout.buildDirectory.set(new File(sourceRoot, 'build'))
+def generatedAssets = layout.buildDirectory.dir('generated/pet/assets')
+def packageManifest = [schemaVersion: 2, kind: 'pet', apiVersion: 2, id: config.id,
+    name: config.name, versionCode: config.versionCode, entryClass: config.entryClass]
+def generateManifest = tasks.register('generatePetManifest') {
+    inputs.property('manifest', JsonOutput.toJson(packageManifest))
+    inputs.property('info', JsonOutput.toJson(packageInfo))
+    inputs.file(file('gradle/PetInfo.groovy'))
+    inputs.files(fileTree(new File(sourceRoot, 'src/main/assets')))
+    def output = generatedAssets.map { it.file('plugin.json') }
+    outputs.dir(generatedAssets)
+    doLast {
+        petInfoValidator.validateAssets(sourceRoot, packageInfo)
+        def file = output.get().asFile
+        file.parentFile.mkdirs()
+        file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(packageManifest)) + '\n', 'UTF-8')
+        def infoFile = new File(file.parentFile, 'pet-info.json')
+        if (packageInfo != null) {
+            infoFile.bytes = petInfoValidator.encode(packageInfo)
+        } else {
+            Files.deleteIfExists(infoFile.toPath())
+        }
+    }
+}
+
+// The Android container is a build artifact; its identity is independent of the plugin entry class.
+android {
+    namespace = 'io.legado.plugin.container'
+    compileSdk = 36
+    defaultConfig {
+        applicationId 'io.legado.plugin.container'
+        minSdk 21
+        targetSdk 36
+        versionCode config.versionCode
+        versionName config.versionCode.toString()
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+    buildTypes { release { minifyEnabled false } }
+    sourceSets {
+        main {
+            manifest.srcFile file('AndroidManifest.xml')
+            java.setSrcDirs([new File(sourceRoot, 'src/main/java')] + sharedRoots.collect { new File(sourceRoot, it) })
+            assets.setSrcDirs([new File(sourceRoot, 'src/main/assets'), generatedAssets])
+        }
+        test.java.setSrcDirs([new File(sourceRoot, 'src/test/java')])
+    }
+}
+tasks.matching { it.name == 'preBuild' }.configureEach { dependsOn generateManifest }
+dependencies {
+    compileOnly files(sdkJar)
+    testImplementation files(sdkJar)
+    testImplementation 'junit:junit:4.13.2'
+}
+
+apply from: 'gradle/verify-zip.gradle'
+def apkDir = layout.buildDirectory.dir('outputs/apk/release')
+def outputZip = layout.buildDirectory.file("outputs/pet/${config.id}-${config.versionCode}.zip")
+tasks.register('packagePet') {
+    group = 'build'
+    description = 'Verify the compiled plugin and export its ZIP for the resource catalog.'
+    dependsOn 'packageRelease'
+    inputs.dir(apkDir)
+    inputs.property('manifest', JsonOutput.toJson(packageManifest))
+    inputs.property('info', JsonOutput.toJson(packageInfo))
+    inputs.file(file('gradle/verify-zip.gradle'))
+    inputs.file(file('gradle/PetInfo.groovy'))
+    outputs.file(outputZip)
+    doLast {
+        def directory = apkDir.get().asFile
+        def metadata = new JsonSlurper().parse(new File(directory, 'output-metadata.json'), 'UTF-8')
+        if (metadata.elements.size() != 1) throw new GradleException('Expected a single APK variant output')
+        def apk = new File(directory, metadata.elements[0].outputFile)
+        verifyPetZip(apk, packageManifest, packageInfo)
+        def target = outputZip.get().asFile
+        target.parentFile.mkdirs()
+        Files.copy(apk.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        logger.lifecycle("Pet package: ${target}")
+    }
+}

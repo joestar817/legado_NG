@@ -29,7 +29,7 @@ class NgThemeDrawerPackageTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val image = sampleImage(context)
         val archive = File(context.cacheDir, "${UUID.randomUUID()}.ngtheme")
-        val theme = NgBuiltInThemes.storybook.copy(
+        val theme = NgThemeTestFixtures.storybook.copy(
             lightBackground = NgThemeBackground(image.path),
             darkBackground = NgThemeBackground(image.path),
             drawerProfile = NgThemeDrawerProfile(source = "theme_image"),
@@ -177,12 +177,52 @@ class NgThemeDrawerPackageTest {
         }
     }
 
-    private fun customTheme(path: String): NgManagedTheme = NgBuiltInThemes.storybook.copy(
+    @Test
+    fun `exported cover album is recreated without its original device ID`() = runBlocking<Unit> {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val image = sampleImage(context)
+        val original = NgCoverAlbumStore.importFromPackage(
+            context, requireNotNull(image.parentFile), "封面测试",
+            listOf(NgCoverAlbumImport("test", "日夜封面", listOf(image.name), listOf(image.name))),
+        ).single()
+        val archive = File.createTempFile("portable-cover", ".zip", context.cacheDir)
+        try {
+            val theme = NgThemeTestFixtures.storybook.copy(
+                id = "local.${UUID.randomUUID()}",
+                name = "封面测试",
+                coverProfile = NgThemeCoverProfile(applyAlbumSelection = true, albumId = original.id),
+                ownedCoverAlbumIds = listOf(original.id),
+            )
+            NgThemePackageManager.exportTheme(context, theme, Uri.fromFile(archive)).getOrThrow()
+            val manifest = NgThemePackageManager.inspectArchive(archive)
+            assertNull(manifest.theme.coverProfile?.albumId)
+            assertNull(manifest.theme.ownedCoverAlbumIds)
+            assertEquals(manifest.coverAlbums?.single()?.ref, manifest.selectedCoverAlbumRef)
+            NgCoverAlbumStore.removeImported(context, listOf(original.id))
+            val restored = NgThemePackageManager.importTheme(context, Uri.fromFile(archive)).getOrThrow()
+            try {
+                val selected = requireNotNull(restored.coverProfile?.albumId)
+                assertTrue(selected != original.id)
+                assertEquals(listOf(selected), restored.ownedCoverAlbumIds)
+                val album = NgCoverAlbumStore.current(context).albums.single { it.id == selected }
+                assertArrayEquals(image.readBytes(), File(album.lightImages.single()).readBytes())
+                assertArrayEquals(image.readBytes(), File(album.darkImages.single()).readBytes())
+            } finally {
+                NgThemeLibraryStore.remove(context, restored.id, restoreFallback = false)
+            }
+        } finally {
+            NgCoverAlbumStore.removeImported(context, listOf(original.id))
+            archive.delete()
+            image.delete()
+        }
+    }
+
+    private fun customTheme(path: String): NgManagedTheme = NgThemeTestFixtures.storybook.copy(
         id = "local.${UUID.randomUUID()}",
         name = "drawer-${UUID.randomUUID()}",
         lightBackground = NgThemeBackground(),
         darkBackground = NgThemeBackground(),
-        drawerProfile = requireNotNull(NgBuiltInThemes.storybook.drawerProfile).let { profile ->
+        drawerProfile = requireNotNull(NgThemeTestFixtures.storybook.drawerProfile).let { profile ->
             profile.copy(
                 source = "custom_image",
                 light = profile.light.copy(imagePath = path),

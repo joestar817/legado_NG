@@ -1,6 +1,7 @@
 package io.legado.app.ui.book.read.epub
 
 import androidx.core.graphics.PathParser
+import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import io.legado.app.ui.book.read.page.entities.TextChapter
 import io.legado.app.ui.book.read.page.entities.column.TextBaseColumn
 import io.legado.app.ui.book.read.page.entities.column.TextColumn
@@ -41,7 +42,8 @@ internal class EpubCharStyles(private val loadFont: (String) -> ByteArray?) {
     ) {
         if (to <= from) return
         val id = identities.getOrPut(style) {
-            val font = if (style.fontPath.isBlank()) null else fontPaths.getOrPut(style.fontPath) {
+            val systemFont = style.fontPath == SYSTEM_DEFAULT_FONT
+            val font = if (style.fontPath.isBlank() || systemFont) null else fontPaths.getOrPut(style.fontPath) {
                 loadFont(style.fontPath)?.let { bytes ->
                     val name = MessageDigest.getInstance("SHA-256").digest(bytes)
                         .joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -66,7 +68,8 @@ internal class EpubCharStyles(private val loadFont: (String) -> ByteArray?) {
                         .put("imageInset", io.legado.app.ui.book.read.page.provider.ReadHighlightImageRenderer.CONTENT_INSET_DP)
                 }
             }
-            if ((style.fontPath.isBlank() || font != null) &&
+            if (systemFont) value.put("systemFont", true)
+            if ((style.fontPath.isBlank() || systemFont || font != null) &&
                 (style.fontPath.isNotBlank() || style.fontWeight != 400 || style.isItalic)) {
                 value.put("weight", style.fontWeight).put("italic", style.isItalic)
                 font?.let { value.put("font", it) }

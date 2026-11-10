@@ -1,0 +1,112 @@
+import groovy.json.JsonSlurper
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.charset.StandardCharsets
+import java.util.zip.ZipFile
+
+// Inspect the final DEX class definitions, not strings or source file names.
+static Map inspectDex(byte[] bytes) {
+    def data = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+    int stringsAt = data.getInt(60)
+    int typesAt = data.getInt(68)
+    def types = (0..<data.getInt(64)).collect { index ->
+        int stringId = data.getInt(typesAt + index * 4)
+        int start = data.getInt(stringsAt + stringId * 4)
+        while ((bytes[start++] & 128) != 0) { /* ULEB128 string length */ }
+        int end = start
+        while (bytes[end] != 0) end++
+        new String(bytes, start, end - start, StandardCharsets.UTF_8)
+    }
+    def definitions = [:]
+    int classesAt = data.getInt(100)
+    for (int index = 0; index < data.getInt(96); index++) {
+        int pos = classesAt + index * 32
+        String name = types[data.getInt(pos)]
+        int parent = data.getInt(pos + 8)
+        int interfacesAt = data.getInt(pos + 12)
+        def parents = parent < 0 ? [] : [types[parent]]
+        if (interfacesAt != 0) {
+            for (int i = 0; i < data.getInt(interfacesAt); i++) {
+                parents << types[data.getShort(interfacesAt + 4 + i * 2) & 0xffff]
+            }
+        }
+        definitions[name] = [flags: data.getInt(pos + 4), parents: parents]
+    }
+    return [types: types, definitions: definitions]
+}
+
+// Validate reflective factory construction without loading any plugin code.
+static boolean hasPublicNoArgConstructor(byte[] bytes, String descriptor, List types) {
+    def data=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+    int wanted=types.indexOf(descriptor)
+    int classData=0
+    for(int i=0;i<data.getInt(96);i++) {
+        int at=data.getInt(100)+i*32
+        if(data.getInt(at)==wanted) { classData=data.getInt(at+24); break }
+    }
+    if(classData==0) return false
+    int[] position=[classData]
+    def uleb={ ->
+        int result=0
+        for(int shift=0;shift<35;shift+=7) {
+            int item=bytes[position[0]++]&255
+            result |= (item&127)<<shift
+            if((item&128)==0) return result
+        }
+        throw new IllegalArgumentException('Invalid DEX integer')
+    }
+    int staticFields=uleb(), instanceFields=uleb(), directMethods=uleb(); uleb()
+    for(int i=0;i<staticFields+instanceFields;i++){uleb();uleb()}
+    int method=0
+    for(int i=0;i<directMethods;i++) {
+        method+=uleb();int access=uleb();int code=uleb()
+        int at=data.getInt(92)+method*8
+        int nameId=data.getInt(at+4)
+        int start=data.getInt(data.getInt(60)+nameId*4)
+        while((bytes[start++]&128)!=0){}
+        int end=start;while(bytes[end]!=0)end++
+        def name=new String(bytes,start,end-start,StandardCharsets.UTF_8)
+        int proto=data.getShort(at+2)&65535
+        int parameters=data.getInt(data.getInt(76)+proto*12+8)
+        if(name=='<init>' && (access&1)!=0 && code!=0 && (parameters==0 || data.getInt(parameters)==0))return true
+    }
+    return false
+}
+
+ext.verifyEffectThemeZip = { File file, Map manifest ->
+    if (file.length() > 64L * 1024 * 1024) throw new GradleException('Theme ZIP exceeds 64 MiB')
+    new ZipFile(file).withCloseable { zip ->
+        def entries = zip.entries().toList()
+        def names = entries.collect { it.name }
+        if (entries.size() > 512 || names.toSet().size() != names.size() ||
+            names.any { it.contains('\\') || it.startsWith('/') || it.contains(':') || it.split('/', -1).any { part -> part == '..' || part == '.' || !part } } ||
+            entries.any { it.size < 0 || it.size > 64L * 1024 * 1024 } || entries.sum { it.size } > 128L * 1024 * 1024) {
+            throw new GradleException('Invalid or oversized archive entries')
+        }
+        if (names.any { !(it == 'manifest.json' || it.startsWith('assets/') || it ==~ /classes(?:[0-9]+)?\.dex/) } || !names.contains('classes.dex')) {
+            throw new GradleException('Expected only complete manifest, DEX and assets')
+        }
+        def actual = zip.getInputStream(zip.getEntry('manifest.json')).withCloseable { new JsonSlurper().parse(it, 'UTF-8') }
+        if (actual != manifest) throw new GradleException('Theme manifest changed during packaging')
+        themeManifestValidator.fromAuthor(actual)
+        themeManifestValidator.verifyAssets(zip, manifest)
+        def entry='L'+manifest.theme.effect.entryClass.replace('.', '/')+';'
+        boolean hasFactory=false
+        def types=[] as Set; def definitions=[:]
+        names.findAll { it ==~ /classes(?:[0-9]+)?\.dex/ }.each { name ->
+            def bytes=zip.getInputStream(zip.getEntry(name)).withCloseable { it.bytes }
+            def dex=inspectDex(bytes)
+            if(dex.definitions.containsKey(entry))hasFactory=hasPublicNoArgConstructor(bytes,entry,dex.types)
+            types.addAll(dex.types)
+            if (definitions.keySet().intersect(dex.definitions.keySet())) throw new GradleException('Duplicate DEX class definitions')
+            definitions.putAll(dex.definitions)
+        }
+        if (definitions.keySet().any { it.startsWith('Lio/legado/effect/api/') }) throw new GradleException('Use compileOnly for the host API')
+        if (types.collect { it.replaceFirst(/^\[+/, '') }.any { it.startsWith('Lio/legado/app/') }) throw new GradleException('Effect theme depends on App implementation classes')
+        if (!hasFactory) throw new GradleException('Entry needs a public no-argument constructor')
+        if (!definitions.containsKey(entry) || (definitions[entry].flags & 0x601) != 1) throw new GradleException('Entry must be a public concrete class')
+        def reachable=[] as Set; def pending=[entry]
+        while (pending) { def type=pending.pop(); if (reachable.add(type)) pending.addAll(definitions[type]?.parents ?: []) }
+        if (!reachable.contains('Lio/legado/effect/api/EffectThemePlugin;')) throw new GradleException('Entry does not implement EffectThemePlugin API 1')
+    }
+}

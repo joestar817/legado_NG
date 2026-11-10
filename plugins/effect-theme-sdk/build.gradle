@@ -1,0 +1,72 @@
+import groovy.json.JsonSlurper
+
+plugins {
+    id 'com.android.application' version '8.13.2'
+    id 'org.jetbrains.kotlin.android' version '2.3.10'
+}
+
+def sourceRoot = file(providers.gradleProperty('themeProject').getOrElse('template')).canonicalFile
+def configFile = new File(sourceRoot, 'theme.json')
+def author = new JsonSlurper().parse(configFile, 'UTF-8')
+def validator = new GroovyClassLoader(getClass().classLoader).parseClass(file('gradle/ThemeManifest.groovy'))
+ext.themeManifestValidator = validator
+def packageManifest = validator.fromAuthor(author)
+def packageManifests = validator.packagesFromAuthor(author)
+validator.validateAssets(sourceRoot, packageManifest)
+def theme = packageManifest.theme
+def sdkJar = file('lib/effect-theme-api-1.0.0.jar')
+if (!sdkJar.isFile()) throw new GradleException('Build from the extracted effect-theme-sdk-1.1.0 distribution')
+def dependenciesToBundle = author.build?.dependencies ?: []
+if (!(dependenciesToBundle instanceof List) || !dependenciesToBundle.every { it instanceof String && it ==~ /[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+/ }) {
+    throw new GradleException('build.dependencies must be pinned Maven coordinates')
+}
+layout.buildDirectory.set(new File(sourceRoot, 'build'))
+android {
+    namespace = 'io.legado.effect.container'
+    compileSdk = 36
+    defaultConfig {
+        applicationId 'io.legado.effect.container'
+        minSdk 21
+        targetSdk 36
+        versionCode theme.publication.versionCode
+        versionName theme.publication.versionName
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = '17' }
+    buildTypes { release { minifyEnabled false } }
+    sourceSets { main {
+        manifest.srcFile file('AndroidManifest.xml')
+        java.setSrcDirs([new File(sourceRoot, 'src/main/java')])
+        assets.setSrcDirs([new File(sourceRoot, 'src/main/assets')])
+    } }
+}
+dependencies {
+    compileOnly files(sdkJar)
+    dependenciesToBundle.each { dependency -> implementation dependency }
+}
+apply from: 'gradle/verify-zip.gradle'
+def apkDir = layout.buildDirectory.dir('outputs/apk/release')
+def outputZips = packageManifests.collectEntries { purpose, manifest ->
+    [(purpose): layout.buildDirectory.file("outputs/${purpose == 'theme' ? 'theme' : 'listening-effect'}/${manifest.theme.id ?: 'theme'}-${theme.publication.versionCode}-${purpose}.zip")]
+}
+tasks.register('packageEffectTheme') {
+    group = 'build'
+    description = 'Build independent theme and listening-effect ZIPs from reusable author sources.'
+    dependsOn 'packageRelease'
+    inputs.dir(apkDir)
+    inputs.file(configFile)
+    inputs.files(fileTree('gradle'))
+    outputs.files(outputZips.values())
+    doLast {
+        validator.validateAssets(sourceRoot, packageManifest)
+        def metadata = new JsonSlurper().parse(new File(apkDir.get().asFile, 'output-metadata.json'), 'UTF-8')
+        if (metadata.elements.size() != 1) throw new GradleException('Expected one APK output')
+        def apk = new File(apkDir.get().asFile, metadata.elements[0].outputFile)
+        def packager = new GroovyClassLoader(getClass().classLoader).parseClass(file('gradle/ThemePackager.groovy'))
+        packageManifests.each { purpose, distribution ->
+            def target = outputZips[purpose].get().asFile
+            packager.write(apk, target, distribution, verifyEffectThemeZip)
+            logger.lifecycle("Complete ${purpose}: ${target}")
+        }
+    }
+}

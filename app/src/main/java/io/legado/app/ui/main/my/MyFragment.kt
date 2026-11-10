@@ -90,6 +90,7 @@ class MyFragment() : Fragment(), MainFragmentInterface,
             MyMenuAction.RULE -> startActivity<ConfigActivity> {
                 putExtra("configTag", ConfigTag.RULE_CONFIG)
             }
+            MyMenuAction.RESOURCE_CENTER -> startActivity<io.legado.app.ui.resource.ResourceCenterActivity>()
             MyMenuAction.AI -> startActivity<ConfigActivity> {
                 putExtra("configTag", ConfigTag.AI_CONFIG)
             }
@@ -101,6 +102,9 @@ class MyFragment() : Fragment(), MainFragmentInterface,
             }
             MyMenuAction.BACKUP -> startActivity<ConfigActivity> {
                 putExtra("configTag", ConfigTag.BACKUP_CONFIG)
+            }
+            MyMenuAction.APPEARANCE -> startActivity<ConfigActivity> {
+                putExtra("configTag", ConfigTag.APPEARANCE_CONFIG)
             }
             MyMenuAction.SETTINGS -> startActivity<ConfigActivity> {
                 putExtra("configTag", ConfigTag.SETTINGS_CONFIG)

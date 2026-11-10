@@ -94,7 +94,7 @@ internal fun NgSoftGradientColorPresetSheet(
         NgBottomDrawerSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(if (selectedTab == CUSTOM_TAB) 0.90f else 0.60f),
+                .fillMaxHeight(if (selectedTab == CUSTOM_TAB) 0.80f else 0.60f),
             contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
         ) {
             Column(

@@ -1,0 +1,79 @@
+import groovy.json.JsonSlurper
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.charset.StandardCharsets
+import java.util.zip.ZipFile
+
+// Inspect the final DEX class definitions, not strings or source file names.
+static Map inspectDex(byte[] bytes) {
+    def data = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+    int stringsAt = data.getInt(60)
+    int typesAt = data.getInt(68)
+    def types = (0..<data.getInt(64)).collect { index ->
+        int stringId = data.getInt(typesAt + index * 4)
+        int start = data.getInt(stringsAt + stringId * 4)
+        while ((bytes[start++] & 128) != 0) { /* ULEB128 string length */ }
+        int end = start
+        while (bytes[end] != 0) end++
+        new String(bytes, start, end - start, StandardCharsets.UTF_8)
+    }
+    def definitions = [:]
+    int classesAt = data.getInt(100)
+    for (int index = 0; index < data.getInt(96); index++) {
+        int pos = classesAt + index * 32
+        String name = types[data.getInt(pos)]
+        int parent = data.getInt(pos + 8)
+        int interfacesAt = data.getInt(pos + 12)
+        def parents = parent < 0 ? [] : [types[parent]]
+        if (interfacesAt != 0) {
+            for (int i = 0; i < data.getInt(interfacesAt); i++) {
+                parents << types[data.getShort(interfacesAt + 4 + i * 2) & 0xffff]
+            }
+        }
+        definitions[name] = [flags: data.getInt(pos + 4), parents: parents]
+    }
+    return [types: types, definitions: definitions]
+}
+
+ext.verifyPetZip = { File apk, Map manifest, Map info = null ->
+    new ZipFile(apk).withCloseable { zip ->
+        petInfoValidator.verifyZipInfo(zip, info)
+        def names = zip.entries().collect { it.name }
+        if (names.any { it.startsWith('lib/') } || 'assets/pet-plugin.json' in names) {
+            throw new GradleException('Native libraries and v1 plugin manifests are unsupported')
+        }
+        def actual = zip.getInputStream(zip.getEntry('assets/plugin.json')).withCloseable {
+            new JsonSlurper().parse(it, 'UTF-8')
+        }
+        if (manifest != actual) throw new GradleException('Generated plugin manifest has changed')
+        def types = [] as Set
+        def definitions = [:]
+        names.findAll { it ==~ /classes(?:[0-9]+)?\.dex/ }.each { name ->
+            def dex = zip.getInputStream(zip.getEntry(name)).withCloseable { inspectDex(it.bytes) }
+            types.addAll(dex.types)
+            if (!definitions.keySet().intersect(dex.definitions.keySet()).isEmpty()) {
+                throw new GradleException('Duplicate DEX class definitions')
+            }
+            definitions.putAll(dex.definitions)
+        }
+        if (definitions.keySet().any { it.startsWith('Lio/legado/pet/api/') }) {
+            throw new GradleException('Plugin contains host SDK definitions; use compileOnly for the SDK')
+        }
+        def hostReferences = types.collect { it.replaceFirst(/^\[+/, '') }.findAll { it.startsWith('Lio/legado/app/') && !definitions.containsKey(it) }
+        if (hostReferences) throw new GradleException("Plugin depends on App internals: ${hostReferences}")
+        // entryClass is a JVM binary name. Only package separators change; nested types keep their dollar sign.
+        String entry = 'L' + manifest.entryClass.replace('.', '/') + ';'
+        if (!definitions.containsKey(entry) || (definitions[entry].flags & 0x401) != 1) {
+            throw new GradleException("Entry must be a public, concrete class: ${manifest.entryClass}")
+        }
+        def reachable = [] as Set
+        def pending = [entry]
+        while (pending) {
+            def current = pending.pop()
+            if (reachable.add(current)) pending.addAll(definitions[current]?.parents ?: [])
+        }
+        if (!reachable.contains('Lio/legado/pet/api/PetPlugin;')) {
+            throw new GradleException('Entry class does not implement SDK v2 PetPlugin')
+        }
+    }
+}

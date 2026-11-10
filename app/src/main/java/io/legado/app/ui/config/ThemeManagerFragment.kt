@@ -1,8 +1,12 @@
 package io.legado.app.ui.config
 
 import android.net.Uri
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.View
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +18,15 @@ import io.legado.app.R
 import io.legado.app.base.BaseFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.help.config.NgManagedTheme
+import io.legado.app.help.config.NgPreparedThemeImport
+import io.legado.app.help.config.NgThemeImportAction
+import io.legado.app.help.config.NgEffectThemeStatus
+import io.legado.app.help.config.EffectThemeRuntime
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.help.config.NgThemeModeGroup
+import io.legado.app.help.config.NgThemePresentationMode
+import io.legado.app.help.config.NgEffectPackageKind
+import io.legado.app.help.config.NgEffectPackageLibrary
 import io.legado.app.help.config.NgThemeLibraryStore
 import io.legado.app.help.config.NgThemeDrawerAssets
 import io.legado.app.help.config.NgThemeDrawerProfile
@@ -24,6 +37,7 @@ import io.legado.app.help.config.md3.Md3ThemeImportDraft
 import io.legado.app.help.config.md3.Md3ThemeImportManager
 import io.legado.app.help.config.md3.Md3ThemePackageNotRecognizedException
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.resource.ResourceCenterActivity
 import io.legado.app.utils.normalizeFileName
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.CreateDocumentContract
@@ -47,11 +61,20 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     private var editingSession: String? = null
     private var pendingDrawerImage: Pair<String, Boolean>? = null
     private var savingTheme by mutableStateOf(false)
-    private var applyingTheme = false
+    private var applyingTheme by mutableStateOf(false)
     private var copyingDrawerImage by mutableStateOf(false)
     private var pendingMd3ImportUri: Uri? = null
     private var md3ImportDraft by mutableStateOf<Md3ThemeImportDraft?>(null)
     private var md3ImportInstalling by mutableStateOf(false)
+    private var themePackageImport by mutableStateOf<NgPreparedThemeImport?>(null)
+    private var themePackageInstalling by mutableStateOf(false)
+    private var inspectingImport by mutableStateOf(false)
+    private var effectWorking by mutableStateOf(false)
+    private var effectStatuses by mutableStateOf<Map<String, NgEffectThemeStatus>>(emptyMap())
+    private var statusRefresh by mutableStateOf(0L)
+    private val effectBusy: Boolean get() = themePackageInstalling || inspectingImport || effectWorking ||
+        applyingTheme || savingTheme || copyingDrawerImage || preparingExport || md3ImportInstalling
+
 
     private val exportTheme = registerForActivityResult(
         CreateDocumentContract("application/zip")
@@ -82,23 +105,27 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
         }
     }
 
-    private val importTheme = registerForActivityResult(
-        SelectFileContract()
-    ) { uri ->
-        uri ?: return@registerForActivityResult
+    private val importTheme = registerForActivityResult(SelectFileContract()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val context = requireContext().applicationContext
+        inspectingImport = true
         viewLifecycleOwner.lifecycleScope.launch {
-            Md3ThemeImportManager.preview(requireContext(), uri)
-                .onSuccess { draft ->
-                    pendingMd3ImportUri = uri
-                    md3ImportDraft = draft
-                }
-                .onFailure { error ->
-                    if (error is Md3ThemePackageNotRecognizedException) {
-                        importNativeTheme(uri)
-                    } else {
-                        toastOnUi(getString(R.string.ng_theme_import_failed, error.message.orEmpty()))
+            try {
+                Md3ThemeImportManager.preview(context, uri)
+                    .onSuccess { draft ->
+                        pendingMd3ImportUri = uri
+                        md3ImportDraft = draft
+                    }.onFailure { error ->
+                        when (error) {
+                            is CancellationException -> throw error
+                            is Md3ThemePackageNotRecognizedException -> prepareThemePackageImport(uri)
+                            else -> {
+                                Log.w(TAG, "Could not inspect theme package", error)
+                                toastOnUi(R.string.ng_theme_import_read_failed)
+                            }
+                        }
                     }
-                }
+            } finally { inspectingImport = false }
         }
     }
 
@@ -165,9 +192,17 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 val state by NgThemeLibraryStore.observe(requireContext()).collectAsState()
+                val effectRevision by EffectThemeRuntime.revision.collectAsState()
+                val context = requireContext().applicationContext
+                LaunchedEffect(state.savedThemes, effectRevision, statusRefresh) {
+                    effectStatuses = withContext(Dispatchers.IO) {
+                        state.savedThemes.filter { it.effect != null }.associate { theme ->
+                            theme.id to EffectThemeRuntime.status(context, theme, NgEffectPackageKind.THEME.target)
+                        }
+                    }
+                }
                 NgAppTheme {
                     ThemeManagerScreen(
-                        builtInThemes = NgThemeLibraryStore.builtInThemes(requireContext()),
                         savedThemes = state.savedThemes,
                         activeThemeId = state.activeThemeId,
                         currentThemeName = NgThemeLibraryStore.currentThemeName(requireContext()),
@@ -195,7 +230,22 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                         md3ImportDraft = md3ImportDraft,
                         md3ImportInstalling = md3ImportInstalling,
                         onDismissMd3Import = ::dismissMd3Import,
-                        onConfirmMd3Import = ::installMd3Theme
+                        onConfirmMd3Import = ::installMd3Theme,
+                        effectStatuses = effectStatuses,
+                        effectBusy = effectBusy,
+                        appEffectEnabled = NgThemeModeStore.current(context) == NgThemePresentationMode.EFFECT_THEME,
+                        appThemeEnabled = NgThemeModeStore.currentGroup(context) == NgThemeModeGroup.STANDARD,
+                        themePackageImport = themePackageImport,
+                        themePackageInstalling = themePackageInstalling,
+                        onDismissThemePackageImport = ::dismissThemePackageImport,
+                        onConfirmThemePackageImport = ::installThemePackage,
+                        onEffectApply = ::applyEffectTheme,
+                        onEffectApplyStatic = ::applyStaticEffectTheme,
+                        onGetMore = {
+                            startActivity(Intent(requireContext(), ResourceCenterActivity::class.java)
+                                .putExtra("resourcePurpose", "APPEARANCE")
+                                .putExtra("resourceType", "theme"))
+                        },
                     )
                 }
             }
@@ -204,6 +254,7 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
 
     override fun onResume() {
         super.onResume()
+        statusRefresh += 1
         activity?.setTitle(R.string.ng_theme_management)
         setSharedTitleBarVisible(false)
     }
@@ -217,6 +268,7 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     private fun saveCurrentTheme(name: String) {
+        if (effectBusy) return
         val context = requireContext().applicationContext
         lifecycleScope.launch {
             runCatching {
@@ -231,7 +283,7 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     private fun selectTheme(theme: NgManagedTheme) {
-        if (applyingTheme || savingTheme || preparingExport) return
+        if (effectBusy) return
         val context = requireContext().applicationContext
         applyingTheme = true
         lifecycleScope.launch {
@@ -246,21 +298,110 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     private fun importThemePackage() {
-        importTheme.launch(
-            arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
-        )
+        if (effectBusy) return
+        importTheme.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
     }
 
-    private suspend fun importNativeTheme(uri: Uri) {
-        NgThemePackageManager.importTheme(requireContext(), uri)
-            .onSuccess { theme ->
-                if (NgThemeLibraryStore.applyAsync(requireContext().applicationContext, theme)) {
-                    toastOnUi(getString(R.string.ng_theme_import_success, theme.name))
-                } else {
-                    toastOnUi(R.string.ng_drawer_theme_apply_failed)
-                }
+    private suspend fun prepareThemePackageImport(uri: Uri) {
+        val context = requireContext().applicationContext
+        var created: NgPreparedThemeImport? = null
+        var handedToUi = false
+        try {
+            val candidate = withContext(Dispatchers.IO) {
+                NgThemePackageManager.inspectTheme(context, uri).getOrThrow().also { created = it }
             }
-            .onFailure { toastOnUi(getString(R.string.ng_theme_import_failed, it.message.orEmpty())) }
+            if (candidate.action == NgThemeImportAction.NO_OP) {
+                toastOnUi(R.string.effect_theme_installed)
+            } else {
+                themePackageImport = candidate
+                handedToUi = true
+            }
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (error: Exception) {
+            toastOnUi(getString(R.string.ng_theme_import_failed, error.message.orEmpty()))
+        } finally {
+            if (!handedToUi) created?.let { withContext(NonCancellable + Dispatchers.IO) { it.discard() } }
+        }
+    }
+
+    private fun dismissThemePackageImport() {
+        if (themePackageInstalling) return
+        val candidate = themePackageImport ?: return
+        themePackageImport = null
+        lifecycleScope.launch(NonCancellable + Dispatchers.IO) { candidate.discard() }
+    }
+
+    private fun installThemePackage(keepCustomizations: Boolean) {
+        val candidate = themePackageImport ?: return
+        if (effectBusy) return
+        val context = requireContext().applicationContext
+        val updateCurrent = candidate.previous?.id?.let { NgThemeLibraryStore.current(context).activeThemeId == it } == true
+        val applicationMode = NgThemeModeStore.current(context)
+        themePackageInstalling = true
+        themePackageImport = null
+        lifecycleScope.launch {
+            try {
+                val installed = withContext(NonCancellable + Dispatchers.IO) {
+                    candidate.commit(context,
+                        allowReplace = candidate.action == NgThemeImportAction.REPLACE,
+                        allowDowngrade = candidate.action == NgThemeImportAction.DOWNGRADE,
+                        keepCustomizations = keepCustomizations)
+                }
+                if (updateCurrent &&
+                    NgThemeLibraryStore.current(context).activeThemeId == installed.id &&
+                    NgThemeModeStore.current(context) == applicationMode &&
+                    (applicationMode == NgThemePresentationMode.STANDARD ||
+                        applicationMode == NgThemePresentationMode.EFFECT_THEME && installed.effect != null)
+                ) {
+                    val applied = if (applicationMode == NgThemePresentationMode.STANDARD) {
+                        NgThemeLibraryStore.applyStaticAsync(context, installed)
+                    } else NgThemeLibraryStore.applyAsync(context, installed)
+                    if (!applied) {
+                        toastOnUi(R.string.ng_drawer_theme_apply_failed)
+                        return@launch
+                    }
+                    withContext(NonCancellable + Dispatchers.IO) { candidate.discardPreviousPackage(context) }
+                }
+                toastOnUi(getString(R.string.ng_theme_import_success, installed.name))
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { toastOnUi(getString(R.string.ng_theme_import_failed, error.message.orEmpty()))
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) { candidate.discard() }
+                themePackageInstalling = false
+                statusRefresh += 1
+            }
+        }
+    }
+
+    private fun runEffectOperation(block: suspend (Context) -> Unit) {
+        if (effectBusy) return
+        val context = requireContext().applicationContext
+        effectWorking = true
+        lifecycleScope.launch {
+            try { block(context)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { if (isAdded) toastOnUi(error.message ?: getString(R.string.ng_drawer_theme_apply_failed))
+            } finally {
+                effectWorking = false
+                statusRefresh += 1
+            }
+        }
+    }
+
+    private fun applyEffectTheme(theme: NgManagedTheme) {
+        val target = NgEffectPackageKind.THEME.target
+        if (theme.effect?.targets != listOf(target)) return
+        runEffectOperation { context ->
+            val status = withContext(Dispatchers.IO) { EffectThemeRuntime.status(context, theme, target) }
+            check(status.canRun) { status.label }
+            check(NgThemeLibraryStore.applyAsync(context, theme)) { getString(R.string.ng_drawer_theme_apply_failed) }
+        }
+    }
+
+    private fun applyStaticEffectTheme(theme: NgManagedTheme) {
+        runEffectOperation { context ->
+            check(NgThemeLibraryStore.applyStaticAsync(context, theme)) { getString(R.string.ng_drawer_theme_apply_failed) }
+        }
     }
 
     private fun dismissMd3Import() {
@@ -274,16 +415,21 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
         if (md3ImportInstalling) return
         md3ImportInstalling = true
         viewLifecycleOwner.lifecycleScope.launch {
-            Md3ThemeImportManager.install(requireContext(), uri, applyAfterInstall)
-                .onSuccess { result ->
-                    pendingMd3ImportUri = null
-                    md3ImportDraft = null
-                    toastOnUi(getString(R.string.ng_theme_import_success, result.theme.name))
-                }
-                .onFailure { error ->
-                    toastOnUi(getString(R.string.ng_theme_import_failed, error.message.orEmpty()))
-                }
-            md3ImportInstalling = false
+            try {
+                Md3ThemeImportManager.install(requireContext(), uri, applyAfterInstall)
+                    .onSuccess { result ->
+                        pendingMd3ImportUri = null
+                        md3ImportDraft = null
+                        toastOnUi(getString(R.string.ng_theme_import_success, result.theme.name))
+                    }
+                    .onFailure { error ->
+                        if (error is CancellationException) throw error
+                        Log.w(TAG, "Could not install theme package", error)
+                        toastOnUi(R.string.ng_theme_import_save_failed)
+                    }
+            } finally {
+                md3ImportInstalling = false
+            }
         }
     }
 
@@ -339,7 +485,7 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
         } else {
             draft.name
         }
-        val conflict = NgThemeLibraryStore.allThemes(context).any { existing ->
+        val conflict = NgThemeLibraryStore.current(context).savedThemes.any { existing ->
             existing.id != original.id && existing.name.equals(targetName, true)
         }
         if (conflict) {
@@ -347,6 +493,7 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
             return
         }
         val applyAfterSave = NgThemeLibraryStore.current(context).activeThemeId == original.id && !builtIn
+        val applicationMode = NgThemeModeStore.current(context)
         val session = editingSession
         val applicationContext = context.applicationContext
         savingTheme = true
@@ -355,8 +502,8 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
             try {
                 val (saved, applied) = withContext(NonCancellable) {
                     val stored = withContext(Dispatchers.IO) {
-                        NgThemeLibraryStore.addOrReplace(
-                            applicationContext,
+                        NgEffectPackageLibrary.addOrReplace(
+                            applicationContext, NgEffectPackageKind.THEME,
                             draft.copy(
                                 id = if (builtIn) "local.${UUID.randomUUID()}" else original.id,
                                 name = targetName,
@@ -364,7 +511,15 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                         )
                     }
                     storedTheme = stored
-                    stored to (!applyAfterSave || NgThemeLibraryStore.applyAsync(applicationContext, stored))
+                    val stillSelected = NgThemeLibraryStore.current(applicationContext).activeThemeId == original.id
+                        && NgThemeModeStore.current(applicationContext) == applicationMode
+                    val effectIsInactive = stored.effect != null && applicationMode !in
+                        setOf(NgThemePresentationMode.STANDARD, NgThemePresentationMode.EFFECT_THEME)
+                    val applied = if (!applyAfterSave || !stillSelected || effectIsInactive) true
+                    else if (stored.effect != null && applicationMode == NgThemePresentationMode.STANDARD) {
+                        NgThemeLibraryStore.applyStaticAsync(applicationContext, stored)
+                    } else NgThemeLibraryStore.applyAsync(applicationContext, stored)
+                    stored to applied
                 }
                 if (editingSession != session) return@launch
                 if (!applied) {
@@ -460,10 +615,13 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                 // Pin all draft resources into a complete package before opening the system picker.
                 val frozen = withContext(NonCancellable + Dispatchers.IO) {
                     val root = File(context.cacheDir, EXPORT_DRAFT_DIR).apply { mkdirs() }
-                    val target = File(root, "${UUID.randomUUID()}.ngtheme")
+                    val target = File(root, "${UUID.randomUUID()}.zip")
                     frozenPath = target.absolutePath
                     try {
                         NgThemePackageManager.exportTheme(context, theme, Uri.fromFile(target)).getOrThrow()
+                        if (!theme.ownedCoverAlbumIds.isNullOrEmpty() || theme.coverProfile?.albumId != null) {
+                            NgThemePackageManager.inspectArchive(target)
+                        }
                         target
                     } catch (error: Throwable) {
                         target.delete()
@@ -473,7 +631,7 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
                 frozenPath = frozen.absolutePath
                 if (!isAdded || view == null) return@launch
                 pendingExportPackagePath = frozenPath
-                exportTheme.launch("${theme.name.normalizeFileName()}.ngtheme")
+                exportTheme.launch("${theme.name.normalizeFileName()}.zip")
                 frozenPath = null
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -505,6 +663,19 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     private fun deleteTheme(theme: NgManagedTheme) {
+        if (effectBusy) return
+        if (theme.effect != null) {
+            runEffectOperation { context ->
+                val removed = withContext(NonCancellable) {
+                    NgThemeLibraryStore.removeAsync(context, theme.id)
+                }
+                if (removed != null) {
+                    BookCover.upDefaultCover()
+                    postEvent(EventBus.BOOKSHELF_REFRESH, "")
+                }
+            }
+            return
+        }
         if (savingTheme || preparingExport) return
         runCatching { NgThemeLibraryStore.remove(requireContext(), theme.id) }
             .onSuccess { removed ->
@@ -517,6 +688,11 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     override fun onDestroyView() {
+        if (!themePackageInstalling) {
+            val pending = themePackageImport
+            themePackageImport = null
+            if (pending != null) lifecycleScope.launch(NonCancellable + Dispatchers.IO) { pending.discard() }
+        }
         if (!savingTheme && !preparingExport) {
             context?.let { NgThemeDrawerAssets.discardDrafts(it, draftEditTheme?.drawerProfile) }
         }
@@ -539,6 +715,7 @@ class ThemeManagerFragment : BaseFragment(R.layout.fragment_theme_manager) {
     }
 
     private companion object {
+        private const val TAG = "ThemeManager"
         private const val PENDING_EXPORT_PACKAGE = "pendingExportPackage"
         private const val EXPORT_DRAFT_DIR = "ng_theme_export_drafts"
 

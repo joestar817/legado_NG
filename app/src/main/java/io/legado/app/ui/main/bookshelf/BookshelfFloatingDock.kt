@@ -32,7 +32,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -46,7 +45,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -56,11 +54,9 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -69,10 +65,13 @@ import io.legado.app.help.config.BookshelfFloatingDockConfig
 import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassStyle
 import io.legado.app.ui.design.components.compose.NgMaterialRole
+import io.legado.app.ui.design.components.compose.NgMenuSelectionStyle
 import io.legado.app.ui.design.components.compose.NgVisualSurface
+import io.legado.app.ui.design.components.compose.rememberNgExpandableActionMenuContentWidth
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.firstDisplayGrapheme
 
@@ -425,7 +424,6 @@ internal fun BookshelfCompactToolbar(
             modifier = Modifier
                 .width(44.dp)
                 .fillMaxHeight(),
-            menuOffset = DpOffset(0.dp, (-6).dp),
         ) { openMenu ->
             CompactToolbarAction(
                 iconRes = R.drawable.ic_bookshelf_dock_more,
@@ -545,30 +543,6 @@ private fun CompactToolbarGroupAction(
     val isPressed by interactionSource.collectIsPressedAsState()
     var expanded by remember { mutableStateOf(false) }
     val groupLabel = stringResource(R.string.group)
-    val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
-    val textMeasurer = rememberTextMeasurer()
-    val menuTextStyle = MaterialTheme.typography.bodyMedium
-    val menuWidth = remember(
-        groups,
-        configuration.screenWidthDp,
-        density.density,
-        density.fontScale,
-        menuTextStyle,
-    ) {
-        val longestTextWidth = groups.maxOfOrNull { group ->
-            textMeasurer.measure(
-                text = group.name,
-                style = menuTextStyle,
-                maxLines = 1,
-            ).size.width
-        } ?: 0
-        val measuredWidth = with(density) { longestTextWidth.toDp() } + 84.dp
-        val maxWidth = (configuration.screenWidthDp.dp - 32.dp)
-            .coerceAtMost(196.dp)
-            .coerceAtLeast(120.dp)
-        measuredWidth.coerceIn(120.dp, maxWidth)
-    }
     val menuItems = remember(groups, selectedIndex) {
         groups.mapIndexed { index, group ->
             NgExpandableActionMenuItem(
@@ -577,9 +551,13 @@ private fun CompactToolbarGroupAction(
                 iconRes = group.builtInIconRes() ?: R.drawable.ic_groups,
                 title = group.name,
                 checked = index == selectedIndex,
+                selectionStyle = NgMenuSelectionStyle.COMPACT_CHECK,
+                leadingIconSize = 16.dp,
             )
         }
     }
+
+    val menuWidth = rememberNgExpandableActionMenuContentWidth(menuItems).coerceAtMost(196.dp)
 
     Box(
         modifier = Modifier
@@ -630,7 +608,8 @@ private fun CompactToolbarGroupAction(
             onDismissRequest = { expanded = false },
             items = menuItems,
             width = menuWidth,
-            offset = DpOffset(groupActionWidth - menuWidth, (-4).dp),
+            offset = BookshelfToolbarMenuOffset,
+            variant = NgExpandableActionMenuVariant.END_ANCHORED_DROPDOWN,
             onItemClick = { item ->
                 expanded = false
                 val index = item.itemId - COMPACT_GROUP_ITEM_ID_BASE
@@ -759,7 +738,7 @@ private fun floatingDockInactiveContentColor(): Color {
 @DrawableRes
 private fun BookshelfDockGroup.builtInIconRes(): Int? {
     return when (groupId) {
-        BookGroup.IdAll -> R.drawable.ic_bookshelf_dock_all
+        BookGroup.IdAll -> R.drawable.ic_bookshelf_group_all
         BookGroup.IdNoGroup -> R.drawable.ic_bookshelf_dock_ungrouped
         BookGroup.IdLocal -> R.drawable.ic_bookshelf_dock_local
         BookGroup.IdAudio -> R.drawable.ic_bookshelf_dock_audio

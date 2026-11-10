@@ -5,6 +5,7 @@ import kotlin.math.roundToInt
 object FloatingBottomBarConfig {
 
     const val AUTOMATIC_BOTTOM_DISTANCE_PX = -1
+    const val DEFAULT_BOTTOM_DISTANCE_PX = 40
     const val MIN_BOTTOM_DISTANCE_PX = 0
     const val MAX_BOTTOM_DISTANCE_PX = 100
     const val BOTTOM_DISTANCE_STEP_PX = 5
@@ -14,15 +15,15 @@ object FloatingBottomBarConfig {
     const val MIN_TRANSPARENCY_PERCENT = 0
     const val MAX_TRANSPARENCY_PERCENT = 100
 
-    private const val DEFAULT_BOTTOM_DISTANCE_DP = 12
+    private const val AUTOMATIC_BOTTOM_DISTANCE_DP = 12
 
-    /** 未主动调整时保持旧版 12dp 的底部距离；显式值始终按物理像素保存。 */
+    /** 自动距离沿用旧版 12dp，显式值按物理像素解析。 */
     fun resolveBottomDistancePx(storedDistancePx: Int, density: Float): Int {
         if (storedDistancePx != AUTOMATIC_BOTTOM_DISTANCE_PX) {
             return normalizeBottomDistancePx(storedDistancePx)
         }
         val safeDensity = density.takeIf { it > 0f } ?: 1f
-        return (DEFAULT_BOTTOM_DISTANCE_DP * safeDensity).roundToInt()
+        return (AUTOMATIC_BOTTOM_DISTANCE_DP * safeDensity).roundToInt()
             .coerceIn(MIN_BOTTOM_DISTANCE_PX, MAX_BOTTOM_DISTANCE_PX)
     }
 

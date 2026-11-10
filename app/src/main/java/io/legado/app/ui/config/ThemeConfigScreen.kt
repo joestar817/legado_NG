@@ -16,15 +16,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.BrightnessAuto
-import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.LightMode
-import androidx.compose.material.icons.rounded.MonochromePhotos
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,29 +41,31 @@ import io.legado.app.help.config.BookshelfFloatingDockConfig
 import io.legado.app.help.config.BookshelfFloatingDockSearchPosition
 import io.legado.app.help.config.BookshelfTopBarStyle
 import io.legado.app.help.config.FloatingBottomBarConfig
-import io.legado.app.help.config.ListeningCartoonType
-import io.legado.app.help.config.NgDynamicSceneTheme
+import io.legado.app.help.config.NgEffectThemeSelection
 import io.legado.app.help.config.NgThemeDrawerProfile
 import io.legado.app.help.config.NgInterfaceFontStore
 import io.legado.app.help.config.NgSoftGradientColorMode
 import io.legado.app.help.config.NgSoftGradientColorPreset
 import io.legado.app.help.config.NgSoftGradientLightFieldPreset
 import io.legado.app.help.config.NgSoftGradientTheme
+import io.legado.app.help.config.NgMulticolorTheme
 import io.legado.app.help.config.NgThemeModeGroup
 import io.legado.app.help.config.NgThemePresentationMode
 import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.ui.design.components.NgSettingsTrailing
 import io.legado.app.ui.design.components.compose.NgDockSlider
+import io.legado.app.ui.design.components.compose.NgCompactSettingsGroup
+import io.legado.app.ui.design.components.compose.NgCompactSettingsItem
+import io.legado.app.ui.design.components.compose.NgCompactSettingsDivider
 import io.legado.app.ui.design.components.compose.NgExpandableSettingsItem
 import io.legado.app.ui.design.components.compose.NgFloatingTabBar
 import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
-import io.legado.app.ui.design.components.compose.NgFormNavigationRow
-import io.legado.app.ui.design.components.compose.NgFormPanel
 import io.legado.app.ui.design.components.compose.NgLauncherIcon
 import io.legado.app.ui.design.components.compose.NgSettingsGroup
 import io.legado.app.ui.design.components.compose.NgSettingsItem
 import io.legado.app.ui.design.components.compose.NgSettingsSectionLabel
 import io.legado.app.help.config.NgColorConfigStore
+import io.legado.app.ui.design.theme.rememberAppearanceDockSelectionColors
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
 
@@ -82,7 +80,8 @@ internal data class ThemeConfigScreenState(
     val softGradientCustomColor: Int = NgSoftGradientTheme.defaultCustomColor,
     val softGradientLightField: NgSoftGradientLightFieldPreset =
         NgSoftGradientLightFieldPreset.BALANCED,
-    val dynamicScenePreset: ListeningCartoonType = ListeningCartoonType.SAKURA,
+    val effectThemeName: String? = null,
+    val installedThemeCount: Int = 0,
     val visualSystem: NgVisualSystem = NgVisualSystem.DEFAULT,
     val showLauncherIcon: Boolean = true,
     @param:DrawableRes val launcherIconRes: Int = R.mipmap.ic_launcher,
@@ -91,7 +90,7 @@ internal data class ThemeConfigScreenState(
     val floatingBottomBarTransparency: Int =
         FloatingBottomBarConfig.DEFAULT_TRANSPARENCY_PERCENT,
     val drawerProfile: NgThemeDrawerProfile = NgThemeDrawerProfile(),
-    val bookshelfTopBarStyle: BookshelfTopBarStyle = BookshelfTopBarStyle.COMPACT_TOOLBAR,
+    val bookshelfTopBarStyle: BookshelfTopBarStyle = BookshelfTopBarStyle.DEFAULT,
     val bookshelfFloatingDockMinTopDistancePx: Int = 0,
     val bookshelfFloatingDockTopDistancePx: Int = 0,
     val bookshelfFloatingDockTransparency: Int =
@@ -127,7 +126,6 @@ internal fun ThemeConfigScreen(
     onSoftGradientColorSelected: (NgSoftGradientColorPreset) -> Unit,
     onSoftGradientCustomColorSelected: (Int) -> Unit,
     onSoftGradientLightFieldSelected: (NgSoftGradientLightFieldPreset) -> Unit,
-    onDynamicScenePresetSelected: (ListeningCartoonType) -> Unit,
     onVisualSystemSelected: (NgVisualSystem) -> Unit,
     onLauncherIconClick: () -> Unit,
     onFloatingBottomBarChanged: (Boolean) -> Unit,
@@ -163,21 +161,13 @@ internal fun ThemeConfigScreen(
     val context = LocalContext.current
     val drawerColors = when (state.presentationMode) {
         NgThemePresentationMode.SOFT_GRADIENT -> NgSoftGradientTheme.colors(context)
-        NgThemePresentationMode.DYNAMIC_SCENE -> NgDynamicSceneTheme.colors(context)
+        NgThemePresentationMode.MULTICOLOR -> NgMulticolorTheme.colors
+        NgThemePresentationMode.EFFECT_THEME -> NgEffectThemeSelection.colors(context)
         else -> NgColorConfigStore.current(context)
     }
     val showAppearance = section != ThemeConfigSection.INTERFACE
     val showInterface = section != ThemeConfigSection.APPEARANCE
-    val selectedStandardMode = STANDARD_THEME_MODES
-        .indexOf(state.standardThemeMode)
-        .coerceAtLeast(0)
-    val selectedInternalMode = INTERNAL_THEME_MODES
-        .indexOf(state.internalThemeMode)
-        .coerceAtLeast(0)
-    val selectedDynamicScene = DYNAMIC_SCENE_PRESETS
-        .indexOf(state.dynamicScenePreset)
-        .coerceAtLeast(0)
-    var themeModeExpanded by rememberSaveable { mutableStateOf(false) }
+    val dockSelectionColors = rememberAppearanceDockSelectionColors(state.presentationMode)
     var visualSystemExpanded by rememberSaveable { mutableStateOf(false) }
     var bottomBarExpanded by rememberSaveable { mutableStateOf(false) }
     var drawerAppearanceExpanded by rememberSaveable { mutableStateOf(false) }
@@ -193,200 +183,103 @@ internal fun ThemeConfigScreen(
             .padding(top = 16.dp, bottom = 24.dp)
     ) {
         if (showAppearance) {
-            val modeName = when (state.presentationMode) {
-                NgThemePresentationMode.STANDARD -> standardThemeModeName(
-                    state.standardThemeMode,
-                )
-                NgThemePresentationMode.SOFT_GRADIENT ->
-                    stringResource(R.string.ng_theme_mode_soft_gradient)
-                NgThemePresentationMode.DYNAMIC_SCENE ->
-                    stringResource(state.dynamicScenePreset.themeSceneLabelRes())
-                NgThemePresentationMode.EINK ->
-                    stringResource(R.string.theme_mode_eink_short)
-            }
-            NgExpandableSettingsItem(
-                title = stringResource(R.string.theme_mode),
-                summary = stringResource(
-                    R.string.ng_theme_mode_summary,
-                    stringResource(
-                        if (state.themeModeGroup == NgThemeModeGroup.STANDARD) {
-                            R.string.ng_theme_mode_standard
-                        } else {
-                            R.string.ng_theme_mode_internal
-                        }
-                    ),
-                    modeName,
-                ),
-                expanded = themeModeExpanded,
-                onExpandedChange = { themeModeExpanded = it },
-            ) {
-                NgFloatingTabBar(
-                    items = listOf(
-                        NgFloatingTabSpec(
-                            text = stringResource(R.string.ng_theme_mode_standard),
-                        ),
-                        NgFloatingTabSpec(
-                            text = stringResource(R.string.ng_theme_mode_internal),
-                        ),
-                    ),
-                    selectedIndex = NgThemeModeGroup.entries.indexOf(state.themeModeGroup),
-                    onTabSelected = { index ->
-                        onThemeModeGroupSelected(NgThemeModeGroup.entries[index])
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                if (state.themeModeGroup == NgThemeModeGroup.STANDARD) {
-                    ThemeModeFieldLabel(stringResource(R.string.ng_theme_mode_standard))
-                    NgFloatingTabBar(
-                        items = listOf(
-                            NgFloatingTabSpec(
-                                text = stringResource(R.string.theme_mode_follow_short),
-                                iconVector = Icons.Rounded.BrightnessAuto,
-                            ),
-                            NgFloatingTabSpec(
-                                text = stringResource(R.string.theme_mode_day_short),
-                                iconVector = Icons.Rounded.LightMode,
-                            ),
-                            NgFloatingTabSpec(
-                                text = stringResource(R.string.theme_mode_night_short),
-                                iconVector = Icons.Rounded.DarkMode,
-                            ),
-                        ),
-                        selectedIndex = selectedStandardMode,
-                        onTabSelected = { index ->
-                            onStandardThemeModeSelected(STANDARD_THEME_MODES[index])
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                } else {
-                    ThemeModeFieldLabel(stringResource(R.string.ng_theme_mode_internal))
-                    NgFloatingTabBar(
-                        items = listOf(
-                            NgFloatingTabSpec(
-                                text = stringResource(R.string.ng_theme_mode_soft_gradient),
-                            ),
-                            NgFloatingTabSpec(
-                                text = stringResource(R.string.ng_theme_mode_dynamic_scene),
-                            ),
-                            NgFloatingTabSpec(
-                                text = stringResource(R.string.theme_mode_eink_short),
-                                iconVector = Icons.Rounded.MonochromePhotos,
-                            ),
-                        ),
-                        selectedIndex = selectedInternalMode,
-                        onTabSelected = { index ->
-                            onInternalThemeModeSelected(INTERNAL_THEME_MODES[index])
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-
-                    if (state.presentationMode == NgThemePresentationMode.SOFT_GRADIENT) {
-                        NgFormPanel {
-                            NgFormNavigationRow(
-                                title = stringResource(R.string.ng_soft_gradient_color),
-                                value = if (
-                                    state.softGradientColorMode == NgSoftGradientColorMode.CUSTOM
-                                ) {
-                                    stringResource(R.string.ng_soft_gradient_color_custom_tab)
-                                } else {
-                                    stringResource(state.softGradientColor.labelRes())
-                                },
-                                onClick = { showSoftGradientColorSheet = true },
-                                arrowIcon = painterResource(R.drawable.ic_chevron_right_20),
-                            )
-                        }
-
-                        ThemeModeFieldLabel(stringResource(R.string.ng_soft_gradient_light_field))
-                        NgFloatingTabBar(
-                            items = NgSoftGradientLightFieldPreset.entries.map { preset ->
-                                NgFloatingTabSpec(
-                                    text = stringResource(preset.labelRes()),
-                                )
-                            },
-                            selectedIndex = NgSoftGradientLightFieldPreset.entries.indexOf(
-                                state.softGradientLightField,
-                            ),
-                            onTabSelected = { index ->
-                                onSoftGradientLightFieldSelected(
-                                    NgSoftGradientLightFieldPreset.entries[index],
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
+            NgCompactSettingsGroup {
+                ThemeModeGroupSetting(state.themeModeGroup, onThemeModeGroupSelected, dockSelectionColors)
+                NgCompactSettingsDivider()
+                if (state.themeModeGroup == NgThemeModeGroup.INTERNAL) {
+                    ThemeInternalModeChoices(state, onInternalThemeModeSelected)
+                    if (state.internalThemeMode == NgThemePresentationMode.SOFT_GRADIENT) {
+                        NgCompactSettingsDivider()
+                        ThemeSoftGradientSettings(
+                            state = state,
+                            onLightFieldSelected = onSoftGradientLightFieldSelected,
+                            onOpenColor = { showSoftGradientColorSheet = true },
+                            selectionColors = dockSelectionColors,
                         )
                     }
-                    if (state.presentationMode == NgThemePresentationMode.DYNAMIC_SCENE) {
-                        ThemeModeFieldLabel(
-                            stringResource(R.string.ng_theme_mode_dynamic_scene),
-                        )
-                        NgFloatingTabBar(
-                            items = DYNAMIC_SCENE_PRESETS.map { preset ->
-                                NgFloatingTabSpec(
-                                    text = stringResource(preset.themeSceneLabelRes()),
-                                )
-                            },
-                            selectedIndex = selectedDynamicScene,
-                            onTabSelected = { index ->
-                                onDynamicScenePresetSelected(DYNAMIC_SCENE_PRESETS[index])
-                            },
-                            modifier = Modifier.fillMaxWidth(),
+                } else {
+                    ThemeDisplayModeSetting(state.standardThemeMode, onStandardThemeModeSelected, dockSelectionColors)
+                    NgCompactSettingsDivider()
+                    NgCompactSettingsItem(
+                        title = stringResource(R.string.theme_list),
+                        summary = stringResource(R.string.ng_theme_installed_count, state.installedThemeCount),
+                        onClick = onOpenThemeManager,
+                    )
+                    NgCompactSettingsDivider()
+                    NgCompactSettingsItem(
+                        title = stringResource(R.string.ng_custom_colors),
+                        summary = stringResource(R.string.ng_theme_day_night_colors),
+                        onClick = onOpenCustomColors,
+                    )
+                    if (state.presentationMode != NgThemePresentationMode.EFFECT_THEME) {
+                        NgCompactSettingsDivider()
+                        ThemeBackgroundSetting(
+                            daySummary = state.dayBackgroundSummary,
+                            nightSummary = state.nightBackgroundSummary,
+                            onOpenDay = onOpenDayBackground,
+                            onOpenNight = onOpenNightBackground,
                         )
                     }
                 }
+            }
+            Spacer(Modifier.height(20.dp))
+            NgSettingsSectionLabel(stringResource(R.string.ng_appearance_common))
+            NgCompactSettingsGroup {
+                if (state.presentationMode != NgThemePresentationMode.EINK) {
+                    NgCompactSettingsItem(
+                        title = stringResource(R.string.ng_visual_system),
+                        summary = stringResource(state.visualSystem.labelRes()),
+                        onClick = { visualSystemExpanded = !visualSystemExpanded },
+                    )
+                    if (visualSystemExpanded) {
+                        NgFloatingTabBar(
+                            items = listOf(
+                                NgFloatingTabSpec(text = stringResource(R.string.ng_visual_system_transparent_glass)),
+                                NgFloatingTabSpec(text = stringResource(R.string.ng_visual_system_liquid_glass)),
+                            ),
+                            selectedIndex = NgVisualSystem.entries.indexOf(state.visualSystem),
+                            onTabSelected = { onVisualSystemSelected(NgVisualSystem.entries[it]) },
+                            selectionColors = dockSelectionColors,
+                            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                        )
+                    }
+                    NgCompactSettingsDivider()
+                }
+                if (state.showLauncherIcon) {
+                    NgCompactSettingsItem(
+                        title = stringResource(R.string.change_icon),
+                        summary = stringResource(R.string.change_icon_summary),
+                        trailing = NgSettingsTrailing.CUSTOM,
+                        onClick = onLauncherIconClick,
+                        customTrailing = {
+                            LauncherIconPreview(state.launcherIconRes, stringResource(R.string.change_icon))
+                        },
+                    )
+                    NgCompactSettingsDivider()
+                }
+                NgCompactSettingsItem(
+                    title = stringResource(R.string.font_scale),
+                    summary = state.fontScaleSummary,
+                    onClick = onOpenFontScale,
+                )
+                NgCompactSettingsDivider()
+                val interfaceFontRevision by NgInterfaceFontStore.revision.collectAsState()
+                val fontChoice = NgInterfaceFontStore.choice(context)
+                val fontName = NgInterfaceFontStore.name(context)
+                val systemFontIndex = NgInterfaceFontStore.systemChoices.indexOf(fontChoice)
+                val fontSummary = remember(interfaceFontRevision, fontChoice, fontName, context) {
+                    if (systemFontIndex >= 0) context.resources.getStringArray(R.array.system_typefaces)[systemFontIndex]
+                    else fontName.ifBlank { context.getString(R.string.font_mode_custom) }
+                }
+                NgCompactSettingsItem(
+                    title = stringResource(R.string.interface_font),
+                    summary = fontSummary,
+                    onClick = { showInterfaceFontSheet = true },
+                )
             }
         }
 
-        NgSettingsGroup {
-            if (
-                showAppearance &&
-                state.presentationMode != NgThemePresentationMode.EINK
-            ) {
-                NgExpandableSettingsItem(
-                    title = stringResource(R.string.ng_visual_system),
-                    summary = stringResource(state.visualSystem.labelRes()),
-                    expanded = visualSystemExpanded,
-                    onExpandedChange = { visualSystemExpanded = it },
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        NgFloatingTabBar(
-                            items = listOf(
-                                NgFloatingTabSpec(
-                                    text = stringResource(
-                                        R.string.ng_visual_system_transparent_glass
-                                    )
-                                ),
-                                NgFloatingTabSpec(
-                                    text = stringResource(
-                                        R.string.ng_visual_system_liquid_glass
-                                    )
-                                ),
-                            ),
-                            selectedIndex = NgVisualSystem.entries.indexOf(state.visualSystem),
-                            onTabSelected = { index ->
-                                onVisualSystemSelected(NgVisualSystem.entries[index])
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-            }
-            if (showAppearance && state.showLauncherIcon) {
-                NgSettingsItem(
-                    title = stringResource(R.string.change_icon),
-                    summary = stringResource(R.string.change_icon_summary),
-                    trailing = NgSettingsTrailing.CUSTOM,
-                    onClick = onLauncherIconClick,
-                    customTrailing = {
-                        LauncherIconPreview(
-                            iconRes = state.launcherIconRes,
-                            contentDescription = stringResource(R.string.change_icon)
-                        )
-                    }
-                )
-            }
+        if (showInterface) NgSettingsGroup {
             if (showInterface) {
                 NgExpandableSettingsItem(
                 title = stringResource(R.string.main_bottom_bar_style),
@@ -413,7 +306,8 @@ internal fun ThemeConfigScreen(
                     ),
                     selectedIndex = if (state.floatingBottomBar) 1 else 0,
                     onTabSelected = { index -> onFloatingBottomBarChanged(index == 1) },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    selectionColors = dockSelectionColors,
                 )
                 AnimatedVisibility(visible = state.floatingBottomBar) {
                     Column(
@@ -517,7 +411,8 @@ internal fun ThemeConfigScreen(
                     onTabSelected = { index ->
                         onBookshelfTopBarStyleSelected(BookshelfTopBarStyle.entries[index])
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    selectionColors = dockSelectionColors,
                 )
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -547,7 +442,8 @@ internal fun ThemeConfigScreen(
                                             BookshelfFloatingDockSearchPosition.entries[index]
                                         )
                                     },
-                                    modifier = Modifier.width(132.dp)
+                                    modifier = Modifier.width(132.dp),
+                                    selectionColors = dockSelectionColors,
                                 )
                             }
                         )
@@ -611,75 +507,11 @@ internal fun ThemeConfigScreen(
                 }
             )
             }
-            if (
-                showAppearance &&
-                (
-                    state.presentationMode == NgThemePresentationMode.STANDARD ||
-                        state.presentationMode == NgThemePresentationMode.DYNAMIC_SCENE
-                )
-            ) {
-                NgSettingsItem(
-                    title = stringResource(R.string.ng_custom_colors),
-                    summary = stringResource(R.string.ng_custom_colors_summary),
-                    onClick = onOpenCustomColors
-                )
-            }
-            if (showAppearance) {
-                NgSettingsItem(
-                    title = stringResource(R.string.font_scale),
-                    summary = state.fontScaleSummary,
-                    onClick = onOpenFontScale
-                )
-                val context = LocalContext.current
-                val fontChoice = NgInterfaceFontStore.choice(context)
-                val systemFontIndex = NgInterfaceFontStore.systemChoices.indexOf(fontChoice)
-                NgSettingsItem(
-                    title = stringResource(R.string.interface_font),
-                    summary = if (systemFontIndex >= 0) {
-                        context.resources.getStringArray(R.array.system_typefaces)[systemFontIndex]
-                    } else NgInterfaceFontStore.name(context).ifBlank { stringResource(R.string.font_mode_custom) },
-                    onClick = { showInterfaceFontSheet = true },
-                )
-            }
-            if (
-                showAppearance &&
-                state.presentationMode == NgThemePresentationMode.STANDARD
-            ) {
-                NgSettingsItem(
-                    title = stringResource(R.string.theme_list),
-                    summary = stringResource(R.string.theme_list_summary),
-                    onClick = onOpenThemeManager
-                )
-            }
             if (section == ThemeConfigSection.ALL) {
                 NgSettingsItem(
                     title = stringResource(R.string.cover_config),
                     summary = stringResource(R.string.cover_config_summary),
                     onClick = onOpenCoverConfig
-                )
-            }
-        }
-
-        if (
-            showAppearance &&
-            state.presentationMode == NgThemePresentationMode.STANDARD
-        ) {
-            Spacer(Modifier.height(4.dp))
-            NgSettingsSectionLabel(stringResource(R.string.day))
-            NgSettingsGroup {
-                NgSettingsItem(
-                    title = stringResource(R.string.background_image),
-                    summary = state.dayBackgroundSummary,
-                    onClick = onOpenDayBackground
-                )
-            }
-
-            NgSettingsSectionLabel(stringResource(R.string.night))
-            NgSettingsGroup {
-                NgSettingsItem(
-                    title = stringResource(R.string.background_image),
-                    summary = state.nightBackgroundSummary,
-                    onClick = onOpenNightBackground
                 )
             }
         }
@@ -746,26 +578,7 @@ internal fun ThemeConfigScreen(
     )
 }
 
-@Composable
-private fun standardThemeModeName(mode: String): String = stringResource(
-    when (mode) {
-        "1" -> R.string.theme_mode_day_short
-        "2" -> R.string.theme_mode_night_short
-        else -> R.string.theme_mode_follow_short
-    }
-)
-
-@Composable
-private fun ThemeModeFieldLabel(text: String) {
-    Text(
-        text = text,
-        modifier = Modifier.padding(start = 4.dp),
-        color = Color(NgTheme.colors.primary),
-        fontSize = 13.sp,
-    )
-}
-
-private fun NgSoftGradientLightFieldPreset.labelRes(): Int = when (this) {
+internal fun NgSoftGradientLightFieldPreset.labelRes(): Int = when (this) {
     NgSoftGradientLightFieldPreset.BALANCED -> R.string.ng_soft_gradient_light_balanced
     NgSoftGradientLightFieldPreset.CLEAR -> R.string.ng_soft_gradient_light_clear
     NgSoftGradientLightFieldPreset.STILL_SEA -> R.string.ng_soft_gradient_light_still_sea
@@ -788,11 +601,6 @@ internal fun NgSoftGradientColorPreset.labelRes(): Int = when (this) {
     NgSoftGradientColorPreset.GRAPHITE -> R.string.ng_soft_gradient_graphite
 }
 
-private fun ListeningCartoonType.themeSceneLabelRes(): Int = when (this) {
-    ListeningCartoonType.SAKURA -> R.string.listening_motion_cartoon_sakura
-    ListeningCartoonType.CATS -> R.string.listening_motion_cartoon_cats
-    ListeningCartoonType.RAIN_NIGHT -> R.string.listening_motion_cartoon_rain_night
-}
 
 private fun NgVisualSystem.labelRes(): Int = when (this) {
     NgVisualSystem.TRANSPARENT_GLASS -> R.string.ng_visual_system_transparent_glass
@@ -868,17 +676,7 @@ private fun LauncherIconPreview(
         iconRes = iconRes,
         contentDescription = contentDescription,
         modifier = Modifier
-            .size(50.dp)
+            .size(40.dp)
             .clip(RoundedCornerShape(12.dp)),
     )
 }
-
-private val STANDARD_THEME_MODES = listOf("0", "1", "2")
-
-private val INTERNAL_THEME_MODES = listOf(
-    NgThemePresentationMode.SOFT_GRADIENT,
-    NgThemePresentationMode.DYNAMIC_SCENE,
-    NgThemePresentationMode.EINK,
-)
-
-private val DYNAMIC_SCENE_PRESETS = NgDynamicSceneTheme.presets

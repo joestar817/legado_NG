@@ -37,6 +37,7 @@ import io.legado.app.ui.main.bookshelf.BookshelfDockGroup
 import io.legado.app.ui.main.bookshelf.style1.books.BooksFragment
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgMenuSelectionStyle
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.startActivityForBook
@@ -298,6 +299,7 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
                 titleRes = sortLabelRes(sort),
                 iconRes = sortIconRes(sort),
                 checked = sort == currentSort,
+                selectionStyle = NgMenuSelectionStyle.COMPACT_CHECK,
             )
         }
     }

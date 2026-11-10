@@ -57,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookSourcePart
@@ -65,6 +66,7 @@ import io.legado.app.data.entities.SearchKeyword
 import io.legado.app.ui.book.source.BookSourceGroupIcon
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarBackButton
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSearchBar
@@ -332,7 +334,12 @@ private fun SearchTopBar(
                 expanded = menuState.expanded,
                 onDismissRequest = menuState::onDismissRequest,
                 items = menuItems,
+                variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+                sideSlideEndMargin = 10.dp,
+                sideSlideAnchorGap = 8.dp,
+                properties = PopupProperties(focusable = true, clippingEnabled = false),
                 onItemClick = { item ->
+                    if (!menuState.expanded) return@NgExpandableActionMenu
                     menuState.close()
                     when (item.itemId) {
                         R.id.menu_clear_history -> onClearHistory()

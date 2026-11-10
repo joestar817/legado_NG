@@ -1,6 +1,7 @@
 package io.legado.app.help.config
 
 import android.net.Uri
+import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import io.legado.app.utils.GSON
 import splitties.init.appCtx
 import java.io.BufferedInputStream
@@ -113,7 +114,7 @@ internal object ReadHighlightRulePackageManager {
                         "highlight_rule_bg_$index",
                         "高亮规则“${source.name.ifBlank { source.id }}”的背景图",
                     ),
-                    fontPath = copyResource(
+                    fontPath = if (source.fontPath == SYSTEM_DEFAULT_FONT) SYSTEM_DEFAULT_FONT else copyResource(
                         source.fontPath,
                         "highlight_rule_font_$index",
                         "高亮规则“${source.name.ifBlank { source.id }}”的字体",
@@ -193,7 +194,9 @@ internal object ReadHighlightRulePackageManager {
             enabled = rule.enabled && validPattern,
             position = index,
             bgImage = rule.bgImage?.let { resolveResource(it, "高亮规则背景图") },
-            fontPath = rule.fontPath?.let { resolveResource(it, "高亮规则字体") },
+            fontPath = rule.fontPath?.let {
+                if (it == SYSTEM_DEFAULT_FONT) it else resolveResource(it, "高亮规则字体")
+            },
         )
     }
 

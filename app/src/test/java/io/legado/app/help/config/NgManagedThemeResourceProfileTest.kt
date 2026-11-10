@@ -10,7 +10,7 @@ class NgManagedThemeResourceProfileTest {
 
     @Test
     fun `normalization keeps safe package relative resource paths`() {
-        val normalized = NgBuiltInThemes.autumn.copy(
+        val normalized = NgThemeTestFixtures.autumn.copy(
             resourceProfile = NgThemeResourceProfile(
                 navigation = NgThemeNavigationAssets(
                     bookshelf = "assets/icons/bookshelf.png",
@@ -28,7 +28,7 @@ class NgManagedThemeResourceProfileTest {
 
     @Test
     fun `normalization rejects package traversal and absolute paths`() {
-        val normalized = NgBuiltInThemes.autumn.copy(
+        val normalized = NgThemeTestFixtures.autumn.copy(
             resourceProfile = NgThemeResourceProfile(
                 navigation = NgThemeNavigationAssets(
                     bookshelf = "../outside.png",
@@ -47,7 +47,7 @@ class NgManagedThemeResourceProfileTest {
 
     @Test
     fun `managed theme persists functional cover profile`() {
-        val theme = NgBuiltInThemes.autumn.copy(
+        val theme = NgThemeTestFixtures.autumn.copy(
             coverProfile = NgThemeCoverProfile(
                 applyAlbumSelection = true,
                 albumId = " album-id ",
@@ -74,7 +74,7 @@ class NgManagedThemeResourceProfileTest {
 
     @Test
     fun `managed theme persists normalized owned cover albums`() {
-        val theme = NgBuiltInThemes.autumn.copy(
+        val theme = NgThemeTestFixtures.autumn.copy(
             ownedCoverAlbumIds = listOf(" first ", "second", "first", ""),
         ).normalized()
 
@@ -83,8 +83,8 @@ class NgManagedThemeResourceProfileTest {
     }
 
     @Test
-    fun `theme removal keeps cover albums referenced by another theme`() {
-        val removed = NgBuiltInThemes.autumn.copy(
+    fun `theme removal keeps shared and unowned cover albums`() {
+        val removed = NgThemeTestFixtures.autumn.copy(
             id = "local.removed",
             ownedCoverAlbumIds = listOf("album-a", "album-b"),
             coverProfile = NgThemeCoverProfile(
@@ -92,7 +92,7 @@ class NgManagedThemeResourceProfileTest {
                 albumId = "legacy-selected",
             ),
         )
-        val remaining = NgBuiltInThemes.autumn.copy(
+        val remaining = NgThemeTestFixtures.autumn.copy(
             id = "local.remaining",
             coverProfile = NgThemeCoverProfile(
                 applyAlbumSelection = true,
@@ -101,7 +101,7 @@ class NgManagedThemeResourceProfileTest {
         )
 
         assertEquals(
-            setOf("album-a", "legacy-selected"),
+            setOf("album-a"),
             orphanedCoverAlbumIds(removed, listOf(remaining)),
         )
     }

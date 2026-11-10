@@ -6,6 +6,7 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.http.newCallResponse
+import io.legado.app.help.http.GitHubRelay
 import io.legado.app.help.http.okHttpClient
 import io.legado.app.help.http.text
 import io.legado.app.utils.GSON
@@ -19,7 +20,7 @@ import kotlinx.coroutines.withTimeout
 @Suppress("unused")
 object AppUpdateGitHub : AppUpdate.AppUpdateInterface {
 
-    private const val API_ATTEMPT_TIMEOUT = 4_500L
+    private const val API_ATTEMPT_TIMEOUT = GitHubRelay.METADATA_ATTEMPT_TIMEOUT_MS
 
     private val checkVariant: AppVariant
         get() = when (AppConfig.updateToVariant) {
