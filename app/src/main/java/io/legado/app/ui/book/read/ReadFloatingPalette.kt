@@ -251,6 +251,18 @@ internal object ReadFloatingPalette {
         )
     }
 
+    /** Keep destructive text readable against both ends of the reading dialog gradient. */
+    @ColorInt
+    fun resolveDangerTextColor(snapshot: NgThemeSnapshot, primaryStrengthPercent: Int): Int {
+        val surfaces = resolveSurfaceColors(snapshot, primaryStrengthPercent)
+        return findContrastingTone(
+            preferred = snapshot.colors.error,
+            backgrounds = intArrayOf(surfaces.top, surfaces.bottom),
+            contrastThreshold = TEXT_MIN_CONTRAST,
+            preserveChroma = true,
+        )
+    }
+
     private fun resolveStyleSeeds(
         @ColorInt seed: Int,
         style: ReadFloatingColorStyle,

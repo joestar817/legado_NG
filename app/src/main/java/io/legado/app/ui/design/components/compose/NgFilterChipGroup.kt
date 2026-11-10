@@ -70,13 +70,14 @@ fun NgActionChip(
     @DrawableRes iconRes: Int? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
-    val contentColor = Color.White
+    val colors = rememberNgSolidButtonColors(Color(NgTheme.colors.primary))
+    val contentColor = Color(colors.content)
     Row(
         modifier = modifier
             .height(CHIP_HEIGHT)
             .widthIn(max = 360.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(NgTheme.colors.primary))
+            .background(Color(colors.container))
             .then(
                 if (onLongClick != null) {
                     Modifier.combinedClickable(

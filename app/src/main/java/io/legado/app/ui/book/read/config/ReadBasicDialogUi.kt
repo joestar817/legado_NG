@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgFormActionButton
+import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.theme.NgTheme
 
 @Composable
@@ -143,6 +144,8 @@ private fun ReadDialogActions(
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    val snapshot = NgTheme.snapshot
+    val readingNight = snapshot.isDark && !snapshot.isEInk
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -159,7 +162,9 @@ private fun ReadDialogActions(
             text = confirmLabel,
             onClick = onConfirm,
             modifier = Modifier.weight(1f),
-            variant = NgButtonVariant.PRIMARY,
+            variant = if (readingNight) NgButtonVariant.TONAL else NgButtonVariant.PRIMARY,
+            appearance = if (readingNight) NgFormActionButtonAppearance.READING_NIGHT_CONFIRM
+            else NgFormActionButtonAppearance.DEFAULT,
         )
     }
 }

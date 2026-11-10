@@ -28,6 +28,8 @@ import androidx.compose.ui.window.DialogProperties
 import io.legado.app.R
 import io.legado.app.help.font.FontFileEntry
 import io.legado.app.help.font.FontUsageReference
+import io.legado.app.ui.book.read.ReadFloatingAppearanceState
+import io.legado.app.ui.book.read.ReadFloatingPalette
 import io.legado.app.ui.book.read.config.ReadConfigDialogSurface
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgDialog
@@ -56,6 +58,13 @@ internal fun FontDeletionConfirmDialog(
         ),
     ) {
         val title = stringResource(R.string.font_delete_confirmation_title)
+        val snapshot = NgTheme.snapshot
+        val dangerColor = if (style == FontDeletionConfirmStyle.READER && snapshot.isDark) {
+            val strength = ReadFloatingAppearanceState.primaryStrengthPercent
+            remember(snapshot, strength) {
+                Color(ReadFloatingPalette.resolveDangerTextColor(snapshot, strength))
+            }
+        } else null
         val actions: @Composable RowScope.() -> Unit = {
             NgDialogTextActionButton(
                 text = stringResource(R.string.cancel),
@@ -68,6 +77,7 @@ internal fun FontDeletionConfirmDialog(
                 onClick = onConfirm,
                 danger = true,
                 enabled = !busy,
+                contentColorOverride = dangerColor,
             )
         }
         val message: @Composable ColumnScope.() -> Unit = {

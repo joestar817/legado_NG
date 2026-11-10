@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
@@ -252,7 +253,11 @@ internal fun ResourceEmptyState(
                         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
                     ) {
                         Text(actionLabel, style = textStyle, fontSize = 13.sp, lineHeight = 18.sp,
-                            fontWeight = FontWeight.Medium, color = Color.White, textAlign = TextAlign.Center)
+                            fontWeight = FontWeight.Medium,
+                            color = if (NgTheme.snapshot.isDark && !NgTheme.snapshot.isEInk) {
+                                LocalContentColor.current
+                            } else Color.White,
+                            textAlign = TextAlign.Center)
                     }
                 }
             }

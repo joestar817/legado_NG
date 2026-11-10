@@ -12,6 +12,25 @@ import org.junit.Test
 class ReadFloatingPaletteTest {
 
     @Test
+    fun nightDangerTextContrastsWithBothReadingDialogGradientEnds() {
+        val snapshot = NgThemeResolver.resolve(
+            NgLegacyThemeInput(
+                primaryColor = 0xFF153A5B.toInt(),
+                accentColor = 0xFF5CCBFF.toInt(),
+                backgroundColor = 0xFF06182D.toInt(),
+                bottomBackground = 0xFF12314D.toInt(),
+                errorColor = 0xFFEB4333.toInt(),
+                isDark = true,
+                isEInk = false,
+            )
+        )
+        for (strength in listOf(0, 50, 100)) {
+            val text = ReadFloatingPalette.resolveDangerTextColor(snapshot, strength)
+            assertTrue(minContrast(text, ReadFloatingPalette.resolveSurfaceColors(snapshot, strength)) >= 4.5)
+        }
+    }
+
+    @Test
     fun zeroSeedKeepsApplicationSnapshotUntouched() {
         val base = baseSnapshot(isDark = false)
 

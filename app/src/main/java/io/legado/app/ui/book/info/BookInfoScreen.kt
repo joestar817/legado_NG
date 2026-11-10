@@ -44,6 +44,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -1413,7 +1414,13 @@ private fun BookInfoUnsupportedFileDialog(
                     modifier = Modifier.width(92.dp).height(42.dp),
                     variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
                 ) {
-                    Text(stringResource(R.string.open_fun), color = Color.White, fontSize = 14.sp)
+                    Text(
+                        stringResource(R.string.open_fun),
+                        color = if (NgTheme.snapshot.isDark && !NgTheme.snapshot.isEInk) {
+                            LocalContentColor.current
+                        } else Color.White,
+                        fontSize = 14.sp,
+                    )
                 }
             },
         ) {

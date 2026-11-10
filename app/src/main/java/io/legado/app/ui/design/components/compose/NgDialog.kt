@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgDialogVariant
+import io.legado.app.ui.design.theme.NgButtonTextPalette
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.resolveNgDialogTheme
@@ -166,14 +167,25 @@ fun NgDialogTextActionButton(
     enabled: Boolean = true,
     secondary: Boolean = false,
     modifier: Modifier = Modifier,
+    contentColorOverride: Color? = null,
 ) {
-    val contentColor = Color(
+    val snapshot = NgTheme.snapshot
+    val preferred = Color(
         when {
-            danger -> NgTheme.colors.error
-            secondary -> NgTheme.colors.onSurfaceVariant
-            else -> NgTheme.colors.primary
+            danger -> snapshot.colors.error
+            secondary -> snapshot.colors.onSurfaceVariant
+            else -> snapshot.colors.primary
         }
-    ).let { if (enabled) it else it.copy(alpha = 0.45f) }
+    )
+    val resolved = if (contentColorOverride != null) {
+        contentColorOverride
+    } else if (danger && snapshot.isDark && !snapshot.isEInk) {
+        val surface = ngDialogSurfaceColor()
+        remember(preferred, surface) {
+            Color(NgButtonTextPalette.resolveDanger(preferred.toArgb(), surface.toArgb(), isDark = true))
+        }
+    } else preferred
+    val contentColor = resolved.let { if (enabled) it else it.copy(alpha = 0.45f) }
     TextButton(
         onClick = onClick,
         modifier = modifier,

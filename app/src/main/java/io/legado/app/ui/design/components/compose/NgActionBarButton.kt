@@ -65,6 +65,8 @@ fun NgActionBarButton(
     sizeVariant: NgActionBarButtonSizeVariant = NgActionBarButtonSizeVariant.REGULAR,
 ) {
     val colors = NgTheme.colors
+    val primaryContent = ngDrawerPrimaryContentColor()
+    val primaryColors = rememberNgSolidButtonColors(Color(colors.primary), primaryContent)
     val compact = sizeVariant == NgActionBarButtonSizeVariant.COMPACT
     val cornerRadius = if (compact) 8.dp else 12.dp
     val shape = RoundedCornerShape(cornerRadius)
@@ -133,8 +135,8 @@ fun NgActionBarButton(
             enabled = enabled,
             shape = shape,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(colors.primary),
-                contentColor = ngDrawerPrimaryContentColor()
+                containerColor = Color(primaryColors.container),
+                contentColor = Color(primaryColors.content)
             ),
             contentPadding = contentPadding,
             content = content
@@ -146,8 +148,8 @@ fun NgActionBarButton(
             enabled = enabled,
             shape = shape,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(colors.primary),
-                contentColor = ngDrawerPrimaryContentColor()
+                containerColor = Color(primaryColors.container),
+                contentColor = Color(primaryColors.content)
             ),
             contentPadding = contentPadding,
             content = content

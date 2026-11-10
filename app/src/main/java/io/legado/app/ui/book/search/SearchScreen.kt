@@ -66,6 +66,7 @@ import io.legado.app.data.entities.SearchKeyword
 import io.legado.app.ui.book.source.BookSourceGroupIcon
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.rememberNgSolidButtonColors
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarBackButton
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
@@ -227,6 +228,7 @@ internal fun SearchScreen(
             val showSearchAction = queryMatchesSearch && state.activeQuery.isNotEmpty() &&
                 (state.isSearching || (!state.manualStopped && state.hasMore))
             if (!showInputHelp && showSearchAction) {
+                val actionColors = rememberNgSolidButtonColors(Color(NgTheme.colors.primary).copy(alpha = 1f))
                 FloatingActionButton(
                     onClick = if (state.isSearching) onStopSearch else onLoadMore,
                     modifier = Modifier
@@ -235,8 +237,8 @@ internal fun SearchScreen(
                         .padding(16.dp)
                         .size(40.dp),
                     shape = CircleShape,
-                    containerColor = Color(NgTheme.colors.primary).copy(alpha = 1f),
-                    contentColor = Color.White
+                    containerColor = Color(actionColors.container),
+                    contentColor = Color(actionColors.content)
                 ) {
                     Icon(
                         painter = painterResource(
@@ -577,11 +579,12 @@ private fun SearchInputHelp(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.padding(horizontal = 3.dp, vertical = 4.dp)
                 ) {
+                    val actionColors = rememberNgSolidButtonColors(Color(NgTheme.colors.primary).copy(alpha = 1f))
                     visibleHistory.forEach { keyword ->
                         SearchHelpChip(
                             text = keyword.word,
-                            containerColor = Color(NgTheme.colors.primary).copy(alpha = 1f),
-                            contentColor = Color.White,
+                            containerColor = Color(actionColors.container),
+                            contentColor = Color(actionColors.content),
                             onClick = { onHistoryClick(keyword) },
                             onLongClick = { onDeleteHistory(keyword) }
                         )

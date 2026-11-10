@@ -94,6 +94,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgButtonVariant
+import io.legado.app.ui.design.theme.NgSolidButtonPalette
 import io.legado.app.ui.design.theme.NgTheme
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -1632,6 +1633,8 @@ enum class NgFormActionButtonAppearance {
     SURFACE_CARD_BORDERLESS,
     DIALOG,
     COLOR_PICKER_CONFIRM,
+    /** 阅读夜间浮窗使用浅色 Tonal 确认按钮，保持主次层级。 */
+    READING_NIGHT_CONFIRM,
     /** 无底色、无描边的主题色文字操作，图标与文字使用紧凑间距。 */
     TEXT,
 }
@@ -1653,6 +1656,19 @@ fun NgFormActionButton(
     val colors = NgTheme.colors
     val primary = Color(colors.primary)
     val colorPickerConfirm = appearance == NgFormActionButtonAppearance.COLOR_PICKER_CONFIRM
+    val snapshot = NgTheme.snapshot
+    val readingNightConfirm = appearance == NgFormActionButtonAppearance.READING_NIGHT_CONFIRM &&
+        variant == NgButtonVariant.TONAL && snapshot.isDark && !snapshot.isEInk
+    val readingConfirmColors = if (readingNightConfirm) {
+        remember(colors.primary, colors.surface) {
+            NgSolidButtonPalette.resolveLightTonalAction(colors.primary, colors.surface)
+        }
+    } else null
+    val drawerPrimaryContent = ngDrawerPrimaryContentColor()
+    val primaryContent = if (colorPickerConfirm && variant == NgButtonVariant.PRIMARY) {
+        Color.White
+    } else drawerPrimaryContent
+    val primaryColors = rememberNgSolidButtonColors(primary, primaryContent)
     val textAppearance = appearance == NgFormActionButtonAppearance.TEXT
     val shape = RoundedCornerShape(if (colorPickerConfirm) 13.dp else NgTheme.shapes.mediumDp.dp)
     val surfaceCardAppearance = appearance == NgFormActionButtonAppearance.DIALOG ||
@@ -1662,12 +1678,12 @@ fun NgFormActionButton(
         appearance == NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS
     val containerColor = if (textAppearance) Color.Transparent else when (variant) {
         NgButtonVariant.PRIMARY,
-        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> primary
-        NgButtonVariant.TONAL -> Color(colors.selectedContainer)
+        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> Color(primaryColors.container)
+        NgButtonVariant.TONAL -> Color(readingConfirmColors?.container ?: colors.selectedContainer)
         NgButtonVariant.NEUTRAL -> Color(colors.surfaceContainerHigh).copy(
             alpha = if (NgTheme.snapshot.isEInk) 1f else 0.38f
         )
-        NgButtonVariant.DANGER -> Color(colors.error)
+        NgButtonVariant.DANGER -> rememberNgSolidButtonContainerColor(Color(colors.error))
         NgButtonVariant.ON_IMAGE -> Color.Black.copy(alpha = 0.56f)
         NgButtonVariant.OUTLINE -> if (surfaceCardAppearance) {
             ngDrawerContentCardColor()
@@ -1676,9 +1692,9 @@ fun NgFormActionButton(
         }
     }
     val contentColor = if (textAppearance) primary else when (variant) {
-        NgButtonVariant.PRIMARY -> if (colorPickerConfirm) Color.White else ngDrawerPrimaryContentColor()
-        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> ngDrawerPrimaryContentColor()
-        NgButtonVariant.TONAL,
+        NgButtonVariant.PRIMARY,
+        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> Color(primaryColors.content)
+        NgButtonVariant.TONAL -> Color(readingConfirmColors?.content ?: colors.onSurface)
         NgButtonVariant.NEUTRAL -> Color(colors.onSurface)
         NgButtonVariant.DANGER -> Color.White
         NgButtonVariant.ON_IMAGE -> Color.White
