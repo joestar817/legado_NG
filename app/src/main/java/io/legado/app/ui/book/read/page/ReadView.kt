@@ -1074,6 +1074,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
         curPage.upBg()
         prevPage.upBg()
         nextPage.upBg()
+        // EPUB draws the background in this view's drawChild, outside the PageView display list.
+        invalidate()
     }
 
     /**
@@ -1083,6 +1085,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
         curPage.upBgAlpha()
         prevPage.upBgAlpha()
         nextPage.upBgAlpha()
+        invalidate()
     }
 
     /**
