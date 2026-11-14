@@ -30,6 +30,7 @@ internal fun <T> withReorderedChapterCache(
     require(oldChapters.map(BookChapter::index).toSet().size == oldChapters.size)
     require(newChapters.map(BookChapter::index).toSet().size == newChapters.size)
     val directory = File(BookHelp.cachePath, book.getFolderName())
+    val existingNames = directory.list()?.toHashSet()
     val moves = buildList {
         oldChapters.forEach { old ->
             val new = newByUrl.getValue(old.url)
@@ -39,7 +40,11 @@ internal fun <T> withReorderedChapterCache(
                 // AtomicFile's companion files belong to the same edited chapter.
                 listOf("", ".epub-positions.gz", ".epub-positions.gz.bak", ".epub-positions.gz.new")
                     .forEach { suffix ->
-                        add(ChapterCacheFileMove(File(directory, oldName + suffix), File(directory, newName + suffix)))
+                        val sourceName = oldName + suffix
+                        val targetName = newName + suffix
+                        if (existingNames == null || sourceName in existingNames || targetName in existingNames) {
+                            add(ChapterCacheFileMove(File(directory, sourceName), File(directory, targetName)))
+                        }
                     }
             }
         }
@@ -90,7 +95,7 @@ internal fun <T> withReorderedCacheFiles(
         runCatching { staging.delete() }
     }
 
-    var published = false
+    var needsRollback = false
     val result = try {
         Properties().apply {
             setProperty("root", root.path)
@@ -100,14 +105,19 @@ internal fun <T> withReorderedCacheFiles(
             }
         }.also { properties -> recovery.outputStream().use { properties.store(it, "Original chapter cache files") } }
         backups.forEach { (original, backup) -> original.copyTo(backup) }
+        // Every original now has a backup, so output preparation can move the source.
+        needsRollback = true
         val outputs = plan.mapIndexedNotNull { index, move ->
             val backup = backups[move.source] ?: return@mapIndexedNotNull null
             val output = File(staging, "$index.output").also(ownedFiles::add)
-            if (move.replacement == null) backup.copyTo(output) else output.writeBytes(move.replacement)
+            if (move.replacement == null) {
+                if (!move.source.renameTo(output)) backup.copyTo(output)
+            } else {
+                output.writeBytes(move.replacement)
+            }
             output.setLastModified(modifiedTimes.getValue(move.source))
             move.target to output
         }
-        published = true
         paths.forEach { file ->
             if (file.exists() && !file.delete()) throw IOException("无法替换章节缓存：$file")
         }
@@ -116,7 +126,7 @@ internal fun <T> withReorderedCacheFiles(
         }
         commit()
     } catch (failure: Throwable) {
-        if (published) {
+        if (needsRollback) {
             val rollbackFailures = mutableListOf<Throwable>()
             paths.forEach { original ->
                 try {

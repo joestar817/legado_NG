@@ -388,7 +388,6 @@ object Restore {
             reloadGlobalReadFloatingColorPreferences()
             hideStatusBar = appCtx.getPrefBoolean(PreferKey.hideStatusBar)
             readBodyToLh = appCtx.getPrefBoolean(PreferKey.readBodyToLh, true)
-            useZhLayout = appCtx.getPrefBoolean(PreferKey.useZhLayout)
             isNightTheme = appCtx.getPrefBoolean(PreferKey.readNightTheme, false)
             autoReadSpeed = appCtx.getPrefInt(
                 PreferKey.autoReadSpeed,

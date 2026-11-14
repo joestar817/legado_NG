@@ -24,8 +24,8 @@ class ReadHeaderImageView @JvmOverloads constructor(
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
-    fun updateImage(path: String, imageWidth: Int, imageHeight: Int, enabled: Boolean) {
-        val nextPath = path.takeIf { enabled && imageWidth > 0 && imageHeight > 0 }.orEmpty()
+    fun updateImage(path: String, imageWidth: Int, imageHeight: Int) {
+        val nextPath = path.takeIf { imageWidth > 0 && imageHeight > 0 }.orEmpty()
         if (imagePath == nextPath && sourceWidth == imageWidth && sourceHeight == imageHeight) return
         imagePath = nextPath
         sourceWidth = imageWidth

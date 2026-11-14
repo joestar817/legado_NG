@@ -32,6 +32,16 @@ class ReadBookDefaultFloatingAppearanceTest {
             val config = requireNotNull(actual[preset.name])
             assertEquals(preset.seed, config.readFloatingSeed)
             assertEquals(0, config.readFloatingSeedNight)
+            listOf(ReadAppearanceMode.DAY, ReadAppearanceMode.NIGHT).forEach { mode ->
+                val effective = resolveEffectiveReadFloatingColor(
+                    isEInk = false,
+                    globallyFollowsApplication = false,
+                    globalColorStyle = ReadFloatingColorStyle.VIBRANT,
+                    presetSeed = config.readFloatingSeedForMode(mode),
+                    presetColorStyle = config.curReadFloatingColorStyle(),
+                )
+                assertFalse(effective.followsApplication)
+            }
             assertEquals(0, config.curReadFloatingTransparency())
             assertEquals(100, config.curReadFloatingPrimaryStrength())
             assertEquals(preset.style, config.curReadFloatingColorStyle())

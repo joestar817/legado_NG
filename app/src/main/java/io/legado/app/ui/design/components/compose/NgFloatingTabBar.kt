@@ -73,6 +73,7 @@ fun NgFloatingTabBar(
     size: NgFloatingTabBarSize = NgFloatingTabBarSize.STANDARD,
     enabled: Boolean = true,
     selectionColors: NgDockSelectionColors? = null,
+    semanticRole: Role? = null,
 ) {
     items.forEach { item ->
         require(item.text != null || !item.contentDescription.isNullOrBlank()) {
@@ -113,6 +114,7 @@ fun NgFloatingTabBar(
                     enabled = enabled,
                     contentColor = contentColor,
                     selectedContainerColor = selectedContainerColor,
+                    role = semanticRole ?: Role.RadioButton,
                     onClick = { onTabSelected(index) },
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
@@ -131,7 +133,7 @@ fun NgFloatingTabBar(
                     .selectable(
                         selected = selected,
                         enabled = enabled,
-                        role = if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) Role.RadioButton else Role.Tab,
+                        role = semanticRole ?: if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) Role.RadioButton else Role.Tab,
                         onClick = { onTabSelected(index) }
                     )
                     .semantics(mergeDescendants = true) {
@@ -264,6 +266,7 @@ private fun NgAppearanceSelectionTab(
     enabled: Boolean,
     contentColor: Color,
     selectedContainerColor: Color,
+    role: Role,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -272,7 +275,7 @@ private fun NgAppearanceSelectionTab(
         modifier = modifier
             .clip(shape)
             .then(if (selected) Modifier.background(selectedContainerColor) else Modifier)
-            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .selectable(selected = selected, enabled = enabled, role = role, onClick = onClick)
             .semantics(mergeDescendants = true) {
                 item.contentDescription?.let { contentDescription = it }
             }

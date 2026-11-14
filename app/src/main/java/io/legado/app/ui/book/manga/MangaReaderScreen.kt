@@ -344,7 +344,8 @@ private fun MangaModule(state: MangaReaderState, onSetting: (MangaSetting, Int) 
                             maxLines = 1, color = Color(NgTheme.colors.onSurface))
                         Box(Modifier.weight(1f)) {
                             MangaChoice(listOf(stringResource(R.string.read_catalog_style_card),
-                                stringResource(R.string.read_catalog_style_compact_side)), state.catalogStyle.ordinal) {
+                                stringResource(R.string.read_catalog_style_compact_side),
+                                stringResource(R.string.read_catalog_style_dense_list)), state.catalogStyle.ordinal) {
                                 onSetting(MangaSetting.CATALOG_STYLE, it)
                             }
                         }

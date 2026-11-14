@@ -235,10 +235,16 @@ class TextChapterLayout(
 
         if (titleMode != 2 || bookChapter.isVolume || contents.isEmpty()) {
             var firstLine = true
-            val titleSegments = displayTitle.splitNotBlank("\n").flatMap { title ->
+            val segmentType = ReadBookConfig.titleSegType
+            val titleSegments = displayTitle.splitNotBlank("\n").flatMapIndexed { index, title ->
+                val lineType = if (index > 0 && segmentType == ReadTitleSegmentType.CHAPTER_NUMBER) {
+                    ReadTitleSegmentType.NONE
+                } else {
+                    segmentType
+                }
                 ReadTitleStyleParser.parse(
                     title,
-                    ReadBookConfig.titleSegType,
+                    lineType,
                     ReadBookConfig.titleSegDistance,
                     ReadBookConfig.titleSegFlag,
                     ReadBookConfig.titleSegScaling,

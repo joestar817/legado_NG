@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="read_highlight_current_preset">Current preset</string>
+    <string name="read_highlight_rule_library">Rule library</string>
+    <string name="read_highlight_link_rules">Linked rules</string>
+    <string name="read_highlight_linked_count">%1$d linked</string>
+    <string name="read_highlight_used_by_preset">Used by this preset</string>
+    <string name="read_highlight_not_used_by_preset">Not used by this preset</string>
+    <string name="read_highlight_used_by_book">Used by this book</string>
+    <string name="read_highlight_not_used_by_book">Not used by this book</string>
+    <string name="read_highlight_add_rule">+ Add</string>
+    <string name="read_highlight_global_switch_description">%1$s global default</string>
+    <string name="read_highlight_multi_select">Select</string>
+    <string name="read_highlight_selected_count">%1$d selected</string>
+    <string name="read_highlight_rule_more">%1$s more options</string>
+    <string name="read_highlight_copy_action">Copy</string>
+    <string name="read_highlight_restore_one_confirm">Restore the default settings for “%1$s”?</string>
+    <string name="read_highlight_restore_one_done">Rule restored to default</string>
+</resources>

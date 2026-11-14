@@ -193,6 +193,16 @@ internal object ReadHighlightRuleStore {
     }
 
     @Synchronized
+    fun mergeForPreset(importedRules: List<ReadHighlightRule>): ReadPresetRuleMergeResult {
+        ensureInitialized()
+        val result = mergePresetHighlightRules(rules, importedRules)
+        rules.clear()
+        rules.addAll(result.merge.rules)
+        if (result.merge.addedCount > 0) saveAsync()
+        return result
+    }
+
+    @Synchronized
     fun restoreBuiltIn(defaultRules: List<ReadHighlightRule>): ReadHighlightRuleMergeResult {
         ensureInitialized()
         val result = restoreBuiltInReadHighlightRules(rules, defaultRules)

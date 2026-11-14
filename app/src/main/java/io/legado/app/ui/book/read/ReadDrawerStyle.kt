@@ -23,11 +23,11 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
-import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgColorConfigStore
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
+import io.legado.app.help.config.ReadAppearanceMode
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadFloatingColorStyle
 import io.legado.app.help.config.ThemeConfig
@@ -35,11 +35,14 @@ import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgColorGenerationMode
+import io.legado.app.ui.design.theme.NgColorSpec
+import io.legado.app.ui.design.theme.NgColorSystem
+import io.legado.app.ui.design.theme.NgContrastLevel
 import io.legado.app.ui.design.theme.NgManualColorSet
+import io.legado.app.ui.design.theme.NgPaletteStyle
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.design.theme.NgThemeSnapshot
-import io.legado.app.utils.defaultSharedPreferences
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.windowSize
 import splitties.systemservices.windowManager
@@ -49,31 +52,34 @@ import kotlin.math.roundToInt
 object ReadDrawerStyle {
     private const val DRAWER_AVOIDANCE_ANIMATION_DURATION = 180L
 
-    // 保留已验收的阅读夜间蓝色；仅用于尚未配置独立夜间颜色的多彩光场。
-    private val defaultIndependentNightColors = NgManualColorSet(
-        primary = 0xFF5CCBFF.toInt(),
-        secondary = 0xFF153A5B.toInt(),
-        primaryText = 0xFFF2F7FF.toInt(),
-        secondaryText = 0xFFB8D4E8.toInt(),
-        background = 0xFF06182D.toInt(),
-        labelContainer = 0xFF12314D.toInt(),
+    // 独立阅读预设使用已验收的中性日间与蓝色夜间基底，不读取应用的手动配色。
+    private val independentReadingColors = NgColorSystem(
+        mode = NgColorGenerationMode.MANUAL,
+        lightSeed = 0xFFE53935.toInt(),
+        darkSeed = 0xFF5CCBFF.toInt(),
+        paletteStyle = NgPaletteStyle.TONAL_SPOT,
+        contrast = NgContrastLevel.DEFAULT,
+        colorSpec = NgColorSpec.MATERIAL_3_2021,
+        manualLight = NgManualColorSet(
+            primary = 0xFFE53935.toInt(),
+            secondary = 0xFF795548.toInt(),
+            primaryText = 0xFF1D1B20.toInt(),
+            secondaryText = 0xFF1D1B20.toInt(),
+            background = 0xFFF5F5F5.toInt(),
+            labelContainer = 0xFFEEEEEE.toInt(),
+        ),
+        manualDark = NgManualColorSet(
+            primary = 0xFF5CCBFF.toInt(),
+            secondary = 0xFF153A5B.toInt(),
+            primaryText = 0xFFF2F7FF.toInt(),
+            secondaryText = 0xFFB8D4E8.toInt(),
+            background = 0xFF06182D.toInt(),
+            labelContainer = 0xFF12314D.toInt(),
+        ),
     )
 
-    private val nightColorPreferenceKeys = arrayOf(
-        PreferKey.ngColorMode,
-        PreferKey.ngColorDarkSeed,
-        PreferKey.ngColorDarkPrimary,
-        PreferKey.ngColorDarkSecondary,
-        PreferKey.ngColorDarkPrimaryText,
-        PreferKey.ngColorDarkSecondaryText,
-        PreferKey.ngColorDarkBackground,
-        PreferKey.ngColorDarkLabel,
-        PreferKey.ngColorDarkTopBarTextMode,
-        PreferKey.cNPrimary,
-        PreferKey.cNAccent,
-        PreferKey.cNBackground,
-        PreferKey.cNBBackground,
-    )
+    internal fun independentSeedForMode(mode: ReadAppearanceMode): Int =
+        independentReadingColors.manualColors(mode == ReadAppearanceMode.NIGHT).primary
 
     private val topRadius: Float
         get() = 18.dpToPx().toFloat()
@@ -133,33 +139,52 @@ object ReadDrawerStyle {
         primaryStrengthPercent: Int = ReadBookConfig.durConfig.curReadFloatingPrimaryStrength(),
         colorStyle: ReadFloatingColorStyle =
             ReadBookConfig.effectiveReadFloatingColor().colorStyle,
+    ): NgThemeSnapshot = resolveThemeSnapshot(
+        context = context,
+        preset = ReadBookConfig.durConfig,
+        mode = ReadAppearanceMode.current(),
+        primaryStrengthPercent = primaryStrengthPercent,
+        colorStyle = colorStyle,
+    )
+
+    internal fun themeSnapshotForMode(
+        context: Context,
+        preset: ReadBookConfig.Config,
+        mode: ReadAppearanceMode,
+    ): NgThemeSnapshot = resolveThemeSnapshot(
+        context = context,
+        preset = preset,
+        mode = mode,
+        primaryStrengthPercent = preset.curReadFloatingPrimaryStrength(),
+        colorStyle = ReadBookConfig.effectiveReadFloatingColor(preset, mode).colorStyle,
+    )
+
+    private fun resolveThemeSnapshot(
+        context: Context,
+        preset: ReadBookConfig.Config,
+        mode: ReadAppearanceMode,
+        primaryStrengthPercent: Int,
+        colorStyle: ReadFloatingColorStyle,
     ): NgThemeSnapshot = if (
         NgThemeModeStore.current(context) == NgThemePresentationMode.EINK
     ) {
         NgThemeResolver.resolve(context)
     } else {
-        val effectiveColor = ReadBookConfig.effectiveReadFloatingColor()
+        val effectiveColor = ReadBookConfig.effectiveReadFloatingColor(preset, mode)
         val seed = effectiveColor.seed
         val presentation = NgThemeModeStore.current(context)
-        val base = if (
-            effectiveColor.followsApplication &&
-            (presentation == NgThemePresentationMode.SOFT_GRADIENT ||
-                presentation == NgThemePresentationMode.MULTICOLOR)
-        ) {
-            NgThemeResolver.resolve(context)
-        } else {
-            val colors = NgColorConfigStore.current(context)
-            val useDefaultNightColors = presentation == NgThemePresentationMode.MULTICOLOR &&
-                ReadBookConfig.isNightTheme &&
-                !effectiveColor.followsApplication && seed == 0 &&
-                colors.mode == NgColorGenerationMode.MANUAL &&
-                nightColorPreferenceKeys.none(context.defaultSharedPreferences::contains)
-            NgThemeResolver.resolve(
+        val base = when {
+            !effectiveColor.followsApplication -> NgThemeResolver.resolve(
                 context = context,
-                colors = if (useDefaultNightColors) {
-                    colors.copy(manualDark = defaultIndependentNightColors)
-                } else colors,
-                isDark = ReadBookConfig.isNightTheme,
+                colors = independentReadingColors,
+                isDark = mode == ReadAppearanceMode.NIGHT,
+            )
+            presentation == NgThemePresentationMode.SOFT_GRADIENT ||
+                presentation == NgThemePresentationMode.MULTICOLOR -> NgThemeResolver.resolve(context)
+            else -> NgThemeResolver.resolve(
+                context = context,
+                colors = NgColorConfigStore.current(context),
+                isDark = mode == ReadAppearanceMode.NIGHT,
             )
         }
         val seeded = ReadFloatingPalette.applySeed(

@@ -91,6 +91,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
     private val menuItems: List<MenuItemImpl> = buildMenuItems()
     private val actionOrderState = mutableStateOf(TextSelectionActionOrder.load())
     private val disabledActionKeysState = mutableStateOf(TextSelectionActionOrder.disabledKeys())
+    private val showActionTextState = mutableStateOf(TextSelectionActionOrder.showText())
     private val currentPageState = mutableIntStateOf(0)
     private val moreMenuVisibleState = mutableStateOf(false)
     private val textHighlightState = mutableStateOf<Bookmark?>(null)
@@ -216,6 +217,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
                     } else {
                         TextSelectionToolbar(
                             primaryActions = primaryActions,
+                            showText = showActionTextState.value,
                             currentPage = currentPageState.intValue,
                             onPageChange = {
                                 currentPageState.intValue = it
@@ -325,6 +327,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
         ReadFloatingAppearanceState.refreshFromConfig()
         actionOrderState.value = TextSelectionActionOrder.load()
         disabledActionKeysState.value = TextSelectionActionOrder.disabledKeys()
+        showActionTextState.value = TextSelectionActionOrder.showText()
         themeSnapshotState.value = ReadDrawerStyle.themeSnapshot(context)
         currentPageState.intValue = 0
         dismissMoreMenu()
@@ -812,9 +815,9 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
     @DrawableRes
     private fun menuIcon(itemId: Int): Int = when (itemId) {
         R.id.menu_replace -> R.drawable.ic_cfg_replace
-        R.id.menu_ai_purify -> R.drawable.ic_ai_purify
-        R.id.menu_copy -> R.drawable.ic_copy
-        R.id.menu_bookmark -> R.drawable.ic_text_highlight
+        R.id.menu_ai_purify -> R.drawable.ic_text_selection_ai_purify
+        R.id.menu_copy -> R.drawable.ic_text_selection_copy
+        R.id.menu_bookmark -> R.drawable.ic_text_selection_highlight
         R.id.menu_aloud -> R.drawable.ic_read_aloud
         R.id.menu_character_card -> R.drawable.ic_bookshelf_action_user
         R.id.menu_dict -> R.drawable.ic_translate

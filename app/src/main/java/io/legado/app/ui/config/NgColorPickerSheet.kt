@@ -8,6 +8,7 @@ import android.graphics.Color as AndroidColor
 import android.graphics.drawable.Drawable
 import android.view.ViewGroup
 import android.widget.ImageView
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,11 +25,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Colorize
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -53,8 +56,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -194,6 +199,12 @@ internal fun NgInlineColorPicker(
     showAlphaSlider: Boolean = true,
     forceOpaque: Boolean = false,
     backgroundRenderer: ((Int, Int) -> Bitmap)? = null,
+    fillAvailableHeight: Boolean = false,
+    resetInContent: Boolean = false,
+    compactResetAction: Boolean = false,
+    onRestoreOriginal: (() -> Unit)? = null,
+    headerContentSpacing: Dp = 0.dp,
+    heightLimit: Dp? = null,
 ) {
     val state = remember(title, forceOpaque) { NgColorPickerState(initialColor, forceOpaque) }
     val originalColor = remember(title, forceOpaque) { state.color }
@@ -205,20 +216,64 @@ internal fun NgInlineColorPicker(
         if (state.color != previous) onChange(state.color)
     }
     val focusManager = LocalFocusManager.current
-    val maxHeight = minOf(620, (LocalConfiguration.current.screenHeightDp * 0.78f).toInt()).dp
-    Column(modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight)) {
+    val maxHeight = heightLimit ?: minOf(620, (LocalConfiguration.current.screenHeightDp * 0.78f).toInt()).dp
+    val heightModifier = if (fillAvailableHeight) Modifier.fillMaxHeight() else Modifier.heightIn(max = maxHeight)
+    Column(modifier = Modifier.fillMaxWidth().then(heightModifier)) {
         NgColorPickerHeader(title = title, onPick = takeColor, onClose = onBack, inline = true)
-        Column(modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-            NgColorPickerContent(state = state, originalColor = originalColor,
-                showAlphaSlider = showAlphaSlider, onColorChanged = onChange)
+        Spacer(Modifier.height(headerContentSpacing))
+        Column(modifier = Modifier.weight(1f, fill = fillAvailableHeight).verticalScroll(rememberScrollState())) {
+            NgColorPickerContent(
+                state = state,
+                originalColor = originalColor,
+                showAlphaSlider = showAlphaSlider,
+                onColorChanged = onChange,
+                onRestoreOriginal = onRestoreOriginal,
+                compactHexRow = resetInContent && compactResetAction,
+                hexTrailing = if (resetInContent) {
+                    {
+                        val resetColor = Color(NgTheme.colors.primary)
+                        if (compactResetAction) {
+                            Row(
+                                modifier = Modifier.heightIn(min = 44.dp)
+                                    .clickable(role = Role.Button) {
+                                        focusManager.clearFocus(); state.reset(state.color); onReset()
+                                    }
+                                    .padding(horizontal = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(painterResource(R.drawable.ic_color_picker_restore), null, Modifier.size(16.dp), tint = resetColor)
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.reset), color = resetColor, fontSize = 13.sp, maxLines = 1)
+                            }
+                        } else {
+                            TextButton(
+                                onClick = { focusManager.clearFocus(); state.reset(state.color); onReset() },
+                                modifier = Modifier.heightIn(min = 44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.textButtonColors(
+                                    containerColor = resetColor.copy(alpha = 0.08f),
+                                    contentColor = resetColor,
+                                ),
+                                contentPadding = PaddingValues(horizontal = 10.dp),
+                            ) {
+                                Icon(painterResource(R.drawable.ic_color_picker_restore), null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.reset), fontSize = 13.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                } else null,
+            )
             Spacer(Modifier.height(8.dp))
         }
-        TextButton(
-            onClick = { focusManager.clearFocus(); state.reset(state.color); onReset() },
-            modifier = Modifier.align(Alignment.Start),
-        ) {
-            Text(stringResource(R.string.ng_reset_color),
-                color = Color(NgTheme.colors.onSurfaceVariant), fontSize = 14.sp)
+        if (!resetInContent) {
+            TextButton(
+                onClick = { focusManager.clearFocus(); state.reset(state.color); onReset() },
+                modifier = Modifier.align(Alignment.Start),
+            ) {
+                Text(stringResource(R.string.ng_reset_color),
+                    color = Color(NgTheme.colors.onSurfaceVariant), fontSize = 14.sp)
+            }
         }
     }
 }

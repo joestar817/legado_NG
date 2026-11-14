@@ -38,8 +38,25 @@ class NativeBookTest {
             "setReverseToc", "setPageAnim", "setReSegment", "setRemoveSameTitle", "setImageStyle",
             "setUseReplaceRule", "setDelTag", "setTtsEngine", "setSplitLongChapter", "setReadSimulating",
             "setStartDate", "setStartChapter", "setDailyChapters", "setOpenCredits", "setCloseCredits",
-            "setPlayMode", "setPlaySpeed", "setIndependentReadStyle", "setCustomBookType", "setMangaReadingStyle",
+            "setPlayMode", "setPlaySpeed", "setIndependentReadStyle", "setSavedIndependentReadStyle", "setCustomBookType", "setMangaReadingStyle",
         ), Book.ReadConfig::class.java.methods.filter { it.name.startsWith("set") }.map { it.name }.toSet())
+    }
+
+    @Test
+    fun savedIndependentStyleIsReadableButCannotBeChangedByBookSource() {
+        val book = Book(name = "本书暂存预设")
+        book.config.savedIndependentReadStyle = "{\"textSize\":32}"
+        val result = RhinoScriptEngine.eval(
+            """
+                book.config.savedIndependentReadStyle = "changed";
+                book.config.setSavedIndependentReadStyle("changed");
+                book.config["setSavedIndependentReadStyle(java.lang.String)"]("changed");
+                book.getReadConfig().setSavedIndependentReadStyle("changed");
+                book.config.savedIndependentReadStyle;
+            """.trimIndent(), ScriptBindings().apply { put("book", book) },
+        )
+        assertEquals("{\"textSize\":32}", result)
+        assertEquals("{\"textSize\":32}", book.config.savedIndependentReadStyle)
     }
 
     @Test

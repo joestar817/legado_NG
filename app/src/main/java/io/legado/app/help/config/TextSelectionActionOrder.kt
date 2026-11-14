@@ -1,7 +1,10 @@
 package io.legado.app.help.config
 
 import io.legado.app.R
+import io.legado.app.constant.PreferKey
+import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefString
+import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.putPrefString
 import splitties.init.appCtx
 
@@ -24,6 +27,10 @@ object TextSelectionActionOrder {
     private const val PREF_KEY = "textSelectionActionOrder"
     private const val DISABLED_KEY = "textSelectionDisabledActions"
 
+    fun showText(): Boolean = appCtx.getPrefBoolean(PreferKey.textSelectionShowText, true)
+
+    fun setShowText(showText: Boolean) = appCtx.putPrefBoolean(PreferKey.textSelectionShowText, showText)
+
     fun disabledKeys(): Set<String> = appCtx.getPrefString(DISABLED_KEY).orEmpty()
         .split(',').filter { it.isNotEmpty() }.toSet()
 
@@ -35,8 +42,16 @@ object TextSelectionActionOrder {
         return (saved + TextSelectionBuiltInAction.entries).distinct()
     }
 
-    fun save(actions: List<TextSelectionBuiltInAction>, disabledKeys: Set<String>) {
+    fun saveOrder(actions: List<TextSelectionBuiltInAction>) {
         appCtx.putPrefString(PREF_KEY, actions.joinToString(",") { it.key })
+    }
+
+    fun setDisabledKeys(disabledKeys: Set<String>) {
         appCtx.putPrefString(DISABLED_KEY, disabledKeys.joinToString(","))
+    }
+
+    fun save(actions: List<TextSelectionBuiltInAction>, disabledKeys: Set<String>) {
+        saveOrder(actions)
+        setDisabledKeys(disabledKeys)
     }
 }

@@ -437,7 +437,6 @@ object NgMenuPopup {
             R.id.menu_load_word_count -> R.drawable.ic_chapter_list
             R.id.menu_reverse_toc,
             R.id.menu_reverse_content -> R.drawable.ic_exchange_order
-            R.id.menu_enable_replace -> R.drawable.ic_cfg_replace
             R.id.menu_use_replace,
             R.id.menu_effective_replaces -> R.drawable.ic_find_replace
 
@@ -460,8 +459,7 @@ object NgMenuPopup {
             R.id.menu_export_type,
             R.id.menu_enable_custom_export -> R.drawable.ic_custom
             R.id.menu_export_no_chapter_name,
-            R.id.menu_parallel_export,
-            R.id.menu_re_segment -> R.drawable.ic_arrange
+            R.id.menu_parallel_export -> R.drawable.ic_arrange
 
             R.id.menu_add_bookmark,
             R.id.menu_bookmark -> R.drawable.ic_bookmark
@@ -470,7 +468,6 @@ object NgMenuPopup {
             R.id.menu_cover_progress,
             R.id.menu_read_record -> R.drawable.ic_history
             R.id.menu_aloud -> R.drawable.ic_read_aloud
-            R.id.menu_same_title_removed -> R.drawable.ic_clear_all
 
             R.id.menu_open_in_browser,
             R.id.menu_browser_open,
@@ -488,9 +485,6 @@ object NgMenuPopup {
             R.id.menu_add_bookmark -> R.drawable.ic_bookmark to 1
             R.id.menu_edit_content -> R.drawable.ic_edit to 1
             R.id.menu_reverse_content -> R.drawable.ic_swap_vert to 2
-            R.id.menu_enable_replace -> R.drawable.ic_cfg_replace to 1
-            R.id.menu_same_title_removed -> R.drawable.ic_ai_capability_text to 1
-            R.id.menu_re_segment -> R.drawable.ic_format_line_spacing to 2
             R.id.menu_effective_replaces -> R.drawable.ic_visibility to 2
             R.id.menu_log -> R.drawable.ic_bug_report to 2
             R.id.menu_network_log -> R.drawable.ic_web_outline to 1

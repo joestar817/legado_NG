@@ -98,6 +98,7 @@ import io.legado.app.ui.book.read.config.AiPurifyRangeDialogContent
 import io.legado.app.ui.book.read.config.AiPurifyRuleDetailDialogContent
 import io.legado.app.ui.book.read.config.AiPurifyRuleUi
 import io.legado.app.ui.book.read.config.MoreConfigDialog
+import io.legado.app.ui.book.read.config.ReadContentSettingsDialog
 import io.legado.app.ui.book.read.config.ReadStyleDialog
 import io.legado.app.ui.font.FontSelectDialog
 import io.legado.app.ui.resource.ResourceFontDestination
@@ -139,7 +140,6 @@ import io.legado.app.utils.StartActivityContract
 import io.legado.app.utils.buildMainHandler
 import io.legado.app.utils.dismissDialogFragment
 import io.legado.app.utils.dpToPx
-import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.invisible
 import io.legado.app.utils.isTrue
@@ -326,9 +326,6 @@ class ReadBookActivity : BaseReadBookActivity(),
             }
             if (isAutoPage) {
                 autoPageStop()
-                return@addCallback
-            }
-            if (getPrefBoolean("disableReturnKey") && !menuLayoutIsVisible) {
                 return@addCallback
             }
             finish()
@@ -591,9 +588,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                 R.id.menu_group_local -> item.isVisible = !onLine
                 R.id.menu_group_text -> item.isVisible = book.isLocalTxt
                 else -> when (item.itemId) {
-                    R.id.menu_enable_replace -> item.isChecked = book.getUseReplaceRule()
-                    R.id.menu_same_title_removed -> item.isChecked = book.getRemoveSameTitle()
-                    R.id.menu_re_segment -> item.isChecked = book.getReSegment()
 //                    R.id.menu_enable_review -> {
 //                        item.isVisible = BuildConfig.DEBUG
 //                        item.isChecked = AppConfig.enableReview
@@ -643,13 +637,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                 loadChapterList(it)
             }
 
-            R.id.menu_enable_replace -> changeReplaceRuleState()
-            R.id.menu_re_segment -> ReadBook.book?.let {
-                it.setReSegment(!it.getReSegment())
-                item.isChecked = it.getReSegment()
-                ReadBook.loadContent(false)
-            }
-
 //            R.id.menu_enable_review -> {
 //                AppConfig.enableReview = !AppConfig.enableReview
 //                item.isChecked = AppConfig.enableReview
@@ -676,13 +663,6 @@ class ReadBookActivity : BaseReadBookActivity(),
 
             R.id.menu_cover_progress -> ReadBook.book?.let {
                 ReadBook.uploadProgress(true) { toastOnUi(R.string.upload_book_success) }
-            }
-
-            R.id.menu_same_title_removed -> ReadBook.book?.let {
-                it.setRemoveSameTitle(!it.getRemoveSameTitle())
-                item.isChecked = it.getRemoveSameTitle()
-                ReadBook.saveRead()
-                ReadBook.loadContent(false)
             }
 
             R.id.menu_effective_replaces -> showDialogFragment<EffectiveReplacesDialog>()
@@ -864,6 +844,9 @@ class ReadBookActivity : BaseReadBookActivity(),
      * 松开按键事件
      */
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (!menuLayoutIsVisible && (isPrevKey(keyCode) || isNextKey(keyCode))) {
+            return true
+        }
         when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN -> {
                 if (volumeKeyPage(PageDirection.NONE, false)) {
@@ -1397,7 +1380,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                     if (!book.getUseReplaceRule()) {
                         book.setUseReplaceRule(true)
                         ReadBook.saveRead()
-                        menu?.findItem(R.id.menu_enable_replace)?.isChecked = true
                     }
                 }
                 viewModel.replaceRuleChanged()
@@ -1450,7 +1432,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                     if (!book.getUseReplaceRule()) {
                         book.setUseReplaceRule(true)
                         ReadBook.saveRead()
-                        menu?.findItem(R.id.menu_enable_replace)?.isChecked = true
                     }
                 }
                 viewModel.replaceRuleChanged()
@@ -2263,9 +2244,6 @@ class ReadBookActivity : BaseReadBookActivity(),
         if (!AppConfig.volumeKeyPage) {
             return false
         }
-        if (!AppConfig.volumeKeyPageOnPlay && BaseReadAloudService.isPlay()) {
-            return false
-        }
         handleKeyPage(direction, longPress)
         return true
     }
@@ -2475,6 +2453,15 @@ class ReadBookActivity : BaseReadBookActivity(),
         }
     }
 
+    override fun onSidePageAnimSelected(pageAnim: Int) {
+        ReadBook.book?.setPageAnim(-1)
+        ReadBookConfig.pageAnim = pageAnim
+        ReadBookConfig.save()
+        ReadBook.saveRead()
+        upPageAnim(false)
+        ReadBook.loadContent(false)
+    }
+
     override fun notifyBookChanged() {
         bookChanged = true
         if (!ReadBook.inBookshelf) {
@@ -2637,10 +2624,10 @@ class ReadBookActivity : BaseReadBookActivity(),
         val style = ReadCatalogStyle.fromValue(
             getPrefString(PreferKey.readCatalogStyle, ReadCatalogStyle.CARD.value)
         )
-        val dialog = if (style == ReadCatalogStyle.COMPACT_SIDE) {
-            ReadCompactCatalogDialog()
-        } else {
-            ReadCatalogDialog()
+        val dialog = when (style) {
+            ReadCatalogStyle.CARD -> ReadCatalogDialog()
+            ReadCatalogStyle.COMPACT_SIDE -> ReadCompactCatalogDialog()
+            ReadCatalogStyle.DENSE_LIST -> ReadDenseCatalogDialog()
         }
         dialog.show(supportFragmentManager, "readCatalog")
     }
@@ -2695,6 +2682,20 @@ class ReadBookActivity : BaseReadBookActivity(),
     override fun showMoreSetting() {
         showDialogFragment<MoreConfigDialog>()
     }
+
+    override fun showPageTurningSettings() {
+        showDialogFragment(MoreConfigDialog.forPageTurning())
+    }
+
+    override fun showContentSettings() {
+        showDialogFragment<ReadContentSettingsDialog>()
+    }
+
+    override fun showFloatingSettings() {
+        showDialogFragment(ReadStyleDialog.forFloating())
+    }
+
+    internal fun floatingToolMaxCapacity(): Int = binding.readMenu.floatingToolMaxCapacity()
 
     /**
      * 更新状态栏,导航栏
@@ -3130,11 +3131,29 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
 
     override fun changeReplaceRuleState() {
+        ReadBook.book?.let { setReadContentReplaceEnabled(!it.getUseReplaceRule()) }
+    }
+
+    internal fun setReadContentReplaceEnabled(enabled: Boolean) {
         ReadBook.book?.let {
-            it.setUseReplaceRule(!it.getUseReplaceRule())
+            it.setUseReplaceRule(enabled)
             ReadBook.saveRead()
-            menu?.findItem(R.id.menu_enable_replace)?.isChecked = it.getUseReplaceRule()
             viewModel.replaceRuleChanged()
+        }
+    }
+
+    internal fun setReadContentRemoveSameTitle(enabled: Boolean) {
+        ReadBook.book?.let {
+            it.setRemoveSameTitle(enabled)
+            ReadBook.saveRead()
+            ReadBook.loadContent(false)
+        }
+    }
+
+    internal fun setReadContentReSegment(enabled: Boolean) {
+        ReadBook.book?.let {
+            it.setReSegment(enabled)
+            ReadBook.loadContent(false)
         }
     }
 
@@ -3302,11 +3321,14 @@ class ReadBookActivity : BaseReadBookActivity(),
         observeEvent<Boolean>(PreferKey.keepLight) {
             upScreenTimeOut()
         }
-        observeEvent<Boolean>(PreferKey.textSelectAble) {
-            readView.upSelectAble(it)
-        }
         observeEvent<String>(PreferKey.showBrightnessView) {
             readMenu.upFloatingToolVisibility()
+        }
+        observeEvent<String>(PreferKey.readFloatingToolOrder) {
+            readMenu.upFloatingToolSettings()
+        }
+        observeEvent<String>(PreferKey.readMenuShowChapterProgress) {
+            readMenu.upChapterProgressVisibility()
         }
         observeEvent<Boolean>(EventBus.UPDATE_READ_ACTION_BAR) {
             readMenu.reset()

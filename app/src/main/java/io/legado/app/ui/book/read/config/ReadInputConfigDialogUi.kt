@@ -1,9 +1,7 @@
 package io.legado.app.ui.book.read.config
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
@@ -27,10 +24,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.PlatformTextStyle
@@ -41,10 +37,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.help.config.PageKeyBindings
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.compose.NgFormActionButton
-import io.legado.app.ui.design.components.compose.NgGlassDefaults
-import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.theme.NgTheme
 
 internal data class ClickActionOption(
@@ -54,23 +49,15 @@ internal data class ClickActionOption(
 
 @Composable
 internal fun PageKeyDialogContent(
-    prevKeys: String,
-    nextKeys: String,
-    onPrevKeysChanged: (String) -> Unit,
-    onNextKeysChanged: (String) -> Unit,
-    onPrevFocusChanged: (Boolean) -> Unit,
-    onNextFocusChanged: (Boolean) -> Unit,
-    onReset: () -> Unit,
-    onConfirm: () -> Unit,
+    bindings: PageKeyBindings,
+    capture: PageKeyCaptureController,
+    onBindingsChanged: (PageKeyBindings) -> Unit,
+    onClose: () -> Unit,
 ) {
-    ReadConfigDialogSurface(
-        contentPadding = PaddingValues(16.dp),
-    ) {
+    ReadConfigDialogSurface(contentPadding = PaddingValues(16.dp)) {
         Text(
             text = stringResource(R.string.custom_page_key),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(5.dp),
+            modifier = Modifier.fillMaxWidth().padding(5.dp),
             color = Color(NgTheme.colors.onSurface),
             style = TextStyle(
                 fontFamily = NgTheme.fontFamily,
@@ -79,99 +66,12 @@ internal fun PageKeyDialogContent(
                 platformStyle = PlatformTextStyle(includeFontPadding = false),
             ),
         )
-        PageKeyInputField(
-            label = stringResource(R.string.prev_page_key),
-            value = prevKeys,
-            onValueChange = onPrevKeysChanged,
-            onFocusChanged = onPrevFocusChanged,
-            modifier = Modifier.padding(5.dp),
-        )
-        PageKeyInputField(
-            label = stringResource(R.string.next_page_key),
-            value = nextKeys,
-            onValueChange = onNextKeysChanged,
-            onFocusChanged = onNextFocusChanged,
-            modifier = Modifier.padding(5.dp),
-        )
-        Text(
-            text = stringResource(R.string.page_key_set_help),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(5.dp),
-            color = Color(NgTheme.colors.onSurfaceVariant),
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(5.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            NgFormActionButton(
-                text = stringResource(R.string.reset),
-                onClick = onReset,
-                modifier = Modifier.weight(1f),
-            )
-            NgFormActionButton(
-                text = stringResource(R.string.ok),
-                onClick = onConfirm,
-                modifier = Modifier.weight(1f),
-                variant = NgButtonVariant.PRIMARY,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PageKeyInputField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    onFocusChanged: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = NgTheme.colors
-    val shape = RoundedCornerShape(12.dp)
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
-            color = Color(colors.onSurfaceVariant),
-            fontSize = 13.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 44.dp)
-                .onFocusChanged { onFocusChanged(it.isFocused) },
-            singleLine = true,
-            textStyle = TextStyle(
-                fontFamily = NgTheme.fontFamily,
-                color = Color(colors.onSurface),
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
-                platformStyle = PlatformTextStyle(includeFontPadding = false),
-            ),
-            cursorBrush = SolidColor(Color(colors.primary)),
-            decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .clip(shape)
-                        .background(Color(colors.inputContainer))
-                        .border(1.dp, Color(colors.outline), shape)
-                        .padding(horizontal = 12.dp, vertical = 11.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    innerTextField()
-                }
-            },
+        PageKeyBindingControls(bindings, capture, onBindingsChanged)
+        NgFormActionButton(
+            text = stringResource(R.string.close),
+            onClick = onClose,
+            modifier = Modifier.fillMaxWidth().padding(5.dp),
+            variant = NgButtonVariant.PRIMARY,
         )
     }
 }
@@ -185,28 +85,21 @@ internal fun ClickActionConfigScreen(
     val labels = remember(actionLabels) {
         List(9) { index -> actionLabels.getOrElse(index) { "" } }
     }
-    val isDark = NgTheme.snapshot.isDark
-    val foregroundColor = if (isDark) {
-        Color(0xFFF2F4F7)
-    } else {
-        Color(NgTheme.colors.onSurface)
-    }
-    val glassStyle = NgGlassDefaults.style(
-        containerAlpha = if (isDark) 0.54f else 0.69f,
-    ).copy(shadowElevation = 0.dp)
-    val glassShape = RoundedCornerShape(6.dp)
+    val translucent = colorResource(R.color.translucent)
+    val foregroundColor = Color.White
+    val shape = RoundedCornerShape(3.dp)
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = if (isDark) 0.07f else 0.10f))
+            .background(translucent)
             .padding(3.dp),
     ) {
-        NgGlassSurface(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(3.dp),
-            shape = glassShape,
-            style = glassStyle,
+                .padding(3.dp)
+                .clip(shape)
+                .background(translucent),
         ) {
             Row(
                 modifier = Modifier
@@ -254,34 +147,25 @@ internal fun ClickActionConfigScreen(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .padding(3.dp),
+                            .padding(3.dp)
+                            .clip(shape)
+                            .background(translucent)
+                            .clickable(
+                                role = Role.Button,
+                                onClick = { onCellClick(index) },
+                            ),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        NgGlassSurface(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clickable(
-                                    role = Role.Button,
-                                    onClick = { onCellClick(index) },
-                                ),
-                            shape = glassShape,
-                            style = glassStyle,
-                        ) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = labels[index],
-                                    modifier = Modifier.padding(12.dp),
-                                    color = foregroundColor,
-                                    fontSize = 14.sp,
-                                    lineHeight = 19.sp,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 3,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
+                        Text(
+                            text = labels[index],
+                            modifier = Modifier.padding(12.dp),
+                            color = foregroundColor,
+                            fontSize = 14.sp,
+                            lineHeight = 19.sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }

@@ -190,6 +190,7 @@ internal fun TextHighlightNotePreview(
 @Composable
 internal fun TextSelectionToolbar(
     primaryActions: List<TextSelectionAction>,
+    showText: Boolean,
     currentPage: Int,
     onPageChange: (Int) -> Unit,
     moreMenuVisible: Boolean,
@@ -255,6 +256,7 @@ internal fun TextSelectionToolbar(
                     pages[page].forEach { action ->
                         TextSelectionActionItem(
                             action = action,
+                            showText = showText,
                             onLongClick = onLongClick,
                             modifier = Modifier.weight(1f),
                         )
@@ -264,6 +266,7 @@ internal fun TextSelectionToolbar(
                     }
                     MoreButton(
                         expanded = moreMenuVisible,
+                        showText = showText,
                         onExpandedChange = { visible ->
                             if (visible && noteEditorVisible) {
                                 focusManager.clearFocus()
@@ -276,6 +279,7 @@ internal fun TextSelectionToolbar(
                         PageButton(
                             iconRes = R.drawable.ic_chevron_right_20,
                             contentDescription = stringResource(R.string.more_menu),
+                            showText = showText,
                             onClick = { onPageChange(1) },
                         )
                     }
@@ -283,11 +287,13 @@ internal fun TextSelectionToolbar(
                     PageButton(
                         iconRes = R.drawable.ic_chevron_left_20,
                         contentDescription = stringResource(R.string.back),
+                        showText = showText,
                         onClick = { onPageChange(page - 1) },
                     )
                     pages[page].forEach { action ->
                         TextSelectionActionItem(
                             action = action,
+                            showText = showText,
                             onLongClick = onLongClick,
                             modifier = Modifier.weight(1f),
                         )
@@ -300,6 +306,7 @@ internal fun TextSelectionToolbar(
                     }
                     MoreButton(
                         expanded = moreMenuVisible,
+                        showText = showText,
                         onExpandedChange = { visible ->
                             if (visible && noteEditorVisible) {
                                 focusManager.clearFocus()
@@ -312,6 +319,7 @@ internal fun TextSelectionToolbar(
                         PageButton(
                             iconRes = R.drawable.ic_chevron_right_20,
                             contentDescription = stringResource(R.string.more_menu),
+                            showText = showText,
                             onClick = { onPageChange(page + 1) },
                         )
                     }
@@ -699,6 +707,7 @@ private fun HighlightColorButton(
 @Composable
 private fun TextSelectionActionItem(
     action: TextSelectionAction,
+    showText: Boolean,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -717,26 +726,30 @@ private fun TextSelectionActionItem(
     ) {
         ActionIcon(
             action = action,
-            sizeDp = 20,
+            sizeDp = if (showText) 20 else 24,
+            contentDescription = if (showText) null else action.title,
         )
-        Spacer(Modifier.height(1.dp))
-        Text(
-            text = action.title,
-            color = Color(NgTheme.colors.onSurface),
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 11.sp,
-                lineHeight = 12.sp,
-                fontWeight = FontWeight.Medium,
-            ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (showText) {
+            Spacer(Modifier.height(1.dp))
+            Text(
+                text = action.title,
+                color = Color(NgTheme.colors.onSurface),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    lineHeight = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
 @Composable
 private fun MoreButton(
     expanded: Boolean,
+    showText: Boolean,
     onExpandedChange: (Boolean) -> Unit,
 ) {
     Box(
@@ -753,7 +766,7 @@ private fun MoreButton(
         Icon(
             painter = painterResource(R.drawable.ic_more_vert),
             contentDescription = stringResource(R.string.more_menu),
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(if (showText) 20.dp else 24.dp),
             tint = Color(NgTheme.colors.onSurface),
         )
     }
@@ -763,6 +776,7 @@ private fun MoreButton(
 private fun PageButton(
     @DrawableRes iconRes: Int,
     contentDescription: String,
+    showText: Boolean,
     onClick: () -> Unit,
 ) {
     Box(
@@ -779,7 +793,7 @@ private fun PageButton(
         Icon(
             painter = painterResource(iconRes),
             contentDescription = contentDescription,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(if (showText) 20.dp else 24.dp),
             tint = Color(NgTheme.colors.onSurface),
         )
     }

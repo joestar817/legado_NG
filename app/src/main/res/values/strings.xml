@@ -6,8 +6,12 @@
     <string name="text_selection_action_order">Text toolbar order</string>
     <string name="text_selection_action_order_summary">First 5 actions appear in the toolbar; the rest go in More</string>
     <string name="text_selection_toolbar">Text toolbar</string>
+    <string name="text_selection_toolbar_preview">Toolbar preview</string>
+    <string name="text_selection_show_text">Show text</string>
+    <string name="text_selection_drag_hint">Drag to reorder</string>
     <string name="text_selection_action_order_hint">Drag to reorder; the first 5 enabled actions appear in the toolbar</string>
     <string name="text_selection_toolbar_count">Toolbar · %1$d actions</string>
+    <string name="text_selection_toolbar_min_limit">Keep at least one tool in the toolbar</string>
     <string name="text_selection_system_actions_hint">System apps appear at the end of More</string>
     <string name="switch_selection_read_mode">Switch selected-text read mode</string>
     <!--App-->
@@ -751,6 +755,7 @@
     <string name="read_catalog_style">Catalog drawer style</string>
     <string name="read_catalog_style_card">Cards</string>
     <string name="read_catalog_style_compact_side">Compact sidebar</string>
+    <string name="read_catalog_style_dense_list">Compact list</string>
     <string name="next_chapter">Next</string>
     <string name="previous_chapter">Prior</string>
     <string name="pt_hide_status_bar">Hide status bar</string>
@@ -1079,7 +1084,6 @@
     <string name="download_path">Cache path</string>
     <string name="new_version">New version</string>
     <string name="download_update">Download updates</string>
-    <string name="volume_key_page_on_play">Volume keys to turn page when reading</string>
     <string name="tip_margin_change">Margin adjustment</string>
     <string name="allow_update">Enable update</string>
     <string name="disable_update">Disable update</string>
@@ -1505,6 +1509,22 @@
     <string name="importing">Importing</string>
     <string name="exporting">Exporting</string>
     <string name="custom_page_key">Set page-turning buttons</string>
+    <string name="page_key_bind">Bind</string>
+    <string name="page_key_waiting">Press a key</string>
+    <string name="page_key_rebind">Bind again</string>
+    <string name="page_key_clear_description">Clear %1$s</string>
+    <string name="page_key_direction_left">Left</string>
+    <string name="page_key_direction_right">Right</string>
+    <string name="page_key_direction_up">Up</string>
+    <string name="page_key_direction_down">Down</string>
+    <string name="page_key_direction_center">Center</string>
+    <string name="page_key_volume_up">Volume up</string>
+    <string name="page_key_volume_down">Volume down</string>
+    <string name="page_key_page_up">Page up</string>
+    <string name="page_key_page_down">Page down</string>
+    <string name="page_key_enter">Enter</string>
+    <string name="page_key_space">Space</string>
+    <string name="page_key_code">Key %1$d</string>
     <string name="prev_page_key">Page up button</string>
     <string name="next_page_key">Page down button</string>
     <string name="no_group">Ungrouped</string>
@@ -1586,7 +1606,6 @@
     <string name="font_weight">Weight</string>
     <string name="chinese_converter_shortcut">Chinese</string>
     <string name="full_screen_gestures_support">Full screen gestures support</string>
-    <string name="disable_return_key">Disable return key</string>
 
     <!--color-->
     <string name="primary">Primary</string>
@@ -2038,7 +2057,6 @@
     <string name="search_scope">Search scope</string>
     <string name="toggle_search_scope">Handover</string>
     <string name="sure_clear_search_history">Are you sure to clear all search history</string>
-    <string name="no_anim_scroll_page">Disable scroll click animation</string>
     <string name="webdav_device_name">Device name</string>
     <string name="web_service_wake_lock">WebService Wake up Lock</string>
     <string name="web_service_wake_lock_summary">The wake-up lock is enabled when the web service is enabled, and some phones will be killed when the wake-up lock is enabled.</string>
@@ -2053,7 +2071,7 @@
     <string name="replace_state_change">Replace (enable / disable)</string>
     <string name="show_last_update_time">Show last updated time</string>
     <string name="refresh_list">Refresh list</string>
-    <string name="tip_text_color">Header and footer text color</string>
+    <string name="tip_text_color">Text color</string>
     <string name="tip_divider_color">Divider color</string>
     <string name="divider_line">Divider</string>
     <string name="same_title_removed">Remove duplicate title</string>
@@ -2156,7 +2174,8 @@
     <string name="adjust_chapter_page">Adjust of chapter page</string>
     <string name="adjust_chapter_index">Adjust of chapter index</string>
     <string name="clear_webview_data_success">Cleared successfully, automatically restarts the application after 3 seconds</string>
-    <string name="key_page_on_long_press">Press and hold the key to turn the page</string>
+    <string name="key_page_on_long_press">Hold to turn pages continuously</string>
+    <string name="key_page_on_long_press_summary">Enable volume-key paging or configure custom keys</string>
     <string name="save_log">Save logs</string>
     <string name="create_heap_dump">Create heap dump</string>
     <string name="record_heap_dump_s">Saving a heap dump when the application crashes by OOM</string>
@@ -2463,6 +2482,12 @@
     <string name="font_delete_usage_separator">", "</string>
     <string name="font_delete_and_switch">Delete and switch</string>
     <string name="reading_padding">Reading margins</string>
+    <string name="read_style_body_margins">Text margins</string>
+    <string name="read_style_margins">Margins</string>
+    <string name="read_tip_show_information">Show information bar</string>
+    <string name="read_tip_tab_layout">Layout</string>
+    <string name="read_tip_tab_image">Image</string>
+    <string name="read_style_header_footer_shared_style">Shared header and footer style</string>
     <string name="reading_information">Reading information</string>
     <string name="show_header">Show header</string>
     <string name="read_header_back_button">Back button</string>
@@ -2474,6 +2499,7 @@
     <string name="read_style_this_book">This book</string>
     <string name="read_style_follow_global">Use global</string>
     <string name="create_style">＋ New</string>
+    <string name="read_style_drawer_title">Reading style</string>
     <string name="read_style_edit_title">Edit preset</string>
     <string name="read_style_create_title">New preset</string>
     <string name="read_style_restore_current">Restore current preset</string>
@@ -2503,8 +2529,31 @@
     <string name="read_style_color_accent_short">Accent</string>
     <string name="read_style_floating_color">Pick floating-window color</string>
     <string name="read_style_floating_section">Floating windows</string>
+    <string name="read_menu_floating">Floating</string>
+    <string name="read_menu_scroll">Scroll</string>
+    <string name="read_content_settings_title">Content processing</string>
+    <string name="read_content_only_current_book">This book only</string>
+    <string name="read_content_chinese_conversion">Chinese conversion</string>
+    <string name="read_content_replace_rules">Replacement rules</string>
+    <string name="read_floating_appearance">Floating appearance</string>
+    <string name="read_floating_tab_color">Colors</string>
+    <string name="read_floating_tab_layout">Layout &amp; actions</string>
+    <string name="read_floating_current_preset">Current preset</string>
+    <string name="read_floating_current_style">Current style</string>
+    <string name="read_floating_book_style">Book-specific</string>
+    <string name="read_floating_global_follow">Globally follow app colors</string>
+    <string name="read_floating_global_style">%1$s · Global</string>
+    <string name="read_floating_color_label">Floating color</string>
+    <string name="read_floating_side_tool_order">Side toolbar order</string>
+    <string name="read_floating_side_tool_title">Side toolbar</string>
+    <string name="read_floating_side_tool_count">Side tools · %1$d</string>
+    <string name="read_floating_side_tool_theme">Day and night</string>
+    <string name="read_floating_side_tool_min_limit">Keep at least one tool enabled</string>
+    <string name="read_floating_side_tool_max_limit">Up to %1$d tools fit on this screen</string>
+    <string name="read_floating_selection_order">Text selection toolbar</string>
+    <string name="read_floating_show_chapter_progress">Show chapter progress bar</string>
     <string name="read_style_floating_color_follow">Follow app</string>
-    <string name="read_style_floating_color_background">Pick from background</string>
+    <string name="read_style_floating_color_custom">Custom</string>
     <string name="read_style_floating_color_style">Color style</string>
     <string name="read_style_floating_current_color">Current color</string>
     <string name="read_style_floating_color_picked">From background</string>
@@ -2760,4 +2809,7 @@
     <string name="listening_effect_uninstall">Uninstall listening effect</string>
     <string name="listening_effect_uninstall_current">The player will return to its base background.</string>
     <string name="listening_effect_code_notice">Listening effects contain executable code. Confirm that you trust the source.</string>
+    <string name="read_page_section_layout">Page layout</string>
+    <string name="read_page_section_keys">Key controls</string>
+    <string name="read_page_section_touch">Touch controls</string>
 </resources>

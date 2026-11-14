@@ -316,12 +316,14 @@ internal object BackupResources {
 
     internal fun collectBookReadStyleResources(book: JsonObject, copy: (String) -> String) {
         val readConfig = book.get("readConfig")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
-        val storedStyle = readConfig.get("independentReadStyle")
-            ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: return
-        val style = parseStoredReadStyle(storedStyle) ?: return
-        val original = style.deepCopy()
-        collectReadStyleResources(style, copy)
-        if (style != original) readConfig.addProperty("independentReadStyle", style.toString())
+        listOf("independentReadStyle", "savedIndependentReadStyle").forEach { key ->
+            val storedStyle = readConfig.get(key)
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: return@forEach
+            val style = parseStoredReadStyle(storedStyle) ?: return@forEach
+            val original = style.deepCopy()
+            collectReadStyleResources(style, copy)
+            if (style != original) readConfig.addProperty(key, style.toString())
+        }
     }
 
     private fun parseStoredReadStyle(value: String): JsonObject? = runCatching {
@@ -367,12 +369,13 @@ internal object BackupResources {
         val fields = setOf("bgStr", "bgStrNight", "bgStrEInk", "textFont", "titleFont", "headerFont", "headerImage", "footerImage",
             "footerFont", "bgImage", "fontPath", "customCoverUrl", "path",
             "packageRootPath", "lightImages", "darkImages", "imagePath")
+        val bookStyleFields = setOf("independentReadStyle", "savedIndependentReadStyle")
         fun visit(node: JsonElement, field: String?): JsonElement = when {
             node.isJsonObject -> JsonObject().apply {
                 node.asJsonObject.entrySet().forEach { (key, child) -> add(key, visit(child, key)) }
             }
             node.isJsonArray -> JsonArray().apply { node.asJsonArray.forEach { add(visit(it, field)) } }
-            field == "independentReadStyle" && node.isJsonPrimitive && node.asJsonPrimitive.isString -> {
+            field in bookStyleFields && node.isJsonPrimitive && node.asJsonPrimitive.isString -> {
                 val style = parseStoredReadStyle(node.asString)
                 if (style == null) node else {
                     val original = style.deepCopy()

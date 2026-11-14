@@ -43,6 +43,26 @@ class TocCatalogRowsTest {
     }
 
     @Test
+    fun displaySortKeepsOriginalIndicesAndVolumeMembershipInBothStoredOrders() {
+        val reversedRows = rows.asReversed().mapIndexed { index, row -> row.copy(index = index) }
+        listOf(rows to false, reversedRows to true).forEach { (input, storedReversed) ->
+            val stored = project(input, setOf("v1"), reversed = storedReversed)
+            val descending = stored.inDisplayOrder(true)
+            val expectedOrder = if (storedReversed) {
+                listOf("cover", "intro", "v1", "empty", "last", "c3", "c4")
+            } else {
+                listOf("c4", "c3", "last", "empty", "v1", "intro", "cover")
+            }
+            assertEquals(expectedOrder, keys(descending))
+            assertEquals(stored.parentVolumeByKey, descending.parentVolumeByKey)
+            assertEquals(input.filterNot { it.url == "c1" || it.url == "c2" }
+                .associate { it.url to it.index }, descending.visibleRows.associate { it.url to it.index })
+            assertEquals(descending.visibleRows.indexOfFirst { it.url == "v1" },
+                tocCatalogAnchorPosition(descending, "c2"))
+        }
+    }
+
+    @Test
     fun sparseSearchMatchesBypassCollapseAndMembershipInBothDirections() {
         val matches = listOf(rows[0], rows[2], rows[4], rows[8])
         listOf(false, true).forEach { reversed ->
@@ -50,6 +70,9 @@ class TocCatalogRowsTest {
             val projection = projectTocCatalogRows(input, setOf("v1", "last"), reversed, true)
             assertEquals(input, projection.visibleRows)
             assertEquals(emptyMap<String, String>(), projection.parentVolumeByKey)
+            val expected = if (reversed) listOf("cover", "v1", "c2", "c4")
+                else listOf("c4", "c2", "v1", "cover")
+            assertEquals(expected, keys(projection.inDisplayOrder(true)))
         }
     }
 

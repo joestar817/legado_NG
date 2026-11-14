@@ -156,7 +156,7 @@ class FontSelectDialog : BaseComposeDialogFragment() {
             arguments = bundleOf(ARG_READER_BODY_FONT to true, ARG_PREFERRED_FONT_PATH to preferredFontPath)
         }
 
-        fun forReaderTitle(preferredFontPath: String): FontSelectDialog = FontSelectDialog().apply {
+        fun forReaderTitle(preferredFontPath: String? = null): FontSelectDialog = FontSelectDialog().apply {
             arguments = bundleOf(
                 ARG_TITLE_FONT to true,
                 ARG_READER_TITLE_FONT to true,

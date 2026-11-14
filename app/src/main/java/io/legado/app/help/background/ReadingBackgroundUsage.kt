@@ -33,6 +33,7 @@ internal object ReadingBackgroundUsage {
             addConfig("共享排版", ReadBookConfig.shareConfig)
             addConfig("当前书籍", ReadBookConfig.durConfig)
             addConfig("当前阅读", ReadBookConfig.config)
+            ReadBookConfig.pendingBookStyleConfigs().forEach { addConfig("本书预设", it) }
             File(ReadBookConfig.configFilePath).takeIf(File::exists)?.let { file ->
                 requireNotNull(GSON.fromJson(file.readText(), Array<ReadBookConfig.Config>::class.java))
                     .forEach { addConfig("预设「${it.name}」", it) }
@@ -41,9 +42,10 @@ internal object ReadingBackgroundUsage {
                 addConfig("共享排版", requireNotNull(BookReadStyleSession.decode(file.readText())))
             }
             appDb.bookDao.all.forEach { book ->
-                book.readConfig?.independentReadStyle?.takeIf(String::isNotBlank)?.let { json ->
-                    addConfig("书籍《${book.name}》", requireNotNull(BookReadStyleSession.decode(json)))
-                }
+                listOfNotNull(book.readConfig?.independentReadStyle, book.readConfig?.savedIndependentReadStyle)
+                    .filter(String::isNotBlank).forEach { json ->
+                        addConfig("书籍《${book.name}》", requireNotNull(BookReadStyleSession.decode(json)))
+                    }
             }
             addRules("阅读", ReadHighlightRuleStore.allRules())
             File(ReadHighlightRuleStore.filePath).takeIf(File::exists)?.let { file ->

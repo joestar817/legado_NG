@@ -7,6 +7,7 @@ import io.legado.app.utils.GSON
 import io.legado.app.utils.externalFiles
 import splitties.init.appCtx
 import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -23,11 +24,12 @@ import kotlin.math.roundToInt
 internal object ReadStylePackageManager {
 
     private const val CONFIG_NAME = "readConfig.json"
-    private const val PACKAGE_DIR = "read_style_packages"
+    internal const val PACKAGE_DIR = "read_style_packages"
     private const val MAX_ENTRY_COUNT = 512
     private const val MAX_ENTRY_BYTES = 64L * 1024 * 1024
     private const val MAX_TOTAL_BYTES = 256L * 1024 * 1024
     private const val MAX_CONFIG_BYTES = 5L * 1024 * 1024
+    private const val COPY_BUFFER_BYTES = 64 * 1024
 
     data class ImportResult(
         val config: ReadBookConfig.Config,
@@ -211,7 +213,9 @@ internal object ReadStylePackageManager {
         val warnings = mutableListOf<String>()
         var installedByThisImport = false
         try {
-            val entries = extract(input, stagingRoot)
+            // 已安装相同包时仍完整读取并校验 ZIP，但无需重复写入其资源。
+            val reuseInstalledResources = installedRoot.isDirectory
+            val entries = extract(input, stagingRoot, writeResources = !reuseInstalledResources)
             val configFile = File(stagingRoot, CONFIG_NAME)
             require(configFile.isFile) { "排版包缺少 $CONFIG_NAME" }
             require(configFile.length() <= MAX_CONFIG_BYTES) { "排版配置文件过大" }
@@ -229,7 +233,10 @@ internal object ReadStylePackageManager {
                 .filterNot { (name, _) -> name in knownFieldNames }
                 .associate { (name, value) -> name to value.toString() }
 
-            if (installedRoot.exists()) {
+            if (reuseInstalledResources) {
+                require(installedRoot.isDirectory) { "阅读预设资源在导入期间发生变化，请重试" }
+                stagingRoot.deleteRecursively()
+            } else if (installedRoot.exists()) {
                 stagingRoot.deleteRecursively()
             } else {
                 require(stagingRoot.renameTo(installedRoot)) { "无法安装排版包资源" }
@@ -247,12 +254,17 @@ internal object ReadStylePackageManager {
         }
     }
 
-    private fun extract(input: InputStream, stagingRoot: File): Set<String> {
+    private fun extract(
+        input: InputStream,
+        stagingRoot: File,
+        writeResources: Boolean,
+    ): Set<String> {
         stagingRoot.mkdirs()
         val entries = linkedSetOf<String>()
         val caseInsensitiveEntries = hashSetOf<String>()
         var entryCount = 0
         var totalBytes = 0L
+        val buffer = ByteArray(COPY_BUFFER_BYTES)
         ZipInputStream(BufferedInputStream(input)).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
@@ -268,14 +280,19 @@ internal object ReadStylePackageManager {
                     "排版包路径越界: $normalizedName"
                 }
                 if (entry.isDirectory) {
-                    target.mkdirs()
+                    if (writeResources) target.mkdirs()
                     zip.closeEntry()
                     continue
                 }
-                target.parentFile?.mkdirs()
                 var entryBytes = 0L
-                FileOutputStream(target).use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                val writeEntry = writeResources || normalizedName == CONFIG_NAME
+                if (writeEntry) target.parentFile?.mkdirs()
+                val output = if (writeEntry) {
+                    BufferedOutputStream(FileOutputStream(target), COPY_BUFFER_BYTES)
+                } else {
+                    null
+                }
+                output.use {
                     while (true) {
                         val read = zip.read(buffer)
                         if (read < 0) break
@@ -283,7 +300,7 @@ internal object ReadStylePackageManager {
                         totalBytes += read
                         require(entryBytes <= MAX_ENTRY_BYTES) { "排版包单个文件过大: $normalizedName" }
                         require(totalBytes <= MAX_TOTAL_BYTES) { "排版包解压后体积过大" }
-                        output.write(buffer, 0, read)
+                        output?.write(buffer, 0, read)
                     }
                 }
                 zip.closeEntry()
@@ -553,7 +570,7 @@ internal object ReadStylePackageManager {
         "lineSpacingExtra", "paragraphSpacing", "titleMode", "titleSize", "titleTopSpacing",
         "titleBottomSpacing", "titleColor", "titleColorNight", "titleBold",
         "titleLineSpacingExtra", "titleLineSpacingSub", "titleSegType", "titleSegScaling",
-        "titleSegDistance", "titleSegFlag", "paragraphIndent", "underlineMode", "underline",
+        "titleSegDistance", "titleSegFlag", "titleSegCustomType", "paragraphIndent", "underlineMode", "underline",
         "underlinePadding", "underlineHeight", "underlineExtend", "underlineColor",
         "underlineColorNight", "dottedLine", "dottedBase", "dottedRatio", "paddingBottom",
         "paddingLeft", "paddingRight", "paddingTop", "headerPaddingBottom", "headerPaddingLeft",
@@ -562,6 +579,7 @@ internal object ReadStylePackageManager {
         "tipHeaderLeft", "tipHeaderMiddle", "tipHeaderRight", "tipFooterLeft", "tipFooterMiddle",
         "tipFooterRight", "tipColor", "tipHeaderColor", "tipHeaderColorNight", "tipFooterColor",
         "tipFooterColorNight", "tipDividerColor", "headerMode", "showHeaderBackButton", "footerMode", "highlightRules",
+        "linkedHighlightRuleIds", "useLinkedHighlightRules",
         "paperEffect", "paperInkStrength", "readScrollFollowBackground",
         "readScrollFollowBackgroundNight", "readScrollFollowBackgroundEInk",
         "underlineDashLength", "underlineStrokeWidth",

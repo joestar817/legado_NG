@@ -136,13 +136,29 @@ fun NgFormGroup(
     }
 }
 
+enum class NgFormPanelVariant { STANDARD, LARGE_ROUNDED }
+
 /** 不附带外部标题的连续亮白表单底板。 */
 @Composable
 fun NgFormPanel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
+    NgFormPanel(NgFormPanelVariant.STANDARD, modifier, content)
+}
+
+@Composable
+fun NgFormPanel(
+    variant: NgFormPanelVariant,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val radius = when (variant) {
+        NgFormPanelVariant.STANDARD -> NgTheme.shapes.mediumDp
+        NgFormPanelVariant.LARGE_ROUNDED -> NgTheme.shapes.largeDp
+    }
+    val shape = RoundedCornerShape(radius.dp)
+    val cardColor = ngDrawerContentCardColor()
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -150,11 +166,11 @@ fun NgFormPanel(
                 shape = shape,
                 fallback = BorderStroke(
                     0.6.dp,
-                    Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
+                    Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f * cardColor.alpha),
                 ),
             )
             .clip(shape)
-            .background(ngDrawerContentCardColor()),
+            .background(cardColor),
         content = content,
     )
 }

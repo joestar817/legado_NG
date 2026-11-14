@@ -61,6 +61,7 @@ private val LocalNgDrawerContentCardStyle = staticCompositionLocalOf {
 
 private val LocalNgDrawerHasThemeProfile = staticCompositionLocalOf { false }
 private val LocalNgDrawerHasBackgroundImage = compositionLocalOf { false }
+internal val LocalNgDrawerContentCardAlpha = compositionLocalOf { 1f }
 
 /** Hosts with their own palette can opt out of the global drawer background profile. */
 internal val LocalNgDrawerInheritThemeProfile = staticCompositionLocalOf { true }
@@ -275,9 +276,12 @@ fun NgBottomDrawerSurface(
 
 /** 固定白卡在自适应抽屉中读取局部卡色，其它页面继续使用原资源色。 */
 @Composable
-fun ngDrawerContentCardColor(): Color = when (LocalNgDrawerContentCardStyle.current) {
-    NgDrawerContentCardStyle.LEGACY -> colorResource(R.color.ng_surface_card)
-    NgDrawerContentCardStyle.ADAPTIVE -> Color(NgTheme.colors.cardContainer).copy(alpha = 1f)
+fun ngDrawerContentCardColor(): Color {
+    val color = when (LocalNgDrawerContentCardStyle.current) {
+        NgDrawerContentCardStyle.LEGACY -> colorResource(R.color.ng_surface_card)
+        NgDrawerContentCardStyle.ADAPTIVE -> Color(NgTheme.colors.cardContainer).copy(alpha = 1f)
+    }
+    return color.copy(alpha = color.alpha * LocalNgDrawerContentCardAlpha.current.coerceIn(0f, 1f))
 }
 
 /**

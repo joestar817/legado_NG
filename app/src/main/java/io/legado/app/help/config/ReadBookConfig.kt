@@ -15,6 +15,7 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.help.DefaultData
+import io.legado.app.help.background.ReadingBackgroundLibrary
 import io.legado.app.help.book.isImage
 import io.legado.app.help.globalExecutor
 import io.legado.app.help.coroutine.Coroutine
@@ -94,16 +95,17 @@ object ReadBookConfig {
     val shareConfigFilePath = FileUtils.getPath(appCtx.filesDir, shareConfigFileName)
     val configList: ArrayList<Config> = arrayListOf()
     lateinit var shareConfig: Config
-    private val pendingBookStyles = mutableMapOf<String, String?>()
-    private val bookStyle = BookReadStyleSession { bookUrl, style ->
+    private val pendingBookStyles = mutableMapOf<String, BookReadStyleSnapshot>()
+    private val bookStyle = BookReadStyleSession { bookUrl, snapshot ->
         synchronized(this) {
             val alreadyScheduled = pendingBookStyles.containsKey(bookUrl)
-            pendingBookStyles[bookUrl] = style
+            pendingBookStyles[bookUrl] = snapshot
             if (!alreadyScheduled) globalExecutor.execute {
                 synchronized(this) {
-                    val latest = pendingBookStyles.remove(bookUrl)
-                    runCatching { appDb.bookDao.saveIndependentReadStyle(bookUrl, latest) }
-                        .onFailure { AppLog.put("保存本书预设失败", it) }
+                    pendingBookStyles.remove(bookUrl)?.let { latest ->
+                        runCatching { appDb.bookDao.saveIndependentReadStyle(bookUrl, latest.active, latest.saved) }
+                            .onFailure { AppLog.put("保存本书预设失败", it) }
+                    }
                 }
             }
         }
@@ -112,22 +114,31 @@ object ReadBookConfig {
     val canUseBookStyle: Boolean get() = bookStyle.isBound
     val floatingColorManagedGlobally: Boolean get() = !onlyThisBook && readFloatingFollowAppGlobally
 
-    fun bindBook(book: Book): Boolean = bookStyle.bind(book)
+    fun bindBook(book: Book): Boolean = synchronized(this) {
+        pendingBookStyles[book.bookUrl]?.let { pending ->
+            book.config.independentReadStyle = pending.active
+            book.config.savedIndependentReadStyle = pending.saved
+        }
+        bookStyle.bind(book)
+    }
 
     fun saveBookStyle(book: Book) = bookStyle.saveFor(book)
+
+    internal fun pendingBookStyleConfigs(): List<Config> {
+        val pending = synchronized(this) { pendingBookStyles.values.toList() }
+        return pending.flatMap { snapshot ->
+            listOfNotNull(BookReadStyleSession.decode(snapshot.active), BookReadStyleSession.decode(snapshot.saved))
+        } + listOfNotNull(bookStyle.savedConfig())
+    }
 
     fun setOnlyThisBook(enabled: Boolean) {
         if (enabled == onlyThisBook || !canUseBookStyle) return
         if (enabled) {
             save()
-            val copy = durConfig.copyForBook(config)
-            if (readFloatingFollowAppGlobally) {
-                copy.readFloatingSeed = 0
-                copy.readFloatingSeedNight = 0
-                copy.readFloatingFollowAppNight = true
-                copy.readFloatingColorStyle = readFloatingGlobalColorStyle
+            if (!bookStyle.restoreSaved()) {
+                val copy = durConfig.copyForBook(config)
+                bookStyle.use(copy)
             }
-            bookStyle.use(copy)
         } else {
             bookStyle.followGlobal()
         }
@@ -277,12 +288,23 @@ object ReadBookConfig {
         }
         appDb.runInTransaction {
             appDb.bookDao.all.forEach { book ->
-                switchedStyle(book.readConfig?.independentReadStyle)?.let { style ->
-                    appDb.bookDao.saveIndependentReadStyle(book.bookUrl, style)
+                val config = book.readConfig ?: return@forEach
+                val active = switchedStyle(config.independentReadStyle)
+                val saved = switchedStyle(config.savedIndependentReadStyle)
+                if (active != null || saved != null) {
+                    appDb.bookDao.saveIndependentReadStyle(
+                        book.bookUrl, active ?: config.independentReadStyle, saved ?: config.savedIndependentReadStyle,
+                    )
                 }
             }
         }
-        pendingBookStyles.replaceAll { _, style -> switchedStyle(style) ?: style }
+        pendingBookStyles.replaceAll { _, snapshot ->
+            snapshot.copy(
+                active = switchedStyle(snapshot.active) ?: snapshot.active,
+                saved = switchedStyle(snapshot.saved) ?: snapshot.saved,
+            )
+        }
+        bookStyle.updateSaved { switchedStyle(it) }
         var activeChanged = (configList.toList() + shareConfig).count { it.resetDeletedFont(matches) } > 0
         if (bookStyle.config?.resetDeletedFont(matches) == true) {
             bookStyle.save()
@@ -307,55 +329,51 @@ object ReadBookConfig {
         return list
     }
 
-    fun deleteDur(): Boolean {
+    fun deleteDur(): Boolean = deleteStyle(styleSelect)
+
+    fun deleteStyle(index: Int): Boolean {
         if (onlyThisBook) {
+            if (index != -1) return false
             setOnlyThisBook(false)
             return true
         }
-        if (configList.size <= 1) return false
-        val removeIndex = styleSelect.takeIf(configList.indices::contains) ?: 0
-        configList.removeAt(removeIndex)
-        readStyleSelect = 0
-        comicStyleSelect = 0
+        if (configList.size <= 1 || index !in configList.indices) return false
+        configList.removeAt(index)
+        fun adjusted(selected: Int): Int = when {
+            selected == index -> 0
+            selected > index -> selected - 1
+            else -> selected
+        }.coerceIn(configList.indices)
+        readStyleSelect = adjusted(readStyleSelect)
+        comicStyleSelect = adjusted(comicStyleSelect)
         return true
     }
 
     fun clearBgAndCache() {
-        val bgs = hashSetOf<String>()
-        val independent = appDb.bookDao.independentReadConfigs().mapNotNull { readConfig ->
-            BookReadStyleSession.decode(readConfig.independentReadStyle)
-        }
-        (configList + independent + listOfNotNull(bookStyle.config)).forEach { config ->
-            repeat(3) {
-                config.getBgPath(it)?.let { path ->
-                    bgs.add(path)
-                }
-            }
-        }
-        appCtx.externalFiles.getFile("bg").listFiles()?.forEach {
-            if (it.canonicalFile != io.legado.app.help.resource.ResourceFiles.backgrounds.canonicalFile &&
-                !bgs.contains(it.absolutePath)) {
-                it.delete()
-            }
-        }
+        // 图片库由用户管理，未被当前预设引用的背景也不是临时缓存。
         FileUtils.delete(appCtx.externalCache.getFile("readConfig"))
         val configZipPath = FileUtils.getPath(appCtx.externalCache, "readConfig.zip")
         FileUtils.delete(configZipPath)
     }
 
-    fun hasDefaultForCurrent(): Boolean {
-        if (onlyThisBook) return defaultConfig(durConfig.name) != null
-        val index = styleSelect.takeIf(configList.indices::contains) ?: return false
-        return defaultConfig(configList[index].name) != null
+    fun hasDefaultForCurrent(): Boolean = hasDefaultForPreset(styleSelect)
+
+    internal fun hasDefaultForPreset(index: Int): Boolean = when {
+        onlyThisBook && index == -1 -> defaultConfig(durConfig.name) != null
+        onlyThisBook -> false
+        else -> configList.getOrNull(index)?.let { defaultConfig(it.name) != null } ?: false
     }
 
-    fun restoreCurrentDefault(): Boolean {
+    fun restoreCurrentDefault(): Boolean = restorePresetDefault(styleSelect)
+
+    internal fun restorePresetDefault(index: Int): Boolean {
         if (onlyThisBook) {
+            if (index != -1) return false
             val default = defaultConfig(durConfig.name) ?: return false
             bookStyle.use(default)
             return true
         }
-        val index = styleSelect.takeIf(configList.indices::contains) ?: return false
+        if (index !in configList.indices) return false
         val default = defaultConfig(configList[index].name) ?: return false
         configList[index] = default.detachedCopy().apply { highlightRules.clear() }
         save()
@@ -399,6 +417,7 @@ object ReadBookConfig {
             bgStrEInk
         },
         highlightRules = ArrayList(highlightRules.map { it.copy() }),
+        linkedHighlightRuleIds = linkedHighlightRuleIds?.toList(),
         ngUnknownFields = ngUnknownFields.toMap(),
     )
 
@@ -467,12 +486,11 @@ object ReadBookConfig {
                 appCtx.putPrefInt(PreferKey.comicStyleSelect, value)
             }
         }
-    var shareLayout = appCtx.getPrefBoolean(PreferKey.shareLayout, false)
+    /** Kept only for older backup readers; every preset now owns its own layout. */
+    var shareLayout: Boolean
+        get() = false
         set(value) {
-            field = value
-            if (appCtx.getPrefBoolean(PreferKey.shareLayout, false) != value) {
-                appCtx.putPrefBoolean(PreferKey.shareLayout, value)
-            }
+            // Do not restore the removed shared-layout behavior from an older backup.
         }
 
     var readFloatingFollowAppGlobally = appCtx.getPrefBoolean(
@@ -547,15 +565,15 @@ object ReadBookConfig {
     /**
      * 两端对齐
      */
-    val textFullJustify get() = appCtx.getPrefBoolean(PreferKey.textFullJustify, true)
+    const val textFullJustify = true
 
     /**
      * 底部对齐
      */
-    val textBottomJustify get() = appCtx.getPrefBoolean(PreferKey.textBottomJustify, true)
+    const val textBottomJustify = true
 
     var hideStatusBar = appCtx.getPrefBoolean(PreferKey.hideStatusBar)
-    var useZhLayout = appCtx.getPrefBoolean(PreferKey.useZhLayout)
+    const val useZhLayout = false
 
     val config get() = bookStyle.config ?: if (shareLayout) shareConfig else durConfig
 
@@ -567,7 +585,6 @@ object ReadBookConfig {
         globallyFollowsApplication = floatingColorManagedGlobally,
         globalColorStyle = readFloatingGlobalColorStyle,
         presetSeed = preset.readFloatingSeedForMode(mode),
-        presetFollowsApplication = preset.readFloatingFollowsApplicationForMode(mode),
         presetColorStyle = preset.curReadFloatingColorStyle(),
     )
 
@@ -724,7 +741,11 @@ object ReadBookConfig {
             config.dottedRatio = value
         }
     val highlightRules: List<ReadHighlightRule>
-        get() = ReadHighlightRuleStore.enabledRules()
+        get() = resolvePresetHighlightRules(
+            ReadHighlightRuleStore.allRules(),
+            durConfig.linkedHighlightRuleIds,
+            durConfig.useLinkedHighlightRules,
+        )
 
     var paddingBottom: Int
         get() = config.paddingBottom
@@ -815,15 +836,26 @@ object ReadBookConfig {
         shareConfig.takeIf { shareLayout && !onlyThisBook },
     )
 
+    internal fun getExportConfig(index: Int): Config? = when {
+        index == -1 && onlyThisBook -> getExportConfig()
+        index in configList.indices -> getExportConfig(configList[index], null)
+        else -> null
+    }
+
     /** Export another book's effective style without changing the active book or preset. */
     internal fun getExportConfig(book: Book): Config {
         val independent = bookStyle.configFor(book)
         val selected = independent ?: getConfig(if (book.isImage) comicStyleSelect else readStyleSelect)
-        return getExportConfig(selected, shareConfig.takeIf { independent == null && shareLayout })
+        return getExportConfig(selected, shareConfig.takeIf { independent == null && shareLayout }, includeGlobalRules = true)
     }
 
-    private fun getExportConfig(preset: Config, sharedLayout: Config?): Config {
-        val exportConfig = preset.copy(highlightRules = ArrayList(ReadHighlightRuleStore.allRules()))
+    private fun getExportConfig(preset: Config, sharedLayout: Config?, includeGlobalRules: Boolean = false): Config {
+        val linkedIds = preset.linkedHighlightRuleIds.orEmpty().toSet()
+        val rules = ReadHighlightRuleStore.allRules()
+        val exportConfig = preset.copy(
+            highlightRules = ArrayList(if (includeGlobalRules && linkedIds.isEmpty()) rules else rules.filter { it.id in linkedIds }),
+            linkedHighlightRuleIds = preset.linkedHighlightRuleIds?.toList(),
+        )
         if (sharedLayout != null) {
             val shareConfig = sharedLayout
             exportConfig.textFont = shareConfig.textFont
@@ -861,6 +893,7 @@ object ReadBookConfig {
             exportConfig.titleLineSpacingExtra = shareConfig.titleLineSpacingExtra
             exportConfig.titleLineSpacingSub = shareConfig.titleLineSpacingSub
             exportConfig.titleSegType = shareConfig.titleSegType
+            exportConfig.titleSegCustomType = shareConfig.titleSegCustomType
             exportConfig.titleSegScaling = shareConfig.titleSegScaling
             exportConfig.titleSegDistance = shareConfig.titleSegDistance
             exportConfig.titleSegFlag = shareConfig.titleSegFlag
@@ -909,30 +942,54 @@ object ReadBookConfig {
     fun import(byteArray: ByteArray): Config = importWithReport(byteArray).config
 
     internal fun importWithReport(byteArray: ByteArray): ReadStylePackageManager.ImportResult {
-        return ReadStylePackageManager.import(byteArray)
+        val result = ReadStylePackageManager.import(byteArray)
+        if (result.config.linkedHighlightRuleIds.orEmpty().isNotEmpty()) {
+            val ids = result.config.highlightRules.map { it.id }.filter { it.isNotBlank() }
+            require(ids.size == ids.toSet().size) { "预设包含重复的高亮规则编号" }
+        }
+        val error = runCatching { ReadingBackgroundLibrary.registerPresetPackage(result.installedRoot) }.exceptionOrNull()
+        return if (error == null) result else result.copy(
+            warnings = result.warnings + "预设背景未能加入图片列表：${error.localizedMessage}",
+        )
     }
 
     internal fun exportWithReport(output: OutputStream): ReadStylePackageManager.ExportResult {
-        return ReadStylePackageManager.export(getExportConfig(), output, ReadPresetPreferences.capture())
+        return ReadStylePackageManager.export(getExportConfig(), output)
     }
 
     internal data class AppendImportedConfigResult(
         val index: Int,
         val highlightRuleMerge: ReadHighlightRuleMergeResult?,
+        val warning: String? = null,
     )
 
     internal fun appendImportedConfig(config: Config): Int =
         appendImportedConfigWithReport(config).index
 
     internal fun appendImportedConfigWithReport(config: Config): AppendImportedConfigResult {
+        val importedRules = config.highlightRules.toList()
+        val linked = config.linkedHighlightRuleIds.orEmpty().isNotEmpty()
+        val ruleMerge = importedRules.takeIf { it.isNotEmpty() && (linked || !onlyThisBook) }?.let { rules ->
+            if (linked) {
+                val result = ReadHighlightRuleStore.mergeForPreset(rules)
+                config.linkedHighlightRuleIds = config.linkedHighlightRuleIds.orEmpty().map {
+                    result.idMapping[it] ?: it
+                }.distinct()
+                result.merge
+            } else {
+                ReadHighlightRuleStore.merge(rules, replaceMatchingIds = true)
+            }
+        }
+        config.highlightRules.clear()
         if (onlyThisBook) {
             bookStyle.use(config)
-            return AppendImportedConfigResult(-1, null)
-        }
-        val importedRules = config.highlightRules.toList()
-        config.highlightRules.clear()
-        val ruleMerge = importedRules.takeIf { it.isNotEmpty() }?.let {
-            ReadHighlightRuleStore.merge(it, replaceMatchingIds = true)
+            val availableIds = ReadHighlightRuleStore.allRules().mapTo(hashSetOf()) { it.id }
+            val missing = config.linkedHighlightRuleIds.orEmpty().any { it !in availableIds }
+            return AppendImportedConfigResult(
+                -1,
+                ruleMerge,
+                if (missing) "本书预设的部分高亮规则尚未在规则库中，未匹配时将跟随全局" else null,
+            )
         }
         configList.add(config)
         val index = configList.lastIndex
@@ -1009,6 +1066,7 @@ object ReadBookConfig {
         @SerializedName("titleLineSpacingExtra") var titleLineSpacingExtra: Int = 12,
         @SerializedName("titleLineSpacingSub") var titleLineSpacingSub: Int = 12,
         @SerializedName("titleSegType") var titleSegType: Int = 0,
+        @SerializedName("titleSegCustomType") var titleSegCustomType: Int = 0,
         @SerializedName("titleSegScaling") var titleSegScaling: Float = 1f,
         @SerializedName("titleSegDistance") var titleSegDistance: Int = 4,
         @SerializedName("titleSegFlag") var titleSegFlag: String = "",
@@ -1054,6 +1112,8 @@ object ReadBookConfig {
         var footerMode: Int = 0,
         /** 仅用于兼容旧配置和排版包传输；运行时规则由 [ReadHighlightRuleStore] 持有。 */
         @SerializedName("highlightRules") var highlightRules: ArrayList<ReadHighlightRule> = arrayListOf(),
+        @SerializedName("linkedHighlightRuleIds") var linkedHighlightRuleIds: List<String>? = null,
+        @SerializedName("useLinkedHighlightRules") var useLinkedHighlightRules: Boolean = false,
         @SerializedName("ngReadStyleSource") var ngReadStyleSource: String? = null,
         @SerializedName("ngUnknownFields") var ngUnknownFields: Map<String, String> = emptyMap(),
     ) {
@@ -1083,6 +1143,8 @@ object ReadBookConfig {
             readFloatingPrimaryStrength = readFloatingPrimaryStrength,
             readFloatingColorStyle = readFloatingColorStyle,
             highlightRules = arrayListOf(),
+            linkedHighlightRuleIds = linkedHighlightRuleIds?.toList(),
+            useLinkedHighlightRules = useLinkedHighlightRules,
             ngUnknownFields = ngUnknownFields.toMap(),
         )
 
@@ -1312,7 +1374,7 @@ object ReadBookConfig {
             if (mode == ReadAppearanceMode.EINK) return
             if (mode == ReadAppearanceMode.NIGHT) {
                 readFloatingSeedNight = 0
-                readFloatingFollowAppNight = true
+                readFloatingFollowAppNight = false
             } else {
                 readFloatingSeed = 0
             }
@@ -1324,19 +1386,6 @@ object ReadBookConfig {
             ReadAppearanceMode.EINK -> 0
             ReadAppearanceMode.NIGHT -> readFloatingSeedNight
             else -> readFloatingSeed
-        }
-
-        /**
-         * 旧内置预设只验收过日间种子，夜间的 0 不是用户显式选择“跟随应用”。
-         * 新选择会写入独立标记；旧数据仅在日夜种子都为空时延续跟随语义。
-         */
-        fun curReadFloatingFollowsApplication(): Boolean = readFloatingFollowsApplicationForMode(ReadAppearanceMode.current())
-
-        internal fun readFloatingFollowsApplicationForMode(mode: ReadAppearanceMode): Boolean = when (mode) {
-            ReadAppearanceMode.EINK -> false
-            ReadAppearanceMode.NIGHT -> readFloatingSeedNight == 0 &&
-                (readFloatingFollowAppNight ?: (readFloatingSeed == 0))
-            else -> readFloatingSeed == 0
         }
 
         fun curReadFloatingTransparency(): Int =

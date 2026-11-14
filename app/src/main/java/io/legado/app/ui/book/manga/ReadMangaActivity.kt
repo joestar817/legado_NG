@@ -303,10 +303,10 @@ class ReadMangaActivity : VMBaseActivity<ComposeActivityBinding, ReadMangaViewMo
                 if (ReadManga.book == null) return
                 ui.externalModal = true
                 setPanel(MangaPanel.NONE)
-                val catalog = if (currentCatalogStyle() == ReadCatalogStyle.COMPACT_SIDE) {
-                    MangaCompactCatalogDialog()
-                } else {
-                    MangaCatalogDialog()
+                val catalog = when (currentCatalogStyle()) {
+                    ReadCatalogStyle.CARD -> MangaCatalogDialog()
+                    ReadCatalogStyle.COMPACT_SIDE -> MangaCompactCatalogDialog()
+                    ReadCatalogStyle.DENSE_LIST -> MangaDenseCatalogDialog()
                 }
                 catalog.show(supportFragmentManager, "mangaCatalog")
             }

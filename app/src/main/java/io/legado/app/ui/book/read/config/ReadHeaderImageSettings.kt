@@ -1,7 +1,6 @@
 package io.legado.app.ui.book.read.config
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -43,7 +42,6 @@ import io.legado.app.model.ReadBook
 import io.legado.app.ui.design.components.compose.NgFormActionButton
 import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgSurface
-import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.postEvent
@@ -59,16 +57,15 @@ private data class ReadImageConfig(
     val path: String = "",
     val width: Int = 0,
     val height: Int = 0,
-    val enabled: Boolean = false,
 )
 
 private fun ReadBookConfig.Config.imageConfig(position: ReadImagePosition): ReadImageConfig =
     when (position) {
         ReadImagePosition.HEADER -> ReadImageConfig(
-            headerImage, headerImageWidth, headerImageHeight, headerImageEnabled,
+            headerImage, headerImageWidth, headerImageHeight,
         )
         ReadImagePosition.FOOTER -> ReadImageConfig(
-            footerImage, footerImageWidth, footerImageHeight, footerImageEnabled,
+            footerImage, footerImageWidth, footerImageHeight,
         )
     }
 
@@ -78,13 +75,13 @@ private fun ReadBookConfig.Config.setImageConfig(position: ReadImagePosition, im
             headerImage = image.path
             headerImageWidth = image.width
             headerImageHeight = image.height
-            headerImageEnabled = image.enabled
+            headerImageEnabled = image.path.isNotBlank()
         }
         ReadImagePosition.FOOTER -> {
             footerImage = image.path
             footerImageWidth = image.width
             footerImageHeight = image.height
-            footerImageEnabled = image.enabled
+            footerImageEnabled = image.path.isNotBlank()
         }
     }
 }
@@ -94,11 +91,9 @@ internal class ReadImageSettingsState(
     val path: String,
     val width: Int,
     val height: Int,
-    val enabled: Boolean,
     val importing: Boolean,
     val error: String?,
     val onChoose: () -> Unit,
-    val onEnabledChanged: (Boolean) -> Unit,
     val onRemove: () -> Unit,
 )
 
@@ -156,7 +151,6 @@ internal fun rememberReadImageSettingsState(
                             path = image.path,
                             width = image.width,
                             height = image.height,
-                            enabled = true,
                         ))
                         ReadBookConfig.save()
                         postEvent(EventBus.UP_CONFIG, arrayListOf(2, 5))
@@ -187,16 +181,9 @@ internal fun rememberReadImageSettingsState(
         path = imageConfig.path,
         width = imageConfig.width,
         height = imageConfig.height,
-        enabled = imageConfig.enabled,
         importing = importing,
         error = error,
         onChoose = ::choose,
-        onEnabledChanged = { enabled ->
-            if (!importing) {
-                if (enabled && imageConfig.path.isBlank()) choose()
-                else applyChange(config.imageConfig(position).copy(enabled = enabled))
-            }
-        },
         onRemove = {
             error = null
             applyChange(ReadImageConfig())
@@ -219,9 +206,7 @@ internal fun ReadImageSettings(state: ReadImageSettingsState) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 44.dp)
-                .clickable(enabled = !state.importing) { state.onEnabledChanged(!state.enabled) },
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .heightIn(min = 44.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -230,12 +215,6 @@ internal fun ReadImageSettings(state: ReadImageSettingsState) {
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
                 fontWeight = FontWeight.Medium,
-            )
-            NgSwitchControl(
-                checked = state.enabled,
-                onCheckedChange = state.onEnabledChanged,
-                enabled = !state.importing,
-                modifier = Modifier.size(width = 44.dp, height = 28.dp),
             )
         }
         if (hasImage) {

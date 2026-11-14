@@ -111,14 +111,38 @@ class EpubReadStylePackageTest {
     }
 
     @Test
-    fun `hidden title keeps text in source while inactive images reserve no space`() {
-        val config = ReadBookConfig.Config(bgType = 0, titleMode = 2, headerImage = "header.png",
-            headerImageEnabled = false, headerImageWidth = 1600, headerImageHeight = 400)
+    fun `hidden title keeps text in source while removed images reserve no space`() {
+        val config = ReadBookConfig.Config(bgType = 0, titleMode = 2, headerImage = "",
+            headerImageEnabled = true, headerImageWidth = 1600, headerImageHeight = 400)
         val style = EpubReadStylePackage.fromPackage(config, packageBytes(config, mapOf("header.png" to byteArrayOf(1))))
         assertTrue(style.titleCss().contains("display:none"))
         assertTrue(style.titleMarkup("第1章 标题").contains("第1章 标题"))
         assertFalse(style.decorationCss().contains("padding-"))
         assertFalse(style.decorationCss().contains("url("))
+    }
+
+    @Test
+    fun `selected header and footer export regardless of stored switch values`() {
+        val config = ReadBookConfig.Config(
+            bgType = 0,
+            headerImage = "header.png", headerImageEnabled = false, headerImageWidth = 1600, headerImageHeight = 400,
+            footerImage = "footer.png", footerImageEnabled = false, footerImageWidth = 1600, footerImageHeight = 160,
+        )
+        val resources = mapOf("header.png" to byteArrayOf(1), "footer.png" to byteArrayOf(2))
+        val both = EpubReadStylePackage.fromPackage(config, packageBytes(config, resources)).decorationCss()
+        assertTrue(both.contains("../NG/assets/header.png"))
+        assertTrue(both.contains("../NG/assets/footer.png"))
+        assertTrue(both.contains("padding-top:"))
+        assertTrue(both.contains("padding-bottom:"))
+
+        val withoutHeader = config.copy(headerImage = "", headerImageEnabled = true)
+        val footerOnly = EpubReadStylePackage.fromPackage(
+            withoutHeader, packageBytes(withoutHeader, resources),
+        ).decorationCss()
+        assertFalse(footerOnly.contains("../NG/assets/header.png"))
+        assertTrue(footerOnly.contains("../NG/assets/footer.png"))
+        assertFalse(footerOnly.contains("padding-top:"))
+        assertTrue(footerOnly.contains("padding-bottom:"))
     }
 
     @Test
@@ -154,6 +178,73 @@ class EpubReadStylePackageTest {
         EpubReadStylePackage.bindImportedStyle(first, byteArrayOf(2), importer)
         assertEquals(1, calls)
         assertEquals(retained, first.config.independentReadStyle)
+    }
+
+    @Test
+    fun `imported book links its own rules without overwriting the global library`() {
+        val global = ReadHighlightRule(id = "same-id", name = "全局", pattern = "global", enabled = true)
+        val importedRule = ReadHighlightRule(id = "same-id", name = "书籍", pattern = "book", enabled = true)
+        val config = ReadBookConfig.Config(
+            linkedHighlightRuleIds = listOf("same-id", "missing"),
+            useLinkedHighlightRules = true,
+            highlightRules = arrayListOf(importedRule),
+        )
+        val book = Book(bookUrl = "file:///linked.epub")
+        var library = listOf(global)
+        val warnings = EpubReadStylePackage.bindImportedStyle(
+            book, byteArrayOf(1),
+            importer = { ReadStylePackageManager.ImportResult(config, "ng", emptyList(), File("installed")) },
+            mergeRules = { rules ->
+                mergePresetHighlightRules(library, rules) { "book-rule" }.also { library = it.merge.rules }
+            },
+            availableRuleIds = { library.mapTo(hashSetOf()) { it.id } },
+        )
+
+        val restored = GSON.fromJson(book.config.independentReadStyle, ReadBookConfig.Config::class.java)
+        assertEquals(listOf("book-rule", "missing"), restored.linkedHighlightRuleIds)
+        assertTrue(restored.highlightRules.isEmpty())
+        assertTrue(restored.useLinkedHighlightRules)
+        assertEquals(global, library.first())
+        assertFalse(library.last().enabled)
+        assertEquals("book", resolvePresetHighlightRules(library, restored.linkedHighlightRuleIds, true).single().pattern)
+        assertEquals(1, warnings.size)
+    }
+
+    @Test
+    fun `missing embedded rules remain linked and fall back to the global rules`() {
+        val config = ReadBookConfig.Config(linkedHighlightRuleIds = listOf("missing"), useLinkedHighlightRules = true)
+        val book = Book(bookUrl = "file:///missing.epub")
+        val warnings = EpubReadStylePackage.bindImportedStyle(
+            book, byteArrayOf(1),
+            importer = { ReadStylePackageManager.ImportResult(config, "ng", emptyList(), File("installed")) },
+            mergeRules = { error("没有可导入规则时不应修改规则库") },
+            availableRuleIds = { setOf("global") },
+        )
+
+        val restored = GSON.fromJson(book.config.independentReadStyle, ReadBookConfig.Config::class.java)
+        assertEquals(listOf("missing"), restored.linkedHighlightRuleIds)
+        assertTrue(restored.useLinkedHighlightRules)
+        val global = ReadHighlightRule(id = "global", pattern = "global", enabled = true)
+        assertEquals(listOf(global), resolvePresetHighlightRules(listOf(global), restored.linkedHighlightRuleIds, true))
+        assertEquals(1, warnings.size)
+    }
+
+    @Test
+    fun `book package containing global settings is rejected before merging rules`() {
+        val config = ReadBookConfig.Config(
+            linkedHighlightRuleIds = listOf("rule"),
+            highlightRules = arrayListOf(ReadHighlightRule(id = "rule")),
+        )
+        val book = Book(bookUrl = "file:///invalid.epub")
+        val result = runCatching {
+            EpubReadStylePackage.bindImportedStyle(
+                book, byteArrayOf(1),
+                importer = { ReadStylePackageManager.ImportResult(config, "ng", emptyList(), File("installed"), com.google.gson.JsonObject()) },
+                mergeRules = { error("无效书籍样式包不应修改规则库") },
+            )
+        }
+        assertTrue(result.isFailure)
+        assertNull(book.config.independentReadStyle)
     }
 
     private fun publication(items: List<EpubManifestItem>) = EpubPublication("OEBPS/content.opf", "2.0", null,

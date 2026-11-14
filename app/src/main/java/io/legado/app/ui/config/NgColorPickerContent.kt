@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -108,6 +109,9 @@ internal fun NgColorPickerContent(
     modifier: Modifier = Modifier,
     showAlphaSlider: Boolean = true,
     onColorChanged: (Int) -> Unit = {},
+    hexTrailing: (@Composable () -> Unit)? = null,
+    compactHexRow: Boolean = false,
+    onRestoreOriginal: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -119,6 +123,13 @@ internal fun NgColorPickerContent(
         val previous = state.color
         edit()
         if (state.isInputValid && previous != state.color) currentCallback(state.color)
+    }
+    val restoreOriginal = {
+        if (onRestoreOriginal == null) change { state.setColor(originalColor) }
+        else {
+            state.setColor(originalColor)
+            onRestoreOriginal()
+        }
     }
     val modeLabels = listOf(
         stringResource(R.string.ng_color_picker_mode_grid),
@@ -180,53 +191,64 @@ internal fun NgColorPickerContent(
             )
             Spacer(Modifier.height(12.dp))
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            NgPickerPreview(
-                color = originalColor,
-                label = stringResource(R.string.ng_color_picker_original),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(topStart = 9.dp, bottomStart = 9.dp))
-                    .clickable(
-                        role = Role.Button,
-                        onClickLabel = stringResource(R.string.ng_color_picker_restore_original),
-                    ) { change { state.setColor(originalColor) } },
-            )
-            NgPickerPreview(
-                color = state.color,
-                label = stringResource(R.string.ng_color_picker_current),
-                modifier = Modifier.clip(RoundedCornerShape(topEnd = 9.dp, bottomEnd = 9.dp)),
-            )
-            Spacer(Modifier.width(14.dp))
-            Text(
-                hexLabel,
-                color = Color(colors.onSurfaceVariant),
-                fontSize = 11.sp,
-            )
-            Spacer(Modifier.width(8.dp))
-            NgFormField(
-                label = hexLabel,
-                value = state.hexInput,
-                onValueChange = { text ->
-                    if (text.length <= 9) change { state.editHex(text) }
-                },
-                modifier = Modifier.weight(1f).semantics {
-                    contentDescription = hexLabel
-                },
-                isError = state.isHexInputError,
-                variant = NgFormFieldVariant.DIALOG_UNDERLINE,
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Characters,
-                    keyboardType = KeyboardType.Ascii,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(onDone = {
-                    focusManager.clearFocus()
-                    keyboard?.hide()
-                }),
-            )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val fontScale = LocalDensity.current.fontScale
+            val stackPreview = hexTrailing != null && if (compactHexRow) {
+                maxWidth < 220.dp || fontScale > 1.8f
+            } else {
+                maxWidth < 320.dp || fontScale > 1.15f
+            }
+            val moveResetBelow = compactHexRow && hexTrailing != null && !stackPreview &&
+                (maxWidth < 280.dp || fontScale > 1.15f)
+            val previewHexGap = when {
+                !compactHexRow -> 14.dp
+                maxWidth < 280.dp || fontScale > 1.15f -> 6.dp
+                maxWidth < 292.dp -> 12.dp
+                maxWidth < 320.dp -> 18.dp
+                else -> 36.dp
+            }
+            Column {
+                if (stackPreview) {
+                    NgPickerPreviewPair(originalColor, state.color, restoreOriginal)
+                    Spacer(Modifier.height(8.dp))
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (!stackPreview) {
+                        NgPickerPreviewPair(originalColor, state.color, restoreOriginal)
+                        Spacer(Modifier.width(previewHexGap))
+                    }
+                    Text(hexLabel, color = Color(colors.onSurfaceVariant), fontSize = 11.sp)
+                    Spacer(Modifier.width(if (compactHexRow) 4.dp else 8.dp))
+                    NgFormField(
+                        label = hexLabel,
+                        value = state.hexInput,
+                        onValueChange = { text ->
+                            if (text.length <= 9) change { state.editHex(text) }
+                        },
+                        modifier = Modifier.weight(1f).semantics { contentDescription = hexLabel },
+                        isError = state.isHexInputError,
+                        variant = NgFormFieldVariant.DIALOG_UNDERLINE,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            keyboardType = KeyboardType.Ascii,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(onDone = {
+                            focusManager.clearFocus()
+                            keyboard?.hide()
+                        }),
+                    )
+                    if (hexTrailing != null && !moveResetBelow) {
+                        Spacer(Modifier.width(if (compactHexRow) 4.dp else 6.dp))
+                        hexTrailing()
+                    }
+                }
+                if (moveResetBelow) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        hexTrailing()
+                    }
+                }
+            }
         }
         if (!state.isInputValid) {
             Text(
@@ -239,6 +261,27 @@ internal fun NgColorPickerContent(
         }
         Spacer(Modifier.height(16.dp))
         NgPickerSavedColors(state, change)
+    }
+}
+
+@Composable
+private fun NgPickerPreviewPair(originalColor: Int, currentColor: Int, onRestoreOriginal: () -> Unit) {
+    Row {
+        NgPickerPreview(
+            color = originalColor,
+            label = stringResource(R.string.ng_color_picker_original),
+            modifier = Modifier.clip(RoundedCornerShape(topStart = 9.dp, bottomStart = 9.dp))
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = stringResource(R.string.ng_color_picker_restore_original),
+                    onClick = onRestoreOriginal,
+                ),
+        )
+        NgPickerPreview(
+            color = currentColor,
+            label = stringResource(R.string.ng_color_picker_current),
+            modifier = Modifier.clip(RoundedCornerShape(topEnd = 9.dp, bottomEnd = 9.dp)),
+        )
     }
 }
 

@@ -104,6 +104,7 @@ fun NgDialog(
     variant: NgDialogVariant = NgDialogVariant.STANDARD,
     titleFontSize: TextUnit? = null,
     titleFontWeight: FontWeight = FontWeight.Bold,
+    titleLineHeight: TextUnit? = null,
     actions: @Composable RowScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) = NgDialogTheme {
@@ -135,7 +136,7 @@ fun NgDialog(
                     modifier = Modifier.fillMaxWidth(),
                     color = Color(NgTheme.colors.onSurface),
                     fontSize = titleFontSize ?: metrics.titleSize,
-                    lineHeight = metrics.titleLineHeight,
+                    lineHeight = titleLineHeight ?: metrics.titleLineHeight,
                     fontWeight = titleFontWeight,
                     textAlign = metrics.titleAlignment,
                     maxLines = 1,

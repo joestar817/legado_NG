@@ -67,6 +67,34 @@ class ChapterCacheReorderTest {
     }
 
     @Test
+    fun failedCyclicReorderRestoresEveryOriginalAndTimestamp() {
+        val directory = temporary.newFolder("cycle-rollback")
+        val files = (0..2).map { index -> write(File(directory, "$index.nb"), "body:$index") }
+        val before = snapshot(directory)
+        val times = files.associateWith(File::lastModified)
+        val moves = files.indices.map { index ->
+            ChapterCacheFileMove(files[index], files[(index + 1) % files.size])
+        }
+        val failure = IOException("database rejected commit")
+
+        try {
+            withReorderedCacheFiles(directory, moves) {
+                assertEquals("body:2", files[0].readText())
+                assertEquals("body:0", files[1].readText())
+                assertEquals("body:1", files[2].readText())
+                throw failure
+            }
+            fail("Failed commit must propagate")
+        } catch (actual: IOException) {
+            assertSame(failure, actual)
+        }
+
+        assertEquals(before, snapshot(directory))
+        times.forEach { (file, time) -> assertEquals(time, file.lastModified()) }
+        assertNoStaging(directory)
+    }
+
+    @Test
     fun chapterWrapperKeepsMangaImagesMissingChaptersAndCompanionFilesAcrossTwoReversals() {
         val book = book(BookType.image)
         val directory = directory(book)
@@ -126,6 +154,33 @@ class ChapterCacheReorderTest {
 
         assertEquals(setOf("images/keep.svg"), snapshot(directory).keys)
         assertEquals("unrelated image", keep.readText())
+        assertNoStaging(directory)
+    }
+
+    @Test
+    fun wrapperRemovesStaleCompanionWhenSourceChapterWasNotCached() {
+        val book = book(BookType.text)
+        val directory = directory(book)
+        val old = (0..2).map { index ->
+            BookChapter(bookUrl = book.bookUrl, url = "${book.bookUrl}/$index",
+                title = "chapter-$index", index = index)
+        }
+        val updated = old.reversed().mapIndexed { index, chapter -> chapter.copy(index = index) }
+        val missing = old.first()
+        val newMissing = updated.single { it.url == missing.url }
+        val suffix = ".epub-positions.gz"
+        val stale = write(File(directory, newMissing.getFileName() + suffix), "stale")
+        val cached = old.last()
+        write(File(directory, cached.getFileName()), "cached:${cached.url}")
+
+        withReorderedChapterCache(book, old, updated) {
+            assertFalse(stale.exists())
+            val movedCached = updated.single { it.url == cached.url }
+            assertEquals("cached:${cached.url}", File(directory, movedCached.getFileName()).readText())
+        }
+
+        assertFalse(File(directory, newMissing.getFileName()).exists())
+        assertFalse(stale.exists())
         assertNoStaging(directory)
     }
 

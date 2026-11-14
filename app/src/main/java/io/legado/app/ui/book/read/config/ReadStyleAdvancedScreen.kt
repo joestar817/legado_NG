@@ -100,10 +100,12 @@ internal fun FullLineUnderlinePage(
             .fillMaxWidth()
             .height(AdvancedPageHeight),
     ) {
-        AdvancedEditorHeader(
+        ReadStyleSubpageHeader(
             title = stringResource(R.string.read_style_full_underline_title),
             contentColor = contentColor,
             onBack = actions.onBack,
+            circularBack = true,
+            centerTitle = true,
         )
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -114,10 +116,13 @@ internal fun FullLineUnderlinePage(
             ),
         ) {
             item {
-                Text(
-                    text = stringResource(R.string.read_style_shared_geometry),
-                    color = contentColor.copy(alpha = 0.62f), fontSize = 12.sp,
+                ReadStylePaletteModeSelector(
+                    mode = if (state.editorMode == ReadAppearanceMode.NIGHT.ordinal) 1 else 0,
+                    allowEInk = false,
+                    contentColor = contentColor,
+                    onSelected = actions.onEditorModeChanged,
                 )
+                Spacer(Modifier.height(8.dp))
                 AdvancedSwitchRow(
                     title = stringResource(R.string.enable),
                     checked = underline.enabled,
@@ -909,12 +914,16 @@ internal fun AdvancedColorPage(
     onColorChanged: (Int) -> Unit,
     onReset: () -> Unit,
     backgroundRenderer: (Int, Int) -> Bitmap = ::renderCurrentReadBackground,
+    showAlphaSlider: Boolean = true,
+    forceOpaque: Boolean = false,
+    onRestoreOriginal: (() -> Unit)? = null,
 ) {
+    val pickerHeight = LocalConfiguration.current.screenHeightDp.dp * 0.86f
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(AdvancedPageHeight)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .heightIn(max = pickerHeight)
+            .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
     ) {
         NgInlineColorPicker(
             title = title,
@@ -923,6 +932,13 @@ internal fun AdvancedColorPage(
             onBack = onBack,
             onColorChanged = onColorChanged,
             onReset = onReset,
+            showAlphaSlider = showAlphaSlider,
+            forceOpaque = forceOpaque,
+            onRestoreOriginal = onRestoreOriginal,
+            resetInContent = true,
+            compactResetAction = true,
+            headerContentSpacing = 8.dp,
+            heightLimit = pickerHeight,
         )
     }
 }

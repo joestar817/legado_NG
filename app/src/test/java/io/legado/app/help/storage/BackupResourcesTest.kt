@@ -203,6 +203,27 @@ class BackupResourcesTest {
         assertEquals(expected, actual)
     }
 
+    @Test fun savedBookStyleResourcesAreCollectedAndRestoredWhileFollowingGlobal() {
+        val style = JsonParser.parseString("""{"bgType":2,"bgStr":"/images/book.png","textFont":"/fonts/book.ttf"}""").asJsonObject
+        val book = JsonObject().apply {
+            add("readConfig", JsonObject().apply { addProperty("savedIndependentReadStyle", style.toString()) })
+        }
+        val copied = mutableListOf<String>()
+        BackupResources.collectBookReadStyleResources(book) {
+            copied += it
+            "backup-resource://resources/${it.substringAfterLast('/')}"
+        }
+        assertEquals(listOf("/images/book.png", "/fonts/book.ttf"), copied)
+        val restored = BackupResources.transform(book) {
+            it.replace("backup-resource://resources/", "/restored/")
+        }.asJsonObject
+        val actual = JsonParser.parseString(
+            restored.getAsJsonObject("readConfig").get("savedIndependentReadStyle").asString,
+        ).asJsonObject
+        assertEquals("/restored/book.png", actual.get("bgStr").asString)
+        assertEquals("/restored/book.ttf", actual.get("textFont").asString)
+    }
+
     @Test fun independentStyleCollectsEveryReaderResourceWithoutChangingOtherFields() {
         val style = JsonParser.parseString("""{
             "bgType":2,"bgStr":"/images/day.png","bgTypeNight":2,"bgStrNight":"/images/night.png",

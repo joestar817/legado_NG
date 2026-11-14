@@ -89,6 +89,7 @@ internal object FontUsageInspector {
         // 当前书的独立预设可能还没有落盘，不能仅以数据库记录判断占用。
         addConfig("当前书籍", ReadBookConfig.durConfig)
         addConfig("当前阅读", ReadBookConfig.config)
+        ReadBookConfig.pendingBookStyleConfigs().forEach { addConfig("本书预设", it) }
 
         // 正常读取会对损坏文件回退默认值；删除检查不能把回退结果当成没有引用。
         File(ReadBookConfig.configFilePath).takeIf(File::exists)?.let { file ->
@@ -98,9 +99,12 @@ internal object FontUsageInspector {
             addAll(referencesForConfig("共享排版", decodePreset(file.readText())))
         }
         appDb.bookDao.all.forEach { book ->
-            BookReadStyleSession.decode(book.readConfig?.independentReadStyle)?.let { config ->
-                addAll(referencesForConfig("书籍《${book.name}》", config, "《${book.name}》"))
-            }
+            listOfNotNull(book.readConfig?.independentReadStyle, book.readConfig?.savedIndependentReadStyle)
+                .forEach { serialized ->
+                    BookReadStyleSession.decode(serialized)?.let { config ->
+                        addAll(referencesForConfig("书籍《${book.name}》", config, "《${book.name}》"))
+                    }
+                }
         }
 
         addAll(referencesForRules("高亮规则", ReadHighlightRuleStore.allRules()))

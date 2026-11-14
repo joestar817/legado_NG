@@ -23,13 +23,14 @@ interface BookDao {
     fun updateReadStyleConfig(bookUrl: String, config: Book.ReadConfig)
 
     @Transaction
-    fun saveIndependentReadStyle(bookUrl: String, style: String?) {
+    fun saveIndependentReadStyle(bookUrl: String, style: String?, savedStyle: String?) {
         val config = getBook(bookUrl)?.config ?: return
         config.independentReadStyle = style
+        config.savedIndependentReadStyle = savedStyle
         updateReadStyleConfig(bookUrl, config)
     }
 
-    @Query("SELECT readConfig FROM books WHERE readConfig LIKE '%\"independentReadStyle\"%'")
+    @Query("SELECT readConfig FROM books WHERE readConfig LIKE '%\"independentReadStyle\"%' OR readConfig LIKE '%\"savedIndependentReadStyle\"%'")
     @TypeConverters(Book.Converters::class)
     fun independentReadConfigs(): List<Book.ReadConfig>
 

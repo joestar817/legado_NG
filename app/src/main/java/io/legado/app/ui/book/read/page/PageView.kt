@@ -158,15 +158,13 @@ class PageView(context: Context) : FrameLayout(context) {
                 it.config.headerImage,
                 it.config.headerImageWidth,
                 it.config.headerImageHeight,
-                it.config.headerImageEnabled,
             )
             ivFooterImage.updateImage(
                 it.config.footerImage,
                 it.config.footerImageWidth,
                 it.config.footerImageHeight,
-                it.config.footerImageEnabled,
             )
-            if (it.config.headerImageEnabled || it.config.footerImageEnabled) requestLayout()
+            if (it.config.headerImage.isNotBlank() || it.config.footerImage.isNotBlank()) requestLayout()
             val textColor = it.textColor
             val tipDividerColor = with(ReadTipConfig) {
                 when (tipDividerColor) {

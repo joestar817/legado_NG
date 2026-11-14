@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="read_highlight_current_preset">当前预设</string>
+    <string name="read_highlight_rule_library">规则库</string>
+    <string name="read_highlight_link_rules">关联规则</string>
+    <string name="read_highlight_linked_count">已关联 %1$d 条</string>
+    <string name="read_highlight_used_by_preset">本预设使用</string>
+    <string name="read_highlight_not_used_by_preset">本预设未使用</string>
+    <string name="read_highlight_used_by_book">本书使用</string>
+    <string name="read_highlight_not_used_by_book">本书未使用</string>
+    <string name="read_highlight_add_rule">＋ 新增</string>
+    <string name="read_highlight_global_switch_description">%1$s全局默认</string>
+    <string name="read_highlight_multi_select">多选</string>
+    <string name="read_highlight_selected_count">已选 %1$d 条</string>
+    <string name="read_highlight_rule_more">%1$s 更多操作</string>
+    <string name="read_highlight_copy_action">复制</string>
+    <string name="read_highlight_restore_one_confirm">将「%1$s」恢复默认设置？</string>
+    <string name="read_highlight_restore_one_done">已恢复默认规则</string>
+</resources>

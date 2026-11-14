@@ -9,6 +9,9 @@ import androidx.documentfile.provider.DocumentFile
 import com.google.gson.annotations.SerializedName
 import io.legado.app.help.resource.ResourceFiles
 import io.legado.app.help.resource.ResourceInstallStore
+import io.legado.app.help.config.ReadAppearanceMode
+import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadStylePackageManager
 import io.legado.app.utils.externalFiles
 import io.legado.app.utils.inputStream
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +43,17 @@ internal data class ReadingBackgroundSnapshot(
 internal data class BackgroundDeletionTarget(val entry: ReadingBackground, val hash: String)
 internal data class BackgroundDeletionResult(val deleted: Set<String>, val failures: List<String>)
 
+private val hiddenBuiltInBackgroundNames = setOf(
+    "午后沙滩.jpg", "山水墨影.jpg", "明媚倾城.jpg", "深宫魅影.jpg", "清新时光.jpg",
+)
+private val preferredBuiltInBackgroundNames = listOf("宁静夜色.jpg", "山水画.jpg")
+
+internal fun selectableBuiltInBackgroundNames(assetNames: List<String>): List<String> {
+    val visible = assetNames.filterNot(hiddenBuiltInBackgroundNames::contains)
+    return preferredBuiltInBackgroundNames.filter(visible::contains) +
+        visible.filterNot(preferredBuiltInBackgroundNames::contains)
+}
+
 @Keep
 internal data class ReadingBackgroundNames(
     @SerializedName("names") val names: Map<String, String> = emptyMap(),
@@ -52,6 +66,7 @@ internal object ReadingBackgroundLibrary {
     val revision = mutableRevision.asStateFlow()
     private val directory get() = File(appCtx.externalFiles, "bg")
     private val namesFile get() = File(appCtx.filesDir, "reading-background-names.json")
+    private val presetDirectory get() = File(appCtx.filesDir, ReadStylePackageManager.PACKAGE_DIR)
 
     fun resolveFile(reference: String): File =
         if (reference.contains(File.separator)) File(reference) else File(directory, reference)
@@ -65,9 +80,25 @@ internal object ReadingBackgroundLibrary {
     private fun isOwned(file: File): Boolean = isOwned(file, listOf(directory, ResourceFiles.backgrounds))
 
     fun scan(): ReadingBackgroundSnapshot = synchronized(lock) {
-        val names = ResourceFiles.readJson(namesFile, ReadingBackgroundNames::class.java)?.names.orEmpty()
+        val savedNames = ResourceFiles.readJson(namesFile, ReadingBackgroundNames::class.java)?.names.orEmpty()
+        val names = savedNames.toMutableMap()
         val records = ResourceInstallStore.load().filter { it.entry.category.type == "background" }
         val references = runCatching { ReadingBackgroundUsage.pathsByLocation() }
+        val packageRoots = linkedSetOf<File>()
+        fun addPackageRoot(reference: String) {
+            ReadingPresetBackgroundCatalog.packageRootForReference(presetDirectory, reference)?.let(packageRoots::add)
+        }
+        references.getOrDefault(emptyList()).forEach { (path, _) -> addPackageRoot(path) }
+        val configs = ReadBookConfig.configList.toList() + listOf(ReadBookConfig.durConfig, ReadBookConfig.config, ReadBookConfig.shareConfig) +
+            ReadBookConfig.pendingBookStyleConfigs()
+        configs.forEach { config ->
+            listOf(config.textFont, config.titleFont, config.headerFont, config.footerFont, config.headerImage, config.footerImage)
+                .forEach(::addPackageRoot)
+            ReadAppearanceMode.entries.filter { config.backgroundTypeForMode(it) == 2 }
+                .forEach { addPackageRoot(config.backgroundForMode(it)) }
+        }
+        packageRoots.forEach { names.putAll(ReadingPresetBackgroundCatalog.backgrounds(it)) }
+        if (names != savedNames) ResourceFiles.writeJson(namesFile, ReadingBackgroundNames(names))
         val files = linkedMapOf<String, File>()
         fun add(file: File) {
             if (file.isFile) files.putIfAbsent(file.canonicalPath, file)
@@ -76,20 +107,23 @@ internal object ReadingBackgroundLibrary {
             it.isFile && !it.name.startsWith('.') && !it.name.endsWith(".bak") && !it.name.endsWith(".new")
         }?.forEach(::add)
         ResourceFiles.backgroundFiles().forEach(::add)
+        names.keys.filter { ReadingPresetBackgroundCatalog.packageRootForReference(presetDirectory, it) != null }
+            .forEach { add(File(it)) }
         references.getOrDefault(emptyList()).forEach { (path, _) -> add(File(path)) }
         val custom = files.mapNotNull { (path, file) ->
             if (!isImage(file)) return@mapNotNull null
             val record = records.firstOrNull { resolveFile(it.target).canonicalPath == path }
             ReadingBackground(
                 id = path, type = 2, reference = path,
-                name = record?.entry?.item?.name ?: names[file.name] ?: file.nameWithoutExtension,
-                source = if (!isOwned(file)) "外部" else if (record != null || file.parentFile?.canonicalFile == ResourceFiles.backgrounds.canonicalFile) "下载" else "导入",
+                name = record?.entry?.item?.name ?: names[path] ?: names[file.name] ?: file.nameWithoutExtension,
+                source = if (names[path] != null && ReadingPresetBackgroundCatalog.packageRootForReference(presetDirectory, path) != null) {
+                    "预设"
+                } else if (!isOwned(file)) "外部" else if (record != null || file.parentFile?.canonicalFile == ResourceFiles.backgrounds.canonicalFile) "下载" else "导入",
                 file = file, deletable = isOwned(file), size = file.length(), modified = file.lastModified(),
             )
         }.sortedWith(compareBy<ReadingBackground> { if (it.source == "下载") 0 else 1 }.thenBy { it.name })
         val assetNames = appCtx.assets.list("bg").orEmpty().toList()
-        val preferred = listOf("午后沙滩.jpg", "宁静夜色.jpg", "山水墨影.jpg", "山水画.jpg")
-        val builtIn = (preferred.filter(assetNames::contains) + assetNames.filterNot(preferred::contains)).map {
+        val builtIn = selectableBuiltInBackgroundNames(assetNames).map {
             ReadingBackground("asset:$it", 1, it, File(it).nameWithoutExtension, "内置")
         }
         ReadingBackgroundSnapshot(
@@ -103,6 +137,20 @@ internal object ReadingBackgroundLibrary {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, options)
         return options.outWidth > 0 && options.outHeight > 0
+    }
+
+    /** Keep package backgrounds available even if the preset later switches to another image. */
+    fun registerPresetPackage(packageRoot: File) = synchronized(lock) {
+        val root = packageRoot.canonicalFile
+        if (root.parentFile != presetDirectory.canonicalFile) return@synchronized
+        val backgrounds = ReadingPresetBackgroundCatalog.backgrounds(root)
+        if (backgrounds.isEmpty()) return@synchronized
+        val names = ResourceFiles.readJson(namesFile, ReadingBackgroundNames::class.java)?.names.orEmpty()
+        val merged = names + backgrounds
+        if (merged != names) {
+            ResourceFiles.writeJson(namesFile, ReadingBackgroundNames(merged))
+            changed()
+        }
     }
 
     /** Copy to private app storage; source gallery/document is never changed. Call on IO. */

@@ -4,8 +4,12 @@
     <string name="text_selection_action_order">工具浮窗排序</string>
     <string name="text_selection_action_order_summary">前5项显示在浮窗，其余收进更多</string>
     <string name="text_selection_toolbar">工具浮窗</string>
+    <string name="text_selection_toolbar_preview">浮窗预览</string>
+    <string name="text_selection_show_text">显示文字</string>
+    <string name="text_selection_drag_hint">按住拖动</string>
     <string name="text_selection_action_order_hint">拖动排序，前5个开启项显示在浮窗</string>
     <string name="text_selection_toolbar_count">浮窗 · %1$d项</string>
+    <string name="text_selection_toolbar_min_limit">浮窗至少保留一个工具</string>
     <string name="text_selection_system_actions_hint">系统应用自动排在更多菜单末尾</string>
     <string name="switch_selection_read_mode">切换选中文字朗读模式</string>
     <!--App-->
@@ -748,6 +752,7 @@
     <string name="read_catalog_style">目录抽屉样式</string>
     <string name="read_catalog_style_card">卡片式</string>
     <string name="read_catalog_style_compact_side">紧凑侧栏</string>
+    <string name="read_catalog_style_dense_list">紧凑列表</string>
     <string name="next_chapter">下一章</string>
     <string name="previous_chapter">上一章</string>
     <string name="pt_hide_status_bar">隐藏状态栏</string>
@@ -1075,7 +1080,6 @@
     <string name="download_path">内容缓存路径</string>
     <string name="new_version">新版本</string>
     <string name="download_update">下载更新</string>
-    <string name="volume_key_page_on_play">朗读时音量键翻页</string>
     <string name="tip_margin_change">提示边距跟随页边距调整</string>
     <string name="allow_update">允许更新</string>
     <string name="disable_update">禁止更新</string>
@@ -1501,6 +1505,22 @@
     <string name="importing">正在导入</string>
     <string name="exporting">正在导出</string>
     <string name="custom_page_key">自定义翻页按键</string>
+    <string name="page_key_bind">点击绑定</string>
+    <string name="page_key_waiting">请按下按键</string>
+    <string name="page_key_rebind">请重新绑定</string>
+    <string name="page_key_clear_description">清除%1$s</string>
+    <string name="page_key_direction_left">方向左</string>
+    <string name="page_key_direction_right">方向右</string>
+    <string name="page_key_direction_up">方向上</string>
+    <string name="page_key_direction_down">方向下</string>
+    <string name="page_key_direction_center">方向确认</string>
+    <string name="page_key_volume_up">音量上</string>
+    <string name="page_key_volume_down">音量下</string>
+    <string name="page_key_page_up">上一页键</string>
+    <string name="page_key_page_down">下一页键</string>
+    <string name="page_key_enter">确认键</string>
+    <string name="page_key_space">空格键</string>
+    <string name="page_key_code">按键 %1$d</string>
     <string name="prev_page_key">上一页按键</string>
     <string name="next_page_key">下一页按键</string>
     <string name="no_group">未分组</string>
@@ -1581,7 +1601,6 @@
     <string name="font_weight">字重</string>
     <string name="chinese_converter_shortcut">简繁</string>
     <string name="full_screen_gestures_support">全面屏手势优化</string>
-    <string name="disable_return_key">禁用返回键</string>
 
     <!--color-->
     <string name="primary">主色调</string>
@@ -2030,7 +2049,6 @@
     <string name="search_scope">搜索范围</string>
     <string name="toggle_search_scope">切换</string>
     <string name="sure_clear_search_history">是否确认清除所有搜索历史记录</string>
-    <string name="no_anim_scroll_page">禁用滚动点击动画</string>
     <string name="webdav_device_name">设备名称</string>
     <string name="web_service_wake_lock">WebService唤醒锁</string>
     <string name="web_service_wake_lock_summary">开启web服务的时候启用唤醒锁,有些手机开启唤醒锁会被杀后台</string>
@@ -2045,7 +2063,7 @@
     <string name="replace_state_change">替换(启用/禁用)</string>
     <string name="show_last_update_time">显示上次更新时间</string>
     <string name="refresh_list">刷新列表</string>
-    <string name="tip_text_color">页眉页脚文字颜色</string>
+    <string name="tip_text_color">文字颜色</string>
     <string name="tip_divider_color">分隔线颜色</string>
     <string name="divider_line">分割线</string>
     <string name="same_title_removed">移除重复标题</string>
@@ -2147,7 +2165,8 @@
     <string name="adjust_chapter_page">调整本章页数</string>
     <string name="adjust_chapter_index">调整章节位置</string>
     <string name="clear_webview_data_success">清除成功，3秒后自动重启应用</string>
-    <string name="key_page_on_long_press">按键长按翻页</string>
+    <string name="key_page_on_long_press">长按连续翻页</string>
+    <string name="key_page_on_long_press_summary">需开启音量键翻页或设置自定义翻页按键</string>
     <string name="save_log">保存日志</string>
     <string name="create_heap_dump">创建堆转储</string>
     <string name="record_heap_dump_s">当应用发生OOM崩溃时保存堆转储</string>
@@ -2363,6 +2382,12 @@
     <string name="font_delete_usage_separator">、</string>
     <string name="font_delete_and_switch">删除并切换</string>
     <string name="reading_padding">阅读边距</string>
+    <string name="read_style_body_margins">正文边距</string>
+    <string name="read_style_margins">边距</string>
+    <string name="read_tip_show_information">显示信息栏</string>
+    <string name="read_tip_tab_layout">布局</string>
+    <string name="read_tip_tab_image">图片</string>
+    <string name="read_style_header_footer_shared_style">页眉页脚共用样式</string>
     <string name="reading_information">阅读信息</string>
     <string name="show_header">显示页眉</string>
     <string name="read_header_back_button">返回按钮</string>
@@ -2374,6 +2399,7 @@
     <string name="read_style_this_book">本书</string>
     <string name="read_style_follow_global">跟随全局</string>
     <string name="create_style">＋ 新建</string>
+    <string name="read_style_drawer_title">阅读样式</string>
     <string name="read_style_edit_title">编辑预设</string>
     <string name="read_style_create_title">新建预设</string>
     <string name="read_style_restore_current">恢复当前预设</string>
@@ -2403,8 +2429,31 @@
     <string name="read_style_color_accent_short">强调</string>
     <string name="read_style_floating_color">浮窗取色</string>
     <string name="read_style_floating_section">浮窗</string>
+    <string name="read_menu_floating">浮窗</string>
+    <string name="read_menu_scroll">滚动</string>
+    <string name="read_content_settings_title">内容处理</string>
+    <string name="read_content_only_current_book">仅当前书</string>
+    <string name="read_content_chinese_conversion">简繁转换</string>
+    <string name="read_content_replace_rules">净化规则</string>
+    <string name="read_floating_appearance">浮窗外观</string>
+    <string name="read_floating_tab_color">配色</string>
+    <string name="read_floating_tab_layout">布局与操作</string>
+    <string name="read_floating_current_preset">当前预设</string>
+    <string name="read_floating_current_style">当前样式</string>
+    <string name="read_floating_book_style">本书独立</string>
+    <string name="read_floating_global_follow">全局跟随应用颜色</string>
+    <string name="read_floating_global_style">%1$s · 全局</string>
+    <string name="read_floating_color_label">浮窗颜色</string>
+    <string name="read_floating_side_tool_order">侧边工具排序</string>
+    <string name="read_floating_side_tool_title">侧边工具栏</string>
+    <string name="read_floating_side_tool_count">侧边工具 · %1$d项</string>
+    <string name="read_floating_side_tool_theme">日夜模式</string>
+    <string name="read_floating_side_tool_min_limit">至少开启一个工具</string>
+    <string name="read_floating_side_tool_max_limit">当前最多开启 %1$d 个工具</string>
+    <string name="read_floating_selection_order">选字工具排序</string>
+    <string name="read_floating_show_chapter_progress">显示章节进度栏</string>
     <string name="read_style_floating_color_follow">跟随应用</string>
-    <string name="read_style_floating_color_background">从背景取色</string>
+    <string name="read_style_floating_color_custom">自定义</string>
     <string name="read_style_floating_color_style">色彩风格</string>
     <string name="read_style_floating_current_color">当前颜色</string>
     <string name="read_style_floating_color_picked">已从背景取色</string>
@@ -2662,4 +2711,7 @@
     <string name="listening_effect_uninstall">卸载听书特效</string>
     <string name="listening_effect_uninstall_current">播放器将恢复基础背景</string>
     <string name="listening_effect_code_notice">听书特效包含可执行代码，请确认来源可信</string>
+    <string name="read_page_section_layout">页面布局</string>
+    <string name="read_page_section_keys">按键操作</string>
+    <string name="read_page_section_touch">触摸操作</string>
 </resources>

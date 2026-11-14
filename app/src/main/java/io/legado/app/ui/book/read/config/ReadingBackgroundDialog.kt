@@ -1,7 +1,6 @@
 package io.legado.app.ui.book.read.config
 
 import android.app.Dialog as AndroidDialog
-import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -9,10 +8,12 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.ComponentDialog
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -22,6 +23,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -43,6 +46,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,12 +62,12 @@ import io.legado.app.help.resource.ResourceRepository
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.ReadFloatingAppearanceState
 import io.legado.app.ui.book.read.readFloatingGlassStyle
+import io.legado.app.ui.config.NgThemeSheetActionButton
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.NgStatusTagStyle
 import io.legado.app.ui.design.components.NgStatusTagVariant
 import io.legado.app.ui.design.components.compose.*
 import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.resource.ResourceCenterActivity
 import io.legado.app.utils.BitmapUtils
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.CancellationException
@@ -118,10 +122,6 @@ class ReadingBackgroundDialog : BaseComposeDialogFragment() {
                             onMode = owner::setBackgroundLibraryMode,
                             onImport = owner::importLibraryBackground,
                             onApply = owner::applyLibraryBackground,
-                            onResources = {
-                                startActivity(Intent(requireContext(), ResourceCenterActivity::class.java)
-                                    .putExtra(ResourceCenterActivity.BACKGROUND_LIBRARY_OWNER, target.bookUrl))
-                            },
                             onBusy = { isCancelable = !it },
                         )
                     }
@@ -141,7 +141,6 @@ private fun ReadingBackgroundScreen(
     onMode: (Int) -> Unit,
     onImport: () -> Unit,
     onApply: (ReadingBackground) -> Unit,
-    onResources: () -> Unit,
     onBusy: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
@@ -200,44 +199,66 @@ private fun ReadingBackgroundScreen(
             style = readFloatingGlassStyle(),
         ) {
             Column(Modifier.fillMaxWidth().height((LocalConfiguration.current.screenHeightDp * 0.84f).dp)
-                .padding(horizontal = 16.dp).padding(top = 14.dp, bottom = 12.dp)) {
-                Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(36.dp).clickable(enabled = !busy && !importing, role = Role.Button) { close() }, Alignment.Center) {
-                        Icon(painterResource(R.drawable.ic_arrow_back), "返回", Modifier.size(24.dp), tint = contentColor)
+                .padding(horizontal = 16.dp).padding(top = 6.dp, bottom = 12.dp)) {
+                NgDrawerDragHandle(variant = NgDrawerDragHandleVariant.COMPACT)
+                Box(Modifier.fillMaxWidth().height(52.dp)) {
+                    Text(
+                        if (managing) "管理背景" else "阅读背景",
+                        modifier = Modifier.align(Alignment.Center).fillMaxWidth()
+                            .padding(horizontal = if (managing) 44.dp else 92.dp),
+                        color = contentColor,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    NgThemeSheetActionButton(
+                        onClick = ::close,
+                        contentDescription = "返回",
+                        modifier = Modifier.align(Alignment.CenterStart),
+                        enabled = !busy && !importing,
+                    ) {
+                        Icon(painterResource(R.drawable.ic_arrow_back), null, Modifier.size(22.dp), tint = contentColor)
                     }
-                    Text(if (managing) "管理背景" else "阅读背景", Modifier.weight(1f), color = contentColor,
-                        fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (!managing) {
-                        Box(Modifier.width(if (allowEInk) 156.dp else 126.dp)) {
-                            ReadStyleModeSelector(target.mode.ordinal, allowEInk, contentColor, accentColor) {
-                                if (!busy && !importing) onMode(it)
+                        Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
+                            NgThemeSheetActionButton(
+                                onClick = onImport,
+                                contentDescription = "导入图片",
+                                enabled = !busy && !importing,
+                            ) {
+                                Icon(Icons.Outlined.AddPhotoAlternate, null, Modifier.size(22.dp), tint = accentColor)
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            NgThemeSheetActionButton(
+                                onClick = {
+                                    managing = true; selected = emptyList(); refresh++
+                                },
+                                contentDescription = "管理背景",
+                                enabled = !busy && !importing,
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_settings),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp),
+                                    tint = accentColor,
+                                )
                             }
                         }
                     }
-                    if (!managing) {
-                        Box(Modifier.width(44.dp).fillMaxHeight()
-                            .clickable(enabled = !busy && !importing, role = Role.Button) {
-                                managing = true; selected = emptyList(); refresh++
-                            }, Alignment.CenterEnd) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_settings),
-                                contentDescription = "管理背景",
-                                modifier = Modifier.size(24.dp),
-                                tint = contentColor,
-                            )
-                        }
-                    }
                 }
-                Box(Modifier.padding(top = 10.dp, bottom = 12.dp).fillMaxWidth().height(0.5.dp).background(contentColor.copy(alpha = 0.12f)))
                 if (!managing) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        BackgroundEntryButton("导入图片", R.drawable.ic_image, Modifier.weight(1f), contentColor,
-                            enabled = !busy && !importing, onClick = onImport)
-                        BackgroundEntryButton("资源中心", null, Modifier.weight(1f), contentColor,
-                            enabled = !busy && !importing, onClick = onResources)
-                    }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(4.dp))
+                    ReadStylePaletteModeSelector(
+                        mode = target.mode.ordinal,
+                        allowEInk = allowEInk,
+                        contentColor = contentColor,
+                        enabled = !busy && !importing,
+                        onSelected = onMode,
+                    )
                 }
+                Spacer(Modifier.height(16.dp))
                 val message = error ?: snapshot?.usageError?.takeIf { managing }
                 if (message != null) {
                     Text(message, color = contentColor, fontSize = 13.sp)
@@ -250,7 +271,7 @@ private fun ReadingBackgroundScreen(
                     }
                 } else {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(3), state = gridState,
+                        columns = GridCells.Fixed(4), state = gridState,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -262,8 +283,12 @@ private fun ReadingBackgroundScreen(
                                 else entry.id == ReadingBackgroundLibrary.resolveFile(target.appearance.backgroundForMode(target.mode)).absolutePath
                             val selectableEntry = entry.id in selectable
                             val inUse = !snapshot?.usages?.get(entry.id).isNullOrEmpty()
-                            BackgroundCard(entry, current, managing, entry.id in selected, selectableEntry,
-                                if (managing && inUse) "使用中" else if (managing && !entry.deletable && entry.type != 1) "外部" else entry.source,
+                            val status = when {
+                                managing && inUse -> "使用中"
+                                managing && !entry.deletable -> "外部"
+                                else -> null
+                            }
+                            BackgroundCard(entry, current, managing, entry.id in selected, selectableEntry, status,
                                 contentColor, accentColor, selectedContent, enabled = !busy && !importing) {
                                 if (managing) {
                                     if (selectableEntry) selected = if (entry.id in selected) selected - entry.id else selected + entry.id
@@ -363,25 +388,14 @@ private fun ReadingBackgroundScreen(
     }
 }
 
-@Composable
-private fun BackgroundEntryButton(label: String, icon: Int?, modifier: Modifier, color: Color, enabled: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(10.dp)
-    Row(modifier.height(46.dp).clip(shape).background(ReadDrawerStyle.dockSurfaceColor())
-        .border(0.5.dp, color.copy(alpha = 0.12f), shape).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-        .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (icon != null) Icon(painterResource(icon), null, Modifier.size(22.dp), tint = color)
-        else Icon(painterResource(R.drawable.ic_storefront_thin), null, Modifier.size(22.dp), tint = color)
-        Text(label, Modifier.weight(1f).padding(start = 8.dp), color = color, fontSize = 15.sp, maxLines = 1)
-        if (icon == null) Icon(painterResource(R.drawable.ic_chevron_right_20), null, Modifier.size(18.dp), tint = color)
-    }
-}
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BackgroundCard(
     entry: ReadingBackground, current: Boolean, managing: Boolean, checked: Boolean, selectable: Boolean,
-    source: String, color: Color, accent: Color, onAccent: Color, enabled: Boolean, onClick: () -> Unit,
+    status: String?, color: Color, accent: Color, onAccent: Color, enabled: Boolean, onClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    var showFullName by remember(entry.id) { mutableStateOf(false) }
     val bitmap by produceState<ImageBitmap?>(null, entry.id, entry.size, entry.modified) {
         value = withContext(Dispatchers.IO) {
             runCatching {
@@ -391,28 +405,54 @@ private fun BackgroundCard(
         }
     }
     val shape = RoundedCornerShape(10.dp)
-    Column(Modifier.semantics { selected = if (managing) checked else current }
-        .clickable(enabled = enabled, role = if (managing && selectable) Role.Checkbox else Role.Button, onClick = onClick)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(shape)
-            .background(color.copy(alpha = 0.05f))
-            .then(if ((!managing && current) || checked) Modifier.border(2.dp, accent, shape) else Modifier)) {
-            bitmap?.let { Image(it, null, Modifier.fillMaxSize().padding(if ((!managing && current) || checked) 2.dp else 0.dp).clip(shape), contentScale = ContentScale.Crop) }
+    val marked = if (managing) checked else current
+    Column(
+        Modifier.semantics { selected = marked }
+            .combinedClickable(
+                enabled = enabled,
+                role = if (managing && selectable) Role.Checkbox else Role.Button,
+                onLongClickLabel = "查看完整名称",
+                onLongClick = { showFullName = true },
+                onClick = onClick,
+            ),
+    ) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(0.72f).clip(shape)
+                .background(color.copy(alpha = 0.05f))
+                .then(if (marked) Modifier.border(1.5.dp, accent, shape) else Modifier),
+        ) {
+            bitmap?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                 ?: Icon(painterResource(R.drawable.ic_image), null, Modifier.size(28.dp).align(Alignment.Center), tint = color.copy(alpha = 0.4f))
-            NgStatusTag(
-                text = source,
-                variant = NgStatusTagVariant.NEUTRAL,
-                style = NgStatusTagStyle.INLINE,
-                modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
-            )
-            if ((!managing && current) || checked) {
-                Box(Modifier.align(Alignment.TopEnd).size(25.dp).background(accent, RoundedCornerShape(bottomStart = 14.dp)), Alignment.Center) {
-                    Icon(painterResource(R.drawable.ic_check), if (managing) "已选择" else "当前背景", Modifier.size(18.dp), tint = onAccent)
+            if (status != null) {
+                NgStatusTag(status, NgStatusTagVariant.NEUTRAL,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp),
+                    style = NgStatusTagStyle.INLINE)
+            }
+            if (marked) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(5.dp).size(17.dp)
+                        .background(accent, CircleShape).border(1.dp, Color.White.copy(alpha = 0.85f), CircleShape),
+                    Alignment.Center,
+                ) {
+                    Icon(painterResource(R.drawable.ic_check), if (managing) "已选择" else "当前背景", Modifier.size(12.dp), tint = onAccent)
                 }
             } else if (managing && selectable) {
-                Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(19.dp).background(Color.White.copy(alpha = 0.85f), CircleShape)
+                Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(17.dp).background(Color.White.copy(alpha = 0.85f), CircleShape)
                     .border(1.dp, color.copy(alpha = 0.4f), CircleShape))
             }
         }
-        Text(entry.name, Modifier.padding(top = 6.dp, start = 2.dp), color = color, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(entry.name, Modifier.fillMaxWidth().padding(top = 6.dp), color = color,
+            fontSize = 12.sp, lineHeight = 14.sp, letterSpacing = 0.sp,
+            textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    if (showFullName) {
+        CompositionLocalProvider(LocalNgDialogColorMode provides NgDialogColorMode.INHERIT_HOST) {
+            Dialog(onDismissRequest = { showFullName = false }) {
+                NgDialog("背景名称", actions = { NgDialogTextActionButton("知道了", { showFullName = false }) }) {
+                    Text(entry.name, Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+                        color = color, fontSize = 14.sp)
+                }
+            }
+        }
     }
 }

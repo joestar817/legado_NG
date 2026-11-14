@@ -2,6 +2,11 @@ package io.legado.app.ui.design.components.compose
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -12,7 +17,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +42,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.dp
 import io.legado.app.ui.design.theme.NgTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -65,6 +77,7 @@ internal fun ngSliderStepValue(
 }
 
 /** 无常驻底色的滑轨微调按钮；图标保持轻量，整行高度承担触控区域。 */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NgSliderStepButton(
     @DrawableRes iconRes: Int,
@@ -73,17 +86,49 @@ fun NgSliderStepButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     tint: Color = Color(NgTheme.colors.onSurface),
+    onLongPressStep: (() -> Boolean)? = null,
+    onLongPressFinished: (() -> Unit)? = null,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    var repeating by remember { mutableStateOf(false) }
+    val currentRepeat by rememberUpdatedState(onLongPressStep)
+    val currentFinished by rememberUpdatedState(onLongPressFinished)
+    val repeatEnabled = onLongPressStep != null
+    LaunchedEffect(pressed, repeating, enabled, repeatEnabled) {
+        if (pressed && repeating && enabled && repeatEnabled) {
+            try {
+                while (isActive && currentRepeat?.invoke() == true) {
+                    delay(NG_SLIDER_STEP_REPEAT_INTERVAL_MS)
+                }
+            } finally {
+                currentFinished?.invoke()
+            }
+        } else if ((!pressed || !enabled || !repeatEnabled) && repeating) {
+            repeating = false
+        }
+    }
     Box(
         modifier = modifier
             .width(36.dp)
             .height(44.dp)
             .clip(RoundedCornerShape(18.dp))
             .semantics { this.contentDescription = contentDescription }
-            .clickable(
-                enabled = enabled,
-                role = Role.Button,
-                onClick = onClick,
+            .then(
+                if (repeatEnabled) {
+                    Modifier.combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = LocalIndication.current,
+                        enabled = enabled,
+                        role = Role.Button,
+                        onClick = onClick,
+                        onLongClick = {
+                            if (pressed) repeating = true else onClick()
+                        },
+                    )
+                } else {
+                    Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                }
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -95,6 +140,8 @@ fun NgSliderStepButton(
         )
     }
 }
+
+private const val NG_SLIDER_STEP_REPEAT_INTERVAL_MS = 120L
 
 /**
  * Reading NG 的通用滑动轨道。
