@@ -13,11 +13,11 @@ class ResourceClassificationTest {
     )
 
     @Test fun purposesSeparateReadingAppearanceAndListeningWithoutChangingEntries() {
-        val entries = listOf(entry("font-a", "font"), entry("paper", "background"),
+        val entries = listOf(entry("preset", "read_preset"), entry("font-a", "font"), entry("paper", "background"),
             entry("theme-a", "theme"), entry("script", "tts"))
-        assertEquals(entries.take(2), filterResourceEntries(entries, ResourcePurpose.READING, "", ""))
-        assertSame(entries[2], filterResourceEntries(entries, ResourcePurpose.APPEARANCE, "", "").single())
-        assertSame(entries[3], filterResourceEntries(entries, ResourcePurpose.LISTENING, "", "").single())
+        assertEquals(listOf(entries[0]), filterResourceEntries(entries, ResourcePurpose.READING, "", ""))
+        assertSame(entries[3], filterResourceEntries(entries, ResourcePurpose.APPEARANCE, "", "").single())
+        assertSame(entries[4], filterResourceEntries(entries, ResourcePurpose.LISTENING, "", "").single())
         assertTrue(filterResourceEntries(entries, ResourcePurpose.PETS, "", "").isEmpty())
     }
 
@@ -34,19 +34,19 @@ class ResourceClassificationTest {
     }
 
     @Test fun aTypeCanSpanMultipleCatalogCategoriesAndHaveOnlyOneMenuOption() {
-        val entries = listOf(entry("body", "font", "body-fonts"), entry("title", "font", "title-fonts"),
+        val entries = listOf(entry("one", "read_preset", "reading-a"), entry("two", "read_preset", "reading-b"),
             entry("paper", "background"))
         val types = resourceTypeOptions(entries.map { it.category }, ResourcePurpose.READING)
-        assertEquals(listOf(ResourceTypeOption("font", "字体"), ResourceTypeOption("background", "背景")), types)
-        assertEquals(entries.take(2), filterResourceEntries(entries, ResourcePurpose.READING, "font", ""))
+        assertEquals(listOf(ResourceTypeOption("read_preset", "阅读预设")), types)
+        assertEquals(entries.take(2), filterResourceEntries(entries, ResourcePurpose.READING, "read_preset", ""))
     }
 
     @Test fun purposeTypeAndSearchAreCombinedAndSearchStillIncludesAuthorAndTags() {
-        val entries = listOf(entry("title", "font", tags = listOf("Heading")), entry("paper", "background"))
-        assertEquals(listOf(entries[0]), filterResourceEntries(entries, ResourcePurpose.READING, "font", " HEADING "))
+        val entries = listOf(entry("title", "read_preset", tags = listOf("Heading")), entry("paper", "read_preset"))
+        assertEquals(listOf(entries[0]), filterResourceEntries(entries, ResourcePurpose.READING, "read_preset", " HEADING "))
         assertEquals(entries, filterResourceEntries(entries, ResourcePurpose.READING, "", "author"))
         assertTrue(filterResourceEntries(entries, ResourcePurpose.READING, "background", "Heading").isEmpty())
-        assertTrue(filterResourceEntries(entries, ResourcePurpose.APPEARANCE, "font", "").isEmpty())
+        assertTrue(filterResourceEntries(entries, ResourcePurpose.APPEARANCE, "read_preset", "").isEmpty())
     }
 
     @Test fun unknownTypesRemainReachableFromAllAndAreNotMisclassified() {
@@ -60,9 +60,9 @@ class ResourceClassificationTest {
     }
 
     @Test fun menusUseOnlyCatalogTypesAndDoNotInventUnimplementedInstallKinds() {
-        val categories = listOf(entry("font", "font").category, entry("theme", "theme").category)
-        assertEquals(listOf("font"), resourceTypeOptions(categories, ResourcePurpose.READING).map { it.key })
+        val categories = listOf(entry("preset", "read_preset").category, entry("theme", "theme").category)
+        assertEquals(listOf("read_preset"), resourceTypeOptions(categories, ResourcePurpose.READING).map { it.key })
         assertTrue(resourceTypeOptions(categories, ResourcePurpose.PETS).isEmpty())
-        assertEquals(listOf("font", "theme"), resourceTypeOptions(categories, null).map { it.key })
+        assertEquals(listOf("read_preset", "theme"), resourceTypeOptions(categories, null).map { it.key })
     }
 }

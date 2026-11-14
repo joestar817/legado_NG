@@ -143,6 +143,10 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
         }
     }
 
+    internal fun showPresetFromResource() {
+        navigateTo(ReadStylePage.PRESET)
+    }
+
     private val backgroundLibraryCallbacks = object : FragmentManager.FragmentLifecycleCallbacks() {
         override fun onFragmentStarted(fm: FragmentManager, fragment: Fragment) {
             if (fragment !is ReadingBackgroundDialog) return

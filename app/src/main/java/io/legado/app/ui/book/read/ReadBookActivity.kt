@@ -103,6 +103,7 @@ import io.legado.app.ui.book.read.config.ReadStyleDialog
 import io.legado.app.ui.font.FontSelectDialog
 import io.legado.app.ui.resource.ResourceFontDestination
 import io.legado.app.ui.resource.ResourceReaderFontRequest
+import io.legado.app.ui.resource.ResourceReaderStyleRequest
 import io.legado.app.ui.book.read.config.showReadConfirmDialog
 import io.legado.app.ui.book.read.config.showReadComposeDialog
 import io.legado.app.ui.book.read.page.ContentTextView
@@ -258,6 +259,7 @@ class ReadBookActivity : BaseReadBookActivity(),
     private var loadStates: Boolean = false
     private var resourceFontReady = false
     private var resourceFontOpenJob: Job? = null
+    private var resourceStyleReady = false
     private var replaceRuleRenderBatchDepth = 0
     private var replaceRuleRenderPending = false
     private var replaceRuleRenderResetPageOffset = false
@@ -346,12 +348,16 @@ class ReadBookActivity : BaseReadBookActivity(),
         super.onNewIntent(intent)
         resourceFontOpenJob?.cancel()
         resourceFontReady = false
+        resourceStyleReady = false
+        if (ResourceReaderStyleRequest.readFrom(intent) != null) {
+            // Retain this request and its actual book if the singleTask reader is recreated.
+            setIntent(intent)
+        } else {
+            ResourceReaderStyleRequest.clear(this.intent)
+        }
         val fontRequest = ResourceReaderFontRequest.readFrom(intent)
         ResourceReaderFontRequest.clear(this.intent)
         fontRequest?.writeTo(this.intent)
-        if (intent.getBooleanExtra("resourceOpenReadStyle", false)) {
-            this.intent.putExtra("resourceOpenReadStyle", true)
-        }
         justInitData = true
         epubOpeningPreview?.close()
         epubOpeningPreview = null
@@ -363,7 +369,17 @@ class ReadBookActivity : BaseReadBookActivity(),
 
     private fun initReaderData(intent: Intent) {
         val request = ResourceReaderFontRequest.readFrom(intent)
-        viewModel.initData(intent) {
+        val styleRequest = ResourceReaderStyleRequest.readFrom(intent)
+        viewModel.initData(intent, onBookBound = styleRequest?.let { requested ->
+            { boundBook: String ->
+                if (boundBook == requested.bookUrl && ResourceReaderStyleRequest.readFrom(this.intent) == requested &&
+                    ReadBook.book?.bookUrl == requested.bookUrl
+                ) {
+                    resourceStyleReady = true
+                    openResourceStyleIfReady()
+                }
+            }
+        }) {
             if (request != null && ResourceReaderFontRequest.readFrom(this.intent) == request &&
                 ReadBook.book?.bookUrl == request.bookUrl
             ) {
@@ -440,6 +456,21 @@ class ReadBookActivity : BaseReadBookActivity(),
     override fun onPostResume() {
         super.onPostResume()
         openResourceFontIfReady()
+        openResourceStyleIfReady()
+    }
+
+    private fun openResourceStyleIfReady() {
+        if (!resourceStyleReady || isFinishing || isDestroyed || supportFragmentManager.isStateSaved ||
+            !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        ) return
+        val request = ResourceReaderStyleRequest.readFrom(intent) ?: return
+        if (ReadBook.book?.bookUrl != request.bookUrl) return
+        val existing = supportFragmentManager.fragments.filterIsInstance<ReadStyleDialog>()
+            .firstOrNull { it.isAdded && !it.isRemoving }
+        if (existing != null) existing.showPresetFromResource()
+        else showDialogFragment<ReadStyleDialog>()
+        ResourceReaderStyleRequest.clear(intent)
+        resourceStyleReady = false
     }
 
     private fun openResourceFontIfReady() {
@@ -2393,14 +2424,6 @@ class ReadBookActivity : BaseReadBookActivity(),
      */
     override fun contentLoadFinish() {
         ReadAloudMiniPlayer.preloadCover(this)
-        if (intent.getBooleanExtra("resourceOpenReadStyle", false)) {
-            intent.removeExtra("resourceOpenReadStyle")
-            binding.root.post {
-                if (!isFinishing && !supportFragmentManager.isStateSaved) {
-                    showDialogFragment<ReadStyleDialog>()
-                }
-            }
-        }
         val startReadAloud = intent.getBooleanExtra("readAloud", false)
         if (startReadAloud) {
             intent.removeExtra("readAloud")

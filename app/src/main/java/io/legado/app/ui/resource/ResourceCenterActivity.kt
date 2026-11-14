@@ -149,20 +149,20 @@ class ResourceCenterActivity : BaseActivity<ComposeActivityBinding>() {
                 putExtra("configTag", ConfigTag.TTS_ENGINE_CONFIG)
                 putExtra("resourceEngineId", ResourceRepository.state.value.installed(entry.item.id)?.target)
             }
-            "background" -> lifecycleScope.launch {
+            "background", "read_preset" -> lifecycleScope.launch {
                 val libraryOwner = intent.getStringExtra(BACKGROUND_LIBRARY_OWNER)
-                if (libraryOwner != null && ReadBook.book?.bookUrl == libraryOwner) {
+                if (entry.category.type == "background" && libraryOwner != null && ReadBook.book?.bookUrl == libraryOwner) {
                     // The original preset editor is still alive under this Activity.
                     finish()
                     return@launch
                 }
                 val book = ReadBook.book ?: withContext(Dispatchers.IO) { appDb.bookDao.lastReadBook }
                 if (book == null) {
-                    toastOnUi("请先打开一本书，再在阅读样式中选择已下载背景")
+                    toastOnUi(if (entry.category.type == "read_preset") "请先打开一本书，再在阅读样式中选择预设" else "请先打开一本书，再在阅读样式中选择已下载背景")
                 } else {
                     startActivity<ReadBookActivity> {
                         putExtra("bookUrl", book.bookUrl)
-                        putExtra("resourceOpenReadStyle", true)
+                        ResourceReaderStyleRequest(book.bookUrl).writeTo(this)
                     }
                 }
             }

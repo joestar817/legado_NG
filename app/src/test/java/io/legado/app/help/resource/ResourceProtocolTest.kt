@@ -147,6 +147,19 @@ class ResourceProtocolTest {
         assertFalse(ResourceProtocol.isUpdate(after, local))
     }
 
+    @Test fun readingPresetUsesZipAndSquareCatalogImages() {
+        val presetCategory = ResourceCategory("read-presets", "阅读预设", "read_preset", "resources/read-presets/index.json", 1)
+        val presetItem = item.copy(payload = ResourcePayload("resources/read-presets/sample/preset.zip", "zip", 32, "b".repeat(64)),
+            preview = preview().copy(detail = preview().detail!!.copy(width = 768, height = 768)))
+        val preset = ResourceEntry(presetCategory, commit, presetItem, "c".repeat(40))
+        ResourceProtocol.validateSnapshot(ResourceSnapshot(catalogCommit = preset.catalogCommit,
+            catalog = ResourceCatalog(1, commit, listOf(presetCategory)), entries = listOf(preset)))
+        assertNull(ResourceProtocol.incompatibility(preset, Long.MAX_VALUE))
+        assertTrue(ResourceProtocol.isBrowsableType("read_preset"))
+        assertFalse(ResourceProtocol.isBrowsableType("font"))
+        assertFalse(ResourceProtocol.isBrowsableType("background"))
+    }
+
     @Test fun previewFilesCannotEscapeTheirHashAddressedPngPaths() {
         val asset = preview().thumbnail!!
         listOf("../${asset.sha256}.png", "previews/../${asset.sha256}.png", "previews/%2e%2e/x.png",

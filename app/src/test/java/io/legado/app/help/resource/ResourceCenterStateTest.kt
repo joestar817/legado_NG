@@ -14,7 +14,7 @@ class ResourceCenterStateTest {
     )
 
     @Test fun missingResourcesAreNotDownloadedAcrossAllTypes() {
-        listOf("font", "background", "tts", "theme").forEach { type ->
+        listOf("font", "background", "read_preset", "tts", "theme").forEach { type ->
             val local = record(type, type)
             val state = ResourceCenterState(installations = listOf(local), localStates = mapOf(type to ResourceLocalState.MISSING))
             assertTrue(state.downloadedInstallations().isEmpty())
@@ -93,7 +93,7 @@ class ResourceCenterStateTest {
     }
 
     @Test fun updatesIncludeEveryResourceTypeAndRetainLocallyModifiedConflicts() {
-        val records = listOf("font", "background", "tts", "theme").map { record(it, it) }
+        val records = listOf("read_preset", "tts", "theme").map { record(it, it) }
         val remote = records.map { it.entry.copy(item = it.entry.item.copy(versionCode = 2)) }
         val conflict = ResourceTask(message = "本地资源冲突", running = false, conflict = true)
         val state = ResourceCenterState(
@@ -115,6 +115,16 @@ class ResourceCenterStateTest {
         assertEquals(listOf(theme), state.downloadedInstallations())
         assertEquals(listOf(remote.first()), state.updatableEntries())
         assertSame(paused, state.installed(paused.entry.item.id))
+    }
+
+    @Test fun standaloneReadingResourcesKeepReceiptsButAreNotListedOrUpdated() {
+        val records = listOf(record("font", "font"), record("background", "background"), record("preset", "read_preset"))
+        val remote = records.map { it.entry.copy(item = it.entry.item.copy(versionCode = 2)) }
+        val state = ResourceCenterState(snapshot = ResourceSnapshot(entries = remote), installations = records)
+        assertEquals(listOf(records.last()), state.downloadedInstallations())
+        assertEquals(listOf(remote.last()), state.updatableEntries())
+        assertSame(records.first(), state.installed("font"))
+        assertSame(records[1], state.installed("background"))
     }
 
     @Test fun updatesExcludeMissingUninstalledAndRemovedRemoteResources() {

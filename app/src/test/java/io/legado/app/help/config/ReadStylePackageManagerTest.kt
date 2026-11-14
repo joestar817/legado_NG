@@ -11,6 +11,7 @@ import io.legado.app.ui.book.read.config.selectTitleSegmentType
 import io.legado.app.ui.book.read.page.provider.ReadTitleSegmentType
 import io.legado.app.ui.book.read.page.provider.ReadTitleStyleParser
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -26,6 +27,26 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 class ReadStylePackageManagerTest {
+    @Test
+    fun `resource ownership is local and never imported exported or copied`() {
+        val json = """{"bgType":0,"ngResourcePresetTarget":"foreign","ngResourcePresetSha256":"${"a".repeat(64)}"}"""
+        val imported = ReadStylePackageManager.import(
+            zipOf("readConfig.json" to json.toByteArray()).inputStream(), "ownership", temporaryFolder.newFolder(),
+        ).config
+        assertNull(imported.ngResourcePresetTarget)
+        assertNull(imported.ngResourcePresetSha256)
+        imported.ngResourcePresetTarget = "local"
+        imported.ngResourcePresetSha256 = "b".repeat(64)
+        val copy = imported.copyForBook()
+        assertNull(copy.ngResourcePresetTarget)
+        assertNull(copy.ngResourcePresetSha256)
+        val output = ByteArrayOutputStream()
+        ReadStylePackageManager.export(imported, output, temporaryFolder.newFolder(), { null })
+        val exported = JsonParser.parseString(unzip(output.toByteArray()).getValue("readConfig.json").toString(Charsets.UTF_8)).asJsonObject
+        assertFalse(exported.has("ngResourcePresetTarget"))
+        assertFalse(exported.has("ngResourcePresetSha256"))
+    }
+
     @Test
     fun `MD3 title rules survive import and can be restored after chapter number mode`() {
         val title = "第112章 新章启程"

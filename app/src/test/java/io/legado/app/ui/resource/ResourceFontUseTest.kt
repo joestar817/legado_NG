@@ -21,6 +21,18 @@ import org.robolectric.annotation.GraphicsMode
 class ResourceFontUseTest {
     @get:Rule val composeRule = createComposeRule()
 
+    @Test fun readerStyleRequestKeepsItsBookAndCanBeConsumedOnce() {
+        val intent = Intent().putExtra("bookUrl", "book://one")
+        val request = ResourceReaderStyleRequest("book://one")
+        request.writeTo(intent)
+        assertEquals(request, ResourceReaderStyleRequest.readFrom(intent))
+        assertEquals("book://one", intent.getStringExtra("bookUrl"))
+        ResourceReaderStyleRequest.clear(intent)
+        assertNull(ResourceReaderStyleRequest.readFrom(intent))
+        ResourceReaderStyleRequest(" ").writeTo(intent)
+        assertNull(ResourceReaderStyleRequest.readFrom(intent))
+    }
+
     @Test fun readerRequestsKeepTheirResourceBookAndDestination() {
         for (destination in listOf(ResourceFontDestination.BODY, ResourceFontDestination.TITLE)) {
             val intent = Intent()

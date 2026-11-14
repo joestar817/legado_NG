@@ -589,7 +589,7 @@ internal object ResourceRepository {
     /** Fetch only the catalog image, independently of resource installation or plugin execution. */
     suspend fun catalogPreview(entry: ResourceEntry, detail: Boolean, allowDownload: Boolean = true): Bitmap? = withContext(Dispatchers.IO) {
         val preview = entry.item.preview
-        if (entry.category.type !in setOf("font", "pet") || preview == null) return@withContext null
+        if (entry.category.type !in setOf("font", "pet", "read_preset") || preview == null) return@withContext null
         try {
             ResourceProtocol.validatePreviewSource(entry)
             val image = requireNotNull(if (detail) preview.detail else preview.thumbnail)
@@ -689,9 +689,12 @@ internal object ResourceRepository {
         entry: ResourceEntry,
         mode: ResourceInstallMode = ResourceInstallMode.NORMAL,
         confirmedThemeConflict: ThemeResourceConflict? = null,
+        confirmedReadPresetConflict: io.legado.app.help.config.ReadPresetResourceConflict? = null,
+        readPresetReplacement: io.legado.app.help.config.ReadPresetResourceCandidate? = null,
     ) {
         val current = state.value.confirmedEntry(entry) ?: return
-        startInstall(current, mode, confirmedThemeConflict = confirmedThemeConflict)
+        startInstall(current, mode, confirmedThemeConflict = confirmedThemeConflict,
+            confirmedReadPresetConflict = confirmedReadPresetConflict, readPresetReplacement = readPresetReplacement)
     }
 
     fun updateAll() {
@@ -722,6 +725,8 @@ internal object ResourceRepository {
         mode: ResourceInstallMode,
         updateOnly: Boolean = false,
         confirmedThemeConflict: ThemeResourceConflict? = null,
+        confirmedReadPresetConflict: io.legado.app.help.config.ReadPresetResourceConflict? = null,
+        readPresetReplacement: io.legado.app.help.config.ReadPresetResourceCandidate? = null,
     ): Job {
         val id = entry.item.id
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -780,7 +785,8 @@ internal object ResourceRepository {
                         records.filter { it.entry.category.type == entry.category.type && it.entry.item.id != id }
                             .mapTo(hashSetOf()) { it.target }
                     } else emptySet()
-                    val candidate = ResourceInstaller.prepare(entry, file, old, mode, confirmedThemeConflict, otherThemeTargets)
+                    val candidate = ResourceInstaller.prepare(entry, file, old, mode, confirmedThemeConflict, otherThemeTargets,
+                        confirmedReadPresetConflict, readPresetReplacement)
                     prepared = candidate
                     currentCoroutineContext().ensureActive()
                     task(id, ResourceTask(message = "正在入库"))
@@ -791,7 +797,13 @@ internal object ResourceRepository {
                             installedAt = System.currentTimeMillis(),
                         )
                         ResourceInstallStore.prepare(record)
-                        candidate.commit()
+                        try {
+                            candidate.commit()
+                        } catch (conflict: ResourceConflict) {
+                            // A confirmation can become stale before the main-thread commit; no preset was written.
+                            ResourceInstallStore.clearPending()
+                            throw conflict
+                        }
                         committed = true
                         record = record.copy(baseline = ResourceInstaller.fingerprint(record) ?: error("入库后资源不存在"))
                         ResourceInstallStore.prepare(record)
@@ -800,8 +812,13 @@ internal object ResourceRepository {
                         ResourceInstallStore.clearPending()
                         val installedPets = if (entry.category.type == "pet")
                             localPetRecordsLocked(updated).associateBy { pet -> pet.id } else null
+                        val invalidatedPresets = if (entry.category.type == "read_preset") {
+                            updated.filter { it.entry.item.id != id && it.entry.category.type == "read_preset" &&
+                                ResourceInstaller.fingerprint(it) == null }
+                                .associate { it.entry.item.id to ResourceLocalState.MISSING }
+                        } else emptyMap()
                         mutableState.update {
-                            it.copy(installations = updated, localStates = it.localStates + (id to ResourceLocalState.PRESENT),
+                            it.copy(installations = updated, localStates = it.localStates + invalidatedPresets + (id to ResourceLocalState.PRESENT),
                                 petInstallations = installedPets ?: it.petInstallations)
                         }
                         if (entry.category.type == "font") {
@@ -820,7 +837,7 @@ internal object ResourceRepository {
                 task(id, ResourceTask(message = completionMessage, running = false))
             } catch (conflict: ResourceConflict) {
                 task(id, ResourceTask(message = conflict.message ?: "本地资源冲突", running = false, conflict = true,
-                    themeConflict = conflict.themeConflict))
+                    themeConflict = conflict.themeConflict, readPresetConflict = conflict.readPresetConflict))
             } catch (cancelled: CancellationException) {
                 task(id, ResourceTask(message = if (committed) "已加入资源库" else "已取消", running = false))
                 throw cancelled

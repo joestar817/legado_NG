@@ -1,6 +1,7 @@
 package io.legado.app.help.resource
 
 import io.legado.app.help.pet.PetPluginStore
+import io.legado.app.constant.EventBus
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.AtomicFile
@@ -11,10 +12,17 @@ import io.legado.app.help.config.NgThemeArchive
 import io.legado.app.help.config.NgThemeLibraryStore
 import io.legado.app.help.config.NgThemePackageManager
 import io.legado.app.help.config.NgThemePublication
+import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadPresetResourceCandidate
+import io.legado.app.help.config.ReadPresetResourceConflict
+import io.legado.app.help.config.readPresetConfirmationValid
 import io.legado.app.help.config.customizationFingerprint
 import io.legado.app.help.font.FontLibraryStore
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.utils.GSON
+import io.legado.app.utils.postEvent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import splitties.init.appCtx
 import java.io.File
 import java.util.UUID
@@ -22,12 +30,13 @@ import java.util.UUID
 internal class ResourceConflict(
     message: String,
     val themeConflict: ThemeResourceConflict? = null,
+    val readPresetConflict: ReadPresetResourceConflict? = null,
 ) : IllegalStateException(message)
 
 internal class PreparedResource(
     val target: String,
     val baseline: String,
-    val commit: () -> Unit,
+    val commit: suspend () -> Unit,
     val discard: () -> Unit = {},
     val afterCommit: suspend () -> String? = { null },
 )
@@ -35,6 +44,7 @@ internal class PreparedResource(
 internal object ResourceInstaller {
     fun fingerprint(record: ResourceInstallation): String? = when (record.entry.category.type) {
         "font", "background", "pet" -> fileFor(record)?.takeIf { it.isFile }?.let(ResourceFiles::hash)
+        "read_preset" -> ReadBookConfig.resourcePresetFingerprint(record.target)
         "tts" -> TtsEngineStore.engine(record.target)?.let { ResourceProtocol.hash(it.script.toByteArray()) }
         "theme", "listening_effect" -> NgEffectPackageLibrary.current(appCtx, packageKind(record.entry)).savedThemes.firstOrNull { it.id == record.target }?.let(::themeHash)
         else -> null
@@ -69,13 +79,17 @@ internal object ResourceInstaller {
         mode: ResourceInstallMode,
         confirmedThemeConflict: ThemeResourceConflict? = null,
         otherThemeTargets: Set<String> = emptySet(),
+        confirmedReadPresetConflict: ReadPresetResourceConflict? = null,
+        readPresetReplacement: ReadPresetResourceCandidate? = null,
     ): PreparedResource {
-        if (entry.category.type != "pet" && old != null && mode == ResourceInstallMode.NORMAL && localState(old) == ResourceLocalState.MODIFIED) {
+        if (entry.category.type !in setOf("pet", "read_preset") && old != null &&
+            mode == ResourceInstallMode.NORMAL && localState(old) == ResourceLocalState.MODIFIED) {
             throw ResourceConflict("本地资源已修改，选择保留本地、替换或安装副本。")
         }
         return when (entry.category.type) {
             "font" -> prepareFont(entry, payload)
             "background" -> prepareFile(entry, payload, old, mode)
+            "read_preset" -> prepareReadPreset(entry, payload, old, mode, confirmedReadPresetConflict, readPresetReplacement)
             "tts" -> prepareTts(entry, payload, old, mode)
             "theme" -> prepareTheme(entry, payload, old, mode, confirmedThemeConflict, otherThemeTargets)
             "pet" -> {
@@ -109,6 +123,50 @@ internal object ResourceInstaller {
         return PreparedResource(prepared.file.absolutePath, prepared.sha256, commit = {
             val imported = prepared.commit()
             check(imported.path == prepared.file.absolutePath) { "字体入库位置发生变化" }
+        })
+    }
+
+    private suspend fun prepareReadPreset(
+        entry: ResourceEntry,
+        payload: File,
+        old: ResourceInstallation?,
+        mode: ResourceInstallMode,
+        confirmed: ReadPresetResourceConflict?,
+        replacement: ReadPresetResourceCandidate?,
+    ): PreparedResource {
+        val sha256 = entry.item.payload.sha256
+        require(ResourceFiles.hash(payload) == sha256) { "预设内容已变化，请重试" }
+        val imported = ReadBookConfig.importResourceWithReport(payload, sha256)
+        val previousTarget = old?.target
+        suspend fun currentConflict() = withContext(Dispatchers.Main.immediate) {
+            ReadBookConfig.resourcePresetConflict(imported.config.name, previousTarget, sha256)
+        }
+        fun requireConfirmation(current: ReadPresetResourceConflict?) {
+            if (readPresetConfirmationValid(current, confirmed, mode, replacement)) return
+            if (current == null) error("预设列表已变化，请重新操作")
+            throw ResourceConflict("请选择替换原预设或保留两份。", readPresetConflict = current)
+        }
+        requireConfirmation(currentConflict())
+        // A fresh target distinguishes a completed replacement from the old preset in the recovery journal,
+        // including a reinstall of the same package whose payload hash has not changed.
+        val target = UUID.randomUUID().toString()
+        var affectsCurrentReader = false
+        return PreparedResource(target, sha256, commit = {
+            withContext(Dispatchers.Main.immediate) {
+                // The user may have edited, reordered, or selected a preset while the dialog was open.
+                requireConfirmation(ReadBookConfig.resourcePresetConflict(imported.config.name, previousTarget, sha256))
+                ReadBookConfig.appendResourcePreset(imported.config, target, sha256,
+                    replacement.takeIf { mode == ResourceInstallMode.REPLACE })
+                affectsCurrentReader = mode == ResourceInstallMode.REPLACE && replacement?.index == ReadBookConfig.styleSelect
+            }
+        }, afterCommit = {
+            if (affectsCurrentReader) withContext(Dispatchers.Main.immediate) {
+                postEvent(EventBus.UP_CONFIG, arrayListOf(1, 2, 5, 13))
+                postEvent(EventBus.UPDATE_READ_ACTION_BAR, true)
+            }
+            val warnings = imported.warnings +
+                if (imported.readerSettings != null) listOf("已忽略包内全局阅读设置") else emptyList()
+            if (warnings.isEmpty()) null else "已加入预设：${warnings.joinToString("；")}"
         })
     }
 

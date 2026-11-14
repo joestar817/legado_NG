@@ -180,6 +180,8 @@ internal object ReadStylePackageManager {
             val configJson = GSON.toJsonTree(portableConfig).asJsonObject.apply {
                 remove("ngReadStyleSource")
                 remove("ngUnknownFields")
+                remove("ngResourcePresetTarget")
+                remove("ngResourcePresetSha256")
                 addProperty("ngResourcePackageVersion", 1)
                 readerSettings?.let { add("ngReaderSettings", it.deepCopy()) }
             }
@@ -228,6 +230,9 @@ internal object ReadStylePackageManager {
             val sourceFormat = detectSourceFormat(root)
             val config = GSON.fromJson(root, ReadBookConfig.Config::class.java)
                 ?: error("无法解析排版配置")
+            // A portable package may not claim ownership of an installed resource.
+            config.ngResourcePresetTarget = null
+            config.ngResourcePresetSha256 = null
             config.ngReadStyleSource = sourceFormat
             config.ngUnknownFields = root.entrySet()
                 .filterNot { (name, _) -> name in knownFieldNames }
@@ -583,6 +588,7 @@ internal object ReadStylePackageManager {
         "paperEffect", "paperInkStrength", "readScrollFollowBackground",
         "readScrollFollowBackgroundNight", "readScrollFollowBackgroundEInk",
         "underlineDashLength", "underlineStrokeWidth",
-        "ngReadStyleSource", "ngUnknownFields", "ngReaderSettings", "ngResourcePackageVersion",
+        "ngReadStyleSource", "ngUnknownFields", "ngResourcePresetTarget", "ngResourcePresetSha256",
+        "ngReaderSettings", "ngResourcePackageVersion",
     )
 }

@@ -44,6 +44,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -54,6 +55,7 @@ import io.legado.app.BuildConfig
 import io.legado.app.R
 import io.legado.app.help.resource.*
 import io.legado.app.ui.design.components.NgButtonVariant
+import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.NgFilterChipGroupVariant
 import io.legado.app.ui.design.components.compose.*
 import io.legado.app.ui.design.theme.NgTheme
@@ -97,6 +99,16 @@ internal fun ResourceCenterScreen(
         if (task !== before && !task.running) {
             themeDownload = null
             if (task.themeConflict != null) conflict = entry
+        }
+    }
+    var presetDownload by remember { mutableStateOf<Pair<ResourceEntry, ResourceTask?>?>(null) }
+    val presetDownloadTask = presetDownload?.first?.item?.id?.let(state.tasks::get)
+    LaunchedEffect(presetDownload, presetDownloadTask) {
+        val (entry, before) = presetDownload ?: return@LaunchedEffect
+        val task = presetDownloadTask ?: return@LaunchedEffect
+        if (task !== before && !task.running) {
+            presetDownload = null
+            if (task.readPresetConflict != null) conflict = entry
         }
     }
     var menu by remember { mutableStateOf(false) }
@@ -249,11 +261,13 @@ internal fun ResourceCenterScreen(
         when {
             task?.running == true -> ResourceRepository.cancel(id)
             state.confirmedEntry(entry) == null -> if (canUseLocalResource(entry, state)) onUse(entry)
-            task?.conflict == true || state.isLocalPetChange(entry) || state.localStates[id] == ResourceLocalState.MODIFIED -> conflict = entry
+            task?.conflict == true || state.isLocalPetChange(entry) ||
+                (entry.category.type != "read_preset" && state.localStates[id] == ResourceLocalState.MODIFIED) -> conflict = entry
             state.hasInstalled(entry) && (entry.category.type == "pet" || state.localStates[id] == ResourceLocalState.PRESENT) &&
                 versionLabel(entry, state) != "可更新" -> onUse(entry)
             else -> {
                 if (entry.category.type == "theme") themeDownload = entry to task
+                if (entry.category.type == "read_preset") presetDownload = entry to task
                 ResourceRepository.install(entry)
             }
         }
@@ -307,8 +321,12 @@ internal fun ResourceCenterScreen(
                             1 -> ResourceRepository.refresh()
                             2 -> onOpenRepository()
                             3 -> detail?.let(state::confirmedEntry)?.let { entry ->
-                                if (state.isLocalPetChange(entry) || state.localStates[entry.item.id] == ResourceLocalState.MODIFIED) conflict = entry
-                                else ResourceRepository.install(entry, ResourceInstallMode.REPLACE)
+                                if (state.isLocalPetChange(entry) || (entry.category.type != "read_preset" &&
+                                        state.localStates[entry.item.id] == ResourceLocalState.MODIFIED)) conflict = entry
+                                else {
+                                    if (entry.category.type == "read_preset") presetDownload = entry to state.tasks[entry.item.id]
+                                    ResourceRepository.install(entry, ResourceInstallMode.REPLACE)
+                                }
                             }
                             4 -> selectGrid(false)
                             5 -> selectGrid(true)
@@ -404,30 +422,42 @@ internal fun ResourceCenterScreen(
                     header = {
                         if (visibleCatalog != null || page != ResourceCollectionPage.LIBRARY) {
                             key(purpose) {
-                                ResourceTypeFilterRow(
-                                    count = visibleCount,
-                                    selectedType = selectedType,
-                                    types = typeOptions,
-                                    onSelected = { resourceType = it },
-                                    complete = scopeComplete,
-                                    loading = pageLoading,
-                                    trailingAction = if (page == ResourceCollectionPage.UPDATES) {
-                                        {
-                                            val enabled = updatesReady && updateEntries.isNotEmpty() && !state.updatingAll && !state.loading && state.storageError == null
-                                            TextButton(
-                                                onClick = ResourceRepository::updateAll,
-                                                enabled = enabled,
-                                                modifier = Modifier.heightIn(min = 48.dp).semantics {
-                                                    contentDescription = if (state.updatingAll) "正在全部更新" else "全部更新，共 ${updateEntries.size} 项，不受分类和搜索筛选限制"
-                                                },
-                                            ) {
-                                                Text(if (state.updatingAll) "更新中" else "全部更新", fontSize = 14.sp,
-                                                    maxLines = 1,
-                                                    color = Color(NgTheme.colors.primary).let { if (enabled) it else it.copy(alpha = .45f) })
+                                val presetConflicts = if (page == ResourceCollectionPage.UPDATES && !state.updatingAll) {
+                                    updateEntries.count { state.tasks[it.item.id]?.readPresetConflict != null }
+                                } else 0
+                                Column {
+                                    ResourceTypeFilterRow(
+                                        count = visibleCount,
+                                        selectedType = selectedType,
+                                        types = typeOptions,
+                                        onSelected = { resourceType = it },
+                                        complete = scopeComplete,
+                                        loading = pageLoading,
+                                        pendingCount = presetConflicts,
+                                        trailingAction = if (page == ResourceCollectionPage.UPDATES) {
+                                            {
+                                                val enabled = updatesReady && updateEntries.isNotEmpty() && !state.updatingAll && !state.loading && state.storageError == null
+                                                TextButton(
+                                                    onClick = ResourceRepository::updateAll,
+                                                    enabled = enabled,
+                                                    modifier = Modifier.heightIn(min = 48.dp).semantics {
+                                                        contentDescription = if (state.updatingAll) "正在全部更新" else "全部更新，共 ${updateEntries.size} 项，不受分类和搜索筛选限制"
+                                                    },
+                                                ) {
+                                                    Text(if (state.updatingAll) "更新中" else "全部更新", fontSize = 14.sp,
+                                                        maxLines = 1,
+                                                        color = Color(NgTheme.colors.primary).let { if (enabled) it else it.copy(alpha = .45f) })
+                                                }
                                             }
-                                        }
-                                    } else null,
-                                )
+                                        } else null,
+                                    )
+                                    if (presetConflicts > 0 && (purpose != null || selectedType.isNotEmpty() || query.isNotBlank())) {
+                                        Text("查看全部待处理", fontSize = 12.sp, color = Color(NgTheme.colors.primary),
+                                            modifier = Modifier.align(Alignment.End).clickable {
+                                                purpose = null; resourceType = ""; query = ""
+                                            }.padding(horizontal = 14.dp, vertical = 4.dp))
+                                    }
+                                }
                             }
                         }
                     },
@@ -521,8 +551,63 @@ internal fun ResourceCenterScreen(
         }
     }
     conflict?.let(state::confirmedEntry)?.let { entry ->
+        val presetConflict = state.tasks[entry.item.id]?.readPresetConflict
         val themeConflict = state.tasks[entry.item.id]?.themeConflict
-        Dialog(onDismissRequest = { conflict = null }) {
+        if (presetConflict != null) {
+            var selectedIndex by remember(presetConflict) {
+                mutableStateOf(presetConflict.candidates.singleOrNull()?.index)
+            }
+            val selected = presetConflict.candidates.firstOrNull { it.index == selectedIndex }
+            val dismiss = { ResourceRepository.dismissTask(entry.item.id); conflict = null }
+            Dialog(onDismissRequest = dismiss) {
+                NgDialog(title = null, variant = NgDialogVariant.COMPACT_CONFIRMATION, actions = {
+                    ResourcePresetConflictAction(if (presetConflict.isUpdate) "暂不更新" else "取消",
+                        onClick = dismiss, modifier = Modifier.weight(1f), secondary = true)
+                    ResourcePresetConflictAction("保留两份", onClick = {
+                        presetDownload = entry to state.tasks[entry.item.id]
+                        ResourceRepository.install(entry, ResourceInstallMode.COPY,
+                            confirmedReadPresetConflict = presetConflict)
+                        conflict = null
+                    }, modifier = Modifier.weight(1f))
+                    ResourcePresetConflictAction("替换", enabled = selected != null, onClick = {
+                        presetDownload = entry to state.tasks[entry.item.id]
+                        ResourceRepository.install(entry, ResourceInstallMode.REPLACE,
+                            confirmedReadPresetConflict = presetConflict, readPresetReplacement = selected)
+                        conflict = null
+                    }, modifier = Modifier.weight(1f))
+                }) {
+                    val multiple = presetConflict.candidates.size > 1
+                    val message = when {
+                        multiple && selected?.selected == true -> "已选中此预设，替换会覆盖修改。"
+                        multiple -> "替换会覆盖所选预设的修改。"
+                        selected?.selected == true -> "「${selected.name}」已选中，替换会覆盖修改。"
+                        else -> "替换会覆盖「${selected?.name.orEmpty()}」的修改。"
+                    }
+                    Text(if (presetConflict.isUpdate) "更新预设" else "已有同名预设",
+                        modifier = Modifier.fillMaxWidth(), color = Color(NgTheme.colors.onSurfaceVariant),
+                        fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(12.dp))
+                    Text(message, modifier = Modifier.fillMaxWidth(), color = Color(NgTheme.colors.onSurfaceVariant),
+                        fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center)
+                    if (multiple) {
+                        Spacer(Modifier.height(8.dp))
+                        Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                            presetConflict.candidates.forEach { candidate ->
+                                Row(Modifier.fillMaxWidth().clickable { selectedIndex = candidate.index }
+                                    .heightIn(min = 44.dp).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(if (candidate.index == selectedIndex) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked,
+                                        contentDescription = null, tint = Color(NgTheme.colors.primary), modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Text("${candidate.name} · 第${candidate.index + 1}项",
+                                        color = Color(NgTheme.colors.onSurfaceVariant), fontSize = 14.sp,
+                                        fontWeight = FontWeight.Normal)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else Dialog(onDismissRequest = { conflict = null }) {
             NgDialog(title = "本地资源冲突", actions = {
                 if (entry.category.type == "pet") {
                     NgFormActionButton("保留本地", {
@@ -561,11 +646,39 @@ internal fun ResourceCenterScreen(
     }
 }
 
+@Composable
+private fun ResourcePresetConflictAction(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    secondary: Boolean = false,
+) {
+    val primary = Color(NgTheme.colors.primary)
+    val content = if (secondary) Color(NgTheme.colors.onSurfaceVariant) else primary
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.heightIn(min = 48.dp),
+        contentPadding = PaddingValues(0.dp),
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(text, color = content.let { if (enabled) it else it.copy(alpha = .45f) },
+                fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 private fun versionLabel(entry: ResourceEntry, state: ResourceCenterState): String =
     runCatching { state.versionLabel(entry) }.getOrDefault("来源身份异常")
 
 private fun statusLabel(entry: ResourceEntry, state: ResourceCenterState): String {
     val id = entry.item.id
+    if (state.tasks[id]?.readPresetConflict != null) return "待选择"
     state.tasks[id]?.let { if (it.running || it.message != "已加入资源库") return it.message }
     if (state.localStates[id] == ResourceLocalState.MODIFIED) return "本地已修改"
     if (state.hasInstalled(entry) && state.sourceChecked(entry) && state.snapshot?.entries.orEmpty().none { it.item.id == id }) {
@@ -691,7 +804,7 @@ private fun ResourcePreview(
     variant: ResourcePreviewVariant = ResourcePreviewVariant.DEFAULT,
 ) {
     val font = entry.category.type == "font"
-    val catalogImage = font || entry.category.type == "pet"
+    val catalogImage = font || entry.category.type == "pet" || entry.category.type == "read_preset"
     val image = entry.item.preview?.let { if (reading) it.detail else it.thumbnail }
     val allowDownload = state.confirmedEntry(entry) != null
     val target = state.installed(entry.item.id)?.target

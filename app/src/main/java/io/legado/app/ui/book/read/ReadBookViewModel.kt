@@ -44,6 +44,7 @@ import io.legado.app.utils.postEvent
 import io.legado.app.utils.toStringArray
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
@@ -53,6 +54,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onEmpty
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileNotFoundException
@@ -91,7 +93,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
     /**
      * 初始化
      */
-    fun initData(intent: Intent, success: (() -> Unit)? = null) {
+    fun initData(intent: Intent, onBookBound: ((String) -> Unit)? = null, success: (() -> Unit)? = null) {
         execute {
             ReadBook.inBookshelf = intent.getBooleanExtra("inBookshelf", true)
             ReadBook.chapterChanged = intent.getBooleanExtra("chapterChanged", false)
@@ -108,7 +110,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
             }
             val hasExplicitPosition = bookmark != null || (index >= 0 && chapterPos >= 0)
             when {
-                book != null -> initBook(book, hasExplicitPosition)
+                book != null -> initBook(book, hasExplicitPosition, onBookBound)
                 else -> {
                     ReadBook.upMsg(context.getString(R.string.no_book))
                     AppLog.put("未找到书籍\nbookUrl:$bookUrl")
@@ -132,7 +134,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    private suspend fun initBook(book: Book, hasExplicitPosition: Boolean) {
+    private suspend fun initBook(book: Book, hasExplicitPosition: Boolean, onBookBound: ((String) -> Unit)?) {
         readingRecordBookKey = book.bookUrl
         val startup = if (book.isEpub) io.legado.app.ui.book.read.epub.EpubStartupTiming("book-init") else null
         val isSameBook = ReadBook.book?.bookUrl == book.bookUrl
@@ -145,6 +147,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
         startup?.mark("reader-bound")
         prepareReplaceRuleResetOnEnter(book)
         isInitFinish = true
+        if (onBookBound != null) withContext(Dispatchers.Main) { onBookBound(book.bookUrl) }
         if (!book.isLocal && book.tocUrl.isEmpty() && !loadBookInfo(book)) {
             return
         }

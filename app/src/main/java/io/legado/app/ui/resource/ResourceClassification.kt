@@ -16,7 +16,7 @@ internal fun resourcePriorityTypes(purpose: ResourcePurpose?, type: String): Set
     if (type.isNotEmpty() && ResourceProtocol.isBrowsableType(type)) return setOf(type)
     return when (purpose) {
         null -> null
-        ResourcePurpose.READING -> setOf("font", "background")
+        ResourcePurpose.READING -> setOf("read_preset")
         ResourcePurpose.APPEARANCE -> setOf("theme")
         ResourcePurpose.LISTENING -> setOf("tts")
         ResourcePurpose.PETS -> setOf("pet")
@@ -24,7 +24,7 @@ internal fun resourcePriorityTypes(purpose: ResourcePurpose?, type: String): Set
 }
 
 internal fun ResourceCategory.resourcePurpose(): ResourcePurpose? = when (type) {
-    "font", "background" -> ResourcePurpose.READING
+    "font", "background", "read_preset" -> ResourcePurpose.READING
     "theme" -> ResourcePurpose.APPEARANCE
     "tts" -> ResourcePurpose.LISTENING
     "pet" -> ResourcePurpose.PETS
@@ -34,6 +34,7 @@ internal fun ResourceCategory.resourcePurpose(): ResourcePurpose? = when (type) 
 internal fun ResourceCategory.resourceTypeTitle(): String = when (type) {
     "font" -> "字体"
     "background" -> "背景"
+    "read_preset" -> "阅读预设"
     "theme" -> "主题包"
     "tts" -> "TTS 脚本"
     "pet" -> "宠物插件"

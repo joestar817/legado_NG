@@ -58,9 +58,11 @@ internal fun ResourceTypeFilterRow(
     onSelected: (String) -> Unit,
     complete: Boolean = true,
     loading: Boolean = false,
+    pendingCount: Int = 0,
     trailingAction: (@Composable () -> Unit)? = null,
 ) {
     val title = when {
+        complete && pendingCount > 0 -> "$count 项 · $pendingCount 待处理"
         complete -> "$count 项"
         loading -> "加载中"
         else -> "未完成"

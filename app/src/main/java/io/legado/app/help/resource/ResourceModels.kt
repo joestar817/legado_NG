@@ -130,6 +130,7 @@ internal data class ResourceTask(
     val running: Boolean = true,
     val conflict: Boolean = false,
     val themeConflict: ThemeResourceConflict? = null,
+    val readPresetConflict: io.legado.app.help.config.ReadPresetResourceConflict? = null,
 )
 internal data class ResourceCenterState(
     val snapshot: ResourceSnapshot? = null,
@@ -243,12 +244,13 @@ internal object ResourceProtocol {
     private val formats = mapOf(
         "font" to setOf("ttf", "otf"),
         "background" to setOf("png", "jpg", "jpeg", "webp"),
+        "read_preset" to setOf("zip"),
         "tts" to setOf("js"),
         "theme" to setOf("ngtheme", "zip"),
         "pet" to setOf("zip"),
     )
 
-    fun isBrowsableType(type: String) = type != "listening_effect"
+    fun isBrowsableType(type: String) = type !in setOf("font", "background", "listening_effect")
 
     fun validCommit(value: String) = sha.matches(value) && value.any { it != '0' }
 
@@ -308,10 +310,10 @@ internal object ResourceProtocol {
 
     fun validatePreview(preview: ResourceFontPreview?, type: String) {
         if (preview == null) return
-        require(type == "font" || type == "pet") { "此资源类型不支持目录预览" }
+        require(type == "font" || type == "pet" || type == "read_preset") { "此资源类型不支持目录预览" }
         validatePreviewImage(requireNotNull(preview.thumbnail) { "预览缺少缩略图" }, 256, 256)
         val detail = requireNotNull(preview.detail) { "预览缺少详情图" }
-        if (type == "pet") validatePreviewImage(detail, 768, 768)
+        if (type == "pet" || type == "read_preset") validatePreviewImage(detail, 768, 768)
         else validatePreviewImage(detail, 960, 420)
     }
 

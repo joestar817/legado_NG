@@ -22,6 +22,7 @@ import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.font.FontUsageInspector
 import io.legado.app.help.font.resetDeletedFont
 import io.legado.app.help.resource.ResourceFiles
+import io.legado.app.help.resource.ResourceProtocol
 import io.legado.app.utils.BitmapUtils
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.GSON
@@ -45,6 +46,7 @@ import io.legado.app.utils.resizeAndRecycle
 import splitties.init.appCtx
 import java.io.File
 import java.io.OutputStream
+import java.util.UUID
 
 /**
  * 阅读界面配置
@@ -941,8 +943,15 @@ object ReadBookConfig {
 
     fun import(byteArray: ByteArray): Config = importWithReport(byteArray).config
 
-    internal fun importWithReport(byteArray: ByteArray): ReadStylePackageManager.ImportResult {
-        val result = ReadStylePackageManager.import(byteArray)
+    internal fun importWithReport(byteArray: ByteArray): ReadStylePackageManager.ImportResult =
+        finishImport(ReadStylePackageManager.import(byteArray))
+
+    internal fun importResourceWithReport(file: File, sha256: String): ReadStylePackageManager.ImportResult =
+        finishImport(file.inputStream().use {
+            ReadStylePackageManager.import(it, sha256, File(appCtx.filesDir, ReadStylePackageManager.PACKAGE_DIR))
+        })
+
+    private fun finishImport(result: ReadStylePackageManager.ImportResult): ReadStylePackageManager.ImportResult {
         if (result.config.linkedHighlightRuleIds.orEmpty().isNotEmpty()) {
             val ids = result.config.highlightRules.map { it.id }.filter { it.isNotBlank() }
             require(ids.size == ids.toSet().size) { "预设包含重复的高亮规则编号" }
@@ -996,6 +1005,52 @@ object ReadBookConfig {
         readStyleSelect = index
         save()
         return AppendImportedConfigResult(index, ruleMerge)
+    }
+
+    internal fun resourcePresetConflict(name: String, previousTarget: String?, sha256: String) = synchronized(this) {
+        readPresetResourceConflict(configList, name.ifBlank { "阅读预设" }, previousTarget, sha256,
+            setOf(readStyleSelect, comicStyleSelect))
+    }
+
+    /** 入库到全局预设列表，不改变当前选择或单书模式。 */
+    internal fun appendResourcePreset(
+        config: Config,
+        target: String,
+        sha256: String,
+        replacement: ReadPresetResourceCandidate? = null,
+    ) = synchronized(this) {
+        require(target.isNotBlank() && sha256.matches(Regex("[a-f0-9]{64}")) &&
+            configList.withIndex().none { it.index != replacement?.index && it.value.ngResourcePresetTarget == target }) {
+            "预设安装身份不合法或重复"
+        }
+        if (replacement != null) {
+            val previous = configList.getOrNull(replacement.index) ?: error("预设已发生变化，请重新选择")
+            require(ResourceProtocol.hash(GSON.toJson(previous).toByteArray(Charsets.UTF_8)) == replacement.fingerprint) {
+                "预设已发生变化，请重新选择"
+            }
+        }
+        val importedRules = config.highlightRules.map { rule ->
+            if (rule.id.isBlank()) rule.copy(id = UUID.randomUUID().toString()) else rule
+        }
+        if (importedRules.isNotEmpty()) {
+            val merged = ReadHighlightRuleStore.mergeForPreset(importedRules, persistImmediately = true)
+            val previousLinks = config.linkedHighlightRuleIds.orEmpty()
+            val linked = if (previousLinks.isNotEmpty()) previousLinks else importedRules.filter { it.enabled }.map { it.id }
+            config.linkedHighlightRuleIds = linked.map { merged.idMapping[it] ?: it }.distinct()
+            if (previousLinks.isEmpty() && linked.isNotEmpty()) config.useLinkedHighlightRules = true
+        }
+        config.highlightRules.clear()
+        val persist: (List<Config>) -> Unit = { presets ->
+            // save() saves only the active book in single-book mode; this always saves the global list.
+            ResourceFiles.writeJson(File(configFilePath), presets)
+        }
+        if (replacement == null) appendReadPresetResource(configList, config, target, sha256, persist)
+        else replaceReadPresetResource(configList, config, replacement, target, sha256, persist)
+    }
+
+    internal fun resourcePresetFingerprint(target: String): String? = synchronized(this) {
+        val sha256 = readPresetResourceHash(configList, target) ?: return@synchronized null
+        sha256.takeIf { File(File(appCtx.filesDir, ReadStylePackageManager.PACKAGE_DIR), it).isDirectory }
     }
 
     @Keep
@@ -1116,6 +1171,8 @@ object ReadBookConfig {
         @SerializedName("useLinkedHighlightRules") var useLinkedHighlightRules: Boolean = false,
         @SerializedName("ngReadStyleSource") var ngReadStyleSource: String? = null,
         @SerializedName("ngUnknownFields") var ngUnknownFields: Map<String, String> = emptyMap(),
+        @SerializedName("ngResourcePresetTarget") var ngResourcePresetTarget: String? = null,
+        @SerializedName("ngResourcePresetSha256") var ngResourcePresetSha256: String? = null,
     ) {
 
         /** 复制当前实际布局及预设外观，不保留全局模板的可变对象引用。 */
@@ -1146,6 +1203,8 @@ object ReadBookConfig {
             linkedHighlightRuleIds = linkedHighlightRuleIds?.toList(),
             useLinkedHighlightRules = useLinkedHighlightRules,
             ngUnknownFields = ngUnknownFields.toMap(),
+            ngResourcePresetTarget = null,
+            ngResourcePresetSha256 = null,
         )
 
         @Transient

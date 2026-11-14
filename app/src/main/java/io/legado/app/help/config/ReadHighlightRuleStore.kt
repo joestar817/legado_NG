@@ -193,12 +193,25 @@ internal object ReadHighlightRuleStore {
     }
 
     @Synchronized
-    fun mergeForPreset(importedRules: List<ReadHighlightRule>): ReadPresetRuleMergeResult {
+    fun mergeForPreset(importedRules: List<ReadHighlightRule>, persistImmediately: Boolean = false): ReadPresetRuleMergeResult {
         ensureInitialized()
+        val before = rules.toList()
         val result = mergePresetHighlightRules(rules, importedRules)
         rules.clear()
         rules.addAll(result.merge.rules)
-        if (result.merge.addedCount > 0) saveAsync()
+        if (result.merge.addedCount > 0) {
+            if (persistImmediately) {
+                saveGeneration++
+                try {
+                    ResourceFiles.writeJson(File(filePath), rules)
+                } catch (error: Throwable) {
+                    rules.clear()
+                    rules.addAll(before)
+                    saveAsync()
+                    throw error
+                }
+            } else saveAsync()
+        }
         return result
     }
 
