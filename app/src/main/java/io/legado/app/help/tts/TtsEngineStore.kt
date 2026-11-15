@@ -12,6 +12,9 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.TtsEngineRuntimeEntity
 import io.legado.app.data.entities.TtsVoiceEntity
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.tts.packages.MicrosoftTtsCatalog
+import io.legado.app.help.tts.packages.MicrosoftTtsBundleManager
+import io.legado.app.help.tts.packages.MicrosoftOfflineSupport
 import io.legado.app.model.ReadAloud
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonArray
@@ -46,13 +49,11 @@ internal object TtsEngineImportResolver {
 
     fun conflicts(
         imported: List<TtsEngineSetting>,
-        existing: List<TtsEngineSetting>,
-        defaultIds: Set<String>
+        existing: List<TtsEngineSetting>
     ): List<TtsEngineImportConflict> {
         val existingById = existing.associateBy { it.id }
         return imported.mapNotNull { candidate ->
             existingById[candidate.id]
-                ?.takeIf { candidate.id !in defaultIds }
                 ?.let { current ->
                     TtsEngineImportConflict(
                         id = candidate.id,
@@ -67,11 +68,10 @@ internal object TtsEngineImportResolver {
     fun resolve(
         imported: List<TtsEngineSetting>,
         existing: List<TtsEngineSetting>,
-        defaultIds: Set<String>,
         action: TtsEngineImportConflictAction,
         copyIdSeed: Long = System.currentTimeMillis()
     ): List<TtsEngineSetting> {
-        val conflicts = conflicts(imported, existing, defaultIds)
+        val conflicts = conflicts(imported, existing)
         if (conflicts.isNotEmpty() && action == TtsEngineImportConflictAction.ASK) {
             throw TtsEngineImportConflictException(conflicts)
         }
@@ -107,6 +107,7 @@ internal object TtsEngineImportResolver {
         return imported.copy(
             enabled = existing.enabled,
             builtIn = existing.builtIn,
+            resourceManaged = existing.resourceManaged,
             optionValues = existing.optionValues,
             activeVoiceId = existing.activeVoiceId,
             disabledVoiceIds = existing.disabledVoiceIds
@@ -199,6 +200,7 @@ internal fun resolveFirstUseTtsRoleDefaults(
 object TtsEngineStore {
 
     const val SYSTEM_DEFAULT_ID = "system_default"
+    const val MICROSOFT_OFFLINE_ID = "__legado_microsoft_offline_bundle__"
     const val MULTITTS_FORWARDER_ID = "multitts_forwarder"
     const val NEXT_EDGE_PROXY_ID = "next_edge_proxy"
     const val NEXT_EDGE_DEFAULT_VOICE_ID = "zh-CN-YunxiNeural"
@@ -226,9 +228,7 @@ object TtsEngineStore {
         "next_edge_proxy.js",
         "mimo_v25_tts.js",
         "stepaudio_25_tts.js",
-        "mossland_tts.js",
-        "script_options_example.js",
-        "static_voices_example.js"
+        "mossland_tts.js"
     )
     private val defaultScriptEngineSnapshots by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         loadDefaultScriptEngines()
@@ -239,14 +239,27 @@ object TtsEngineStore {
     private val voiceCatalogMutexes = ConcurrentHashMap<String, Mutex>()
     @Volatile
     private var engineSnapshotCache: List<TtsEngineSetting>? = null
+    private var offlineCatalogRecovered = false
 
     private fun voiceCatalogMutex(engineId: String): Mutex =
         voiceCatalogMutexes.getOrPut(engineId) { Mutex() }
 
     @Synchronized
     fun engines(): List<TtsEngineSetting> {
+        if (!offlineCatalogRecovered) {
+            offlineCatalogRecovered = true
+            if (Build.VERSION.SDK_INT >= 26 && MicrosoftOfflineSupport.currentUnavailableReason() == null) {
+                // Complete a committed package update after interruption, before exposing cached voices.
+                runCatching {
+                    if (MicrosoftTtsBundleManager.hasInstalledCatalog()) {
+                        val catalog = MicrosoftTtsBundleManager.catalog()
+                        if (catalog.hasLicense) persistMicrosoftOfflineCatalog(savedEngines(), catalog)
+                    }
+                }.onFailure { offlineCatalogRecovered = false }
+            }
+        }
         engineSnapshotCache?.let { return it }
-        val savedEngines = savedEnginesWithSystemDefaultDisabled()
+        val savedEngines = removeRetiredExamplesOnce(savedEnginesWithSystemDefaultDisabled())
         val saved = savedEngines.associateBy { it.id }
         val deletedIds = deletedEngineIds()
         val builtInEngines = builtInEngines().filterNot { it.id in deletedIds }
@@ -355,7 +368,58 @@ object TtsEngineStore {
     }
 
     @Synchronized
+    internal fun registerMicrosoftOffline(catalog: MicrosoftTtsCatalog): TtsEngineSetting {
+        val updated = persistMicrosoftOfflineCatalog(engines(), catalog)
+        val effective = requireNotNull(engine(updated.id))
+        ReadAloud.updatePreparedTtsEngine(effective)
+        return effective
+    }
+
+    private fun persistMicrosoftOfflineCatalog(
+        existing: List<TtsEngineSetting>,
+        catalog: MicrosoftTtsCatalog,
+    ): TtsEngineSetting {
+        check(catalog.hasLicense && catalog.voices.isNotEmpty()) { "离线语音包尚未准备完成" }
+        val previous = existing.firstOrNull { it.id == MICROSOFT_OFFLINE_ID }
+        check(previous == null || previous.type == TtsEngineType.OFFLINE) { "离线引擎 ID 已被占用" }
+        val updated = previous?.copy(
+            offlineRevision = catalog.revision,
+            voices = catalog.voices,
+            activeVoiceId = resolveActiveVoiceId(previous, catalog.voices),
+            maxConcurrency = 1,
+        ) ?: TtsEngineSetting(
+            id = MICROSOFT_OFFLINE_ID,
+            name = "微软离线语音",
+            type = TtsEngineType.OFFLINE,
+            enabled = true,
+            offlineRevision = catalog.revision,
+            voices = catalog.voices,
+            activeVoiceId = catalog.voices.first().id,
+            maxConcurrency = 1,
+        )
+        if (voices(MICROSOFT_OFFLINE_ID).associateBy { it.id } != catalog.voices.associateBy { it.id }) {
+            val now = System.currentTimeMillis()
+            appDb.ttsVoiceDao.replaceForEngine(MICROSOFT_OFFLINE_ID, catalog.voices.map { it.toEntity(MICROSOFT_OFFLINE_ID, now) })
+            engineSnapshotCache = null
+        }
+        if (previous != updated) {
+            saveEngines(if (previous == null) existing + updated else existing.map {
+                if (it.id == MICROSOFT_OFFLINE_ID) updated else it
+            })
+        }
+        return updated
+    }
+
+    @Synchronized
     fun saveEngine(engine: TtsEngineSetting, restartReadAloud: Boolean = true) {
+        saveEngineLocked(engine, restartReadAloud, preserveVoiceCatalog = false)
+    }
+
+    private fun saveEngineLocked(
+        engine: TtsEngineSetting,
+        restartReadAloud: Boolean,
+        preserveVoiceCatalog: Boolean,
+    ) {
         val wasActive = activeEngineId() == engine.id
         val previous = engine(engine.id)
         val currentEngines = engines()
@@ -366,23 +430,36 @@ object TtsEngineStore {
             currentEngines + engine
         }
         saveEngines(updatedEngines)
-        if (previous?.shouldClearVoiceCacheFor(engine) == true) {
+        if (!preserveVoiceCatalog && previous?.shouldClearVoiceCacheFor(engine) == true) {
             appDb.ttsVoiceDao.deleteByEngine(engine.id)
         }
         val effectiveEngine = TtsEngineStore.engine(engine.id) ?: engine
-        if (wasActive) {
+        if (wasActive || preserveVoiceCatalog && ReadAloud.httpTtsEngineV2?.id == engine.id) {
             ReadAloud.updatePreparedTtsEngine(effectiveEngine)
         }
         if (wasActive && restartReadAloud) {
             if (effectiveEngine.enabled) {
                 ReadAloud.httpTtsEngineV2 = effectiveEngine.takeIf {
-                    it.type == TtsEngineType.SCRIPT
+                    it.usesGeneratedAudio
                 }
                 ReadAloud.upReadAloudClass()
             } else {
                 selectFirstEnabledEngine()
             }
         }
+    }
+
+    @Synchronized
+    internal fun saveResourceScriptEngine(engine: TtsEngineSetting) {
+        require(engine.type == TtsEngineType.SCRIPT) { "资源必须是脚本引擎" }
+        val deleted = deletedEngineIds()
+        if (engine.id in defaultScriptIds() && engine.id in deleted) {
+            saveDeletedEngineIds(deleted - engine.id)
+        }
+        // Keep the last usable catalog across a resource update. The user can
+        // explicitly refresh it; deleting it here breaks existing voice bindings.
+        saveEngineLocked(engine.copy(builtIn = false, resourceManaged = true),
+            restartReadAloud = false, preserveVoiceCatalog = true)
     }
 
     fun createCustomScriptEngine(): TtsEngineSetting {
@@ -428,7 +505,6 @@ object TtsEngineStore {
             val savedEngines = TtsEngineImportResolver.resolve(
                 imported = parsedEngines,
                 existing = engines(),
-                defaultIds = defaultScriptIds(),
                 action = conflictAction
             ).map { importEngine(it) }
             savedEngines
@@ -689,7 +765,7 @@ object TtsEngineStore {
         params: TtsVoicePlaybackParams,
     ): TtsEngineSetting? {
         val safeVoiceId = voiceId.takeIf(String::isNotBlank) ?: return null
-        val engine = engine(engineId)?.takeIf(TtsEngineSetting::isScriptEngine) ?: return null
+        val engine = engine(engineId)?.takeIf(TtsEngineSetting::usesGeneratedAudio) ?: return null
         val runtime = runtimeForUpdate(engine.id)
         val normalized = params.normalized()
         val updatedParams = runtime.voiceParams().toMutableMap().apply {
@@ -707,7 +783,7 @@ object TtsEngineStore {
     @Synchronized
     fun removeVoiceParams(engineId: String, voiceId: String): TtsEngineSetting? {
         val safeVoiceId = voiceId.takeIf(String::isNotBlank) ?: return null
-        val engine = engine(engineId)?.takeIf(TtsEngineSetting::isScriptEngine) ?: return null
+        val engine = engine(engineId)?.takeIf(TtsEngineSetting::usesGeneratedAudio) ?: return null
         val runtime = runtimeForUpdate(engine.id)
         val updatedParams = runtime.voiceParams().toMutableMap()
         if (updatedParams.remove(safeVoiceId) == null) {
@@ -755,7 +831,7 @@ object TtsEngineStore {
             updated?.let { engine ->
                 ReadAloud.updatePreparedTtsEngine(engine)
                 ReadAloud.httpTtsEngineV2 = engine.takeIf {
-                    it.type == TtsEngineType.SCRIPT
+                    it.usesGeneratedAudio
                 }
             }
         }
@@ -763,7 +839,7 @@ object TtsEngineStore {
             updated?.type == TtsEngineType.SYSTEM && isActiveEngine -> {
                 ReadAloud.upTtsSpeechRate(appCtx)
             }
-            updated?.type == TtsEngineType.SCRIPT && (
+            updated?.usesGeneratedAudio == true && (
                 isActiveEngine ||
                     AppConfig.readAloudMultiRole && AppConfig.multiRoleTtsEngineId == engineId
                 ) -> {
@@ -776,7 +852,7 @@ object TtsEngineStore {
     private fun notifyVoicePlaybackParamsChanged(engineId: String): TtsEngineSetting? {
         engineSnapshotCache = null
         val updated = engine(engineId)
-        if (updated?.type == TtsEngineType.SCRIPT) {
+        if (updated?.usesGeneratedAudio == true) {
             ReadAloud.refreshTtsPlaybackParams(appCtx)
         }
         return updated
@@ -872,7 +948,9 @@ object TtsEngineStore {
             type = safeType,
             enabled = runCatching { enabled }.getOrDefault(true),
             builtIn = runCatching { builtIn }.getOrDefault(false),
+            resourceManaged = runCatching { resourceManaged }.getOrDefault(false),
             enginePackage = safeNullableString { enginePackage },
+            offlineRevision = safeNullableString { offlineRevision },
             url = safeString { url },
             script = safeScript,
             optionValues = safeOptionValues(),
@@ -914,7 +992,10 @@ object TtsEngineStore {
             runtimePitch = runtime?.pitch,
             voiceParams = runtime?.voiceParams().orEmpty(),
             runtimeVoices = storedVoices.takeIf { it.isNotEmpty() },
-            lastVoiceUpdateTime = appDb.ttsVoiceDao.lastUpdatedAt(id) ?: 0L
+            lastVoiceUpdateTime = appDb.ttsVoiceDao.lastUpdatedAt(id) ?: 0L,
+            runtimeOfflineIssue = if (type == TtsEngineType.OFFLINE &&
+                MicrosoftOfflineSupport.currentUnavailableReason() == null
+            ) MicrosoftTtsBundleManager.revisionUnavailableReason(offlineRevision) else null,
         )
     }
 
@@ -922,7 +1003,7 @@ object TtsEngineStore {
         builtIn: TtsEngineSetting,
         defaultIds: Set<String> = defaultScriptIds()
     ): TtsEngineSetting {
-        if (id !in defaultIds) {
+        if (id !in defaultIds || resourceManaged) {
             return this
         }
         val updatedUrl = if (url in setOf(
@@ -1008,7 +1089,7 @@ object TtsEngineStore {
         ) {
             return true
         }
-        val shouldUpdateMultiTtsTemplate = id in setOf(MULTITTS_FORWARDER_ID, OPTIONS_EXAMPLE_ID) &&
+        val shouldUpdateMultiTtsTemplate = id == MULTITTS_FORWARDER_ID &&
                 script.contains("function parseMultiTtsVoices(body)") &&
                 (
                         script.contains("typeof body === \"string\" ? JSON.parse(body) : body") ||
@@ -1016,9 +1097,6 @@ object TtsEngineStore {
                                 script.contains("style: item.style || item.desc || \"\"")
                         ) &&
                 builtIn.script.contains("JSON.parse(String(body || \"{}\"))")
-        val shouldUpdateStaticPreviewText = id == STATIC_VOICES_EXAMPLE_ID &&
-                script.contains("sample_text: \"这是一段朗读试听。\"") &&
-                builtIn.script.contains(DEFAULT_TTS_PREVIEW_TEXT)
         val shouldUpdateNextEdgeProxy = id == NEXT_EDGE_PROXY_ID &&
                 parseScriptMetadata(script)["version"] in setOf(
                     "1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.0.5",
@@ -1088,19 +1166,12 @@ object TtsEngineStore {
             MULTITTS_FORWARDER_ID ->
                 script.contains("// @version 1.0.3") &&
                     builtIn.script.contains("// @version 1.0.4")
-            OPTIONS_EXAMPLE_ID ->
-                script.contains("// @version 1.0.4") &&
-                    builtIn.script.contains("// @version 1.0.5")
-            STATIC_VOICES_EXAMPLE_ID ->
-                script.contains("// @version 1.0.2") &&
-                    builtIn.script.contains("// @version 1.0.3")
             STEPAUDIO_25_TTS_ID ->
                 script.contains("// @version 1.0.6") &&
                     builtIn.script.contains("// @version 1.0.7")
             else -> false
         }
         return shouldUpdateMultiTtsTemplate ||
-                shouldUpdateStaticPreviewText ||
                 shouldUpdateNextEdgeProxy ||
                 shouldUpdateTranslatorChineseNames ||
                 shouldUpdateMimoExpressiveFields ||
@@ -1127,7 +1198,8 @@ object TtsEngineStore {
             runtimePitch = null,
             voiceParams = emptyMap(),
             runtimeVoices = null,
-            lastVoiceUpdateTime = 0L
+            lastVoiceUpdateTime = 0L,
+            runtimeOfflineIssue = null,
         )
     }
 
@@ -1150,6 +1222,7 @@ object TtsEngineStore {
                 id = source.id,
                 type = source.type,
                 builtIn = source.builtIn,
+                resourceManaged = source.resourceManaged,
                 enginePackage = source.enginePackage,
                 runtimeSpeed = source.runtimeSpeed,
                 runtimeVolume = source.runtimeVolume,
@@ -1348,6 +1421,26 @@ object TtsEngineStore {
         return updated
     }
 
+    private fun removeRetiredExamplesOnce(saved: List<TtsEngineSetting>): List<TtsEngineSetting> {
+        if (appCtx.getPrefBoolean(PreferKey.ttsEngineV2ExamplesRemoved, false)) return saved
+        val retiredIds = setOf(OPTIONS_EXAMPLE_ID, STATIC_VOICES_EXAMPLE_ID)
+        val retained = withoutRetiredTtsExamples(saved)
+        if (retained.size != saved.size) saveEngines(retained)
+        if (appCtx.getPrefString(PreferKey.ttsEngineV2ActiveId)?.let { it in retiredIds } == true) {
+            appCtx.putPrefString(PreferKey.ttsEngineV2ActiveId, "")
+        }
+        retiredIds.forEach { id ->
+            appDb.ttsVoiceDao.deleteByEngine(id)
+            appDb.ttsEngineRuntimeDao.deleteByEngine(id)
+            voiceCatalogMutexes.remove(id)
+        }
+        appCtx.putPrefBoolean(PreferKey.ttsEngineV2ExamplesRemoved, true)
+        return retained
+    }
+
+    internal fun withoutRetiredTtsExamples(saved: List<TtsEngineSetting>): List<TtsEngineSetting> =
+        saved.filterNot { it.id == OPTIONS_EXAMPLE_ID || it.id == STATIC_VOICES_EXAMPLE_ID }
+
     private fun builtInEngines(): List<TtsEngineSetting> {
         return buildList {
             add(
@@ -1365,16 +1458,6 @@ object TtsEngineStore {
             addAll(systemTtsEngines())
             addAll(defaultScriptEngines())
         }
-    }
-
-    internal fun optionsExampleBuiltInEngine(): TtsEngineSetting {
-        return scriptEngineFromAsset("script_options_example.js")
-            ?: error("缺少默认 TTS 脚本: script_options_example.js")
-    }
-
-    internal fun staticVoicesExampleBuiltInEngine(): TtsEngineSetting {
-        return scriptEngineFromAsset("static_voices_example.js")
-            ?: error("缺少默认 TTS 脚本: static_voices_example.js")
     }
 
     private fun defaultScriptEngines(): List<TtsEngineSetting> = defaultScriptEngineSnapshots

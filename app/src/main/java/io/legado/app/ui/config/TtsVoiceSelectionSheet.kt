@@ -205,7 +205,7 @@ class TtsVoiceSelectionSheet(
     }
 
     private fun editVoiceParams(option: TtsVoiceOption) {
-        if (option.systemDefault || !option.engine.isScriptEngine) return
+        if (option.systemDefault || !option.engine.usesGeneratedAudio) return
         voiceParamsDialog?.dismiss()
         voiceParamsDialog = showTtsVoiceParamsDialog(
             context = context,
@@ -221,7 +221,7 @@ class TtsVoiceSelectionSheet(
 
     private fun buildVoiceSnapshot(): TtsVoiceDrawerState {
         val latest = TtsEngineStore.engines().associateBy { it.id }
-        val groups = engines().mapNotNull { latest[it.id] }.map { engine ->
+        val groups = engines().mapNotNull { latest[it.id] }.filter { it.isSelectable }.map { engine ->
             TtsVoiceDrawerGroup(
                 engineId = engine.id,
                 engineName = engine.name,

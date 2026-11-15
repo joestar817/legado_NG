@@ -127,6 +127,16 @@ internal fun ResourceCenterScreen(
             if (task.readPresetConflict != null) conflict = entry
         }
     }
+    var ttsDownload by remember { mutableStateOf<Pair<ResourceEntry, ResourceTask?>?>(null) }
+    val ttsDownloadTask = ttsDownload?.first?.item?.id?.let(state.tasks::get)
+    LaunchedEffect(ttsDownload, ttsDownloadTask) {
+        val (entry, before) = ttsDownload ?: return@LaunchedEffect
+        val task = ttsDownloadTask ?: return@LaunchedEffect
+        if (task !== before && !task.running) {
+            ttsDownload = null
+            if (task.conflict) conflict = entry
+        }
+    }
     var menu by remember { mutableStateOf(false) }
     var uninstallPetId by rememberSaveable { mutableStateOf<String?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -284,6 +294,11 @@ internal fun ResourceCenterScreen(
                 skinDownload = entry to task
                 ResourceRepository.install(entry)
             }
+            entry.category.type == "tts" && task?.conflict != true &&
+                state.localStates[id] == ResourceLocalState.MODIFIED -> {
+                ttsDownload = entry to task
+                ResourceRepository.install(entry)
+            }
             task?.conflict == true || state.isLocalPetChange(entry) ||
                 (entry.category.type != "read_preset" && state.localStates[id] == ResourceLocalState.MODIFIED) -> conflict = entry
             state.hasInstalled(entry) && (entry.category.type in setOf("pet", HOME_WIDGET_SKIN_TYPE) || state.localStates[id] == ResourceLocalState.PRESENT) &&
@@ -292,6 +307,7 @@ internal fun ResourceCenterScreen(
                 if (entry.category.type == HOME_WIDGET_SKIN_TYPE) skinDownload = entry to task
                 if (entry.category.type == "theme") themeDownload = entry to task
                 if (entry.category.type == "read_preset") presetDownload = entry to task
+                if (entry.category.type == "tts") ttsDownload = entry to task
                 ResourceRepository.install(entry)
             }
         }
@@ -345,12 +361,17 @@ internal fun ResourceCenterScreen(
                             1 -> ResourceRepository.refresh()
                             2 -> onOpenRepository()
                             3 -> detail?.let(state::confirmedEntry)?.let { entry ->
-                                if (state.isLocalPetChange(entry) || (entry.category.type != "read_preset" &&
+                                if (entry.category.type == "tts" &&
+                                    state.localStates[entry.item.id] == ResourceLocalState.MODIFIED) {
+                                    ttsDownload = entry to state.tasks[entry.item.id]
+                                    ResourceRepository.install(entry)
+                                } else if (state.isLocalPetChange(entry) || (entry.category.type != "read_preset" &&
                                         !state.isLocalWidgetSkin(entry) &&
                                         state.localStates[entry.item.id] == ResourceLocalState.MODIFIED)) conflict = entry
                                 else {
                                     if (entry.category.type == HOME_WIDGET_SKIN_TYPE) skinDownload = entry to state.tasks[entry.item.id]
                                     if (entry.category.type == "read_preset") presetDownload = entry to state.tasks[entry.item.id]
+                                    if (entry.category.type == "tts") ttsDownload = entry to state.tasks[entry.item.id]
                                     ResourceRepository.install(entry, ResourceInstallMode.REPLACE)
                                 }
                             }
@@ -582,6 +603,7 @@ internal fun ResourceCenterScreen(
     conflict?.let(state::confirmedEntry)?.let { entry ->
         val presetConflict = state.tasks[entry.item.id]?.readPresetConflict
         val themeConflict = state.tasks[entry.item.id]?.themeConflict
+        val ttsConflict = state.tasks[entry.item.id]?.ttsConflict
         val skinReplacement = confirmedSkinCandidate?.takeIf { it.id == entry.item.id }
         if (presetConflict != null) {
             var selectedIndex by remember(presetConflict) {
@@ -653,18 +675,24 @@ internal fun ResourceCenterScreen(
                         Modifier.weight(1f), variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
                     )
                 } else {
-                    NgDialogTextActionButton("保留本地", onClick = {
+                    NgDialogTextActionButton(if (entry.category.type == "tts") "取消" else "保留本地", onClick = {
                         ResourceRepository.dismissTask(entry.item.id); conflict = null; confirmedSkinCandidate = null
                     })
-                    if (themeConflict?.canReplace ?: state.hasInstalled(entry)) NgDialogTextActionButton("替换", onClick = {
+                    val canReplace = themeConflict?.canReplace ?: if (entry.category.type == "tts") {
+                        ttsConflict != null
+                    } else {
+                        state.hasInstalled(entry)
+                    }
+                    if (canReplace) NgDialogTextActionButton(if (entry.category.type == "tts") "覆盖" else "替换", onClick = {
                         if (entry.category.type == "theme") themeDownload = entry to state.tasks[entry.item.id]
                         if (entry.category.type == HOME_WIDGET_SKIN_TYPE) skinDownload = entry to state.tasks[entry.item.id]
+                        if (entry.category.type == "tts") ttsDownload = entry to state.tasks[entry.item.id]
                         ResourceRepository.install(entry, ResourceInstallMode.REPLACE, themeConflict,
-                            confirmedWidgetSkinReplacement = skinReplacement)
+                            confirmedWidgetSkinReplacement = skinReplacement, confirmedTtsConflict = ttsConflict)
                         conflict = null
                         confirmedSkinCandidate = null
                     })
-                    if (entry.category.type != HOME_WIDGET_SKIN_TYPE) NgDialogTextActionButton("安装副本", onClick = {
+                    if (entry.category.type !in setOf(HOME_WIDGET_SKIN_TYPE, "tts")) NgDialogTextActionButton("安装副本", onClick = {
                         ResourceRepository.install(entry, ResourceInstallMode.COPY); conflict = null
                     })
                 }
@@ -748,6 +776,7 @@ private fun canUseLocalResource(entry: ResourceEntry, state: ResourceCenterState
 private fun canAct(entry: ResourceEntry, state: ResourceCenterState): Boolean {
     if (state.storageError != null || state.tasks[entry.item.id]?.message == "正在入库") return false
     if (state.tasks[entry.item.id]?.running == true) return true
+    if (entry.isOfflineTts && io.legado.app.help.tts.packages.MicrosoftOfflineSupport.currentUnavailableReason() != null) return false
     if (state.confirmedEntry(entry) == null) return canUseLocalResource(entry, state)
     if (state.isLocalWidgetSkin(entry)) return ResourceProtocol.incompatibility(entry, BuildConfig.VERSION_CODE.toLong()) == null
     if (entry.category.type == "pet" && state.hasInstalled(entry) && versionLabel(entry, state) != "可更新") return true
@@ -924,22 +953,23 @@ private fun ResourcePreview(
 @Composable
 private fun ResourceDetail(entry: ResourceEntry, state: ResourceCenterState, onAction: (ResourceEntry) -> Unit, onViewLatest: (ResourceEntry) -> Unit, onUninstall: (String) -> Unit, modifier: Modifier) {
     val incompatible = ResourceProtocol.incompatibility(entry, BuildConfig.VERSION_CODE.toLong())
+        ?: if (entry.isOfflineTts) io.legado.app.help.tts.packages.MicrosoftOfflineSupport.currentUnavailableReason() else null
     val latest = state.snapshot?.entries?.firstOrNull {
         it.item.id == entry.item.id && it.item.versionCode > entry.item.versionCode
     }
-    val isTheme = entry.category.type == "theme"
+    val useIconHeader = entry.category.type == "theme" || entry.category.type == "tts"
     Column(modifier.fillMaxWidth()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 24.dp)) {
-            if (!isTheme) {
-                val previewHeight = if (entry.category.type == "font" || entry.category.type == "tts") 140.dp else 280.dp
+            if (!useIconHeader) {
+                val previewHeight = if (entry.category.type == "font") 140.dp else 280.dp
                 ResourcePreview(entry, state, Modifier.fillMaxWidth().height(previewHeight), reading = true)
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = if (isTheme) 0.dp else 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = if (useIconHeader) 0.dp else 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (isTheme) {
+                if (useIconHeader) {
                     ResourcePreview(entry, state, Modifier.size(48.dp), variant = ResourcePreviewVariant.COMPACT_LIST)
                 }
                 Column(Modifier.weight(1f)) {

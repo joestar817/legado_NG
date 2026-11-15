@@ -97,7 +97,7 @@ internal fun TtsEngineSelectionDrawerContent(
     var searchExpanded by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
     val filteredEngines = engines.filter { engine ->
-        query.isBlank() || engine.name.contains(query.trim(), ignoreCase = true)
+        engine.isSelectable && (query.isBlank() || engine.name.contains(query.trim(), ignoreCase = true))
     }
     BackHandler(enabled = searchExpanded) {
         searchExpanded = false
@@ -278,7 +278,7 @@ class TtsEngineSelectionSheet(
             try {
                 val engines = withContext(IO) {
                     TtsEngineStore.reloadEngines().filter {
-                        it.enabled && it.type == TtsEngineType.SCRIPT
+                        it.isSelectable && it.usesGeneratedAudio
                     }
                 }
                 if (dialog != null) {
@@ -382,7 +382,11 @@ private fun engineSelectionTags(engine: TtsEngineSetting): List<NgStatusTagSpec>
         variant = if (engine.enabled) NgStatusTagVariant.SUCCESS else NgStatusTagVariant.WARNING,
     ),
     NgStatusTagSpec(
-        text = if (engine.type == TtsEngineType.SCRIPT) "脚本" else "系统",
+        text = when (engine.type) {
+            TtsEngineType.SCRIPT -> "脚本"
+            TtsEngineType.SYSTEM -> "系统"
+            TtsEngineType.OFFLINE -> "离线"
+        },
         variant = NgStatusTagVariant.INFO,
     ),
     NgStatusTagSpec(

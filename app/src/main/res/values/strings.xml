@@ -1393,6 +1393,7 @@
     <string name="default_tts_voice_avatar_female">F</string>
     <string name="tts_engine_type_system">System</string>
     <string name="tts_engine_type_script">Script</string>
+    <string name="tts_engine_type_offline">Offline</string>
     <string name="tts_engine_voice_not_loaded">Not loaded</string>
     <string name="tts_engine_voice_count">%1$d voices</string>
     <string name="tts_config_tab">Config</string>

@@ -1342,7 +1342,9 @@ class TtsHttpForwarderClientTest {
     private fun scriptEngineFromAssetFile(fileName: String): TtsEngineSetting {
         val scriptFile = listOf(
             File("src/main/assets/defaultData/tts/$fileName"),
-            File("app/src/main/assets/defaultData/tts/$fileName")
+            File("app/src/main/assets/defaultData/tts/$fileName"),
+            File("src/test/resources/tts/$fileName"),
+            File("app/src/test/resources/tts/$fileName")
         ).first { it.isFile }
         val script = scriptFile.readText()
         return TtsEngineStore.scriptEngineFromScript(script)

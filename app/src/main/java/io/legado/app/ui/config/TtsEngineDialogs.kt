@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -145,6 +147,71 @@ internal fun TtsConfirmDialogContent(
             fontSize = 16.sp,
             lineHeight = 24.sp,
         )
+    }
+}
+
+@Composable
+internal fun TtsInformationDialogContent(
+    title: String,
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    NgDialog(
+        title = title,
+        variant = NgDialogVariant.CLASSIC_CONFIRMATION,
+        titleFontWeight = FontWeight.Normal,
+        actions = {
+            NgDialogTextActionButton(
+                text = stringResource(android.R.string.ok),
+                onClick = onDismiss,
+            )
+        },
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+            color = Color(NgTheme.colors.onSurface),
+            fontSize = 16.sp,
+            lineHeight = 24.sp,
+        )
+    }
+}
+
+@Composable
+internal fun TtsOfflineImportDialogContent(
+    message: String,
+    notice: String?,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    NgDialog(
+        title = "导入离线语音",
+        variant = NgDialogVariant.CLASSIC_CONFIRMATION,
+        titleFontWeight = FontWeight.Normal,
+        actions = {
+            NgDialogTextActionButton(text = stringResource(android.R.string.cancel), onClick = onCancel)
+            NgDialogTextActionButton(text = "导入", onClick = onConfirm)
+        },
+    ) {
+        Column {
+            Text(
+                text = message,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
+                    .verticalScroll(rememberScrollState()),
+                color = Color(NgTheme.colors.onSurface),
+                fontSize = 16.sp,
+                lineHeight = 24.sp,
+            )
+            if (notice != null) {
+                Text(
+                    text = notice,
+                    modifier = Modifier.padding(top = 12.dp),
+                    color = Color(NgTheme.colors.onSurface),
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                )
+            }
+        }
     }
 }
 

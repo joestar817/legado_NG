@@ -149,7 +149,7 @@ internal fun TtsVoiceOption.toDrawerCard(selected: Boolean): TtsVoiceDrawerCard 
         genderLabel = genderLabel,
         style = style,
         tags = tags,
-        canEditParams = !systemDefault && engine.isScriptEngine,
+        canEditParams = !systemDefault && engine.usesGeneratedAudio,
         hasVoiceParams = !systemDefault && engine.hasVoiceParams(voice.id),
     )
 }

@@ -2,8 +2,10 @@ package io.legado.app.ui.config
 
 import android.app.Dialog
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
@@ -41,6 +43,9 @@ import io.legado.app.help.tts.TtsScriptOption
 import io.legado.app.help.tts.TtsScriptOptionValue
 import io.legado.app.help.tts.TtsVoice
 import io.legado.app.help.tts.TtsVoiceStyle
+import io.legado.app.help.tts.packages.MicrosoftTtsBundleManager
+import io.legado.app.help.tts.packages.MicrosoftTtsBundleSummary
+import io.legado.app.help.tts.packages.MicrosoftOfflineSupport
 import io.legado.app.help.tts.generateTtsRandomNumber
 import io.legado.app.help.tts.styleOptions
 import io.legado.app.ui.design.components.compose.NgListState
@@ -58,6 +63,7 @@ import io.legado.app.utils.readText
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
@@ -71,6 +77,7 @@ class TtsEngineConfigFragment : BaseFragment(0),
 
     companion object {
         const val EXTRA_IMPORT_URI = "ttsEngineImportUri"
+        private const val OFFLINE_BUNDLE_ID = TtsEngineStore.MICROSOFT_OFFLINE_ID
     }
 
     private enum class DetailTab { CONFIG, VOICES }
@@ -100,6 +107,10 @@ class TtsEngineConfigFragment : BaseFragment(0),
     private var voiceListScreenState by mutableStateOf(TtsEngineVoiceListScreenState())
     private var voiceControlsState by mutableStateOf(TtsEngineVoiceControlsState())
     private var engineSettingsSnapshot: List<TtsEngineSetting> = emptyList()
+    private var offlineBundleSummary: MicrosoftTtsBundleSummary? = null
+    private var offlineBundleIssue: String? = null
+    private var offlineBundleChecked = false
+    private var offlineImportJob: Job? = null
     private var engineOrderSaveJob: Job? = null
     private var engineConfigSaveJob: Job? = null
     private var engineConfigSaveRevision = 0L
@@ -169,6 +180,9 @@ class TtsEngineConfigFragment : BaseFragment(0),
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
+        offlineBundleChecked = false
+        offlineBundleSummary = null
+        offlineBundleIssue = null
         activity?.setTitle(R.string.tts_engine_settings)
         val editor = createScriptEditorView()
         scriptEditorView = editor
@@ -270,6 +284,7 @@ class TtsEngineConfigFragment : BaseFragment(0),
         )
 
         refreshEngines()
+        loadOfflineBundle()
         importExternalTtsEngineIfRequested()
     }
 
@@ -281,6 +296,8 @@ class TtsEngineConfigFragment : BaseFragment(0),
         configOptionsWarmJob = null
         cancelEngineRefresh()
         cancelVoiceRefresh()
+        offlineImportJob?.cancel()
+        offlineImportJob = null
         voiceRefreshEnabled = false
         voiceParamPanelExpanded = false
         importConflictDialog?.dismiss()
@@ -425,23 +442,45 @@ class TtsEngineConfigFragment : BaseFragment(0),
                 engineScreenState.query.isBlank() ||
                     engine.name.contains(engineScreenState.query, ignoreCase = true)
             }
+        val items = visibleEngines.map { it.toListItemUiModel() }.toMutableList()
+        offlineBundleSummary?.takeIf { allEngines.none { engine -> engine.id == OFFLINE_BUNDLE_ID } }?.let { bundle ->
+            if (engineScreenState.query.isBlank() ||
+                "微软离线语音".contains(engineScreenState.query, ignoreCase = true)
+            ) {
+                items.add(bundle.toListItemUiModel())
+            }
+        }
         engineScreenState = engineScreenState.copy(
             listState = NgListState.Content(
-                visibleEngines.map { it.toListItemUiModel() }
+                items
             ),
             showDisabled = showDisabledEngines
         )
     }
 
+    private fun MicrosoftTtsBundleSummary.toListItemUiModel() = TtsEngineListItemUiModel(
+        id = OFFLINE_BUNDLE_ID,
+        name = "微软离线语音",
+        enabled = false,
+        engineTypeText = "离线",
+        voiceCountText = getString(R.string.tts_engine_voice_count, voices.size),
+        reorderable = false,
+        deletable = true,
+        statusText = "未就绪",
+    )
+
     private fun TtsEngineSetting.toListItemUiModel(): TtsEngineListItemUiModel {
+        val unavailable = type == TtsEngineType.OFFLINE &&
+            (runtimeUnavailableReason ?: offlineUnavailableReason()) != null
         return TtsEngineListItemUiModel(
             id = id,
             name = name,
-            enabled = enabled,
+            enabled = enabled && !unavailable,
             engineTypeText = getString(
                 when (type) {
                     TtsEngineType.SYSTEM -> R.string.tts_engine_type_system
                     TtsEngineType.SCRIPT -> R.string.tts_engine_type_script
+                    TtsEngineType.OFFLINE -> R.string.tts_engine_type_offline
                 }
             ),
             voiceCountText = when {
@@ -453,9 +492,15 @@ class TtsEngineConfigFragment : BaseFragment(0),
             },
             reorderable = true,
             deletable = TtsEngineStore.isDeletableEngine(this),
-            actionContentDescription = getString(R.string.tts_engine_drag_sort)
+            actionContentDescription = getString(R.string.tts_engine_drag_sort),
+            statusText = if (unavailable) {
+                if (!offlineBundleChecked && MicrosoftOfflineSupport.currentUnavailableReason() == null) "检查中" else "未就绪"
+            } else null,
         )
     }
+
+    private fun offlineUnavailableReason(): String? = MicrosoftOfflineSupport.currentUnavailableReason()
+        ?: if (!offlineBundleChecked) "正在检查离线语音包" else offlineBundleIssue
 
     private fun handleEngineListAction(action: TtsEngineListAction) {
         when (action) {
@@ -466,9 +511,19 @@ class TtsEngineConfigFragment : BaseFragment(0),
 
             is TtsEngineListAction.SearchSubmitted -> Unit
             is TtsEngineListAction.OpenEngine -> {
-                engineSettingsSnapshot
-                    .firstOrNull { it.id == action.engineId }
-                    ?.let(::showEngineDetail)
+                val engine = engineSettingsSnapshot.firstOrNull { it.id == action.engineId }
+                val unavailableReason = engine?.takeIf { it.type == TtsEngineType.OFFLINE }
+                    ?.runtimeUnavailableReason ?: offlineUnavailableReason()
+                if (action.engineId == OFFLINE_BUNDLE_ID && unavailableReason != null) {
+                    offlineBundleSummary?.let(::showOfflineBundleDetails)
+                        ?: context?.toastOnUi(unavailableReason)
+                } else if (action.engineId == OFFLINE_BUNDLE_ID && engine?.type == TtsEngineType.OFFLINE) {
+                    showEngineDetail(engine, DetailTab.VOICES)
+                } else if (action.engineId == OFFLINE_BUNDLE_ID && engine == null) {
+                    offlineBundleSummary?.let(::showOfflineBundleDetails)
+                } else {
+                    engine?.let(::showEngineDetail)
+                }
             }
 
             is TtsEngineListAction.ReorderCommitted -> {
@@ -476,7 +531,12 @@ class TtsEngineConfigFragment : BaseFragment(0),
             }
 
             is TtsEngineListAction.DeleteRequested -> {
-                TtsEngineStore.engine(action.engineId)?.let { engine ->
+                val engine = engineSettingsSnapshot.firstOrNull { it.id == action.engineId }
+                if (action.engineId == OFFLINE_BUNDLE_ID &&
+                    (engine?.type == TtsEngineType.OFFLINE || engine == null && offlineBundleSummary != null)
+                ) {
+                    confirmRemoveOfflineBundle()
+                } else TtsEngineStore.engine(action.engineId)?.let { engine ->
                     confirmDeleteEngine(
                         engine = engine,
                         onCancel = ::refreshEngines,
@@ -494,12 +554,7 @@ class TtsEngineConfigFragment : BaseFragment(0),
             TtsEngineListAction.CreateEngine -> addTtsEngine()
             TtsEngineListAction.ImportLocal -> {
                 importTtsEngineFileLauncher.launch(
-                    arrayOf(
-                        "text/*",
-                        "application/json",
-                        "application/javascript",
-                        "application/octet-stream"
-                    )
+                    arrayOf("*/*")
                 )
             }
 
@@ -518,6 +573,10 @@ class TtsEngineConfigFragment : BaseFragment(0),
 
     private fun commitEngineOrder(orderedEngineIds: List<String>) {
         if (engineScreenState.query.isNotBlank()) return
+        val offline = engineSettingsSnapshot.firstOrNull { it.id == OFFLINE_BUNDLE_ID }
+        val placeholderShown = offline == null && offlineBundleSummary != null
+        val orderedIds = if (placeholderShown) orderedEngineIds.filterNot { it == OFFLINE_BUNDLE_ID }
+            else orderedEngineIds
         val allEngines = engineSettingsSnapshot
         if (allEngines.isEmpty()) {
             refreshEngines()
@@ -529,16 +588,19 @@ class TtsEngineConfigFragment : BaseFragment(0),
             isEnabled = TtsEngineSetting::enabled
         )
         val visibleIds = visibleEngines.map(TtsEngineSetting::id)
-        if (orderedEngineIds == visibleIds) return
-        if (orderedEngineIds.size != visibleIds.size ||
-            orderedEngineIds.toSet().size != orderedEngineIds.size ||
-            orderedEngineIds.toSet() != visibleIds.toSet()
+        if (orderedIds == visibleIds) {
+            applyEngineSnapshot(allEngines)
+            return
+        }
+        if (orderedIds.size != visibleIds.size ||
+            orderedIds.toSet().size != orderedIds.size ||
+            orderedIds.toSet() != visibleIds.toSet()
         ) {
             refreshEngines()
             return
         }
         val enginesById = visibleEngines.associateBy(TtsEngineSetting::id)
-        val reorderedEngines = orderedEngineIds.mapNotNull(enginesById::get)
+        val reorderedEngines = orderedIds.mapNotNull(enginesById::get)
         val mergedEngines = ConfigListVisibilitySupport.mergeVisibleOrder(
             allItems = allEngines,
             reorderedVisibleItems = reorderedEngines,
@@ -546,21 +608,12 @@ class TtsEngineConfigFragment : BaseFragment(0),
             isEnabled = TtsEngineSetting::enabled
         )
         cancelEngineRefresh()
-        engineSettingsSnapshot = mergedEngines
-        engineScreenState = engineScreenState.copy(
-            listState = NgListState.Content(
-                ConfigListVisibilitySupport.visibleItems(
-                    allItems = mergedEngines,
-                    showDisabled = showDisabledEngines,
-                    isEnabled = TtsEngineSetting::enabled
-                ).map { it.toListItemUiModel() }
-            )
-        )
+        applyEngineSnapshot(mergedEngines)
         val previousSave = engineOrderSaveJob
         engineOrderSaveJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
                 previousSave?.join()
-                if (!TtsEngineStore.saveVisibleEngineOrder(orderedEngineIds)) {
+                if (!TtsEngineStore.saveVisibleEngineOrder(orderedIds)) {
                     withContext(Dispatchers.Main) {
                         refreshEngines()
                     }
@@ -632,6 +685,15 @@ class TtsEngineConfigFragment : BaseFragment(0),
             bindSystemEngineDetail(engine)
             return
         }
+        if (engine.type == TtsEngineType.OFFLINE) {
+            voiceRefreshEnabled = false
+            bindVoiceParams(engine)
+            setVoiceItems(engine.effectiveVoices())
+            updateVoiceMessage(engine)
+            voiceControlsState = voiceControlsState.copy(mode = TtsEngineVoiceControlsMode.SCRIPT, query = voiceSearchQuery)
+            navigateToRoute(TtsEngineConfigRoute.OFFLINE_VOICES)
+            return
+        }
         bindEngineForm(engine)
         bindVoiceParams(engine)
         setVoiceItems(engine.effectiveVoices())
@@ -647,15 +709,229 @@ class TtsEngineConfigFragment : BaseFragment(0),
     }
 
     private fun importTtsEngineFromUri(uri: Uri) {
-        lifecycleScope.launch {
+        val context = requireContext()
+        viewLifecycleOwner.lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    uri.readText(requireContext())
+                    val resolver = context.contentResolver
+                    val name = if (uri.scheme == "content") {
+                        runCatching {
+                            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                                if (cursor.moveToFirst()) cursor.getString(0) else null
+                            }
+                        }.getOrNull()
+                    } else uri.lastPathSegment
+                    val isZip = requireNotNull(resolver.openInputStream(uri)) { "无法读取所选文件" }.use {
+                        val a = it.read()
+                        val b = it.read()
+                        val c = it.read()
+                        val d = it.read()
+                        a == 'P'.code && b == 'K'.code &&
+                            ((c == 3 && d == 4) || (c == 5 && d == 6) || (c == 7 && d == 8))
+                    }
+                    if (isZip || name?.endsWith(".zip", ignoreCase = true) == true) null
+                    else uri.readText(context)
                 }
             }
-            result.onSuccess { importTtsEngineText(it) }
-                .onFailure { requireContext().toastOnUi(it.localizedMessage ?: "导入失败") }
+            result.onSuccess { text ->
+                if (text == null) importOfflineBundle(uri) else importTtsEngineText(text)
+            }.onFailure { error -> context.toastOnUi(error.localizedMessage ?: "导入失败") }
         }
+    }
+
+    private fun loadOfflineBundle() {
+        if (Build.VERSION.SDK_INT < 26) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { refreshOfflineBundleState() } }
+            result.onSuccess { (summary, issue) ->
+                offlineBundleSummary = summary
+                offlineBundleIssue = issue
+                offlineBundleChecked = true
+                refreshEngines()
+            }.onFailure {
+                offlineBundleIssue = "读取离线语音状态失败"
+                offlineBundleChecked = true
+                if (view != null) refreshEngines()
+                if (!it.message.orEmpty().contains("正在处理")) {
+                    context?.toastOnUi("读取离线语音包失败：${it.localizedMessage ?: it.javaClass.simpleName}")
+                }
+            }
+        }
+    }
+
+    private fun refreshOfflineBundleState(): Pair<MicrosoftTtsBundleSummary?, String?> {
+        val summary = MicrosoftTtsBundleManager.installed() ?: return null to "离线语音包尚未安装"
+        val catalog = runCatching { MicrosoftTtsBundleManager.catalog() }.getOrElse {
+            return summary to (MicrosoftOfflineSupport.currentUnavailableReason()
+                ?: "整合包没有适配当前设备的可用引擎，请导入匹配的完整包。")
+        }
+        if (!catalog.hasLicense) return summary to "整合包缺少运行所需文件，请导入完整包。"
+        val previous = TtsEngineStore.engine(OFFLINE_BUNDLE_ID)
+        if (previous == null || previous.type != TtsEngineType.OFFLINE || previous.offlineRevision != catalog.revision ||
+            previous.effectiveVoices() != catalog.voices
+        ) {
+            TtsEngineStore.registerMicrosoftOffline(catalog)
+        }
+        return summary to null
+    }
+
+    private fun importOfflineBundle(uri: Uri) {
+        if (Build.VERSION.SDK_INT < 26) {
+            context?.toastOnUi("微软离线语音需要 Android 8.0 或更高版本")
+            return
+        }
+        if (offlineImportJob?.isActive == true) {
+            context?.toastOnUi("离线语音包正在检查，请稍后重试")
+            return
+        }
+        context?.toastOnUi("正在检查离线语音包，请稍候")
+        offlineImportJob = viewLifecycleOwner.lifecycleScope.launch {
+            var candidate: MicrosoftTtsBundleManager.Candidate? = null
+            try {
+                withContext(Dispatchers.IO) { candidate = MicrosoftTtsBundleManager.inspect(uri) }
+                showOfflineImportPreview(checkNotNull(candidate))
+                candidate = null // The dialog now owns the candidate and its installation lock.
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                context?.toastOnUi("导入失败：${error.localizedMessage ?: error.javaClass.simpleName}")
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) { candidate?.close() }
+            }
+        }
+    }
+
+    private fun showOfflineImportPreview(candidate: MicrosoftTtsBundleManager.Candidate) {
+        val summary = candidate.summary
+        val message = buildString {
+            append("包名：${candidate.name.replace('\n', ' ').take(80)}\n")
+            append("版本：${candidate.versionName.replace('\n', ' ').take(80)}\n")
+            append("发音人：${summary.voices.size} 位")
+        }
+        modalDialog?.dismiss()
+        val dialog = ComponentDialog(requireContext())
+        var committed = false
+        dialog.setContentView(ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    TtsOfflineImportDialogContent(
+                        message = message,
+                        notice = when {
+                            !candidate.processCompatible -> "此包不适配当前设备的运行架构。"
+                            !summary.hasBundledLicense && !MicrosoftTtsBundleManager.hasLicense() ->
+                                "此包缺少运行所需文件，导入后暂不可朗读。"
+                            else -> null
+                        },
+                        onCancel = dialog::dismiss,
+                        onConfirm = {
+                            committed = true
+                            dialog.dismiss()
+                            commitOfflineBundle(candidate)
+                        },
+                    )
+                }
+            }
+        })
+        dialog.setOnDismissListener {
+            if (modalDialog === dialog) modalDialog = null
+            if (!committed) {
+                lifecycleScope.launch(Dispatchers.IO + NonCancellable) { runCatching { candidate.close() } }
+            }
+        }
+        modalDialog = dialog
+        dialog.show()
+        dialog.applyNgWindow()
+    }
+
+    private fun commitOfflineBundle(candidate: MicrosoftTtsBundleManager.Candidate) {
+        lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val result = withContext(Dispatchers.IO + NonCancellable) {
+                runCatching {
+                    val summary = candidate.commit()
+                    runCatching { refreshOfflineBundleState() }.getOrElse { summary to "读取离线语音状态失败" }
+                }
+            }
+            result.onSuccess { (summary, issue) ->
+                offlineBundleSummary = summary
+                offlineBundleIssue = issue
+                offlineBundleChecked = true
+                if (view != null) refreshEngines()
+                context?.toastOnUi(if (issue == null) "离线语音包已导入" else "已导入，但暂不可朗读")
+            }.onFailure {
+                context?.toastOnUi("导入失败：${it.localizedMessage ?: it.javaClass.simpleName}")
+            }
+        }
+    }
+
+    private fun showOfflineBundleDetails(summary: MicrosoftTtsBundleSummary) {
+        modalDialog?.dismiss()
+        val dialog = ComponentDialog(requireContext())
+        val voices = summary.voices.take(6).joinToString("、") { it.replace('\n', ' ').take(60) }
+        val message = "已导入发音人（${summary.voices.size}）：$voices" +
+            (if (summary.voices.size > 6) " 等" else "") +
+            "\n${offlineUnavailableReason() ?: "整合包暂不可朗读。"}"
+        dialog.setContentView(ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    TtsInformationDialogContent("微软离线语音", message, dialog::dismiss)
+                }
+            }
+        })
+        dialog.setOnDismissListener { if (modalDialog === dialog) modalDialog = null }
+        modalDialog = dialog
+        dialog.show()
+        dialog.applyNgWindow()
+    }
+
+    private fun confirmRemoveOfflineBundle() {
+        if (Build.VERSION.SDK_INT < 26) return
+        modalDialog?.dismiss()
+        val dialog = ComponentDialog(requireContext())
+        dialog.setContentView(ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                NgAppTheme(updateSystemBars = false) {
+                    TtsConfirmDialogContent(
+                        title = getString(R.string.delete),
+                        message = "删除微软离线语音及其已导入的声音？",
+                        onCancel = { dialog.dismiss(); applyEngineSnapshot(engineSettingsSnapshot) },
+                        onConfirm = {
+                            dialog.dismiss()
+                            lifecycleScope.launch {
+                                val result = withContext(Dispatchers.IO + NonCancellable) {
+                                    runCatching {
+                                        val cleaned = MicrosoftTtsBundleManager.remove()
+                                        TtsEngineStore.deleteEngine(OFFLINE_BUNDLE_ID)
+                                        cleaned
+                                    }
+                                }
+                                result.onSuccess { cleaned ->
+                                    offlineBundleSummary = null
+                                    offlineBundleIssue = null
+                                    if (view != null) {
+                                        applyEngineSnapshot(engineSettingsSnapshot.filterNot { it.id == OFFLINE_BUNDLE_ID })
+                                        refreshEngines()
+                                    }
+                                    context?.toastOnUi(if (cleaned) "已删除离线语音" else "已删除离线语音，残留文件将在下次清理")
+                                }.onFailure {
+                                    if (view != null) applyEngineSnapshot(engineSettingsSnapshot)
+                                    context?.toastOnUi("删除失败：${it.localizedMessage ?: it.javaClass.simpleName}")
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+        })
+        dialog.setOnDismissListener {
+            if (modalDialog === dialog) modalDialog = null
+            if (view != null) applyEngineSnapshot(engineSettingsSnapshot)
+        }
+        modalDialog = dialog
+        dialog.show()
+        dialog.applyNgWindow()
     }
 
     private fun importExternalTtsEngineIfRequested() {
@@ -836,8 +1112,11 @@ class TtsEngineConfigFragment : BaseFragment(0),
 
     private fun navigateToRoute(route: TtsEngineConfigRoute) {
         screenRoute = route
-        setSharedTitleBarVisible(route.showsSharedTitleBar)
+        setSharedTitleBarVisible(route.showsSharedTitleBar && !usesFloatingSettingsTitleBar())
+        (activity as? ConfigActivity)?.refreshTitleBarChrome(this)
     }
+
+    internal fun usesFloatingSettingsTitleBar(): Boolean = screenRoute == TtsEngineConfigRoute.SCRIPT_FORM
 
     private fun setSharedTitleBarVisible(visible: Boolean) {
         activity?.findViewById<TitleBar>(R.id.title_bar)?.isVisible = visible
@@ -1284,7 +1563,7 @@ class TtsEngineConfigFragment : BaseFragment(0),
 
     private fun showVoiceParamsDialog(voice: TtsVoice) {
         val engine = currentDisplayedEngine()
-            ?.takeIf(TtsEngineSetting::isScriptEngine)
+            ?.takeIf(TtsEngineSetting::usesGeneratedAudio)
             ?: return
         modalDialog?.dismiss()
         modalDialog = showTtsVoiceParamsDialog(
@@ -1597,7 +1876,8 @@ class TtsEngineConfigFragment : BaseFragment(0),
             )
             return
         }
-        val engine = engineFromForm(currentEngine).takeIf { it.isScriptEngine } ?: return
+        val engine = if (currentEngine.type == TtsEngineType.OFFLINE) currentEngine
+        else engineFromForm(currentEngine).takeIf { it.isScriptEngine } ?: return
         val voices = engine.effectiveVoices()
         val selectedVoice = voice ?: voices.firstOrNull { it.id == engine.activeVoiceId }
             ?: voices.firstOrNull()
@@ -1741,7 +2021,7 @@ class TtsEngineConfigFragment : BaseFragment(0),
 
     private fun updateVoiceMessage(engine: TtsEngineSetting) {
         val message = when {
-            engine.type != TtsEngineType.SCRIPT -> "系统 TTS 暂不支持发音人列表"
+            engine.type == TtsEngineType.SYSTEM -> "系统 TTS 暂不支持发音人列表"
             engine.effectiveVoices().isEmpty() -> getString(R.string.tts_voice_not_loaded)
             else -> null
         }

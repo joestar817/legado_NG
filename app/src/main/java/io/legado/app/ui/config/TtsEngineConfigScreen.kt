@@ -25,6 +25,7 @@ internal enum class TtsEngineConfigRoute {
     SCRIPT_FORM,
     SCRIPT_SOURCE,
     SCRIPT_VOICES,
+    OFFLINE_VOICES,
     SYSTEM_DETAIL;
 
     val showsSharedTitleBar: Boolean
@@ -41,6 +42,7 @@ internal enum class TtsEngineConfigRoute {
         SCRIPT_SOURCE -> SCRIPT_FORM
         SCRIPT_FORM,
         SCRIPT_VOICES,
+        OFFLINE_VOICES,
         SYSTEM_DETAIL -> ENGINE_LIST
     }
 }
@@ -121,7 +123,7 @@ private fun TtsEngineDetailContent(
             .fillMaxSize()
             .padding(horizontal = 16.dp)
             .then(
-                if (route == TtsEngineConfigRoute.SCRIPT_VOICES) {
+                if (route == TtsEngineConfigRoute.SCRIPT_VOICES || route == TtsEngineConfigRoute.OFFLINE_VOICES) {
                     Modifier
                 } else {
                     Modifier.padding(top = 16.dp)
@@ -141,6 +143,7 @@ private fun TtsEngineDetailContent(
             )
 
             TtsEngineConfigRoute.SCRIPT_VOICES,
+            TtsEngineConfigRoute.OFFLINE_VOICES,
             TtsEngineConfigRoute.SYSTEM_DETAIL -> TtsEngineVoicesRoute(
                 systemEngine = route == TtsEngineConfigRoute.SYSTEM_DETAIL,
                 refreshing = voiceRefreshing,

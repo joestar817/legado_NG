@@ -3,6 +3,7 @@ package io.legado.app.ui.config
 import android.content.Context
 import android.net.Uri
 import android.os.Handler
+import android.os.Build
 import android.os.Looper
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
@@ -21,6 +22,7 @@ import io.legado.app.help.tts.TtsPlayerFactory
 import io.legado.app.help.tts.TtsScriptEngineClient
 import io.legado.app.help.tts.TtsSpeedPolicy
 import io.legado.app.help.tts.TtsVoice
+import io.legado.app.help.tts.packages.MicrosoftOfflineClient
 import io.legado.app.help.tts.previewText
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.CancellationException
@@ -134,7 +136,7 @@ class TtsVoicePreviewController(
         styleId: String?,
         key: String
     ) {
-        val scriptEngine = engine.takeIf { it.type == TtsEngineType.SCRIPT }
+        val scriptEngine = engine.takeIf { it.usesGeneratedAudio }
             ?: run {
                 finishPreview(key)
                 context.toastOnUi("当前发音人不支持试听")
@@ -147,30 +149,45 @@ class TtsVoicePreviewController(
         }
         val token = ++requestToken
         previewJob = lifecycleScope.launch {
+            var pendingFile: File? = null
             try {
                 val file = withContext(Dispatchers.IO) {
-                    val response = TtsScriptEngineClient.getSynthesisResponse(
-                        engine = scriptEngine,
-                        text = TtsScriptEngineClient.sampleText(scriptEngine, voice),
-                        voiceId = voice.id.takeUnless { systemDefault },
-                        styleId = styleId
-                    )
-                    File(
+                    val target = File(
                         context.cacheDir,
                         "voice_preview_${scriptEngine.id}_${System.currentTimeMillis()}.audio"
-                    ).apply {
-                        response.use {
-                            outputStream().use { out ->
-                                it.body.byteStream().use { input -> input.copyTo(out) }
+                    )
+                    pendingFile = target
+                    try {
+                        if (scriptEngine.type == TtsEngineType.OFFLINE) {
+                            check(Build.VERSION.SDK_INT >= 26) { "微软离线语音需要 Android 8.0 或更高版本" }
+                            MicrosoftOfflineClient.synthesize(
+                                context, scriptEngine.offlineRevision.orEmpty(), voice.id,
+                                TtsScriptEngineClient.sampleText(scriptEngine, voice)
+                            ).use { input -> target.outputStream().use { input.copyTo(it) } }
+                        } else {
+                            val response = TtsScriptEngineClient.getSynthesisResponse(
+                                engine = scriptEngine,
+                                text = TtsScriptEngineClient.sampleText(scriptEngine, voice),
+                                voiceId = voice.id.takeUnless { systemDefault },
+                                styleId = styleId
+                            )
+                            response.use {
+                                target.outputStream().use { out ->
+                                    it.body.byteStream().use { input -> input.copyTo(out) }
+                                }
                             }
                         }
+                        target
+                    } catch (error: Throwable) {
+                        target.delete()
+                        throw error
                     }
                 }
                 if (token != requestToken || activeKey != key) {
-                    file.delete()
                     return@launch
                 }
                 previewFile = file
+                pendingFile = null
                 startPlayer(
                     file = file,
                     key = key,
@@ -187,6 +204,8 @@ class TtsVoicePreviewController(
                         "试听失败：${error.localizedMessage ?: error.javaClass.simpleName}"
                     )
                 }
+            } finally {
+                pendingFile?.delete()
             }
         }
     }

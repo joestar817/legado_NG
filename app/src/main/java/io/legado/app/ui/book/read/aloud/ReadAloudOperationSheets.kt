@@ -188,7 +188,7 @@ internal class ReadAloudModeDialog : ReadAloudComposeBottomSheet() {
         viewLifecycleOwner.lifecycleScope.launch {
             val engines = withContext(IO) {
                 TtsEngineStore.engines().filter {
-                    it.enabled && it.type == TtsEngineType.SCRIPT
+                    it.isSelectable && it.usesGeneratedAudio
                 }
             }
             if (revision != engineSnapshotRevision) return@launch
@@ -208,7 +208,7 @@ internal class ReadAloudModeDialog : ReadAloudComposeBottomSheet() {
             try {
                 val engines = withContext(IO) {
                     TtsEngineStore.reloadEngines().filter {
-                        it.enabled && it.type == TtsEngineType.SCRIPT
+                        it.isSelectable && it.usesGeneratedAudio
                     }
                 }
                 if (revision != engineSnapshotRevision) return@launch
@@ -647,7 +647,13 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
         viewLifecycleOwner.lifecycleScope.launch {
             val engineName = withContext(IO) {
                 runCatching {
-                    TtsEngineStore.activeEngine().takeIf { it.enabled }?.name ?: "未选择"
+                    TtsEngineStore.activeEngine().let { engine ->
+                        when {
+                            !engine.enabled -> "未选择"
+                            !engine.isSelectable -> "${engine.name}（未就绪）"
+                            else -> engine.name
+                        }
+                    }
                 }.getOrDefault("未选择")
             }
             state = state?.copy(engineName = engineName)
@@ -1294,12 +1300,12 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
             try {
             if (forceRefresh) {
                 val result = withContext(IO) {
-                    refreshTtsVoiceCatalogs(TtsEngineStore.engines().filter { it.enabled })
+                    refreshTtsVoiceCatalogs(TtsEngineStore.engines().filter { it.isSelectable })
                 }
                 activity?.toastOnUi(result.feedback())
             }
             val snapshot = withContext(IO) {
-                var engines = TtsEngineStore.engines().filter { it.enabled }
+                var engines = TtsEngineStore.engines().filter { it.isSelectable }
                 val activeEngineId = runCatching {
                     TtsEngineStore.activeEngineId()
                 }.getOrDefault("")
@@ -1316,7 +1322,7 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
                                 engineId = engine.id,
                                 restartReadAloud = false,
                             )
-                            engines = TtsEngineStore.engines().filter { it.enabled }
+                            engines = TtsEngineStore.engines().filter { it.isSelectable }
                         } catch (error: CancellationException) {
                             throw error
                         } catch (error: Throwable) {
@@ -1397,7 +1403,7 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
     }
 
     private fun editVoiceParams(option: TtsVoiceOption) {
-        if (option.systemDefault || !option.engine.isScriptEngine) return
+        if (option.systemDefault || !option.engine.usesGeneratedAudio) return
         val player = activity as? ReadAloudPlayerActivity ?: return
         voiceParamsDialog?.dismiss()
         voiceParamsDialog = showTtsVoiceParamsDialog(
@@ -1419,7 +1425,7 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
         val wasRun = BaseReadAloudService.isRun
         val oldEngineType = when {
             !wasRun -> null
-            ReadAloud.httpTtsEngineV2 != null -> TtsEngineType.SCRIPT
+            ReadAloud.httpTtsEngineV2 != null -> ReadAloud.httpTtsEngineV2?.type
             else -> TtsEngineType.SYSTEM
         }
         val shouldPlay = player.wantsPlayback()

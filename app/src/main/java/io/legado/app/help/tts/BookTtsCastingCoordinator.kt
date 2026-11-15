@@ -1431,7 +1431,7 @@ object BookTtsCastingCoordinator {
 
     private fun currentMultiRoleEngine(): TtsEngineSetting? {
         return TtsEngineStore.engine(io.legado.app.help.config.AppConfig.multiRoleTtsEngineId)
-            ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+            ?.takeIf { it.isSelectable && it.usesGeneratedAudio }
     }
 
     private fun currentCastingSnapshot(workKey: String): CastingSnapshot? {

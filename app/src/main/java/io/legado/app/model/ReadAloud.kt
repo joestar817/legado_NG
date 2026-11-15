@@ -51,7 +51,7 @@ object ReadAloud {
                     httpTtsEngineV2 = null
                     return TTSReadAloudService::class.java
                 }
-                TtsEngineType.SCRIPT -> {
+                TtsEngineType.SCRIPT, TtsEngineType.OFFLINE -> {
                     httpTtsEngineV2 = engineV2
                     return HttpReadAloudService::class.java
                 }
@@ -62,8 +62,7 @@ object ReadAloud {
     }
 
     fun updatePreparedTtsEngine(engine: TtsEngineSetting) {
-        if (preparedActiveEngine?.id != engine.id) return
-        preparedActiveEngine = engine
+        if (preparedActiveEngine?.id == engine.id) preparedActiveEngine = engine
         if (httpTtsEngineV2?.id == engine.id) {
             httpTtsEngineV2 = engine
         }
@@ -93,6 +92,12 @@ object ReadAloud {
         engineVerified: Boolean = false,
         contentPosition: Int? = null,
     ) {
+        if (play) {
+            httpTtsEngineV2?.runtimeUnavailableReason?.let { reason ->
+                context.toastOnUi(reason)
+                return
+            }
+        }
         if (!engineVerified && !TtsEngineStore.hasEnabledEngine()) {
             context.toastOnUi("未启用朗读引擎")
             return

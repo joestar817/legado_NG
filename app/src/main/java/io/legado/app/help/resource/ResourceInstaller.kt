@@ -21,6 +21,8 @@ import io.legado.app.help.config.readPresetConfirmationValid
 import io.legado.app.help.config.customizationFingerprint
 import io.legado.app.help.font.FontLibraryStore
 import io.legado.app.help.tts.TtsEngineStore
+import io.legado.app.help.tts.TtsEngineSetting
+import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.utils.GSON
 import io.legado.app.utils.postEvent
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +34,7 @@ import java.util.UUID
 internal class ResourceConflict(
     message: String,
     val themeConflict: ThemeResourceConflict? = null,
+    val ttsConflict: TtsResourceConflict? = null,
     val readPresetConflict: ReadPresetResourceConflict? = null,
     val widgetSkinConflict: HomeWidgetSkinRecord? = null,
 ) : IllegalStateException(message)
@@ -51,6 +54,32 @@ internal fun requireWidgetSkinReplacement(
     }
 }
 
+internal fun requireTtsResourceReplacement(
+    existing: TtsEngineSetting?,
+    incoming: TtsEngineSetting,
+    old: ResourceInstallation?,
+    mode: ResourceInstallMode,
+    confirmed: TtsResourceConflict?,
+) {
+    if (existing == null) {
+        if (confirmed != null) throw ResourceConflict("本地 TTS 已变化，请重新检查。")
+        return
+    }
+    if (existing.type != TtsEngineType.SCRIPT) {
+        throw ResourceConflict("本地系统引擎不能替换。")
+    }
+    val conflict = TtsResourceConflict(
+        existing.id,
+        ResourceProtocol.hash(existing.script.toByteArray(Charsets.UTF_8)),
+        ResourceProtocol.hash(incoming.script.toByteArray(Charsets.UTF_8)),
+    )
+    if (confirmed == null && (existing.script == incoming.script ||
+            old != null && conflict.localScriptHash == old.baseline)) return
+    if (mode != ResourceInstallMode.REPLACE || confirmed != conflict) {
+        throw ResourceConflict("本地已有同一朗读引擎。替换脚本并关联资源库后，个人配置会保留。", ttsConflict = conflict)
+    }
+}
+
 internal class PreparedResource(
     val target: String,
     val baseline: String,
@@ -63,9 +92,20 @@ internal object ResourceInstaller {
     fun fingerprint(record: ResourceInstallation): String? = when (record.entry.category.type) {
         "font", "background", "pet", HOME_WIDGET_SKIN_TYPE -> fileFor(record)?.takeIf { it.isFile }?.let(ResourceFiles::hash)
         "read_preset" -> ReadBookConfig.resourcePresetFingerprint(record.target)
-        "tts" -> TtsEngineStore.engine(record.target)?.let { ResourceProtocol.hash(it.script.toByteArray()) }
+        "tts" -> if (record.entry.isOfflineTts) OfflineTtsResourceInstaller.fingerprint() else
+            TtsEngineStore.engine(record.target)?.let { ResourceProtocol.hash(it.script.toByteArray()) }
         "theme", "listening_effect" -> NgEffectPackageLibrary.current(appCtx, packageKind(record.entry)).savedThemes.firstOrNull { it.id == record.target }?.let(::themeHash)
         else -> null
+    }
+
+    fun completeRecovery(record: ResourceInstallation) {
+        if (record.entry.category.type != "tts") return
+        if (record.entry.isOfflineTts) {
+            OfflineTtsResourceInstaller.refreshEngine()
+            return
+        }
+        val engine = TtsEngineStore.engine(record.target) ?: error("待恢复的朗读引擎不存在")
+        if (!engine.resourceManaged) TtsEngineStore.saveResourceScriptEngine(engine)
     }
 
     fun localState(record: ResourceInstallation): ResourceLocalState = when (fingerprint(record)) {
@@ -102,10 +142,11 @@ internal object ResourceInstaller {
         readPresetReplacement: ReadPresetResourceCandidate? = null,
         confirmedWidgetSkinReplacement: HomeWidgetSkinRecord? = null,
         expectedWidgetSkin: HomeWidgetSkinRecord? = null,
+        confirmedTtsConflict: TtsResourceConflict? = null,
     ): PreparedResource {
         val localWidgetSkin = entry.category.type == HOME_WIDGET_SKIN_TYPE &&
             HomeWidgetSkinStore.current(entry.item.id)?.fromResource == false
-        if (!localWidgetSkin && entry.category.type !in setOf("pet", "read_preset") && old != null &&
+        if (!localWidgetSkin && entry.category.type !in setOf("pet", "read_preset", "tts") && old != null &&
             mode == ResourceInstallMode.NORMAL && localState(old) == ResourceLocalState.MODIFIED) {
             throw ResourceConflict("本地资源已修改，选择保留本地、替换或安装副本。")
         }
@@ -114,7 +155,8 @@ internal object ResourceInstaller {
             "background" -> prepareFile(entry, payload, old, mode)
             "read_preset" -> prepareReadPreset(entry, payload, old, mode, confirmedReadPresetConflict, readPresetReplacement)
             HOME_WIDGET_SKIN_TYPE -> prepareHomeWidgetSkin(entry, payload, mode, confirmedWidgetSkinReplacement, expectedWidgetSkin)
-            "tts" -> prepareTts(entry, payload, old, mode)
+            "tts" -> if (entry.isOfflineTts) OfflineTtsResourceInstaller.prepare(entry, payload, old, mode, confirmedTtsConflict)
+                else prepareTts(entry, payload, old, mode, confirmedTtsConflict)
             "theme" -> prepareTheme(entry, payload, old, mode, confirmedThemeConflict, otherThemeTargets)
             "pet" -> {
                 require(mode != ResourceInstallMode.COPY) { "宠物插件不支持安装副本" }
@@ -246,15 +288,20 @@ internal object ResourceInstaller {
         })
     }
 
-    private fun prepareTts(entry: ResourceEntry, payload: File, old: ResourceInstallation?, mode: ResourceInstallMode): PreparedResource {
+    private fun prepareTts(
+        entry: ResourceEntry,
+        payload: File,
+        old: ResourceInstallation?,
+        mode: ResourceInstallMode,
+        confirmed: TtsResourceConflict?,
+    ): PreparedResource {
+        require(mode != ResourceInstallMode.COPY) { "朗读脚本不支持安装副本" }
         val script = payload.readText()
         val parsed = TtsEngineStore.scriptEngineFromScript(script) ?: error("TTS 脚本元数据无效")
         require(parsed.id == entry.item.payload.engineId && !parsed.builtIn) { "TTS 引擎身份不一致" }
-        val targetId = if (mode == ResourceInstallMode.COPY) "${parsed.id}_${UUID.randomUUID()}"
-            else old?.target ?: parsed.id
+        val targetId = old?.target ?: parsed.id
         val existing = TtsEngineStore.engine(targetId)
-        if (old == null && existing != null) throw ResourceConflict("本地已有此 TTS 引擎，请安装副本；不会认领或覆盖手工导入的引擎。")
-        require(existing?.builtIn != true) { "不能覆盖内置引擎" }
+        requireTtsResourceReplacement(existing, parsed, old, mode, confirmed)
         val installedScript = if (targetId == parsed.id) script else script.replace(
             Regex("(?m)^(\\s*//\\s*@uuid\\s+).*$"),
         ) { it.groupValues[1] + targetId }
@@ -263,7 +310,13 @@ internal object ResourceInstaller {
         return PreparedResource(targetId, baseline, commit = {
             synchronized(TtsEngineStore) {
                 val latest = TtsEngineStore.engine(targetId)
-                check(latest?.script == existing?.script && latest?.builtIn != true) { "本地 TTS 已变化，请重新检查" }
+                if (latest?.script != existing?.script || latest?.type != existing?.type) {
+                    val currentConflict = latest?.takeIf { it.type == TtsEngineType.SCRIPT }?.let {
+                        TtsResourceConflict(it.id, ResourceProtocol.hash(it.script.toByteArray(Charsets.UTF_8)),
+                            ResourceProtocol.hash(parsed.script.toByteArray(Charsets.UTF_8)))
+                    }
+                    throw ResourceConflict("本地 TTS 已变化，请重新确认。", ttsConflict = currentConflict)
+                }
                 // 只替换发布内容；所有个人参数、运行表和音色绑定继续归现有 Store。
                 val next = if (latest == null) replacement else latest.copy(
                     script = installedScript,
@@ -271,7 +324,7 @@ internal object ResourceInstaller {
                     capabilities = replacement.capabilities,
                     sampleText = replacement.sampleText,
                 )
-                TtsEngineStore.saveEngine(next, restartReadAloud = false)
+                TtsEngineStore.saveResourceScriptEngine(next)
             }
         })
     }

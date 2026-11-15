@@ -51,6 +51,8 @@ import io.legado.app.help.tts.TtsPlayerFactory
 import io.legado.app.help.tts.TtsSynthesisContext
 import io.legado.app.help.tts.TtsSpeedPolicy
 import io.legado.app.help.tts.TtsScriptEngineClient
+import io.legado.app.help.tts.TtsEngineType
+import io.legado.app.help.tts.packages.MicrosoftOfflineClient
 import io.legado.app.help.tts.TtsVoicePlaybackParams
 import io.legado.app.help.tts.isReadAloudSynthesisTextSilent
 import io.legado.app.help.tts.prepareReadAloudAudioTasks
@@ -101,6 +103,7 @@ import kotlinx.coroutines.withContext
 import org.htmlunit.corejs.javascript.WrappedException
 import java.io.File
 import java.io.InputStream
+import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
@@ -1284,18 +1287,27 @@ class HttpReadAloudService : BaseReadAloudService(),
         route: ReadAloudTtsRouter.Route?,
         synthesisContext: TtsSynthesisContext?
     ): InputStream {
+        val routedEngine = route?.engine ?: engineV2
         while (true) {
             try {
-                val routedEngine = route?.engine ?: engineV2
-                val stream = TtsScriptEngineClient.getSynthesisStream(
-                    engine = routedEngine,
-                    text = speakText,
-                    voiceId = route?.voiceId ?: routedEngine.activeVoiceId,
-                    styleId = route?.styleId,
-                    speed = TtsSpeedPolicy.synthesisSpeed(routedEngine),
-                    synthesisContext = synthesisContext,
-                    coroutineContext = currentCoroutineContext()
-                )
+                val stream = if (routedEngine.type == TtsEngineType.OFFLINE) {
+                    check(android.os.Build.VERSION.SDK_INT >= 26) { "微软离线语音需要 Android 8.0 或更高版本" }
+                    routedEngine.runtimeUnavailableReason?.let { throw IOException(it) }
+                    MicrosoftOfflineClient.synthesize(
+                        this, routedEngine.offlineRevision.orEmpty(),
+                        route?.voiceId ?: routedEngine.activeVoiceId.orEmpty(), speakText
+                    )
+                } else {
+                    TtsScriptEngineClient.getSynthesisStream(
+                        engine = routedEngine,
+                        text = speakText,
+                        voiceId = route?.voiceId ?: routedEngine.activeVoiceId,
+                        styleId = route?.styleId,
+                        speed = TtsSpeedPolicy.synthesisSpeed(routedEngine),
+                        synthesisContext = synthesisContext,
+                        coroutineContext = currentCoroutineContext()
+                    )
+                }
                 currentCoroutineContext().ensureActive()
                 downloadErrorNo.set(0)
                 return stream
@@ -1318,7 +1330,11 @@ class HttpReadAloudService : BaseReadAloudService(),
 
                     else -> {
                         val errorCount = downloadErrorNo.incrementAndGet()
-                        val msg = "tts下载错误\n${e.localizedMessage}"
+                        val msg = if (routedEngine.type == TtsEngineType.OFFLINE) {
+                            "离线语音合成错误\n${e.localizedMessage}"
+                        } else {
+                            "tts下载错误\n${e.localizedMessage}"
+                        }
                         AppLog.put(msg, e)
                         e.printOnDebug()
                         if (errorCount > 5) {
@@ -1615,7 +1631,10 @@ class HttpReadAloudService : BaseReadAloudService(),
                 MD5Utils.md5Encode16(
                     listOf(
                         scenarioMode,
-                        TtsScriptEngineClient.audioCacheKey(
+                        if (engine.type == TtsEngineType.OFFLINE) listOf(
+                            engine.id, engine.offlineRevision.orEmpty(),
+                            route?.voiceId ?: engine.activeVoiceId.orEmpty(), content
+                        ).joinToString("-|-") else TtsScriptEngineClient.audioCacheKey(
                             engine = engine,
                             text = content,
                             voiceId = route?.voiceId ?: engine.activeVoiceId,

@@ -17,6 +17,7 @@ lyricViewx = "1.3.2"
 soraEditor = "0.24.4"
 glide = "5.0.5"
 gson = "2.13.2"
+eddsa = "0.3.0"
 jsonPath = "2.10.0"
 jsoupxpath = "2.5.3"
 coroutines = "1.10.2"
@@ -201,6 +202,7 @@ desugar = { group = "com.android.tools", name = "desugar_jdk_libs_nio", version.
 
 flexbox = { module = "com.google.android.flexbox:flexbox", version.ref = "flexbox" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+eddsa = { module = "net.i2p.crypto:eddsa", version.ref = "eddsa" }
 json-path = { module = "com.jayway.jsonpath:json-path", version.ref = "jsonPath" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 jsoupxpath = { module = "cn.wanghaomiao:JsoupXpath", version.ref = "jsoupxpath" }

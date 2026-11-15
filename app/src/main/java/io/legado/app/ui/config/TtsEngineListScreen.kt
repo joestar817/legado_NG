@@ -58,7 +58,8 @@ data class TtsEngineListItemUiModel(
     val reorderable: Boolean,
     val deletable: Boolean,
     @param:DrawableRes val iconRes: Int = R.drawable.ic_ai_capability_tts,
-    val actionContentDescription: String? = null
+    val actionContentDescription: String? = null,
+    val statusText: String? = null,
 )
 
 @Immutable
@@ -312,7 +313,7 @@ internal fun TtsEngineListItemUiModel.statusTags(
 ): List<NgStatusTagSpec> {
     return listOf(
         NgStatusTagSpec(
-            text = if (enabled) enabledText else disabledText,
+            text = statusText ?: if (enabled) enabledText else disabledText,
             variant = if (enabled) {
                 NgStatusTagVariant.SUCCESS
             } else {

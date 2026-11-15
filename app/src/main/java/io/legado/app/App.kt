@@ -53,6 +53,7 @@ import io.legado.app.help.rhino.NativeBaseSource
 import io.legado.app.help.rhino.NativeBook
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.storage.Backup
+import io.legado.app.help.tts.packages.MicrosoftOfflineProcess
 import io.legado.app.model.BookCover
 import io.legado.app.quickjs.QuickJsSandboxProcess
 import io.legado.app.service.McpService
@@ -77,7 +78,7 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        if (QuickJsSandboxProcess.isCurrentProcess()) return
+        if (QuickJsSandboxProcess.isCurrentProcess() || MicrosoftOfflineProcess.isCurrentProcess()) return
         CrashHandler(this)
         if (isDebuggable) {
             ThreadUtils.setThreadAssertsDisabledForTesting(true)
@@ -139,7 +140,7 @@ class App : Application() {
     }
 
     override fun attachBaseContext(base: Context) {
-        if (QuickJsSandboxProcess.isCurrentProcess()) {
+        if (QuickJsSandboxProcess.isCurrentProcess() || MicrosoftOfflineProcess.isCurrentProcess()) {
             super.attachBaseContext(base)
         } else {
             super.attachBaseContext(AppContextWrapper.wrap(base))
@@ -148,7 +149,7 @@ class App : Application() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (QuickJsSandboxProcess.isCurrentProcess()) return
+        if (QuickJsSandboxProcess.isCurrentProcess() || MicrosoftOfflineProcess.isCurrentProcess()) return
         val diff = newConfig.diff(oldConfig)
         if ((diff and ActivityInfo.CONFIG_UI_MODE) != 0) {
             onSystemUiModeChanged(this, newConfig.isNightMode)

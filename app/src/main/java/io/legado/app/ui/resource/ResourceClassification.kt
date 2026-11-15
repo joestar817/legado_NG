@@ -38,7 +38,7 @@ internal fun ResourceCategory.resourceTypeTitle(): String = when (type) {
     "read_preset" -> "阅读预设"
     "theme" -> "主题包"
     HOME_WIDGET_SKIN_TYPE -> "组件皮肤"
-    "tts" -> "TTS 脚本"
+    "tts" -> "朗读引擎"
     "pet" -> "宠物插件"
     else -> name
 }

@@ -58,7 +58,6 @@ class TtsEngineImportResolverTest {
             TtsEngineImportResolver.resolve(
                 imported = listOf(imported),
                 existing = listOf(existing),
-                defaultIds = emptySet(),
                 action = TtsEngineImportConflictAction.ASK
             )
         }.exceptionOrNull()
@@ -110,7 +109,6 @@ class TtsEngineImportResolverTest {
         val copy = TtsEngineImportResolver.resolve(
             imported = listOf(imported),
             existing = listOf(existing),
-            defaultIds = emptySet(),
             action = TtsEngineImportConflictAction.KEEP_BOTH,
             copyIdSeed = 42L
         ).single()
@@ -132,7 +130,6 @@ class TtsEngineImportResolverTest {
             TtsEngineImportResolver.resolve(
                 imported = listOf(imported),
                 existing = listOf(existing),
-                defaultIds = emptySet(),
                 action = TtsEngineImportConflictAction.OVERWRITE
             )
         }.exceptionOrNull()
@@ -141,18 +138,19 @@ class TtsEngineImportResolverTest {
     }
 
     @Test
-    fun defaultScriptKeepsExistingSilentUpdateBehavior() {
+    fun defaultScriptRequiresTheSameOverwriteConfirmation() {
         val existing = engine(id = "default_script", name = "旧默认脚本", version = "1.0.0")
         val imported = engine(id = "default_script", name = "新默认脚本", version = "1.1.0")
 
-        val resolved = TtsEngineImportResolver.resolve(
-            imported = listOf(imported),
-            existing = listOf(existing),
-            defaultIds = setOf("default_script"),
-            action = TtsEngineImportConflictAction.ASK
-        )
+        val error = runCatching {
+            TtsEngineImportResolver.resolve(
+                imported = listOf(imported),
+                existing = listOf(existing),
+                action = TtsEngineImportConflictAction.ASK
+            )
+        }.exceptionOrNull()
 
-        assertEquals(listOf(imported), resolved)
+        assertTrue(error is TtsEngineImportConflictException)
     }
 
     private fun engine(
