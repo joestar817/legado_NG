@@ -172,6 +172,8 @@ internal data class NgManagedTheme(
     @SerializedName("publication") val publication: NgThemePublication? = null,
     @SerializedName("drawerProfile")
     val drawerProfile: NgThemeDrawerProfile? = null,
+    @SerializedName("centerCropBackground")
+    val centerCropBackground: Boolean? = null,
 ) {
     fun normalized(): NgManagedTheme = copy(
         schemaVersion = NG_MANAGED_THEME_SCHEMA_VERSION,
@@ -293,6 +295,7 @@ internal object NgThemeLibraryStore {
             publication = active?.publication,
             ownedCoverAlbumIds = active?.ownedCoverAlbumIds,
             drawerProfile = NgDrawerProfileStore.snapshot(context),
+            centerCropBackground = active?.centerCropBackground,
             coverProfile = NgThemeCoverProfile(
                 applyAlbumSelection = true,
                 albumId = NgCoverAlbumStore.current(context).selectedAlbumId,

@@ -124,6 +124,7 @@ internal data class ResourceInstallLedger(
 internal const val HOME_WIDGET_SKIN_TYPE = "widget_skin"
 internal const val HOME_WIDGET_SKIN_CAPABILITY = "home.widget.skin.1"
 internal const val HOME_WIDGET_BLUE_FISH_CAPABILITY = "home.widget.skin.blue_fish.1"
+internal const val THEME_CENTER_CROP_CAPABILITY = "theme.background.center_crop.1"
 
 internal enum class ResourceLocalState { PRESENT, MODIFIED, MISSING }
 internal enum class ResourceInstallMode { NORMAL, REPLACE, COPY }
@@ -407,7 +408,8 @@ internal object ResourceProtocol {
             } else setOf(HOME_WIDGET_SKIN_CAPABILITY)
             if (capabilities.toSet() != expected) return "组件皮肤接口不兼容"
         } else if (entry.category.type == "theme") {
-            if (capabilities.any { it != "theme.effect.1" }) return "特效主题接口不兼容"
+            if (capabilities.any { it != "theme.effect.1" && it != THEME_CENTER_CROP_CAPABILITY })
+                return "主题接口不兼容"
         } else if (capabilities.isNotEmpty()) return "资源要求当前未声明支持的能力"
         return null
     }

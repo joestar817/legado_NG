@@ -372,6 +372,7 @@ internal object NgThemeArchive {
             barProfile = old.barProfile, coverProfile = old.coverProfile, ownedCoverAlbumIds = old.ownedCoverAlbumIds,
             lightBackground = old.lightBackground.copy(path = copyImage(old.lightBackground.path, "light")),
             darkBackground = old.darkBackground.copy(path = copyImage(old.darkBackground.path, "dark")),
+            centerCropBackground = old.centerCropBackground,
             drawerProfile = drawer, effectValues = old.effectValues,
         )
     }

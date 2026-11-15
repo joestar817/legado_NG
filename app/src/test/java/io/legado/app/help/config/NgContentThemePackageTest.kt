@@ -63,6 +63,7 @@ class NgContentThemePackageTest {
                 val manifest = NgThemeArchive.inspect(archive)
                 assertFalse(manifest.theme.isBuiltIn)
                 assertNull(manifest.theme.effect)
+                assertNull(manifest.theme.centerCropBackground)
                 val root = File(temp, "installed")
                 NgThemeArchive.extract(archive, root)
                 val installed = NgThemePackageManager.materializeTheme(root, manifest, "local.test.$slug", manifest.theme.name)
@@ -102,7 +103,7 @@ class NgContentThemePackageTest {
 
     @Test
     fun `inspecting cancelling and installing an ordinary theme preserve the current appearance`() = runBlocking<Unit> {
-        val incoming = NgThemeTestFixtures.autumn
+        val incoming = NgThemeTestFixtures.autumn.copy(centerCropBackground = true)
         val selected = incoming.copy(id = "local.current")
         context.defaultSharedPreferences.edit().clear()
             .putString("ngManagedThemes.v1", GSON.toJson(listOf(selected)))
@@ -130,6 +131,7 @@ class NgContentThemePackageTest {
                 try {
                     val after = NgThemeLibraryStore.current(context)
                     assertEquals(incoming.id, installed.id)
+                    assertEquals(true, installed.centerCropBackground)
                     assertEquals(before.activeThemeId, after.activeThemeId)
                     assertEquals(before.savedThemes.toSet() + installed, after.savedThemes.toSet())
                     assertEquals(NgThemePresentationMode.STANDARD, NgThemeModeStore.current(context))

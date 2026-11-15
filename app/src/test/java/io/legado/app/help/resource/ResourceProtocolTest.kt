@@ -262,6 +262,20 @@ class ResourceProtocolTest {
         assertNotNull(ResourceProtocol.incompatibility(entry(item.copy(payload = item.payload.copy(size = ResourceProtocol.MAX_PAYLOAD_BYTES + 1))), 100))
     }
 
+    @Test fun centerCropThemeCapabilityDoesNotAcceptUnknownCapabilities() {
+        val themeCategory = ResourceCategory("themes", "主题包", "theme", "resources/themes/index.json", 1)
+        fun theme(vararg capabilities: String) = ResourceEntry(themeCategory, commit, item.copy(
+            id = "ng.theme.claude_and_bluefish",
+            payload = ResourcePayload("resources/themes/example/theme.zip", "zip", 32, "b".repeat(64)),
+            requirements = ResourceRequirements(capabilities = capabilities.toList()),
+        ))
+        assertNull(ResourceProtocol.incompatibility(theme(), Long.MAX_VALUE))
+        assertNull(ResourceProtocol.incompatibility(theme("theme.effect.1"), Long.MAX_VALUE))
+        assertNull(ResourceProtocol.incompatibility(theme(THEME_CENTER_CROP_CAPABILITY), Long.MAX_VALUE))
+        assertNull(ResourceProtocol.incompatibility(theme("theme.effect.1", THEME_CENTER_CROP_CAPABILITY), Long.MAX_VALUE))
+        assertNotNull(ResourceProtocol.incompatibility(theme(THEME_CENTER_CROP_CAPABILITY, "unknown"), Long.MAX_VALUE))
+    }
+
     @Test fun blueFishRequiresItsRendererCapabilityWithoutChangingExistingSkins() {
         val category = ResourceCategory("widget-skins", "组件皮肤", HOME_WIDGET_SKIN_TYPE,
             "resources/widget-skins/index.json", 1)
