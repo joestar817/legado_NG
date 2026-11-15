@@ -4,10 +4,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ResourceProgressiveStateTest {
-    private val category = ResourceCategory("fonts", "字体", "font", "resources/fonts/index.json", 1)
-    private val another = category.copy(id = "more-fonts", index = "resources/more-fonts/index.json")
-    private val item = ResourceItem(id = "font.example", name = "示例", author = "作者", versionCode = 1,
-        payload = ResourcePayload("resources/fonts/example/font.ttf", "ttf", 32, "b".repeat(64)))
+    private val category = ResourceCategory("themes", "主题包", "theme", "resources/themes/index.json", 1)
+    private val another = category.copy(id = "more-themes", index = "resources/more-themes/index.json")
+    private val item = ResourceItem(id = "theme.example", name = "示例", author = "作者", versionCode = 1,
+        payload = ResourcePayload("resources/themes/example/theme.zip", "zip", 32, "b".repeat(64)))
     private val entry = ResourceEntry(category, "a".repeat(40), item, "c".repeat(40))
     private val local = ResourceInstallation(entry = entry, target = "local", baseline = item.payload.sha256)
     private val snapshot = ResourceSnapshot(catalogCommit = entry.catalogCommit,

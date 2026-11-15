@@ -413,7 +413,10 @@ internal fun ResourceCenterScreen(
                             ResourceMessageRow(message, enabled = !state.loading, onRetry = ResourceRepository::refresh)
                         }
                     }
-                    ResourceDetail(displayed, state, action, onViewLatest = { detailJson = GSON.toJson(it) }, onUninstall = { uninstallPetId = it }, modifier = Modifier.weight(1f))
+                    ResourceDetail(displayed, state, action, onViewLatest = { detailJson = GSON.toJson(it) },
+                        onUninstall = { id ->
+                            uninstallPetId = id
+                        }, modifier = Modifier.weight(1f))
                 }
             } else {
                 ResourceCollectionTabs(
@@ -921,7 +924,9 @@ private fun ResourcePreview(
 @Composable
 private fun ResourceDetail(entry: ResourceEntry, state: ResourceCenterState, onAction: (ResourceEntry) -> Unit, onViewLatest: (ResourceEntry) -> Unit, onUninstall: (String) -> Unit, modifier: Modifier) {
     val incompatible = ResourceProtocol.incompatibility(entry, BuildConfig.VERSION_CODE.toLong())
-    val latest = state.snapshot?.entries?.firstOrNull { it.item.id == entry.item.id && it.item.versionCode > entry.item.versionCode }
+    val latest = state.snapshot?.entries?.firstOrNull {
+        it.item.id == entry.item.id && it.item.versionCode > entry.item.versionCode
+    }
     val isTheme = entry.category.type == "theme"
     Column(modifier.fillMaxWidth()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 24.dp)) {
@@ -939,7 +944,9 @@ private fun ResourceDetail(entry: ResourceEntry, state: ResourceCenterState, onA
                 }
                 Column(Modifier.weight(1f)) {
                     Text(entry.item.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(NgTheme.colors.onSurface))
-                    Text(entry.item.author, Modifier.padding(top = 6.dp), fontSize = 14.sp, color = Color(NgTheme.colors.onSurfaceVariant))
+                    if (entry.item.author.isNotBlank()) {
+                        Text(entry.item.author, Modifier.padding(top = 6.dp), fontSize = 14.sp, color = Color(NgTheme.colors.onSurfaceVariant))
+                    }
                 }
             }
             if (entry.item.description.isNotBlank()) Text(entry.item.description, Modifier.padding(vertical = 12.dp), fontSize = 14.sp, color = Color(NgTheme.colors.onSurfaceVariant))
