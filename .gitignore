@@ -97,3 +97,4 @@ __pycache__/
 /lib/legado-ng-adapter/src/test/**
 /lib/legado-ng-adapter/src/test/**/
 /lib/legado-ng-adapter/src/test/kotlin/io/legado/features/adapter/ExtensionChallengeSessionTest.kt
+/lib/video-preload/src/test/

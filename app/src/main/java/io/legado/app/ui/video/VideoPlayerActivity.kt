@@ -4,6 +4,8 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -109,6 +111,9 @@ class VideoPlayerActivity : VMBaseActivity<ComposeActivityBinding, VideoPlayerVi
     private var orientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var windowedCutoutMode: Int? = null
     private var immersiveWindowApplied = false
+    private var windowedDecorBackground: Drawable? = null
+    private var windowedContrastEnforcement: Pair<Boolean, Boolean>? = null
+    private var windowedNavigationBarDividerColor: Int? = null
     private var initIntroView = false
     private val introTextView by lazy {
         initIntroView = true
@@ -252,11 +257,22 @@ class VideoPlayerActivity : VMBaseActivity<ComposeActivityBinding, VideoPlayerVi
                 else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
     }
+    @Suppress("DEPRECATION")
     override fun setupSystemBar() {
         val windowed = presentation == VideoPresentation.WINDOW
         if (windowed && immersiveWindowApplied) {
             // 分屏时 Base 不执行 fullScreen，也要恢复进入沉浸前的窗口适配。
             WindowCompat.setDecorFitsSystemWindows(window, true)
+            window.decorView.background = windowedDecorBackground
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                windowedContrastEnforcement?.let { (status, navigation) ->
+                    window.isStatusBarContrastEnforced = status
+                    window.isNavigationBarContrastEnforced = navigation
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                windowedNavigationBarDividerColor?.let { window.navigationBarDividerColor = it }
+            }
         }
         super.setupSystemBar()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -279,10 +295,35 @@ class VideoPlayerActivity : VMBaseActivity<ComposeActivityBinding, VideoPlayerVi
             }
         }
         if (!windowed) {
+            if (!immersiveWindowApplied) {
+                windowedDecorBackground = window.decorView.background
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    windowedContrastEnforcement = window.isStatusBarContrastEnforced to window.isNavigationBarContrastEnforced
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    windowedNavigationBarDividerColor = window.navigationBarDividerColor
+                }
+            }
             WindowCompat.setDecorFitsSystemWindows(window, false)
+            // 替换 Drawable，避免 setBackgroundColor 原地修改已保存的主题背景。
+            window.decorView.background = ColorDrawable(android.graphics.Color.BLACK)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.navigationBarDividerColor = android.graphics.Color.TRANSPARENT
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = false
+            }
+            WindowCompat.getInsetsController(window, window.decorView).run {
+                isAppearanceLightStatusBars = false
+                isAppearanceLightNavigationBars = false
+            }
         }
         immersiveWindowApplied = !windowed
         toggleSystemBar(windowed)
+        window.decorView.requestApplyInsets()
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("videoPresentation", presentation.name)

@@ -50,6 +50,7 @@ import kotlin.math.abs
 
 enum class VideoPresentation { WINDOW, IMMERSIVE, FULLSCREEN }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VideoPlayerScreen(
     owner: Any, mode: VideoPresentation, revision: Int, intro: View,
@@ -92,9 +93,12 @@ fun VideoPlayerScreen(
             delay(2500); controls = false
         }
     }
+    // 背景绘制到窗口边缘；控件和字幕避让安全区，系统栏临时出现时不遮挡或挤动控件。
+    val controlInsets = if (windowed) WindowInsets(0, 0, 0, 0)
+        else WindowInsets.safeContent.union(WindowInsets.systemBarsIgnoringVisibility)
     val contentModifier = Modifier.fillMaxSize()
-        .then(if (windowed) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
         .background(if (windowed) surface else Color.Black)
+        .then(if (windowed) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
     BoxWithConstraints(contentModifier) {
         val playerHeight = if (windowed) (maxWidth / state.aspect).coerceAtMost(maxHeight / 2) else maxHeight
         val fitWidth = minOf(maxWidth, playerHeight * state.aspect)
@@ -102,17 +106,20 @@ fun VideoPlayerScreen(
             Box(Modifier.fillMaxWidth().height(playerHeight).background(Color.Black)) {
                 VideoRenderHost(owner, state, danmaku,
                     Modifier.align(Alignment.Center).width(fitWidth).height(fitWidth / state.aspect))
-                NgVideoCaptions(Modifier.align(Alignment.Center).width(fitWidth).height(fitWidth / state.aspect))
-                // 全屏画布使用完整窗口，控件和手势单独避让安全区。
-                Box(Modifier.matchParentSize().then(
-                    if (windowed) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
-                )) {
-                    VideoGestureLayer(state, mode, locked, enabled = panel.isEmpty() && !more,
-                        onTap = { controls = !controls; interaction++ }, onHint = { hint = it })
+                NgVideoCaptions(Modifier.align(Alignment.Center).width(fitWidth).height(fitWidth / state.aspect)
+                    .windowInsetsPadding(controlInsets))
+                Box(Modifier.matchParentSize()) {
+                    Box(Modifier.matchParentSize().windowInsetsPadding(controlInsets)) {
+                        VideoGestureLayer(state, mode, locked, enabled = panel.isEmpty() && !more,
+                            onTap = { controls = !controls; interaction++ }, onHint = { hint = it })
+                    }
                     if (controls) {
-                        Box(Modifier.fillMaxWidth().height(110.dp).background(Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = .55f), Color.Transparent))))
-                        Row(Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(horizontal = 4.dp),
+                        Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = .55f), Color.Transparent)))
+                            .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Top)).height(110.dp))
+                        Row(Modifier.fillMaxWidth().align(Alignment.TopCenter)
+                            .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
+                            .padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             if (!locked) VideoIcon(R.drawable.ic_arrow_back, "返回", onBack)
                             if (mode == VideoPresentation.FULLSCREEN && !locked) Text(state.title.ifBlank { title.orEmpty() },
@@ -132,16 +139,17 @@ fun VideoPlayerScreen(
                         }
                         if (!windowed || locked) TextButton(onClick = {
                             locked = !locked; VideoPlay.lockCurScreen = locked; interaction++
-                        }, modifier = Modifier.align(Alignment.CenterStart)) {
+                        }, modifier = Modifier.align(Alignment.CenterStart).windowInsetsPadding(controlInsets)) {
                             Text(if (locked) "解锁" else "锁定", color = Color.White, fontSize = 12.sp)
                         }
                         if (!locked) {
                             if (!windowed && !state.preparing && !state.buffering && state.error == null) VideoIcon(
                                 if (state.playing) R.drawable.ic_pause_24dp else R.drawable.ic_play_24dp,
                                 if (state.playing) "暂停" else if (state.ended) "重播" else "播放", { VideoPlaybackBridge.toggle(); interaction++ },
-                                Modifier.align(Alignment.Center).size(64.dp))
+                                Modifier.align(Alignment.Center).windowInsetsPadding(controlInsets).size(64.dp))
                             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .8f))))
+                                .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
                                 .padding(horizontal = 16.dp, vertical = 8.dp)) {
                                 if (mode == VideoPresentation.IMMERSIVE) {
                                     Text(title.orEmpty(), color = Color.White, fontSize = 16.sp, lineHeight = 22.sp,
@@ -186,12 +194,16 @@ fun VideoPlayerScreen(
                         }
                     } else if (!windowed && VideoPlay.fullBottomProgressBar) {
                         LinearProgressIndicator(progress = { if (state.duration > 0) state.position.toFloat() / state.duration else 0f },
-                            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp), color = primary)
+                            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                                .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                                .height(2.dp), color = primary)
                     }
                     if (state.showLoading) CircularProgressIndicator(
-                        Modifier.align(Alignment.Center).size(32.dp), color = Color.White, strokeWidth = 2.dp)
+                        Modifier.align(Alignment.Center).windowInsetsPadding(controlInsets).size(32.dp),
+                        color = Color.White, strokeWidth = 2.dp)
                     state.error?.let { error ->
-                        Column(Modifier.align(Alignment.Center).widthIn(max = 360.dp).padding(horizontal = 20.dp)
+                        Column(Modifier.align(Alignment.Center).windowInsetsPadding(controlInsets)
+                            .widthIn(max = 360.dp).padding(horizontal = 20.dp)
                             .background(Color.Black.copy(alpha = .8f), RoundedCornerShape(12.dp)).padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("暂时无法播放", color = Color.White, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
@@ -200,7 +212,9 @@ fun VideoPlayerScreen(
                             VideoTextAction("重试") { VideoPlaybackBridge.retry() }
                         }
                     }
-                    hint?.let { Text(it, Modifier.align(Alignment.TopCenter).padding(top = 64.dp)
+                    hint?.let { Text(it, Modifier.align(Alignment.TopCenter)
+                        .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
+                        .padding(top = 64.dp)
                         .background(Color.Black.copy(alpha = .6f), RoundedCornerShape(8.dp)).padding(12.dp, 6.dp),
                         color = Color.White, fontSize = 14.sp) }
                 }

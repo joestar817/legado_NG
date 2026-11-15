@@ -40,3 +40,11 @@
 `NgVideoLoadControlTest` 使用 Robolectric API 29 和真实 Media3：覆盖前台/备用 ExoPlayer 构建与释放、配置的回退缓冲、准备/轨道选择/起播/停止/再次准备/释放，以及时长/实际 allocator 字节预算和接管。设备解码与播放仍需单独验证。
 
 验证结果：`build/media3-load-control-focused-check.log` 中新增 4 项回归全部通过，预加载模块 14 项测试与 16 模块边界检查通过，应用 Kotlin/Java 编译通过。使用 `-Pkotlin.incremental=false` 排除此前增量缓存异常；仍排除既有 `:app:verifyNgDesignSystem`。常规测试入口会先编译所有宿主测试，被既有 Compose `assertExists/assertDoesNotExist` 导入及 NgInterfaceFontComposeTest 参数错误阻断（`build/media3-load-control-check.log`）；聚焦验证通过忽略目录中的临时 init script 限定测试源码，未修改这些无关测试。尚未打包安装或进行设备播放复测。
+
+## 全屏背景与安全区
+
+播放页根背景在安全区 padding 之前绘制；横屏全屏和竖屏沉浸模式的顶部、底部控制条渐变铺到窗口边缘。按钮、进度条、字幕、提示和播放手势分别避让 `safeContent`，并合并忽略可见性的系统栏边距，避免系统栏临时出现时遮挡控件或使布局跳动。视频画面继续按原比例显示。
+
+全屏窗口使用黑色底色、透明状态栏/导航栏和浅色系统图标，清除系统栏对比度遮罩与导航栏分隔线。退出全屏时恢复原主题背景、对比度和分隔线配置，再由 BaseActivity 设置普通页面系统栏。
+
+验证：`build/video-fullscreen-insets-check.log` 中应用 Kotlin 编译、16 模块边界和 40 个功能 UI 文件规则检查通过，`git diff --check` 通过。编译继续排除前述既有全局 `:app:verifyNgDesignSystem` 问题；未新增布局测试或打包安装，横竖屏刘海、手势导航、临时系统栏和退出全屏的实际显示仍需设备复测。

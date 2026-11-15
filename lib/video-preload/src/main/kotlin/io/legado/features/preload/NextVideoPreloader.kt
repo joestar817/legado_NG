@@ -1,6 +1,7 @@
 package io.legado.features.preload
 
 import kotlinx.coroutines.*
+import kotlin.time.Duration.Companion.milliseconds
 
 data class VideoPreloadPolicy(
     val bufferAheadMs: Long = 3_000,
@@ -60,8 +61,8 @@ class NextVideoPreloader<K : Any, R : Any, P : Any>(
         task = scope.launch(start = CoroutineStart.LAZY) {
             var player: P? = null
             try {
-                delay(policy.debounceMs)
-                val resource = withTimeout(policy.resolveTimeoutMs) { resolve() }
+                delay(policy.debounceMs.milliseconds)
+                val resource = withTimeout(policy.resolveTimeoutMs.milliseconds) { resolve() }
                 ensureActive()
                 if (ticket != generation) return@launch
                 val limit = minOf(now() + policy.lifetimeMs,
@@ -74,7 +75,7 @@ class NextVideoPreloader<K : Any, R : Any, P : Any>(
                 player = null
                 validUntil = limit
                 expiry = scope.launch {
-                    delay((limit - now()).coerceAtLeast(1))
+                    delay((limit - now()).coerceAtLeast(1).milliseconds)
                     if (ticket == generation) discard()
                 }
             } catch (error: TimeoutCancellationException) {

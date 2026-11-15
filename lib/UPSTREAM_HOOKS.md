@@ -44,7 +44,8 @@
 | `app/src/main/java/io/legado/app/help/video/Media3VideoEngine.kt` | 平台播放器、显式媒体请求、字幕/音轨/画面效果；按 lib/video-preload 预算暂停准备备用实例，接管后扩展缓冲；备用实例不绑定字幕/当前 Surface | data HLS/请求头/密钥/原画/备用实例回调隔离 |
 | `app/src/main/java/io/legado/app/help/video/VideoPlaybackBridge.kt` | 委托 video-support 监测停滞/恢复预算，video-preload 管理下一集和加载提示防闪烁；接管播放器沿用输出 Surface，暂停/退出清理备用实例 | 起播/断流/连续播放/恢复额度/播放器接管 |
 | `app/src/main/java/io/legado/app/ui/video/VideoSettings.kt` | NG 设置入口委托清晰度、效果和预开下一集开关 | NG 主题/设置 |
-| `app/src/main/java/io/legado/app/ui/video/VideoPlayerScreen.kt` | 当前播放实例字幕输出表面，跟随窗口大小；仅加载提示使用防闪烁状态 | 字幕/全屏/缓冲提示 |
+| `app/src/main/java/io/legado/app/ui/video/VideoPlayerActivity.kt` | 全屏使用黑色窗口底色、透明系统栏与浅色图标，退出恢复主题背景、系统栏对比度和分隔线配置 | 全屏/横竖屏/返回窗口 |
+| `app/src/main/java/io/legado/app/ui/video/VideoPlayerScreen.kt` | 当前播放实例字幕输出表面；背景和控制条渐变延伸到窗口边缘，控件、字幕和手势单独避让安全区；加载提示使用防闪烁状态 | 字幕/全屏/安全区/缓冲提示 |
 | `app/src/main/java/io/legado/app/ui/video/VideoFloatingContent.kt` | 小窗加载提示使用同一防闪烁状态；字幕/恢复保留原始缓冲状态 | 小窗/后台移交 |
 
 | 扩展接入宿主文件 | 职责与默认行为 | 回归 |
