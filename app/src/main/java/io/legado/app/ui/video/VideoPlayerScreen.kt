@@ -100,7 +100,8 @@ fun VideoPlayerScreen(
         .background(if (windowed) surface else Color.Black)
         .then(if (windowed) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
     BoxWithConstraints(contentModifier) {
-        val playerHeight = if (windowed) (maxWidth / state.aspect).coerceAtMost(maxHeight / 2) else maxHeight
+        // 控件容器不依赖异步视频尺寸；真实比例只影响内部画面，初始化和切集时不挤动下方内容。
+        val playerHeight = if (windowed) (maxWidth * 9 / 16).coerceAtMost(maxHeight / 2) else maxHeight
         val fitWidth = minOf(maxWidth, playerHeight * state.aspect)
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxWidth().height(playerHeight).background(Color.Black)) {
