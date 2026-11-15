@@ -5,6 +5,16 @@ import io.legado.features.api.video.*
 import io.legado.features.video.*
 
 class VideoFeatures {
+    class Recovery {
+        private val delegate = PlaybackRecovery()
+        fun reset() = delegate.reset()
+        fun restarted() = delegate.restarted()
+        fun nextAttempt() = delegate.nextAttempt()
+        fun stalled(now: Long, position: Long, buffered: Long, waiting: Boolean,
+                    playing: Boolean, playWhenReady: Boolean) =
+            delegate.stalled(now, position, buffered, waiting, playing, playWhenReady)
+    }
+
     private val session = VideoSession()
     fun begin(episode: String) = session.begin(episode)
     fun current(revision: Long) = session.current(revision)

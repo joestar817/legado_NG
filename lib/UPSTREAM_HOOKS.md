@@ -40,6 +40,7 @@
 | --- | --- | --- |
 | `app/src/main/java/io/legado/app/model/VideoPlay.kt` | 每次解析捕获会话版本；单链接、订阅、选集在独立规则拦截上下文中解析；网页统一后台嗅探；仅 DASH 正文写入 MPD 文件 | 迟到回调/清晰度位置恢复/规则禁止网页跳转 |
 | `app/src/main/java/io/legado/app/help/video/Media3VideoEngine.kt` | 委托模块合并字幕/外部音轨与画面效果；显式媒体 MIME，流/分片/密钥绕过磁盘缓存；应用直接管理单一 Media3 ExoPlayer | data HLS/请求头/密钥/原画 |
+| `app/src/main/java/io/legado/app/help/video/VideoPlaybackBridge.kt` | 委托 video-support 监测缓冲停滞及恢复预算，宿主保留进度重建播放器；暂停/切集/退出取消恢复 | 起播/断流/慢速缓冲/连续播放后恢复额度 |
 | `app/src/main/java/io/legado/app/ui/video/VideoSettings.kt` | NG 设置入口委托清晰度和效果组件 | NG 主题/设置 |
 | `app/src/main/java/io/legado/app/ui/video/VideoPlayerScreen.kt` | 当前播放实例字幕输出表面，跟随窗口大小 | 字幕/全屏 |
 

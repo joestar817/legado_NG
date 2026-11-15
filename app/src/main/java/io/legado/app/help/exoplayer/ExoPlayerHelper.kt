@@ -85,17 +85,20 @@ object ExoPlayerHelper {
      * 支持缓存的DataSource.Factory
      */
     val cacheDataSourceFactory by lazy {
-        //使用自定义的CacheDataSource以支持设置UA
+        createCacheDataSourceFactory(okhttpDataFactory)
+    }
+
+    /** Share the disk cache while letting video retain its own headers and network timeouts. */
+    fun createCacheDataSourceFactory(upstream: DataSource.Factory): CacheDataSource.Factory =
         CacheDataSource.Factory()
             .setCache(cache)
-            .setUpstreamDataSourceFactory(okhttpDataFactory)
+            .setUpstreamDataSourceFactory(upstream)
             .setCacheReadDataSourceFactory(FileDataSource.Factory())
             .setCacheWriteDataSinkFactory(
                 CacheDataSink.Factory()
                     .setCache(cache)
                     .setFragmentSize(CacheDataSink.DEFAULT_FRAGMENT_SIZE)
             )
-    }
 
     /**
      * 手动下载的有声书缓存必须长期保留，不能进入播放器 100M LRU 临时缓存。

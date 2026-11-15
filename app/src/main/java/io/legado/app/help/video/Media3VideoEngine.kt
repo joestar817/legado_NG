@@ -5,8 +5,8 @@ import android.view.Surface
 import androidx.media3.common.*
 import androidx.media3.common.util.Size
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.*
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -48,6 +48,8 @@ internal class Media3VideoEngine {
     val currentPosition get() = player?.currentPosition ?: 0L
     val duration get() = player?.duration?.coerceAtLeast(0) ?: 0L
     val bufferedPercentage get() = player?.bufferedPercentage ?: 0
+    val bufferedPosition get() = player?.bufferedPosition?.coerceAtLeast(0) ?: 0L
+    val isPlaying get() = player?.isPlaying == true
     val currentVideoWidth get() = player?.videoSize?.let { (it.width * it.pixelWidthHeightRatio).toInt() } ?: 0
     val currentVideoHeight get() = player?.videoSize?.height ?: 0
     val videoSarNum get() = 1
@@ -62,9 +64,8 @@ internal class Media3VideoEngine {
         val client = okHttpClient.newBuilder().connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS).callTimeout(0, TimeUnit.SECONDS).build()
         val http = OkHttpDataSource.Factory(client).setDefaultRequestProperties(headers.orEmpty())
-        val cached = ResolvingDataSource.Factory(ExoPlayerHelper.cacheDataSourceFactory) {
-            it.withRequestHeaders(headers.orEmpty() + it.httpRequestHeaders)
-        }
+        val cached = ExoPlayerHelper.createCacheDataSourceFactory(http)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val upstream = if (cache) DataSource.Factory { NgVideoDataSource(cached.createDataSource(), http.createDataSource()) } else http
         val sources = DefaultMediaSourceFactory(appCtx)
             .setDataSourceFactory(DefaultDataSource.Factory(appCtx, upstream))

@@ -5,7 +5,11 @@ import android.media.MediaMetadataRetriever
 import android.media.AudioManager
 import android.view.Surface
 import android.net.ConnectivityManager
+import android.os.SystemClock
+import androidx.media3.common.PlaybackException
+import io.legado.app.constant.AppLog
 import io.legado.app.model.VideoPlay
+import io.legado.features.adapter.VideoFeatures
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -57,6 +61,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
                 if (change == AudioManager.AUDIOFOCUS_LOSS) {
                     seekOnStart = state.value.position
                     ticker?.cancel()
+                    recovery.restarted()
                     manager.releaseMediaPlayer()
                     mutableState.update { it.copy(prepared = false, preparing = false, buffering = false) }
                 }
@@ -77,8 +82,8 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
     private var playWhenReady = true
     private var selectedSpeed = 1f
     private val connectivity get() = appCtx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    private var networkType = ""
     private var networkRetry: Job? = null
+    private val recovery = VideoFeatures.Recovery()
 
     fun attach(owner: Any, surface: Surface, width: Int, height: Int) {
         lease.attach(owner, surface)
@@ -107,6 +112,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
 
     override fun loading() {
         onVideoPause()
+        recovery.reset()
         ticker?.cancel()
         networkRetry?.cancel()
         // A failed new source must never resume the previous source's resolved URL.
@@ -118,10 +124,13 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
     }
 
     override fun loadError(message: String) {
+        ticker?.cancel()
+        networkRetry?.cancel()
         mutableState.update { it.copy(preparing = false, error = message) }
     }
 
     override fun setUp(url: String?, cache: Boolean, cachePath: File?, title: String?): Boolean {
+        recovery.reset()
         networkRetry?.cancel()
         ticker?.cancel()
         dimensionFallback?.cancel()
@@ -174,12 +183,15 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
     override fun startPlayLogic() {
         val url = url ?: return
         playWhenReady = true
-        networkType = connectionType()
+        recovery.restarted()
+        ticker?.cancel()
+        networkRetry?.cancel()
         manager.setListener(this)
         audio.requestAudioFocus(focus, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
         mutableState.update { it.copy(preparing = true, error = null) }
         try {
             manager.prepare(url, mapHeadData, false, selectedSpeed, cache, cachePath, seekOnStart, playWhenReady)
+            startTicker()
         } catch (error: Exception) {
             manager.releaseMediaPlayer()
             loadError("播放器初始化失败：${error.localizedMessage.orEmpty()}")
@@ -194,13 +206,23 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
         onVideoSizeChanged(state.value.rotation)
         mutableState.update { it.copy(preparing = false, prepared = true, playing = playWhenReady, ended = false,
             duration = manager.duration.coerceAtLeast(0), error = null) }
+    }
+
+    private fun startTicker() {
         ticker?.cancel()
         ticker = scope.launch {
             while (isActive) {
                 // Reattaching a completed video seeks just before its end to paint the last frame.
                 // That decoder position must not turn a completed session into a paused one.
-                mutableState.update { if (it.ended) it else it.copy(position = manager.currentPosition.coerceAtLeast(0),
+                mutableState.update { if (it.ended || !it.prepared) it else it.copy(position = manager.currentPosition.coerceAtLeast(0),
                     duration = manager.duration.coerceAtLeast(0), buffered = manager.bufferedPercentage) }
+                val current = state.value
+                if (!current.ended && recovery.stalled(SystemClock.elapsedRealtime(), current.position,
+                        manager.bufferedPosition, current.preparing || current.buffering,
+                        manager.isPlaying, playWhenReady)) {
+                    if (!recoverPlayback("缓冲超时")) failPlayback("视频缓冲超时，请重试或切换线路")
+                    return@launch
+                }
                 delay(500)
             }
         }
@@ -219,13 +241,19 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
     }
     override fun onVideoPause() {
         playWhenReady = false
+        val pendingRetry = networkRetry?.isActive == true
         networkRetry?.cancel()
+        recovery.restarted()
         manager.pause()
-        mutableState.update { it.copy(playing = false) }
+        mutableState.update { it.copy(playing = false,
+            preparing = if (pendingRetry) false else it.preparing,
+            buffering = if (pendingRetry) false else it.buffering) }
     }
     override fun onVideoResume() = onVideoResume(false)
     override fun onVideoResume(seek: Boolean) {
         playWhenReady = true
+        if (state.value.error != null) recovery.reset()
+        recovery.restarted()
         if (state.value.ended || state.value.duration > 0 && state.value.position >= state.value.duration) seekTo(0)
         if (!state.value.prepared) {
             if (url == null && state.value.error != null) {
@@ -241,6 +269,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
         mutableState.update { it.copy(playing = true) }
     }
     fun seekTo(position: Long) {
+        recovery.restarted()
         val target = if (state.value.duration > 0) position.coerceIn(0, state.value.duration) else position.coerceAtLeast(0)
         if (state.value.prepared) manager.seekTo(target) else seekOnStart = target
         mutableState.update { it.copy(position = target, ended = false, seekRevision = it.seekRevision + 1) }
@@ -263,27 +292,59 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
         }
     }
     override fun onCompletion() {
+        playWhenReady = false
         ticker?.cancel()
+        networkRetry?.cancel()
         manager.setListener(null)
     }
     override fun onBufferingUpdate(percent: Int) { mutableState.update { it.copy(buffered = percent) } }
     override fun onSeekComplete() { mutableState.update { it.copy(seekRevision = it.seekRevision + 1) } }
     override fun onError(what: Int, extra: Int) {
-        ticker?.cancel()
-        seekOnStart = state.value.position
+        val recoverable = what == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
+            what == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+            what == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+            what == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+            what == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
+        if (recoverable && recoverPlayback("网络错误 $what")) return
+        failPlayback("播放失败 ($what / $extra)，请重试或切换线路")
+    }
+
+    private fun saveRecoveryPosition() {
+        seekOnStart = if (state.value.prepared) manager.currentPosition.coerceAtLeast(0) else state.value.position
         if (hasPlaybackPosition) VideoPlay.saveRead(seekOnStart.coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
-        mutableState.update { it.copy(preparing = false, prepared = false, playing = false, buffering = false,
-            error = "播放失败 ($what / $extra)") }
-        val currentNetwork = connectionType()
-        if (networkType != currentNetwork && playWhenReady) {
-            networkType = currentNetwork
-            networkRetry?.cancel()
-            networkRetry = scope.launch {
-                manager.releaseMediaPlayer()
-                delay(500)
+    }
+
+    private fun recoverPlayback(reason: String): Boolean {
+        val currentUrl = url ?: return false
+        if (!playWhenReady) return false
+        val attempt = recovery.nextAttempt() ?: return false
+        saveRecoveryPosition()
+        ticker?.cancel()
+        networkRetry?.cancel()
+        manager.releaseMediaPlayer()
+        val revision = state.value.mediaRevision
+        mutableState.update { it.copy(preparing = true, prepared = false, playing = false, buffering = false,
+            position = seekOnStart, buffered = 0, error = null) }
+        AppLog.put("视频播放：$reason，保留进度自动重连 ($attempt/2)")
+        networkRetry = scope.launch {
+            delay(attempt * 750L)
+            if (playWhenReady && url == currentUrl && state.value.mediaRevision == revision) {
+                networkRetry = null
                 startPlayLogic()
             }
         }
+        return true
+    }
+
+    private fun failPlayback(message: String) {
+        saveRecoveryPosition()
+        ticker?.cancel()
+        networkRetry?.cancel()
+        manager.releaseMediaPlayer()
+        playWhenReady = false
+        mutableState.update { it.copy(preparing = false, prepared = false, playing = false, buffering = false,
+            position = seekOnStart, error = message) }
+        AppLog.put("视频播放：$message")
     }
     override fun onInfo(what: Int, extra: Int) {
         when (what) {
@@ -307,12 +368,12 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
     private fun isWifiConnected(): Boolean =
         connectivity.activeNetworkInfo?.type == ConnectivityManager.TYPE_WIFI
 
-    @Suppress("DEPRECATION")
-    private fun connectionType(): String = connectivity.activeNetworkInfo?.let { "${it.type}:${it.isConnected}" }.orEmpty()
-
     fun releasePlayer() {
+        playWhenReady = false
+        recovery.reset()
         ticker?.cancel()
         networkRetry?.cancel()
+        dimensionFallback?.cancel()
         manager.setListener(null)
         manager.setDisplay(null)
         manager.releaseMediaPlayer()
