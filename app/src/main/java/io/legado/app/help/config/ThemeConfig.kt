@@ -417,7 +417,11 @@ object ThemeConfig {
             context.putPrefInt(PreferKey.bgImageBlurring, theme.lightBackground.blur)
             context.putPrefInt(PreferKey.bgImageNBlurring, theme.darkBackground.blur)
             context.putPrefBoolean(PreferKey.tNavBar, true)
-            theme.barProfile?.normalized()?.let { bars ->
+            val barProfile = theme.barProfile?.normalized()
+            // A missing theme value uses the app default, never the previously applied theme's gap.
+            AppConfig.bookshelfFloatingDockTopDistancePx = barProfile?.bookshelfFloatingDockTopDistancePx
+                ?: BookshelfFloatingDockConfig.DEFAULT_TOP_DISTANCE_PX
+            barProfile?.let { bars ->
                 bars.useFloatingBottomBar?.let {
                     context.putPrefBoolean(PreferKey.useFloatingBottomBar, it)
                 }
@@ -429,9 +433,6 @@ object ThemeConfig {
                 }
                 bars.bookshelfTopBarStyle?.let {
                     AppConfig.bookshelfTopBarStyle = BookshelfTopBarStyle.fromValue(it)
-                }
-                bars.bookshelfFloatingDockTopDistancePx?.let {
-                    AppConfig.bookshelfFloatingDockTopDistancePx = it
                 }
                 bars.bookshelfFloatingDockTransparency?.let {
                     AppConfig.bookshelfFloatingDockTransparency = it
