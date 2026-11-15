@@ -26,11 +26,12 @@
     <string name="home_size_large">Large · Full row</string>
     <string name="home_size_small_label">Small</string>
     <string name="home_size_large_label">Large</string>
-    <string name="home_style_basic">Basic glass</string>
+    <string name="home_style_basic">Glass</string>
     <string name="home_style_storybook">Storybook</string>
     <string name="home_style_paper">Paper Leaves</string>
     <string name="home_style_night">Night Desk</string>
     <string name="home_style_white">Bright white</string>
+    <string name="home_style_blue_fish">Blue Whale</string>
     <string name="home_variant_storybook_small">Storybook · Small</string>
     <string name="home_variant_storybook_large">Storybook · Large</string>
     <string name="home_variant_paper_small">Paper Leaves · Small</string>
@@ -39,6 +40,8 @@
     <string name="home_variant_night_large">Night Desk · Large</string>
     <string name="home_variant_white_small">Bright white · Small</string>
     <string name="home_variant_white_large">Bright white · Large</string>
+    <string name="home_variant_blue_fish_small">Blue Whale · Small</string>
+    <string name="home_variant_blue_fish_large">Blue Whale · Large</string>
     <string name="home_move_widget_up">Move up</string>
     <string name="home_move_widget_down">Move down</string>
     <string name="home_edit">Edit</string>
@@ -62,4 +65,9 @@
     <string name="home_suite_mixed">Current: Mixed</string>
     <string name="home_suite_choose">Choose a style</string>
     <string name="home_suite_apply">Apply skin</string>
+    <string name="home_suite_get_more">Get skins</string>
+    <string name="home_skin_import">Import</string>
+    <string name="home_skin_manage">Manage skins</string>
+    <string name="home_skin_done">Done</string>
+    <string name="home_skin_delete">Delete skin</string>
 </resources>

@@ -168,8 +168,8 @@ private fun HomeUpdatesContent(
                     }
                     maxOf(30.dp, 8.dp + textHeight + 4.dp)
                 } else 0.dp
-                val lamp = homeWidgetArtworkPainter(R.drawable.ng_home_calendar_night_lamp)
-                Canvas(Modifier.matchParentSize().clipToBounds().clearAndSetSemantics {}) {
+                val lamp = homeWidgetArtworkPainter(variant.styleId, "lamp")
+                if (lamp != null) Canvas(Modifier.matchParentSize().clipToBounds().clearAndSetSemantics {}) {
                     val edge = minOf(100.dp.toPx(), availableWidth.toPx(),
                         (size.height - topSafe.toPx() - 4.dp.toPx()).coerceAtLeast(0f))
                     if (edge >= 24.dp.toPx()) {

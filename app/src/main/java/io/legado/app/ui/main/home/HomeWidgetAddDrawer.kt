@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -45,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -65,10 +67,12 @@ internal fun HomeWidgetAddDrawer(
     var selectedVariants by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
     val existingByType = remember(usedWidgets) { usedWidgets.distinctBy { it.typeId }.associateBy { it.typeId } }
     val type = HomeWidgetCatalog.type(selectedTypeId.orEmpty())
+    val skins = LocalHomeWidgetSkins.current
     val existing = type?.let { existingByType[it.id] }
     val selected = type?.let { entry ->
         val selectedId = selectedVariants[entry.id] ?: existing?.variantId
-        entry.variants.firstOrNull { it.id == selectedId } ?: entry.variants.first()
+        selectedId?.let { HomeWidgetCatalog.renderVariant(HomeWidgetInstance("preview", entry.id, it), skins.installed) }
+            ?: entry.variants.first()
     }
     val directoryScrollState = rememberScrollState()
     val pageStates = rememberSaveableStateHolder()
@@ -132,7 +136,8 @@ internal fun ColumnScope.HomeWidgetStyleChooser(
     preview: @Composable (HomeWidgetVariant) -> Unit,
 ) {
     val sizes = remember(typeId) { HomeWidgetCatalog.type(typeId)!!.variants.map { it.size }.distinct() }
-    val variants = remember(typeId, selected.size) { HomeWidgetCatalog.variantsForSize(typeId, selected.size) }
+    val choices = LocalHomeWidgetSkins.current.choices(typeId)
+    val variants = choices.filter { it.size == selected.size }
     val usedIds = remember(usedWidgets, typeId) {
         usedWidgets.filter { it.typeId == typeId }.mapTo(mutableSetOf()) { it.variantId }
     }
@@ -145,7 +150,7 @@ internal fun ColumnScope.HomeWidgetStyleChooser(
             sizes.forEach { size ->
                 Tab(selected = selected.size == size,
                     onClick = {
-                        HomeWidgetCatalog.variantForSize(typeId, selected.id, size)?.let { onSelect(it.id) }
+                        selectHomeWidgetSize(choices, selected.id, size)?.let { onSelect(it.id) }
                     }, text = {
                         Text(stringResource(if (size == HomeWidgetSize.SMALL) R.string.home_size_small_label
                             else R.string.home_size_large_label), fontSize = 14.sp,
@@ -220,23 +225,39 @@ private fun HomeWidgetPreviewCard(
     val shape = RoundedCornerShape(12.dp)
     val primary = Color(NgTheme.colors.primary)
     Column(Modifier.fillMaxWidth().clip(shape).background(ngDrawerContentCardColor())
-        .border(1.dp, if (selected == true) primary else Color.Transparent, shape)
+        .border(if (selected == null) 1.dp else 1.5.dp,
+            if (selected == true) primary else Color.Transparent, shape)
         .then(if (selected == null) Modifier.clickable(role = Role.Button, onClick = onSelect)
             else Modifier.selectable(selected = selected, role = Role.RadioButton, onClick = onSelect))
         .padding(10.dp)) {
-        Box(Modifier.fillMaxWidth().height(HomeWidgetAddPreviewHeight).clearAndSetSemantics {},
-            contentAlignment = Alignment.Center) { preview() }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, Modifier.weight(1f), color = Color(NgTheme.colors.onSurface),
-                fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
-            if (selected == true) Icon(painterResource(R.drawable.ic_check), null, tint = primary,
-                modifier = Modifier.size(18.dp))
-            else if (selected != null) Spacer(Modifier.size(18.dp))
+        Box(Modifier.fillMaxWidth().height(HomeWidgetAddPreviewHeight)) {
+            Box(Modifier.fillMaxSize().clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
+                preview()
+            }
+            if (selected != null && inUse == true) {
+                Box(Modifier.align(Alignment.TopEnd).size(44.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(26.dp).background(ngDrawerContentCardColor(), CircleShape),
+                        contentAlignment = Alignment.Center) {
+                        Icon(painterResource(R.drawable.ic_check), stringResource(R.string.home_widget_in_use),
+                            tint = primary, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
         }
-        if (inUse != null) {
-            Text(stringResource(if (inUse) R.string.home_widget_in_use else R.string.home_widget_not_in_use),
-                color = if (inUse) primary else Color(NgTheme.colors.onSurfaceVariant),
-                fontSize = 11.sp, lineHeight = 16.sp)
+        if (selected == null) {
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f), color = Color(NgTheme.colors.onSurface),
+                    fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+            }
+            if (inUse != null) {
+                Text(stringResource(if (inUse) R.string.home_widget_in_use else R.string.home_widget_not_in_use),
+                    color = if (inUse) primary else Color(NgTheme.colors.onSurfaceVariant),
+                    fontSize = 11.sp, lineHeight = 16.sp)
+            }
+        } else {
+            Text(title, Modifier.fillMaxWidth().padding(top = 8.dp),
+                color = Color(NgTheme.colors.onSurface), textAlign = TextAlign.Center,
+                fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
         }
     }
 }

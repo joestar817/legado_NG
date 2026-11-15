@@ -3,6 +3,7 @@ package io.legado.app.ui.resource
 import io.legado.app.help.resource.ResourceCategory
 import io.legado.app.help.resource.ResourceEntry
 import io.legado.app.help.resource.ResourceProtocol
+import io.legado.app.help.resource.HOME_WIDGET_SKIN_TYPE
 
 /** 用途只负责浏览；不改目录身份、安装类型或安装记录。 */
 internal enum class ResourcePurpose(val title: String) {
@@ -17,7 +18,7 @@ internal fun resourcePriorityTypes(purpose: ResourcePurpose?, type: String): Set
     return when (purpose) {
         null -> null
         ResourcePurpose.READING -> setOf("read_preset")
-        ResourcePurpose.APPEARANCE -> setOf("theme")
+        ResourcePurpose.APPEARANCE -> setOf("theme", HOME_WIDGET_SKIN_TYPE)
         ResourcePurpose.LISTENING -> setOf("tts")
         ResourcePurpose.PETS -> setOf("pet")
     }
@@ -25,7 +26,7 @@ internal fun resourcePriorityTypes(purpose: ResourcePurpose?, type: String): Set
 
 internal fun ResourceCategory.resourcePurpose(): ResourcePurpose? = when (type) {
     "font", "background", "read_preset" -> ResourcePurpose.READING
-    "theme" -> ResourcePurpose.APPEARANCE
+    "theme", HOME_WIDGET_SKIN_TYPE -> ResourcePurpose.APPEARANCE
     "tts" -> ResourcePurpose.LISTENING
     "pet" -> ResourcePurpose.PETS
     else -> null
@@ -36,6 +37,7 @@ internal fun ResourceCategory.resourceTypeTitle(): String = when (type) {
     "background" -> "背景"
     "read_preset" -> "阅读预设"
     "theme" -> "主题包"
+    HOME_WIDGET_SKIN_TYPE -> "组件皮肤"
     "tts" -> "TTS 脚本"
     "pet" -> "宠物插件"
     else -> name

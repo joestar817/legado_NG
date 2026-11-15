@@ -72,7 +72,7 @@ internal fun ResourceTypeFilterRow(
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f)) {
-            if (types.size > 1) {
+            if (types.size > 1 || selectedType.isNotEmpty()) {
                 NgFormSelectRow(
                     title = title,
                     selectedValue = selectedType,

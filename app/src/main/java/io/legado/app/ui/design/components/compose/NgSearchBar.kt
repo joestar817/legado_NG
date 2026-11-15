@@ -255,6 +255,7 @@ fun NgSearchBarActionButton(
     contentDescription: String,
     modifier: Modifier = Modifier,
     icon: Painter = painterResource(R.drawable.ic_grid_menu),
+    enabled: Boolean = true,
 ) {
     val cornerRadius = 10.dp
     val shape = RoundedCornerShape(cornerRadius)
@@ -270,7 +271,7 @@ fun NgSearchBarActionButton(
         modifier = modifier
             .size(36.dp)
             .clip(shape)
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         role = NgMaterialRole.TOP_NAVIGATION,
         cornerRadius = cornerRadius,
         shape = shape,

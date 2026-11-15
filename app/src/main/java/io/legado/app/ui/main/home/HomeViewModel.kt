@@ -10,6 +10,7 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.bookUpdateChapterCount
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isNotShelf
+import io.legado.app.help.home.HomeWidgetSkinStore
 import io.legado.app.ui.main.BookNewsRefreshState
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefString
@@ -292,6 +293,7 @@ class HomeViewModel(
     }
 
     internal fun addWidget(typeId: String, variantId: String): Boolean {
+        if (!skinSelection().choices(typeId).any { it.id == variantId }) return false
         val updated = addOrReplaceHomeWidget(mutableState.value, typeId, variantId, UUID.randomUUID().toString())
             ?: return false
         applyWidgetMutation(updated)
@@ -300,6 +302,8 @@ class HomeViewModel(
 
     internal fun saveVariant(id: String, variantId: String, autoRefreshUpdates: Boolean?): Boolean {
         val current = mutableState.value
+        val widget = current.displayedWidgets.firstOrNull { it.id == id } ?: return false
+        if (!skinSelection().choices(widget.typeId).any { it.id == variantId }) return false
         val updated = saveHomeWidgetVariant(current, id, variantId) ?: return false
         if (autoRefreshUpdates != null &&
             current.displayedWidgets.any { it.id == id && it.typeId == "updates" }
@@ -312,10 +316,23 @@ class HomeViewModel(
     }
 
     internal fun saveSuite(styleId: String): Boolean {
+        if (!skinSelection().allows(styleId)) return false
         val updated = saveHomeWidgetSuite(mutableState.value, styleId) ?: return false
         persistLayout(updated.widgets)
         return true
     }
+
+    internal fun onSkinDeleted(styleId: String) {
+        val current = mutableState.value
+        val updated = clearDeletedHomeWidgetSkin(current, styleId)
+        if (updated == current) return
+        if (updated.widgets != current.widgets) {
+            getApplication<Application>().putPrefString(LAYOUT_KEY, HomeWidgetLayoutCodec.encode(updated.widgets))
+        }
+        if (updated.draft != null) updateEditingState(updated) else mutableState.value = updated
+    }
+
+    private fun skinSelection() = HomeWidgetSkinSelection(HomeWidgetSkinStore.installed.value)
 
     private fun applyWidgetMutation(updated: HomeUiState) {
         val draft = updated.draft

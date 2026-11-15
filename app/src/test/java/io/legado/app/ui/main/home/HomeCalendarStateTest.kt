@@ -103,10 +103,10 @@ class HomeCalendarStateTest {
         assertEquals(widgets, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(widgets)))
     }
 
-    @Test fun `calendar exposes four large skins outside the default layout`() {
+    @Test fun `calendar exposes large skins outside the default layout`() {
         val calendar = HomeWidgetCatalog.type("calendar")!!
-        assertEquals(listOf("large", "story-large", "night-large", "white-large"), calendar.variants.map { it.id })
-        assertEquals(listOf("basic", "storybook", "night", "white"), calendar.variants.map { it.styleId })
+        assertEquals(listOf("large", "story-large", "night-large", "white-large", "blue-fish-large"), calendar.variants.map { it.id })
+        assertEquals(listOf("basic", "storybook", "night", "white", "blue_fish"), calendar.variants.map { it.styleId })
         assertTrue(calendar.variants.all { it.size == HomeWidgetSize.LARGE })
         calendar.variants.forEach { variant ->
             assertNull(HomeWidgetCatalog.variantForSize("calendar", variant.id, HomeWidgetSize.SMALL))

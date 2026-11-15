@@ -1,6 +1,10 @@
 package io.legado.app.help.resource
 
 import io.legado.app.help.pet.PetIdentity
+import io.legado.app.help.home.HomeWidgetSkinPackage
+import io.legado.app.help.home.HomeWidgetSkinRecord
+import io.legado.app.help.home.HomeWidgetSkinRenderer
+import io.legado.app.help.home.InstalledHomeWidgetSkin
 import androidx.annotation.Keep
 import com.google.gson.annotations.SerializedName
 import java.security.MessageDigest
@@ -117,6 +121,10 @@ internal data class ResourceInstallLedger(
     @SerializedName("installations") val installations: List<ResourceInstallation> = emptyList(),
 )
 
+internal const val HOME_WIDGET_SKIN_TYPE = "widget_skin"
+internal const val HOME_WIDGET_SKIN_CAPABILITY = "home.widget.skin.1"
+internal const val HOME_WIDGET_BLUE_FISH_CAPABILITY = "home.widget.skin.blue_fish.1"
+
 internal enum class ResourceLocalState { PRESENT, MODIFIED, MISSING }
 internal enum class ResourceInstallMode { NORMAL, REPLACE, COPY }
 internal data class ThemeResourceConflict(
@@ -131,12 +139,14 @@ internal data class ResourceTask(
     val conflict: Boolean = false,
     val themeConflict: ThemeResourceConflict? = null,
     val readPresetConflict: io.legado.app.help.config.ReadPresetResourceConflict? = null,
+    val widgetSkinConflict: HomeWidgetSkinRecord? = null,
 )
 internal data class ResourceCenterState(
     val snapshot: ResourceSnapshot? = null,
     val installations: List<ResourceInstallation> = emptyList(),
     val localStates: Map<String, ResourceLocalState> = emptyMap(),
     val petInstallations: Map<String, io.legado.app.help.pet.PetLocalRecord> = emptyMap(),
+    val widgetSkins: Map<String, InstalledHomeWidgetSkin> = emptyMap(),
     val tasks: Map<String, ResourceTask> = emptyMap(),
     val loading: Boolean = false,
     val updatingAll: Boolean = false,
@@ -177,7 +187,8 @@ internal data class ResourceCenterState(
     /** 暂停分发的类型保留安装记录，当前目录仅显示可用类型。 */
     fun downloadedInstallations() = installations.filter {
         ResourceProtocol.isBrowsableType(it.entry.category.type) &&
-            localStates[it.entry.item.id] != ResourceLocalState.MISSING
+            localStates[it.entry.item.id] != ResourceLocalState.MISSING &&
+            (it.entry.category.type != HOME_WIDGET_SKIN_TYPE || widgetSkins[it.entry.item.id]?.fromResource == true)
     }
 
     fun installed(id: String) = installations.firstOrNull {
@@ -185,22 +196,32 @@ internal data class ResourceCenterState(
     }
 
     fun pet(entry: ResourceEntry) = entry.item.payload.pluginId?.let(petInstallations::get)
-    fun hasInstalled(entry: ResourceEntry) = if (entry.category.type == "pet")
-        PetResourcePolicy.present(pet(entry)) else installed(entry.item.id) != null
+    fun hasInstalled(entry: ResourceEntry) = when (entry.category.type) {
+        "pet" -> PetResourcePolicy.present(pet(entry))
+        HOME_WIDGET_SKIN_TYPE -> widgetSkins.containsKey(entry.item.id)
+        else -> installed(entry.item.id) != null
+    }
     fun isLocalPetChange(entry: ResourceEntry) = entry.category.type == "pet" &&
         PetResourcePolicy.localChange(entry, pet(entry), installed(entry.item.id))
-    fun versionLabel(entry: ResourceEntry) = if (entry.category.type == "pet")
-        PetResourcePolicy.label(entry, pet(entry), installed(entry.item.id))
-        else ResourceProtocol.versionState(entry, installed(entry.item.id))
+    fun isLocalWidgetSkin(entry: ResourceEntry) =
+        entry.category.type == HOME_WIDGET_SKIN_TYPE && widgetSkins[entry.item.id]?.fromResource == false
+    fun versionLabel(entry: ResourceEntry): String {
+        if (entry.category.type == "pet") return PetResourcePolicy.label(entry, pet(entry), installed(entry.item.id))
+        if (entry.category.type == HOME_WIDGET_SKIN_TYPE && widgetSkins[entry.item.id]?.fromResource == false) return "本地已导入"
+        return ResourceProtocol.versionState(entry, installed(entry.item.id))
+    }
 
     fun updateCategories(): Set<String> {
-        val types = downloadedInstallations().map { it.entry.category.type }.toSet() +
-            if (petInstallations.isNotEmpty()) setOf("pet") else emptySet()
+        val types = updateTypes()
         return snapshot?.catalog?.categories.orEmpty().filter { it.type in types }.map { it.id }.toSet()
     }
 
+    fun updateTypes(): Set<String> =
+        downloadedInstallations().mapTo(mutableSetOf()) { it.entry.category.type }
+            .apply { if (petInstallations.isNotEmpty()) add("pet") }
+
     fun updatesReady(): Boolean = localChecked && storageError == null &&
-        ((downloadedInstallations().isEmpty() && petInstallations.isEmpty()) ||
+        (updateTypes().isEmpty() ||
             (snapshot != null && !accessDenied && updateCategories().all { it in loadedCategories }))
 
     fun sourceChecked(entry: ResourceEntry): Boolean = snapshot != null && !accessDenied &&
@@ -245,6 +266,7 @@ internal object ResourceProtocol {
         "font" to setOf("ttf", "otf"),
         "background" to setOf("png", "jpg", "jpeg", "webp"),
         "read_preset" to setOf("zip"),
+        HOME_WIDGET_SKIN_TYPE to setOf("zip"),
         "tts" to setOf("js"),
         "theme" to setOf("ngtheme", "zip"),
         "pet" to setOf("zip"),
@@ -310,7 +332,7 @@ internal object ResourceProtocol {
 
     fun validatePreview(preview: ResourceFontPreview?, type: String) {
         if (preview == null) return
-        require(type == "font" || type == "pet" || type == "read_preset") { "此资源类型不支持目录预览" }
+        require(type in setOf("font", "pet", "read_preset")) { "此资源类型不支持目录预览" }
         validatePreviewImage(requireNotNull(preview.thumbnail) { "预览缺少缩略图" }, 256, 256)
         val detail = requireNotNull(preview.detail) { "预览缺少详情图" }
         if (type == "pet" || type == "read_preset") validatePreviewImage(detail, 768, 768)
@@ -372,11 +394,18 @@ internal object ResourceProtocol {
         if (entry.category.type == "pet" && entry.item.payload.format == "ngpet") return "旧版宠物插件，请更新插件"
         if (entry.item.payload.format !in formats[entry.category.type].orEmpty()) return "暂不支持此资源类型"
         if (entry.item.payload.size > MAX_PAYLOAD_BYTES) return "资源超过当前 64 MB 下载上限"
+        if (entry.category.type == HOME_WIDGET_SKIN_TYPE && entry.item.payload.size > HomeWidgetSkinPackage.MAX_PACKAGE_BYTES)
+            return "组件皮肤超过 8 MB 下载上限"
         val requirements = entry.item.requirements
         if (requirements != null && requirements.minAppVersionCode > appVersion) return "需要更新版本的阅读 NG"
         val capabilities = requirements?.capabilities.orEmpty()
         if (entry.category.type == "pet") {
             if (capabilities.toSet() != setOf(PetIdentity.CAPABILITY)) return "宠物插件接口不兼容"
+        } else if (entry.category.type == HOME_WIDGET_SKIN_TYPE) {
+            val expected = if (entry.item.id == HomeWidgetSkinRenderer.BLUE_FISH.resourceId) {
+                setOf(HOME_WIDGET_SKIN_CAPABILITY, HOME_WIDGET_BLUE_FISH_CAPABILITY)
+            } else setOf(HOME_WIDGET_SKIN_CAPABILITY)
+            if (capabilities.toSet() != expected) return "组件皮肤接口不兼容"
         } else if (entry.category.type == "theme") {
             if (capabilities.any { it != "theme.effect.1" }) return "特效主题接口不兼容"
         } else if (capabilities.isNotEmpty()) return "资源要求当前未声明支持的能力"

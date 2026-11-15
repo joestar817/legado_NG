@@ -1,6 +1,9 @@
 package io.legado.app.help.resource
 
 import android.graphics.Bitmap
+import io.legado.app.help.home.HomeWidgetSkinPackage
+import io.legado.app.help.home.HomeWidgetSkinStore
+import io.legado.app.help.home.HomeWidgetSkinRecord
 import io.legado.app.help.pet.PetPluginStore
 import io.legado.app.help.pet.PetLocalManager
 import io.legado.app.help.pet.PetLocalRecord
@@ -93,6 +96,7 @@ internal object ResourceRepository {
 
     init {
         scope.launch { PetPluginStore.revision.collect { reconcile() } }
+        scope.launch { HomeWidgetSkinStore.revision.collect { reconcile() } }
     }
 
     /** ViewModel持有租约，配置变化不重开会话，最后一个页面退出才释放远端索引。 */
@@ -195,6 +199,11 @@ internal object ResourceRepository {
             ) return@withLock null
             ResourceInstaller.fileFor(record)?.takeIf { it.isFile }?.absolutePath
         }
+    }
+
+    suspend fun homeWidgetSkinPreview(id: String, detail: Boolean): Bitmap? = withContext(Dispatchers.IO) {
+        val file = HomeWidgetSkinStore.file(id) ?: return@withContext null
+        runCatching { HomeWidgetSkinPackage.previewBitmap(file, if (detail) 1 else 4) }.getOrNull()
     }
 
     /** Installed receipts are local data; this projection never opens a catalog session. */
@@ -308,6 +317,8 @@ internal object ResourceRepository {
             val locals = records.associate { it.entry.item.id to ResourceInstaller.localState(it) }
             val pets = localPetRecordsLocked(records).associateBy { it.id }
             mutableState.update { it.withLocalInstallations(records, locals, checkedTasks).copy(petInstallations = pets) }
+            HomeWidgetSkinStore.refresh()
+            mutableState.update { it.copy(widgetSkins = HomeWidgetSkinStore.installed.value.associateBy { skin -> skin.id }) }
             runCatching { cleanupFontPayloadsLocked(records) }
         } catch (error: Exception) {
             mutableState.update { it.copy(storageError = "无法读取安装记录：${error.message}") }
@@ -324,6 +335,29 @@ internal object ResourceRepository {
             ResourceInstallStore.clearPending()
         }
         return records
+    }
+
+    private suspend fun commitInstallationLocked(
+        records: List<ResourceInstallation>,
+        record: ResourceInstallation,
+        candidate: PreparedResource,
+        onCommitted: () -> Unit,
+    ): List<ResourceInstallation> {
+        ResourceInstallStore.prepare(record)
+        try {
+            candidate.commit()
+        } catch (conflict: ResourceConflict) {
+            // A confirmation can become stale before the final write.
+            ResourceInstallStore.clearPending()
+            throw conflict
+        }
+        onCommitted()
+        val verified = record.copy(baseline = ResourceInstaller.fingerprint(record) ?: error("入库后资源不存在"))
+        ResourceInstallStore.prepare(verified)
+        val updated = records.filterNot { it.entry.item.id == record.entry.item.id } + verified
+        ResourceInstallStore.save(updated)
+        ResourceInstallStore.clearPending()
+        return updated
     }
 
     /** 删除托管字体及其台账。用中的字体需要单独确认其引用。 */
@@ -411,14 +445,17 @@ internal object ResourceRepository {
         payloadLeases[hash] = (payloadLeases[hash] ?: 0) + 1
     }
 
-    private fun releasePayloadLease(hash: String, disposableFont: Boolean) {
+    private fun releasePayloadLease(hash: String, type: String) {
         synchronized(payloadLeaseLock) {
             val count = (payloadLeases[hash] ?: 1) - 1
             if (count == 0) payloadLeases.remove(hash) else payloadLeases[hash] = count
         }
         scope.launch {
             installMutex.withLock {
-                if (disposableFont) queueFontPayloadCleanupLocked(listOf(hash))
+                if (type == "font") queueFontPayloadCleanupLocked(listOf(hash))
+                if (type == HOME_WIDGET_SKIN_TYPE) synchronized(payloadLeaseLock) {
+                    if (hash !in payloadLeases) File(cacheDir, hash).delete()
+                }
                 // Cache failures never turn a successful install into a failed resource operation.
                 runCatching { cleanupFontPayloadsLocked(ResourceInstallStore.load()) }
             }
@@ -691,10 +728,12 @@ internal object ResourceRepository {
         confirmedThemeConflict: ThemeResourceConflict? = null,
         confirmedReadPresetConflict: io.legado.app.help.config.ReadPresetResourceConflict? = null,
         readPresetReplacement: io.legado.app.help.config.ReadPresetResourceCandidate? = null,
+        confirmedWidgetSkinReplacement: HomeWidgetSkinRecord? = null,
     ) {
         val current = state.value.confirmedEntry(entry) ?: return
         startInstall(current, mode, confirmedThemeConflict = confirmedThemeConflict,
-            confirmedReadPresetConflict = confirmedReadPresetConflict, readPresetReplacement = readPresetReplacement)
+            confirmedReadPresetConflict = confirmedReadPresetConflict, readPresetReplacement = readPresetReplacement,
+            confirmedWidgetSkinReplacement = confirmedWidgetSkinReplacement)
     }
 
     fun updateAll() {
@@ -727,6 +766,7 @@ internal object ResourceRepository {
         confirmedThemeConflict: ThemeResourceConflict? = null,
         confirmedReadPresetConflict: io.legado.app.help.config.ReadPresetResourceConflict? = null,
         readPresetReplacement: io.legado.app.help.config.ReadPresetResourceCandidate? = null,
+        confirmedWidgetSkinReplacement: HomeWidgetSkinRecord? = null,
     ): Job {
         val id = entry.item.id
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -745,6 +785,7 @@ internal object ResourceRepository {
                 check(state.value.storageError == null) { "安装记录异常，请重新进入后重试" }
                 check(!state.value.accessDenied) { "资源库暂不可访问，请重试" }
                 ResourceProtocol.incompatibility(entry, BuildConfig.VERSION_CODE.toLong())?.let { error(it) }
+                val widgetSkinBefore = if (entry.category.type == HOME_WIDGET_SKIN_TYPE) HomeWidgetSkinStore.current(id) else null
                 val previous = state.value.installed(id)
                 if (previous != null && entry.category.type != "pet") {
                     val version = ResourceProtocol.versionState(entry, previous)
@@ -786,30 +827,17 @@ internal object ResourceRepository {
                             .mapTo(hashSetOf()) { it.target }
                     } else emptySet()
                     val candidate = ResourceInstaller.prepare(entry, file, old, mode, confirmedThemeConflict, otherThemeTargets,
-                        confirmedReadPresetConflict, readPresetReplacement)
+                        confirmedReadPresetConflict, readPresetReplacement, confirmedWidgetSkinReplacement, widgetSkinBefore)
                     prepared = candidate
                     currentCoroutineContext().ensureActive()
                     task(id, ResourceTask(message = "正在入库"))
                     // 事务段不可取消；不会留下已经替换业务对象却声称取消的状态。
                     withContext(NonCancellable) {
-                        var record = ResourceInstallation(
+                        val record = ResourceInstallation(
                             entry = entry, target = candidate.target, baseline = candidate.baseline,
                             installedAt = System.currentTimeMillis(),
                         )
-                        ResourceInstallStore.prepare(record)
-                        try {
-                            candidate.commit()
-                        } catch (conflict: ResourceConflict) {
-                            // A confirmation can become stale before the main-thread commit; no preset was written.
-                            ResourceInstallStore.clearPending()
-                            throw conflict
-                        }
-                        committed = true
-                        record = record.copy(baseline = ResourceInstaller.fingerprint(record) ?: error("入库后资源不存在"))
-                        ResourceInstallStore.prepare(record)
-                        val updated = records.filterNot { it.entry.item.id == id } + record
-                        ResourceInstallStore.save(updated)
-                        ResourceInstallStore.clearPending()
+                        val updated = commitInstallationLocked(records, record, candidate) { committed = true }
                         val installedPets = if (entry.category.type == "pet")
                             localPetRecordsLocked(updated).associateBy { pet -> pet.id } else null
                         val invalidatedPresets = if (entry.category.type == "read_preset") {
@@ -819,7 +847,8 @@ internal object ResourceRepository {
                         } else emptyMap()
                         mutableState.update {
                             it.copy(installations = updated, localStates = it.localStates + invalidatedPresets + (id to ResourceLocalState.PRESENT),
-                                petInstallations = installedPets ?: it.petInstallations)
+                                petInstallations = installedPets ?: it.petInstallations,
+                                widgetSkins = HomeWidgetSkinStore.installed.value.associateBy { skin -> skin.id })
                         }
                         if (entry.category.type == "font") {
                             queueFontPayloadCleanupLocked(listOfNotNull(
@@ -837,7 +866,8 @@ internal object ResourceRepository {
                 task(id, ResourceTask(message = completionMessage, running = false))
             } catch (conflict: ResourceConflict) {
                 task(id, ResourceTask(message = conflict.message ?: "本地资源冲突", running = false, conflict = true,
-                    themeConflict = conflict.themeConflict, readPresetConflict = conflict.readPresetConflict))
+                    themeConflict = conflict.themeConflict, readPresetConflict = conflict.readPresetConflict,
+                    widgetSkinConflict = conflict.widgetSkinConflict))
             } catch (cancelled: CancellationException) {
                 task(id, ResourceTask(message = if (committed) "已加入资源库" else "已取消", running = false))
                 throw cancelled
@@ -846,7 +876,7 @@ internal object ResourceRepository {
                 task(id, ResourceTask(message = resourceNetworkMessage(error), running = false))
             } finally {
                 if (!committed) prepared?.discard?.invoke()
-                leasedPayload?.let { releasePayloadLease(it, entry.category.type == "font") }
+                leasedPayload?.let { releasePayloadLease(it, entry.category.type) }
             }
         }
         // LAZY 任务若在 start 前被取消，协程体不会执行，仍必须释放对应 ID。
@@ -866,6 +896,7 @@ internal object ResourceRepository {
         if (jobs[id]?.isActive != true) mutableState.update { it.copy(tasks = it.tasks - id) }
     }
     private fun task(id: String, value: ResourceTask) { mutableState.update { it.copy(tasks = it.tasks + (id to value)) } }
+
 }
 
 internal fun resourceNetworkMessage(error: Exception): String = when (error) {

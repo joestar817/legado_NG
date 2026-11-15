@@ -20,7 +20,7 @@ private const val MATERIAL_PIXELS_PER_DP = 2f
 internal fun listeningStructuredMaterialPaint(styleId: String, density: Float): Paint {
     require(density.isFinite() && density > 0f)
     val bitmap = when (styleId) {
-        "storybook" -> storyMaterialTile
+        "storybook", "blue_fish" -> storyMaterialTile
         "night" -> nightMaterialTile
         else -> error("No structured listening material for $styleId")
     }

@@ -20,6 +20,9 @@ import androidx.lifecycle.lifecycleScope
 import io.legado.app.base.BaseActivity
 import io.legado.app.base.ComposeActivityBinding
 import io.legado.app.data.appDb
+import io.legado.app.help.config.AppConfig
+import io.legado.app.help.resource.HOME_WIDGET_SKIN_TYPE
+import io.legado.app.help.home.HomeWidgetSkinStore
 import io.legado.app.help.resource.ResourceEntry
 import io.legado.app.help.resource.ResourceProtocol
 import io.legado.app.help.resource.ResourceRepository
@@ -29,6 +32,8 @@ import io.legado.app.ui.config.ConfigActivity
 import io.legado.app.ui.config.ConfigTag
 import io.legado.app.ui.config.ThemeInterfaceFontEditorSheet
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.main.HOME_WIDGET_SKIN_REQUEST
+import io.legado.app.ui.main.MainActivity
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
@@ -145,6 +150,24 @@ class ResourceCenterActivity : BaseActivity<ComposeActivityBinding>() {
                 putExtra(PetManagerActivity.PLUGIN_ID, entry.item.payload.pluginId)
             }
             "theme" -> startActivity<ConfigActivity> { putExtra("configTag", ConfigTag.THEME_MANAGER) }
+            HOME_WIDGET_SKIN_TYPE -> lifecycleScope.launch {
+                if (!AppConfig.showHome) {
+                    toastOnUi("请先在界面布局中开启首页")
+                    return@launch
+                }
+                try {
+                    withContext(Dispatchers.IO) { HomeWidgetSkinStore.refresh() }
+                    if (HomeWidgetSkinStore.installed.value.none { it.id == entry.item.id }) {
+                        toastOnUi("组件皮肤不可用，请重新导入或下载")
+                        return@launch
+                    }
+                    startActivity<MainActivity> {
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        putExtra(HOME_WIDGET_SKIN_REQUEST, entry.item.id)
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (error: Exception) { toastOnUi(error.message ?: "无法打开组件皮肤") }
+            }
             "tts" -> startActivity<ConfigActivity> {
                 putExtra("configTag", ConfigTag.TTS_ENGINE_CONFIG)
                 putExtra("resourceEngineId", ResourceRepository.state.value.installed(entry.item.id)?.target)

@@ -262,6 +262,27 @@ class ResourceProtocolTest {
         assertNotNull(ResourceProtocol.incompatibility(entry(item.copy(payload = item.payload.copy(size = ResourceProtocol.MAX_PAYLOAD_BYTES + 1))), 100))
     }
 
+    @Test fun blueFishRequiresItsRendererCapabilityWithoutChangingExistingSkins() {
+        val category = ResourceCategory("widget-skins", "组件皮肤", HOME_WIDGET_SKIN_TYPE,
+            "resources/widget-skins/index.json", 1)
+        fun skin(id: String, capabilities: List<String>) = ResourceEntry(category, commit, item.copy(
+            id = id,
+            payload = ResourcePayload("resources/widget-skins/example/skin.zip", "zip", 32, "b".repeat(64)),
+            requirements = ResourceRequirements(capabilities = capabilities),
+        ))
+        val common = HOME_WIDGET_SKIN_CAPABILITY
+        val blue = HOME_WIDGET_BLUE_FISH_CAPABILITY
+        val blueFish = "ng.home_skin.blue_fish"
+        assertNull(ResourceProtocol.incompatibility(skin(blueFish, listOf(common, blue)), Long.MAX_VALUE))
+        assertNotNull(ResourceProtocol.incompatibility(skin(blueFish, listOf(common)), Long.MAX_VALUE))
+        assertNotNull(ResourceProtocol.incompatibility(skin(blueFish, listOf(blue)), Long.MAX_VALUE))
+        assertNotNull(ResourceProtocol.incompatibility(skin(blueFish, listOf(common, blue, "unknown")), Long.MAX_VALUE))
+        assertNull(ResourceProtocol.incompatibility(skin("ng.home_skin.storybook", listOf(common)), Long.MAX_VALUE))
+        assertNotNull(ResourceProtocol.incompatibility(skin("ng.home_skin.storybook", listOf(common, blue)), Long.MAX_VALUE))
+        // The earlier client accepted only the one-element common capability set.
+        assertNotEquals(setOf(common), setOf(common, blue))
+    }
+
     @Test fun zeroCommitAndPayloadOutsideCategoryAreRejected() {
         assertFalse(ResourceProtocol.validCommit("0".repeat(40)))
         assertThrows(IllegalArgumentException::class.java) {

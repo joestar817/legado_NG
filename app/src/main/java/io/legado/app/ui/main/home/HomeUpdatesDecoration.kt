@@ -3,7 +3,6 @@ package io.legado.app.ui.main.home
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,20 +40,12 @@ private fun homeUpdatesHeaderSubtitle(state: HomeUpdatesState): String? =
     if (state.books.isNotEmpty()) stringResource(R.string.home_updates_count_compact, state.books.size)
     else null
 
+/** Place the update count on the same left edge as the body. */
 @Composable
-internal fun HomeUpdatesHeaderTitle(
-    title: String,
-    state: HomeUpdatesState,
-    small: Boolean,
-    foreground: Color,
-    secondary: Color,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier) {
-        Text(title, color = foreground, style = homeWidgetHeaderTitleStyle(small))
-        homeUpdatesHeaderSubtitle(state)?.let {
-            Text(it, color = secondary, style = homeUpdatesDateStyle(small))
-        }
+internal fun HomeUpdatesCountBelowHeader(state: HomeUpdatesState, small: Boolean, color: Color) {
+    homeUpdatesHeaderSubtitle(state)?.let {
+        Text(it, Modifier.fillMaxWidth().padding(horizontal = if (small) 12.dp else 14.dp),
+            color = color, fontSize = 12.sp, lineHeight = 16.sp)
     }
 }
 
@@ -114,12 +105,13 @@ internal fun HomeUpdatesDecoratedHeader(
     checkWidth: Dp = 0.dp,
     content: @Composable (Dp) -> Unit,
 ) {
-    val artwork = when (variant.styleId) {
-        "storybook" -> R.drawable.ng_home_updates_story_girl.takeIf { variant.size == HomeWidgetSize.SMALL }
-        "night" -> R.drawable.ng_home_calendar_night_lamp.takeIf { variant.size == HomeWidgetSize.SMALL }
-        else -> null
-    }
     val small = variant.size == HomeWidgetSize.SMALL
+    val artwork = if (small) when (variant.styleId) {
+        "storybook" -> homeWidgetArtworkPainter(variant.styleId, "updates")
+        "blue_fish" -> homeWidgetArtworkPainter(variant.styleId, "updates")
+        "night" -> homeWidgetArtworkPainter(variant.styleId, "lamp")
+        else -> null
+    } else null
     if (artwork == null && small) {
         content(0.dp)
         return
@@ -156,7 +148,7 @@ internal fun HomeUpdatesDecoratedHeader(
         content(statusWidth)
         if (artwork != null && maxWidth >= padding * 2 + iconSize + iconGap + textWidth + 8.dp + artSize + occupiedTrailingWidth) {
             Box(Modifier.matchParentSize().clearAndSetSemantics {}) {
-                Image(homeWidgetArtworkPainter(artwork), null, contentScale = ContentScale.Fit,
+                Image(artwork, null, contentScale = ContentScale.Fit,
                     modifier = Modifier.align(Alignment.CenterEnd).padding(end = padding + occupiedTrailingWidth).size(artSize))
             }
         }

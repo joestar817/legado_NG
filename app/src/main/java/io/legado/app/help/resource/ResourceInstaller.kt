@@ -1,6 +1,8 @@
 package io.legado.app.help.resource
 
 import io.legado.app.help.pet.PetPluginStore
+import io.legado.app.help.home.HomeWidgetSkinRecord
+import io.legado.app.help.home.HomeWidgetSkinStore
 import io.legado.app.constant.EventBus
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -31,7 +33,23 @@ internal class ResourceConflict(
     message: String,
     val themeConflict: ThemeResourceConflict? = null,
     val readPresetConflict: ReadPresetResourceConflict? = null,
+    val widgetSkinConflict: HomeWidgetSkinRecord? = null,
 ) : IllegalStateException(message)
+
+internal fun requireWidgetSkinReplacement(
+    current: HomeWidgetSkinRecord?,
+    expected: HomeWidgetSkinRecord?,
+    confirmed: HomeWidgetSkinRecord?,
+    mode: ResourceInstallMode,
+) {
+    if (current != expected || confirmed != null && current != confirmed) {
+        throw ResourceConflict("已安装皮肤发生变化，请重新确认",
+            widgetSkinConflict = current?.takeIf { !it.fromResource })
+    }
+    if (current?.fromResource == false && (mode != ResourceInstallMode.REPLACE || confirmed != current)) {
+        throw ResourceConflict("本地已有同名皮肤，请选择保留或替换。", widgetSkinConflict = current)
+    }
+}
 
 internal class PreparedResource(
     val target: String,
@@ -43,7 +61,7 @@ internal class PreparedResource(
 
 internal object ResourceInstaller {
     fun fingerprint(record: ResourceInstallation): String? = when (record.entry.category.type) {
-        "font", "background", "pet" -> fileFor(record)?.takeIf { it.isFile }?.let(ResourceFiles::hash)
+        "font", "background", "pet", HOME_WIDGET_SKIN_TYPE -> fileFor(record)?.takeIf { it.isFile }?.let(ResourceFiles::hash)
         "read_preset" -> ReadBookConfig.resourcePresetFingerprint(record.target)
         "tts" -> TtsEngineStore.engine(record.target)?.let { ResourceProtocol.hash(it.script.toByteArray()) }
         "theme", "listening_effect" -> NgEffectPackageLibrary.current(appCtx, packageKind(record.entry)).savedThemes.firstOrNull { it.id == record.target }?.let(::themeHash)
@@ -58,6 +76,7 @@ internal object ResourceInstaller {
 
     fun fileFor(record: ResourceInstallation): File? {
         if (record.entry.category.type == "pet") return PetPluginStore.file(record.target)
+        if (record.entry.category.type == HOME_WIDGET_SKIN_TYPE) return HomeWidgetSkinStore.file(record.target)
         if (record.entry.category.type == "font") {
             return requireNotNull(FontLibraryStore.managedFile(record.target)) { "字体资源本地路径越界" }
         }
@@ -81,8 +100,12 @@ internal object ResourceInstaller {
         otherThemeTargets: Set<String> = emptySet(),
         confirmedReadPresetConflict: ReadPresetResourceConflict? = null,
         readPresetReplacement: ReadPresetResourceCandidate? = null,
+        confirmedWidgetSkinReplacement: HomeWidgetSkinRecord? = null,
+        expectedWidgetSkin: HomeWidgetSkinRecord? = null,
     ): PreparedResource {
-        if (entry.category.type !in setOf("pet", "read_preset") && old != null &&
+        val localWidgetSkin = entry.category.type == HOME_WIDGET_SKIN_TYPE &&
+            HomeWidgetSkinStore.current(entry.item.id)?.fromResource == false
+        if (!localWidgetSkin && entry.category.type !in setOf("pet", "read_preset") && old != null &&
             mode == ResourceInstallMode.NORMAL && localState(old) == ResourceLocalState.MODIFIED) {
             throw ResourceConflict("本地资源已修改，选择保留本地、替换或安装副本。")
         }
@@ -90,6 +113,7 @@ internal object ResourceInstaller {
             "font" -> prepareFont(entry, payload)
             "background" -> prepareFile(entry, payload, old, mode)
             "read_preset" -> prepareReadPreset(entry, payload, old, mode, confirmedReadPresetConflict, readPresetReplacement)
+            HOME_WIDGET_SKIN_TYPE -> prepareHomeWidgetSkin(entry, payload, mode, confirmedWidgetSkinReplacement, expectedWidgetSkin)
             "tts" -> prepareTts(entry, payload, old, mode)
             "theme" -> prepareTheme(entry, payload, old, mode, confirmedThemeConflict, otherThemeTargets)
             "pet" -> {
@@ -114,6 +138,28 @@ internal object ResourceInstaller {
             }
             else -> error("暂不支持此资源类型")
         }
+    }
+
+    private fun prepareHomeWidgetSkin(
+        entry: ResourceEntry, payload: File, mode: ResourceInstallMode,
+        confirmed: HomeWidgetSkinRecord?, expected: HomeWidgetSkinRecord?,
+    ): PreparedResource {
+        require(mode != ResourceInstallMode.COPY) { "组件皮肤按资源版本管理" }
+        val hash = entry.item.payload.sha256
+        require(payload.length() == entry.item.payload.size && ResourceFiles.hash(payload) == hash) {
+            "组件皮肤内容已变化，请重试"
+        }
+        val skin = HomeWidgetSkinStore.prepare(payload, entry.item.name, fromResource = true)
+        require(skin.record.id == entry.item.id) { "组件皮肤与目录身份不一致" }
+        requireWidgetSkinReplacement(skin.previous, expected, confirmed, mode)
+        return PreparedResource(skin.record.id, hash, commit = {
+            try {
+                HomeWidgetSkinStore.install(skin)
+            } catch (error: IllegalStateException) {
+                throw ResourceConflict(error.message ?: "皮肤已变化，请重新确认",
+                    widgetSkinConflict = HomeWidgetSkinStore.current(entry.item.id)?.takeIf { !it.fromResource })
+            }
+        })
     }
 
     private fun prepareFont(entry: ResourceEntry, payload: File): PreparedResource {

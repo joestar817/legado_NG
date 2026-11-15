@@ -113,6 +113,7 @@ internal fun HomeWidgetMeasuredLayout(
     previewWidget: HomeWidgetInstance? = null,
     content: @Composable (HomeWidgetDimensions) -> Unit,
 ) {
+    val skins = LocalHomeWidgetSkins.current
     SubcomposeLayout(modifier) { constraints ->
         val fullWidth = fullWidgetWidth ?: (constraints.maxWidth.toDp() - HomeWidgetGridMargin * 2)
         val dimensionsKey = if (probeCache != null && previewWidget != null) HomeWidgetDimensionsKey(
@@ -138,12 +139,12 @@ internal fun HomeWidgetMeasuredLayout(
             var updatesSmallBody = 0.dp
             val measuredHeaders = mutableMapOf<Pair<String, HomeWidgetSize>, Dp>()
             widgets.distinctBy {
-                val variant = HomeWidgetCatalog.variant(it)!!
+                val variant = skins.render(it)
                 Triple(it.typeId, variant.size, if (it.typeId == "calendar") it.id
                     else if (variant.size == HomeWidgetSize.LARGE) variant.styleId
                     else if (isCompactHomeWidgetSmall(variant.size, it.typeId, variant.styleId)) "compact-basic" else "small")
             }.forEach { widget ->
-                val selected = HomeWidgetCatalog.variant(widget)!!
+                val selected = skins.render(widget)
                 val size = selected.size
                 val compactSmall = isCompactHomeWidgetSmall(size, widget.typeId, selected.styleId)
                 val updatesSmall = size == HomeWidgetSize.SMALL && widget.typeId == "updates"
@@ -170,7 +171,7 @@ internal fun HomeWidgetMeasuredLayout(
                 else if (compactSmall) compactSmallHeader = maxOf(compactSmallHeader, header)
                 else if (size == HomeWidgetSize.SMALL) headers[size] = maxOf(headers[size] ?: HomeWidgetSkinHeaderHeight, header)
                 else largeHeaders[widget.typeId] = header
-                homeWidgetMeasureVariants(widget.typeId, size, selected).forEach { bodyVariant ->
+                homeWidgetMeasureVariants(widget.typeId, size, selected).filter { skins.allows(it.styleId) }.forEach { bodyVariant ->
                     val bodyKey = homeWidgetBodyKey(widget.typeId, bodyVariant.styleId, widget.id)
                     val bodyMeasureKey = HomeWidgetMeasureKey(widget.typeId, size, false, bodyVariant.styleId, bodyKey.instanceId)
                     val calendarSelection = calendarState.selectionFor(widget.id, calendarSelections)

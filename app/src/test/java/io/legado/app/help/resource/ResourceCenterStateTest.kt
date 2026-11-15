@@ -1,6 +1,9 @@
 package io.legado.app.help.resource
 
 import org.junit.Assert.*
+import io.legado.app.help.home.HomeWidgetSkinRenderer
+import io.legado.app.help.home.InstalledHomeWidgetSkin
+import java.io.File
 import org.junit.Test
 
 class ResourceCenterStateTest {
@@ -104,6 +107,39 @@ class ResourceCenterStateTest {
         )
         assertEquals(remote, state.updatableEntries())
         assertSame(conflict, state.tasks["tts"])
+    }
+
+    @Test fun importedSkinBelongsToHomeWithoutBecomingADownloadOrAutomaticUpdate() {
+        val id = "ng.home_skin.storybook"
+        val digest = "f".repeat(64)
+        val skin = InstalledHomeWidgetSkin(id, "绘本书屋", HomeWidgetSkinRenderer.STORYBOOK, File("local.zip"), digest)
+        val remote = ResourceEntry(
+            category = ResourceCategory(type = HOME_WIDGET_SKIN_TYPE),
+            sourceCommit = "a".repeat(40),
+            item = ResourceItem(id = id, versionCode = 8L, payload = ResourcePayload(sha256 = "e".repeat(64))),
+        )
+        val state = ResourceCenterState(widgetSkins = mapOf(id to skin), localChecked = true,
+            snapshot = ResourceSnapshot(entries = listOf(remote)))
+        assertTrue(state.downloadedInstallations().isEmpty())
+        assertTrue(state.hasInstalled(remote))
+        assertTrue(state.updatesReady())
+        assertTrue(state.updatableEntries().isEmpty())
+        assertTrue(state.isLocalWidgetSkin(remote))
+        assertTrue(state.isLocalWidgetSkin(remote.copy(item = remote.item.copy(payload = ResourcePayload(sha256 = digest)))))
+        assertFalse(state.isLocalWidgetSkin(remote.copy(category = ResourceCategory(type = "theme"))))
+        assertEquals("本地已导入", state.versionLabel(remote))
+
+        val receipt = ResourceInstallation(entry = remote.copy(item = remote.item.copy(versionCode = 1)), baseline = digest)
+        val previousDownload = state.copy(installations = listOf(receipt),
+            localStates = mapOf(id to ResourceLocalState.MODIFIED))
+        assertTrue(previousDownload.downloadedInstallations().isEmpty())
+        assertTrue(previousDownload.updatableEntries().isEmpty())
+
+        val downloaded = previousDownload.copy(widgetSkins = mapOf(id to skin.copy(fromResource = true)),
+            localStates = mapOf(id to ResourceLocalState.PRESENT))
+        assertFalse(downloaded.isLocalWidgetSkin(remote))
+        assertEquals(listOf(receipt), downloaded.downloadedInstallations())
+        assertEquals(listOf(remote), downloaded.updatableEntries())
     }
 
     @Test fun pausedListeningPackagesKeepTheirReceiptsOutsideDownloadsAndUpdates() {

@@ -1,6 +1,7 @@
 package io.legado.app.ui.resource
 
 import io.legado.app.help.resource.ResourceCategory
+import io.legado.app.help.resource.HOME_WIDGET_SKIN_TYPE
 import io.legado.app.help.resource.ResourceEntry
 import io.legado.app.help.resource.ResourceItem
 import org.junit.Assert.*
@@ -11,6 +12,15 @@ class ResourceClassificationTest {
         category = ResourceCategory(id = category, name = category, type = type),
         item = ResourceItem(id = id, name = id, author = "Author", tags = tags),
     )
+
+    @Test fun widgetSkinsHaveTheirOwnAppearanceFilterAndPriority() {
+        val theme = entry("theme", "theme")
+        val skin = entry("skin", HOME_WIDGET_SKIN_TYPE)
+        val entries = listOf(theme, skin, entry("pet", "pet"))
+        assertEquals(listOf(theme, skin), filterResourceEntries(entries, ResourcePurpose.APPEARANCE, "", ""))
+        assertEquals(listOf(skin), filterResourceEntries(entries, ResourcePurpose.APPEARANCE, HOME_WIDGET_SKIN_TYPE, ""))
+        assertEquals(setOf(HOME_WIDGET_SKIN_TYPE), resourcePriorityTypes(ResourcePurpose.APPEARANCE, HOME_WIDGET_SKIN_TYPE))
+    }
 
     @Test fun purposesSeparateReadingAppearanceAndListeningWithoutChangingEntries() {
         val entries = listOf(entry("preset", "read_preset"), entry("font-a", "font"), entry("paper", "background"),

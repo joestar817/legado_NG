@@ -17,7 +17,7 @@
     <string name="home_listening_chapter_unavailable">章节信息暂无</string>
     <string name="home_widget_updates">今日书讯</string>
     <string name="home_widget_placeholder">内容待补充</string>
-    <string name="home_add_widget">添加小组件</string>
+    <string name="home_add_widget">添加组件</string>
     <string name="home_widget_options">小组件样式</string>
     <string name="home_manage_widgets">小组件管理</string>
     <string name="home_edit_layout">编辑布局</string>
@@ -26,11 +26,12 @@
     <string name="home_size_large">大窗口 · 整行</string>
     <string name="home_size_small_label">小窗口</string>
     <string name="home_size_large_label">大窗口</string>
-    <string name="home_style_basic">基础玻璃</string>
+    <string name="home_style_basic">玻璃材质</string>
     <string name="home_style_storybook">绘本书屋</string>
     <string name="home_style_paper">纸页叶影</string>
     <string name="home_style_night">夜灯书桌</string>
     <string name="home_style_white">亮白卡片</string>
+    <string name="home_style_blue_fish">蓝色大肥鱼</string>
     <string name="home_variant_storybook_small">绘本书屋 · 小窗口</string>
     <string name="home_variant_storybook_large">绘本书屋 · 大窗口</string>
     <string name="home_variant_paper_small">纸页叶影 · 小窗口</string>
@@ -39,6 +40,8 @@
     <string name="home_variant_night_large">夜灯书桌 · 大窗口</string>
     <string name="home_variant_white_small">亮白卡片 · 小窗口</string>
     <string name="home_variant_white_large">亮白卡片 · 大窗口</string>
+    <string name="home_variant_blue_fish_small">蓝色大肥鱼 · 小窗口</string>
+    <string name="home_variant_blue_fish_large">蓝色大肥鱼 · 大窗口</string>
     <string name="home_move_widget_up">上移</string>
     <string name="home_move_widget_down">下移</string>
     <string name="home_edit">编辑</string>
@@ -48,7 +51,7 @@
     <string name="home_replace">替换</string>
     <string name="home_remove">移除</string>
     <string name="home_apply">应用</string>
-    <string name="home_empty">从右上角添加小组件。</string>
+    <string name="home_empty">从右上角添加组件。</string>
     <string name="home_layout_read_failed">首页布局读取失败</string>
     <string name="home_reset_layout">重置首页布局</string>
     <string name="home_reset">重置</string>
@@ -62,4 +65,9 @@
     <string name="home_suite_mixed">当前：混搭</string>
     <string name="home_suite_choose">选择样式</string>
     <string name="home_suite_apply">应用皮肤</string>
+    <string name="home_suite_get_more">获取皮肤</string>
+    <string name="home_skin_import">导入</string>
+    <string name="home_skin_manage">管理皮肤</string>
+    <string name="home_skin_done">完成</string>
+    <string name="home_skin_delete">删除皮肤</string>
 </resources>

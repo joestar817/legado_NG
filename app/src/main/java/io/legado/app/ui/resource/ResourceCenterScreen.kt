@@ -54,6 +54,7 @@ import androidx.compose.ui.window.PopupProperties
 import io.legado.app.BuildConfig
 import io.legado.app.R
 import io.legado.app.help.resource.*
+import io.legado.app.help.home.HomeWidgetSkinRecord
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.NgFilterChipGroupVariant
@@ -91,6 +92,21 @@ internal fun ResourceCenterScreen(
             ?.takeIf { ResourceProtocol.isBrowsableType(it.category.type) }
     }
     var conflict by remember { mutableStateOf<ResourceEntry?>(null) }
+    var confirmedSkinCandidate by remember { mutableStateOf<HomeWidgetSkinRecord?>(null) }
+    val showSkinConflict: (ResourceEntry, HomeWidgetSkinRecord) -> Unit = { entry, candidate ->
+        confirmedSkinCandidate = candidate
+        conflict = entry
+    }
+    var skinDownload by remember { mutableStateOf<Pair<ResourceEntry, ResourceTask?>?>(null) }
+    val skinDownloadTask = skinDownload?.first?.item?.id?.let(state.tasks::get)
+    LaunchedEffect(skinDownload, skinDownloadTask) {
+        val (entry, before) = skinDownload ?: return@LaunchedEffect
+        val task = skinDownloadTask ?: return@LaunchedEffect
+        if (task !== before && !task.running) {
+            skinDownload = null
+            task.widgetSkinConflict?.let { showSkinConflict(entry, it) }
+        }
+    }
     var themeDownload by remember { mutableStateOf<Pair<ResourceEntry, ResourceTask?>?>(null) }
     val themeDownloadTask = themeDownload?.first?.item?.id?.let(state.tasks::get)
     LaunchedEffect(themeDownload, themeDownloadTask) {
@@ -125,14 +141,13 @@ internal fun ResourceCenterScreen(
     }
     val listState = rememberLazyGridState()
     var pendingViewAnchor by remember { mutableStateOf<String?>(null) }
-    val downloadedInstallations = remember(state.installations, state.localStates) { state.downloadedInstallations().filter { it.entry.category.type != "pet" } }
-    val installedTypes = remember(state.installations, state.localStates, state.petInstallations) {
-        state.downloadedInstallations().map { it.entry.category.type }.toSet() +
-            if (state.petInstallations.isEmpty()) emptySet() else setOf("pet")
+    val downloadedInstallations = remember(state.installations, state.localStates, state.widgetSkins) { state.downloadedInstallations().filter { it.entry.category.type != "pet" } }
+    val updateTypes = remember(state.installations, state.localStates, state.petInstallations, state.widgetSkins) {
+        state.updateTypes()
     }
-    val updateEntries = remember(state.snapshot, state.installations, state.localStates, state.petInstallations) { state.updatableEntries() }
+    val updateEntries = remember(state.snapshot, state.installations, state.localStates, state.petInstallations, state.widgetSkins) { state.updatableEntries() }
     val updatesReady = remember(state.snapshot, state.loadedCategories, state.localChecked, state.installations,
-        state.localStates, state.petInstallations, state.storageError, state.accessDenied) { state.updatesReady() }
+        state.localStates, state.petInstallations, state.widgetSkins, state.storageError, state.accessDenied) { state.updatesReady() }
     val visibleCatalog = state.visibleCatalog
     val libraryEntries = remember(state.snapshot, state.cachedSnapshot, state.loadedCategories) { state.visibleCatalogEntries() }
     val entries = remember(state.snapshot, libraryEntries, downloadedInstallations, updateEntries, page) {
@@ -149,9 +164,12 @@ internal fun ResourceCenterScreen(
         (visibleCatalog?.categories.orEmpty().filter { it.count > 0 } +
             downloadedInstallations.map { it.entry.category }).distinctBy { it.id }
     }
-    val typeOptions = remember(categories, purpose, state.petInstallations, page) {
+    val typeOptions = remember(categories, purpose, state.petInstallations, page, initialType) {
         val options = resourceTypeOptions(categories, purpose)
-        if (page == ResourceCollectionPage.DOWNLOADED && state.petInstallations.isNotEmpty() &&
+        if (initialType == HOME_WIDGET_SKIN_TYPE && purpose == ResourcePurpose.APPEARANCE &&
+            options.none { it.key == HOME_WIDGET_SKIN_TYPE }) {
+            options + ResourceTypeOption(HOME_WIDGET_SKIN_TYPE, "组件皮肤")
+        } else if (page == ResourceCollectionPage.DOWNLOADED && state.petInstallations.isNotEmpty() &&
             (purpose == null || purpose == ResourcePurpose.PETS) && options.none { it.key == "pet" }) {
             options + ResourceTypeOption("pet", "宠物插件")
         } else options
@@ -173,8 +191,8 @@ internal fun ResourceCenterScreen(
     }
     val visibleCount = filtered.size + localPets.size
     val selectedTypes = resourcePriorityTypes(purpose, selectedType)
-    val scopedCategories = remember(visibleCatalog, selectedTypes, page, installedTypes) {
-        val types = if (page == ResourceCollectionPage.UPDATES) installedTypes
+    val scopedCategories = remember(visibleCatalog, selectedTypes, page, updateTypes) {
+        val types = if (page == ResourceCollectionPage.UPDATES) updateTypes
             else selectedTypes
         visibleCatalog?.categories.orEmpty().filter { types == null || it.type in types }.map { it.id }.toSet()
     }
@@ -203,7 +221,7 @@ internal fun ResourceCenterScreen(
     val priority = when {
         detail != null && !state.hasInstalled(detail) -> setOf(detail.category.type)
         page == ResourceCollectionPage.DOWNLOADED -> emptySet()
-        page == ResourceCollectionPage.UPDATES -> installedTypes
+        page == ResourceCollectionPage.UPDATES -> updateTypes
         else -> resourcePriorityTypes(purpose, resourceType)
     }
     LaunchedEffect(priority) { onPriorityChanged(priority) }
@@ -261,11 +279,17 @@ internal fun ResourceCenterScreen(
         when {
             task?.running == true -> ResourceRepository.cancel(id)
             state.confirmedEntry(entry) == null -> if (canUseLocalResource(entry, state)) onUse(entry)
+            task?.widgetSkinConflict != null -> showSkinConflict(entry, task.widgetSkinConflict)
+            state.isLocalWidgetSkin(entry) -> {
+                skinDownload = entry to task
+                ResourceRepository.install(entry)
+            }
             task?.conflict == true || state.isLocalPetChange(entry) ||
                 (entry.category.type != "read_preset" && state.localStates[id] == ResourceLocalState.MODIFIED) -> conflict = entry
-            state.hasInstalled(entry) && (entry.category.type == "pet" || state.localStates[id] == ResourceLocalState.PRESENT) &&
+            state.hasInstalled(entry) && (entry.category.type in setOf("pet", HOME_WIDGET_SKIN_TYPE) || state.localStates[id] == ResourceLocalState.PRESENT) &&
                 versionLabel(entry, state) != "可更新" -> onUse(entry)
             else -> {
+                if (entry.category.type == HOME_WIDGET_SKIN_TYPE) skinDownload = entry to task
                 if (entry.category.type == "theme") themeDownload = entry to task
                 if (entry.category.type == "read_preset") presetDownload = entry to task
                 ResourceRepository.install(entry)
@@ -322,8 +346,10 @@ internal fun ResourceCenterScreen(
                             2 -> onOpenRepository()
                             3 -> detail?.let(state::confirmedEntry)?.let { entry ->
                                 if (state.isLocalPetChange(entry) || (entry.category.type != "read_preset" &&
+                                        !state.isLocalWidgetSkin(entry) &&
                                         state.localStates[entry.item.id] == ResourceLocalState.MODIFIED)) conflict = entry
                                 else {
+                                    if (entry.category.type == HOME_WIDGET_SKIN_TYPE) skinDownload = entry to state.tasks[entry.item.id]
                                     if (entry.category.type == "read_preset") presetDownload = entry to state.tasks[entry.item.id]
                                     ResourceRepository.install(entry, ResourceInstallMode.REPLACE)
                                 }
@@ -553,6 +579,7 @@ internal fun ResourceCenterScreen(
     conflict?.let(state::confirmedEntry)?.let { entry ->
         val presetConflict = state.tasks[entry.item.id]?.readPresetConflict
         val themeConflict = state.tasks[entry.item.id]?.themeConflict
+        val skinReplacement = confirmedSkinCandidate?.takeIf { it.id == entry.item.id }
         if (presetConflict != null) {
             var selectedIndex by remember(presetConflict) {
                 mutableStateOf(presetConflict.candidates.singleOrNull()?.index)
@@ -607,8 +634,12 @@ internal fun ResourceCenterScreen(
                     }
                 }
             }
-        } else Dialog(onDismissRequest = { conflict = null }) {
-            NgDialog(title = "本地资源冲突", actions = {
+        } else Dialog(onDismissRequest = {
+            if (skinReplacement != null) ResourceRepository.dismissTask(entry.item.id)
+            conflict = null
+            confirmedSkinCandidate = null
+        }) {
+            NgDialog(title = if (skinReplacement != null) "替换皮肤" else "本地资源冲突", actions = {
                 if (entry.category.type == "pet") {
                     NgFormActionButton("保留本地", {
                         ResourceRepository.dismissTask(entry.item.id); conflict = null
@@ -620,14 +651,17 @@ internal fun ResourceCenterScreen(
                     )
                 } else {
                     NgDialogTextActionButton("保留本地", onClick = {
-                        ResourceRepository.dismissTask(entry.item.id); conflict = null
+                        ResourceRepository.dismissTask(entry.item.id); conflict = null; confirmedSkinCandidate = null
                     })
                     if (themeConflict?.canReplace ?: state.hasInstalled(entry)) NgDialogTextActionButton("替换", onClick = {
                         if (entry.category.type == "theme") themeDownload = entry to state.tasks[entry.item.id]
-                        ResourceRepository.install(entry, ResourceInstallMode.REPLACE, themeConflict)
+                        if (entry.category.type == HOME_WIDGET_SKIN_TYPE) skinDownload = entry to state.tasks[entry.item.id]
+                        ResourceRepository.install(entry, ResourceInstallMode.REPLACE, themeConflict,
+                            confirmedWidgetSkinReplacement = skinReplacement)
                         conflict = null
+                        confirmedSkinCandidate = null
                     })
-                    NgDialogTextActionButton("安装副本", onClick = {
+                    if (entry.category.type != HOME_WIDGET_SKIN_TYPE) NgDialogTextActionButton("安装副本", onClick = {
                         ResourceRepository.install(entry, ResourceInstallMode.COPY); conflict = null
                     })
                 }
@@ -638,8 +672,9 @@ internal fun ResourceCenterScreen(
                     }
                     Text("替换后来源将记为资源库。插件包含可执行代码，请确认来源可信。", color = Color(NgTheme.colors.onSurfaceVariant), fontSize = 13.sp, modifier = Modifier.padding(bottom = 10.dp))
                 }
-                Text(state.tasks[entry.item.id]?.message?.takeIf { state.tasks[entry.item.id]?.conflict == true }
-                    ?: "本地内容已修改。替换会更新资源内容，个人配置仍会保留。",
+                Text(if (skinReplacement != null) "将用资源库版本替换「${entry.item.name}」。" else
+                    state.tasks[entry.item.id]?.message?.takeIf { state.tasks[entry.item.id]?.conflict == true }
+                        ?: "本地内容已修改。替换会更新资源内容，个人配置仍会保留。",
                     color = Color(NgTheme.colors.onSurface), fontSize = 15.sp)
             }
         }
@@ -678,8 +713,9 @@ private fun versionLabel(entry: ResourceEntry, state: ResourceCenterState): Stri
 
 private fun statusLabel(entry: ResourceEntry, state: ResourceCenterState): String {
     val id = entry.item.id
-    if (state.tasks[id]?.readPresetConflict != null) return "待选择"
+    if (state.tasks[id]?.readPresetConflict != null || state.tasks[id]?.widgetSkinConflict != null) return "待选择"
     state.tasks[id]?.let { if (it.running || it.message != "已加入资源库") return it.message }
+    if (state.isLocalWidgetSkin(entry)) return "本地已导入"
     if (state.localStates[id] == ResourceLocalState.MODIFIED) return "本地已修改"
     if (state.hasInstalled(entry) && state.sourceChecked(entry) && state.snapshot?.entries.orEmpty().none { it.item.id == id }) {
         return "来源已移除"
@@ -693,6 +729,8 @@ private fun actionLabel(entry: ResourceEntry, state: ResourceCenterState): Strin
     val task = state.tasks[id]
     if (task?.running == true) return if (task.message == "正在入库") "正在入库" else "取消下载"
     if (state.confirmedEntry(entry) == null) return if (canUseLocalResource(entry, state)) useLabel(entry) else "待同步"
+    if (task?.widgetSkinConflict != null) return "处理冲突"
+    if (state.isLocalWidgetSkin(entry)) return "下载"
     if (task?.conflict == true || state.isLocalPetChange(entry) || state.localStates[id] == ResourceLocalState.MODIFIED) return "处理冲突"
     if (!state.hasInstalled(entry)) return "下载"
     return if (versionLabel(entry, state) == "可更新") "更新" else useLabel(entry)
@@ -701,13 +739,14 @@ private fun actionLabel(entry: ResourceEntry, state: ResourceCenterState): Strin
 private fun useLabel(entry: ResourceEntry) = if (entry.category.type == "tts") "去配置" else "去使用"
 
 private fun canUseLocalResource(entry: ResourceEntry, state: ResourceCenterState) =
-    if (entry.category.type == "pet") state.hasInstalled(entry)
+    if (entry.category.type == "pet" || entry.category.type == HOME_WIDGET_SKIN_TYPE) state.hasInstalled(entry)
     else state.localStates[entry.item.id] == ResourceLocalState.PRESENT
 
 private fun canAct(entry: ResourceEntry, state: ResourceCenterState): Boolean {
     if (state.storageError != null || state.tasks[entry.item.id]?.message == "正在入库") return false
     if (state.tasks[entry.item.id]?.running == true) return true
     if (state.confirmedEntry(entry) == null) return canUseLocalResource(entry, state)
+    if (state.isLocalWidgetSkin(entry)) return ResourceProtocol.incompatibility(entry, BuildConfig.VERSION_CODE.toLong()) == null
     if (entry.category.type == "pet" && state.hasInstalled(entry) && versionLabel(entry, state) != "可更新") return true
     if (entry.category.type == "pet" && ResourceProtocol.incompatibility(entry, BuildConfig.VERSION_CODE.toLong()) != null) return false
     if (state.localStates[entry.item.id] == ResourceLocalState.PRESENT && versionLabel(entry, state) != "可更新") return true
@@ -804,12 +843,13 @@ private fun ResourcePreview(
     variant: ResourcePreviewVariant = ResourcePreviewVariant.DEFAULT,
 ) {
     val font = entry.category.type == "font"
-    val catalogImage = font || entry.category.type == "pet" || entry.category.type == "read_preset"
+    val widgetSkin = entry.category.type == HOME_WIDGET_SKIN_TYPE
+    val catalogImage = font || entry.category.type in setOf("pet", "read_preset")
     val image = entry.item.preview?.let { if (reading) it.detail else it.thumbnail }
     val allowDownload = state.confirmedEntry(entry) != null
     val target = state.installed(entry.item.id)?.target
     val sourceKey = if (catalogImage) listOf(entry.catalogCommit, image) else
-        listOf(entry.item.payload.sha256, target, state.localStates[entry.item.id])
+        listOf(entry.item.payload.sha256, target, state.localStates[entry.item.id], state.widgetSkins[entry.item.id]?.revision)
     val preview by key(entry.category.type, sourceKey, reading) {
         produceState(
             ResourcePreviewState(loading = catalogImage && image != null && allowDownload),
@@ -819,7 +859,11 @@ private fun ResourcePreview(
             if (catalogImage && value.bitmap != null) return@produceState
             if (catalogImage) value = ResourcePreviewState(loading = image != null && allowDownload)
             val bitmap = withContext(Dispatchers.IO) {
-                if (catalogImage) {
+                if (widgetSkin) {
+                    if (state.widgetSkins[entry.item.id]?.revision == entry.item.payload.sha256) {
+                        ResourceRepository.homeWidgetSkinPreview(entry.item.id, reading)?.asImageBitmap()
+                    } else null
+                } else if (catalogImage) {
                     ResourceRepository.catalogPreview(entry, detail = reading, allowDownload = allowDownload)?.asImageBitmap()
                 } else {
                     ResourceRepository.backgroundPreview(entry, allowDownload = allowDownload)?.let { file ->
@@ -845,7 +889,7 @@ private fun ResourcePreview(
     Box(modifier.clip(RoundedCornerShape(if (compact) 10.dp else 12.dp)).background(previewColor), contentAlignment = Alignment.Center) {
         if (preview.bitmap != null) {
             Image(preview.bitmap!!, entry.item.name, Modifier.fillMaxSize(),
-                contentScale = if (catalogImage) ContentScale.Fit else ContentScale.Crop,
+                contentScale = if (catalogImage || widgetSkin) ContentScale.Fit else ContentScale.Crop,
                 colorFilter = if (font) ColorFilter.tint(fontColor) else null)
             if (reading && entry.category.type == "background") Text("翻开一页\n\n让文字安静下来\n\n在字里行间，慢慢阅读。",
                 Modifier.padding(24.dp), color = Color(0xFF302C26), fontSize = 18.sp)

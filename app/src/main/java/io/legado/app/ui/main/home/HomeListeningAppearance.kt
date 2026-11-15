@@ -1,6 +1,5 @@
 package io.legado.app.ui.main.home
 
-import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
@@ -11,7 +10,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import io.legado.app.R
 import io.legado.app.help.config.NgVisualSystem
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
@@ -30,25 +28,6 @@ internal data class HomeListeningPalette(
     val error: Color = Color(0xFFB42318),
 )
 
-@Immutable
-internal data class HomeListeningAppearance(
-    val styleId: String,
-    val palette: HomeListeningPalette,
-    val container: Color,
-    val border: Color,
-    @param:DrawableRes val texture: Int,
-)
-
-@Composable
-internal fun homeListeningAppearance(variant: HomeWidgetVariant): HomeListeningAppearance? =
-    homeListeningSkinPalette(variant.styleId)?.let { palette ->
-        val night = variant.styleId == "night"
-        HomeListeningAppearance(variant.styleId, palette,
-            if (night) Color(0xFF0B192F) else Color(0xFFFDFBEA),
-            if (night) Color(0xFFCEAA68) else Color(0xFFD7DEC9),
-            if (night) R.drawable.ng_home_listening_night_texture else R.drawable.ng_home_listening_paper_texture)
-    }
-
 /** Restore listening's established colors without restyling the reading component. */
 @Composable
 internal fun homeListeningSkinPalette(styleId: String): HomeListeningPalette? = when (styleId) {
@@ -56,6 +35,7 @@ internal fun homeListeningSkinPalette(styleId: String): HomeListeningPalette? = 
         Color.White, Color(0xFFFCFAEA), Color(0xFF52574E))
     "night" -> HomeListeningPalette(Color(0xFFFFF1D2), Color(0xFF9CB7DE), Color(0xFFF3B953),
         Color(0xFF12233C), Color(0xFF2B3750), Color(0xFFFFF0D9), Color(0xFFFFAFA0))
+    "blue_fish" -> homeWidgetSkinPalette(styleId)
     "white" -> homeWidgetSkinPalette(styleId)
     else -> null
 }
@@ -118,7 +98,8 @@ internal fun HomeWidgetSurface(
                     variant = backdropVariant,
                     small = variant.size == HomeWidgetSize.SMALL,
                     bookNewsCornerArtwork = backdropVariant == HomeWidgetBackdropVariant.BOOK_NEWS &&
-                        variant.styleId == "storybook" && variant.size == HomeWidgetSize.LARGE)
+                        (variant.styleId == "storybook" || variant.styleId == "blue_fish") &&
+                        variant.size == HomeWidgetSize.LARGE)
             },
             content = content,
         )

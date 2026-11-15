@@ -5,9 +5,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
@@ -22,6 +25,9 @@ import io.legado.app.constant.AppLog
 import io.legado.app.data.appDb
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isNotShelf
+import io.legado.app.help.resource.HOME_WIDGET_SKIN_TYPE
+import io.legado.app.help.home.InstalledHomeWidgetSkin
+import io.legado.app.help.home.HomeWidgetSkinStore
 import io.legado.app.model.AudioPlay
 import io.legado.app.model.ListeningHistoryEntry
 import io.legado.app.model.ListeningHistorySource
@@ -37,10 +43,13 @@ import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.main.MainActivity
 import io.legado.app.ui.main.MainFragmentInterface
 import io.legado.app.ui.main.MainViewModel
+import io.legado.app.ui.resource.ResourceCenterActivity
+import io.legado.app.ui.resource.ResourcePurpose
 import io.legado.app.utils.eventObservable
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.startActivityForBook
 import io.legado.app.utils.toastOnUi
+import io.legado.app.utils.SelectFileContract
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -49,6 +58,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -60,6 +70,10 @@ class HomeFragment() : Fragment(), MainFragmentInterface {
     override val position: Int? get() = arguments?.getInt("position")
     private val viewModel by viewModels<HomeViewModel>()
     private val activityViewModel by activityViewModels<MainViewModel>()
+    private val skinModel by viewModels<HomeWidgetSkinImportViewModel>()
+    private val selectSkin = registerForActivityResult(SelectFileContract()) { uri ->
+        uri?.let(skinModel::inspect)
+    }
     private var bottomInsetPx by mutableIntStateOf(0)
     private var scrollToTopToken by mutableIntStateOf(0)
     private var listeningState by mutableStateOf(HomeListeningState())
@@ -83,33 +97,76 @@ class HomeFragment() : Fragment(), MainFragmentInterface {
                 val calendarSelections by viewModel.calendarSelections.collectAsStateWithLifecycle()
                 val updatesState by viewModel.updatesState.collectAsStateWithLifecycle()
                 val autoRefreshUpdates by viewModel.autoRefreshUpdates.collectAsStateWithLifecycle()
-                HomeScreen(
-                    state = state,
-                    bottomInsetPx = bottomInsetPx,
-                    scrollToTopToken = scrollToTopToken,
-                    onEdit = viewModel::beginEditing,
-                    onEditWidget = viewModel::beginSingleEditing,
-                    onCancel = { viewModel.cancelEditing() },
-                    onSave = viewModel::saveEditing,
-                    onAdd = viewModel::addWidget,
-                    onVariantSave = viewModel::saveVariant,
-                    onSuiteSave = viewModel::saveSuite,
-                    onRemove = viewModel::removeWidget,
-                    onMove = viewModel::moveWidget,
-                    onReset = viewModel::resetLayout,
-                    listeningState = listeningState,
-                    onListeningAction = ::onListeningAction,
-                    readingState = readingState,
-                    onOpenReading = ::openReadingRecords,
-                    calendarState = calendarState,
-                    calendarSelections = calendarSelections,
-                    onCalendarAction = viewModel::onCalendarAction,
-                    updatesState = updatesState,
-                    autoRefreshUpdates = autoRefreshUpdates,
-                    onOpenUpdatesBook = ::openUpdatesBook,
-                    onRetryUpdates = ::refreshUpdates,
-                    onPreviewTypesChanged = viewModel::setWidgetPreviewTypes,
-                )
+                val installedSkins by HomeWidgetSkinStore.installed.collectAsStateWithLifecycle()
+                val skinImport by skinModel.state.collectAsStateWithLifecycle()
+                val skinRequest by activityViewModel.homeWidgetSkinRequest.collectAsStateWithLifecycle()
+                var skinArtwork by remember { mutableStateOf(HomeWidgetArtworkCache() to emptyList<InstalledHomeWidgetSkin>()) }
+                LaunchedEffect(installedSkins) {
+                    if (installedSkins != skinArtwork.second) {
+                        skinArtwork = withContext(IO) {
+                            val cache = HomeWidgetArtworkCache()
+                            val prepared = installedSkins.filter { skin ->
+                                currentCoroutineContext().ensureActive()
+                                cache.prepare(skin)
+                            }
+                            cache to prepared
+                        }
+                    }
+                }
+                val (artwork, preparedSkins) = skinArtwork
+                val skins = remember(preparedSkins) { HomeWidgetSkinSelection(preparedSkins) }
+                CompositionLocalProvider(
+                    LocalHomeWidgetSkins provides skins, LocalHomeWidgetArtworkCache provides artwork,
+                ) {
+                    HomeScreen(
+                        state = state,
+                        bottomInsetPx = bottomInsetPx,
+                        scrollToTopToken = scrollToTopToken,
+                        onEdit = viewModel::beginEditing,
+                        onEditWidget = viewModel::beginSingleEditing,
+                        onCancel = { viewModel.cancelEditing() },
+                        onSave = viewModel::saveEditing,
+                        onAdd = viewModel::addWidget,
+                        onVariantSave = viewModel::saveVariant,
+                        onSuiteSave = viewModel::saveSuite,
+                        skinRequest = skinImport.importedId ?: skinRequest,
+                        onSkinRequestConsumed = {
+                            skinModel.importedShown()
+                            activityViewModel.requestHomeWidgetSkin(null)
+                        },
+                        onImportSkin = {
+                            runCatching {
+                                selectSkin.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                            }.onFailure { requireContext().toastOnUi("无法打开文件选择器") }
+                        },
+                        onDeleteSkin = { skin -> skinModel.remove(skin, viewModel::onSkinDeleted) },
+                        skinBusy = skinImport.busy,
+                        onOpenSkinLibrary = {
+                            startActivity<ResourceCenterActivity> {
+                                putExtra("resourcePurpose", ResourcePurpose.APPEARANCE.name)
+                                putExtra("resourceType", HOME_WIDGET_SKIN_TYPE)
+                            }
+                        },
+                        onRemove = viewModel::removeWidget,
+                        onMove = viewModel::moveWidget,
+                        onReset = viewModel::resetLayout,
+                        listeningState = listeningState,
+                        onListeningAction = ::onListeningAction,
+                        readingState = readingState,
+                        onOpenReading = ::openReadingRecords,
+                        calendarState = calendarState,
+                        calendarSelections = calendarSelections,
+                        onCalendarAction = viewModel::onCalendarAction,
+                        updatesState = updatesState,
+                        autoRefreshUpdates = autoRefreshUpdates,
+                        onOpenUpdatesBook = ::openUpdatesBook,
+                        onRetryUpdates = ::refreshUpdates,
+                        onPreviewTypesChanged = viewModel::setWidgetPreviewTypes,
+                    )
+                    skinImport.draft?.let {
+                        HomeWidgetSkinImportDialog(it, skinModel::confirm, skinModel::dismiss)
+                    }
+                }
             }
         }
     }
@@ -122,7 +179,19 @@ class HomeFragment() : Fragment(), MainFragmentInterface {
             }
         }
         viewLifecycleOwner.lifecycleScope.launch {
+            skinModel.events.collect { requireContext().toastOnUi(it) }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                launch {
+                    try {
+                        withContext(IO) { HomeWidgetSkinStore.refresh() }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        AppLog.put("加载组件皮肤失败", error)
+                    }
+                }
                 launch {
                     viewModel.observeReadingRecords()
                 }

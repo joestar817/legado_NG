@@ -2,6 +2,8 @@
 
 package io.legado.app.ui.main
 
+import android.content.Intent
+
 import android.content.res.ColorStateList
 import android.graphics.Rect
 import android.os.Bundle
@@ -171,7 +173,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             }
         }
         upHomePage()
-        openLastReadBookAfterStartup(savedInstanceState)
+        if (!openHomeWidgetSkin(intent)) openLastReadBookAfterStartup(savedInstanceState)
         onBackPressedDispatcher.addCallback(this) {
             if (realPositions.getOrNull(pagePosition) == idHome &&
                 (fragmentMap[idHome] as? HomeFragment)?.back() == true
@@ -210,6 +212,22 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openHomeWidgetSkin(intent)
+    }
+
+    private fun openHomeWidgetSkin(intent: Intent): Boolean {
+        val skinId = intent.getStringExtra(HOME_WIDGET_SKIN_REQUEST) ?: return false
+        intent.removeExtra(HOME_WIDGET_SKIN_REQUEST)
+        val position = realPositions.indexOf(idHome)
+        if (position < 0) return false
+        viewModel.requestHomeWidgetSkin(skinId)
+        binding.viewPagerMain.setCurrentItem(position, false)
+        syncPageSelection(position)
+        return true
     }
 
     override fun onPostCreate(savedInstanceState: Bundle?) {

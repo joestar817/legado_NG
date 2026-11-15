@@ -46,6 +46,7 @@ internal fun homeListeningReference(variant: HomeWidgetVariant): HomeListeningRe
     val large = variant.size == HomeWidgetSize.LARGE
     return when (variant.styleId) {
         "storybook" -> if (large) storyLarge else storySmall
+        "blue_fish" -> if (large) blueFishLarge else blueFishSmall
         "paper" -> if (large) paperLarge else paperSmall
         "night" -> if (large) nightLarge else nightSmall
         else -> error("No reference for ${variant.styleId}")
@@ -55,9 +56,9 @@ internal fun homeListeningReference(variant: HomeWidgetVariant): HomeListeningRe
 /** Available title area follows the decoration boundary, not the old lettering's erase rectangle. */
 internal val HomeListeningReference.headerSafeRight: Float
     get() = when {
-        width > 200f && styleId == "storybook" -> 195f
+        width > 200f && (styleId == "storybook" || styleId == "blue_fish") -> 195f
         width > 200f -> 230f
-        styleId == "storybook" || styleId == "night" -> 98f
+        styleId == "storybook" || styleId == "night" || styleId == "blue_fish" -> 98f
         else -> 110f
     }
 
@@ -73,6 +74,8 @@ private val storyLarge = HomeListeningReference(
     actionsY = 104f, primaryCenterX = 105.1f, secondaryCenterX = 166.8f,
     primarySize = 41.6f, secondarySize = 41.9f, captionSize = 9.5f, captionLine = 13f, captionGap = 0f,
 )
+
+private val blueFishLarge = storyLarge.copy(styleId = "blue_fish")
 
 private val paperLarge = HomeListeningReference(
     "paper", 340f, 150.4f, 38f,
@@ -99,6 +102,7 @@ private val nightLarge = HomeListeningReference(
 )
 
 private val storySmall = illustratedSmallReference("storybook")
+private val blueFishSmall = illustratedSmallReference("blue_fish")
 
 private val paperSmall = HomeListeningReference(
     "paper", 164f, 208.4f, 36.6f,

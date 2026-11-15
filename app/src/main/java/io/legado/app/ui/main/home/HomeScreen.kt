@@ -35,7 +35,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -44,14 +43,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.colorResource
@@ -61,7 +58,6 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -71,10 +67,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.PopupProperties
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import io.legado.app.R
+import io.legado.app.help.home.InstalledHomeWidgetSkin
 import io.legado.app.BuildConfig
 import io.legado.app.ui.design.components.compose.NgButton
 import io.legado.app.ui.design.components.compose.NgDialog
@@ -95,8 +89,6 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 import java.time.ZoneId
 import java.util.Locale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 private const val HOME_ADD_WIDGET_MENU_ITEM_ID = 0x53000001
 private const val HOME_EDIT_LAYOUT_MENU_ITEM_ID = 0x53000002
@@ -115,6 +107,12 @@ internal fun HomeScreen(
     onAdd: (String, String) -> Boolean,
     onVariantSave: (String, String, Boolean?) -> Boolean,
     onSuiteSave: (String) -> Boolean,
+    skinRequest: String?,
+    onSkinRequestConsumed: () -> Unit,
+    onOpenSkinLibrary: () -> Unit,
+    onImportSkin: () -> Unit,
+    onDeleteSkin: (InstalledHomeWidgetSkin) -> Unit,
+    skinBusy: Boolean,
     onRemove: (String) -> Unit,
     onMove: (String, String) -> Unit,
     onReset: () -> Unit,
@@ -133,18 +131,21 @@ internal fun HomeScreen(
 ) {
     var showPicker by rememberSaveable { mutableStateOf(false) }
     var showSuitePicker by rememberSaveable { mutableStateOf(false) }
+    var preferredSkin by rememberSaveable { mutableStateOf<String?>(null) }
     var editingWidgetId by rememberSaveable { mutableStateOf<String?>(null) }
     var viewportWidthPx by remember { mutableIntStateOf(0) }
     var showReset by rememberSaveable { mutableStateOf(false) }
     val menuState = remember { NgPopupToggleState() }
-    val artworkConfiguration = LocalConfiguration.current
-    val artworkResources = LocalContext.current.resources
-    val artworkCache = remember(artworkConfiguration, artworkResources) { HomeWidgetArtworkCache() }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(artworkCache, lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            withFrameNanos { }
-            withContext(Dispatchers.IO) { artworkCache.prepare(artworkResources) }
+    val skins = LocalHomeWidgetSkins.current
+    LaunchedEffect(skinRequest, skins, state.layoutReadFailed, state.pendingEdit) {
+        if (state.pendingEdit) return@LaunchedEffect
+        val style = skins.installed.firstOrNull { it.id == skinRequest }?.renderer?.styleId
+        if (style != null) {
+            if (!state.layoutReadFailed) {
+                preferredSkin = style
+                showSuitePicker = true
+            }
+            onSkinRequestConsumed()
         }
     }
     val menuItems = remember(state.editing, state.displayedWidgets.isNotEmpty()) {
@@ -187,6 +188,11 @@ internal fun HomeScreen(
     }
     LaunchedEffect(state.pendingEdit, state.layoutReadFailed, widgets) {
         if (widgets.none { it.id == editingWidgetId }) editingWidgetId = null
+        if (state.pendingEdit) {
+            menuState.close()
+            showSuitePicker = false
+            preferredSkin = null
+        }
         if (state.layoutReadFailed) {
             editingWidgetId = null
             showPicker = false
@@ -240,11 +246,10 @@ internal fun HomeScreen(
                     contentAlignment = Alignment.CenterEnd,
                 ) {
                     NgSearchBarActionButton(
-                        onClick = { if (!state.layoutReadFailed) menuState.onAnchorClick() },
+                        onClick = menuState::onAnchorClick,
                         contentDescription = stringResource(R.string.home_manage_widgets),
-                        modifier = Modifier
-                            .alpha(if (state.layoutReadFailed) 0.4f else 1f)
-                            .semantics { if (state.layoutReadFailed) disabled() },
+                        enabled = !state.layoutReadFailed && !state.pendingEdit,
+                        modifier = Modifier.alpha(if (state.layoutReadFailed || state.pendingEdit) 0.4f else 1f),
                     )
                     NgExpandableActionMenu(
                         expanded = menuState.expanded,
@@ -310,10 +315,10 @@ internal fun HomeScreen(
                 items(
                     items = widgets,
                     key = { it.id },
-                    span = { GridItemSpan(HomeWidgetCatalog.variant(it)!!.size.columns.coerceAtMost(dimensions.columns)) },
+                    span = { GridItemSpan(skins.render(it).size.columns.coerceAtMost(dimensions.columns)) },
                     contentType = { it.typeId },
                 ) { widget ->
-                    val variant = HomeWidgetCatalog.variant(widget)!!
+                    val variant = skins.render(widget)
                     val widgetEditing = state.editing || (state.pendingEdit && state.singleEditId == widget.id)
                     ReorderableItem(state = reorderState, key = widget.id) { _ ->
                         HomeEditableWidget(
@@ -376,46 +381,41 @@ internal fun HomeScreen(
             else LocalConfiguration.current.screenWidthDp.dp
         val widgetWidth = viewportWidth - 32.dp
         // Add and single edit share one preview generation with the same complete invalidation inputs.
-        val probeCache = remember(showPicker, widgets, listeningState, readingState, calendarState, calendarSelections,
+        val probeCache = if (showPicker || editingWidget != null) remember(showPicker, skins, widgets, listeningState, readingState, calendarState, calendarSelections,
             updatesState, updatesState.books.map { it.book.name }, widgetWidth,
             density.density, density.fontScale, layoutDirection, configuration, previewTheme,
             textStyle, locale, timeZone) {
             HomeWidgetProbeCache()
-        }
+        } else null
         DisposableEffect(probeCache) {
             onDispose {
-                if (BuildConfig.DEBUG) android.util.Log.d("HomeWidgetPreview",
+                if (BuildConfig.DEBUG && probeCache != null) android.util.Log.d("HomeWidgetPreview",
                     "measurement cache: probes=${probeCache.missCount}, reused=${probeCache.hitCount}, keys=${probeCache.size}, " +
                         "dimensions=${probeCache.dimensionsMissCount}, dimensionsReused=${probeCache.dimensionsHitCount}")
             }
         }
-        DisposableEffect(artworkCache) {
-            onDispose {
-                if (BuildConfig.DEBUG) android.util.Log.d("HomeWidgetPreview", "artwork cache: ${artworkCache.debugSummary()}")
-            }
-        }
         if (showSuitePicker) {
             NgThemeContextProvider(previewTheme) {
-                CompositionLocalProvider(LocalHomeWidgetArtworkCache provides artworkCache) {
-                    HomeWidgetSuiteDrawer(
-                        usedWidgets = widgets,
-                        onDismiss = { showSuitePicker = false },
-                        onSave = { styleId ->
-                            val applied = onSuiteSave(styleId)
-                            if (applied) {
-                                showSuitePicker = false
-                                editingWidgetId = null
-                                showPicker = false
-                            }
-                            applied
-                        },
-                        onPreviewTypesChanged = onPreviewTypesChanged,
-                        preview = { styleId ->
-                            HomeWidgetSuitePreview(styleId, widgets, listeningState, widgetWidth, readingState,
-                                calendarState, calendarSelections, updatesState, probeCache)
-                        },
-                    )
-                }
+                HomeWidgetSuiteDrawer(
+                    usedWidgets = widgets,
+                    appliedWidgets = state.widgets,
+                    preferredStyle = preferredSkin,
+                    onOpenLibrary = onOpenSkinLibrary,
+                    onImport = onImportSkin,
+                    onDelete = onDeleteSkin,
+                    busy = skinBusy,
+                    onDismiss = { showSuitePicker = false; preferredSkin = null },
+                    onSave = { styleId ->
+                        val applied = onSuiteSave(styleId)
+                        if (applied) {
+                            showSuitePicker = false
+                            preferredSkin = null
+                            editingWidgetId = null
+                            showPicker = false
+                        }
+                        applied
+                    },
+                )
             }
         } else if (showPicker) {
             HomeWidgetAddDrawer(
@@ -430,11 +430,9 @@ internal fun HomeScreen(
                 preview = { candidate, variant ->
                     val previewWidgets = remember(widgets, candidate) { homeWidgetChoiceLayout(widgets, candidate) }
                     NgThemeContextProvider(previewTheme) {
-                        CompositionLocalProvider(LocalHomeWidgetArtworkCache provides artworkCache) {
-                            HomeWidgetPreview(candidate, variant, listeningState, widgetWidth, readingState, previewWidgets,
-                                calendarState, calendarSelections, updatesState,
-                                maximumHeight = HomeWidgetAddPreviewHeight, probeCache = probeCache)
-                        }
+                        HomeWidgetPreview(candidate, variant, listeningState, widgetWidth, readingState, previewWidgets,
+                            calendarState, calendarSelections, updatesState,
+                            maximumHeight = HomeWidgetAddPreviewHeight, probeCache = probeCache)
                     }
                 },
             )
@@ -453,11 +451,9 @@ internal fun HomeScreen(
                 onPreviewTypesChanged = onPreviewTypesChanged,
                 preview = { variant ->
                     NgThemeContextProvider(previewTheme) {
-                        CompositionLocalProvider(LocalHomeWidgetArtworkCache provides artworkCache) {
-                            HomeWidgetPreview(editingWidget, variant, listeningState, widgetWidth, readingState, widgets,
-                                calendarState, calendarSelections, updatesState,
-                                maximumHeight = HomeWidgetAddPreviewHeight, probeCache = probeCache)
-                        }
+                        HomeWidgetPreview(editingWidget, variant, listeningState, widgetWidth, readingState, widgets,
+                            calendarState, calendarSelections, updatesState,
+                            maximumHeight = HomeWidgetAddPreviewHeight, probeCache = probeCache)
                     }
                 },
             )
@@ -701,7 +697,7 @@ internal fun HomeWidgetCard(
     }
 }
 
-/** Identical header geometry for all modules and skins; hide actions without reclaiming their slot. */
+/** Align the title row and keep action slots stable while editing. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun HomeWidgetHeader(
@@ -716,6 +712,10 @@ internal fun HomeWidgetHeader(
     onRefreshUpdates: () -> Unit = {},
 ) {
     val small = variant.size == HomeWidgetSize.SMALL
+    val isUpdates = typeId == "updates"
+    val rowMinimumHeight = if (isUpdates) {
+        if (small) 40.dp else HomeWidgetSkinHeaderHeight
+    } else minimumHeight
     val palette = if (typeId == "listening") homeListeningSkinPalette(variant.styleId)
         else homeWidgetSkinPalette(variant.styleId)
     val content = HomeWidgetContents.find(typeId)
@@ -725,7 +725,7 @@ internal fun HomeWidgetHeader(
     val headerContent: @Composable (Dp) -> Unit = { checkWidth ->
         Row(
             Modifier.fillMaxWidth().padding(horizontal = if (small) 12.dp else 14.dp)
-                .heightIn(min = minimumHeight),
+                .heightIn(min = rowMinimumHeight),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -734,12 +734,7 @@ internal fun HomeWidgetHeader(
                 modifier = Modifier.size(homeWidgetHeaderIconSize(small)),
             )
             Spacer(Modifier.width(homeWidgetHeaderIconGap(small)))
-            if (typeId == "updates") HomeUpdatesHeaderTitle(
-                title, updatesState, small,
-                palette?.foreground ?: Color(NgTheme.colors.onSurface),
-                palette?.secondary ?: Color(NgTheme.colors.onSurfaceVariant),
-                Modifier.weight(1f),
-            ) else Text(
+            Text(
                 title, Modifier.weight(1f),
                 color = palette?.foreground ?: Color(NgTheme.colors.onSurface),
                 style = homeWidgetHeaderTitleStyle(small),
@@ -755,7 +750,7 @@ internal fun HomeWidgetHeader(
                     ) else Modifier),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (!editing && variant.styleId == "storybook") HomeWidgetControlDisc(
+                    if (!editing && (variant.styleId == "storybook" || variant.styleId == "blue_fish")) HomeWidgetControlDisc(
                         variant.styleId, primary = false, editing = false, modifier = Modifier.size(32.dp))
                     if (!editing) Icon(
                         painterResource(R.drawable.ic_arrow_right),
@@ -773,14 +768,18 @@ internal fun HomeWidgetHeader(
                 if (editing) Spacer(Modifier.size(48.dp))
                 else HomeUpdatesRefreshButton(updatesState,
                     palette?.primary ?: Color(NgTheme.colors.primary), interactive, onRefreshUpdates,
-                    headerDiscStyleId = variant.styleId.takeIf { it == "storybook" || it == "night" })
+                    headerDiscStyleId = variant.styleId.takeIf { it == "storybook" || it == "night" || it == "blue_fish" })
             }
         }
     }
-    if (typeId == "updates") {
-        HomeUpdatesDecoratedHeader(variant, title, updatesState,
-            trailingActionWidth = if (small) 0.dp else 48.dp,
-            checkWidth = updatesCheckWidth, content = headerContent)
+    if (isUpdates) {
+        Column(Modifier.fillMaxWidth().heightIn(min = minimumHeight)) {
+            HomeUpdatesDecoratedHeader(variant, title, updatesState,
+                trailingActionWidth = if (small) 0.dp else 48.dp,
+                checkWidth = updatesCheckWidth, content = headerContent)
+            HomeUpdatesCountBelowHeader(updatesState, small,
+                palette?.secondary ?: Color(NgTheme.colors.onSurfaceVariant))
+        }
     } else {
         headerContent(0.dp)
     }
