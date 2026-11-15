@@ -1,22 +1,20 @@
 package io.legado.app.ui.main.home
 
-/** A single target and bulk layout editing share one pending layout, but different tool visibility. */
-internal fun beginHomeWidgetEditing(state: HomeUiState, singleEditId: String? = null): HomeUiState? {
+/** Every entry edits the same draft; the target only controls the selected card. */
+internal fun beginHomeWidgetEditing(state: HomeUiState, selectedWidgetId: String? = null): HomeUiState? {
     if (state.layoutReadFailed) return null
-    if (singleEditId != null) {
-        if (state.displayedWidgets.none { it.id == singleEditId }) return null
-        if (state.editing) return state
+    if (selectedWidgetId != null) {
+        if (state.displayedWidgets.none { it.id == selectedWidgetId }) return null
     }
-    return state.copy(draft = state.draft ?: state.widgets, singleEditId = singleEditId)
+    return state.copy(draft = state.draft ?: state.widgets, selectedWidgetId = selectedWidgetId)
 }
 
 internal fun cancelHomeWidgetEditing(state: HomeUiState): HomeUiState =
-    state.copy(draft = null, singleEditId = null)
+    state.copy(draft = null, selectedWidgetId = null, draftAutoRefreshUpdates = null)
 
-/** The drawer's Save commits the whole pending edit, including earlier moves and removals. */
+/** A drawer confirms its selection into the draft; only the main toolbar commits it. */
 internal fun saveHomeWidgetVariant(state: HomeUiState, id: String, variantId: String): HomeUiState? {
-    val updated = editHomeWidget(state, id, variantId) ?: return null
-    return HomeUiState(widgets = updated.displayedWidgets)
+    return editHomeWidget(state, id, variantId)
 }
 
 /** A suite is in use only when every placed instance has the same valid style. */
@@ -51,11 +49,11 @@ internal fun changeHomeWidgetSuite(
     }
 }
 
-/** Applying a suite is unavailable until any layout edit is saved or canceled. */
+/** Applying a suite keeps pending moves, removals and the original cancel snapshot. */
 internal fun saveHomeWidgetSuite(state: HomeUiState, styleId: String): HomeUiState? {
-    if (state.layoutReadFailed || state.pendingEdit) return null
-    val widgets = changeHomeWidgetSuite(state.widgets, styleId) ?: return null
-    return HomeUiState(widgets = widgets)
+    if (state.layoutReadFailed) return null
+    val widgets = changeHomeWidgetSuite(state.displayedWidgets, styleId) ?: return null
+    return replaceHomeWidgetLayout(state, widgets)
 }
 
 /** Explicit deletion clears only that skin, without committing or discarding a pending layout. */

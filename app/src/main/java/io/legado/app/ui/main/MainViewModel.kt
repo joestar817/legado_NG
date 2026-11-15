@@ -58,6 +58,7 @@ import io.legado.app.model.RuleUpdate
 import io.legado.app.model.SourceCallBack
 
 internal const val HOME_WIDGET_SKIN_REQUEST = "homeWidgetSkinRequest"
+internal const val HOME_WIDGET_EDIT_REQUEST = "homeWidgetEditRequest"
 
 class MainViewModel(application: Application) : BaseViewModel(application) {
     private var threadCount = AppConfig.threadCount
@@ -83,6 +84,12 @@ class MainViewModel(application: Application) : BaseViewModel(application) {
         mutableBookNewsRefreshState.asStateFlow()
     private val mutableHomeWidgetSkinRequest = MutableStateFlow<String?>(null)
     internal val homeWidgetSkinRequest = mutableHomeWidgetSkinRequest.asStateFlow()
+    private val mutableHomeWidgetEditRequest = MutableStateFlow(false)
+    internal val homeWidgetEditRequest = mutableHomeWidgetEditRequest.asStateFlow()
+
+    internal fun requestHomeWidgetEditing(editing: Boolean) {
+        mutableHomeWidgetEditRequest.value = editing
+    }
 
     internal fun requestHomeWidgetSkin(id: String?) {
         mutableHomeWidgetSkinRequest.value = id

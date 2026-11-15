@@ -54,7 +54,7 @@ import io.legado.app.ui.design.components.compose.NgIconButton
 import io.legado.app.ui.design.components.compose.NgFormSwitchRow
 import io.legado.app.ui.design.theme.NgTheme
 
-/** Save commits the surrounding edit; dismissing only discards the drawer's local selection. */
+/** Confirm updates the parent draft; dismissing only discards the drawer's local selection. */
 @Composable
 internal fun HomeWidgetEditorDrawer(
     widget: HomeWidgetInstance,

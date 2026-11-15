@@ -33,13 +33,13 @@ class HomeWidgetMutationTest {
             HomeWidgetInstance("calendar", "calendar", "night-large"),
         )
         val draft = listOf(saved[2], saved[0].copy(variantId = "night-large"))
-        val state = HomeUiState(saved, draft, singleEditId = "reading")
+        val state = HomeUiState(saved, draft, selectedWidgetId = "reading")
         val updated = clearDeletedHomeWidgetSkin(state, "night")
         assertEquals(listOf("reading", "updates", "calendar"), updated.widgets.map { it.id })
         assertEquals(listOf("small", "white-large", "large"), updated.widgets.map { it.variantId })
         assertEquals(listOf("calendar", "reading"), updated.draft!!.map { it.id })
         assertEquals(listOf("large", "large"), updated.draft!!.map { it.variantId })
-        assertEquals("reading", updated.singleEditId)
+        assertEquals("reading", updated.selectedWidgetId)
         assertEquals(updated.widgets, cancelHomeWidgetEditing(updated).widgets)
         assertEquals(updated, clearDeletedHomeWidgetSkin(updated, "night"))
     }
@@ -56,12 +56,12 @@ class HomeWidgetMutationTest {
     }
 
     @Test
-    fun singleEditingCreatesAPendingLayoutWithoutActivatingAllWidgets() {
+    fun selectingACardStartsTheSharedEditSession() {
         val saved = threeWidgetLayout()
         val state = beginHomeWidgetEditing(HomeUiState(saved), saved[0].id)!!
         assertTrue(state.pendingEdit)
-        assertFalse(state.editing)
-        assertEquals(saved[0].id, state.singleEditId)
+        assertTrue(state.editing)
+        assertEquals(saved[0].id, state.selectedWidgetId)
         assertSame(saved, state.widgets)
         assertSame(saved, state.draft)
     }
@@ -73,8 +73,8 @@ class HomeWidgetMutationTest {
         val moved = moveHomeWidgetState(started, saved[0].id, saved[2].id)!!
         val removed = removeHomeWidget(moved, saved[0].id)!!
         assertTrue(removed.pendingEdit)
-        assertFalse(removed.editing)
-        assertEquals(saved[0].id, removed.singleEditId)
+        assertTrue(removed.editing)
+        assertEquals(saved[0].id, removed.selectedWidgetId)
         assertSame(saved, removed.widgets)
         val cancelled = cancelHomeWidgetEditing(removed)
         assertEquals(HomeUiState(saved), cancelled)
@@ -83,36 +83,35 @@ class HomeWidgetMutationTest {
         val onlyWidget = beginHomeWidgetEditing(HomeUiState(listOf(saved[0])), saved[0].id)!!
         val emptyDraft = removeHomeWidget(onlyWidget, saved[0].id)!!
         assertTrue(emptyDraft.pendingEdit)
-        assertFalse(emptyDraft.editing)
+        assertTrue(emptyDraft.editing)
         assertTrue(emptyDraft.displayedWidgets.isEmpty())
-        assertEquals(saved[0].id, emptyDraft.singleEditId)
+        assertEquals(saved[0].id, emptyDraft.selectedWidgetId)
         assertEquals(listOf(saved[0]), cancelHomeWidgetEditing(emptyDraft).widgets)
     }
 
     @Test
-    fun drawerSaveCommitsPriorSingleSessionChangesAndExitsEditing() {
+    fun drawerConfirmKeepsMovesRemovalsAndStyleInTheDraftUntilDone() {
         val saved = threeWidgetLayout()
         val started = beginHomeWidgetEditing(HomeUiState(saved), saved[0].id)!!
         val moved = moveHomeWidgetState(started, saved[0].id, saved[2].id)!!
-        val focused = beginHomeWidgetEditing(moved, saved[1].id)!!
-        val removed = removeHomeWidget(focused, saved[1].id)!!
-        val refocused = beginHomeWidgetEditing(removed, saved[0].id)!!
-        val confirmed = saveHomeWidgetVariant(refocused, saved[0].id, "night-large")!!
-        assertEquals(listOf(saved[2], saved[0].copy(variantId = "night-large")), confirmed.widgets)
-        assertFalse(confirmed.pendingEdit)
-        assertFalse(confirmed.editing)
-        assertNull(confirmed.singleEditId)
-        assertEquals(threeWidgetLayout(), saved)
+        val removed = removeHomeWidget(moved, saved[1].id)!!
+        val confirmed = saveHomeWidgetVariant(removed, saved[0].id, "night-large")!!
+        assertEquals(listOf(saved[2], saved[0].copy(variantId = "night-large")), confirmed.draft)
+        assertSame(saved, confirmed.widgets)
+        assertTrue(confirmed.pendingEdit)
+        assertTrue(confirmed.editing)
+        assertEquals(HomeUiState(saved), cancelHomeWidgetEditing(confirmed))
     }
 
     @Test
-    fun unchangedDrawerSelectionStillCommitsTheWholeBulkDraft() {
+    fun unchangedDrawerSelectionDoesNotCommitTheDraft() {
         val saved = threeWidgetLayout()
         val draft = saved.reversed().dropLast(1)
         val state = HomeUiState(saved, draft)
         val confirmed = saveHomeWidgetVariant(state, draft[0].id, draft[0].variantId)!!
-        assertEquals(HomeUiState(draft), confirmed)
-        assertFalse(confirmed.pendingEdit)
+        assertEquals(state, confirmed)
+        assertTrue(confirmed.pendingEdit)
+        assertEquals(HomeUiState(saved), cancelHomeWidgetEditing(confirmed))
     }
 
     @Test
@@ -123,23 +122,23 @@ class HomeWidgetMutationTest {
         assertNull(saveHomeWidgetVariant(moved, "missing", "large"))
         assertNull(saveHomeWidgetVariant(moved, saved[0].id, "missing"))
         assertTrue(moved.pendingEdit)
-        assertEquals(saved[0].id, moved.singleEditId)
+        assertEquals(saved[0].id, moved.selectedWidgetId)
         assertSame(saved, moved.widgets)
     }
 
     @Test
-    fun changingFocusOrPromotingToBulkKeepsOneOriginalSnapshot() {
+    fun selectingAnotherCardOrTheBackgroundKeepsOneOriginalSnapshot() {
         val saved = threeWidgetLayout()
         val started = beginHomeWidgetEditing(HomeUiState(saved), saved[0].id)!!
         val moved = moveHomeWidgetState(started, saved[0].id, saved[2].id)!!
         val focused = beginHomeWidgetEditing(moved, saved[1].id)!!
-        assertFalse(focused.editing)
+        assertTrue(focused.editing)
         assertSame(moved.draft, focused.draft)
         val bulk = beginHomeWidgetEditing(focused)!!
         assertTrue(bulk.editing)
-        assertNull(bulk.singleEditId)
+        assertNull(bulk.selectedWidgetId)
         assertSame(moved.draft, bulk.draft)
-        assertSame(bulk, beginHomeWidgetEditing(bulk, saved[0].id))
+        assertEquals(bulk.copy(selectedWidgetId = saved[0].id), beginHomeWidgetEditing(bulk, saved[0].id))
         assertEquals(HomeUiState(saved), cancelHomeWidgetEditing(bulk))
     }
 
@@ -509,32 +508,32 @@ class HomeWidgetMutationTest {
         ), confirmed.widgets)
         assertFalse(confirmed.pendingEdit)
         assertFalse(confirmed.editing)
-        assertNull(confirmed.singleEditId)
+        assertNull(confirmed.selectedWidgetId)
         assertEquals(listOf("large", "small"), widgets.map { it.variantId })
     }
 
     @Test
-    fun suiteSaveDoesNotCommitOrDiscardSingleOrBulkLayoutEdits() {
+    fun suiteSelectionUsesTheDraftAndCancelRestoresEveryPreviousEdit() {
         val saved = threeWidgetLayout()
-        listOf(null, saved[0].id).forEach { singleEditId ->
-            val started = beginHomeWidgetEditing(HomeUiState(saved), singleEditId)!!
+        listOf(null, saved[0].id).forEach { selectedWidgetId ->
+            val started = beginHomeWidgetEditing(HomeUiState(saved), selectedWidgetId)!!
             val moved = moveHomeWidgetState(started, saved[0].id, saved[2].id)!!
             val removed = removeHomeWidget(moved, saved[1].id)!!
-            assertNull(saveHomeWidgetSuite(removed, "night"))
-            assertNull(saveHomeWidgetSuite(removed, "basic"))
-            assertTrue(removed.pendingEdit)
-            assertEquals(singleEditId, removed.singleEditId)
-            assertSame(saved, removed.widgets)
-            assertEquals(listOf(saved[2], saved[0]), removed.draft)
+            val confirmed = saveHomeWidgetSuite(removed, "night")!!
+            assertEquals(listOf(saved[2].copy(variantId = "night-large"),
+                saved[0].copy(variantId = "night-small")), confirmed.draft)
+            assertTrue(confirmed.pendingEdit)
+            assertEquals(selectedWidgetId, confirmed.selectedWidgetId)
+            assertSame(saved, confirmed.widgets)
+            assertEquals(HomeUiState(saved), cancelHomeWidgetEditing(confirmed))
         }
-        assertEquals(threeWidgetLayout(), saved)
     }
 
     @Test
     fun suiteSaveBecomesAvailableAfterCancelingAnEdit() {
         val saved = threeWidgetLayout()
-        listOf(null, saved[0].id).forEach { singleEditId ->
-            val started = beginHomeWidgetEditing(HomeUiState(saved), singleEditId)!!
+        listOf(null, saved[0].id).forEach { selectedWidgetId ->
+            val started = beginHomeWidgetEditing(HomeUiState(saved), selectedWidgetId)!!
             val moved = moveHomeWidgetState(started, saved[0].id, saved[2].id)!!
             val removed = removeHomeWidget(moved, saved[1].id)!!
             val canceled = cancelHomeWidgetEditing(removed)
@@ -543,29 +542,29 @@ class HomeWidgetMutationTest {
                 widget.copy(variantId = if (widget.variantId == "large") "night-large" else "night-small")
             }, confirmed.widgets)
             assertFalse(confirmed.pendingEdit)
-            assertNull(confirmed.singleEditId)
+            assertNull(confirmed.selectedWidgetId)
             assertSame(saved, canceled.widgets)
         }
     }
 
     @Test
-    fun suiteSaveRemainsUnavailableWhenTheEditedWidgetWasDeleted() {
+    fun suiteSelectionStillWorksAfterRemovingTheSelectedCard() {
         val saved = threeWidgetLayout()
         val started = beginHomeWidgetEditing(HomeUiState(saved), saved[0].id)!!
         val removed = removeHomeWidget(started, saved[0].id)!!
-        assertEquals(saved[0].id, removed.singleEditId)
-        assertNull(saveHomeWidgetSuite(removed, "night"))
-        assertTrue(removed.pendingEdit)
-        assertEquals(saved[0].id, removed.singleEditId)
-        assertEquals(listOf(saved[1], saved[2]), removed.draft)
-        assertSame(saved, removed.widgets)
+        val confirmed = saveHomeWidgetSuite(removed, "night")!!
+        assertEquals(listOf(saved[1].copy(variantId = "night-small"),
+            saved[2].copy(variantId = "night-large")), confirmed.draft)
+        assertSame(saved, confirmed.widgets)
+        assertTrue(confirmed.pendingEdit)
+        assertEquals(HomeUiState(saved), cancelHomeWidgetEditing(confirmed))
     }
 
     @Test
     fun aRejectedSuiteSaveCannotCommitOrDiscardEitherParentSession() {
         val saved = threeWidgetLayout()
-        listOf(null, saved[0].id).forEach { singleEditId ->
-            val started = beginHomeWidgetEditing(HomeUiState(saved), singleEditId)!!
+        listOf(null, saved[0].id).forEach { selectedWidgetId ->
+            val started = beginHomeWidgetEditing(HomeUiState(saved), selectedWidgetId)!!
             val moved = moveHomeWidgetState(started, saved[0].id, saved[2].id)!!
             assertNull(saveHomeWidgetSuite(moved, "missing"))
             assertNull(saveHomeWidgetSuite(moved.copy(layoutReadFailed = true), "night"))
@@ -573,7 +572,7 @@ class HomeWidgetMutationTest {
                 HomeWidgetInstance("bad", "calendar", "small"))
             assertNull(saveHomeWidgetSuite(invalidDraft, "night"))
             assertTrue(moved.pendingEdit)
-            assertEquals(singleEditId, moved.singleEditId)
+            assertEquals(selectedWidgetId, moved.selectedWidgetId)
             assertSame(saved, moved.widgets)
             assertEquals(listOf(saved[1], saved[2], saved[0]), moved.draft)
             assertSame(invalidDraft.draft, invalidDraft.displayedWidgets)
@@ -584,12 +583,12 @@ class HomeWidgetMutationTest {
     @Test
     fun anEmptyParentDraftCannotApplyASuiteOrResurrectTheSavedLayout() {
         val saved = threeWidgetLayout()
-        listOf(null, saved.first().id).forEach { singleEditId ->
-            val empty = HomeUiState(saved, emptyList(), singleEditId = singleEditId)
+        listOf(null, saved.first().id).forEach { selectedWidgetId ->
+            val empty = HomeUiState(saved, emptyList(), selectedWidgetId = selectedWidgetId)
             assertNull(saveHomeWidgetSuite(empty, "night"))
             assertNull(homeWidgetCommonStyle(empty.displayedWidgets))
             assertTrue(empty.pendingEdit)
-            assertEquals(singleEditId, empty.singleEditId)
+            assertEquals(selectedWidgetId, empty.selectedWidgetId)
             assertTrue(empty.displayedWidgets.isEmpty())
             assertSame(saved, empty.widgets)
         }

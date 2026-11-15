@@ -148,6 +148,7 @@ internal fun ThemeConfigScreen(
     onOnlyUpdateReadChanged: (Boolean) -> Unit,
     onDefaultToReadChanged: (Boolean) -> Unit,
     onShowHomeChanged: (Boolean) -> Unit,
+    onManageHome: () -> Unit,
     onShowDiscoveryChanged: (Boolean) -> Unit,
     onShowRssChanged: (Boolean) -> Unit,
     onDefaultHomePageSelected: (String) -> Unit,
@@ -545,6 +546,13 @@ internal fun ThemeConfigScreen(
                     checked = state.showHome,
                     onCheckedChange = onShowHomeChanged
                 )
+                if (state.showHome) {
+                    NgSettingsItem(
+                        title = stringResource(R.string.home_manage_home),
+                        trailing = NgSettingsTrailing.CHEVRON,
+                        onClick = onManageHome,
+                    )
+                }
                 InterfaceSwitchSettingItem(
                     title = stringResource(R.string.show_discovery),
                     checked = state.showDiscovery,

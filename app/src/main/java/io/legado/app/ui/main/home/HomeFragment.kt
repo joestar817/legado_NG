@@ -100,6 +100,13 @@ class HomeFragment() : Fragment(), MainFragmentInterface {
                 val installedSkins by HomeWidgetSkinStore.installed.collectAsStateWithLifecycle()
                 val skinImport by skinModel.state.collectAsStateWithLifecycle()
                 val skinRequest by activityViewModel.homeWidgetSkinRequest.collectAsStateWithLifecycle()
+                val editRequest by activityViewModel.homeWidgetEditRequest.collectAsStateWithLifecycle()
+                LaunchedEffect(editRequest) {
+                    if (editRequest) {
+                        viewModel.beginEditing()
+                        activityViewModel.requestHomeWidgetEditing(false)
+                    }
+                }
                 var skinArtwork by remember { mutableStateOf(HomeWidgetArtworkCache() to emptyList<InstalledHomeWidgetSkin>()) }
                 LaunchedEffect(installedSkins) {
                     if (installedSkins != skinArtwork.second) {
@@ -123,7 +130,7 @@ class HomeFragment() : Fragment(), MainFragmentInterface {
                         bottomInsetPx = bottomInsetPx,
                         scrollToTopToken = scrollToTopToken,
                         onEdit = viewModel::beginEditing,
-                        onEditWidget = viewModel::beginSingleEditing,
+                        onEditWidget = viewModel::selectEditingWidget,
                         onCancel = { viewModel.cancelEditing() },
                         onSave = viewModel::saveEditing,
                         onAdd = viewModel::addWidget,
