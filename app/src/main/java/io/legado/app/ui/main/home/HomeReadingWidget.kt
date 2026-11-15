@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.LocalTextStyle
@@ -24,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import io.legado.app.R
 import io.legado.app.ui.design.theme.NgTheme
 import java.text.NumberFormat
@@ -143,12 +147,20 @@ private fun HomeReadingContent(
         }
         if (!measuring && !large) {
             // Match the actual shared body, not the shorter natural content measured by the probe.
-            Box(Modifier.matchParentSize().padding(
+            val blueFish = variant.styleId == "blue_fish"
+            Box(Modifier.matchParentSize().then(if (blueFish) Modifier.zIndex(-1f) else Modifier).padding(
                 horizontal = horizontalPadding,
             ).padding(bottom = 8.dp)) {
                 HomeReadingArtwork(variant, Modifier.align(Alignment.BottomEnd)
+                    .then(if (blueFish) Modifier.offset(x = 8.dp) else Modifier)
                     .width(smallArtworkWidth).height(72.dp)
-                    .padding(top = 4.dp))
+                    .padding(top = if (blueFish) 0.dp else 4.dp).then(if (blueFish) {
+                        Modifier.graphicsLayer {
+                            transformOrigin = TransformOrigin(1f, 1f)
+                            scaleX = 1.4f
+                            scaleY = 1.4f
+                        }
+                    } else Modifier))
             }
         }
     }
@@ -247,9 +259,12 @@ private fun HomeReadingRecordedMetric(variant: HomeWidgetVariant, measuring: Boo
     label: String, value: String, unit: String, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth()) {
         HomeReadingMetric(label, value, unit, 32)
-        if (!measuring && (variant.styleId == "storybook" || variant.styleId == "night")) {
-            // The original metric alone determines the height; decoration only uses its spare width.
-            BoxWithConstraints(Modifier.matchParentSize().clipToBounds()) {
+        if (!measuring && (variant.styleId == "storybook" || variant.styleId == "night" || variant.styleId == "blue_fish")) {
+            // Keep the metric's layout while drawing the enlarged blue fish behind it.
+            val blueFish = variant.styleId == "blue_fish"
+            BoxWithConstraints(Modifier.matchParentSize().then(
+                if (blueFish) Modifier.zIndex(-1f) else Modifier.clipToBounds(),
+            )) {
                 val measurer = rememberTextMeasurer()
                 val density = LocalDensity.current
                 val baseStyle = LocalTextStyle.current
@@ -263,12 +278,21 @@ private fun HomeReadingRecordedMetric(variant: HomeWidgetVariant, measuring: Boo
                 val inlineWidth = valueWidth + with(density) { 6.dp.roundToPx() } + unitWidth
                 val contentWidth = maxOf(labelWidth,
                     if (inlineWidth <= widthPx) inlineWidth else maxOf(valueWidth, unitWidth))
+                val rightPaddingAllowance = if (blueFish) 14.dp else 0.dp
                 val artworkWidth = with(density) {
                     (widthPx - contentWidth - 8.dp.roundToPx()).coerceAtLeast(0).toDp()
-                }
+                } + rightPaddingAllowance
                 if (artworkWidth >= 24.dp) {
+                    val artworkHeight = minOf(maxHeight, 80.dp)
                     HomeReadingArtwork(variant, Modifier.align(Alignment.BottomEnd)
-                        .width(artworkWidth).height(minOf(maxHeight, 80.dp)).clipToBounds())
+                        .then(if (blueFish) Modifier.offset(x = rightPaddingAllowance) else Modifier)
+                        .width(artworkWidth).height(artworkHeight).then(if (blueFish) {
+                            Modifier.graphicsLayer {
+                                transformOrigin = TransformOrigin(1f, 1f)
+                                scaleX = 1.25f
+                                scaleY = 1.25f
+                            }
+                        } else Modifier).clipToBounds())
                 }
             }
         }

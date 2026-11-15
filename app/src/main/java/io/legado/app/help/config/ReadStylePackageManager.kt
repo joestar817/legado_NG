@@ -2,10 +2,12 @@ package io.legado.app.help.config
 
 import android.net.Uri
 import com.google.gson.JsonObject
+import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import io.legado.app.utils.GSON
 import io.legado.app.utils.externalFiles
 import splitties.init.appCtx
 import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -22,11 +24,12 @@ import kotlin.math.roundToInt
 internal object ReadStylePackageManager {
 
     private const val CONFIG_NAME = "readConfig.json"
-    private const val PACKAGE_DIR = "read_style_packages"
+    internal const val PACKAGE_DIR = "read_style_packages"
     private const val MAX_ENTRY_COUNT = 512
     private const val MAX_ENTRY_BYTES = 64L * 1024 * 1024
     private const val MAX_TOTAL_BYTES = 256L * 1024 * 1024
     private const val MAX_CONFIG_BYTES = 5L * 1024 * 1024
+    private const val COPY_BUFFER_BYTES = 64 * 1024
 
     data class ImportResult(
         val config: ReadBookConfig.Config,
@@ -106,6 +109,9 @@ internal object ReadStylePackageManager {
                 contentNames[hash] = target.name
                 return target.name
             }
+            fun copyFont(reference: String?, prefix: String, label: String): String? =
+                if (reference == SYSTEM_DEFAULT_FONT) reference else copyResource(reference, prefix, label)
+
             fun exportBackground(index: Int, label: String) {
                 val type = when (index) {
                     0 -> portableConfig.bgType
@@ -136,18 +142,18 @@ internal object ReadStylePackageManager {
             exportBackground(0, "日间阅读背景")
             exportBackground(1, "夜间阅读背景")
             exportBackground(2, "墨水屏阅读背景")
-            portableConfig.textFont = copyResource(
+            portableConfig.textFont = copyFont(
                 portableConfig.textFont,
                 "read_font_text",
                 "正文字体",
             ).orEmpty()
-            portableConfig.titleFont = copyResource(
+            portableConfig.titleFont = copyFont(
                 portableConfig.titleFont,
                 "read_font_title",
                 "标题字体",
             ).orEmpty()
-            portableConfig.headerFont = copyResource(portableConfig.headerFont, "read_font_header", "页眉字体").orEmpty()
-            portableConfig.footerFont = copyResource(portableConfig.footerFont, "read_font_footer", "页脚字体").orEmpty()
+            portableConfig.headerFont = copyFont(portableConfig.headerFont, "read_font_header", "页眉字体").orEmpty()
+            portableConfig.footerFont = copyFont(portableConfig.footerFont, "read_font_footer", "页脚字体").orEmpty()
             portableConfig.headerImage = copyResource(
                 portableConfig.headerImage, "read_header_image", "页眉图片",
             ).orEmpty()
@@ -162,7 +168,7 @@ internal object ReadStylePackageManager {
                             "highlight_rule_bg_$index",
                             "高亮规则“${rule.name.ifBlank { rule.id }}”的背景图",
                         ),
-                        fontPath = copyResource(
+                        fontPath = copyFont(
                             rule.fontPath,
                             "highlight_rule_font_$index",
                             "高亮规则“${rule.name.ifBlank { rule.id }}”的字体",
@@ -174,6 +180,8 @@ internal object ReadStylePackageManager {
             val configJson = GSON.toJsonTree(portableConfig).asJsonObject.apply {
                 remove("ngReadStyleSource")
                 remove("ngUnknownFields")
+                remove("ngResourcePresetTarget")
+                remove("ngResourcePresetSha256")
                 addProperty("ngResourcePackageVersion", 1)
                 readerSettings?.let { add("ngReaderSettings", it.deepCopy()) }
             }
@@ -207,7 +215,9 @@ internal object ReadStylePackageManager {
         val warnings = mutableListOf<String>()
         var installedByThisImport = false
         try {
-            val entries = extract(input, stagingRoot)
+            // 已安装相同包时仍完整读取并校验 ZIP，但无需重复写入其资源。
+            val reuseInstalledResources = installedRoot.isDirectory
+            val entries = extract(input, stagingRoot, writeResources = !reuseInstalledResources)
             val configFile = File(stagingRoot, CONFIG_NAME)
             require(configFile.isFile) { "排版包缺少 $CONFIG_NAME" }
             require(configFile.length() <= MAX_CONFIG_BYTES) { "排版配置文件过大" }
@@ -220,12 +230,18 @@ internal object ReadStylePackageManager {
             val sourceFormat = detectSourceFormat(root)
             val config = GSON.fromJson(root, ReadBookConfig.Config::class.java)
                 ?: error("无法解析排版配置")
+            // A portable package may not claim ownership of an installed resource.
+            config.ngResourcePresetTarget = null
+            config.ngResourcePresetSha256 = null
             config.ngReadStyleSource = sourceFormat
             config.ngUnknownFields = root.entrySet()
                 .filterNot { (name, _) -> name in knownFieldNames }
                 .associate { (name, value) -> name to value.toString() }
 
-            if (installedRoot.exists()) {
+            if (reuseInstalledResources) {
+                require(installedRoot.isDirectory) { "阅读预设资源在导入期间发生变化，请重试" }
+                stagingRoot.deleteRecursively()
+            } else if (installedRoot.exists()) {
                 stagingRoot.deleteRecursively()
             } else {
                 require(stagingRoot.renameTo(installedRoot)) { "无法安装排版包资源" }
@@ -243,12 +259,17 @@ internal object ReadStylePackageManager {
         }
     }
 
-    private fun extract(input: InputStream, stagingRoot: File): Set<String> {
+    private fun extract(
+        input: InputStream,
+        stagingRoot: File,
+        writeResources: Boolean,
+    ): Set<String> {
         stagingRoot.mkdirs()
         val entries = linkedSetOf<String>()
         val caseInsensitiveEntries = hashSetOf<String>()
         var entryCount = 0
         var totalBytes = 0L
+        val buffer = ByteArray(COPY_BUFFER_BYTES)
         ZipInputStream(BufferedInputStream(input)).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
@@ -264,14 +285,19 @@ internal object ReadStylePackageManager {
                     "排版包路径越界: $normalizedName"
                 }
                 if (entry.isDirectory) {
-                    target.mkdirs()
+                    if (writeResources) target.mkdirs()
                     zip.closeEntry()
                     continue
                 }
-                target.parentFile?.mkdirs()
                 var entryBytes = 0L
-                FileOutputStream(target).use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                val writeEntry = writeResources || normalizedName == CONFIG_NAME
+                if (writeEntry) target.parentFile?.mkdirs()
+                val output = if (writeEntry) {
+                    BufferedOutputStream(FileOutputStream(target), COPY_BUFFER_BYTES)
+                } else {
+                    null
+                }
+                output.use {
                     while (true) {
                         val read = zip.read(buffer)
                         if (read < 0) break
@@ -279,7 +305,7 @@ internal object ReadStylePackageManager {
                         totalBytes += read
                         require(entryBytes <= MAX_ENTRY_BYTES) { "排版包单个文件过大: $normalizedName" }
                         require(totalBytes <= MAX_TOTAL_BYTES) { "排版包解压后体积过大" }
-                        output.write(buffer, 0, read)
+                        output?.write(buffer, 0, read)
                     }
                 }
                 zip.closeEntry()
@@ -353,10 +379,13 @@ internal object ReadStylePackageManager {
                 ?.absolutePath
         }
 
-        config.textFont = resolve(config.textFont, "正文字体").orEmpty()
-        config.titleFont = resolve(config.titleFont, "标题字体").orEmpty()
-        config.headerFont = resolve(config.headerFont, "页眉字体").orEmpty()
-        config.footerFont = resolve(config.footerFont, "页脚字体").orEmpty()
+        fun resolveFont(reference: String?, label: String): String? =
+            if (reference == SYSTEM_DEFAULT_FONT) reference else resolve(reference, label)
+
+        config.textFont = resolveFont(config.textFont, "正文字体").orEmpty()
+        config.titleFont = resolveFont(config.titleFont, "标题字体").orEmpty()
+        config.headerFont = resolveFont(config.headerFont, "页眉字体").orEmpty()
+        config.footerFont = resolveFont(config.footerFont, "页脚字体").orEmpty()
         fun resolveImage(reference: String, label: String): ReadHeaderImageStore.Image? {
             val path = resolve(reference, label) ?: return null
             val inspected = runCatching { ReadHeaderImageStore.inspect(File(path)) }
@@ -407,7 +436,7 @@ internal object ReadStylePackageManager {
             val bg = rule.bgImage?.let { resolve(it, "高亮规则背景图") }.also {
                 if (rule.bgImage != null && it == null) missingRuleBackgrounds++
             }
-            val font = rule.fontPath?.let { resolve(it, "高亮规则字体") }.also {
+            val font = resolveFont(rule.fontPath, "高亮规则字体").also {
                 if (rule.fontPath != null && it == null) missingRuleFonts++
             }
             rule.copy(bgImage = bg, fontPath = font)
@@ -546,7 +575,7 @@ internal object ReadStylePackageManager {
         "lineSpacingExtra", "paragraphSpacing", "titleMode", "titleSize", "titleTopSpacing",
         "titleBottomSpacing", "titleColor", "titleColorNight", "titleBold",
         "titleLineSpacingExtra", "titleLineSpacingSub", "titleSegType", "titleSegScaling",
-        "titleSegDistance", "titleSegFlag", "paragraphIndent", "underlineMode", "underline",
+        "titleSegDistance", "titleSegFlag", "titleSegCustomType", "paragraphIndent", "underlineMode", "underline",
         "underlinePadding", "underlineHeight", "underlineExtend", "underlineColor",
         "underlineColorNight", "dottedLine", "dottedBase", "dottedRatio", "paddingBottom",
         "paddingLeft", "paddingRight", "paddingTop", "headerPaddingBottom", "headerPaddingLeft",
@@ -555,9 +584,11 @@ internal object ReadStylePackageManager {
         "tipHeaderLeft", "tipHeaderMiddle", "tipHeaderRight", "tipFooterLeft", "tipFooterMiddle",
         "tipFooterRight", "tipColor", "tipHeaderColor", "tipHeaderColorNight", "tipFooterColor",
         "tipFooterColorNight", "tipDividerColor", "headerMode", "showHeaderBackButton", "footerMode", "highlightRules",
+        "linkedHighlightRuleIds", "useLinkedHighlightRules",
         "paperEffect", "paperInkStrength", "readScrollFollowBackground",
         "readScrollFollowBackgroundNight", "readScrollFollowBackgroundEInk",
         "underlineDashLength", "underlineStrokeWidth",
-        "ngReadStyleSource", "ngUnknownFields", "ngReaderSettings", "ngResourcePackageVersion",
+        "ngReadStyleSource", "ngUnknownFields", "ngResourcePresetTarget", "ngResourcePresetSha256",
+        "ngReaderSettings", "ngResourcePackageVersion",
     )
 }

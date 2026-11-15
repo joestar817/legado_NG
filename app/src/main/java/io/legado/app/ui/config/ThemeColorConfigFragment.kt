@@ -12,7 +12,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
 import io.legado.app.constant.EventBus
-import io.legado.app.help.config.NgDynamicSceneTheme
+import io.legado.app.help.config.NgEffectThemeSelection
 import io.legado.app.help.config.NgColorConfigStore
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
@@ -29,15 +29,16 @@ class ThemeColorConfigFragment : BaseFragment(R.layout.fragment_theme_color_conf
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         activity?.setTitle(R.string.ng_custom_colors)
+        hasChanges = savedInstanceState?.getBoolean("themeColorsChanged") ?: hasChanges
         (view as ComposeView).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 val context = requireContext()
                 if (
                     NgThemeModeStore.current(context) ==
-                    NgThemePresentationMode.DYNAMIC_SCENE
+                    NgThemePresentationMode.EFFECT_THEME
                 ) {
-                    var colors by remember { mutableStateOf(NgDynamicSceneTheme.colors(context)) }
+                    var colors by remember { mutableStateOf(NgEffectThemeSelection.colors(context)) }
                     NgAppTheme(
                         snapshot = NgThemeResolver.resolve(
                             context = context,
@@ -51,7 +52,7 @@ class ThemeColorConfigFragment : BaseFragment(R.layout.fragment_theme_color_conf
                                 if (updated != colors) {
                                     hasChanges = true
                                     colors = updated
-                                    NgDynamicSceneTheme.updateColors(context, updated)
+                                    NgEffectThemeSelection.updateColors(context, updated)
                                 }
                             },
                         )
@@ -74,11 +75,19 @@ class ThemeColorConfigFragment : BaseFragment(R.layout.fragment_theme_color_conf
     override fun onConfigBackPressed(): Boolean {
         if (!hasChanges) return false
         hasChanges = false
+        val context = requireContext()
+        val wasFoundation = NgThemeModeStore.isCustomFoundation(context)
         parentFragmentManager.popBackStack()
         requireActivity().window.decorView.post {
-            postEvent(EventBus.RECREATE, "")
+            if (wasFoundation) NgThemeModeStore.activateManualAppearance(context)
+            else postEvent(EventBus.RECREATE, "")
         }
         return true
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("themeColorsChanged", hasChanges)
+        super.onSaveInstanceState(outState)
     }
 
     private fun updateColors(colors: NgColorSystem) {

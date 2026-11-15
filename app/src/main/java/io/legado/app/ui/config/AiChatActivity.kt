@@ -253,7 +253,7 @@ import io.legado.app.ui.design.components.compose.ngDrawerSecondaryTextColor
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeGradientBackground
-import io.legado.app.ui.design.theme.NgThemeSceneBackground
+import io.legado.app.ui.design.theme.NgEffectThemeBackground
 import io.legado.app.utils.GSON
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.openUrl
@@ -2329,7 +2329,7 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxSize()
                 )
             }
-            NgThemeSceneBackground(modifier = Modifier.fillMaxSize())
+            NgEffectThemeBackground(modifier = Modifier.fillMaxSize())
             AiChatBackgroundMask()
             if (globalSearchMode) {
                 GlobalMessageSearchPage(

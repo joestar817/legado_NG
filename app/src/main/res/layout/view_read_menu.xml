@@ -226,6 +226,7 @@
         android:layout_marginTop="12dp"
         android:layout_marginEnd="8dp"
         android:layout_marginBottom="12dp"
+        app:layout_constrainedHeight="true"
         app:layout_constraintBottom_toTopOf="@+id/bottom_menu"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/title_bar_container"
@@ -270,6 +271,7 @@
                 app:layout_constraintTop_toTopOf="parent">
             <!--章节设置-->
             <LinearLayout
+                android:id="@+id/ll_chapter_progress"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginLeft="20dp"
@@ -322,6 +324,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/ll_bottom_actions_primary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:baselineAligned="false"
@@ -355,7 +358,7 @@
                         android:adjustViewBounds="true"
                         android:contentDescription="@string/chapter_list"
                         android:maxHeight="20dp"
-                        android:src="@drawable/ic_toc"
+                        android:src="@drawable/ic_manga_menu_catalog"
                         app:tint="@color/primaryText"
                         tools:ignore="NestedWeights" />
 
@@ -399,7 +402,7 @@
                         android:adjustViewBounds="true"
                         android:contentDescription="@string/read_aloud"
                         android:maxHeight="20dp"
-                        android:src="@drawable/ic_read_aloud"
+                        android:src="@drawable/ic_read_menu_aloud"
                         app:tint="@color/primaryText"
                         tools:ignore="NestedWeights" />
 
@@ -443,7 +446,7 @@
                         android:adjustViewBounds="true"
                         android:contentDescription="@string/interface_setting"
                         android:maxHeight="20dp"
-                        android:src="@drawable/ic_interface_setting"
+                        android:src="@drawable/ic_read_menu_interface"
                         app:tint="@color/primaryText"
                         tools:ignore="NestedWeights" />
 
@@ -466,14 +469,14 @@
                     android:layout_weight="2"
                     android:importantForAccessibility="no" />
 
-                <!--设置按钮-->
+                <!--更多按钮-->
                 <LinearLayout
                     android:id="@+id/ll_setting"
                     android:layout_width="60dp"
                     android:layout_height="wrap_content"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:clickable="true"
-                    android:contentDescription="@string/setting"
+                    android:contentDescription="@string/more"
                     android:focusable="true"
                     android:orientation="vertical"
                     android:paddingBottom="7dp"
@@ -485,9 +488,9 @@
                         android:layout_height="0dp"
                         android:layout_weight="1"
                         android:adjustViewBounds="true"
-                        android:contentDescription="@string/setting"
+                        android:contentDescription="@string/more"
                         android:maxHeight="20dp"
-                        android:src="@drawable/ic_settings"
+                        android:src="@drawable/ic_manga_menu_settings"
                         app:tint="@color/primaryText"
                         tools:ignore="NestedWeights" />
 
@@ -499,7 +502,7 @@
                         android:layout_marginTop="3dp"
                         android:ellipsize="middle"
                         android:singleLine="true"
-                        android:text="@string/setting"
+                        android:text="@string/more"
                         android:textColor="@color/primaryText"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -510,6 +513,170 @@
                     android:layout_weight="1"
                     android:importantForAccessibility="no" />
 
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1">
+
+                    <LinearLayout
+                        android:id="@+id/ll_page_turning"
+                        android:layout_width="60dp"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal"
+                        android:background="?android:attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:contentDescription="@string/read_settings_tab_page"
+                        android:focusable="true"
+                        android:orientation="vertical"
+                        android:paddingBottom="7dp">
+
+                        <androidx.appcompat.widget.AppCompatImageView
+                            android:id="@+id/iv_page_turning"
+                            android:layout_width="match_parent"
+                            android:layout_height="20dp"
+                            android:contentDescription="@string/read_settings_tab_page"
+                            android:src="@drawable/ic_manga_menu_reading"
+                            app:tint="@color/primaryText" />
+
+                        <TextView
+                            android:id="@+id/tv_page_turning"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center_horizontal"
+                            android:layout_marginTop="3dp"
+                            android:ellipsize="middle"
+                            android:singleLine="true"
+                            android:text="@string/read_settings_tab_page"
+                            android:textColor="@color/primaryText"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </FrameLayout>
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1">
+
+                    <LinearLayout
+                        android:id="@+id/ll_auto_page"
+                        android:layout_width="60dp"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal"
+                        android:background="?android:attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:contentDescription="@string/auto_next_page"
+                        android:focusable="true"
+                        android:orientation="vertical"
+                        android:paddingBottom="7dp">
+
+                        <androidx.appcompat.widget.AppCompatImageView
+                            android:id="@+id/iv_auto_page"
+                            android:layout_width="match_parent"
+                            android:layout_height="20dp"
+                            android:contentDescription="@string/auto_next_page"
+                            android:src="@drawable/ic_auto_page"
+                            app:tint="@color/primaryText" />
+
+                        <TextView
+                            android:id="@+id/tv_auto_page"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center_horizontal"
+                            android:layout_marginTop="3dp"
+                            android:ellipsize="middle"
+                            android:singleLine="true"
+                            android:text="@string/read_menu_scroll"
+                            android:textColor="@color/primaryText"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </FrameLayout>
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1">
+
+                    <LinearLayout
+                        android:id="@+id/ll_content"
+                        android:layout_width="60dp"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal"
+                        android:background="?android:attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:contentDescription="@string/content"
+                        android:focusable="true"
+                        android:orientation="vertical"
+                        android:paddingBottom="7dp">
+
+                        <androidx.appcompat.widget.AppCompatImageView
+                            android:id="@+id/iv_content"
+                            android:layout_width="match_parent"
+                            android:layout_height="20dp"
+                            android:contentDescription="@string/content"
+                            android:src="@drawable/ic_read_menu_content"
+                            app:tint="@color/primaryText" />
+
+                        <TextView
+                            android:id="@+id/tv_content"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center_horizontal"
+                            android:layout_marginTop="3dp"
+                            android:ellipsize="middle"
+                            android:singleLine="true"
+                            android:text="@string/content"
+                            android:textColor="@color/primaryText"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </FrameLayout>
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1">
+
+                    <LinearLayout
+                        android:id="@+id/ll_floating"
+                        android:layout_width="60dp"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal"
+                        android:background="?android:attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:contentDescription="@string/read_menu_floating"
+                        android:focusable="true"
+                        android:orientation="vertical"
+                        android:paddingBottom="7dp">
+
+                        <androidx.appcompat.widget.AppCompatImageView
+                            android:id="@+id/iv_floating"
+                            android:layout_width="match_parent"
+                            android:layout_height="20dp"
+                            android:contentDescription="@string/read_menu_floating"
+                            android:src="@drawable/ic_read_menu_floating"
+                            app:tint="@color/primaryText" />
+
+                        <TextView
+                            android:id="@+id/tv_floating"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center_horizontal"
+                            android:layout_marginTop="3dp"
+                            android:ellipsize="middle"
+                            android:singleLine="true"
+                            android:text="@string/read_menu_floating"
+                            android:textColor="@color/primaryText"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </FrameLayout>
             </LinearLayout>
             </LinearLayout>
         </androidx.constraintlayout.widget.ConstraintLayout>

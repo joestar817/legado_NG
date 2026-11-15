@@ -1,0 +1,20 @@
+io.legado.pet.api.PetAssets public abstract java.io.InputStream open(java.lang.String);
+io.legado.pet.api.PetPlugin public abstract io.legado.pet.api.PetSession createSession(io.legado.pet.api.PetAssets);
+io.legado.pet.api.PetPlugin public abstract java.lang.String getId();
+io.legado.pet.api.PetSession public abstract android.graphics.RectF getHitBounds();
+io.legado.pet.api.PetSession public abstract boolean hitTest(float, float);
+io.legado.pet.api.PetSession public abstract boolean release(float, float);
+io.legado.pet.api.PetSession public abstract byte[] saveState();
+io.legado.pet.api.PetSession public abstract java.lang.Long nextFrameDelayMs();
+io.legado.pet.api.PetSession public abstract void advance(long);
+io.legado.pet.api.PetSession public abstract void cancel();
+io.legado.pet.api.PetSession public abstract void close();
+io.legado.pet.api.PetSession public abstract void draw(android.graphics.Canvas);
+io.legado.pet.api.PetSession public abstract void move(float, float, long, boolean);
+io.legado.pet.api.PetSession public abstract void press(float, float, long);
+io.legado.pet.api.PetSession public abstract void resize(float, float);
+io.legado.pet.api.PetSession public abstract void restoreState(byte[]);
+io.legado.pet.api.PetSession public abstract void setVisible(boolean);
+public interface io.legado.pet.api.PetAssets
+public interface io.legado.pet.api.PetPlugin
+public interface io.legado.pet.api.PetSession

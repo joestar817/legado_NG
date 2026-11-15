@@ -17,6 +17,17 @@ class FloatingBottomBarConfigTest {
     }
 
     @Test
+    fun `default distance stays at forty physical pixels`() {
+        assertEquals(
+            40,
+            FloatingBottomBarConfig.resolveBottomDistancePx(
+                FloatingBottomBarConfig.DEFAULT_BOTTOM_DISTANCE_PX,
+                density = 3f
+            )
+        )
+    }
+
+    @Test
     fun `explicit distance is clamped and snapped to five pixels`() {
         assertEquals(0, FloatingBottomBarConfig.normalizeBottomDistancePx(-1))
         assertEquals(35, FloatingBottomBarConfig.normalizeBottomDistancePx(37))

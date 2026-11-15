@@ -18,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,13 +33,41 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgDialogVariant
+import io.legado.app.ui.design.theme.NgButtonTextPalette
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.resolveNgDialogTheme
 import io.legado.app.utils.isNightMode
 
+enum class NgDialogColorMode {
+    STANDARD,
+    INHERIT_HOST,
+}
+
+/** Host-owned colors are opt-in and remain scoped to the dialog tree, including child dialogs. */
+val LocalNgDialogColorMode = staticCompositionLocalOf { NgDialogColorMode.STANDARD }
+internal val LocalNgDialogContainerColor = staticCompositionLocalOf<Color?> { null }
+
+@Composable
+internal fun ngDialogSurfaceColor(): Color = if (LocalNgDialogColorMode.current == NgDialogColorMode.INHERIT_HOST) {
+    (LocalNgDialogContainerColor.current ?: Color(NgTheme.colors.dialogContainer)).copy(alpha = 1f)
+} else {
+    colorResource(R.color.ng_surface_card)
+}
+
+@Composable
+internal fun ngDialogContentCardColor(): Color = if (LocalNgDialogColorMode.current == NgDialogColorMode.INHERIT_HOST) {
+    (LocalNgDialogContainerColor.current ?: Color(NgTheme.colors.cardContainer)).copy(alpha = 1f)
+} else {
+    colorResource(R.color.ng_surface_card)
+}
+
 @Composable
 private fun NgDialogTheme(content: @Composable () -> Unit) {
+    if (LocalNgDialogColorMode.current == NgDialogColorMode.INHERIT_HOST) {
+        content()
+        return
+    }
     val source = NgTheme.snapshot
     val isDark = LocalConfiguration.current.isNightMode
     val surface = colorResource(R.color.ng_surface_card).toArgb()
@@ -52,6 +81,21 @@ private fun NgDialogTheme(content: @Composable () -> Unit) {
     }
 }
 
+/** 常规弹窗的实色外壳，供自行组织标题栏和底栏的管理弹窗复用。 */
+@Composable
+fun NgDialogSurface(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) = NgDialogTheme {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = ngDialogSurfaceColor(),
+        shape = RoundedCornerShape(NgTheme.shapes.extraLargeDp.dp),
+        shadowElevation = NgTheme.effects.overlayElevationDp.dp,
+        content = content,
+    )
+}
+
 /** Compose NG 居中弹窗内容外壳；窗口尺寸与遮罩仍由 applyNgDialogWindow 统一处理。 */
 @Composable
 fun NgDialog(
@@ -60,19 +104,21 @@ fun NgDialog(
     variant: NgDialogVariant = NgDialogVariant.STANDARD,
     titleFontSize: TextUnit? = null,
     titleFontWeight: FontWeight = FontWeight.Bold,
+    titleLineHeight: TextUnit? = null,
     actions: @Composable RowScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) = NgDialogTheme {
     val metrics = dialogMetrics(variant)
     val cornerRadius = when (variant) {
-        NgDialogVariant.COMPACT_CONFIRMATION -> NgTheme.shapes.largeDp
+        NgDialogVariant.COMPACT_CONFIRMATION,
+        NgDialogVariant.SIMPLE_CONFIRMATION -> NgTheme.shapes.largeDp
         NgDialogVariant.CLASSIC_CONFIRMATION -> NgTheme.shapes.mediumDp
         NgDialogVariant.FORM_EDITOR -> NgTheme.shapes.dialogDp
         else -> NgTheme.shapes.extraLargeDp
     }
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = colorResource(R.color.ng_surface_card),
+        color = ngDialogSurfaceColor(),
         shape = RoundedCornerShape(cornerRadius.dp),
         shadowElevation = NgTheme.effects.overlayElevationDp.dp,
     ) {
@@ -90,7 +136,7 @@ fun NgDialog(
                     modifier = Modifier.fillMaxWidth(),
                     color = Color(NgTheme.colors.onSurface),
                     fontSize = titleFontSize ?: metrics.titleSize,
-                    lineHeight = metrics.titleLineHeight,
+                    lineHeight = titleLineHeight ?: metrics.titleLineHeight,
                     fontWeight = titleFontWeight,
                     textAlign = metrics.titleAlignment,
                     maxLines = 1,
@@ -102,7 +148,10 @@ fun NgDialog(
             Spacer(Modifier.height(metrics.actionSpacing))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(
+                    if (variant == NgDialogVariant.SIMPLE_CONFIRMATION) 0.dp else 10.dp,
+                    Alignment.End,
+                ),
                 verticalAlignment = Alignment.CenterVertically,
                 content = actions,
             )
@@ -118,16 +167,29 @@ fun NgDialogTextActionButton(
     danger: Boolean = false,
     enabled: Boolean = true,
     secondary: Boolean = false,
+    modifier: Modifier = Modifier,
+    contentColorOverride: Color? = null,
 ) {
-    val contentColor = Color(
+    val snapshot = NgTheme.snapshot
+    val preferred = Color(
         when {
-            danger -> NgTheme.colors.error
-            secondary -> NgTheme.colors.onSurfaceVariant
-            else -> NgTheme.colors.primary
+            danger -> snapshot.colors.error
+            secondary -> snapshot.colors.onSurfaceVariant
+            else -> snapshot.colors.primary
         }
-    ).let { if (enabled) it else it.copy(alpha = 0.45f) }
+    )
+    val resolved = if (contentColorOverride != null) {
+        contentColorOverride
+    } else if (danger && snapshot.isDark && !snapshot.isEInk) {
+        val surface = ngDialogSurfaceColor()
+        remember(preferred, surface) {
+            Color(NgButtonTextPalette.resolveDanger(preferred.toArgb(), surface.toArgb(), isDark = true))
+        }
+    } else preferred
+    val contentColor = resolved.let { if (enabled) it else it.copy(alpha = 0.45f) }
     TextButton(
         onClick = onClick,
+        modifier = modifier,
         enabled = enabled,
         contentPadding = PaddingValues(horizontal = 16.dp),
     ) {
@@ -281,6 +343,17 @@ private fun dialogMetrics(variant: NgDialogVariant): NgDialogMetrics = when (var
         titleLineHeight = 24.sp,
         titleSpacing = 14.dp,
         actionSpacing = 16.dp,
+        titleAlignment = TextAlign.Center,
+    )
+
+    NgDialogVariant.SIMPLE_CONFIRMATION -> NgDialogMetrics(
+        horizontalPadding = 12.dp,
+        topPadding = 20.dp,
+        bottomPadding = 6.dp,
+        titleSize = 18.sp,
+        titleLineHeight = 22.sp,
+        titleSpacing = 0.dp,
+        actionSpacing = 12.dp,
         titleAlignment = TextAlign.Center,
     )
 

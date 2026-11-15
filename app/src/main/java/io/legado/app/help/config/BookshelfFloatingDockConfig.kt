@@ -5,6 +5,7 @@ import kotlin.math.roundToInt
 object BookshelfFloatingDockConfig {
 
     const val AUTOMATIC_TOP_DISTANCE_PX = -1
+    const val DEFAULT_TOP_DISTANCE_PX = 40
     const val MIN_TOP_DISTANCE_PX = 0
     const val MAX_TOP_DISTANCE_PX = 500
     const val TOP_DISTANCE_STEP_PX = 5

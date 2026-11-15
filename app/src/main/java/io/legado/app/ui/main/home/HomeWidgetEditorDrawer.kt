@@ -66,12 +66,12 @@ internal fun HomeWidgetEditorDrawer(
     onPreviewTypesChanged: (Set<String>) -> Unit = {},
     preview: @Composable (HomeWidgetVariant) -> Unit,
 ) {
-    val variants = HomeWidgetCatalog.type(widget.typeId)?.variants ?: return
     var selectedId by rememberSaveable(widget.id, widget.variantId) { mutableStateOf(widget.variantId) }
     var selectedAutoRefresh by rememberSaveable(widget.id, autoRefreshUpdates) {
         mutableStateOf(autoRefreshUpdates)
     }
-    val selected = variants.firstOrNull { it.id == selectedId } ?: return
+    val selected = HomeWidgetCatalog.renderVariant(widget.copy(variantId = selectedId), LocalHomeWidgetSkins.current.installed)
+        ?: return
     var submitted by remember(widget.id) { mutableStateOf(false) }
     val previewTypes = remember(widget.typeId) { setOf(widget.typeId) }
     HomeWidgetPreviewTypes(previewTypes, onPreviewTypesChanged)
@@ -107,6 +107,7 @@ internal fun HomeWidgetDrawerShell(
     onConfirm: () -> Unit,
     onNavigateBack: (() -> Unit)? = null,
     confirmEnabled: Boolean = true,
+    headerAction: @Composable (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Dialog(
@@ -170,6 +171,7 @@ internal fun HomeWidgetDrawerShell(
                                     lineHeight = 24.sp,
                                     fontWeight = FontWeight.Medium,
                                 )
+                                headerAction?.invoke()
                             }
                             content()
                             if (confirmTitle != null) {

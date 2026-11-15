@@ -125,8 +125,8 @@ internal class EpubReadStylePackage private constructor(
     /** Root viewport backgrounds stay independent of the reader's transformed body. */
     internal fun decorationCss(): String {
         val images = listOfNotNull(
-            decoration("headerImage", config.headerImageEnabled, config.headerImageWidth, config.headerImageHeight, "top"),
-            decoration("footerImage", config.footerImageEnabled, config.footerImageWidth, config.footerImageHeight, "bottom"),
+            decoration("headerImage", config.headerImageWidth, config.headerImageHeight, "top"),
+            decoration("footerImage", config.footerImageWidth, config.footerImageHeight, "bottom"),
         )
         if (images.isEmpty()) return "/* NG page decorations: none */\n"
         val cap = if (images.size == 1) 45 else 25
@@ -150,8 +150,8 @@ internal class EpubReadStylePackage private constructor(
     }
 
     private data class Decoration(val path: String, val width: Int, val height: Int, val position: String)
-    private fun decoration(field: String, enabled: Boolean, width: Int, height: Int, position: String): Decoration? =
-        if (enabled && width > 0 && height > 0) portableResource(field)?.let { Decoration(it, width, height, position) } else null
+    private fun decoration(field: String, width: Int, height: Int, position: String): Decoration? =
+        if (width > 0 && height > 0) portableResource(field)?.let { Decoration(it, width, height, position) } else null
 
     private fun portableResource(field: String): String? = portable.string(field)?.takeIf { it in entries }
         ?.let { "$ASSET_DIR/$it" }
@@ -218,12 +218,33 @@ internal class EpubReadStylePackage private constructor(
             }?.location?.path
         }
 
-        internal fun bindImportedStyle(book: Book, bytes: ByteArray, importer: (ByteArray) -> ReadStylePackageManager.ImportResult = ReadStylePackageManager::import): List<String> {
+        internal fun bindImportedStyle(
+            book: Book,
+            bytes: ByteArray,
+            importer: (ByteArray) -> ReadStylePackageManager.ImportResult = ReadStylePackageManager::import,
+            mergeRules: (List<ReadHighlightRule>) -> ReadPresetRuleMergeResult = { ReadHighlightRuleStore.mergeForPreset(it) },
+            availableRuleIds: () -> Set<String> = { ReadHighlightRuleStore.allRules().mapTo(hashSetOf()) { it.id } },
+        ): List<String> {
             if (book.config.independentReadStyle != null) return emptyList()
             val imported = importer(bytes)
             require(imported.readerSettings == null) { "书籍样式包包含全局阅读设置，已忽略" }
-            book.config.independentReadStyle = GSON.toJson(imported.config)
-            return imported.warnings
+            val config = imported.config
+            val warnings = imported.warnings.toMutableList()
+            val linkedIds = config.linkedHighlightRuleIds.orEmpty().filter(String::isNotBlank).distinct()
+            if (linkedIds.isNotEmpty()) {
+                val linkedSet = linkedIds.toSet()
+                val rules = config.highlightRules.filter { it.id in linkedSet }
+                require(rules.map { it.id }.distinct().size == rules.size) { "预设包含重复的高亮规则编号" }
+                val mapping = if (rules.isEmpty()) emptyMap() else mergeRules(rules).idMapping
+                config.linkedHighlightRuleIds = linkedIds.map { mapping[it] ?: it }.distinct()
+                val availableIds = availableRuleIds()
+                if (config.linkedHighlightRuleIds.orEmpty().any { it !in availableIds }) {
+                    warnings += "书籍预设的部分高亮规则尚未在规则库中，未匹配时将跟随全局"
+                }
+                config.highlightRules.clear()
+            }
+            book.config.independentReadStyle = GSON.toJson(config)
+            return warnings
         }
 
         private fun xml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;")

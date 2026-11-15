@@ -1,16 +1,13 @@
 package io.legado.app.ui.book.read.config
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -19,59 +16,61 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.constant.PreferKey
-import io.legado.app.ui.book.read.ReadDrawerStyle
+import io.legado.app.help.config.PageKeyBindings
 import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgFormGroup
+import io.legado.app.ui.design.components.compose.NgFormGroupDivider
+import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
-internal const val READ_MORE_CONFIG_WINDOW_HEIGHT_DP = 540
+internal const val PAGE_TOUCH_SLOP_MAX = 9999
+internal const val PAGE_TOUCH_CLICK_MAX = 399
 
 internal object ReadMoreConfigKeys {
     const val CLICK_REGIONAL_CONFIG = "clickRegionalConfig"
-    const val CUSTOM_PAGE_KEY = "customPageKey"
-    const val DISABLE_RETURN_KEY = "disableReturnKey"
     const val BOOK_IMAGE_STYLE = "bookImageStyle"
-    const val TEXT_TOOLBAR = "textToolbar"
-}
-
-internal enum class ReadMoreConfigTab {
-    INTERFACE,
-    PAGE,
-    CONTENT,
 }
 
 internal data class ReadMoreConfigOption(
@@ -83,8 +82,8 @@ internal data class ReadMoreConfigUiState(
     val booleans: Map<String, Boolean>,
     val values: Map<String, String>,
     val options: Map<String, List<ReadMoreConfigOption>>,
-    val actionValues: Map<String, String>,
-    val optimizeRenderSupported: Boolean,
+    val thresholdValues: Map<String, Int>,
+    val pageAnim: Int,
 ) {
     fun boolean(key: String): Boolean = booleans[key] == true
 
@@ -92,346 +91,361 @@ internal data class ReadMoreConfigUiState(
 
     fun options(key: String): List<ReadMoreConfigOption> = options[key].orEmpty()
 
-    fun actionValue(key: String): String? = actionValues[key]
+    fun thresholdValue(key: String): Int = thresholdValues[key] ?: 0
 }
 
 internal data class ReadMoreConfigActions(
-    val onTabSelected: (ReadMoreConfigTab) -> Unit,
     val onBooleanChanged: (String, Boolean) -> Unit,
     val onValueChanged: (String, String) -> Unit,
     val onAction: (String) -> Unit,
+    val onPageAnimChanged: (Int) -> Unit,
+    val onThresholdChanged: (String, Int) -> Unit,
+    val onPageKeysChanged: (String, String) -> Unit,
+    val pageKeyCapture: PageKeyCaptureController,
 )
 
 @Composable
 internal fun ReadMoreConfigScreen(
-    tab: ReadMoreConfigTab,
     state: ReadMoreConfigUiState,
     actions: ReadMoreConfigActions,
 ) {
-    val contentColor = Color(NgTheme.colors.onSurface)
-    val accentColor = Color(NgTheme.colors.primary)
-    val selectedContentColor = if (accentColor.luminance() > 0.5f) {
-        Color.Black
-    } else {
-        Color.White
-    }
+    val maxHeight = LocalConfiguration.current.screenHeightDp.dp
 
     NgGlassSurface(
         modifier = Modifier
             .padding(top = 8.dp)
-            .fillMaxSize(),
+            .fillMaxWidth()
+            .heightIn(max = maxHeight),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         style = readFloatingGlassStyle(),
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 10.dp, bottom = 8.dp),
+                .fillMaxWidth()
+                .padding(top = 6.dp, bottom = 8.dp),
         ) {
-            Text(
-                text = stringResource(R.string.read_more_settings_title),
-                modifier = Modifier
-                    .height(42.dp)
-                    .padding(horizontal = 16.dp),
-                color = contentColor,
-                fontSize = 20.sp,
-                lineHeight = 42.sp,
-                fontWeight = FontWeight.Medium,
+            NgLongDrawerHeader(
+                title = stringResource(R.string.read_more_settings_title),
+                centerTitle = true,
             )
-            ReadMoreConfigDock(
-                selectedTab = tab,
-                contentColor = contentColor,
-                selectedContainerColor = accentColor,
-                selectedContentColor = selectedContentColor,
-                onSelected = actions.onTabSelected,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 8.dp, bottom = 8.dp),
             ) {
-                when (tab) {
-                    ReadMoreConfigTab.INTERFACE -> InterfaceSettingsPage(
-                        state = state,
-                        actions = actions,
-                        contentColor = contentColor,
-                    )
-
-                    ReadMoreConfigTab.PAGE -> PageSettingsPage(
-                        state = state,
-                        actions = actions,
-                        contentColor = contentColor,
-                    )
-
-                    ReadMoreConfigTab.CONTENT -> ContentSettingsPage(
-                        state = state,
-                        actions = actions,
-                        contentColor = contentColor,
-                        accentColor = accentColor,
-                    )
-                }
+                InterfaceSettingsGroup(state, actions)
+                Spacer(Modifier.height(12.dp))
+                ContentSettingsGroups(state, actions)
             }
         }
     }
 }
 
 @Composable
-private fun InterfaceSettingsPage(
+private fun InterfaceSettingsGroup(
     state: ReadMoreConfigUiState,
     actions: ReadMoreConfigActions,
-    contentColor: Color,
 ) {
-    SettingsColumn {
-        ChoiceSettingRow(
-            title = stringResource(R.string.read_catalog_style),
-            selectedValue = state.value(PreferKey.readCatalogStyle),
-            options = state.options(PreferKey.readCatalogStyle),
-            onSelected = { actions.onValueChanged(PreferKey.readCatalogStyle, it) },
-        )
-        ReadMoreDivider(contentColor)
-        ChoiceSettingRow(
-            title = stringResource(R.string.screen_direction),
-            selectedValue = state.value(PreferKey.screenOrientation),
-            options = state.options(PreferKey.screenOrientation),
-            onSelected = { actions.onValueChanged(PreferKey.screenOrientation, it) },
-        )
-        ReadMoreDivider(contentColor)
-        ChoiceSettingRow(
-            title = stringResource(R.string.keep_light),
-            selectedValue = state.value(PreferKey.keepLight),
-            options = state.options(PreferKey.keepLight),
-            onSelected = { actions.onValueChanged(PreferKey.keepLight, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.pt_hide_status_bar),
-            checked = state.boolean(PreferKey.hideStatusBar),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.hideStatusBar, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.read_body_to_lh),
-            checked = state.boolean(PreferKey.readBodyToLh),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.readBodyToLh, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.read_content_avoid_cutout),
-            checked = state.boolean(PreferKey.paddingDisplayCutouts),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.paddingDisplayCutouts, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.show_floating_toolbar),
-            checked = state.boolean(PreferKey.showBrightnessView),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.showBrightnessView, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.show_read_title_addition),
-            checked = state.boolean(PreferKey.showReadTitleAddition),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.showReadTitleAddition, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.read_bar_style_follow_page),
-            checked = state.boolean(PreferKey.readBarStyleFollowPage),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.readBarStyleFollowPage, it) },
-        )
-        ReadMoreDivider(contentColor)
-        ActionSettingRow(
-            title = stringResource(R.string.text_selection_action_order),
-            onClick = { actions.onAction(ReadMoreConfigKeys.TEXT_TOOLBAR) },
-        )
-        ReadMoreDivider(contentColor)
-        ChoiceSettingRow(
-            title = stringResource(R.string.progress_bar_behavior),
-            selectedValue = state.value(PreferKey.progressBarBehavior),
-            options = state.options(PreferKey.progressBarBehavior),
-            onSelected = { actions.onValueChanged(PreferKey.progressBarBehavior, it) },
-        )
-    }
-}
-
-@Composable
-private fun PageSettingsPage(
-    state: ReadMoreConfigUiState,
-    actions: ReadMoreConfigActions,
-    contentColor: Color,
-) {
-    SettingsColumn {
-        ChoiceSettingRow(
-            title = stringResource(R.string.double_page_horizontal),
-            selectedValue = state.value(PreferKey.doublePageHorizontal),
-            options = state.options(PreferKey.doublePageHorizontal),
-            onSelected = { actions.onValueChanged(PreferKey.doublePageHorizontal, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.mouse_wheel_page),
-            checked = state.boolean(PreferKey.mouseWheelPage),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.mouseWheelPage, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.volume_key_page),
-            checked = state.boolean(PreferKey.volumeKeyPage),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.volumeKeyPage, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.volume_key_page_on_play),
-            checked = state.boolean(PreferKey.volumeKeyPageOnPlay),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.volumeKeyPageOnPlay, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.key_page_on_long_press),
-            checked = state.boolean(PreferKey.keyPageOnLongPress),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.keyPageOnLongPress, it) },
-        )
-        ReadMoreDivider(contentColor)
-        ActionSettingRow(
-            title = stringResource(R.string.page_touch_slop_title),
-            value = state.actionValue(PreferKey.pageTouchSlop),
-            onClick = { actions.onAction(PreferKey.pageTouchSlop) },
-        )
-        ReadMoreDivider(contentColor)
-        ActionSettingRow(
-            title = stringResource(R.string.page_touch_click_title),
-            value = state.actionValue(PreferKey.pageTouchClick),
-            onClick = { actions.onAction(PreferKey.pageTouchClick) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.no_anim_scroll_page),
-            checked = state.boolean(PreferKey.noAnimScrollPage),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.noAnimScrollPage, it) },
-        )
-        ReadMoreDivider(contentColor)
-        ActionSettingRow(
-            title = stringResource(R.string.click_regional_config),
-            onClick = { actions.onAction(ReadMoreConfigKeys.CLICK_REGIONAL_CONFIG) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.disable_return_key),
-            checked = state.boolean(ReadMoreConfigKeys.DISABLE_RETURN_KEY),
-            onCheckedChange = {
-                actions.onBooleanChanged(ReadMoreConfigKeys.DISABLE_RETURN_KEY, it)
-            },
-        )
-        ReadMoreDivider(contentColor)
-        ActionSettingRow(
-            title = stringResource(R.string.custom_page_key),
-            onClick = { actions.onAction(ReadMoreConfigKeys.CUSTOM_PAGE_KEY) },
-        )
-    }
-}
-
-@Composable
-private fun ContentSettingsPage(
-    state: ReadMoreConfigUiState,
-    actions: ReadMoreConfigActions,
-    contentColor: Color,
-    accentColor: Color,
-) {
-    SettingsColumn {
-        ReadMoreSectionLabel(
-            text = stringResource(R.string.read_settings_current_book),
-            color = Color(NgTheme.colors.secondary),
-        )
-        ChoiceSettingRow(
-            title = stringResource(R.string.image_style),
-            selectedValue = state.value(ReadMoreConfigKeys.BOOK_IMAGE_STYLE),
-            options = state.options(ReadMoreConfigKeys.BOOK_IMAGE_STYLE),
-            preferPopupBelow = true,
-            onSelected = {
-                actions.onValueChanged(ReadMoreConfigKeys.BOOK_IMAGE_STYLE, it)
-            },
-        )
-        ReadMoreDivider(contentColor)
-        ReadMoreSectionLabel(
-            text = stringResource(R.string.read_settings_all_books),
-            color = Color(NgTheme.colors.secondary),
-        )
-        SwitchSettingRow(
-            title = stringResource(R.string.use_zh_layout),
-            checked = state.boolean(PreferKey.useZhLayout),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.useZhLayout, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.text_full_justify),
-            checked = state.boolean(PreferKey.textFullJustify),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.textFullJustify, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.text_bottom_justify),
-            checked = state.boolean(PreferKey.textBottomJustify),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.textBottomJustify, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.adapt_special_style),
-            checked = state.boolean(PreferKey.adaptSpecialStyle),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.adaptSpecialStyle, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.auto_change_source),
-            checked = state.boolean(PreferKey.autoChangeSource),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.autoChangeSource, it) },
-        )
-        ReadMoreDivider(contentColor)
-        SwitchSettingRow(
-            title = stringResource(R.string.selectText),
-            checked = state.boolean(PreferKey.textSelectAble),
-            onCheckedChange = { actions.onBooleanChanged(PreferKey.textSelectAble, it) },
-        )
-        ReadMoreDivider(contentColor)
-        ChoiceSettingRow(
-            title = stringResource(R.string.click_image_way),
-            selectedValue = state.value(PreferKey.clickImgWay),
-            options = state.options(PreferKey.clickImgWay),
-            onSelected = { actions.onValueChanged(PreferKey.clickImgWay, it) },
-        )
-        if (state.optimizeRenderSupported) {
-            ReadMoreDivider(contentColor)
+    NgFormGroup(stringResource(R.string.read_settings_tab_interface)) {
+        MoreConfigRow {
+            ReadMoreChoiceSettingRow(
+                title = stringResource(R.string.screen_direction),
+                selectedValue = state.value(PreferKey.screenOrientation),
+                options = state.options(PreferKey.screenOrientation),
+                onSelected = { actions.onValueChanged(PreferKey.screenOrientation, it) },
+            )
+        }
+        NgFormGroupDivider()
+        MoreConfigRow {
+            ReadMoreChoiceSettingRow(
+                title = stringResource(R.string.keep_light),
+                selectedValue = state.value(PreferKey.keepLight),
+                options = state.options(PreferKey.keepLight),
+                onSelected = { actions.onValueChanged(PreferKey.keepLight, it) },
+            )
+        }
+        NgFormGroupDivider()
+        MoreConfigRow {
             SwitchSettingRow(
-                title = stringResource(R.string.enable_optimize_render),
-                checked = state.boolean(PreferKey.optimizeRender),
-                onCheckedChange = { actions.onBooleanChanged(PreferKey.optimizeRender, it) },
+                title = stringResource(R.string.pt_hide_status_bar),
+                checked = state.boolean(PreferKey.hideStatusBar),
+                onCheckedChange = { actions.onBooleanChanged(PreferKey.hideStatusBar, it) },
+            )
+        }
+        NgFormGroupDivider()
+        MoreConfigRow {
+            SwitchSettingRow(
+                title = stringResource(R.string.read_body_to_lh),
+                checked = state.boolean(PreferKey.readBodyToLh),
+                onCheckedChange = { actions.onBooleanChanged(PreferKey.readBodyToLh, it) },
+            )
+        }
+        NgFormGroupDivider()
+        MoreConfigRow {
+            SwitchSettingRow(
+                title = stringResource(R.string.read_content_avoid_cutout),
+                checked = state.boolean(PreferKey.paddingDisplayCutouts),
+                onCheckedChange = { actions.onBooleanChanged(PreferKey.paddingDisplayCutouts, it) },
             )
         }
     }
 }
 
 @Composable
-private fun SettingsColumn(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
-        content = content,
-    )
+internal fun ReadPageTurningScreen(
+    state: ReadMoreConfigUiState,
+    actions: ReadMoreConfigActions,
+) {
+    val contentColor = Color(NgTheme.colors.onSurface)
+    val accentColor = Color(NgTheme.colors.primary)
+    val maxHeight = LocalConfiguration.current.screenHeightDp.dp
+    NgGlassSurface(
+        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().heightIn(max = maxHeight),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        style = readFloatingGlassStyle(),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 8.dp)) {
+            NgLongDrawerHeader(
+                title = stringResource(R.string.read_settings_tab_page),
+                centerTitle = true,
+            )
+            Column(
+                Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 8.dp),
+            ) {
+                NgFormGroup(stringResource(R.string.page_anim)) {
+                    ReadStyleDock(
+                        labels = listOf(
+                            stringResource(R.string.page_anim_cover),
+                            stringResource(R.string.page_anim_slide),
+                            stringResource(R.string.page_anim_simulation),
+                            stringResource(R.string.page_anim_scroll),
+                            stringResource(R.string.page_anim_none),
+                        ),
+                        selectedIndex = state.pageAnim,
+                        contentColor = contentColor,
+                        selectedContainerColor = accentColor,
+                        selectedContentColor = Color(NgTheme.colors.onPrimary),
+                        onSelected = actions.onPageAnimChanged,
+                        height = 42.dp,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(1.dp),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                NgFormGroup(stringResource(R.string.read_page_section_layout)) {
+                    PageTurningRow {
+                        val options = state.options(PreferKey.doublePageHorizontal)
+                        ChoiceSettingRow(
+                            title = stringResource(R.string.double_page_horizontal),
+                            selectedValue = state.value(PreferKey.doublePageHorizontal),
+                            options = options,
+                            onSelected = { actions.onValueChanged(PreferKey.doublePageHorizontal, it) },
+                            preferPopupBelow = true,
+                            menuWidth = pageLayoutMenuWidth(options),
+                            scrollablePopup = true,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                NgFormGroup(stringResource(R.string.read_page_section_keys)) {
+                    PageTurningRow {
+                        SwitchSettingRow(
+                            title = stringResource(R.string.volume_key_page),
+                            checked = state.boolean(PreferKey.volumeKeyPage),
+                            onCheckedChange = { actions.onBooleanChanged(PreferKey.volumeKeyPage, it) },
+                        )
+                    }
+                    NgFormGroupDivider()
+                    PageTurningRow {
+                        SwitchSettingRow(
+                            title = stringResource(R.string.key_page_on_long_press),
+                            summary = stringResource(R.string.key_page_on_long_press_summary),
+                            checked = state.boolean(PreferKey.keyPageOnLongPress),
+                            onCheckedChange = { actions.onBooleanChanged(PreferKey.keyPageOnLongPress, it) },
+                        )
+                    }
+                    NgFormGroupDivider()
+                    ReadPageKeyExpandableSetting(
+                        bindings = PageKeyBindings(
+                            previous = state.value(PreferKey.prevKeys),
+                            next = state.value(PreferKey.nextKeys),
+                        ),
+                        capture = actions.pageKeyCapture,
+                        onBindingsChanged = { actions.onPageKeysChanged(it.previous, it.next) },
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                NgFormGroup(stringResource(R.string.read_page_section_touch)) {
+                    ReadThresholdExpandableSetting(
+                        title = stringResource(R.string.page_touch_slop_title),
+                        value = state.thresholdValue(PreferKey.pageTouchSlop),
+                        maxValue = PAGE_TOUCH_SLOP_MAX,
+                        systemDefaultAtZero = true,
+                        onValueChanged = { actions.onThresholdChanged(PreferKey.pageTouchSlop, it) },
+                    )
+                    NgFormGroupDivider()
+                    ReadThresholdExpandableSetting(
+                        title = stringResource(R.string.page_touch_click_title),
+                        value = state.thresholdValue(PreferKey.pageTouchClick),
+                        maxValue = PAGE_TOUCH_CLICK_MAX,
+                        systemDefaultAtZero = false,
+                        onValueChanged = { actions.onThresholdChanged(PreferKey.pageTouchClick, it) },
+                    )
+                    NgFormGroupDivider()
+                    PageTurningRow {
+                        ActionSettingRow(
+                            title = stringResource(R.string.click_regional_config),
+                            onClick = { actions.onAction(ReadMoreConfigKeys.CLICK_REGIONAL_CONFIG) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ReadThresholdExpandableSetting(
+    title: String,
+    value: Int,
+    maxValue: Int,
+    systemDefaultAtZero: Boolean,
+    onValueChanged: (Int) -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val draft = rememberSaveable(maxValue) { mutableIntStateOf(value.coerceIn(0, maxValue)) }
+    val committed = remember(maxValue) { mutableIntStateOf(value.coerceIn(0, maxValue)) }
+    val currentOnValueChanged = rememberUpdatedState(onValueChanged)
+    val bringIntoView = remember { BringIntoViewRequester() }
+    val contentColor = Color(NgTheme.colors.onSurface)
+
+    LaunchedEffect(value, maxValue) {
+        val updated = value.coerceIn(0, maxValue)
+        if (updated != committed.intValue) {
+            committed.intValue = updated
+            draft.intValue = updated
+        }
+    }
+
+    fun commit() {
+        val selected = draft.intValue.coerceIn(0, maxValue)
+        if (selected != committed.intValue) {
+            committed.intValue = selected
+            currentOnValueChanged.value(selected)
+        }
+    }
+
+    DisposableEffect(maxValue) {
+        onDispose { commit() }
+    }
+
+    val currentLabel = if (systemDefaultAtZero && draft.intValue == 0) {
+        stringResource(R.string.read_settings_system_default)
+    } else {
+        stringResource(R.string.read_settings_pixels, draft.intValue)
+    }
+    val minimumLabel = if (systemDefaultAtZero) {
+        stringResource(R.string.read_settings_system_default)
+    } else {
+        stringResource(R.string.read_settings_pixels, 0)
+    }
+    Column(Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)) {
+        PageTurningRow {
+            EditorNavigationRow(
+                title = title,
+                summary = currentLabel,
+                color = contentColor,
+                expanded = expanded,
+                rowHeight = 48.dp,
+                arrowVariant = EditorNavigationArrowVariant.RIGHT_TO_DOWN,
+                onClick = {
+                    if (expanded) commit()
+                    expanded = !expanded
+                },
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp)) {
+                NgSlider(
+                    value = draft.intValue.toFloat(),
+                    onValueChange = { draft.intValue = it.roundToInt().coerceIn(0, maxValue) },
+                    valueRange = 0f..maxValue.toFloat(),
+                    steps = maxValue - 1,
+                    visualSteps = 0,
+                    variant = NgSliderVariant.CONTINUOUS,
+                    onValueChangeFinished = { commit() },
+                    modifier = Modifier.semantics { contentDescription = title },
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(minimumLabel, color = contentColor.copy(alpha = 0.65f), fontSize = 12.sp)
+                    Text(
+                        stringResource(R.string.read_settings_pixels, maxValue),
+                        color = contentColor.copy(alpha = 0.65f),
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        }
+    }
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            delay(250)
+            bringIntoView.bringIntoView()
+        }
+    }
 }
 
 @Composable
-private fun ReadMoreSectionLabel(text: String, color: Color) {
-    Text(
-        text = text,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 4.dp),
-        color = color,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Medium,
-    )
+private fun PageTurningRow(content: @Composable () -> Unit) {
+    Box(Modifier.padding(horizontal = 14.dp)) { content() }
+}
+
+@Composable
+private fun ContentSettingsGroups(
+    state: ReadMoreConfigUiState,
+    actions: ReadMoreConfigActions,
+) {
+    NgFormGroup(stringResource(R.string.read_settings_current_book)) {
+        MoreConfigRow {
+            ReadMoreChoiceSettingRow(
+                title = stringResource(R.string.image_style),
+                selectedValue = state.value(ReadMoreConfigKeys.BOOK_IMAGE_STYLE),
+                options = state.options(ReadMoreConfigKeys.BOOK_IMAGE_STYLE),
+                onSelected = {
+                    actions.onValueChanged(ReadMoreConfigKeys.BOOK_IMAGE_STYLE, it)
+                },
+            )
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    NgFormGroup(stringResource(R.string.read_settings_all_books)) {
+        MoreConfigRow {
+            SwitchSettingRow(
+                title = stringResource(R.string.auto_change_source),
+                checked = state.boolean(PreferKey.autoChangeSource),
+                onCheckedChange = { actions.onBooleanChanged(PreferKey.autoChangeSource, it) },
+            )
+        }
+        NgFormGroupDivider()
+        MoreConfigRow {
+            ReadMoreChoiceSettingRow(
+                title = stringResource(R.string.click_image_way),
+                selectedValue = state.value(PreferKey.clickImgWay),
+                options = state.options(PreferKey.clickImgWay),
+                onSelected = { actions.onValueChanged(PreferKey.clickImgWay, it) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoreConfigRow(content: @Composable () -> Unit) {
+    Box(Modifier.padding(horizontal = 14.dp)) { content() }
 }
 
 @Composable
@@ -441,26 +455,50 @@ internal fun SwitchSettingRow(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    summary: String? = null,
 ) {
     val contentColor = Color(NgTheme.colors.onSurface)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = if (summary.isNullOrBlank()) 48.dp else 64.dp)
             .alpha(if (enabled) 1f else 0.45f)
             .clickable(enabled = enabled, role = Role.Switch) {
                 onCheckedChange(!checked)
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            color = contentColor,
-            fontSize = 16.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (summary.isNullOrBlank()) {
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f),
+                color = contentColor,
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Column(
+                modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                Text(
+                    text = title,
+                    color = contentColor,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = summary,
+                    color = Color(NgTheme.colors.onSurfaceVariant),
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         NgSwitchControl(
             checked = checked,
             enabled = enabled,
@@ -471,12 +509,66 @@ internal fun SwitchSettingRow(
 }
 
 @Composable
+private fun ReadMoreChoiceSettingRow(
+    title: String,
+    selectedValue: String,
+    options: List<ReadMoreConfigOption>,
+    onSelected: (String) -> Unit,
+) {
+    ChoiceSettingRow(
+        title = title,
+        selectedValue = selectedValue,
+        options = options,
+        onSelected = onSelected,
+        preferPopupBelow = true,
+        menuWidth = readSettingsMenuWidth(options),
+        scrollablePopup = true,
+        useVisibleWindowBounds = true,
+    )
+}
+
+internal fun readSettingsPopupWidth(longestLabel: Dp, screenWidth: Dp): Dp =
+    (longestLabel + 40.dp).coerceAtLeast(120.dp)
+        .coerceAtMost((screenWidth - 16.dp).coerceAtLeast(0.dp))
+
+@Composable
+private fun readSettingsMenuWidth(options: List<ReadMoreConfigOption>): Dp {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    return remember(options, measurer, density, textStyle, screenWidth) {
+        val longest = options.maxOfOrNull { option ->
+            with(density) { measurer.measure(option.label, textStyle, maxLines = 1).size.width.toDp() }
+        } ?: 0.dp
+        readSettingsPopupWidth(longest, screenWidth)
+    }
+}
+
+@Composable
+private fun pageLayoutMenuWidth(options: List<ReadMoreConfigOption>): Dp {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    return remember(options, measurer, density, textStyle, screenWidth) {
+        val longest = options.maxOfOrNull { option ->
+            with(density) { measurer.measure(option.label, textStyle, maxLines = 1).size.width.toDp() }
+        } ?: 0.dp
+        (longest + 40.dp).coerceIn(120.dp, (screenWidth - 16.dp).coerceAtLeast(120.dp))
+    }
+}
+
+@Composable
 private fun ChoiceSettingRow(
     title: String,
     selectedValue: String,
     options: List<ReadMoreConfigOption>,
     onSelected: (String) -> Unit,
     preferPopupBelow: Boolean = false,
+    menuWidth: Dp = 156.dp,
+    scrollablePopup: Boolean = false,
+    useVisibleWindowBounds: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selectedLabel = options.firstOrNull { it.value == selectedValue }?.label
@@ -526,77 +618,11 @@ private fun ChoiceSettingRow(
                 onDismissRequest = { expanded = false },
                 onSelected = onSelected,
                 preferPopupBelow = preferPopupBelow,
+                menuWidth = menuWidth,
+                scrollable = scrollablePopup,
+                variant = if (scrollablePopup) ReadChoicePopupVariant.ADAPTIVE else ReadChoicePopupVariant.STANDARD,
+                useVisibleWindowBounds = useVisibleWindowBounds,
             )
-        }
-    }
-}
-
-@Composable
-internal fun ReadThresholdSliderDialog(
-    title: String,
-    initialValue: Int,
-    maxValue: Int,
-    valueLabel: (Int) -> String,
-    onDismiss: () -> Unit,
-    onValueChanged: (Int) -> Unit,
-) {
-    var sliderValue by remember(initialValue, maxValue) {
-        mutableFloatStateOf(initialValue.coerceIn(0, maxValue).toFloat())
-    }
-    val value = sliderValue.roundToInt().coerceIn(0, maxValue)
-    val contentColor = Color(NgTheme.colors.onSurface)
-    NgGlassSurface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        style = readFloatingGlassStyle(),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = title,
-                    modifier = Modifier.weight(1f),
-                    color = contentColor,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_baseline_close),
-                        contentDescription = stringResource(R.string.close),
-                        modifier = Modifier.size(22.dp),
-                        tint = contentColor.copy(alpha = 0.72f),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = valueLabel(value),
-                modifier = Modifier.fillMaxWidth(),
-                color = Color(NgTheme.colors.secondary),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center,
-            )
-            NgSlider(
-                value = value.toFloat(),
-                onValueChange = {
-                    sliderValue = it
-                    onValueChanged(it.roundToInt().coerceIn(0, maxValue))
-                },
-                valueRange = 0f..maxValue.toFloat(),
-                steps = (maxValue - 1).coerceAtLeast(0),
-                variant = NgSliderVariant.CONTINUOUS,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(modifier = Modifier.height(4.dp))
         }
     }
 }
@@ -653,69 +679,4 @@ private fun ValueSettingRow(
             tint = contentColor.copy(alpha = 0.72f),
         )
     }
-}
-
-@Composable
-private fun ReadMoreConfigDock(
-    selectedTab: ReadMoreConfigTab,
-    contentColor: Color,
-    selectedContainerColor: Color,
-    selectedContentColor: Color,
-    onSelected: (ReadMoreConfigTab) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val tabs = listOf(
-        ReadMoreConfigTab.INTERFACE to stringResource(R.string.read_settings_tab_interface),
-        ReadMoreConfigTab.PAGE to stringResource(R.string.read_settings_tab_page),
-        ReadMoreConfigTab.CONTENT to stringResource(R.string.read_settings_tab_content),
-    )
-    val shape = RoundedCornerShape(12.dp)
-    val dockSurfaceColor = ReadDrawerStyle.dockSurfaceColor()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .clip(shape)
-            .background(dockSurfaceColor)
-            .padding(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        tabs.forEach { (tab, label) ->
-            val selected = tab == selectedTab
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(10.dp))
-                    .then(
-                        if (selected) Modifier.background(selectedContainerColor) else Modifier
-                    )
-                    .semantics {
-                        role = Role.Tab
-                        this.selected = selected
-                    }
-                    .clickable(role = Role.Tab) { onSelected(tab) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    color = if (selected) selectedContentColor else contentColor,
-                    fontSize = 15.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun ReadMoreDivider(contentColor: Color) {
-    Spacer(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(0.8.dp)
-            .background(contentColor.copy(alpha = 0.12f)),
-    )
 }

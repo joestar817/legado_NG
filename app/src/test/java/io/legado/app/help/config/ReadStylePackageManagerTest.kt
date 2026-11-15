@@ -6,7 +6,12 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonArray
 import com.google.gson.JsonParser
 import io.legado.app.constant.PreferKey
+import io.legado.app.ui.book.read.config.preferredCustomTitleSegmentType
+import io.legado.app.ui.book.read.config.selectTitleSegmentType
+import io.legado.app.ui.book.read.page.provider.ReadTitleSegmentType
+import io.legado.app.ui.book.read.page.provider.ReadTitleStyleParser
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -15,11 +20,75 @@ import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FilterInputStream
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 class ReadStylePackageManagerTest {
+    @Test
+    fun `resource ownership is local and never imported exported or copied`() {
+        val json = """{"bgType":0,"ngResourcePresetTarget":"foreign","ngResourcePresetSha256":"${"a".repeat(64)}"}"""
+        val imported = ReadStylePackageManager.import(
+            zipOf("readConfig.json" to json.toByteArray()).inputStream(), "ownership", temporaryFolder.newFolder(),
+        ).config
+        assertNull(imported.ngResourcePresetTarget)
+        assertNull(imported.ngResourcePresetSha256)
+        imported.ngResourcePresetTarget = "local"
+        imported.ngResourcePresetSha256 = "b".repeat(64)
+        val copy = imported.copyForBook()
+        assertNull(copy.ngResourcePresetTarget)
+        assertNull(copy.ngResourcePresetSha256)
+        val output = ByteArrayOutputStream()
+        ReadStylePackageManager.export(imported, output, temporaryFolder.newFolder(), { null })
+        val exported = JsonParser.parseString(unzip(output.toByteArray()).getValue("readConfig.json").toString(Charsets.UTF_8)).asJsonObject
+        assertFalse(exported.has("ngResourcePresetTarget"))
+        assertFalse(exported.has("ngResourcePresetSha256"))
+    }
+
+    @Test
+    fun `MD3 title rules survive import and can be restored after chapter number mode`() {
+        val title = "第112章 新章启程"
+        val rules = listOf(
+            Triple(1, "", listOf("第112", "章 新章启程")),
+            Triple(2, "章", listOf("第112章", "新章", "启程")),
+            Triple(3, "^第[0-9]{1,6}章", listOf("第112章", "新章启程")),
+        )
+        for ((type, rule, expected) in rules) {
+            val json = """{"bgType":0,"underline":false,"titleSegType":$type,"titleSegDistance":4,
+                "titleSegFlag":"$rule","titleSegScaling":0.9,"titleLineSpacingSub":12}"""
+            val result = ReadStylePackageManager.import(
+                zipOf("readConfig.json" to json.toByteArray()).inputStream(),
+                "md3-title-$type", temporaryFolder.newFolder(),
+            )
+            val config = result.config
+            assertEquals("md3-read-style", result.sourceFormat)
+            assertEquals(type, config.titleSegType)
+            assertEquals(0, config.titleSegCustomType)
+            fun segments(style: ReadBookConfig.Config) = ReadTitleStyleParser.parse(
+                title, style.titleSegType, style.titleSegDistance, style.titleSegFlag, style.titleSegScaling,
+            ).map { it.text }
+            assertEquals(expected, segments(config))
+
+            config.selectTitleSegmentType(ReadTitleSegmentType.CHAPTER_NUMBER)
+            assertEquals(type, config.titleSegCustomType)
+            assertEquals(listOf("第112章", "新章启程"), segments(config))
+            val exported = ByteArrayOutputStream()
+            ReadStylePackageManager.export(config, exported, temporaryFolder.newFolder(), { null })
+            val restored = ReadStylePackageManager.import(
+                exported.toByteArray().inputStream(), "ng-title-$type", temporaryFolder.newFolder(),
+            ).config
+            assertEquals(ReadTitleSegmentType.CHAPTER_NUMBER, restored.titleSegType)
+            assertEquals(type, restored.titleSegCustomType)
+            assertEquals(rule, restored.titleSegFlag)
+            assertEquals(12, restored.titleLineSpacingSub)
+            assertEquals(0.9f, restored.titleSegScaling, 0f)
+            restored.selectTitleSegmentType(restored.preferredCustomTitleSegmentType())
+            assertEquals(expected, segments(restored))
+        }
+    }
+
     @Test
     fun `export bundles header image and keeps its layout metadata without changing source`() {
         val image = byteArrayOf(1, 3, 5, 7)
@@ -128,7 +197,8 @@ class ReadStylePackageManagerTest {
                 bgImage = "assets://bg/test.png", fontPath = "assets://body.ttf", npLeft = 0.2f)),
         )
         val settings = JsonObject().apply {
-            addProperty(PreferKey.textFullJustify, false)
+            addProperty(PreferKey.autoChangeSource, false)
+            addProperty(PreferKey.textSelectionShowText, false)
             add("toolbarOrder", JsonArray().apply { add("copy") })
             add("toolbarDisabled", JsonArray().apply { add("share") })
         }
@@ -146,6 +216,23 @@ class ReadStylePackageManagerTest {
         assertArrayEquals(resources.getValue("assets://header.ttf"), File(imported.config.headerFont).readBytes())
         assertArrayEquals(resources.getValue("assets://footer.ttf"), File(imported.config.footerFont).readBytes())
         assertEquals(0.2f, imported.config.highlightRules.single().npLeft, 0f)
+    }
+
+    @Test
+    fun `removed settings are ignored while current reader preferences are preserved`() {
+        val json = """{"ngReaderSettings":{"disableReturnKey":true,"mouseWheelPage":false,"volumeKeyPage":true,"volumeKeyPageOnPlay":false,"noAnimScrollPage":true}}"""
+        val imported = ReadStylePackageManager.import(
+            zipOf("readConfig.json" to json.toByteArray()).inputStream(),
+            "legacy-return-key", temporaryFolder.newFolder(),
+        )
+        val settings = requireNotNull(imported.readerSettings)
+        assertFalse(settings.get(PreferKey.mouseWheelPage).asBoolean)
+        assertFalse(PreferKey.mouseWheelPage in ReadPresetPreferences.preferenceKeys)
+        assertTrue(settings.get(PreferKey.volumeKeyPage).asBoolean)
+        assertTrue(PreferKey.volumeKeyPage in ReadPresetPreferences.preferenceKeys)
+        assertFalse("disableReturnKey" in ReadPresetPreferences.preferenceKeys)
+        assertFalse("volumeKeyPageOnPlay" in ReadPresetPreferences.preferenceKeys)
+        assertFalse("noAnimScrollPage" in ReadPresetPreferences.preferenceKeys)
     }
 
     @Test
@@ -375,6 +462,136 @@ class ReadStylePackageManagerTest {
         assertTrue(error is IllegalArgumentException)
         assertFalse(File(parent, "bad-hash").exists())
         assertFalse(File(parent.parentFile, "outside.txt").exists())
+    }
+
+    @Test
+    fun `reimport preserves installed resources and reads the original configuration`() {
+        val parent = temporaryFolder.newFolder("reimport-packages")
+        val image = ByteArray(256 * 1024 + 17) { (it * 31).toByte() }
+        val zip = zipOf(
+            "readConfig.json" to """{"name":"fixture","bgType":2,"bgStr":"background.png"}""".toByteArray(),
+            "background.png" to image,
+        )
+        val first = ReadStylePackageManager.import(zip.inputStream(), "same-package", parent)
+        first.config.name = "changed after import"
+
+        val second = ReadStylePackageManager.import(zip.inputStream(), "same-package", parent)
+
+        assertEquals("fixture", second.config.name)
+        assertEquals(first.installedRoot, second.installedRoot)
+        assertArrayEquals(image, File(second.config.bgStr).readBytes())
+        assertTrue(parent.listFiles().orEmpty().none { it.name.startsWith(".staging-") })
+    }
+
+    @Test
+    fun `reimport still rejects corrupt resource data and preserves installed files`() {
+        val parent = temporaryFolder.newFolder("corrupt-reimport")
+        val config = """{"bgType":2,"bgStr":"background.png"}""".toByteArray()
+        val image = "unique-stored-resource-for-crc-check".toByteArray()
+        val valid = zipOf("readConfig.json" to config, "background.png" to image)
+        val installed = ReadStylePackageManager.import(valid.inputStream(), "same-package", parent)
+        val bad = ByteArrayOutputStream().use { output ->
+            ZipOutputStream(output).use { zip ->
+                zip.putNextEntry(ZipEntry("readConfig.json"))
+                zip.write(config)
+                zip.closeEntry()
+                val checksum = CRC32().apply { update(image) }
+                zip.putNextEntry(ZipEntry("background.png").apply {
+                    method = ZipEntry.STORED
+                    size = image.size.toLong()
+                    compressedSize = size
+                    crc = checksum.value
+                })
+                zip.write(image)
+                zip.closeEntry()
+            }
+            output.toByteArray()
+        }
+        val position = bad.indices.first { start ->
+            start + image.size <= bad.size && image.indices.all { bad[start + it] == image[it] }
+        }
+        bad[position] = (bad[position].toInt() xor 1).toByte()
+
+        val result = runCatching {
+            ReadStylePackageManager.import(bad.inputStream(), "same-package", parent)
+        }
+
+        assertTrue(result.isFailure)
+        assertArrayEquals(image, File(installed.config.bgStr).readBytes())
+        assertTrue(parent.listFiles().orEmpty().none { it.name.startsWith(".staging-") })
+    }
+
+    @Test
+    fun `reimport rejects traversal even when the package is installed`() {
+        val parent = temporaryFolder.newFolder("traversal-reimport")
+        val valid = zipOf("readConfig.json" to "{}".toByteArray())
+        val installed = ReadStylePackageManager.import(valid.inputStream(), "same-package", parent)
+        val invalid = zipOf(
+            "readConfig.json" to "{}".toByteArray(),
+            "../outside-reimport.txt" to "bad".toByteArray(),
+        )
+
+        val result = runCatching {
+            ReadStylePackageManager.import(invalid.inputStream(), "same-package", parent)
+        }
+
+        assertTrue(result.isFailure)
+        assertTrue(installed.installedRoot.isDirectory)
+        assertFalse(File(parent.parentFile, "outside-reimport.txt").exists())
+        assertTrue(parent.listFiles().orEmpty().none { it.name.startsWith(".staging-") })
+    }
+
+    @Test
+    fun `reimport still enforces the uncompressed entry size limit`() {
+        val parent = temporaryFolder.newFolder("oversize-reimport")
+        val valid = zipOf("readConfig.json" to "{}".toByteArray())
+        val installed = ReadStylePackageManager.import(valid.inputStream(), "same-package", parent)
+        val oversized = ByteArrayOutputStream().use { output ->
+            ZipOutputStream(output).use { zip ->
+                zip.putNextEntry(ZipEntry("readConfig.json"))
+                zip.write("{}".toByteArray())
+                zip.closeEntry()
+                zip.putNextEntry(ZipEntry("oversized.bin"))
+                val block = ByteArray(64 * 1024)
+                repeat(1025) { zip.write(block) }
+                zip.closeEntry()
+            }
+            output.toByteArray()
+        }
+
+        val result = runCatching {
+            ReadStylePackageManager.import(oversized.inputStream(), "same-package", parent)
+        }
+
+        assertTrue(result.isFailure)
+        assertTrue(installed.installedRoot.isDirectory)
+        assertTrue(parent.listFiles().orEmpty().none { it.name.startsWith(".staging-") })
+    }
+
+    @Test
+    fun `reimport does not install a partial package if cached resources disappear`() {
+        val parent = temporaryFolder.newFolder("missing-reimport")
+        val zip = zipOf("readConfig.json" to "{}".toByteArray())
+        val installed = ReadStylePackageManager.import(zip.inputStream(), "same-package", parent)
+        val input = object : FilterInputStream(zip.inputStream()) {
+            private var removed = false
+
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                if (!removed) {
+                    removed = true
+                    assertTrue(installed.installedRoot.deleteRecursively())
+                }
+                return super.read(bytes, offset, length)
+            }
+        }
+
+        val result = runCatching {
+            ReadStylePackageManager.import(input, "same-package", parent)
+        }
+
+        assertTrue(result.isFailure)
+        assertFalse(installed.installedRoot.exists())
+        assertTrue(parent.listFiles().orEmpty().none { it.name.startsWith(".staging-") })
     }
 
     private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray {

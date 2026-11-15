@@ -58,6 +58,7 @@ import io.legado.app.help.book.removeType
 import io.legado.app.help.book.update
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.resource.ResourceRepository
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.source.getSourceType
 import io.legado.app.help.storage.Backup
@@ -97,7 +98,12 @@ import io.legado.app.ui.book.read.config.AiPurifyRangeDialogContent
 import io.legado.app.ui.book.read.config.AiPurifyRuleDetailDialogContent
 import io.legado.app.ui.book.read.config.AiPurifyRuleUi
 import io.legado.app.ui.book.read.config.MoreConfigDialog
+import io.legado.app.ui.book.read.config.ReadContentSettingsDialog
 import io.legado.app.ui.book.read.config.ReadStyleDialog
+import io.legado.app.ui.font.FontSelectDialog
+import io.legado.app.ui.resource.ResourceFontDestination
+import io.legado.app.ui.resource.ResourceReaderFontRequest
+import io.legado.app.ui.resource.ResourceReaderStyleRequest
 import io.legado.app.ui.book.read.config.showReadConfirmDialog
 import io.legado.app.ui.book.read.config.showReadComposeDialog
 import io.legado.app.ui.book.read.page.ContentTextView
@@ -135,7 +141,6 @@ import io.legado.app.utils.StartActivityContract
 import io.legado.app.utils.buildMainHandler
 import io.legado.app.utils.dismissDialogFragment
 import io.legado.app.utils.dpToPx
-import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.invisible
 import io.legado.app.utils.isTrue
@@ -252,6 +257,9 @@ class ReadBookActivity : BaseReadBookActivity(),
     private val timeBatteryReceiver = TimeBatteryReceiver()
     private var screenTimeOut: Long = 0
     private var loadStates: Boolean = false
+    private var resourceFontReady = false
+    private var resourceFontOpenJob: Job? = null
+    private var resourceStyleReady = false
     private var replaceRuleRenderBatchDepth = 0
     private var replaceRuleRenderPending = false
     private var replaceRuleRenderResetPageOffset = false
@@ -322,9 +330,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                 autoPageStop()
                 return@addCallback
             }
-            if (getPrefBoolean("disableReturnKey") && !menuLayoutIsVisible) {
-                return@addCallback
-            }
             finish()
         }
     }
@@ -333,7 +338,7 @@ class ReadBookActivity : BaseReadBookActivity(),
         super.onPostCreate(savedInstanceState)
         viewModel.initReadBookConfig(intent)
         binding.root.post {
-            viewModel.initData(intent)
+            initReaderData(intent)
             startEpubOpeningPreview()
         }
         justInitData = true
@@ -341,13 +346,47 @@ class ReadBookActivity : BaseReadBookActivity(),
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        resourceFontOpenJob?.cancel()
+        resourceFontReady = false
+        resourceStyleReady = false
+        if (ResourceReaderStyleRequest.readFrom(intent) != null) {
+            // Retain this request and its actual book if the singleTask reader is recreated.
+            setIntent(intent)
+        } else {
+            ResourceReaderStyleRequest.clear(this.intent)
+        }
+        val fontRequest = ResourceReaderFontRequest.readFrom(intent)
+        ResourceReaderFontRequest.clear(this.intent)
+        fontRequest?.writeTo(this.intent)
         justInitData = true
         epubOpeningPreview?.close()
         epubOpeningPreview = null
         epubOpeningPreparation?.close()
         epubOpeningPreparation = io.legado.app.ui.book.read.epub.EpubOpeningPreparation(applicationContext, intent.getStringExtra("bookUrl"), ReadBook.curTextChapter)
-        viewModel.initData(intent)
+        initReaderData(intent)
         startEpubOpeningPreview()
+    }
+
+    private fun initReaderData(intent: Intent) {
+        val request = ResourceReaderFontRequest.readFrom(intent)
+        val styleRequest = ResourceReaderStyleRequest.readFrom(intent)
+        viewModel.initData(intent, onBookBound = styleRequest?.let { requested ->
+            { boundBook: String ->
+                if (boundBook == requested.bookUrl && ResourceReaderStyleRequest.readFrom(this.intent) == requested &&
+                    ReadBook.book?.bookUrl == requested.bookUrl
+                ) {
+                    resourceStyleReady = true
+                    openResourceStyleIfReady()
+                }
+            }
+        }) {
+            if (request != null && ResourceReaderFontRequest.readFrom(this.intent) == request &&
+                ReadBook.book?.bookUrl == request.bookUrl
+            ) {
+                resourceFontReady = true
+                openResourceFontIfReady()
+            }
+        }
     }
 
     private fun startEpubOpeningPreview() {
@@ -390,7 +429,7 @@ class ReadBookActivity : BaseReadBookActivity(),
         if (bookChanged) {
             bookChanged = false
             ReadBook.callBack = this
-            viewModel.initData(intent)
+            initReaderData(intent)
             justInitData = true
         } else {
             //web端阅读时，app处于阅读界面，本地记录会覆盖web保存的进度，在此处恢复
@@ -411,6 +450,58 @@ class ReadBookActivity : BaseReadBookActivity(),
             if (AppConfig.syncBookProgressPlus && NetworkUtils.isAvailable() && !justInitData && ReadBook.inBookshelf) {
                 ReadBook.syncProgress({ progress -> sureNewProgress(progress) })
             }
+        }
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        openResourceFontIfReady()
+        openResourceStyleIfReady()
+    }
+
+    private fun openResourceStyleIfReady() {
+        if (!resourceStyleReady || isFinishing || isDestroyed || supportFragmentManager.isStateSaved ||
+            !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        ) return
+        val request = ResourceReaderStyleRequest.readFrom(intent) ?: return
+        if (ReadBook.book?.bookUrl != request.bookUrl) return
+        val existing = supportFragmentManager.fragments.filterIsInstance<ReadStyleDialog>()
+            .firstOrNull { it.isAdded && !it.isRemoving }
+        if (existing != null) existing.showPresetFromResource()
+        else showDialogFragment<ReadStyleDialog>()
+        ResourceReaderStyleRequest.clear(intent)
+        resourceStyleReady = false
+    }
+
+    private fun openResourceFontIfReady() {
+        if (!resourceFontReady || isFinishing || isDestroyed || supportFragmentManager.isStateSaved ||
+            !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || resourceFontOpenJob?.isActive == true
+        ) return
+        val request = ResourceReaderFontRequest.readFrom(intent) ?: return
+        if (ReadBook.book?.bookUrl != request.bookUrl) return
+        resourceFontOpenJob = lifecycleScope.launch {
+            val path = try {
+                ResourceRepository.installedFontPath(request.resourceId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (!resourceFontReady || isFinishing || isDestroyed || supportFragmentManager.isStateSaved ||
+                !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                ReadBook.book?.bookUrl != request.bookUrl || ResourceReaderFontRequest.readFrom(intent) != request
+            ) return@launch
+            ResourceReaderFontRequest.clear(intent)
+            if (path == null) {
+                toastOnUi("字体已不可用，请返回资源中心刷新")
+                return@launch
+            }
+            val dialog = when (request.destination) {
+                ResourceFontDestination.BODY -> FontSelectDialog.forReaderBody(path)
+                ResourceFontDestination.TITLE -> FontSelectDialog.forReaderTitle(path)
+                ResourceFontDestination.INTERFACE -> return@launch
+            }
+            dialog.show(supportFragmentManager, "resource-font")
         }
     }
 
@@ -528,9 +619,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                 R.id.menu_group_local -> item.isVisible = !onLine
                 R.id.menu_group_text -> item.isVisible = book.isLocalTxt
                 else -> when (item.itemId) {
-                    R.id.menu_enable_replace -> item.isChecked = book.getUseReplaceRule()
-                    R.id.menu_same_title_removed -> item.isChecked = book.getRemoveSameTitle()
-                    R.id.menu_re_segment -> item.isChecked = book.getReSegment()
 //                    R.id.menu_enable_review -> {
 //                        item.isVisible = BuildConfig.DEBUG
 //                        item.isChecked = AppConfig.enableReview
@@ -580,13 +668,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                 loadChapterList(it)
             }
 
-            R.id.menu_enable_replace -> changeReplaceRuleState()
-            R.id.menu_re_segment -> ReadBook.book?.let {
-                it.setReSegment(!it.getReSegment())
-                item.isChecked = it.getReSegment()
-                ReadBook.loadContent(false)
-            }
-
 //            R.id.menu_enable_review -> {
 //                AppConfig.enableReview = !AppConfig.enableReview
 //                item.isChecked = AppConfig.enableReview
@@ -613,13 +694,6 @@ class ReadBookActivity : BaseReadBookActivity(),
 
             R.id.menu_cover_progress -> ReadBook.book?.let {
                 ReadBook.uploadProgress(true) { toastOnUi(R.string.upload_book_success) }
-            }
-
-            R.id.menu_same_title_removed -> ReadBook.book?.let {
-                it.setRemoveSameTitle(!it.getRemoveSameTitle())
-                item.isChecked = it.getRemoveSameTitle()
-                ReadBook.saveRead()
-                ReadBook.loadContent(false)
             }
 
             R.id.menu_effective_replaces -> showDialogFragment<EffectiveReplacesDialog>()
@@ -801,6 +875,9 @@ class ReadBookActivity : BaseReadBookActivity(),
      * 松开按键事件
      */
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (!menuLayoutIsVisible && (isPrevKey(keyCode) || isNextKey(keyCode))) {
+            return true
+        }
         when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN -> {
                 if (volumeKeyPage(PageDirection.NONE, false)) {
@@ -1334,7 +1411,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                     if (!book.getUseReplaceRule()) {
                         book.setUseReplaceRule(true)
                         ReadBook.saveRead()
-                        menu?.findItem(R.id.menu_enable_replace)?.isChecked = true
                     }
                 }
                 viewModel.replaceRuleChanged()
@@ -1387,7 +1463,6 @@ class ReadBookActivity : BaseReadBookActivity(),
                     if (!book.getUseReplaceRule()) {
                         book.setUseReplaceRule(true)
                         ReadBook.saveRead()
-                        menu?.findItem(R.id.menu_enable_replace)?.isChecked = true
                     }
                 }
                 viewModel.replaceRuleChanged()
@@ -2200,9 +2275,6 @@ class ReadBookActivity : BaseReadBookActivity(),
         if (!AppConfig.volumeKeyPage) {
             return false
         }
-        if (!AppConfig.volumeKeyPageOnPlay && BaseReadAloudService.isPlay()) {
-            return false
-        }
         handleKeyPage(direction, longPress)
         return true
     }
@@ -2358,6 +2430,8 @@ class ReadBookActivity : BaseReadBookActivity(),
             ReadBook.readAloud()
         }
         loadStates = true
+        resourceFontReady = true
+        binding.root.post { openResourceFontIfReady() }
     }
 
     /**
@@ -2400,6 +2474,15 @@ class ReadBookActivity : BaseReadBookActivity(),
         lifecycleScope.launch {
             binding.readView.upPageAnim(upRecorder)
         }
+    }
+
+    override fun onSidePageAnimSelected(pageAnim: Int) {
+        ReadBook.book?.setPageAnim(-1)
+        ReadBookConfig.pageAnim = pageAnim
+        ReadBookConfig.save()
+        ReadBook.saveRead()
+        upPageAnim(false)
+        ReadBook.loadContent(false)
     }
 
     override fun notifyBookChanged() {
@@ -2564,10 +2647,10 @@ class ReadBookActivity : BaseReadBookActivity(),
         val style = ReadCatalogStyle.fromValue(
             getPrefString(PreferKey.readCatalogStyle, ReadCatalogStyle.CARD.value)
         )
-        val dialog = if (style == ReadCatalogStyle.COMPACT_SIDE) {
-            ReadCompactCatalogDialog()
-        } else {
-            ReadCatalogDialog()
+        val dialog = when (style) {
+            ReadCatalogStyle.CARD -> ReadCatalogDialog()
+            ReadCatalogStyle.COMPACT_SIDE -> ReadCompactCatalogDialog()
+            ReadCatalogStyle.DENSE_LIST -> ReadDenseCatalogDialog()
         }
         dialog.show(supportFragmentManager, "readCatalog")
     }
@@ -2622,6 +2705,20 @@ class ReadBookActivity : BaseReadBookActivity(),
     override fun showMoreSetting() {
         showDialogFragment<MoreConfigDialog>()
     }
+
+    override fun showPageTurningSettings() {
+        showDialogFragment(MoreConfigDialog.forPageTurning())
+    }
+
+    override fun showContentSettings() {
+        showDialogFragment<ReadContentSettingsDialog>()
+    }
+
+    override fun showFloatingSettings() {
+        showDialogFragment(ReadStyleDialog.forFloating())
+    }
+
+    internal fun floatingToolMaxCapacity(): Int = binding.readMenu.floatingToolMaxCapacity()
 
     /**
      * 更新状态栏,导航栏
@@ -3057,11 +3154,29 @@ class ReadBookActivity : BaseReadBookActivity(),
     }
 
     override fun changeReplaceRuleState() {
+        ReadBook.book?.let { setReadContentReplaceEnabled(!it.getUseReplaceRule()) }
+    }
+
+    internal fun setReadContentReplaceEnabled(enabled: Boolean) {
         ReadBook.book?.let {
-            it.setUseReplaceRule(!it.getUseReplaceRule())
+            it.setUseReplaceRule(enabled)
             ReadBook.saveRead()
-            menu?.findItem(R.id.menu_enable_replace)?.isChecked = it.getUseReplaceRule()
             viewModel.replaceRuleChanged()
+        }
+    }
+
+    internal fun setReadContentRemoveSameTitle(enabled: Boolean) {
+        ReadBook.book?.let {
+            it.setRemoveSameTitle(enabled)
+            ReadBook.saveRead()
+            ReadBook.loadContent(false)
+        }
+    }
+
+    internal fun setReadContentReSegment(enabled: Boolean) {
+        ReadBook.book?.let {
+            it.setReSegment(enabled)
+            ReadBook.loadContent(false)
         }
     }
 
@@ -3229,11 +3344,14 @@ class ReadBookActivity : BaseReadBookActivity(),
         observeEvent<Boolean>(PreferKey.keepLight) {
             upScreenTimeOut()
         }
-        observeEvent<Boolean>(PreferKey.textSelectAble) {
-            readView.upSelectAble(it)
-        }
         observeEvent<String>(PreferKey.showBrightnessView) {
             readMenu.upFloatingToolVisibility()
+        }
+        observeEvent<String>(PreferKey.readFloatingToolOrder) {
+            readMenu.upFloatingToolSettings()
+        }
+        observeEvent<String>(PreferKey.readMenuShowChapterProgress) {
+            readMenu.upChapterProgressVisibility()
         }
         observeEvent<Boolean>(EventBus.UPDATE_READ_ACTION_BAR) {
             readMenu.reset()

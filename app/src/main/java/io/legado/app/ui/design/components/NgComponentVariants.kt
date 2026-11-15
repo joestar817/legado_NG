@@ -22,6 +22,7 @@ enum class NgButtonShapeVariant {
     PILL,
     ROUNDED,
     SMALL_ROUNDED,
+    COMPACT_ROUNDED,
 }
 
 enum class NgSettingsTrailing {
@@ -39,7 +40,8 @@ enum class NgDialogVariant {
     CLASSIC_CONFIRMATION,
     EDITOR,
     FORM_EDITOR,
-    LONG_CONTENT
+    LONG_CONTENT,
+    SIMPLE_CONFIRMATION,
 }
 
 enum class NgStatusTagVariant {
@@ -73,6 +75,7 @@ enum class NgManagementListCardVariant {
 
 enum class NgFilterChipGroupVariant {
     WRAP,
+    EVEN_ROW,
     TWO_ROW_RAIL
 }
 

@@ -92,12 +92,13 @@ private fun HomeListeningUnifiedBody(
         HomeListeningRestoredLargeBody(variant, context, showPreparing)
         return
     }
-    val palette = homeListeningAppearance(variant)?.palette
+    val palette = homeListeningSkinPalette(variant.styleId)
     val decoration = when (variant.styleId) {
-        "storybook" -> R.drawable.ng_home_listening_storybook
-        "night" -> R.drawable.ng_home_listening_night_desk
+        "storybook" -> homeWidgetArtworkPainter(variant.styleId, "listening-small")
+        "blue_fish" -> homeWidgetArtworkPainter(variant.styleId, "listening")
+        "night" -> homeWidgetArtworkPainter(variant.styleId, "desk")
         else -> null
-    }
+    }.takeUnless { context.measuring }
     SubcomposeLayout(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) { constraints ->
         val width = constraints.maxWidth
         val functionalMin = 152.dp.roundToPx()
@@ -110,7 +111,7 @@ private fun HomeListeningUnifiedBody(
         val sceneHeight = 72.dp.roundToPx()
         val artwork = if (functional.height <= functionalMin && decoration != null && !context.measuring)
             subcompose("decoration") {
-                Image(homeWidgetArtworkPainter(decoration), null, contentScale = ContentScale.Fit,
+                Image(decoration, null, contentScale = ContentScale.Fit,
                     alignment = Alignment.BottomEnd, modifier = Modifier.padding(top = 8.dp))
             }.single().measure(Constraints.fixed(width, sceneHeight)) else null
         val height = constraints.constrainHeight(maxOf(bodyMin, functional.height + bottom))
@@ -128,7 +129,7 @@ private fun HomeListeningRestoredLargeBody(
     context: HomeWidgetContentContext,
     showPreparing: Boolean,
 ) {
-    val palette = homeListeningAppearance(variant)?.palette
+    val palette = homeListeningSkinPalette(variant.styleId)
     if (!isPlainHomeWidgetStyle(variant.styleId)) {
         HomeListeningRestoredReferenceBody(variant, context, showPreparing, palette)
         return
@@ -255,7 +256,7 @@ private fun HomeListeningRestoredReferenceBody(
     val reference = homeListeningReference(variant)
     val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
     val columnWidth = homeListeningLargeCaptionColumn(context, reference)
-    val story = variant.styleId == "storybook"
+    val story = variant.styleId == "storybook" || variant.styleId == "blue_fish"
     val night = variant.styleId == "night"
     SubcomposeLayout(Modifier.fillMaxWidth()) { constraints ->
         val width = constraints.maxWidth
@@ -352,9 +353,14 @@ private fun HomeListeningRestoredReferenceBody(
             }
             val height = constraints.constrainHeight(naturalHeight)
             val artwork = if (!context.measuring && canShowArtwork) subcompose("scene") {
-                Image(homeWidgetArtworkPainter(if (story) R.drawable.ng_home_listening_large_story_scene
-                    else R.drawable.ng_home_listening_night_desk), null,
-                    contentScale = ContentScale.Fit, alignment = Alignment.BottomEnd)
+                val painter = homeWidgetArtworkPainter(variant.styleId, when (variant.styleId) {
+                    "blue_fish" -> "listening"
+                    "storybook" -> "listening-large"
+                    else -> "desk"
+                })
+                if (painter != null) {
+                    Image(painter, null, contentScale = ContentScale.Fit, alignment = Alignment.BottomEnd)
+                } else Box(Modifier)
             }.single().measure(Constraints.fixed(
                 if (story) storySceneWidth else minOf(width, 123.dp.roundToPx()),
                 minOf(if (story) 128.dp.roundToPx() else 59.dp.roundToPx(),

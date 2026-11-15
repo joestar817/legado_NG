@@ -72,6 +72,7 @@ import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.readFloatingGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassStyle
 import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.rememberNgSolidButtonColors
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgColorMath
 import io.legado.app.ui.design.theme.NgTheme
@@ -383,6 +384,7 @@ private fun PickerActionBar(
     modifier: Modifier = Modifier,
 ) {
     val accent = Color(NgTheme.colors.primary)
+    val completeColors = rememberNgSolidButtonColors(accent)
     val secondaryContainer = if (NgTheme.snapshot.isDark) {
         Color(0xFF2C2A28)
     } else {
@@ -421,8 +423,8 @@ private fun PickerActionBar(
                 .fillMaxSize(),
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(
-                containerColor = accent,
-                contentColor = Color.White,
+                containerColor = Color(completeColors.container),
+                contentColor = Color(completeColors.content),
             ),
             elevation = ButtonDefaults.buttonElevation(
                 defaultElevation = 2.dp,

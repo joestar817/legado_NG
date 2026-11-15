@@ -1,92 +1,89 @@
 package io.legado.app.ui.book.read.config
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.data.entities.Book
 import io.legado.app.help.config.EpubLayoutPreferences
-import io.legado.app.ui.book.read.readFloatingGlassStyle
-import io.legado.app.ui.design.components.compose.NgGlassSurface
+import io.legado.app.ui.design.components.compose.NgFormGroup
+import io.legado.app.ui.design.components.compose.NgFormGroupDivider
+import io.legado.app.ui.design.components.compose.NgFormPanel
+import io.legado.app.ui.design.components.compose.NgFormSwitchSettingRow
 import io.legado.app.ui.design.theme.NgTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun EpubLayoutSheet(
+internal fun EpubLayoutSettings(
     book: Book,
     onStyleChanged: () -> Unit,
-    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val maxHeight = minOf(READ_MORE_CONFIG_WINDOW_HEIGHT_DP.dp, LocalConfiguration.current.screenHeightDp.dp)
-    val nestedScrollInteropConnection = rememberNestedScrollInteropConnection()
     var choices by remember(book.bookUrl) { mutableStateOf(EpubLayoutPreferences.read(book.bookUrl)) }
+
     fun change(key: String, value: Boolean) {
         EpubLayoutPreferences.set(book.bookUrl, key, value)
         choices = EpubLayoutPreferences.read(book.bookUrl)
         onStyleChanged()
     }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        sheetMaxWidth = Dp.Unspecified,
-        containerColor = Color.Transparent, shape = RectangleShape, dragHandle = null,
-        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
-    ) {
-        NgGlassSurface(
-            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).padding(top = 8.dp)
-                .nestedScroll(nestedScrollInteropConnection),
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-            style = readFloatingGlassStyle(),
+
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 10.dp, bottom = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            val contentColor = Color(NgTheme.colors.onSurface)
-            Column(
-                Modifier.navigationBarsPadding().verticalScroll(rememberScrollState())
-                    .padding(top = 10.dp, bottom = 8.dp)
-            ) {
-                Text(
-                    text = "EPUB 排版",
-                    modifier = Modifier.height(42.dp).padding(horizontal = 16.dp),
-                    color = contentColor,
-                    fontSize = 20.sp,
-                    lineHeight = 42.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    SwitchSettingRow(
-                        title = "原书排版优先",
-                        checked = choices.getValue("publisher"),
-                        onCheckedChange = { change("publisher", it) },
-                    )
-                    ReadMoreDivider(contentColor)
-                    EpubLayoutPreferences.features.entries.forEach { (key, title) ->
-                        SwitchSettingRow(
-                            title = title,
-                            checked = choices.getValue(key),
-                            onCheckedChange = { change(key, it) },
-                        )
-                        ReadMoreDivider(contentColor)
-                    }
-                    ActionSettingRow(title = "恢复默认", onClick = {
+            Text(
+                text = "EPUB 排版", modifier = Modifier.weight(1f),
+                color = Color(NgTheme.colors.primary), fontSize = 14.sp,
+                lineHeight = 18.sp, fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = "恢复默认",
+                modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                    .clickable(role = Role.Button) {
                         EpubLayoutPreferences.reset(book.bookUrl)
                         choices = EpubLayoutPreferences.read(book.bookUrl)
                         onStyleChanged()
-                    })
-                }
+                    }
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                color = Color(NgTheme.colors.primary), fontSize = 14.sp, lineHeight = 18.sp,
+            )
+        }
+        NgFormPanel {
+            NgFormSwitchSettingRow(
+                title = "原书排版优先",
+                checked = choices.getValue(EpubLayoutPreferences.PUBLISHER),
+                onCheckedChange = { change(EpubLayoutPreferences.PUBLISHER, it) },
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        NgFormGroup("原书样式") {
+            EpubLayoutPreferences.features.entries.forEachIndexed { index, (key, title) ->
+                if (index > 0) NgFormGroupDivider()
+                NgFormSwitchSettingRow(
+                    title = title,
+                    checked = choices.getValue(key),
+                    onCheckedChange = { change(key, it) },
+                )
             }
         }
     }

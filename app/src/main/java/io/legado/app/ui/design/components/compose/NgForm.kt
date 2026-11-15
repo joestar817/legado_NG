@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Button
@@ -93,6 +94,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.ui.design.components.NgButtonVariant
+import io.legado.app.ui.design.theme.NgSolidButtonPalette
 import io.legado.app.ui.design.theme.NgTheme
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -108,6 +110,7 @@ data class NgFormSelectOption(
 enum class NgFormSelectMenuVariant {
     MATCH_ROW,
     END_ANCHORED_COMPACT,
+    END_ANCHORED_FILTER,
 }
 
 /** 带分组标题的紧凑行式表单容器。 */
@@ -133,13 +136,29 @@ fun NgFormGroup(
     }
 }
 
+enum class NgFormPanelVariant { STANDARD, LARGE_ROUNDED }
+
 /** 不附带外部标题的连续亮白表单底板。 */
 @Composable
 fun NgFormPanel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
+    NgFormPanel(NgFormPanelVariant.STANDARD, modifier, content)
+}
+
+@Composable
+fun NgFormPanel(
+    variant: NgFormPanelVariant,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val radius = when (variant) {
+        NgFormPanelVariant.STANDARD -> NgTheme.shapes.mediumDp
+        NgFormPanelVariant.LARGE_ROUNDED -> NgTheme.shapes.largeDp
+    }
+    val shape = RoundedCornerShape(radius.dp)
+    val cardColor = ngDrawerContentCardColor()
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -147,11 +166,11 @@ fun NgFormPanel(
                 shape = shape,
                 fallback = BorderStroke(
                     0.6.dp,
-                    Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f),
+                    Color(NgTheme.colors.outlineVariant).copy(alpha = 0.22f * cardColor.alpha),
                 ),
             )
             .clip(shape)
-            .background(ngDrawerContentCardColor()),
+            .background(cardColor),
         content = content,
     )
 }
@@ -405,13 +424,16 @@ fun NgFormSelectRow(
         ?: selectedValue
     val contentAlpha = if (enabled) 1f else 0.45f
     val rowWidth = with(layoutDensity) { rowWidthPx.toDp() }
+    val filter = menuVariant == NgFormSelectMenuVariant.END_ANCHORED_FILTER
     val menuWidth = when (menuVariant) {
         NgFormSelectMenuVariant.MATCH_ROW -> rowWidth
-        NgFormSelectMenuVariant.END_ANCHORED_COMPACT -> minOf(rowWidth, 156.dp)
+        NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
+        NgFormSelectMenuVariant.END_ANCHORED_FILTER -> minOf(rowWidth, 156.dp)
     }
     val menuOffset = when (menuVariant) {
         NgFormSelectMenuVariant.MATCH_ROW -> DpOffset.Zero
-        NgFormSelectMenuVariant.END_ANCHORED_COMPACT -> DpOffset(
+        NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
+        NgFormSelectMenuVariant.END_ANCHORED_FILTER -> DpOffset(
             x = (rowWidth - menuWidth).coerceAtLeast(0.dp),
             y = 0.dp,
         )
@@ -429,7 +451,7 @@ fun NgFormSelectRow(
                 .clickable(enabled = enabled && options.isNotEmpty()) { expanded = true }
                 .semantics {
                     role = Role.Button
-                    contentDescription = title
+                    contentDescription = if (filter) "类型筛选，$title" else title
                     stateDescription = selectedLabel
                 }
                 .padding(start = 14.dp, end = 10.dp),
@@ -446,8 +468,9 @@ fun NgFormSelectRow(
             )
             Text(
                 text = selectedLabel,
-                color = Color(colors.onSurfaceVariant).copy(alpha = contentAlpha),
-                fontSize = 13.sp,
+                color = Color(if (filter) colors.primary else colors.onSurfaceVariant).copy(alpha = contentAlpha),
+                fontSize = if (filter) 14.sp else 13.sp,
+                fontWeight = if (filter) FontWeight.Medium else null,
                 lineHeight = 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -456,7 +479,7 @@ fun NgFormSelectRow(
                 painter = arrowIcon,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = Color(colors.onSurfaceVariant).copy(alpha = contentAlpha),
+                tint = Color(if (filter) colors.primary else colors.onSurfaceVariant).copy(alpha = contentAlpha),
             )
         }
         DropdownMenu(
@@ -470,19 +493,26 @@ fun NgFormSelectRow(
             shadowElevation = 4.dp,
         ) {
             options.forEach { option ->
+                val selected = option.value == selectedValue
                 DropdownMenuItem(
                     modifier = Modifier
                         .height(44.dp)
-                        .semantics { selected = option.value == selectedValue },
+                        .semantics { this.selected = selected },
                     text = {
                         Text(
                             text = option.label,
-                            color = Color(colors.onSurface),
+                            color = Color(if (filter && selected) colors.primary else colors.onSurface),
                             fontSize = 15.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     },
+                    trailingIcon = if (filter && selected) {
+                        {
+                            Icon(Icons.Rounded.Check, contentDescription = null,
+                                modifier = Modifier.size(20.dp), tint = Color(colors.primary))
+                        }
+                    } else null,
                     onClick = {
                         expanded = false
                         onValueChange(option.value)
@@ -1619,6 +1649,8 @@ enum class NgFormActionButtonAppearance {
     SURFACE_CARD_BORDERLESS,
     DIALOG,
     COLOR_PICKER_CONFIRM,
+    /** 阅读夜间浮窗使用浅色 Tonal 确认按钮，保持主次层级。 */
+    READING_NIGHT_CONFIRM,
     /** 无底色、无描边的主题色文字操作，图标与文字使用紧凑间距。 */
     TEXT,
 }
@@ -1640,6 +1672,19 @@ fun NgFormActionButton(
     val colors = NgTheme.colors
     val primary = Color(colors.primary)
     val colorPickerConfirm = appearance == NgFormActionButtonAppearance.COLOR_PICKER_CONFIRM
+    val snapshot = NgTheme.snapshot
+    val readingNightConfirm = appearance == NgFormActionButtonAppearance.READING_NIGHT_CONFIRM &&
+        variant == NgButtonVariant.TONAL && snapshot.isDark && !snapshot.isEInk
+    val readingConfirmColors = if (readingNightConfirm) {
+        remember(colors.primary, colors.surface) {
+            NgSolidButtonPalette.resolveLightTonalAction(colors.primary, colors.surface)
+        }
+    } else null
+    val drawerPrimaryContent = ngDrawerPrimaryContentColor()
+    val primaryContent = if (colorPickerConfirm && variant == NgButtonVariant.PRIMARY) {
+        Color.White
+    } else drawerPrimaryContent
+    val primaryColors = rememberNgSolidButtonColors(primary, primaryContent)
     val textAppearance = appearance == NgFormActionButtonAppearance.TEXT
     val shape = RoundedCornerShape(if (colorPickerConfirm) 13.dp else NgTheme.shapes.mediumDp.dp)
     val surfaceCardAppearance = appearance == NgFormActionButtonAppearance.DIALOG ||
@@ -1649,12 +1694,12 @@ fun NgFormActionButton(
         appearance == NgFormActionButtonAppearance.SURFACE_CARD_BORDERLESS
     val containerColor = if (textAppearance) Color.Transparent else when (variant) {
         NgButtonVariant.PRIMARY,
-        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> primary
-        NgButtonVariant.TONAL -> Color(colors.selectedContainer)
+        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> Color(primaryColors.container)
+        NgButtonVariant.TONAL -> Color(readingConfirmColors?.container ?: colors.selectedContainer)
         NgButtonVariant.NEUTRAL -> Color(colors.surfaceContainerHigh).copy(
             alpha = if (NgTheme.snapshot.isEInk) 1f else 0.38f
         )
-        NgButtonVariant.DANGER -> Color(colors.error)
+        NgButtonVariant.DANGER -> rememberNgSolidButtonContainerColor(Color(colors.error))
         NgButtonVariant.ON_IMAGE -> Color.Black.copy(alpha = 0.56f)
         NgButtonVariant.OUTLINE -> if (surfaceCardAppearance) {
             ngDrawerContentCardColor()
@@ -1663,9 +1708,9 @@ fun NgFormActionButton(
         }
     }
     val contentColor = if (textAppearance) primary else when (variant) {
-        NgButtonVariant.PRIMARY -> if (colorPickerConfirm) Color.White else ngDrawerPrimaryContentColor()
-        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> ngDrawerPrimaryContentColor()
-        NgButtonVariant.TONAL,
+        NgButtonVariant.PRIMARY,
+        NgButtonVariant.PRIMARY_LIGHT_CONTENT -> Color(primaryColors.content)
+        NgButtonVariant.TONAL -> Color(readingConfirmColors?.content ?: colors.onSurface)
         NgButtonVariant.NEUTRAL -> Color(colors.onSurface)
         NgButtonVariant.DANGER -> Color.White
         NgButtonVariant.ON_IMAGE -> Color.White

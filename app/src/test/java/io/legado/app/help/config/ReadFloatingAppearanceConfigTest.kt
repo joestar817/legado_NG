@@ -8,6 +8,21 @@ import org.junit.Test
 class ReadFloatingAppearanceConfigTest {
 
     @Test
+    fun presetsDefaultToOpaqueAndKeepExplicitTransparency() {
+        assertEquals(0, ReadFloatingAppearanceConfig.DEFAULT_TRANSPARENCY_PERCENT)
+        assertEquals(0, ReadBookConfig.Config().readFloatingTransparency)
+        assertEquals(
+            0,
+            GSON.fromJson("{}", ReadBookConfig.Config::class.java).readFloatingTransparency,
+        )
+        assertEquals(
+            20,
+            GSON.fromJson("{\"readFloatingTransparency\":20}", ReadBookConfig.Config::class.java)
+                .readFloatingTransparency,
+        )
+    }
+
+    @Test
     fun transparencyKeepsEndpointsAndLegacyDefault() {
         assertEquals(1f, ReadFloatingAppearanceConfig.surfaceAlpha(0), 0.001f)
         assertEquals(0.9875f, ReadFloatingAppearanceConfig.surfaceAlpha(5), 0.001f)
@@ -36,7 +51,7 @@ class ReadFloatingAppearanceConfigTest {
     }
 
     @Test
-    fun floatingAlphaEasesInBeforeTheDefaultTransparency() {
+    fun floatingAlphaEasesInBeforeTheTransparencyCurvePivot() {
         assertEquals(
             0.9875f,
             ReadFloatingAppearanceConfig.floatingSurfaceAlpha(5, 0.80f),
@@ -122,7 +137,6 @@ class ReadFloatingAppearanceConfigTest {
             globallyFollowsApplication = true,
             globalColorStyle = ReadFloatingColorStyle.EXPRESSIVE,
             presetSeed = 0xFFCC8844.toInt(),
-            presetFollowsApplication = false,
             presetColorStyle = ReadFloatingColorStyle.FRUIT_SALAD,
         )
 
@@ -138,11 +152,25 @@ class ReadFloatingAppearanceConfigTest {
             globallyFollowsApplication = false,
             globalColorStyle = ReadFloatingColorStyle.EXPRESSIVE,
             presetSeed = 0xFFCC8844.toInt(),
-            presetFollowsApplication = false,
             presetColorStyle = ReadFloatingColorStyle.FRUIT_SALAD,
         )
 
         assertEquals(0xFFCC8844.toInt(), effective.seed)
+        assertEquals(false, effective.followsApplication)
+        assertEquals(ReadFloatingColorStyle.FRUIT_SALAD, effective.colorStyle)
+    }
+
+    @Test
+    fun unsetPresetColorDoesNotFollowWhenGlobalFollowIsOff() {
+        val effective = resolveEffectiveReadFloatingColor(
+            isEInk = false,
+            globallyFollowsApplication = false,
+            globalColorStyle = ReadFloatingColorStyle.EXPRESSIVE,
+            presetSeed = 0,
+            presetColorStyle = ReadFloatingColorStyle.FRUIT_SALAD,
+        )
+
+        assertEquals(0, effective.seed)
         assertEquals(false, effective.followsApplication)
         assertEquals(ReadFloatingColorStyle.FRUIT_SALAD, effective.colorStyle)
     }

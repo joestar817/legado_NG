@@ -1,13 +1,51 @@
 package io.legado.app.ui.main.home
 
 import com.google.gson.JsonParser
+import io.legado.app.help.home.HomeWidgetSkinRenderer
+import io.legado.app.help.home.InstalledHomeWidgetSkin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class HomeWidgetLayoutTest {
+    @Test
+    fun missingSkinKeepsSavedSizeAndBecomesSelectableOnlyWithAnInstalledPack() {
+        val widget = HomeWidgetInstance("existing", "listening", "story-small")
+        val saved = HomeWidgetLayoutCodec.encode(listOf(widget))
+        val empty = HomeWidgetSkinSelection(emptyList())
+        assertEquals(setOf("basic", "white"), empty.choices("listening").map { it.styleId }.toSet())
+        assertEquals("small", empty.render(widget).id)
+        val renderer = HomeWidgetSkinRenderer.STORYBOOK
+        val selection = HomeWidgetSkinSelection(listOf(
+            InstalledHomeWidgetSkin(renderer.resourceId, "绘本书屋", renderer, File("storybook.zip"), "test"),
+        ))
+        assertEquals("story-small", selection.render(widget).id)
+        assertTrue(selection.allows("storybook"))
+        assertFalse(selection.allows("night"))
+        assertEquals(listOf(widget), HomeWidgetLayoutCodec.decode(saved))
+    }
+
+    @Test
+    fun blueFishCanCoexistWithStorybookAndIsNotSelectableUntilInstalled() {
+        val widget = HomeWidgetInstance("existing", "listening", "blue-fish-small")
+        val story = HomeWidgetSkinRenderer.STORYBOOK
+        val fish = HomeWidgetSkinRenderer.BLUE_FISH
+        val storySkin = InstalledHomeWidgetSkin(story.resourceId, "绘本书屋", story, File("story.zip"), "story")
+        val fishSkin = InstalledHomeWidgetSkin(fish.resourceId, "蓝色大肥鱼", fish, File("fish.zip"), "fish")
+        val before = HomeWidgetSkinSelection(listOf(storySkin))
+        assertFalse(before.allows("blue_fish"))
+        assertEquals("small", before.render(widget).id)
+        val after = HomeWidgetSkinSelection(listOf(storySkin, fishSkin))
+        assertTrue(after.allows("storybook"))
+        assertTrue(after.allows("blue_fish"))
+        assertEquals(widget.variantId, after.render(widget).id)
+        assertEquals("blue-fish-large", HomeWidgetCatalog.variantForSize("listening", widget.variantId, HomeWidgetSize.LARGE)?.id)
+        assertEquals(listOf(widget), HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(listOf(widget))))
+    }
+
     @Test
     fun savingAVariantPreservesPendingOrderRemovalAndAddedInstances() {
         val saved = HomeWidgetCatalog.defaults()
@@ -64,16 +102,16 @@ class HomeWidgetLayoutTest {
     }
 
     @Test
-    fun everyModuleOffersTheSameFourStyleFamiliesForItsAvailableSizes() {
+    fun everyModuleOffersTheSameStyleFamiliesForItsAvailableSizes() {
         HomeWidgetCatalog.types.forEach { type ->
             type.variants.map { it.size }.distinct().forEach { size ->
                 val choices = HomeWidgetCatalog.variantsForSize(type.id, size)
-                assertEquals(listOf("basic", "storybook", "night", "white"), choices.map { it.styleId })
+                assertEquals(listOf("basic", "storybook", "night", "white", "blue_fish"), choices.map { it.styleId })
                 assertTrue(choices.all { it.size == size })
             }
         }
         assertEquals(
-            listOf("small", "large", "story-small", "story-large", "night-small", "night-large", "white-small", "white-large"),
+            listOf("small", "large", "story-small", "story-large", "night-small", "night-large", "white-small", "white-large", "blue-fish-small", "blue-fish-large"),
             HomeWidgetCatalog.type("listening")!!.variants.map { it.id },
         )
         assertEquals(null, HomeWidgetCatalog.variantForSize("unknown", "small", HomeWidgetSize.LARGE))
@@ -93,9 +131,9 @@ class HomeWidgetLayoutTest {
             }
             assertEquals(changed, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(changed)))
         }
-        assertEquals(listOf("default_updates", "default_listening", "default_reading", "default_calendar"),
+        assertEquals(listOf("default_updates", "default_listening", "default_reading"),
             HomeWidgetCatalog.defaults().map { it.id })
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"), HomeWidgetCatalog.defaults().map { it.variantId })
+        assertEquals(listOf("large", "large", "large"), HomeWidgetCatalog.defaults().map { it.variantId })
     }
 
     @Test
@@ -122,13 +160,13 @@ class HomeWidgetLayoutTest {
         )
         assertEquals(widgets, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(widgets)))
         assertEquals(listOf(2, 1, 1, 2, 1), widgets.map { HomeWidgetCatalog.variant(it)!!.size.columns })
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"), HomeWidgetCatalog.defaults().map { it.variantId })
+        assertEquals(listOf("large", "large", "large"), HomeWidgetCatalog.defaults().map { it.variantId })
     }
 
     @Test
     fun updatesSkinsKeepBothSizesAndPreserveTheExistingLayoutContract() {
         val variants = HomeWidgetCatalog.type("updates")!!.variants
-        assertEquals(listOf("small", "large", "story-small", "story-large", "night-small", "night-large", "white-small", "white-large"),
+        assertEquals(listOf("small", "large", "story-small", "story-large", "night-small", "night-large", "white-small", "white-large", "blue-fish-small", "blue-fish-large"),
             variants.map { it.id })
         val original = HomeWidgetCatalog.defaults()
         variants.forEach { variant ->
@@ -143,8 +181,8 @@ class HomeWidgetLayoutTest {
             assertEquals(original.map { it.id }, changed.map { it.id })
             assertEquals(changed, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(changed)))
         }
-        assertEquals(listOf("default_updates", "default_listening", "default_reading", "default_calendar"), original.map { it.id })
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"), original.map { it.variantId })
+        assertEquals(listOf("default_updates", "default_listening", "default_reading"), original.map { it.id })
+        assertEquals(listOf("large", "large", "large"), original.map { it.variantId })
     }
 
     @Test
@@ -161,7 +199,7 @@ class HomeWidgetLayoutTest {
             }
             assertEquals(changed, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(changed)))
         }
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"), HomeWidgetCatalog.defaults().map { it.variantId })
+        assertEquals(listOf("large", "large", "large"), HomeWidgetCatalog.defaults().map { it.variantId })
     }
 
     @Test
@@ -176,7 +214,7 @@ class HomeWidgetLayoutTest {
             }
         }
         assertEquals(widgets, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(widgets)))
-        assertEquals(listOf("story-large", "story-large", "story-large", "story-large"),
+        assertEquals(listOf("large", "large", "large"),
             HomeWidgetCatalog.defaults().map { it.variantId })
     }
 

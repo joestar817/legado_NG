@@ -45,6 +45,13 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal fun TocUiState.withBookSnapshot(book: Book): TocUiState = copy(
+    book = book.copy(),
+    reverseToc = book.getReverseToc(),
+    splitLongChapter = book.getSplitLongChapter(),
+    isLocalTxt = book.isLocalTxt,
+)
+
 /** 目录／书签。页面渲染使用 Compose，业务协议沿用原实现。 */
 class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
     toolBarTheme = Theme.Dark,
@@ -93,11 +100,7 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
     }
 
     private fun onBookChanged(book: Book) {
-        uiState = uiState.copy(
-            book = book.copy(),
-            splitLongChapter = book.getSplitLongChapter(),
-            isLocalTxt = book.isLocalTxt,
-        )
+        uiState = uiState.withBookSnapshot(book)
         loadCachedFiles(book)
         if (viewModel.chapterOrderChanged) {
             setResult(RESULT_OK, Intent().apply {
@@ -118,6 +121,7 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
     private fun handleUiEvent(event: TocUiEvent) {
         when (event) {
             TocUiEvent.Back -> onBackPressedDispatcher.onBackPressed()
+            TocUiEvent.ToggleSort -> uiState = uiState.copy(catalogDescending = !uiState.catalogDescending)
             is TocUiEvent.TabChange -> changeTab(event.tab)
             is TocUiEvent.SearchExpandedChange -> {
                 if (event.expanded) {
@@ -176,6 +180,7 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
                 .coerceAtLeast(0)
             uiState = uiState.copy(
                 chapters = chapters.map(::TocChapterUiItem),
+                totalChapterCount = if (query.isBlank()) chapters.size else uiState.totalChapterCount,
                 chapterScrollIndex = scrollIndex,
                 chapterScrollToken = uiState.chapterScrollToken + 1,
             )

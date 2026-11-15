@@ -29,26 +29,29 @@ internal fun HomeListeningReferenceDisc(
 internal fun HomeWidgetControlDisc(styleId: String, primary: Boolean, editing: Boolean, modifier: Modifier) {
     val night = styleId == "night"
     val story = styleId == "storybook"
-    val refined = night || story
+    val blueFish = styleId == "blue_fish"
+    val refined = night || story || blueFish
     val alpha = if (editing) 0.4f else 1f
     val colors = when {
         primary && night -> listOf(Color(0xFFFFD780), Color(0xFFF5BE5C), Color(0xFFEBA648))
         primary && story -> listOf(Color(0xFF337758), Color(0xFF27664A), Color(0xFF1B5238))
+        primary && blueFish -> listOf(Color(0xFF447CCA), Color(0xFF285FAF), Color(0xFF174886))
         primary -> listOf(Color(0xFF0D8D78), Color(0xFF087F6B), Color(0xFF056D5B))
         night -> listOf(Color(0xFF405071), Color(0xFF2E3954), Color(0xFF222B40))
         story -> listOf(Color(0xFFFFFFF8), Color(0xFFFCF9EB), Color(0xFFF1EED8))
+        blueFish -> listOf(Color.White, Color(0xFFF2F8FF), Color(0xFFE2EFFC))
         else -> listOf(Color(0xFFFFFEF8), Color(0xFFFAF9EF), Color(0xFFF0EFD9))
     }.map { it.copy(alpha = alpha) }
     Canvas(modifier.shadow(
         if (editing) 1.dp else if (primary) 2.dp else 3.dp,
         CircleShape, clip = false,
-        ambientColor = (if (night) Color.Black else Color(0xFF4B6242)).copy(alpha = 0.12f * alpha),
-        spotColor = (if (night) Color.Black else Color(0xFF71815C)).copy(alpha = 0.18f * alpha),
+        ambientColor = (if (night) Color.Black else if (blueFish) Color(0xFF526D91) else Color(0xFF4B6242)).copy(alpha = 0.12f * alpha),
+        spotColor = (if (night) Color.Black else if (blueFish) Color(0xFF7894B7) else Color(0xFF71815C)).copy(alpha = 0.18f * alpha),
     )) {
         if (refined && !editing) {
             val shadowCenter = center + Offset(0f, 2.5.dp.toPx())
             val shadowRadius = size.minDimension / 2 + 5.dp.toPx()
-            val shade = if (night) Color.Black else Color(0xFF6B7451)
+            val shade = if (night) Color.Black else if (blueFish) Color(0xFF7089A9) else Color(0xFF6B7451)
             drawCircle(Brush.radialGradient(
                 0f to shade.copy(alpha = 0.16f), 0.70f to shade.copy(alpha = 0.12f),
                 0.86f to shade.copy(alpha = 0.05f), 1f to Color.Transparent,

@@ -1,110 +1,82 @@
 package io.legado.app.ui.main.home
 
-import androidx.annotation.DrawableRes
+import android.graphics.BitmapFactory
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.imageResource
-import androidx.compose.ui.res.painterResource
-import android.content.res.Resources
-import android.util.Log
-import io.legado.app.R
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
+import io.legado.app.help.home.HomeWidgetSkinPackage
+import io.legado.app.help.home.InstalledHomeWidgetSkin
+import java.util.zip.ZipFile
 
-/** Original bitmaps stay shared for this home view, with a bounded retained size. */
+/** Share the bounded decoded artwork between the live cards and the editing previews. */
 internal class HomeWidgetArtworkCache {
+    private data class Key(val revision: String, val role: String)
     private data class Entry(val bitmap: ImageBitmap, val bytes: Long)
     private val lock = Any()
-    private val bitmaps = LinkedHashMap<Int, Entry>(16, 0.75f, true)
+    private val bitmaps = LinkedHashMap<Key, Entry>(16, 0.75f, true)
     private var retainedBytes = 0L
-    private var hitCount = 0L
-    private var loadCount = 0L
-    private var prepared = false
 
-    fun getOrLoad(@DrawableRes id: Int, load: () -> ImageBitmap): ImageBitmap {
+    private fun load(skin: InstalledHomeWidgetSkin, role: String): ImageBitmap? {
+        val key = Key(skin.revision, role)
+        synchronized(lock) { bitmaps[key]?.let { return it.bitmap } }
+        if (role !in skin.renderer.artwork && role !in skin.renderer.optionalArtwork) return null
+        val bitmap = try {
+            ZipFile(skin.archive).use { zip ->
+                val entry = zip.getEntry(HomeWidgetSkinPackage.artworkPath(role)) ?: return null
+                zip.getInputStream(entry).use(BitmapFactory::decodeStream)
+            } ?: return null
+        } catch (error: Exception) {
+            Log.w("HomeWidgetArtwork", "Skin artwork unavailable: $role", error)
+            return null
+        }
+        val bytes = bitmap.allocationByteCount.toLong()
         synchronized(lock) {
-            bitmaps[id]?.let {
-                hitCount++
+            bitmaps[key]?.let {
+                bitmap.recycle()
                 return it.bitmap
             }
-        }
-        // Decoding stays outside the lock: a foreground cache miss never waits for warm-up I/O.
-        val bitmap = load()
-        val bytes = bitmap.asAndroidBitmap().allocationByteCount.toLong()
-        synchronized(lock) {
-            loadCount++
-            bitmaps[id]?.let {
-                hitCount++
-                return it.bitmap
+            val image = bitmap.asImageBitmap()
+            val iterator = bitmaps.entries.iterator()
+            while (retainedBytes + bytes > MAX_RETAINED_BYTES && iterator.hasNext()) {
+                retainedBytes -= iterator.next().value.bytes
+                iterator.remove()
             }
-            if (bytes > MaximumRetainedBytes) return bitmap
-            val entries = bitmaps.entries.iterator()
-            while (retainedBytes + bytes > MaximumRetainedBytes && entries.hasNext()) {
-                val entry = entries.next()
-                retainedBytes -= entry.value.bytes
-                entries.remove()
+            if (bytes <= MAX_RETAINED_BYTES) {
+                bitmaps[key] = Entry(image, bytes)
+                retainedBytes += bytes
             }
-            bitmaps[id] = Entry(bitmap, bytes)
-            retainedBytes += bytes
-            return bitmap
+            return image
         }
     }
 
-    suspend fun prepare(resources: Resources) {
-        if (synchronized(lock) { prepared }) return
-        var complete = true
-        for (id in PreviewArtwork) {
-            currentCoroutineContext().ensureActive()
-            try {
-                getOrLoad(id) { ImageBitmap.imageResource(resources, id) }.asAndroidBitmap().prepareToDraw()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                complete = false
-                Log.w("HomeWidgetPreview", "Unable to prepare artwork $id", error)
+    fun prepare(skin: InstalledHomeWidgetSkin): Boolean {
+        val optional = if (skin.renderer.optionalArtwork.isEmpty()) emptyList() else runCatching {
+            ZipFile(skin.archive).use { zip ->
+                skin.renderer.optionalArtwork.filter { zip.getEntry(HomeWidgetSkinPackage.artworkPath(it)) != null }
             }
-        }
-        currentCoroutineContext().ensureActive()
-        synchronized(lock) { prepared = complete }
+        }.getOrNull() ?: return false
+        return (skin.renderer.artwork + optional).all { load(skin, it) != null }
     }
 
-    fun debugSummary(): String = synchronized(lock) {
-        "images=${bitmaps.size}, decoded=$loadCount, reused=$hitCount, bytes=$retainedBytes, prepared=$prepared"
-    }
+    fun bitmap(skin: InstalledHomeWidgetSkin, role: String): ImageBitmap? =
+        synchronized(lock) { bitmaps[Key(skin.revision, role)]?.bitmap }
 
     private companion object {
-        const val MaximumRetainedBytes = 48L * 1024 * 1024
-        val PreviewArtwork = intArrayOf(
-            R.drawable.ng_home_reading_story_owl,
-            R.drawable.ng_home_listening_night_desk,
-            R.drawable.ng_home_listening_large_night_leaves,
-            R.drawable.ng_home_listening_large_paper_bottom,
-            R.drawable.ng_home_listening_storybook,
-            R.drawable.ng_home_listening_large_story_scene,
-            R.drawable.ng_home_listening_large_wood,
-            R.drawable.ng_home_calendar_story_cat,
-            R.drawable.ng_home_calendar_night_lamp,
-            R.drawable.ng_home_updates_story_girl,
-        )
+        const val MAX_RETAINED_BYTES = 48L * 1024 * 1024
     }
 }
 
 internal val LocalHomeWidgetArtworkCache = staticCompositionLocalOf<HomeWidgetArtworkCache?> { null }
+internal val LocalHomeWidgetSkins = staticCompositionLocalOf { HomeWidgetSkinSelection(emptyList()) }
 
-/** Actual cards keep painterResource; a drawer reuses the same full-resolution bitmap. */
 @Composable
-internal fun homeWidgetArtworkPainter(@DrawableRes id: Int): Painter {
-    val cache = LocalHomeWidgetArtworkCache.current ?: return painterResource(id)
-    val resources = LocalContext.current.resources
-    val bitmap = remember(cache, id, resources) {
-        cache.getOrLoad(id) { ImageBitmap.imageResource(resources, id) }
-    }
-    return remember(bitmap) { BitmapPainter(bitmap) }
+internal fun homeWidgetArtworkPainter(styleId: String, role: String): Painter? {
+    val skin = LocalHomeWidgetSkins.current.installedStyle(styleId) ?: return null
+    val cache = LocalHomeWidgetArtworkCache.current ?: return null
+    return remember(cache, skin, role) { cache.bitmap(skin, role)?.let { BitmapPainter(it) } }
 }

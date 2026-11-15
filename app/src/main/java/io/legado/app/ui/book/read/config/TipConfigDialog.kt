@@ -11,58 +11,50 @@ import android.view.ViewTreeObserver
 import android.view.WindowManager
 import androidx.activity.ComponentDialog
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
+import androidx.lifecycle.Lifecycle
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadTipConfig
+import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.ReadFloatingAppearanceState
 import io.legado.app.ui.config.NgInlineColorPicker
-import io.legado.app.ui.design.components.compose.NgSurface
-import io.legado.app.ui.design.theme.NgAppTheme
-import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.book.read.ReadDrawerContentTheme
 import io.legado.app.ui.font.FontSelectDialog
 import io.legado.app.ui.widget.dialog.applyNgDialogWindow
-import io.legado.app.utils.hexString
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.postEvent
 import io.legado.app.utils.putPrefBoolean
@@ -73,7 +65,26 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
         private const val SECTION_TITLE = 0
         private const val SECTION_HEADER = 1
         private const val SECTION_FOOTER = 2
-        private const val SECTION_STYLE = 3
+        private const val TITLE_FONT_TAG = "titleFont"
+        private const val ARG_INITIAL_SECTION = "initialSection"
+        private const val ARG_TITLE_COLOR_NIGHT = "titleColorNight"
+        private const val ARG_TIP_COLOR_DIVIDER = "tipColorDivider"
+
+        fun forTitleColor(night: Boolean) = TipConfigDialog().apply {
+            arguments = Bundle().apply { putBoolean(ARG_TITLE_COLOR_NIGHT, night) }
+        }
+
+        fun forHeader() = TipConfigDialog().apply {
+            arguments = Bundle().apply { putInt(ARG_INITIAL_SECTION, SECTION_HEADER) }
+        }
+
+        fun forFooter() = TipConfigDialog().apply {
+            arguments = Bundle().apply { putInt(ARG_INITIAL_SECTION, SECTION_FOOTER) }
+        }
+
+        fun forTipColor(divider: Boolean) = TipConfigDialog().apply {
+            arguments = Bundle().apply { putBoolean(ARG_TIP_COLOR_DIVIDER, divider) }
+        }
 
         private const val POSITION_LEFT = 0
         private const val POSITION_MIDDLE = 1
@@ -85,6 +96,37 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
     private lateinit var composeView: ComposeView
     private var externalRevision by mutableIntStateOf(0)
     private var previewRegistered = false
+
+    private val titleFontLifecycleCallbacks = object : FragmentManager.FragmentLifecycleCallbacks() {
+        override fun onFragmentStarted(fm: FragmentManager, fragment: Fragment) {
+            if (fragment !is FontSelectDialog || fragment.tag != TITLE_FONT_TAG) return
+            val ownerUrl = ReadBook.book?.bookUrl
+            fragment.setOnDismissListener {
+                val host = activity ?: return@setOnDismissListener
+                if (!isAdded || isRemoving || host.isFinishing || host.isDestroyed ||
+                    host.isChangingConfigurations || parentFragmentManager.isStateSaved ||
+                    !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                ) return@setOnDismissListener
+                if (ReadBook.book?.bookUrl != ownerUrl) {
+                    dismissAllowingStateLoss()
+                } else {
+                    dialog?.show()
+                }
+            }
+            // Keep this fragment and its scroll state; only the font window is visible.
+            dialog?.hide()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        childFragmentManager.registerFragmentLifecycleCallbacks(titleFontLifecycleCallbacks, false)
+    }
+
+    override fun onDestroy() {
+        childFragmentManager.unregisterFragmentLifecycleCallbacks(titleFontLifecycleCallbacks)
+        super.onDestroy()
+    }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         ComponentDialog(requireContext(), theme)
@@ -126,13 +168,12 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
         composeView.setContent {
             val primaryStrength = ReadFloatingAppearanceState.primaryStrengthPercent
             val colorStyle = ReadFloatingAppearanceState.colorStyle
-            NgAppTheme(
+            ReadDrawerContentTheme(
                 snapshot = ReadDrawerStyle.themeSnapshot(
                     context = requireContext(),
                     primaryStrengthPercent = primaryStrength,
                     colorStyle = colorStyle,
                 ),
-                updateSystemBars = false,
             ) {
                 TipConfigContent()
             }
@@ -142,13 +183,26 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
 
     @Composable
     private fun TipConfigContent() {
-        var section by rememberSaveable { mutableIntStateOf(SECTION_TITLE) }
+        val section = arguments?.getInt(ARG_INITIAL_SECTION, SECTION_TITLE) ?: SECTION_TITLE
         var headerPosition by remember { mutableIntStateOf(POSITION_LEFT) }
         var footerPosition by remember { mutableIntStateOf(POSITION_LEFT) }
         var headerEnabled by remember { mutableStateOf(ReadTipConfig.headerMode == 1) }
         var footerEnabled by remember { mutableStateOf(ReadTipConfig.footerMode == 0) }
         var revision by remember { mutableIntStateOf(0) }
-        var activePicker by remember { mutableStateOf<ColorPickerTarget?>(null) }
+        val directTitleColor = arguments?.containsKey(ARG_TITLE_COLOR_NIGHT) == true
+        val directTipColor = arguments?.containsKey(ARG_TIP_COLOR_DIVIDER) == true
+        val directPicker = directTitleColor || directTipColor
+        var activePicker by remember {
+            mutableStateOf<ColorPickerTarget?>(when {
+                directTitleColor -> if (arguments?.getBoolean(ARG_TITLE_COLOR_NIGHT) == true) {
+                    ColorPickerTarget.TITLE_NIGHT
+                } else ColorPickerTarget.TITLE_DAY
+                directTipColor -> if (arguments?.getBoolean(ARG_TIP_COLOR_DIVIDER) == true) {
+                    ColorPickerTarget.DIVIDER
+                } else ColorPickerTarget.TIP
+                else -> null
+            })
+        }
         val headerImageSettings = rememberReadImageSettingsState(
             ReadImagePosition.HEADER, revision + externalRevision,
         ) { revision++ }
@@ -156,16 +210,19 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
             ReadImagePosition.FOOTER, revision + externalRevision,
         ) { revision++ }
         val titleScroll = rememberScrollState()
-        val headerScroll = rememberScrollState()
-        val footerScroll = rememberScrollState()
-        val styleScroll = rememberScrollState()
+        val areaInfoScroll = rememberScrollState()
+        val areaLayoutScroll = rememberScrollState()
+        val areaImageScroll = rememberScrollState()
+        var areaTab by rememberSaveable(section) { mutableIntStateOf(0) }
         val focusManager = LocalFocusManager.current
+        val keyboard = LocalSoftwareKeyboardController.current
         externalRevision
         revision
 
         fun back() {
             focusManager.clearFocus()
-            if (activePicker != null) activePicker = null
+            if (activePicker != null && directPicker) dismissAllowingStateLoss()
+            else if (activePicker != null) activePicker = null
             else dismissAllowingStateLoss()
         }
         BackHandler(enabled = activePicker != null) { back() }
@@ -179,25 +236,14 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
                 bottom = 12.dp,
             ),
         ) {
-            ReadConfigDialogTitle(getString(R.string.reading_information))
-            Spacer(Modifier.height(14.dp))
-            ReadConfigDock(
-                labels = listOf(
-                    getString(R.string.title),
-                    getString(R.string.header),
-                    getString(R.string.footer),
-                    getString(R.string.style),
-                ),
-                selectedIndex = section,
-                onSelected = {
-                    activePicker = null
-                    section = it
-                },
-                height = 40.dp,
-                modifier = Modifier.padding(horizontal = 6.dp),
-                accessibilityLabel = getString(R.string.reading_information),
-            )
-            Spacer(Modifier.height(10.dp))
+            if (activePicker == null) {
+                ReadConfigDialogTitle(getString(when (section) {
+                    SECTION_HEADER -> R.string.header
+                    SECTION_FOOTER -> R.string.footer
+                    else -> R.string.title
+                }))
+                Spacer(Modifier.height(14.dp))
+            }
             if (activePicker != null) {
                 val target = requireNotNull(activePicker)
                 Box(Modifier.weight(1f, fill = false).padding(horizontal = 6.dp)) {
@@ -212,7 +258,9 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
                         backgroundRenderer = ::renderCurrentReadBackground,
                         showAlphaSlider = false,
                         forceOpaque = true,
-                        onBack = { activePicker = null },
+                        resetInContent = true,
+                        compactResetAction = true,
+                        onBack = { if (directPicker) dismissAllowingStateLoss() else activePicker = null },
                         onColorChanged = { selected ->
                             applySelectedColor(target, selected or AndroidColor.BLACK)
                             revision++
@@ -220,9 +268,62 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
                         onReset = {
                             resetSelectedColor(target)
                             revision++
-                            activePicker = null
+                            if (directPicker) dismissAllowingStateLoss() else activePicker = null
                         },
                     )
+                }
+            } else if (section == SECTION_HEADER || section == SECTION_FOOTER) {
+                val isHeader = section == SECTION_HEADER
+                ReadTipSettingsTabs(
+                    selectedIndex = areaTab,
+                    onSelected = {
+                        focusManager.clearFocus()
+                        keyboard?.hide()
+                        areaTab = it
+                    },
+                    accessibilityLabel = getString(if (isHeader) R.string.header else R.string.footer),
+                )
+                Spacer(Modifier.height(12.dp))
+                val areaScroll = when (areaTab) {
+                    0 -> areaInfoScroll
+                    1 -> areaLayoutScroll
+                    else -> areaImageScroll
+                }
+                Column(Modifier.weight(1f, fill = false).verticalScroll(areaScroll)) {
+                    when (areaTab) {
+                        0 -> TipAreaContent(
+                            enabledTitle = getString(R.string.read_tip_show_information),
+                            enabled = if (isHeader) headerEnabled else footerEnabled,
+                            onEnabledChanged = { enabled ->
+                                if (isHeader) {
+                                    headerEnabled = enabled
+                                    ReadTipConfig.headerMode = if (enabled) 1 else 2
+                                    if (enabled && !ReadBookConfig.hideStatusBar) {
+                                        ReadBookConfig.hideStatusBar = true
+                                        putPrefBoolean(PreferKey.hideStatusBar, true)
+                                        postEvent(EventBus.UP_CONFIG, arrayListOf(0, 2))
+                                    } else {
+                                        postEvent(EventBus.UP_CONFIG, arrayListOf(2))
+                                    }
+                                } else {
+                                    footerEnabled = enabled
+                                    ReadTipConfig.footerMode = if (enabled) 0 else 1
+                                    postEvent(EventBus.UP_CONFIG, arrayListOf(2))
+                                }
+                            },
+                            position = if (isHeader) headerPosition else footerPosition,
+                            onPositionChanged = {
+                                if (isHeader) headerPosition = it else footerPosition = it
+                            },
+                            section = section,
+                            revision = revision,
+                            onContentChanged = { revision++ },
+                        )
+                        1 -> ReadAreaPaddingControls(
+                            if (isHeader) ReadPaddingArea.HEADER else ReadPaddingArea.FOOTER
+                        )
+                        else -> ReadImageSettings(if (isHeader) headerImageSettings else footerImageSettings)
+                    }
                 }
             } else when (section) {
                 SECTION_TITLE -> {
@@ -232,7 +333,7 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
                         ReadTitleSettingsContent(
                             revision = revision + externalRevision,
                             onSelectFont = {
-                                FontSelectDialog.forTitle().show(childFragmentManager, "titleFont")
+                                FontSelectDialog.forTitle().show(childFragmentManager, TITLE_FONT_TAG)
                             },
                             onSelectColor = { night ->
                                 activePicker = if (night) ColorPickerTarget.TITLE_NIGHT
@@ -244,64 +345,6 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
                             },
                         )
                     }
-                }
-
-                SECTION_HEADER -> Column(
-                    Modifier.weight(1f, fill = false).verticalScroll(headerScroll)
-                ) {
-                    ReadImageSettings(headerImageSettings)
-                    TipAreaContent(
-                        enabledTitle = getString(R.string.read_header_information),
-                        enabled = headerEnabled,
-                        onEnabledChanged = { enabled ->
-                            headerEnabled = enabled
-                            ReadTipConfig.headerMode = if (enabled) 1 else 2
-                            if (enabled && !ReadBookConfig.hideStatusBar) {
-                                ReadBookConfig.hideStatusBar = true
-                                putPrefBoolean(PreferKey.hideStatusBar, true)
-                                postEvent(EventBus.UP_CONFIG, arrayListOf(0, 2))
-                            } else {
-                                postEvent(EventBus.UP_CONFIG, arrayListOf(2))
-                            }
-                        },
-                        position = headerPosition,
-                        onPositionChanged = { headerPosition = it },
-                        section = SECTION_HEADER,
-                        revision = revision,
-                        onContentChanged = { revision++ },
-                    )
-                }
-
-                SECTION_FOOTER -> Column(
-                    Modifier.weight(1f, fill = false).verticalScroll(footerScroll)
-                ) {
-                    ReadImageSettings(footerImageSettings)
-                    Column(Modifier.padding(horizontal = 6.dp)) {
-                        TipAreaContent(
-                            enabledTitle = getString(R.string.show_footer),
-                            enabled = footerEnabled,
-                            onEnabledChanged = { enabled ->
-                                footerEnabled = enabled
-                                ReadTipConfig.footerMode = if (enabled) 0 else 1
-                                postEvent(EventBus.UP_CONFIG, arrayListOf(2))
-                            },
-                            position = footerPosition,
-                            onPositionChanged = { footerPosition = it },
-                            section = SECTION_FOOTER,
-                            revision = revision,
-                            onContentChanged = { revision++ },
-                        )
-                    }
-                }
-
-                SECTION_STYLE -> Column(
-                    Modifier.weight(1f, fill = false).verticalScroll(styleScroll).padding(horizontal = 6.dp)
-                ) {
-                    StyleContent(
-                        revision = revision + externalRevision,
-                        onOpenPicker = { activePicker = it },
-                        onChanged = { revision++ },
-                    )
                 }
             }
         }
@@ -341,7 +384,7 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
     private fun notifyTitleChanged(fontChanged: Boolean = false) {
         ReadBookConfig.save()
         val hasImage = ReadBookConfig.config.run {
-            headerImageEnabled || footerImageEnabled
+            headerImage.isNotBlank() || footerImage.isNotBlank()
         }
         postEvent(EventBus.UP_CONFIG, if (fontChanged || hasImage) {
             arrayListOf(2, 5)
@@ -370,228 +413,45 @@ class TipConfigDialog : BaseComposeDialogFragment(), FontSelectDialog.CallBack {
         onContentChanged: () -> Unit,
     ) {
         revision
-        if (section == SECTION_HEADER) {
-            HeaderInformationContent(
-                enabledTitle = enabledTitle,
-                enabled = enabled,
-                onEnabledChanged = onEnabledChanged,
-                position = position,
-                onPositionChanged = onPositionChanged,
-                onContentChanged = onContentChanged,
-            )
-            return
-        }
-        ReadConfigSwitchRow(
-            title = enabledTitle,
-            checked = enabled,
-            onCheckedChange = onEnabledChanged,
-        )
-        if (!enabled) return
-        Spacer(Modifier.height(6.dp))
-        ReadConfigDock(
-            labels = listOf(
-                getString(R.string.left),
-                getString(R.string.middle),
-                getString(R.string.right),
-            ),
-            selectedIndex = position,
-            onSelected = onPositionChanged,
-            height = 38.dp,
-            accessibilityLabel = getString(R.string.reading_information),
-        )
-        ReadTipConfig.tipValues.indices.chunked(2).forEach { rowItems ->
-            Row(Modifier.fillMaxWidth()) {
-                rowItems.forEach { item ->
-                    val value = ReadTipConfig.tipValues[item]
-                    val selected = value == currentTipValue(section, position)
-                    ReadTipOption(
-                        name = ReadTipConfig.tipNames[item],
-                        icon = tipIcon(value),
-                        selected = selected,
-                        usage = if (selected) null else usagePosition(value, section, position),
-                        onClick = {
-                            clearRepeat(value)
-                            assignTipValue(section, position, value)
-                            postEvent(EventBus.UP_CONFIG, arrayListOf(2, 6))
-                            onContentChanged()
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (rowItems.size == 1) Spacer(Modifier.weight(1f))
-            }
-        }
-    }
-
-    @Composable
-    private fun HeaderInformationContent(
-        enabledTitle: String,
-        enabled: Boolean,
-        onEnabledChanged: (Boolean) -> Unit,
-        position: Int,
-        onPositionChanged: (Int) -> Unit,
-        onContentChanged: () -> Unit,
-    ) {
         val tipNames = ReadTipConfig.tipNames
-        NgSurface(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-        ) {
-            ReadConfigSwitchRow(
-                title = enabledTitle,
-                checked = enabled,
-                onCheckedChange = onEnabledChanged,
-                variant = ReadConfigSwitchRowVariant.READ_INFO_COMPACT,
-            )
-            if (enabled) {
-                ReadConfigSwitchRow(
-                    title = getString(R.string.read_header_back_button),
-                    checked = ReadTipConfig.showHeaderBackButton,
-                    onCheckedChange = { checked ->
-                        ReadTipConfig.showHeaderBackButton = checked
-                        onContentChanged()
-                        postEvent(EventBus.UP_CONFIG, arrayListOf(2))
-                    },
-                    variant = ReadConfigSwitchRowVariant.READ_INFO_COMPACT,
-                )
-                ReadConfigDock(
-                    labels = listOf(
-                        getString(R.string.left),
-                        getString(R.string.middle),
-                        getString(R.string.right),
-                    ),
-                    selectedIndex = position,
-                    onSelected = onPositionChanged,
-                    secondaryLabels = (POSITION_LEFT..POSITION_RIGHT).map { slot ->
-                        val value = currentTipValue(SECTION_HEADER, slot)
-                        val index = ReadTipConfig.tipValues.indexOf(value).takeIf { it >= 0 } ?: 0
-                        tipNames[index]
-                    },
-                    height = (44 * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp,
-                    variant = ReadConfigDockVariant.POSITION_SUMMARY,
-                    accessibilityLabel = getString(R.string.header),
-                )
-                Spacer(Modifier.height(4.dp))
-                Column(
-                    Modifier.selectableGroup(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    ReadTipConfig.tipValues.indices.chunked(2).forEach { rowItems ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            rowItems.forEach { item ->
-                                val value = ReadTipConfig.tipValues[item]
-                                val selected = value == currentTipValue(SECTION_HEADER, position)
-                                ReadTipOption(
-                                    name = tipNames[item],
-                                    icon = tipIcon(value),
-                                    selected = selected,
-                                    usage = if (selected) null else usagePosition(value, SECTION_HEADER, position),
-                                    onClick = {
-                                        clearRepeat(value)
-                                        assignTipValue(SECTION_HEADER, position, value)
-                                        postEvent(EventBus.UP_CONFIG, arrayListOf(2, 6))
-                                        onContentChanged()
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    variant = ReadTipOptionVariant.HEADER_CHOICE,
-                                )
-                            }
-                            if (rowItems.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-            }
+        val selectedValue = currentTipValue(section, position)
+        val positionSummaries = (POSITION_LEFT..POSITION_RIGHT).map { slot ->
+            val value = currentTipValue(section, slot)
+            val index = ReadTipConfig.tipValues.indexOf(value).takeIf { it >= 0 } ?: 0
+            tipNames[index]
         }
-    }
-
-    @Composable
-    private fun StyleContent(
-        revision: Int,
-        onOpenPicker: (ColorPickerTarget) -> Unit,
-        onChanged: () -> Unit,
-    ) {
-        revision
-        ColorModeSection(
-            title = getString(R.string.tip_text_color),
-            labels = ReadTipConfig.tipColorNames,
-            selectedIndex = if (ReadTipConfig.tipColor == 0) 0 else 1,
-            valueText = ReadTipConfig.tipColor.takeUnless { it == 0 }?.let { "#${it.hexString}" },
-            onSelected = { mode ->
-                if (mode == 0) {
-                    ReadTipConfig.tipColor = 0
-                    postEvent(EventBus.UP_CONFIG, arrayListOf(2))
-                    onChanged()
-                } else {
-                    onOpenPicker(ColorPickerTarget.TIP)
-                }
-            },
-        )
-        Spacer(Modifier.height(10.dp))
-        ColorModeSection(
-            title = getString(R.string.tip_divider_color),
-            labels = ReadTipConfig.tipDividerColorNames,
-            selectedIndex = dividerColorModeIndex(),
-            valueText = ReadTipConfig.tipDividerColor.takeUnless { it in -1..0 }
-                ?.let { "#${it.hexString}" },
-            onSelected = { mode ->
-                if (mode <= 1) {
-                    ReadTipConfig.tipDividerColor = mode - 1
-                    postEvent(EventBus.UP_CONFIG, arrayListOf(2))
-                    onChanged()
-                } else {
-                    onOpenPicker(ColorPickerTarget.DIVIDER)
-                }
-            },
-        )
-    }
-
-    @Composable
-    private fun ColorModeSection(
-        title: String,
-        labels: List<String>,
-        selectedIndex: Int,
-        valueText: String?,
-        onSelected: (Int) -> Unit,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(32.dp)
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = title,
-                color = Color(NgTheme.colors.onSurface),
-                fontSize = 14.sp,
+        val choices = ReadTipConfig.tipValues.mapIndexed { index, value ->
+            val selected = value == selectedValue
+            ReadTipChoiceUi(
+                value = value,
+                name = tipNames[index],
+                icon = tipIcon(value),
+                selected = selected,
+                usage = if (selected) null else usagePosition(value, section, position),
             )
-            if (valueText != null) {
-                Text(
-                    text = valueText,
-                    color = Color(NgTheme.colors.onSurfaceVariant),
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.End,
-                )
-            }
         }
-        ReadConfigDock(
-            labels = labels,
-            selectedIndex = selectedIndex,
-            onSelected = onSelected,
-            modifier = Modifier.padding(horizontal = 8.dp),
-            accessibilityLabel = title,
+        ReadTipInformationPanel(
+            enabledTitle = enabledTitle,
+            enabled = enabled,
+            onEnabledChanged = onEnabledChanged,
+            headerBackButton = if (section == SECTION_HEADER) ReadTipConfig.showHeaderBackButton else null,
+            onHeaderBackButtonChanged = { checked ->
+                ReadTipConfig.showHeaderBackButton = checked
+                onContentChanged()
+                postEvent(EventBus.UP_CONFIG, arrayListOf(2))
+            },
+            position = position,
+            onPositionChanged = onPositionChanged,
+            positionSummaries = positionSummaries,
+            choices = choices,
+            onChoiceSelected = { value ->
+                clearRepeat(value)
+                assignTipValue(section, position, value)
+                postEvent(EventBus.UP_CONFIG, arrayListOf(2, 6))
+                onContentChanged()
+            },
+            areaLabel = getString(if (section == SECTION_HEADER) R.string.header else R.string.footer),
         )
-    }
-
-    private fun dividerColorModeIndex(): Int = when (ReadTipConfig.tipDividerColor) {
-        -1 -> 0
-        0 -> 1
-        else -> 2
     }
 
     private fun initialColorFor(target: ColorPickerTarget): Int = when (target) {

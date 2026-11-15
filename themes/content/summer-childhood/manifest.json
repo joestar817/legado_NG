@@ -1,0 +1,59 @@
+{
+  "darkBackgroundAsset": "assets/background-dark.webp",
+  "format": "reading-ng-theme",
+  "lightBackgroundAsset": "assets/background-light.webp",
+  "theme": {
+    "barProfile": {
+      "bookshelfFloatingDockSearchPosition": 0,
+      "bookshelfFloatingDockTopDistancePx": 50,
+      "bookshelfFloatingDockTransparency": 40,
+      "bookshelfTopBarStyle": 1,
+      "floatingBottomBarBottomDistancePx": 40,
+      "floatingBottomBarTransparency": 40,
+      "useFloatingBottomBar": true
+    },
+    "colors": {
+      "colorSpec": "MATERIAL_3_2021",
+      "contrast": "DEFAULT",
+      "darkSeed": -10695681,
+      "darkTopBarTextMode": "LIGHT",
+      "lightSeed": -16741519,
+      "lightTopBarTextMode": "DARK",
+      "manualDark": {
+        "background": -16377811,
+        "labelContainer": -15584947,
+        "primary": -10695681,
+        "primaryText": -854017,
+        "secondary": -15386021,
+        "secondaryText": -4664088
+      },
+      "manualLight": {
+        "background": -657931,
+        "labelContainer": -1118482,
+        "primary": -16741519,
+        "primaryText": -14869728,
+        "secondary": -1,
+        "secondaryText": -14869728
+      },
+      "mode": "MANUAL",
+      "paletteStyle": "TONAL_SPOT"
+    },
+    "darkBackground": {
+      "blur": 0
+    },
+    "effectValues": {},
+    "id": "ng.theme.summer_childhood",
+    "lightBackground": {
+      "blur": 0
+    },
+    "name": "夏日童趣",
+    "schemaVersion": 1,
+    "transparentAppBars": true,
+    "publication": {
+      "versionCode": 1,
+      "versionName": "1.0.0",
+      "author": "阅读 NG"
+    }
+  },
+  "version": 1
+}

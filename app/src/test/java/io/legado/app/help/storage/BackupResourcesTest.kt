@@ -40,23 +40,39 @@ class BackupResourcesTest {
 
     @Test fun bundledAssetReferencesStayInConfigurationWithoutBeingPackaged() {
         val root = temp.newFolder()
-        val themes = """[{"backgroundImgPath":"asset://bg/竹影之韵.webp"}]"""
-        File(root, "themeConfig.json").writeText(themes)
         val prefs = mapOf(
             PreferKey.bgImage to "asset://defaultData/theme/reading_ng_summer_childhood.webp",
             PreferKey.bgImageN to "asset://defaultData/theme/reading_ng_summer_childhood_dark.webp",
             PreferKey.defaultCover to "assets://bg/起点读书.jpg",
             PreferKey.defaultCoverDark to "file:///android_asset/bg/起点读书.jpg",
-            "ngManagedThemes.v1" to """[{"lightBackground":{"path":"asset://bg/暖色渐变.webp"}}]""",
+            "ngManagedThemes.v1" to """[{"lightBackground":{"path":"asset://defaultData/theme/reading_ng_summer_childhood.webp"}}]""",
         )
 
         val result = BackupResources.prepare(root, setOf(BackupModule.APPEARANCE.id, BackupModule.COVERS.id), prefs)
 
         assertEquals(prefs, result)
-        assertEquals(JsonParser.parseString(themes), JsonParser.parseString(File(root, "themeConfig.json").readText()))
+        assertFalse(File(root, "themeConfig.json").exists())
         assertFalse(File(root, BackupResources.ASSETS).exists())
         val manifest = JsonParser.parseString(File(root, BackupResources.MANIFEST).readText()).asJsonObject
         assertEquals(0, manifest.getAsJsonObject("files").size())
+        File(root, "config.xml").writeText("<map />")
+        BackupResources.finishManifest(root, listOf("config.xml"))
+        assertEquals(setOf(BackupModule.APPEARANCE.id, BackupModule.COVERS.id), BackupResources.validate(root))
+    }
+
+    @Test fun olderAppearanceArchiveCanCarryAnIgnoredLegacyThemeFile() {
+        val root = temp.newFolder()
+        BackupResources.prepare(root, setOf(BackupModule.APPEARANCE.id), emptyMap<String, Any>())
+        // A retired payload need not be parseable as the deleted theme DTO.
+        File(root, "themeConfig.json").writeText("retired theme payload")
+        File(root, "config.xml").writeText("<map />")
+        BackupResources.finishManifest(root, listOf("config.xml", "themeConfig.json"))
+
+        assertEquals(setOf(BackupModule.APPEARANCE.id), BackupResources.validate(root))
+
+        // Ignored content still obeys archive integrity checks.
+        File(root, "themeConfig.json").appendText("tampered")
+        assertThrows(IllegalArgumentException::class.java) { BackupResources.validate(root) }
     }
 
     @Test fun rejectsTraversalAndSiblingPrefix() {
@@ -70,7 +86,8 @@ class BackupResourcesTest {
         val json = com.google.gson.JsonParser.parseString("""{
             "pattern":"backup-resource://resources/test", "name":"/a/name",
             "bgImage":"backup-resource://resources/test", "fontPath":"font",
-            "lightImages":["image"], "sampleText":"font"
+            "lightImages":["image"], "sampleText":"font",
+            "backgroundImgPath":"retired-image", "lightBackground":{"path":"ng-image"}
         }""")
         val result = BackupResources.transform(json) { "resolved:$it" }.asJsonObject
         assertEquals("backup-resource://resources/test", result.get("pattern").asString)
@@ -78,6 +95,8 @@ class BackupResourcesTest {
         assertEquals("font", result.get("sampleText").asString)
         assertEquals("resolved:font", result.get("fontPath").asString)
         assertEquals("resolved:image", result.getAsJsonArray("lightImages")[0].asString)
+        assertEquals("retired-image", result.get("backgroundImgPath").asString)
+        assertEquals("resolved:ng-image", result.getAsJsonObject("lightBackground").get("path").asString)
     }
 
     @Test fun independentBookHeaderImageIsCollectedAndRestoredInsideStoredStyle() {
@@ -182,6 +201,27 @@ class BackupResourcesTest {
             addProperty("titleFont", "/restored/title.ttf")
         }
         assertEquals(expected, actual)
+    }
+
+    @Test fun savedBookStyleResourcesAreCollectedAndRestoredWhileFollowingGlobal() {
+        val style = JsonParser.parseString("""{"bgType":2,"bgStr":"/images/book.png","textFont":"/fonts/book.ttf"}""").asJsonObject
+        val book = JsonObject().apply {
+            add("readConfig", JsonObject().apply { addProperty("savedIndependentReadStyle", style.toString()) })
+        }
+        val copied = mutableListOf<String>()
+        BackupResources.collectBookReadStyleResources(book) {
+            copied += it
+            "backup-resource://resources/${it.substringAfterLast('/')}"
+        }
+        assertEquals(listOf("/images/book.png", "/fonts/book.ttf"), copied)
+        val restored = BackupResources.transform(book) {
+            it.replace("backup-resource://resources/", "/restored/")
+        }.asJsonObject
+        val actual = JsonParser.parseString(
+            restored.getAsJsonObject("readConfig").get("savedIndependentReadStyle").asString,
+        ).asJsonObject
+        assertEquals("/restored/book.png", actual.get("bgStr").asString)
+        assertEquals("/restored/book.ttf", actual.get("textFont").asString)
     }
 
     @Test fun independentStyleCollectsEveryReaderResourceWithoutChangingOtherFields() {

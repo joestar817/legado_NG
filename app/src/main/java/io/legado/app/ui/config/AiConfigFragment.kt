@@ -7,6 +7,8 @@ import android.net.Uri
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import io.legado.app.help.pet.PetPluginStore
+import io.legado.app.ui.pet.PetManagerActivity
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -165,6 +167,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
     private var providerFormScreenState by mutableStateOf(AiProviderFormScreenState())
     private var providerDetailScreenState by mutableStateOf(AiProviderDetailScreenState())
     private var aiMenuScreenState by mutableStateOf(AiConfigMenuScreenState())
+    private var petManagerNavigationPending = false
     private var skillListScreenItems by mutableStateOf<List<AiSkillListItemUiModel>>(emptyList())
     private var skillDetailScreenRows by mutableStateOf<List<AiSkillFileRowUiModel>>(emptyList())
     private var purifyModelSettingsScreenState by mutableStateOf(
@@ -237,6 +240,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
 
     override fun onResume() {
         super.onResume()
+        petManagerNavigationPending = false
         if (skipNextResumeRefresh) {
             skipNextResumeRefresh = false
         } else {
@@ -579,6 +583,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             ),
             skillSummary = aiMenuScreenState.skillSummary,
             chatEntryStyle = AiConfig.chatEntryStyle,
+            installedPets = PetPluginStore.installedChoices(),
             purifySummary = getString(
                 R.string.ai_model_function_summary,
                 purifyModelSummaryText(providers),
@@ -1084,9 +1089,11 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                     AiConfigMenuScreen(
                         state = aiMenuScreenState,
                         onOpenPage = ::handleAiMainOpenPage,
-                        onChatEntryStyleChanged = { style ->
-                            AiConfig.chatEntryStyle = style
-                            refreshMain()
+                        onManagePets = {
+                            if (!petManagerNavigationPending) {
+                                petManagerNavigationPending = true
+                                startActivity(Intent(requireContext(), PetManagerActivity::class.java))
+                            }
                         },
                     )
                 }

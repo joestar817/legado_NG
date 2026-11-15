@@ -56,26 +56,6 @@
         app:showAsAction="never" />
 
     <item
-        android:id="@+id/menu_enable_replace"
-        android:checkable="true"
-        android:checked="true"
-        android:title="@string/replace_rule_title"
-        app:showAsAction="never" />
-
-    <item
-        android:id="@+id/menu_same_title_removed"
-        android:checkable="true"
-        android:title="@string/same_title_removed"
-        app:showAsAction="never" />
-
-    <item
-        android:id="@+id/menu_re_segment"
-        android:checkable="true"
-        android:checked="false"
-        android:title="@string/re_segment"
-        app:showAsAction="never" />
-
-    <item
         android:id="@+id/menu_enable_review"
         android:checkable="true"
         android:checked="false"

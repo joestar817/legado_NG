@@ -48,7 +48,7 @@ class ReadAppearanceModeTest {
     }
 
     @Test
-    fun inkSlotAndFloatingFollowFlagsStayIndependent() {
+    fun inkSlotAndFloatingColorsStayIndependent() {
         val preset = ReadBookConfig.Config(readFloatingSeed = 0xFF445566.toInt())
         preset.setTextColorForMode(17, ReadAppearanceMode.EINK)
         preset.setBackgroundForMode(0, "#FFFFFF", ReadAppearanceMode.EINK)
@@ -57,10 +57,11 @@ class ReadAppearanceModeTest {
         assertEquals(17, preset.textColorForMode(ReadAppearanceMode.EINK))
         assertEquals(day, preset.textColorForMode(ReadAppearanceMode.DAY))
         preset.clearReadFloatingSeedForMode(ReadAppearanceMode.NIGHT)
-        assertTrue(preset.readFloatingFollowsApplicationForMode(ReadAppearanceMode.NIGHT))
+        assertEquals(0, preset.readFloatingSeedForMode(ReadAppearanceMode.NIGHT))
+        assertEquals(false, preset.readFloatingFollowAppNight)
         assertEquals(0xFF445566.toInt(), preset.readFloatingSeedForMode(ReadAppearanceMode.DAY))
         preset.setReadFloatingSeedForMode(0xFF778899.toInt(), ReadAppearanceMode.NIGHT)
-        assertFalse(preset.readFloatingFollowsApplicationForMode(ReadAppearanceMode.NIGHT))
+        assertEquals(false, preset.readFloatingFollowAppNight)
         val restored = GSON.fromJson(GSON.toJson(preset), ReadBookConfig.Config::class.java)
         assertEquals(preset.textColorForMode(ReadAppearanceMode.NIGHT), restored.textColorForMode(ReadAppearanceMode.NIGHT))
         assertEquals(preset.readFloatingSeedForMode(ReadAppearanceMode.NIGHT), restored.readFloatingSeedForMode(ReadAppearanceMode.NIGHT))

@@ -8,7 +8,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import io.legado.app.R
 
 /** Reading uses the same skin material as listening, with the actual title slot coordinates. */
 @Composable
@@ -24,13 +23,14 @@ internal fun HomeReadingMaterialBackdrop(
 /** Root layout owns slot size and placement; each skin fits its complete transparent artwork. */
 @Composable
 internal fun HomeReadingArtwork(variant: HomeWidgetVariant, modifier: Modifier = Modifier) {
-    val resource = when (variant.styleId) {
-        "storybook" -> R.drawable.ng_home_reading_story_owl
-        "night" -> R.drawable.ng_home_listening_night_desk
+    val artwork = when (variant.styleId) {
+        "storybook" -> homeWidgetArtworkPainter(variant.styleId, "reading")
+        "blue_fish" -> homeWidgetArtworkPainter(variant.styleId, "reading")
+        "night" -> homeWidgetArtworkPainter(variant.styleId, "desk")
         else -> return
-    }
+    } ?: return
     Image(
-        painter = homeWidgetArtworkPainter(resource),
+        painter = artwork,
         contentDescription = null,
         contentScale = ContentScale.Fit,
         // Mirror the owl toward the records while keeping its visual right edge anchored.

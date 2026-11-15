@@ -27,12 +27,19 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.NgColorConfigStore
 import io.legado.app.help.config.NgThemeModeStore
 import io.legado.app.help.config.NgThemePresentationMode
+import io.legado.app.help.config.ReadAppearanceMode
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadFloatingColorStyle
 import io.legado.app.help.config.ThemeConfig
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.design.theme.NgColorGenerationMode
+import io.legado.app.ui.design.theme.NgColorSpec
+import io.legado.app.ui.design.theme.NgColorSystem
+import io.legado.app.ui.design.theme.NgContrastLevel
+import io.legado.app.ui.design.theme.NgManualColorSet
+import io.legado.app.ui.design.theme.NgPaletteStyle
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.design.theme.NgThemeSnapshot
@@ -44,6 +51,35 @@ import kotlin.math.roundToInt
 
 object ReadDrawerStyle {
     private const val DRAWER_AVOIDANCE_ANIMATION_DURATION = 180L
+
+    // 独立阅读预设使用已验收的中性日间与蓝色夜间基底，不读取应用的手动配色。
+    private val independentReadingColors = NgColorSystem(
+        mode = NgColorGenerationMode.MANUAL,
+        lightSeed = 0xFFE53935.toInt(),
+        darkSeed = 0xFF5CCBFF.toInt(),
+        paletteStyle = NgPaletteStyle.TONAL_SPOT,
+        contrast = NgContrastLevel.DEFAULT,
+        colorSpec = NgColorSpec.MATERIAL_3_2021,
+        manualLight = NgManualColorSet(
+            primary = 0xFFE53935.toInt(),
+            secondary = 0xFF795548.toInt(),
+            primaryText = 0xFF1D1B20.toInt(),
+            secondaryText = 0xFF1D1B20.toInt(),
+            background = 0xFFF5F5F5.toInt(),
+            labelContainer = 0xFFEEEEEE.toInt(),
+        ),
+        manualDark = NgManualColorSet(
+            primary = 0xFF5CCBFF.toInt(),
+            secondary = 0xFF153A5B.toInt(),
+            primaryText = 0xFFF2F7FF.toInt(),
+            secondaryText = 0xFFB8D4E8.toInt(),
+            background = 0xFF06182D.toInt(),
+            labelContainer = 0xFF12314D.toInt(),
+        ),
+    )
+
+    internal fun independentSeedForMode(mode: ReadAppearanceMode): Int =
+        independentReadingColors.manualColors(mode == ReadAppearanceMode.NIGHT).primary
 
     private val topRadius: Float
         get() = 18.dpToPx().toFloat()
@@ -96,30 +132,59 @@ object ReadDrawerStyle {
 
     /**
      * 阅读浮层使用背景取色时保持自己的日夜配色；跟随应用时采用当前应用配色。
-     * 柔光渐变只参与配色，不作为阅读页背景；墨水屏继续保留全局强制黑白。
+     * 柔光渐变和多彩光场只参与配色，不作为阅读页背景；墨水屏继续保留全局强制黑白。
      */
     fun themeSnapshot(
         context: Context,
         primaryStrengthPercent: Int = ReadBookConfig.durConfig.curReadFloatingPrimaryStrength(),
         colorStyle: ReadFloatingColorStyle =
             ReadBookConfig.effectiveReadFloatingColor().colorStyle,
+    ): NgThemeSnapshot = resolveThemeSnapshot(
+        context = context,
+        preset = ReadBookConfig.durConfig,
+        mode = ReadAppearanceMode.current(),
+        primaryStrengthPercent = primaryStrengthPercent,
+        colorStyle = colorStyle,
+    )
+
+    internal fun themeSnapshotForMode(
+        context: Context,
+        preset: ReadBookConfig.Config,
+        mode: ReadAppearanceMode,
+    ): NgThemeSnapshot = resolveThemeSnapshot(
+        context = context,
+        preset = preset,
+        mode = mode,
+        primaryStrengthPercent = preset.curReadFloatingPrimaryStrength(),
+        colorStyle = ReadBookConfig.effectiveReadFloatingColor(preset, mode).colorStyle,
+    )
+
+    private fun resolveThemeSnapshot(
+        context: Context,
+        preset: ReadBookConfig.Config,
+        mode: ReadAppearanceMode,
+        primaryStrengthPercent: Int,
+        colorStyle: ReadFloatingColorStyle,
     ): NgThemeSnapshot = if (
         NgThemeModeStore.current(context) == NgThemePresentationMode.EINK
     ) {
         NgThemeResolver.resolve(context)
     } else {
-        val effectiveColor = ReadBookConfig.effectiveReadFloatingColor()
+        val effectiveColor = ReadBookConfig.effectiveReadFloatingColor(preset, mode)
         val seed = effectiveColor.seed
-        val base = if (
-            effectiveColor.followsApplication &&
-            NgThemeModeStore.current(context) == NgThemePresentationMode.SOFT_GRADIENT
-        ) {
-            NgThemeResolver.resolve(context)
-        } else {
-            NgThemeResolver.resolve(
+        val presentation = NgThemeModeStore.current(context)
+        val base = when {
+            !effectiveColor.followsApplication -> NgThemeResolver.resolve(
+                context = context,
+                colors = independentReadingColors,
+                isDark = mode == ReadAppearanceMode.NIGHT,
+            )
+            presentation == NgThemePresentationMode.SOFT_GRADIENT ||
+                presentation == NgThemePresentationMode.MULTICOLOR -> NgThemeResolver.resolve(context)
+            else -> NgThemeResolver.resolve(
                 context = context,
                 colors = NgColorConfigStore.current(context),
-                isDark = ReadBookConfig.isNightTheme,
+                isDark = mode == ReadAppearanceMode.NIGHT,
             )
         }
         val seeded = ReadFloatingPalette.applySeed(

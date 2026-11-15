@@ -416,7 +416,8 @@ internal fun HomeListeningActionButton(
 ) {
     val primary = action == HomeListeningAction.TOGGLE
     val captionStyle = captionReference ?: reference
-    val refinedMaterial = reference?.styleId == "storybook" || reference?.styleId == "night"
+    val refinedMaterial = reference?.styleId == "storybook" || reference?.styleId == "night" ||
+        reference?.styleId == "blue_fish"
     val enabled = !primary || !context.listening.preparing
     val colors = NgTheme.colors
     // Match NG's PRIMARY_LIGHT_CONTENT treatment without changing the user's global text colors.

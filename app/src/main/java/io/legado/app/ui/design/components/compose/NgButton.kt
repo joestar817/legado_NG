@@ -15,16 +15,45 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.legado.app.ui.design.components.NgButtonShapeVariant
 import io.legado.app.ui.design.components.NgButtonVariant
+import io.legado.app.ui.design.theme.NgLightActionColors
+import io.legado.app.ui.design.theme.NgSolidButtonPalette
 import io.legado.app.ui.design.theme.NgTheme
+
+@Composable
+internal fun rememberNgSolidButtonContainerColor(
+    container: Color,
+    content: Color = Color.White,
+): Color {
+    val snapshot = NgTheme.snapshot
+    val isDark = snapshot.isDark && !snapshot.isEInk
+    return remember(container, content, isDark) {
+        Color(NgSolidButtonPalette.resolveContainer(container.toArgb(), content.toArgb(), isDark))
+    }
+}
+
+@Composable
+internal fun rememberNgSolidButtonColors(
+    container: Color,
+    content: Color = Color.White,
+): NgLightActionColors {
+    val snapshot = NgTheme.snapshot
+    val isDark = snapshot.isDark && !snapshot.isEInk
+    val surface = snapshot.colors.surface
+    return remember(container, content, surface, isDark) {
+        NgSolidButtonPalette.resolvePrimary(container.toArgb(), content.toArgb(), surface, isDark)
+    }
+}
 
 @Composable
 fun NgButton(
@@ -37,10 +66,13 @@ fun NgButton(
     content: @Composable RowScope.() -> Unit,
 ) {
     val colors = NgTheme.colors
+    val primaryContent = ngDrawerPrimaryContentColor()
+    val primaryColors = rememberNgSolidButtonColors(Color(colors.primary), primaryContent)
     val shape = when (shapeVariant) {
         NgButtonShapeVariant.PILL -> ButtonDefaults.shape
         NgButtonShapeVariant.ROUNDED -> RoundedCornerShape(NgTheme.shapes.mediumDp.dp)
         NgButtonShapeVariant.SMALL_ROUNDED -> RoundedCornerShape(NgTheme.shapes.smallDp.dp)
+        NgButtonShapeVariant.COMPACT_ROUNDED -> RoundedCornerShape(10.dp)
     }
     when (variant) {
         NgButtonVariant.PRIMARY -> Button(
@@ -50,8 +82,8 @@ fun NgButton(
             shape = shape,
             contentPadding = contentPadding,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(colors.primary),
-                contentColor = ngDrawerPrimaryContentColor()
+                containerColor = Color(primaryColors.container),
+                contentColor = Color(primaryColors.content)
             ),
             content = content
         )
@@ -63,8 +95,8 @@ fun NgButton(
             shape = shape,
             contentPadding = contentPadding,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(colors.primary),
-                contentColor = ngDrawerPrimaryContentColor()
+                containerColor = Color(primaryColors.container),
+                contentColor = Color(primaryColors.content)
             ),
             content = content
         )
@@ -116,7 +148,7 @@ fun NgButton(
             shape = shape,
             contentPadding = contentPadding,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(colors.error),
+                containerColor = rememberNgSolidButtonContainerColor(Color(colors.error)),
                 contentColor = Color.White
             ),
             content = content

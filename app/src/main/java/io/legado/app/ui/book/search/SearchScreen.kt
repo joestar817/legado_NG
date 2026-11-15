@@ -57,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookSourcePart
@@ -65,6 +66,8 @@ import io.legado.app.data.entities.SearchKeyword
 import io.legado.app.ui.book.source.BookSourceGroupIcon
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
+import io.legado.app.ui.design.components.compose.rememberNgSolidButtonColors
+import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarBackButton
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgSearchBar
@@ -225,6 +228,7 @@ internal fun SearchScreen(
             val showSearchAction = queryMatchesSearch && state.activeQuery.isNotEmpty() &&
                 (state.isSearching || (!state.manualStopped && state.hasMore))
             if (!showInputHelp && showSearchAction) {
+                val actionColors = rememberNgSolidButtonColors(Color(NgTheme.colors.primary).copy(alpha = 1f))
                 FloatingActionButton(
                     onClick = if (state.isSearching) onStopSearch else onLoadMore,
                     modifier = Modifier
@@ -233,8 +237,8 @@ internal fun SearchScreen(
                         .padding(16.dp)
                         .size(40.dp),
                     shape = CircleShape,
-                    containerColor = Color(NgTheme.colors.primary).copy(alpha = 1f),
-                    contentColor = Color.White
+                    containerColor = Color(actionColors.container),
+                    contentColor = Color(actionColors.content)
                 ) {
                     Icon(
                         painter = painterResource(
@@ -332,7 +336,12 @@ private fun SearchTopBar(
                 expanded = menuState.expanded,
                 onDismissRequest = menuState::onDismissRequest,
                 items = menuItems,
+                variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+                sideSlideEndMargin = 10.dp,
+                sideSlideAnchorGap = 8.dp,
+                properties = PopupProperties(focusable = true, clippingEnabled = false),
                 onItemClick = { item ->
+                    if (!menuState.expanded) return@NgExpandableActionMenu
                     menuState.close()
                     when (item.itemId) {
                         R.id.menu_clear_history -> onClearHistory()
@@ -570,11 +579,12 @@ private fun SearchInputHelp(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.padding(horizontal = 3.dp, vertical = 4.dp)
                 ) {
+                    val actionColors = rememberNgSolidButtonColors(Color(NgTheme.colors.primary).copy(alpha = 1f))
                     visibleHistory.forEach { keyword ->
                         SearchHelpChip(
                             text = keyword.word,
-                            containerColor = Color(NgTheme.colors.primary).copy(alpha = 1f),
-                            contentColor = Color.White,
+                            containerColor = Color(actionColors.container),
+                            contentColor = Color(actionColors.content),
                             onClick = { onHistoryClick(keyword) },
                             onLongClick = { onDeleteHistory(keyword) }
                         )

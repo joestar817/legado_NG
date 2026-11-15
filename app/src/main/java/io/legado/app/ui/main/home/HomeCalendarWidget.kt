@@ -120,7 +120,8 @@ internal fun HomeCalendarWidget(
             onChooseMonth = { chooseMonth = true }, onAction = onAction, palette = palette)
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val gridWidth = maxOf(maxWidth, minimumCellWidth * 7)
-            if ((variant.styleId == "storybook" || variant.styleId == "night") && !measuring) {
+            if ((variant.styleId == "storybook" || variant.styleId == "night" ||
+                    variant.styleId == "blue_fish") && !measuring) {
                 val weekdayHeight = remember(textMeasurer, weekdays, weekTextStyle, density) {
                     with(density) {
                         weekdays.maxOf {

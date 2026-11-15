@@ -57,6 +57,8 @@ import kotlin.math.min
 import io.legado.app.model.RuleUpdate
 import io.legado.app.model.SourceCallBack
 
+internal const val HOME_WIDGET_SKIN_REQUEST = "homeWidgetSkinRequest"
+
 class MainViewModel(application: Application) : BaseViewModel(application) {
     private var threadCount = AppConfig.threadCount
     private var poolSize = min(threadCount, AppConst.MAX_THREAD)
@@ -79,6 +81,12 @@ class MainViewModel(application: Application) : BaseViewModel(application) {
     private val mutableBookNewsRefreshState = MutableStateFlow(bookNewsTracker.state)
     internal val bookNewsRefreshState: StateFlow<BookNewsRefreshState> =
         mutableBookNewsRefreshState.asStateFlow()
+    private val mutableHomeWidgetSkinRequest = MutableStateFlow<String?>(null)
+    internal val homeWidgetSkinRequest = mutableHomeWidgetSkinRequest.asStateFlow()
+
+    internal fun requestHomeWidgetSkin(id: String?) {
+        mutableHomeWidgetSkinRequest.value = id
+    }
     var callback: CallBack? = null
     fun setActivityCallback(callback: CallBack) {
         this.callback = callback

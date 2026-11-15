@@ -24,7 +24,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import io.legado.app.R
 
 /** Listening's established native material; fixed slots retain the common frame and title geometry. */
 @Composable
@@ -36,6 +35,10 @@ internal fun HomeListeningMaterialBackdrop(
     bottomInset: Dp = 16.dp,
     small: Boolean = false,
 ) {
+    if (styleId == "blue_fish") {
+        HomeWidgetSkinBackdrop(styleId, headerHeight, headerOffset, modifier, bottomInset, small = small)
+        return
+    }
     if (styleId != "storybook" && styleId != "night") return
     val night = styleId == "night"
     val density = LocalDensity.current.density
@@ -85,34 +88,27 @@ internal fun HomeListeningMaterialBackdrop(
             }
             drawIntoCanvas { it.nativeCanvas.drawRect(0f, 0f, width, height, grain) }
         }
-        if (night && bottomInset > 0.dp) Image(
-            painter = homeWidgetArtworkPainter(R.drawable.ng_home_listening_large_wood), contentDescription = null,
+        val wood = if (night && bottomInset > 0.dp) homeWidgetArtworkPainter(styleId, "wood") else null
+        if (wood != null) Image(
+            painter = wood, contentDescription = null,
             contentScale = ContentScale.Crop, alignment = Alignment.TopCenter, alpha = 0.60f,
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bottomInset),
         )
         if (night) {
-            val leaves = if (night) R.drawable.ng_home_listening_large_night_leaves
-                else R.drawable.ng_home_listening_large_paper_bottom
-            Image(
-                painter = homeWidgetArtworkPainter(leaves), contentDescription = null,
-                contentScale = ContentScale.Fit,
-                alignment = if (night) Alignment.TopEnd else Alignment.BottomStart,
-                alpha = if (night) { if (small) 0.45f else 0.55f } else { if (small) 0.55f else 0.70f },
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = headerOffset)
-                    .size(if (small) { if (night) 65.dp else 54.dp } else { if (night) 107.dp else 100.dp },
-                        if (small) { if (night) 57.dp else 67.dp } else { if (night) 63.dp else 68.dp })
-                    .then(if (night) Modifier else Modifier.rotate(180f)),
-            )
-            Image(
-                painter = homeWidgetArtworkPainter(leaves), contentDescription = null,
-                contentScale = ContentScale.Fit,
-                alignment = if (night) Alignment.TopEnd else Alignment.BottomStart,
-                alpha = if (night) { if (small) 0.32f else 0.60f } else 0.75f,
-                modifier = Modifier.align(Alignment.BottomStart)
-                    .size(if (night) { if (small) 84.dp else 102.dp } else 78.dp,
-                        if (night) { if (small) 54.dp else 53.dp } else 49.dp)
-                    .then(if (night) Modifier.rotate(180f) else Modifier),
-            )
+            homeWidgetArtworkPainter(styleId, "leaves")?.let { leaves ->
+                Image(
+                    painter = leaves, contentDescription = null, contentScale = ContentScale.Fit,
+                    alignment = Alignment.TopEnd, alpha = if (small) 0.45f else 0.55f,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(top = headerOffset)
+                        .size(if (small) 65.dp else 107.dp, if (small) 57.dp else 63.dp),
+                )
+                Image(
+                    painter = leaves, contentDescription = null, contentScale = ContentScale.Fit,
+                    alignment = Alignment.TopEnd, alpha = if (small) 0.32f else 0.60f,
+                    modifier = Modifier.align(Alignment.BottomStart)
+                        .size(if (small) 84.dp else 102.dp, if (small) 54.dp else 53.dp).rotate(180f),
+                )
+            }
         } else {
             HomeStorybookLeafBackdrop(Modifier.matchParentSize(), headerOffset, small)
         }

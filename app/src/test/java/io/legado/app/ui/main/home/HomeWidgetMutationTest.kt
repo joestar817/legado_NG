@@ -9,6 +9,53 @@ import org.junit.Test
 
 class HomeWidgetMutationTest {
     @Test
+    fun deletingAnAppliedSkinResetsOnlyItsWidgetsAndKeepsTheirSizesAndOrder() {
+        val saved = listOf(
+            HomeWidgetInstance("reading", "reading", "story-small"),
+            HomeWidgetInstance("listening", "listening", "white-large"),
+            HomeWidgetInstance("updates", "updates", "story-large"),
+            HomeWidgetInstance("calendar", "calendar", "story-large"),
+        )
+        val updated = clearDeletedHomeWidgetSkin(HomeUiState(saved), "storybook")
+        assertEquals(listOf("small", "white-large", "large", "large"), updated.widgets.map { it.variantId })
+        assertEquals(saved.map { it.id }, updated.widgets.map { it.id })
+        assertEquals(saved.map { HomeWidgetCatalog.variant(it)?.size }, updated.widgets.map { HomeWidgetCatalog.variant(it)?.size })
+        assertSame(saved[1], updated.widgets[1])
+        assertNull(updated.draft)
+        assertEquals(updated.widgets, HomeWidgetLayoutCodec.decode(HomeWidgetLayoutCodec.encode(updated.widgets)))
+    }
+
+    @Test
+    fun deletingASkinAlsoClearsTheDraftWithoutSavingItsOtherEdits() {
+        val saved = listOf(
+            HomeWidgetInstance("reading", "reading", "night-small"),
+            HomeWidgetInstance("updates", "updates", "white-large"),
+            HomeWidgetInstance("calendar", "calendar", "night-large"),
+        )
+        val draft = listOf(saved[2], saved[0].copy(variantId = "night-large"))
+        val state = HomeUiState(saved, draft, singleEditId = "reading")
+        val updated = clearDeletedHomeWidgetSkin(state, "night")
+        assertEquals(listOf("reading", "updates", "calendar"), updated.widgets.map { it.id })
+        assertEquals(listOf("small", "white-large", "large"), updated.widgets.map { it.variantId })
+        assertEquals(listOf("calendar", "reading"), updated.draft!!.map { it.id })
+        assertEquals(listOf("large", "large"), updated.draft!!.map { it.variantId })
+        assertEquals("reading", updated.singleEditId)
+        assertEquals(updated.widgets, cancelHomeWidgetEditing(updated).widgets)
+        assertEquals(updated, clearDeletedHomeWidgetSkin(updated, "night"))
+    }
+
+    @Test
+    fun deletingAnUnselectedSkinDoesNotChangeTheLayoutOrBuiltInChoices() {
+        val saved = listOf(HomeWidgetInstance("reading", "reading", "white-small"))
+        val state = HomeUiState(saved)
+        assertEquals(state, clearDeletedHomeWidgetSkin(state, "storybook"))
+        assertSame(state, clearDeletedHomeWidgetSkin(state, "white"))
+        assertSame(state, clearDeletedHomeWidgetSkin(state, "basic"))
+        val failed = state.copy(layoutReadFailed = true)
+        assertSame(failed, clearDeletedHomeWidgetSkin(failed, "night"))
+    }
+
+    @Test
     fun singleEditingCreatesAPendingLayoutWithoutActivatingAllWidgets() {
         val saved = threeWidgetLayout()
         val state = beginHomeWidgetEditing(HomeUiState(saved), saved[0].id)!!
@@ -346,7 +393,7 @@ class HomeWidgetMutationTest {
             HomeWidgetInstance("listening", "listening", "story-small"),
         )
         assertEquals("storybook", homeWidgetCommonStyle(widgets))
-        assertEquals("storybook", homeWidgetCommonStyle(HomeWidgetCatalog.defaults()))
+        assertEquals("basic", homeWidgetCommonStyle(HomeWidgetCatalog.defaults()))
         assertEquals("night", homeWidgetCommonStyle(listOf(widgets[0].copy(variantId = "night-large"))))
     }
 
@@ -392,7 +439,7 @@ class HomeWidgetMutationTest {
             widgets[2].copy(variantId = "night-large"),
             widgets[3].copy(variantId = "night-small"),
         ), night)
-        listOf("basic", "storybook", "night", "white").forEach { style ->
+        listOf("basic", "storybook", "night", "white", "blue_fish").forEach { style ->
             val changed = changeHomeWidgetSuite(night, style)!!
             assertEquals(widgets.map { it.id to it.typeId }, changed.map { it.id to it.typeId })
             assertEquals(widgets.map { HomeWidgetCatalog.variant(it)!!.size },
@@ -467,20 +514,16 @@ class HomeWidgetMutationTest {
     }
 
     @Test
-    fun suiteSaveCommitsEarlierMovesAndDeletionsFromBothSingleAndBulkSessions() {
+    fun suiteSaveDoesNotCommitOrDiscardSingleOrBulkLayoutEdits() {
         val saved = threeWidgetLayout()
         listOf(null, saved[0].id).forEach { singleEditId ->
             val started = beginHomeWidgetEditing(HomeUiState(saved), singleEditId)!!
             val moved = moveHomeWidgetState(started, saved[0].id, saved[2].id)!!
             val removed = removeHomeWidget(moved, saved[1].id)!!
-            val confirmed = saveHomeWidgetSuite(removed, "night")!!
-            assertEquals(listOf(
-                saved[2].copy(variantId = "night-large"),
-                saved[0].copy(variantId = "night-small"),
-            ), confirmed.widgets)
-            assertFalse(confirmed.pendingEdit)
-            assertFalse(confirmed.editing)
-            assertNull(confirmed.singleEditId)
+            assertNull(saveHomeWidgetSuite(removed, "night"))
+            assertNull(saveHomeWidgetSuite(removed, "basic"))
+            assertTrue(removed.pendingEdit)
+            assertEquals(singleEditId, removed.singleEditId)
             assertSame(saved, removed.widgets)
             assertEquals(listOf(saved[2], saved[0]), removed.draft)
         }
@@ -488,36 +531,33 @@ class HomeWidgetMutationTest {
     }
 
     @Test
-    fun applyingTheSuiteAlreadyInUseStillCommitsTheWholeParentDraft() {
+    fun suiteSaveBecomesAvailableAfterCancelingAnEdit() {
         val saved = threeWidgetLayout()
         listOf(null, saved[0].id).forEach { singleEditId ->
             val started = beginHomeWidgetEditing(HomeUiState(saved), singleEditId)!!
             val moved = moveHomeWidgetState(started, saved[0].id, saved[2].id)!!
             val removed = removeHomeWidget(moved, saved[1].id)!!
-            val added = addOrReplaceHomeWidget(removed, "calendar", "large", "new-calendar")!!
-            assertEquals("basic", homeWidgetCommonStyle(added.displayedWidgets))
-            val confirmed = saveHomeWidgetSuite(added, "basic")!!
-            assertEquals(HomeUiState(listOf(saved[2], saved[0],
-                HomeWidgetInstance("new-calendar", "calendar", "large"))), confirmed)
+            val canceled = cancelHomeWidgetEditing(removed)
+            val confirmed = saveHomeWidgetSuite(canceled, "night")!!
+            assertEquals(saved.map { widget ->
+                widget.copy(variantId = if (widget.variantId == "large") "night-large" else "night-small")
+            }, confirmed.widgets)
             assertFalse(confirmed.pendingEdit)
             assertNull(confirmed.singleEditId)
-            assertSame(saved, added.widgets)
+            assertSame(saved, canceled.widgets)
         }
     }
 
     @Test
-    fun suiteSaveCanCommitAfterTheSingleSessionTargetHasBeenDeleted() {
+    fun suiteSaveRemainsUnavailableWhenTheEditedWidgetWasDeleted() {
         val saved = threeWidgetLayout()
         val started = beginHomeWidgetEditing(HomeUiState(saved), saved[0].id)!!
         val removed = removeHomeWidget(started, saved[0].id)!!
         assertEquals(saved[0].id, removed.singleEditId)
-        val confirmed = saveHomeWidgetSuite(removed, "night")!!
-        assertEquals(listOf(
-            saved[1].copy(variantId = "night-small"),
-            saved[2].copy(variantId = "night-large"),
-        ), confirmed.widgets)
-        assertFalse(confirmed.pendingEdit)
-        assertNull(confirmed.singleEditId)
+        assertNull(saveHomeWidgetSuite(removed, "night"))
+        assertTrue(removed.pendingEdit)
+        assertEquals(saved[0].id, removed.singleEditId)
+        assertEquals(listOf(saved[1], saved[2]), removed.draft)
         assertSame(saved, removed.widgets)
     }
 

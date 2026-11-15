@@ -33,16 +33,17 @@ internal fun shouldDismissDrawer(distance: Float, height: Float, velocity: Float
 
 /** 给固定贴底窗口补充关闭手势，不改变材质、几何或保存语义。 */
 @Composable
-fun NgDismissibleDrawer(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+fun NgDismissibleDrawer(onDismiss: () -> Unit, enabled: Boolean = true, content: @Composable () -> Unit) {
     val density = LocalDensity.current.density
     val latestDismiss by rememberUpdatedState(onDismiss)
+    val gesturesEnabled by rememberUpdatedState(enabled)
     var distance by remember { mutableFloatStateOf(0f) }
     var height by remember { mutableIntStateOf(1) }
     var settling by remember { mutableStateOf(false) }
     var dismissed by remember { mutableStateOf(false) }
 
     fun drag(delta: Float): Float {
-        if (settling || dismissed) return 0f
+        if (!gesturesEnabled || settling || dismissed) return 0f
         val previous = distance
         distance = (distance + delta).coerceIn(0f, height.toFloat())
         return distance - previous
@@ -51,7 +52,7 @@ fun NgDismissibleDrawer(onDismiss: () -> Unit, content: @Composable () -> Unit) 
         if (distance <= 0f || settling || dismissed) return
         settling = true
         try {
-            val dismiss = shouldDismissDrawer(distance, height.toFloat(), velocity, density)
+            val dismiss = gesturesEnabled && shouldDismissDrawer(distance, height.toFloat(), velocity, density)
             Animatable(distance).animateTo(
                 if (dismiss) height.toFloat() else 0f,
                 animationSpec = tween(if (dismiss) 160 else 200),
@@ -98,6 +99,7 @@ fun NgDismissibleDrawer(onDismiss: () -> Unit, content: @Composable () -> Unit) 
             .draggable(
                 state = rememberDraggableState { drag(it) },
                 orientation = Orientation.Vertical,
+                enabled = enabled,
                 onDragStopped = { settle(it) },
             ),
     ) { content() }

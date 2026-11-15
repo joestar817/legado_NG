@@ -117,7 +117,7 @@ internal fun BookshelfManageTopBar(
                     NgExpandableActionMenuItem(
                         itemId = ALL_GROUP_ITEM_ID,
                         titleRes = R.string.all,
-                        iconRes = R.drawable.ic_bookshelf_dock_all,
+                        iconRes = R.drawable.ic_bookshelf_group_all,
                         checked = selectedGroupId == BookGroup.IdAll,
                     ),
                     NgExpandableActionMenuItem(

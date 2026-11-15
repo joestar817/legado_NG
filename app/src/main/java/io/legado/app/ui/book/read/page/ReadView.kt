@@ -982,7 +982,6 @@ class ReadView(context: Context, attrs: AttributeSet) :
                 pageDelegate = NoAnimPageDelegate(this)
             }
         }
-        (pageDelegate as? ScrollPageDelegate)?.noAnim = AppConfig.noAnimScrollPage
         if (upRecorder) {
             (pageDelegate as? HorizontalPageDelegate)?.upRecorder()
             autoPager.upRecorder()
@@ -1074,6 +1073,8 @@ class ReadView(context: Context, attrs: AttributeSet) :
         curPage.upBg()
         prevPage.upBg()
         nextPage.upBg()
+        // EPUB draws the background in this view's drawChild, outside the PageView display list.
+        invalidate()
     }
 
     /**
@@ -1083,6 +1084,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
         curPage.upBgAlpha()
         prevPage.upBgAlpha()
         nextPage.upBgAlpha()
+        invalidate()
     }
 
     /**

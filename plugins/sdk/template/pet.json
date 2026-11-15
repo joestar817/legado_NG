@@ -1,0 +1,10 @@
+{
+  "id": "orb",
+  "name": "光球",
+  "versionCode": 1,
+  "entryClass": "example.pets.orb.OrbPlugin",
+  "info": {
+    "versionName": "1.0",
+    "description": "使用 Canvas 绘制的光球示例，无需图片素材。"
+  }
+}

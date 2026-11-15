@@ -6,6 +6,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
 import io.legado.app.R
+import io.legado.app.help.home.InstalledHomeWidgetSkin
 
 /** Stable instance identity is independent of type, style and position. */
 internal data class HomeWidgetInstance(
@@ -64,6 +65,14 @@ internal object HomeWidgetCatalog {
                     "white-large", HomeWidgetSize.LARGE, R.string.home_variant_white_large,
                     styleId = "white", styleTitleRes = R.string.home_style_white,
                 ),
+                HomeWidgetVariant(
+                    "blue-fish-small", HomeWidgetSize.SMALL, R.string.home_variant_blue_fish_small,
+                    styleId = "blue_fish", styleTitleRes = R.string.home_style_blue_fish,
+                ),
+                HomeWidgetVariant(
+                    "blue-fish-large", HomeWidgetSize.LARGE, R.string.home_variant_blue_fish_large,
+                    styleId = "blue_fish", styleTitleRes = R.string.home_style_blue_fish,
+                ),
             ) else emptyList(),
         )
     } + HomeWidgetType(
@@ -82,6 +91,10 @@ internal object HomeWidgetCatalog {
                 "white-large", HomeWidgetSize.LARGE, R.string.home_variant_white_large,
                 styleId = "white", styleTitleRes = R.string.home_style_white,
             ),
+            HomeWidgetVariant(
+                "blue-fish-large", HomeWidgetSize.LARGE, R.string.home_variant_blue_fish_large,
+                styleId = "blue_fish", styleTitleRes = R.string.home_style_blue_fish,
+            ),
         ),
     )
 
@@ -89,6 +102,14 @@ internal object HomeWidgetCatalog {
 
     fun variant(widget: HomeWidgetInstance): HomeWidgetVariant? =
         type(widget.typeId)?.variants?.firstOrNull { it.id == widget.variantId }
+
+    fun renderVariant(widget: HomeWidgetInstance, skins: List<InstalledHomeWidgetSkin>): HomeWidgetVariant? {
+        val saved = variant(widget) ?: return null
+        if (isPlainHomeWidgetStyle(saved.styleId)) return saved
+        val skin = skins.firstOrNull { it.renderer.styleId == saved.styleId }
+        return if (skin != null) saved
+        else variantsForSize(widget.typeId, saved.size).first { it.styleId == "basic" }
+    }
 
     fun variantsForSize(typeId: String, size: HomeWidgetSize): List<HomeWidgetVariant> =
         type(typeId)?.variants?.filter { it.size == size }.orEmpty()
@@ -99,11 +120,23 @@ internal object HomeWidgetCatalog {
     }
 
     fun defaults(): List<HomeWidgetInstance> = listOf(
-        HomeWidgetInstance("default_updates", "updates", "story-large"),
-        HomeWidgetInstance("default_listening", "listening", "story-large"),
-        HomeWidgetInstance("default_reading", "reading", "story-large"),
-        HomeWidgetInstance("default_calendar", "calendar", "story-large"),
+        HomeWidgetInstance("default_updates", "updates", "large"),
+        HomeWidgetInstance("default_listening", "listening", "large"),
+        HomeWidgetInstance("default_reading", "reading", "large"),
     )
+}
+
+/** Only installed artwork makes a renderer selectable. Layout IDs remain valid across downloads. */
+internal class HomeWidgetSkinSelection(val installed: List<InstalledHomeWidgetSkin>) {
+    fun installedStyle(styleId: String) = installed.firstOrNull { it.renderer.styleId == styleId }
+
+    fun allows(styleId: String) = isPlainHomeWidgetStyle(styleId) || installedStyle(styleId) != null
+
+    fun choices(typeId: String): List<HomeWidgetVariant> =
+        HomeWidgetCatalog.type(typeId)?.variants.orEmpty().filter { allows(it.styleId) }
+
+    fun render(widget: HomeWidgetInstance): HomeWidgetVariant =
+        requireNotNull(HomeWidgetCatalog.renderVariant(widget, installed))
 }
 
 internal fun isPlainHomeWidgetStyle(styleId: String?): Boolean =

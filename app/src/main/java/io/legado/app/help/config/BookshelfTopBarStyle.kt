@@ -5,6 +5,8 @@ enum class BookshelfTopBarStyle(val value: Int) {
     GROUP_NAVIGATION(1);
 
     companion object {
+        val DEFAULT = GROUP_NAVIGATION
+
         fun fromValue(value: Int): BookshelfTopBarStyle {
             return entries.firstOrNull { it.value == value } ?: COMPACT_TOOLBAR
         }

@@ -3,7 +3,6 @@ package io.legado.app.help.storage
 import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadHighlightRuleStore
-import io.legado.app.help.config.ThemeConfig
 import io.legado.app.help.DirectLinkUpload
 import io.legado.app.model.BookCover
 import io.legado.app.utils.defaultSharedPreferences
@@ -38,7 +37,6 @@ internal object BackupModules {
         "rssSources.json", "rssStar.json" -> BackupModule.RSS
         ReadBookConfig.configFileName, ReadBookConfig.shareConfigFileName,
         ReadHighlightRuleStore.fileName -> BackupModule.READER
-        ThemeConfig.configFileName -> BackupModule.APPEARANCE
         BookCover.configFileName -> BackupModule.COVERS
         DirectLinkUpload.ruleFileName -> BackupModule.OTHER
         else -> BackupModule.OTHER

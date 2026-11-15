@@ -28,7 +28,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import io.legado.app.R
 import io.legado.app.ui.design.components.compose.NgGlassStyle
 import io.legado.app.ui.design.theme.NgTheme
 
@@ -122,9 +121,23 @@ private val nightWidgetSkin = HomeWidgetSkin(
     edgeBottom = Color(0xFFF3BC61).copy(alpha = 0.62f),
 )
 
+private val blueFishWidgetSkin = HomeWidgetSkin(
+    palette = HomeListeningPalette(
+        foreground = Color(0xFF142A50), secondary = Color(0xFF566B85),
+        primary = Color(0xFF245AA5), primaryContent = Color.White,
+        secondaryContainer = Color(0xFFF1F7FF), secondaryContent = Color(0xFF244B82),
+    ),
+    top = Color(0xFFF3F8FF), middle = Color(0xFFEDF5FF), bottom = Color(0xFFE5F1FF),
+    headerTint = Color(0xFFCEE7FF).copy(alpha = 0.25f),
+    edgeTop = Color.White.copy(alpha = 0.96f),
+    edgeMiddle = Color(0xFFD4E9FF).copy(alpha = 0.75f),
+    edgeBottom = Color.White.copy(alpha = 0.92f),
+)
+
 private fun homeWidgetSkin(styleId: String): HomeWidgetSkin? = when (styleId) {
     "storybook" -> storyWidgetSkin
     "night" -> nightWidgetSkin
+    "blue_fish" -> blueFishWidgetSkin
     else -> null
 }
 
@@ -151,6 +164,7 @@ internal fun HomeWidgetSkinBackdrop(
 ) {
     val skin = homeWidgetSkin(styleId) ?: return
     val night = styleId == "night"
+    val blueFish = styleId == "blue_fish"
     val headerArtwork = variant == HomeWidgetBackdropVariant.CALENDAR ||
         variant == HomeWidgetBackdropVariant.BOOK_NEWS
     val density = LocalDensity.current.density
@@ -186,16 +200,18 @@ internal fun HomeWidgetSkinBackdrop(
                     center = Offset(width * 0.28f, headerEnd + 24.dp.toPx()), radius = 130.dp.toPx(),
                 ))
                 drawRect(Brush.radialGradient(
-                    listOf(Color(0xFFE8EDCA).copy(alpha = 0.14f), Color.Transparent),
+                    listOf((if (blueFish) Color(0xFFC3E4FF) else Color(0xFFE8EDCA)).copy(alpha = 0.14f), Color.Transparent),
                     center = Offset(width, height), radius = 100.dp.toPx(),
                 ))
             }
             drawIntoCanvas { it.nativeCanvas.drawRect(0f, 0f, width, height, grain) }
         }
-        if (night && !headerArtwork && bottomInset > 0.dp) {
+        val wood = if (night && !headerArtwork && bottomInset > 0.dp)
+            homeWidgetArtworkPainter(styleId, "wood") else null
+        if (wood != null) {
             // Existing bottom safety space becomes the shared desk edge, never extra content height.
             Image(
-                painter = homeWidgetArtworkPainter(R.drawable.ng_home_listening_large_wood),
+                painter = wood,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 alignment = Alignment.TopCenter,
@@ -205,27 +221,41 @@ internal fun HomeWidgetSkinBackdrop(
         }
         // Clean, restrained leaf corners are skin ornaments; the owl/person/lamp live in slots.
         if (night) {
-            val leaf = if (night) R.drawable.ng_home_listening_large_night_leaves
-                else R.drawable.ng_home_listening_large_paper_bottom
-            Image(
-                painter = homeWidgetArtworkPainter(leaf), contentDescription = null,
-                contentScale = ContentScale.Fit, alignment = Alignment.TopEnd,
-                alpha = if (night) 0.22f else 0.26f,
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = headerOffset)
-                    .size(56.dp, 60.dp).then(if (night) Modifier else Modifier.rotate(180f)),
-            )
-            Image(
-                painter = homeWidgetArtworkPainter(leaf), contentDescription = null,
-                contentScale = ContentScale.Fit, alignment = Alignment.BottomStart,
-                alpha = if (night) 0.14f else 0.20f,
-                modifier = Modifier.align(Alignment.BottomStart).size(48.dp, 36.dp),
-            )
+            homeWidgetArtworkPainter(styleId, "leaves")?.let { leaf ->
+                Image(
+                    painter = leaf, contentDescription = null,
+                    contentScale = ContentScale.Fit, alignment = Alignment.TopEnd,
+                    alpha = 0.22f,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(top = headerOffset)
+                        .size(56.dp, 60.dp),
+                )
+                Image(
+                    painter = leaf, contentDescription = null,
+                    contentScale = ContentScale.Fit, alignment = Alignment.BottomStart,
+                    alpha = 0.14f,
+                    modifier = Modifier.align(Alignment.BottomStart).size(48.dp, 36.dp),
+                )
+            }
+        } else if (blueFish) {
+            homeWidgetArtworkPainter(styleId, "waves")?.let { waves ->
+                Image(
+                    painter = waves, contentDescription = null, contentScale = ContentScale.Fit,
+                    alignment = Alignment.BottomStart,
+                    modifier = Modifier.align(Alignment.BottomStart).size(if (small) 105.dp else 150.dp, 75.dp),
+                )
+                Image(
+                    painter = waves, contentDescription = null, contentScale = ContentScale.Fit,
+                    alignment = Alignment.BottomStart,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(top = headerOffset)
+                        .size(if (small) 90.dp else 125.dp, 64.dp).rotate(180f),
+                )
+            }
         } else {
             HomeStorybookLeafBackdrop(Modifier.matchParentSize(), headerOffset, small)
         }
-        if (bookNewsCornerArtwork && styleId == "storybook") {
-            val girl = homeWidgetArtworkPainter(R.drawable.ng_home_updates_story_girl)
-            val cornerLeaves = homeWidgetArtworkPainter(R.drawable.ng_home_listening_large_paper_bottom)
+        if (bookNewsCornerArtwork && (styleId == "storybook" || blueFish)) {
+            val girl = homeWidgetArtworkPainter(styleId, "updates")
+            val cornerLeaves = if (blueFish) null else homeWidgetArtworkPainter(styleId, "leaves")
             Canvas(Modifier.matchParentSize()) {
                 val bodyHeight = (size.height - (headerOffset + headerHeight).toPx()).coerceAtLeast(0f)
                 // Decorations consume only the existing body area, including short/empty cards.
@@ -236,13 +266,13 @@ internal fun HomeWidgetSkinBackdrop(
                         size.height - leafSize.height + 6.dp.toPx() * scale) {
                         scale(scaleX = -1f, scaleY = 1f,
                             pivot = Offset(leafSize.width / 2f, leafSize.height / 2f)) {
-                            with(cornerLeaves) { draw(leafSize, colorFilter = HomeStorybookLeafColorFilter) }
+                            cornerLeaves?.let { with(it) { draw(leafSize, colorFilter = HomeStorybookLeafColorFilter) } }
                         }
                     }
                     val girlSize = 100.dp.toPx() * scale
                     translate(size.width - 14.dp.toPx() * scale - girlSize,
                         size.height - 2.dp.toPx() * scale - girlSize) {
-                        with(girl) { draw(Size(girlSize, girlSize)) }
+                        girl?.let { with(it) { draw(Size(girlSize, girlSize)) } }
                     }
                 }
             }

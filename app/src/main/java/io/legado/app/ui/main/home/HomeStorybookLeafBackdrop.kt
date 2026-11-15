@@ -12,7 +12,6 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import io.legado.app.R
 
 /** Match the theme's richer leaf greens without recoloring the card or flattening leaf veins. */
 internal val HomeStorybookLeafColorFilter = ColorFilter.colorMatrix(ColorMatrix(floatArrayOf(
@@ -29,7 +28,7 @@ internal fun HomeStorybookLeafBackdrop(
     headerOffset: Dp = 0.dp,
     small: Boolean = false,
 ) {
-    val leaves = homeWidgetArtworkPainter(R.drawable.ng_home_listening_large_paper_bottom)
+    val leaves = homeWidgetArtworkPainter("storybook", "leaves") ?: return
     Canvas(modifier) {
         val headerStart = headerOffset.toPx().coerceIn(0f, size.height)
         val availableHeight = size.height - headerStart

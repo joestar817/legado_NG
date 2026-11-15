@@ -28,11 +28,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -54,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
@@ -73,11 +69,16 @@ import io.legado.app.data.entities.Bookmark
 import io.legado.app.data.entities.CatalogOutlineEntry
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isVideo
+import io.legado.app.help.config.NgThemeModeStore
+import io.legado.app.ui.book.read.CatalogVipIcon
 import io.legado.app.ui.design.components.compose.NgBookCover
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
+import io.legado.app.ui.design.components.compose.NgFloatingTabBar
+import io.legado.app.ui.design.components.compose.NgFloatingTabBarVariant
+import io.legado.app.ui.design.components.compose.NgFloatingTabSpec
 import io.legado.app.ui.design.components.compose.NgFloatingTitleToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
 import io.legado.app.ui.design.components.compose.NgGlassDefaults
@@ -87,6 +88,7 @@ import io.legado.app.ui.design.components.compose.NgMaterialRole
 import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgVisualSurface
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.theme.rememberAppearanceDockSelectionColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -101,10 +103,13 @@ internal data class TocChapterUiItem(
 
 internal data class TocUiState(
     val book: Book? = null,
+    val reverseToc: Boolean = false,
+    val catalogDescending: Boolean = false,
     val selectedTab: Int = TOC_TAB_CHAPTERS,
     val searchExpanded: Boolean = false,
     val query: String = "",
     val chapters: List<TocChapterUiItem> = emptyList(),
+    val totalChapterCount: Int = 0,
     val bookmarks: List<Bookmark> = emptyList(),
     val cachedFileNames: Set<String> = emptySet(),
     val chapterScrollIndex: Int = 0,
@@ -138,6 +143,7 @@ internal enum class TocMenuAction(val itemId: Int) {
 
 internal sealed interface TocUiEvent {
     data object Back : TocUiEvent
+    data object ToggleSort : TocUiEvent
     data class TabChange(val tab: Int) : TocUiEvent
     data class SearchExpandedChange(val expanded: Boolean) : TocUiEvent
     data class QueryChange(val query: String) : TocUiEvent
@@ -154,6 +160,10 @@ internal fun TocScreen(
     state: TocUiState,
     onEvent: (TocUiEvent) -> Unit,
 ) {
+    val context = LocalContext.current
+    val themeSnapshot = NgTheme.snapshot
+    val presentation = remember(context, themeSnapshot) { NgThemeModeStore.current(context) }
+    val dockSelectionColors = rememberAppearanceDockSelectionColors(presentation)
     val pagerState = rememberPagerState(
         initialPage = state.selectedTab,
         pageCount = { 2 },
@@ -199,20 +209,24 @@ internal fun TocScreen(
                 style = NgGlassDefaults.neutralStyle(),
             ) {
                 state.book?.let { book -> TocBookIdentity(book = book, compact = compact) }
-                Row(Modifier.fillMaxWidth().selectableGroup()) {
-                    TocTab(
-                        title = stringResource(R.string.chapter_list),
-                        selected = state.selectedTab == TOC_TAB_CHAPTERS,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onEvent(TocUiEvent.TabChange(TOC_TAB_CHAPTERS)) },
-                    )
-                    TocTab(
-                        title = stringResource(R.string.bookmark),
-                        selected = state.selectedTab == TOC_TAB_BOOKMARKS,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onEvent(TocUiEvent.TabChange(TOC_TAB_BOOKMARKS)) },
-                    )
-                }
+                NgFloatingTabBar(
+                    items = listOf(
+                        NgFloatingTabSpec(
+                            text = stringResource(R.string.chapter_list),
+                            iconRes = R.drawable.ic_manga_menu_catalog,
+                        ),
+                        NgFloatingTabSpec(
+                            text = stringResource(R.string.bookmark),
+                            iconRes = R.drawable.ic_bookmark,
+                        ),
+                    ),
+                    selectedIndex = state.selectedTab,
+                    onTabSelected = { onEvent(TocUiEvent.TabChange(it)) },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                    variant = NgFloatingTabBarVariant.APPEARANCE_SELECTION,
+                    selectionColors = dockSelectionColors,
+                    semanticRole = Role.Tab,
+                )
                 TocListSummary(state = state, onEvent = onEvent)
                 HorizontalPager(
                     state = pagerState,
@@ -288,8 +302,10 @@ private fun TocTopBar(
 private fun TocBookIdentity(book: Book, compact: Boolean) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(
-            horizontal = 14.dp,
-            vertical = 6.dp,
+            start = 14.dp,
+            end = 14.dp,
+            top = if (compact) 6.dp else 8.dp,
+            bottom = if (compact) 6.dp else 12.dp,
         ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -297,10 +313,10 @@ private fun TocBookIdentity(book: Book, compact: Boolean) {
         NgBookCover(
             book = book,
             modifier = Modifier.size(
-                width = if (compact) 30.dp else 40.dp,
-                height = if (compact) 40.dp else 52.dp,
+                width = if (compact) 30.dp else 78.dp,
+                height = if (compact) 40.dp else 104.dp,
             ),
-            coverRadius = 4,
+            coverRadius = if (compact) 6 else 8,
             contentDescription = book.name,
         )
         if (compact) {
@@ -314,7 +330,10 @@ private fun TocBookIdentity(book: Book, compact: Boolean) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        } else Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        } else Column(
+            modifier = Modifier.weight(1f).align(Alignment.Top),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Text(
                 text = book.name,
                 color = Color(NgTheme.colors.onSurface),
@@ -339,65 +358,46 @@ private fun TocBookIdentity(book: Book, compact: Boolean) {
 }
 
 @Composable
-private fun TocTab(
-    title: String,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .heightIn(min = 44.dp)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = title,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-            color = Color(if (selected) NgTheme.colors.primary else NgTheme.colors.onSurface),
-            fontSize = 15.sp,
-            lineHeight = 20.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (selected) {
-            Box(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp)
-                    .background(Color(NgTheme.colors.primary)),
-            )
-        }
-    }
-}
-
-@Composable
 private fun TocListSummary(state: TocUiState, onEvent: (TocUiEvent) -> Unit) {
     val bookmarks = state.selectedTab == TOC_TAB_BOOKMARKS
     val count = if (bookmarks) state.bookmarks.size else state.chapters.size
-    val countRes = when {
-        bookmarks && state.query.isNotBlank() -> R.string.read_catalog_search_bookmark_count
-        bookmarks -> R.string.read_catalog_bookmark_count
-        state.query.isNotBlank() -> R.string.read_catalog_search_chapter_count
-        else -> R.string.all_chapter_num
+    val summary = when {
+        bookmarks && state.query.isNotBlank() ->
+            stringResource(R.string.read_catalog_search_bookmark_count, count)
+        bookmarks -> stringResource(R.string.read_catalog_bookmark_count, count)
+        state.query.isNotBlank() -> stringResource(R.string.read_catalog_search_chapter_count, count)
+        else -> {
+            val total = state.totalChapterCount
+            val currentChapterNumber = if (total > 0) {
+                ((state.book?.durChapterIndex ?: 0) + 1).coerceIn(1, total)
+            } else {
+                0
+            }
+            val readingProgress = if (total > 0) currentChapterNumber.toDouble() / total * 100 else 0.0
+            stringResource(R.string.read_catalog_reading_progress, currentChapterNumber, total, readingProgress)
+        }
     }
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp),
+        color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.35f),
+    )
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 40.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = stringResource(countRes, count),
+            text = summary,
             modifier = Modifier.weight(1f).padding(vertical = 8.dp),
             color = Color(NgTheme.colors.onSurfaceVariant),
             fontSize = 12.sp,
             lineHeight = 16.sp,
         )
         if (!bookmarks) {
-            val reverse = state.book?.getReverseToc() == true
+            val reverse = state.catalogDescending
             Row(
                 modifier = Modifier.heightIn(min = 40.dp)
-                    .clickable(role = Role.Button) {
-                        onEvent(TocUiEvent.Menu(TocMenuAction.ReverseToc))
-                    }.padding(start = 8.dp),
+                    .clickable(role = Role.Button) { onEvent(TocUiEvent.ToggleSort) }
+                    .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -421,7 +421,6 @@ private fun TocListSummary(state: TocUiState, onEvent: (TocUiEvent) -> Unit) {
             }
         }
     }
-    HorizontalDivider(color = Color(NgTheme.colors.outlineVariant).copy(alpha = 0.35f))
 }
 
 @Composable
@@ -527,7 +526,7 @@ private fun TocChapterPage(
     val collapsedVolumes = remember(collapsedKeys) { collapsedKeys.toSet() }
     // The reverse flag can change before the corresponding chapter batch arrives.
     val reversed = remember(bookKey, state.chapterScrollToken) {
-        state.book?.getReverseToc() == true
+        state.reverseToc
     }
     val searching = state.query.isNotBlank()
     val searchResults = remember(bookKey, state.chapterScrollToken) {
@@ -539,17 +538,17 @@ private fun TocChapterPage(
             CatalogOutlineEntry(it.chapter.primaryStr(), it.chapter.index, it.chapter.isVolume)
         }
     }
-    val projection = remember(outline, collapsedVolumes, reversed, searchResults) {
+    val storedProjection = remember(outline, collapsedVolumes, reversed, searchResults) {
         projectTocCatalogRows(outline, collapsedVolumes, reversed, searchResults)
+    }
+    val projection = remember(storedProjection, state.catalogDescending) {
+        storedProjection.inDisplayOrder(state.catalogDescending)
     }
     val itemsByKey = remember(state.chapters) {
         state.chapters.associateBy { it.chapter.primaryStr() }
     }
-    val visibleItems = remember(projection.visibleRows, itemsByKey) {
-        projection.visibleRows.mapNotNull { itemsByKey[it.url] }
-    }
     var foldScrollJob by remember { mutableStateOf<Job?>(null) }
-    LaunchedEffect(bookKey, state.chapterScrollToken) {
+    LaunchedEffect(bookKey, state.chapterScrollToken, state.catalogDescending) {
         foldScrollJob?.cancel()
         if (state.chapters.isNotEmpty()) {
             val target = state.chapters[state.chapterScrollIndex.coerceIn(state.chapters.indices)]
@@ -562,9 +561,16 @@ private fun TocChapterPage(
             val targetProjection = if (nextCollapsed != collapsedVolumes) {
                 collapsedKeys = ArrayList(nextCollapsed)
                 projectTocCatalogRows(outline, nextCollapsed, reversed, searchResults)
+                    .inDisplayOrder(state.catalogDescending)
             } else projection
             if (nextCollapsed != collapsedVolumes) withFrameNanos { }
-            listState.scrollToItem(tocCatalogAnchorPosition(targetProjection, target.chapter.primaryStr()))
+            val anchorKey = if (currentKey != null && !searchResults) currentKey
+                else target.chapter.primaryStr()
+            val anchorPosition = tocCatalogAnchorPosition(targetProjection, anchorKey)
+            listState.scrollToItem(
+                if (currentKey != null && !searchResults) (anchorPosition - 1).coerceAtLeast(0)
+                else anchorPosition,
+            )
         }
     }
     fun toggleVolume(item: TocChapterUiItem) {
@@ -575,6 +581,7 @@ private fun TocChapterPage(
         val nextCollapsed = if (volumeKey in collapsedVolumes) collapsedVolumes - volumeKey
             else collapsedVolumes + volumeKey
         val nextProjection = projectTocCatalogRows(outline, nextCollapsed, reversed, false)
+            .inDisplayOrder(state.catalogDescending)
         foldScrollJob?.cancel()
         collapsedKeys = ArrayList(nextCollapsed)
         foldScrollJob = scope.launch {
@@ -593,10 +600,11 @@ private fun TocChapterPage(
             contentPadding = PaddingValues(bottom = 8.dp),
         ) {
             items(
-                items = visibleItems,
-                key = { it.chapter.primaryStr() },
-                contentType = { if (it.chapter.isVolume) "volume" else "chapter" },
-            ) { item ->
+                items = projection.visibleRows,
+                key = { it.url },
+                contentType = { if (it.isVolume) "volume" else "chapter" },
+            ) { row ->
+                val item = itemsByKey.getValue(row.url)
                 TocChapterRow(
                     item = item,
                     current = item.chapter.index == state.book?.durChapterIndex,
@@ -653,20 +661,16 @@ private fun TocChapterRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (chapter.isVip) {
-                Icon(
-                    imageVector = if (chapter.isPay) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
-                    contentDescription = stringResource(
-                        if (chapter.isPay) R.string.read_catalog_vip_purchased
-                        else R.string.read_catalog_vip_unpaid,
-                    ),
+                CatalogVipIcon(
+                    isPaid = chapter.isPay,
+                    tint = secondary,
                     modifier = Modifier.size(14.dp),
-                    tint = secondary.copy(alpha = secondary.alpha * 0.72f),
                 )
             }
             Column(Modifier.weight(1f)) {
                 Text(
                     text = item.displayTitle,
-                    color = Color(if (current) NgTheme.colors.primary else NgTheme.colors.onSurface),
+                    color = if (current) Color(NgTheme.colors.primary) else secondary,
                     fontSize = 15.sp,
                     lineHeight = 20.sp,
                     fontWeight = if (current || chapter.isVolume) FontWeight.SemiBold else FontWeight.Normal,

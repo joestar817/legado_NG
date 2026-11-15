@@ -7,6 +7,7 @@ import android.graphics.Point
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +48,7 @@ import io.legado.app.ui.config.ConfigTag
 import io.legado.app.ui.config.TtsSheetLaunchDebouncer
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
+import io.legado.app.utils.Debounce
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.toastOnUi
@@ -94,6 +96,12 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     private var voiceLabelJob: Job? = null
     private var hasEnabledEngineSnapshot: Boolean? = null
     private val drawerLaunchDebouncer = TtsSheetLaunchDebouncer()
+    private val previousVolumePageDebounce by lazy {
+        Debounce(wait = 600L, leading = true, trailing = false) { turnPageByVolume(next = false) }
+    }
+    private val nextVolumePageDebounce by lazy {
+        Debounce(wait = 600L, leading = true, trailing = false) { turnPageByVolume(next = true) }
+    }
     private val applyPendingBufferProgress = Runnable {
         bufferProgressFramePosted = false
         val progress = pendingBufferProgress
@@ -131,6 +139,81 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         refreshStaticState()
         refreshVoiceLabelIfDirty()
         refreshPreparationState()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (AppConfig.volumeKeyPage &&
+            (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
+        ) {
+            val next = keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+            if (AppConfig.keyPageOnLongPress) {
+                turnPageByVolume(next)
+            } else if (event.repeatCount == 0) {
+                if (next) nextVolumePageDebounce() else previousVolumePageDebounce()
+            }
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (AppConfig.volumeKeyPage &&
+            (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
+        ) return true
+        return super.onKeyUp(keyCode, event)
+    }
+
+    private fun turnPageByVolume(next: Boolean) {
+        if (loadingChapterContent || switchingChapter || switchingVoice) return
+        val chapter = ReadBook.curTextChapter?.takeIf { it.isCompleted } ?: return
+        val pages = chapter.readAloudText.pageText ?: return
+        if (pages.size == 0) return
+        val target = pages.adjacentPagePosition(ReadBook.durChapterPos, next)
+        if (target != null) {
+            seekToPagePosition(chapter, target)
+            return
+        }
+
+        val changed = if (next) {
+            ReadBook.moveToNextChapter(upContent = true)
+        } else {
+            val lastPosition = ReadBook.prevTextChapter?.takeIf { it.isCompleted }
+                ?.readAloudText?.pageText?.let { previous ->
+                    if (previous.size > 0) previous.startAt(previous.size - 1) else null
+                }
+            ReadBook.moveToPrevChapter(upContent = true, toLast = true, startPosition = lastPosition)
+        }
+        if (changed) {
+            resetParagraphCache()
+            refreshStaticState()
+            refreshProgress(ReadBook.durChapterPos, restoreSubtitle = true)
+        }
+    }
+
+    private fun seekToPagePosition(
+        chapter: io.legado.app.ui.book.read.page.entities.TextChapter,
+        position: Int,
+    ) {
+        val targetPage = chapter.getPageIndexByCharIndex(position)
+        if (targetPage < 0) return
+        val wasRun = BaseReadAloudService.isRun
+        val wasPlaying = wantsPlayback()
+        paragraphSeeking = false
+        pendingSeekParagraphIndex = -1
+        ReadBook.durChapterPos = position
+        ReadBook.saveRead(pageChanged = true)
+        lastProgress = -1
+        refreshProgress(position, restoreSubtitle = true)
+        if (wasRun) {
+            ReadAloud.play(
+                context = this,
+                play = wasPlaying,
+                pageIndex = targetPage,
+                startPos = (position - chapter.getReadLength(targetPage)).coerceAtLeast(0),
+                engineVerified = true,
+                contentPosition = position,
+            )
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -1095,6 +1178,8 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     }
 
     override fun onDestroy() {
+        previousVolumePageDebounce.cancel()
+        nextVolumePageDebounce.cancel()
         cancelChapterSwitch()
         paneDialogHost?.dispose()
         paneDialogHost = null

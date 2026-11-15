@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
-import android.view.KeyEvent
 import android.view.Window
 import android.view.WindowManager
 import androidx.activity.viewModels
@@ -21,6 +20,7 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.databinding.ActivityBookReadBinding
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
+import io.legado.app.help.config.matchesPageKey
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.lib.theme.bottomBackground
 import io.legado.app.model.CacheBook
@@ -157,10 +157,8 @@ abstract class BaseReadBookActivity :
         if (toolBarHide) {
             setLightStatusBar(ReadBookConfig.durConfig.curStatusIconDark())
         } else {
-            val followsPageColor = AppConfig.readBarStyleFollowPage &&
-                ReadBookConfig.durConfig.curBgType() == 0 || useBgMeanColor
             setLightStatusBar(
-                if (followsPageColor) {
+                if (useBgMeanColor) {
                     ColorUtils.isColorLight(ReadBookConfig.bgMeanColor)
                 } else {
                     ReadDrawerStyle.themeSnapshot(this).systemBars.darkStatusBarIcons
@@ -287,19 +285,9 @@ abstract class BaseReadBookActivity :
         }
     }
 
-    fun isPrevKey(keyCode: Int): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_UNKNOWN) {
-            return false
-        }
-        val prevKeysStr = getPrefString(PreferKey.prevKeys)
-        return prevKeysStr?.split(",")?.contains(keyCode.toString()) ?: false
-    }
+    fun isPrevKey(keyCode: Int): Boolean =
+        matchesPageKey(getPrefString(PreferKey.prevKeys), keyCode)
 
-    fun isNextKey(keyCode: Int): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_UNKNOWN) {
-            return false
-        }
-        val nextKeysStr = getPrefString(PreferKey.nextKeys)
-        return nextKeysStr?.split(",")?.contains(keyCode.toString()) ?: false
-    }
+    fun isNextKey(keyCode: Int): Boolean =
+        matchesPageKey(getPrefString(PreferKey.nextKeys), keyCode)
 }

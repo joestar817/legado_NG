@@ -7,7 +7,11 @@ import org.junit.Test
 
 class BookReadStyleSessionTest {
     private val stored = linkedMapOf<String, String?>()
-    private val session = BookReadStyleSession { url, style -> stored[url] = style }
+    private val saved = linkedMapOf<String, String?>()
+    private val session = BookReadStyleSession { url, snapshot ->
+        stored[url] = snapshot.active
+        saved[url] = snapshot.saved
+    }
     private fun book(url: String, style: String? = null) = Book(bookUrl = url).apply {
         config.independentReadStyle = style
     }
@@ -21,13 +25,18 @@ class BookReadStyleSessionTest {
 
     @Test fun snapshotCapturesSharedLayoutAndPresetAppearanceWithoutSharingObjects() {
         val preset = ReadBookConfig.Config(name = "模板", bgType = 0, bgStr = "#112233", textSize = 18,
-            textColor = "#123456", readFloatingPrimaryStrength = 72)
+            textColor = "#123456", readFloatingPrimaryStrength = 72,
+            readFloatingSeed = 0xFFCC8844.toInt(), readFloatingSeedNight = 0xFF41566B.toInt(),
+            readFloatingColorStyle = ReadFloatingColorStyle.FRUIT_SALAD)
         val shared = ReadBookConfig.Config(textSize = 26, textFont = "font.ttf", lineSpacingExtra = 19,
             paddingLeft = 33, titleColor = 123, bgAlpha = 81)
         val copy = preset.copyForBook(shared)
         assertEquals("#112233", copy.bgStr)
         assertEquals("#123456", GSON.toJsonTree(copy).asJsonObject["textColor"].asString)
         assertEquals(72, copy.readFloatingPrimaryStrength)
+        assertEquals(0xFFCC8844.toInt(), copy.readFloatingSeed)
+        assertEquals(0xFF41566B.toInt(), copy.readFloatingSeedNight)
+        assertEquals(ReadFloatingColorStyle.FRUIT_SALAD, copy.readFloatingColorStyle)
         assertEquals(26, copy.textSize)
         assertEquals("font.ttf", copy.textFont)
         assertEquals(19, copy.lineSpacingExtra)
@@ -141,7 +150,46 @@ class BookReadStyleSessionTest {
         assertNull(session.config)
         assertNull(second.config.independentReadStyle)
         assertNull(stored["b"])
+        assertEquals(30, BookReadStyleSession.decode(saved["b"])!!.textSize)
         assertEquals(savedA, stored["a"])
+    }
+
+    @Test fun disabledBookCopySurvivesRestartAndIsRestoredOnlyForItsOwnBook() {
+        val owner = book("a")
+        session.bind(owner)
+        session.use(ReadBookConfig.Config(name = "本书", textSize = 32, textFont = "book.ttf"))
+        session.config!!.textSize = 37
+        session.followGlobal()
+        assertNull(session.config)
+        assertNull(owner.config.independentReadStyle)
+        assertEquals(37, BookReadStyleSession.decode(owner.config.savedIndependentReadStyle)!!.textSize)
+
+        val restored = GSON.fromJson(GSON.toJson(owner.config), Book.ReadConfig::class.java)
+        val restartedBook = Book(bookUrl = "a").apply { readConfig = restored }
+        val other = book("b")
+        val restarted = BookReadStyleSession { _, _ -> }
+        restarted.bind(other)
+        assertFalse(restarted.restoreSaved())
+        restarted.bind(restartedBook)
+        assertNull(restarted.config)
+        assertTrue(restarted.restoreSaved())
+        assertEquals(37, restarted.config!!.textSize)
+        assertEquals("book.ttf", restarted.config!!.textFont)
+        assertNull(restartedBook.config.savedIndependentReadStyle)
+        assertNotNull(restartedBook.config.independentReadStyle)
+        assertNull(other.config.savedIndependentReadStyle)
+    }
+
+    @Test fun refreshingTheSameBookKeepsItsDisabledCopy() {
+        session.bind(book("a"))
+        session.use(ReadBookConfig.Config(textSize = 24))
+        session.config!!.textSize = 35
+        session.followGlobal()
+        val fresh = book("a")
+        assertFalse(session.bind(fresh))
+        assertEquals(35, BookReadStyleSession.decode(fresh.config.savedIndependentReadStyle)!!.textSize)
+        assertTrue(session.restoreSaved())
+        assertEquals(35, session.config!!.textSize)
     }
 
     @Test fun templateRenameOrRemovalCannotChangeDetachedBookStyle() {
@@ -178,6 +226,7 @@ class BookReadStyleSessionTest {
     @Test fun oldBookWithoutFieldStaysGlobalAndLanguageExperimentIsNotMigrated() {
         val old = GSON.fromJson("""{"reverseToc":true,"scriptClass":"latin","readStyleName":"English"}""", Book.ReadConfig::class.java)
         assertNull(old.independentReadStyle)
+        assertNull(old.savedIndependentReadStyle)
         assertTrue(old.reverseToc)
     }
 

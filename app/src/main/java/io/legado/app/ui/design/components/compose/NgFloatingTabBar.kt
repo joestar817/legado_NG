@@ -6,6 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -36,6 +39,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.design.theme.NgDockSelectionColors
 import io.legado.app.ui.design.theme.NgTheme
 
 data class NgFloatingTabSpec(
@@ -53,6 +57,8 @@ enum class NgFloatingTabBarVariant {
     MANGA_SETTINGS,
     /** 短抽屉中的双模式切换：白色选中项、强调色文字。 */
     DRAWER_SELECTION,
+    /** 外观模式单选：图标和文字横排，沿用标准 Dock 的选中填充。 */
+    APPEARANCE_SELECTION,
 }
 enum class NgFloatingTabBarSize { STANDARD, COMPACT }
 
@@ -66,6 +72,8 @@ fun NgFloatingTabBar(
     variant: NgFloatingTabBarVariant = NgFloatingTabBarVariant.STANDARD,
     size: NgFloatingTabBarSize = NgFloatingTabBarSize.STANDARD,
     enabled: Boolean = true,
+    selectionColors: NgDockSelectionColors? = null,
+    semanticRole: Role? = null,
 ) {
     items.forEach { item ->
         require(item.text != null || !item.contentDescription.isNullOrBlank()) {
@@ -73,6 +81,7 @@ fun NgFloatingTabBar(
         }
     }
     val drawerSelection = variant == NgFloatingTabBarVariant.DRAWER_SELECTION
+    val appearanceSelection = variant == NgFloatingTabBarVariant.APPEARANCE_SELECTION
     val outerShape = RoundedCornerShape(if (drawerSelection) 14.dp else 12.dp)
     val height = if (drawerSelection) 43.dp
         else if (size == NgFloatingTabBarSize.COMPACT) 40.dp else 48.dp
@@ -82,19 +91,34 @@ fun NgFloatingTabBar(
             val contentColor = when {
                 drawerSelection && !selected -> Color(NgTheme.colors.onSurfaceVariant)
                 !selected -> Color(NgTheme.colors.onSurface)
+                selectionColors != null && (variant == NgFloatingTabBarVariant.STANDARD || appearanceSelection) ->
+                    Color(selectionColors.content)
                 variant == NgFloatingTabBarVariant.MANGA_SETTINGS -> Color(NgTheme.colors.onPrimary)
                 variant == NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT ||
                     variant == NgFloatingTabBarVariant.SOLID_WHITE_CONTENT -> Color.White
                 else -> Color(NgTheme.colors.primary)
             }
             val selectedContainerColor = when (variant) {
-                NgFloatingTabBarVariant.STANDARD -> Color(NgTheme.colors.selectedContainer)
+                NgFloatingTabBarVariant.STANDARD -> Color(selectionColors?.container ?: NgTheme.colors.selectedContainer)
+                NgFloatingTabBarVariant.APPEARANCE_SELECTION ->
+                    Color(selectionColors?.container ?: NgTheme.colors.selectedContainer)
                 NgFloatingTabBarVariant.DRAWER_SELECTION -> ngDrawerContentCardColor()
                 NgFloatingTabBarVariant.SOLID_LIGHT_CONTENT,
                 NgFloatingTabBarVariant.SOLID_WHITE_CONTENT,
                 NgFloatingTabBarVariant.MANGA_SETTINGS -> Color(NgTheme.colors.primary)
             }
-            Row(
+            if (appearanceSelection) {
+                NgAppearanceSelectionTab(
+                    item = item,
+                    selected = selected,
+                    enabled = enabled,
+                    contentColor = contentColor,
+                    selectedContainerColor = selectedContainerColor,
+                    role = semanticRole ?: Role.RadioButton,
+                    onClick = { onTabSelected(index) },
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            } else Row(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
@@ -109,7 +133,7 @@ fun NgFloatingTabBar(
                     .selectable(
                         selected = selected,
                         enabled = enabled,
-                        role = if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) Role.RadioButton else Role.Tab,
+                        role = semanticRole ?: if (variant == NgFloatingTabBarVariant.MANGA_SETTINGS) Role.RadioButton else Role.Tab,
                         onClick = { onTabSelected(index) }
                     )
                     .semantics(mergeDescendants = true) {
@@ -161,6 +185,21 @@ fun NgFloatingTabBar(
         }
     }
     when (variant) {
+        NgFloatingTabBarVariant.APPEARANCE_SELECTION -> NgSettingsCardSurface(
+            modifier = modifier.fillMaxWidth(),
+            cornerRadius = 12.dp,
+            role = NgMaterialRole.CONTROL,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+                    .padding(2.dp)
+                    .selectableGroup(),
+                verticalAlignment = Alignment.CenterVertically,
+                content = tabs,
+            )
+        }
+
         NgFloatingTabBarVariant.STANDARD -> NgSettingsCardSurface(
             modifier = modifier
                 .fillMaxWidth()
@@ -217,5 +256,55 @@ fun NgFloatingTabBar(
             verticalAlignment = Alignment.CenterVertically,
             content = tabs,
         )
+    }
+}
+
+@Composable
+private fun NgAppearanceSelectionTab(
+    item: NgFloatingTabSpec,
+    selected: Boolean,
+    enabled: Boolean,
+    contentColor: Color,
+    selectedContainerColor: Color,
+    role: Role,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .then(if (selected) Modifier.background(selectedContainerColor) else Modifier)
+            .selectable(selected = selected, enabled = enabled, role = role, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                item.contentDescription?.let { contentDescription = it }
+            }
+            .heightIn(min = 40.dp)
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when {
+            item.iconVector != null -> Icon(item.iconVector, null, Modifier.size(20.dp), tint = contentColor)
+            item.iconRes != null -> Icon(painterResource(item.iconRes), null, Modifier.size(20.dp), tint = contentColor)
+        }
+        val label = when {
+            item.count != null && !item.text.isNullOrEmpty() -> "${item.text}\n${item.count}"
+            item.count != null -> item.count.toString()
+            else -> item.text.orEmpty()
+        }
+        if (label.isNotEmpty()) {
+            if (item.iconVector != null || item.iconRes != null) Spacer(Modifier.width(6.dp))
+            Text(
+                text = label,
+                color = contentColor,
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

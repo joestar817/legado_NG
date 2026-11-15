@@ -51,11 +51,25 @@ internal fun changeHomeWidgetSuite(
     }
 }
 
-/** Applying a suite also commits all earlier changes in the single or bulk parent draft. */
+/** Applying a suite is unavailable until any layout edit is saved or canceled. */
 internal fun saveHomeWidgetSuite(state: HomeUiState, styleId: String): HomeUiState? {
-    if (state.layoutReadFailed) return null
-    val widgets = changeHomeWidgetSuite(state.displayedWidgets, styleId) ?: return null
+    if (state.layoutReadFailed || state.pendingEdit) return null
+    val widgets = changeHomeWidgetSuite(state.widgets, styleId) ?: return null
     return HomeUiState(widgets = widgets)
+}
+
+/** Explicit deletion clears only that skin, without committing or discarding a pending layout. */
+internal fun clearDeletedHomeWidgetSkin(state: HomeUiState, styleId: String): HomeUiState {
+    if (state.layoutReadFailed || isPlainHomeWidgetStyle(styleId)) return state
+    fun reset(widgets: List<HomeWidgetInstance>) = widgets.map { widget ->
+        val variant = HomeWidgetCatalog.variant(widget)
+        if (variant == null || variant.styleId != styleId) widget else {
+            val basic = HomeWidgetCatalog.variantsForSize(widget.typeId, variant.size)
+                .first { it.styleId == "basic" }
+            widget.copy(variantId = basic.id)
+        }
+    }
+    return state.copy(widgets = reset(state.widgets), draft = state.draft?.let(::reset))
 }
 
 /** Each type is added once; later choices replace it without committing an existing bulk draft. */

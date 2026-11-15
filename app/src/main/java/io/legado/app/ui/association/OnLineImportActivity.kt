@@ -31,9 +31,6 @@ class OnLineImportActivity :
                 "replaceRule" -> showDialogFragment(
                     ImportReplaceRuleDialog(it.second, true)
                 )
-                "theme" -> showDialogFragment(
-                    ImportThemeDialog(it.second, true)
-                )
                 "txtRule" -> showDialogFragment(
                     ImportTxtTocRuleDialog(it.second, true)
                 )
@@ -69,8 +66,9 @@ class OnLineImportActivity :
                 "/dictRule" -> showDialogFragment(
                     ImportDictRuleDialog(url, true)
                 )
-                "/theme" -> showDialogFragment(
-                    ImportThemeDialog(url, true)
+                "/theme" -> finallyDialog(
+                    getString(R.string.error),
+                    getString(R.string.legacy_theme_import_unsupported),
                 )
                 "/readConfig" -> viewModel.getBytes(url) { bytes ->
                     viewModel.importReadConfig(bytes, this::finallyDialog)

@@ -1,0 +1,64 @@
+{
+  "darkBackgroundAsset": "assets/background-dark.webp",
+  "format": "reading-ng-theme",
+  "lightBackgroundAsset": "assets/background-light.webp",
+  "theme": {
+    "barProfile": {
+      "bookshelfFloatingDockSearchPosition": 0,
+      "bookshelfFloatingDockTopDistancePx": 50,
+      "bookshelfFloatingDockTransparency": 40,
+      "bookshelfTopBarStyle": 1,
+      "floatingBottomBarBottomDistancePx": 40,
+      "floatingBottomBarTransparency": 40,
+      "useFloatingBottomBar": true
+    },
+    "colors": {
+      "colorSpec": "MATERIAL_3_2021",
+      "contrast": "DEFAULT",
+      "darkSeed": -804525,
+      "darkTopBarTextMode": "LIGHT",
+      "lightSeed": -16741519,
+      "lightTopBarTextMode": "DARK",
+      "manualDark": {
+        "background": -16049873,
+        "labelContainer": -14337709,
+        "primary": -804525,
+        "primaryText": -3630,
+        "secondary": -14337709,
+        "secondaryText": -5389343
+      },
+      "manualLight": {
+        "background": -657931,
+        "labelContainer": -1118482,
+        "primary": -16741519,
+        "primaryText": -14869728,
+        "secondary": -1,
+        "secondaryText": -14869728
+      },
+      "mode": "MANUAL",
+      "paletteStyle": "TONAL_SPOT"
+    },
+    "darkBackground": {
+      "blur": 0
+    },
+    "drawerProfile": {
+      "dark": {},
+      "light": {},
+      "source": "theme_image"
+    },
+    "effectValues": {},
+    "id": "ng.theme.storybook_house",
+    "lightBackground": {
+      "blur": 0
+    },
+    "name": "绘本书屋",
+    "schemaVersion": 1,
+    "transparentAppBars": true,
+    "publication": {
+      "versionCode": 1,
+      "versionName": "1.0.0",
+      "author": "阅读 NG"
+    }
+  },
+  "version": 1
+}

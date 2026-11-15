@@ -96,6 +96,21 @@ internal fun ThemeEditScreen(
                     )
                 }
             }
+            if (theme.effect != null && theme.effect.parameterSchema.isNotEmpty()) {
+                item(key = "effect-parameters") {
+                    NgFormGroup(title = stringResource(R.string.effect_theme_settings)) {
+                        EffectThemeParameterEditor(
+                            theme = theme,
+                            values = theme.effectValues,
+                            rangeHorizontalPadding = 14.dp,
+                            onValuePreview = { key, value ->
+                                onThemeChanged(theme.copy(effectValues = theme.effectValues + (key to value)))
+                            },
+                            onValueCommitted = {},
+                        )
+                    }
+                }
+            }
             item(key = "theme-drawers") {
                 NgFormGroup(title = stringResource(R.string.ng_drawer_appearance)) {
                     ThemeCompactExpandableRow(
@@ -141,7 +156,7 @@ private fun ThemeBarProfileEditor(
     val bottomTransparency = profile.floatingBottomBarTransparency
         ?: FloatingBottomBarConfig.DEFAULT_TRANSPARENCY_PERCENT
     val topBarStyle = BookshelfTopBarStyle.fromValue(
-        profile.bookshelfTopBarStyle ?: BookshelfTopBarStyle.COMPACT_TOOLBAR.value
+        profile.bookshelfTopBarStyle ?: BookshelfTopBarStyle.DEFAULT.value
     )
     val topDistancePx = profile.bookshelfFloatingDockTopDistancePx
         ?: NgThemeBarProfile.EDITOR_DEFAULT_TOP_DISTANCE_PX

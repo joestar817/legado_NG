@@ -14,7 +14,6 @@ object ConfigTag {
     const val READ_ALOUD_CONFIG = "readAloudConfig"
     const val TTS_ENGINE_CONFIG = "ttsEngineConfig"
     const val DEFAULT_TTS_VOICE_CONFIG = "defaultTtsVoiceConfig"
-    const val THEME_CONFIG = "themeConfig"
     const val THEME_COLOR_CONFIG = "themeColorConfig"
     const val THEME_MANAGER = "themeManager"
     const val BACKUP_CONFIG = "backupConfig"

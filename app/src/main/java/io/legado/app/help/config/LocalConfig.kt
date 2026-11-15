@@ -74,15 +74,6 @@ by appCtx.getSharedPreferences("local", Context.MODE_PRIVATE) {
             edit { putLong(versionCodeKey, value) }
         }
 
-    val isFirstOpenApp: Boolean
-        get() {
-            val value = getBoolean("firstOpen", true)
-            if (value) {
-                edit { putBoolean("firstOpen", false) }
-            }
-            return value
-        }
-
     @Suppress("SameParameterValue")
     private fun isLastVersion(
         lastVersion: Int,

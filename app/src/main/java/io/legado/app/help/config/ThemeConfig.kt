@@ -8,27 +8,23 @@ import android.util.DisplayMetrics
 import androidx.annotation.Keep
 import androidx.annotation.WorkerThread
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.graphics.toColorInt
+import com.google.gson.annotations.SerializedName
 import io.legado.app.R
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.constant.Theme
-import io.legado.app.help.DefaultData
 import io.legado.app.lib.theme.ThemeStore
 import io.legado.app.model.BookCover
 import io.legado.app.ui.design.theme.NgThemeGradientDrawable
+import io.legado.app.ui.design.theme.NgMulticolorLightFieldDrawable
 import io.legado.app.ui.design.theme.NgThemeResolver
 import io.legado.app.ui.design.theme.NgColorGenerationMode
 import io.legado.app.utils.BitmapUtils
 import io.legado.app.utils.ColorUtils
 import io.legado.app.utils.FileUtils
-import io.legado.app.utils.GSON
 import io.legado.app.utils.externalFiles
-import io.legado.app.utils.fromJsonArray
-import io.legado.app.utils.fromJsonObject
 import io.legado.app.utils.getCompatColor
-import io.legado.app.utils.getFile
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
 import io.legado.app.utils.hexString
@@ -39,15 +35,12 @@ import io.legado.app.utils.putPrefInt
 import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.putPrefString
 import io.legado.app.utils.stackBlur
+import io.legado.app.utils.toastOnUi
 import splitties.init.appCtx
 import java.io.File
 import androidx.core.graphics.drawable.toDrawable
-import io.legado.app.help.coroutine.Coroutine
-import io.legado.app.help.http.newCallResponse
-import io.legado.app.help.http.okHttpClient
 import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.getPrefBoolean
-import io.legado.app.utils.toastOnUi
 import java.io.FileOutputStream
 
 internal fun isEffectiveNightMode(mode: Int, systemNightMode: Boolean): Boolean {
@@ -86,56 +79,16 @@ internal fun resolveBundledBackgroundAssetPath(assetPath: String): String = when
     "bg/竹影之韵.png" -> "bg/竹影之韵.webp"
     "defaultData/theme/reading_ng_mist.png",
     "bg/灰色雾霭.png" -> "bg/灰色雾霭.webp"
-    "defaultData/theme/reading_ng_autumn_mountains.png" ->
-        "defaultData/theme/reading_ng_autumn_mountains.webp"
-    "defaultData/theme/reading_ng_autumn_mountains_dark.png" ->
-        "defaultData/theme/reading_ng_autumn_mountains_dark.webp"
     else -> assetPath
-}
-
-internal fun resolveReinstalledThemeBackgroundPath(
-    currentPath: String?,
-    installedPath: String?,
-    packageRootPath: String?,
-    isFile: (String) -> Boolean = { File(it).isFile },
-): String? {
-    if (currentPath.isNullOrBlank() || installedPath.isNullOrBlank() ||
-        packageRootPath.isNullOrBlank()
-    ) {
-        return currentPath
-    }
-    if (runCatching { isFile(currentPath) }.getOrDefault(false)) return currentPath
-    val belongsToPackage = runCatching {
-        val packageRoot = File(packageRootPath).canonicalFile.toPath()
-        val currentFile = File(currentPath).canonicalFile.toPath()
-        currentFile != packageRoot && currentFile.startsWith(packageRoot)
-    }.getOrDefault(false)
-    if (!belongsToPackage) return currentPath
-    return installedPath.takeIf {
-        runCatching { isFile(it) }.getOrDefault(false)
-    } ?: currentPath
 }
 
 @Keep
 object ThemeConfig {
-    const val configFileName = "themeConfig.json"
     private const val ASSET_BACKGROUND_PREFIX = "asset://"
-    private const val DYNAMIC_SCENE_BACKGROUND_CACHE_KEY = "ngDynamicSceneBackground"
+    private const val EFFECT_THEME_BACKGROUND_CACHE_KEY = "ngDynamicSceneBackground"
     private const val THEME_MODE_FOLLOW_SYSTEM = "0"
     private const val THEME_MODE_DARK = "2"
     private const val THEME_MODE_EINK = "3"
-    val configFilePath = FileUtils.getPath(appCtx.filesDir, configFileName)
-
-    val configList: ArrayList<Config> by lazy {
-        val savedConfigs = getConfigs()
-        ArrayList(savedConfigs ?: DefaultData.themeConfigs).apply {
-            if (savedConfigs != null) {
-                addBuiltInAssetThemes(this)
-            }
-        }
-    }
-
-    private var needClearImg = true
     private data class BackgroundBitmapCacheKey(
         val path: String,
         val lastModified: Long,
@@ -179,11 +132,11 @@ object ThemeConfig {
         return !context.getPrefString(backgroundKey).isNullOrBlank()
     }
 
-    fun getGradientBgImage(context: Context): Drawable? {
-        if (NgThemeModeStore.current(context) != NgThemePresentationMode.SOFT_GRADIENT) {
-            return null
-        }
-        return NgThemeGradientDrawable(NgSoftGradientTheme.gradient(context))
+    fun getGradientBgImage(context: Context): Drawable? = when (NgThemeModeStore.current(context)) {
+        NgThemePresentationMode.SOFT_GRADIENT ->
+            NgThemeGradientDrawable(NgSoftGradientTheme.gradient(context))
+        NgThemePresentationMode.MULTICOLOR -> NgMulticolorLightFieldDrawable()
+        else -> null
     }
 
     fun getReadingNgImageSurfaceColor(context: Context): Int {
@@ -322,29 +275,19 @@ object ThemeConfig {
         return file.absolutePath
     }
 
-    private fun addBuiltInAssetThemes(configs: MutableList<Config>) {
-        configs.removeAll {
-            it.themeName == "阅读NG·背景一" ||
-                    it.themeName == "阅读NG·背景二"
-        }
-        DefaultData.themeConfigs
-            .filter { it.backgroundImgPath?.startsWith(ASSET_BACKGROUND_PREFIX) == true }
-            .forEach { builtInConfig ->
-                if (configs.none { it.themeName == builtInConfig.themeName }) {
-                    configs.add(builtInConfig)
-                }
-            }
-    }
-
     /** Resolve the current wallpaper for bounded async consumers, without decoding/copying it. */
     @WorkerThread
     internal fun drawerBackgroundImagePath(context: Context, isDark: Boolean): String? {
         val mode = NgThemeModeStore.current(context)
-        if (mode == NgThemePresentationMode.SOFT_GRADIENT || mode == NgThemePresentationMode.EINK) return null
+        if (
+            mode == NgThemePresentationMode.SOFT_GRADIENT ||
+            mode == NgThemePresentationMode.MULTICOLOR ||
+            mode == NgThemePresentationMode.EINK
+        ) return null
         val preferenceKey = if (isDark) PreferKey.bgImageN else PreferKey.bgImage
-        val path = if (mode == NgThemePresentationMode.DYNAMIC_SCENE) {
-            val scene = NgDynamicSceneTheme.theme(context)
-            (if (isDark) scene.darkBackground else scene.lightBackground).path
+        val path = if (mode == NgThemePresentationMode.EFFECT_THEME) {
+            val theme = NgEffectThemeSelection.current(context)
+            (if (isDark) theme?.darkBackground else theme?.lightBackground)?.path
         } else context.getPrefString(preferenceKey)
         if (path.isNullOrBlank()) return null
         return when {
@@ -359,7 +302,10 @@ object ThemeConfig {
     @Synchronized
     fun getBgImage(context: Context, metrics: DisplayMetrics): Drawable? {
         val presentationMode = NgThemeModeStore.current(context)
-        if (presentationMode == NgThemePresentationMode.SOFT_GRADIENT) {
+        if (
+            presentationMode == NgThemePresentationMode.SOFT_GRADIENT ||
+            presentationMode == NgThemePresentationMode.MULTICOLOR
+        ) {
             return null
         }
         val themeMode = getTheme(context)
@@ -369,10 +315,10 @@ object ThemeConfig {
             else -> return  null
         }
         val sceneBackground = if (
-            presentationMode == NgThemePresentationMode.DYNAMIC_SCENE
+            presentationMode == NgThemePresentationMode.EFFECT_THEME
         ) {
-            val theme = NgDynamicSceneTheme.theme(context)
-            if (themeMode == Theme.Dark) theme.darkBackground else theme.lightBackground
+            val theme = NgEffectThemeSelection.current(context)
+            if (themeMode == Theme.Dark) theme?.darkBackground else theme?.lightBackground
         } else {
             null
         }
@@ -392,7 +338,7 @@ object ThemeConfig {
             path = copyAssetBackgroundIfNeed(
                 context,
                 if (sceneBackground != null) {
-                    DYNAMIC_SCENE_BACKGROUND_CACHE_KEY
+                    EFFECT_THEME_BACKGROUND_CACHE_KEY
                 } else {
                     preferenceKey
                 },
@@ -429,189 +375,14 @@ object ThemeConfig {
         return rendered.toDrawable(context.resources)
     }
 
-    fun upConfig() {
-        addConfigs(getConfigs())
-    }
-
-    fun save() {
-        val json = GSON.toJson(configList)
-        FileUtils.delete(configFilePath)
-        FileUtils.createFileIfNotExist(configFilePath).writeText(json)
-    }
-
-    fun delConfig(index: Int) {
-        configList.removeAt(index)
-        save()
-    }
-
-    fun addConfig(json: String): Boolean {
-        GSON.fromJsonObject<Config>(json.trim { it < ' ' }).getOrNull()
-            ?.let {
-                if (validateConfig(it)) {
-                    addConfig(it)
-                    return true
-                }
-            }
-        return false
-    }
-
-    fun addConfig(newConfig: Config) {
-        if (!validateConfig(newConfig)) {
-            return
-        }
-        var hasTheme = false
-        configList.forEachIndexed { index, config ->
-            if (newConfig.themeName == config.themeName) {
-                configList[index] = newConfig
-                hasTheme = true
-                return@forEachIndexed
-            }
-        }
-        if (!hasTheme) {
-            configList.add(newConfig)
-        }
-        save()
-    }
-
-    fun addConfigs(newConfigs: List<Config>?) {
-        val newConfigs = newConfigs?.filter{
-            validateConfig(it)
-        }
-        if (newConfigs.isNullOrEmpty()) {
-            return
-        }
-        newConfigs.forEach { newConfig ->
-            val existingIndex = configList.indexOfFirst { it.themeName == newConfig.themeName }
-            if (existingIndex != -1) {
-                configList[existingIndex] = newConfig
-            } else {
-                configList.add(newConfig)
-            }
-        }
-        save()
-    }
-
-    private fun validateConfig(config: Config): Boolean {
-        try {
-            config.primaryColor.toColorInt()
-            config.accentColor.toColorInt()
-            config.backgroundColor.toColorInt()
-            config.bottomBackground.toColorInt()
-            return true
-        } catch (_: Exception) {
-            return false
-        }
-    }
-
-    private fun getConfigs(): List<Config>? {
-        val configFile = File(configFilePath)
-        if (configFile.exists()) {
-            kotlin.runCatching {
-                val json = configFile.readText()
-                return GSON.fromJsonArray<Config>(json).getOrThrow()
-            }.onFailure {
-                it.printOnDebug()
-            }
-        }
-        return null
-    }
-
-    fun applyConfig(context: Context, config: Config) {
-        try {
-            if (needClearImg) {
-                needClearImg = false
-                clearBg(context)
-            }
-            val primary = config.primaryColor.toColorInt()
-            val accent = config.accentColor.toColorInt()
-            val background = config.backgroundColor.toColorInt()
-            val bBackground = config.bottomBackground.toColorInt()
-            val isNightTheme = config.isNightTheme
-            val backgroundPath = config.backgroundImgPath
-            val preferenceKey = if (isNightTheme) {
-                PreferKey.bgImageN
-            } else {
-                PreferKey.bgImage
-            }
-            if (backgroundPath != null && backgroundPath.startsWith("http")) {
-                val fileRoot = context.externalFiles
-                val name = getUrlToFile(backgroundPath)
-                val fileFold = File(fileRoot, preferenceKey)
-                if (!fileFold.exists()) {
-                    fileFold.mkdirs()
-                }
-                val fileImg = File(fileFold, name)
-                if (!fileImg.exists()) {
-                    appCtx.toastOnUi("下载背景图片中...")
-                    Coroutine.async {
-                        kotlin.runCatching {
-                            val res = okHttpClient.newCallResponse(0) {
-                                url(backgroundPath)
-                            }
-                            res.body.byteStream().use { inputStream ->
-                                FileOutputStream(fileImg).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
-                                }
-                            }
-                        }.onSuccess {
-                            appCtx.toastOnUi("背景图下载成功\n请重新应用主题")
-                        }.onFailure {
-                            appCtx.toastOnUi(it.localizedMessage)
-                        }
-                    }
-                    return
-                }
-            }
-            val savedBackgroundPath = when {
-                backgroundPath?.startsWith(ASSET_BACKGROUND_PREFIX) == true -> {
-                    copyAssetBackgroundIfNeed(
-                        context = context,
-                        preferenceKey = preferenceKey,
-                        backgroundPath = backgroundPath,
-                        forceRefresh = true,
-                    )
-                }
-
-                else -> backgroundPath
-            }
-            val backgroundBlur = config.backgroundImgBlur
-            if (isNightTheme) {
-                context.putPrefString(PreferKey.dNThemeName, config.themeName)
-                context.putPrefInt(PreferKey.cNPrimary, primary)
-                context.putPrefInt(PreferKey.cNAccent, accent)
-                context.putPrefInt(PreferKey.cNBackground, background)
-                context.putPrefInt(PreferKey.cNBBackground, bBackground)
-                context.putPrefString(PreferKey.bgImageN, savedBackgroundPath)
-                context.putPrefInt(PreferKey.bgImageNBlurring, backgroundBlur)
-            } else {
-                context.putPrefString(PreferKey.dThemeName, config.themeName)
-                context.putPrefInt(PreferKey.cPrimary, primary)
-                context.putPrefInt(PreferKey.cAccent, accent)
-                context.putPrefInt(PreferKey.cBackground, background)
-                context.putPrefInt(PreferKey.cBBackground, bBackground)
-                context.putPrefString(PreferKey.bgImage, savedBackgroundPath)
-                context.putPrefInt(PreferKey.bgImageBlurring, backgroundBlur)
-            }
-            NgColorConfigStore.adoptLegacyVariant(context, isNightTheme)
-            val activeIsNightTheme = resolveThemeNightMode(
-                AppConfig.themeMode,
-                context.resources.configuration
-            )
-            if (!AppConfig.isEInkMode && activeIsNightTheme == isNightTheme) {
-                applyDayNight(context)
-            }
-        } catch (e: Exception) {
-            AppLog.put("设置主题出错\n$e", e, true)
-        }
-    }
-
     /**
-     * 新主题管理一次应用完整的日间／夜间颜色和背景，不改变顶部主题模式。
+     * 一次应用完整的日间／夜间外观；特效类型由本主题决定，静态应用保留完整包。
      */
     internal fun applyManagedTheme(
         context: Context,
         theme: NgManagedTheme,
         preparedDrawer: NgPreparedDrawerProfile? = null,
+        renderEffect: Boolean = true,
     ): Boolean {
         var drawerSettings = preparedDrawer
         return runCatching {
@@ -638,6 +409,7 @@ object ThemeConfig {
                     "主题关联的封面图集不存在"
                 }
             }
+            NgThemeModeStore.selectManagedTheme(context, renderEffect && theme.effect != null)
             context.putPrefString(PreferKey.dThemeName, theme.name)
             context.putPrefString(PreferKey.dNThemeName, theme.name)
             context.putPrefString(PreferKey.bgImage, lightBackground)
@@ -696,6 +468,10 @@ object ThemeConfig {
                 }
             }
             drawerSettings?.let { NgDrawerProfileStore.commit(context, it) }
+            val themeMode = NgThemeModeStore.standardThemeMode(context)
+            if (AppConfig.isEInkMode || AppConfig.themeMode != themeMode) {
+                applyThemeMode(context, themeMode)
+            }
             BookCover.upDefaultCover()
             postEvent(EventBus.RECREATE, "")
             true
@@ -705,30 +481,7 @@ object ThemeConfig {
         }.also { drawerSettings?.discard() }
     }
 
-    internal fun repairReinstalledThemeBackgrounds(
-        context: Context,
-        theme: NgManagedTheme,
-    ): Boolean {
-        val packageRootPath = theme.packageRootPath ?: return false
-        var repaired = false
-        fun repair(preferenceKey: String, installedPath: String?) {
-            val currentPath = context.getPrefString(preferenceKey)
-            val resolvedPath = resolveReinstalledThemeBackgroundPath(
-                currentPath = currentPath,
-                installedPath = installedPath,
-                packageRootPath = packageRootPath,
-            )
-            if (resolvedPath != currentPath) {
-                context.putPrefString(preferenceKey, resolvedPath)
-                repaired = true
-            }
-        }
-        repair(PreferKey.bgImage, theme.lightBackground.path)
-        repair(PreferKey.bgImageN, theme.darkBackground.path)
-        return repaired
-    }
-
-    fun getDurConfig(context: Context): Config {
+    fun getDurConfig(context: Context): ThemeSnapshot {
         val isNight = resolveThemeNightMode(
             AppConfig.themeMode,
             context.resources.configuration
@@ -745,7 +498,7 @@ object ThemeConfig {
         }
     }
 
-    private fun getDayTheme(context: Context, name: String): Config {
+    private fun getDayTheme(context: Context, name: String): ThemeSnapshot {
         val primary =
             context.getPrefInt(PreferKey.cPrimary, context.getCompatColor(R.color.md_brown_500))
         val accent =
@@ -759,7 +512,7 @@ object ThemeConfig {
         val bgImgBlur =
             context.getPrefInt(PreferKey.bgImageBlurring, 0)
 
-        return Config(
+        return ThemeSnapshot(
             themeName = name,
             isNightTheme = false,
             primaryColor = "#${primary.hexString}",
@@ -772,12 +525,7 @@ object ThemeConfig {
         )
     }
 
-    fun saveDayTheme(context: Context, name: String) {
-        val config = getDayTheme(context, name)
-        addConfig(config)
-    }
-
-    private fun getNightTheme(context: Context, name: String): Config {
+    private fun getNightTheme(context: Context, name: String): ThemeSnapshot {
         val primary =
             context.getPrefInt(
                 PreferKey.cNPrimary,
@@ -796,7 +544,7 @@ object ThemeConfig {
             context.getPrefString(PreferKey.bgImageN)
         val bgImgBlur =
             context.getPrefInt(PreferKey.bgImageNBlurring, 0)
-        return Config(
+        return ThemeSnapshot(
             themeName = name,
             isNightTheme = true,
             primaryColor = "#${primary.hexString}",
@@ -807,11 +555,6 @@ object ThemeConfig {
             backgroundImgPath = bgImgPath,
             backgroundImgBlur = bgImgBlur
         )
-    }
-
-    fun saveNightTheme(context: Context, name: String) {
-        val config = getNightTheme(context, name)
-        addConfig(config)
     }
 
     /**
@@ -836,19 +579,21 @@ object ThemeConfig {
         }
         val presentationMode = NgThemeModeStore.current(this)
         val softGradient = presentationMode == NgThemePresentationMode.SOFT_GRADIENT
-        val dynamicScene = presentationMode == NgThemePresentationMode.DYNAMIC_SCENE
+        val multicolor = presentationMode == NgThemePresentationMode.MULTICOLOR
+        val dynamicScene = presentationMode == NgThemePresentationMode.EFFECT_THEME
         val colorConfig = when {
             softGradient -> NgSoftGradientTheme.colors(this)
-            dynamicScene -> NgDynamicSceneTheme.colors(this)
+            multicolor -> NgMulticolorTheme.colors
+            dynamicScene -> NgEffectThemeSelection.colors(this)
             else -> NgColorConfigStore.current(this)
         }
         val colors = NgThemeResolver.resolveColorScheme(
             context = this,
             colors = colorConfig,
-            isDark = if (softGradient) false else isNightTheme
+            isDark = if (softGradient || multicolor) false else isNightTheme
         )
         val manual = colorConfig.takeIf { it.mode == NgColorGenerationMode.MANUAL }
-            ?.manualColors(if (softGradient) false else isNightTheme)
+            ?.manualColors(if (softGradient || multicolor) false else isNightTheme)
         ThemeStore.editTheme(this)
             .primaryColor(manual?.secondary ?: colors.topBarContainer)
             .accentColor(colors.primary)
@@ -858,60 +603,19 @@ object ThemeConfig {
             .apply()
     }
 
-    fun clearBg(context: Context) {
-        val (nightConfigs, dayConfigs) = configList.partition { it.isNightTheme }
-        val nightBackgroundImgPaths = nightConfigs.mapNotNull {
-            val path = it.backgroundImgPath ?: return@mapNotNull null
-            cachedBackgroundPath(context, path, PreferKey.bgImageN)
-        }
-        val dayBackgroundImgPaths = dayConfigs.mapNotNull {
-            val path = it.backgroundImgPath ?: return@mapNotNull null
-            cachedBackgroundPath(context, path, PreferKey.bgImage)
-        }
-        appCtx.externalFiles.getFile(PreferKey.bgImage).listFiles()?.forEach {
-            if (!dayBackgroundImgPaths.contains(it.absolutePath)) {
-                it.delete()
-            }
-        }
-        appCtx.externalFiles.getFile(PreferKey.bgImageN).listFiles()?.forEach {
-            if (!nightBackgroundImgPaths.contains(it.absolutePath)) {
-                it.delete()
-            }
-        }
-    }
-
+    /** Current preferences exposed by the read-only JavaScript theme APIs; never persisted as a theme list. */
     @Keep
-    data class Config(
-        var themeName: String,
-        var isNightTheme: Boolean,
-        var primaryColor: String,
-        var accentColor: String,
-        var backgroundColor: String,
-        var bottomBackground: String,
-        var transparentNavBar: Boolean,
-        var backgroundImgPath: String?,
-        var backgroundImgBlur: Int
+    data class ThemeSnapshot(
+        @SerializedName("themeName") val themeName: String,
+        @SerializedName("isNightTheme") val isNightTheme: Boolean,
+        @SerializedName("primaryColor") val primaryColor: String,
+        @SerializedName("accentColor") val accentColor: String,
+        @SerializedName("backgroundColor") val backgroundColor: String,
+        @SerializedName("bottomBackground") val bottomBackground: String,
+        @SerializedName("transparentNavBar") val transparentNavBar: Boolean,
+        @SerializedName("backgroundImgPath") val backgroundImgPath: String?,
+        @SerializedName("backgroundImgBlur") val backgroundImgBlur: Int
     ) {
-
-        override fun hashCode(): Int {
-            return GSON.toJson(this).hashCode()
-        }
-
-        override fun equals(other: Any?): Boolean {
-            other ?: return false
-            if (other is Config) {
-                return other.themeName == themeName
-                        && other.isNightTheme == isNightTheme
-                        && other.primaryColor == primaryColor
-                        && other.accentColor == accentColor
-                        && other.backgroundColor == backgroundColor
-                        && other.bottomBackground == bottomBackground
-                        && other.transparentNavBar == transparentNavBar
-                        && other.backgroundImgPath == backgroundImgPath
-                        && other.backgroundImgBlur == backgroundImgBlur
-            }
-            return false
-        }
 
         fun toMap() = mapOf(
             "themeName" to themeName,

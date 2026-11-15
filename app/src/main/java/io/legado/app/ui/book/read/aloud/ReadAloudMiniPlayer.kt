@@ -1477,7 +1477,7 @@ object ReadAloudMiniPlayer {
             ReadFloatingAppearanceConfig.MINI_PLAYER_TRANSPARENCY_PERCENT
         )
         val baselineAlpha = ReadFloatingAppearanceConfig.miniPlayerSurfaceAlpha(
-            ReadFloatingAppearanceConfig.DEFAULT_TRANSPARENCY_PERCENT
+            ReadFloatingAppearanceConfig.TRANSPARENCY_CURVE_PIVOT_PERCENT
         )
         return if (baselineAlpha > 0f) fixedAlpha / baselineAlpha else 0f
     }

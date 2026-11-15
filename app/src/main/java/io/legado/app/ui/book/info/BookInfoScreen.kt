@@ -44,6 +44,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -291,7 +292,7 @@ private fun BookInfoPortrait(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = 16.dp,
-                    top = 16.dp,
+                    top = 4.dp,
                     end = 16.dp,
                     bottom = 16.dp,
                 ),
@@ -723,9 +724,9 @@ private fun BookInfoMetaRows(
     )
     if (state.showToc) {
         BookInfoMetaRow(
-            iconRes = R.drawable.ic_folder_open,
+            iconRes = R.drawable.ic_cfg_file_manage,
             text = state.tocText,
-            trailingIconRes = R.drawable.ic_folder_open,
+            trailingIconRes = R.drawable.ic_cfg_file_manage,
             trailingDescription = stringResource(R.string.view_toc),
             onTrailingClick = { onEvent(BookInfoUiEvent.OpenToc) },
         )
@@ -824,12 +825,12 @@ private fun BookInfoCacheRow(
             enabled = state.cache.enabled,
             modifier = Modifier.size(32.dp),
         ) {
+            val summaryTint = colorResource(R.color.tv_text_summary)
+            val stateAlpha = if (state.cache.enabled) 1f else 0.45f
             Icon(
                 painter = painterResource(R.drawable.ic_download_line),
                 contentDescription = stringResource(R.string.book_cache),
-                tint = colorResource(R.color.tv_text_summary).copy(
-                    alpha = if (state.cache.enabled) 1f else 0.45f,
-                ),
+                tint = summaryTint.copy(alpha = summaryTint.alpha * stateAlpha),
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -1413,7 +1414,13 @@ private fun BookInfoUnsupportedFileDialog(
                     modifier = Modifier.width(92.dp).height(42.dp),
                     variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
                 ) {
-                    Text(stringResource(R.string.open_fun), color = Color.White, fontSize = 14.sp)
+                    Text(
+                        stringResource(R.string.open_fun),
+                        color = if (NgTheme.snapshot.isDark && !NgTheme.snapshot.isEInk) {
+                            LocalContentColor.current
+                        } else Color.White,
+                        fontSize = 14.sp,
+                    )
                 }
             },
         ) {

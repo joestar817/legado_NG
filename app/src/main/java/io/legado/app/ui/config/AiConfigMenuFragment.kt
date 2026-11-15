@@ -1,6 +1,9 @@
 package io.legado.app.ui.config
 
 import android.os.Bundle
+import android.content.Intent
+import io.legado.app.help.pet.PetPluginStore
+import io.legado.app.ui.pet.PetManagerActivity
 import android.view.View
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,7 +13,6 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
-import io.legado.app.help.ai.AiChatEntryStyle
 import io.legado.app.help.ai.AiConfig
 import io.legado.app.help.ai.AiModel
 import io.legado.app.help.ai.AiProviderSetting
@@ -46,7 +48,12 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
                     AiConfigMenuScreen(
                         state = screenState,
                         onOpenPage = ::openPage,
-                        onChatEntryStyleChanged = ::updateChatEntryStyle,
+                        onManagePets = {
+                            if (!navigationPending) {
+                                navigationPending = true
+                                startActivity(Intent(requireContext(), PetManagerActivity::class.java))
+                            }
+                        },
                     )
                 }
             }
@@ -82,6 +89,7 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
             ),
             skillSummary = screenState.skillSummary,
             chatEntryStyle = AiConfig.chatEntryStyle,
+            installedPets = PetPluginStore.installedChoices(),
             purifySummary = getString(
                 R.string.ai_model_function_summary,
                 purifyModelSummary(providers),
@@ -99,13 +107,6 @@ class AiConfigMenuFragment : BaseFragment(R.layout.fragment_ai_config_menu) {
             )
         )
         refreshSkillSummary()
-    }
-
-    private fun updateChatEntryStyle(style: AiChatEntryStyle) {
-        AiConfig.chatEntryStyle = style
-        screenState = screenState.copy(
-            chatEntryStyle = AiConfig.chatEntryStyle
-        )
     }
 
     private fun refreshSkillSummary() {

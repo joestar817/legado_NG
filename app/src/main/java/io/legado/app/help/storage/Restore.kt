@@ -134,9 +134,6 @@ object Restore {
                 requireNotNull(GSON.fromJson(File(path, ReadBookConfig.shareConfigFileName).readText(), ReadBookConfig.Config::class.java))
                 requireNotNull(GSON.fromJson(File(path, ReadHighlightRuleStore.fileName).readText(), Array<io.legado.app.help.config.ReadHighlightRule>::class.java))
             }
-            if (BackupModule.APPEARANCE.id in modules) {
-                requireNotNull(GSON.fromJson(File(path, ThemeConfig.configFileName).readText(), Array<ThemeConfig.Config>::class.java))
-            }
             BackupResources.restoreResources(File(path), storedPreferences)
         } else storedPreferences
         val backupGroups = fileToListT<BookGroup>(path, "bookGroup.json")
@@ -276,16 +273,6 @@ object Restore {
             failures += it.localizedMessage.orEmpty()
             AppLog.put("恢复直链上传出错\n${it.localizedMessage}", it)
         }
-        File(path, ThemeConfig.configFileName).takeIf(File::exists)?.let {
-            if (modules != null && !BackupConfig.ignoreThemeConfig) {
-                val themes = GSON.fromJson(it.readText(), Array<ThemeConfig.Config>::class.java).toList()
-                ThemeConfig.configList.clear()
-                ThemeConfig.configList.addAll(themes)
-                ThemeConfig.save()
-            } else {
-                LogUtils.d(TAG, "保留当前 NG 主题配置")
-            }
-        }
         File(path, BookCover.configFileName).takeIf {
             it.exists() && !BackupConfig.ignoreCoverConfig
         }?.runCatching {
@@ -403,7 +390,6 @@ object Restore {
             reloadGlobalReadFloatingColorPreferences()
             hideStatusBar = appCtx.getPrefBoolean(PreferKey.hideStatusBar)
             readBodyToLh = appCtx.getPrefBoolean(PreferKey.readBodyToLh, true)
-            useZhLayout = appCtx.getPrefBoolean(PreferKey.useZhLayout)
             isNightTheme = appCtx.getPrefBoolean(PreferKey.readNightTheme, false)
             autoReadSpeed = appCtx.getPrefInt(
                 PreferKey.autoReadSpeed,

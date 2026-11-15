@@ -8,6 +8,9 @@ internal data class TocCatalogProjection(
     val parentVolumeByKey: Map<String, String>,
 )
 
+internal fun TocCatalogProjection.inDisplayOrder(descending: Boolean): TocCatalogProjection =
+    if (descending) copy(visibleRows = visibleRows.asReversed()) else this
+
 internal fun projectTocCatalogRows(
     rows: List<CatalogOutlineEntry>,
     collapsedVolumes: Set<String>,

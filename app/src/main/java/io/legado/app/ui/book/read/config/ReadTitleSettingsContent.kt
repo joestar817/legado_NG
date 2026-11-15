@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -49,9 +50,8 @@ import androidx.core.graphics.toColorInt
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.font.SYSTEM_DEFAULT_FONT
 import io.legado.app.ui.book.read.ReadDrawerStyle
-import io.legado.app.ui.design.components.compose.NgFormField
-import io.legado.app.ui.design.components.compose.NgFormFieldVariant
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderStepButton
 import io.legado.app.ui.design.components.compose.NgSliderVariant
@@ -71,20 +71,11 @@ internal fun ReadTitleSettingsContent(
     val config = ReadBookConfig.config
     // Equal-valued book/shared presets still own separate in-progress editing state.
     val configKey = ReadTitleConfigIdentity(config)
-    var flagsDraft by remember(configKey) { mutableStateOf(config.titleSegFlag) }
-    var segmentsExpanded by remember(configKey) { mutableStateOf(false) }
     var alignmentExpanded by remember(configKey) { mutableStateOf(false) }
     fun update(change: ReadBookConfig.Config.() -> Unit) {
         config.change()
         onChanged()
     }
-    val segmentLabels = listOf(
-        stringResource(R.string.read_title_segments_none),
-        stringResource(R.string.read_title_segments_count),
-        stringResource(R.string.read_title_segments_flags),
-        stringResource(R.string.read_title_segments_regex),
-    )
-    val fontScale = LocalDensity.current.fontScale
     val alignmentTitle = stringResource(R.string.read_title_alignment)
     val alignmentOptions = listOf(
         ReadMoreConfigOption("0", stringResource(R.string.title_left)),
@@ -161,9 +152,11 @@ internal fun ReadTitleSettingsContent(
     ReadTitleSectionHeading(stringResource(R.string.read_title_font_color))
     ReadTitleNavigationRow(
         title = stringResource(R.string.read_title_font),
-        value = config.titleFont.takeIf(String::isNotBlank)?.let { path ->
-            Uri.decode(path.substringAfterLast('/').substringAfterLast(':'))
-        } ?: stringResource(R.string.read_title_follow_body_font),
+        value = when (val path = config.titleFont) {
+            SYSTEM_DEFAULT_FONT -> stringArrayResource(R.array.system_typefaces).first()
+            "" -> stringResource(R.string.read_title_follow_body_font)
+            else -> Uri.decode(path.substringAfterLast('/').substringAfterLast(':'))
+        },
         onClick = onSelectFont,
     )
     val weight = when (config.titleBold) {
@@ -192,65 +185,20 @@ internal fun ReadTitleSettingsContent(
         onValueChange = { update { titleLineSpacingExtra = it } },
     )
     ReadTitleDivider()
+    var segmentsExpanded by remember(configKey) { mutableStateOf(false) }
     ReadTitleNavigationRow(
         title = stringResource(R.string.read_title_segments),
-        value = segmentLabels[config.titleSegType.coerceIn(segmentLabels.indices)],
+        value = stringResource(titleSegmentsModeLabel(config.titleSegType)),
         expanded = segmentsExpanded,
         onClick = { segmentsExpanded = !segmentsExpanded },
     )
     if (segmentsExpanded) {
-        ReadConfigDock(
-            labels = segmentLabels,
-            selectedIndex = config.titleSegType,
-            onSelected = { mode ->
-                flagsDraft = config.titleSegFlag
-                update { titleSegType = mode }
-            },
-            height = (44 * fontScale.coerceAtLeast(1f)).dp,
-            modifier = Modifier.padding(horizontal = 6.dp),
-            accessibilityLabel = stringResource(R.string.read_title_segments),
+        ReadTitleSegmentsControls(
+            config = config,
+            revision = revision,
+            contentColor = Color(NgTheme.colors.onSurface),
+            onChanged = onChanged,
         )
-        if (config.titleSegType == 1) {
-            ReadTitleValueSlider(
-                title = stringResource(R.string.read_title_segments_count_value),
-                value = config.titleSegDistance, valueRange = 1..100,
-                onValueChange = { update { titleSegDistance = it } },
-            )
-        } else if (config.titleSegType in 2..3) {
-            val validPattern = config.titleSegType != 3 ||
-                runCatching { Regex("(?<=$flagsDraft)") }.isSuccess
-            NgFormField(
-                label = stringResource(R.string.read_title_segments_flags),
-                value = flagsDraft,
-                onValueChange = { value ->
-                    flagsDraft = value
-                    if (config.titleSegType != 3 || runCatching { Regex("(?<=$value)") }.isSuccess) {
-                        update { titleSegFlag = value }
-                    }
-                },
-                placeholder = stringResource(
-                    if (config.titleSegType == 3) R.string.read_title_regex_hint else R.string.read_title_flags_hint
-                ),
-                isError = !validPattern,
-                supportingText = if (validPattern) null else stringResource(R.string.read_title_regex_invalid),
-                modifier = Modifier.padding(horizontal = 6.dp),
-                variant = NgFormFieldVariant.DIALOG_UNDERLINE,
-            )
-        }
-        if (config.titleSegType != 0) {
-            ReadTitleValueSlider(
-                title = stringResource(R.string.read_title_segments_scale),
-                value = (config.titleSegScaling * 100).roundToInt(), valueRange = 10..200,
-                valueText = { "$it%" },
-                onValueChange = { update { titleSegScaling = it / 100f } },
-            )
-            ReadTitleValueSlider(
-                title = stringResource(R.string.read_title_segments_spacing),
-                value = config.titleLineSpacingSub, valueRange = 0..100,
-                valueText = { String.format(Locale.ROOT, "%.1f", it / 10f) },
-                onValueChange = { update { titleLineSpacingSub = it } },
-            )
-        }
     }
 }
 
@@ -496,7 +444,7 @@ private fun ReadTitleValueSlider(
     }
 }
 
-private class ReadTitleConfigIdentity(private val config: ReadBookConfig.Config) {
+internal class ReadTitleConfigIdentity(private val config: ReadBookConfig.Config) {
     override fun equals(other: Any?): Boolean = other is ReadTitleConfigIdentity && config === other.config
     override fun hashCode(): Int = System.identityHashCode(config)
 }

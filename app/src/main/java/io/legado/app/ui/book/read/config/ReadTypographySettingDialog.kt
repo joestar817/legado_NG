@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -23,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.PlatformTextStyle
@@ -37,7 +40,10 @@ import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
+import io.legado.app.ui.design.components.compose.NgSlider
+import io.legado.app.ui.design.components.compose.NgSliderVariant
 import io.legado.app.ui.widget.dialog.applyNgWindow
+import kotlin.math.roundToInt
 
 internal object ReadTypographySettingDialog {
 
@@ -50,6 +56,7 @@ internal object ReadTypographySettingDialog {
         selectedIndex: Int,
         currentValueTextSizeSp: Float = 30f,
         previewTypeface: (Int) -> Typeface? = { null },
+        useNgSlider: Boolean = false,
         onDismiss: () -> Unit = {},
         onSelectionChanged: (Int) -> Unit,
     ) {
@@ -86,7 +93,20 @@ internal object ReadTypographySettingDialog {
                     ),
                     textAlign = TextAlign.Center,
                 )
-                ReadConfigDiscreteStepBar(
+                if (useNgSlider) {
+                    NgSlider(
+                        value = selected.toFloat(),
+                        onValueChange = { value ->
+                            val index = value.roundToInt().coerceIn(stepLabels.indices)
+                            if (index != selected) { selected = index; onSelectionChanged(index) }
+                        },
+                        valueRange = 0f..stepLabels.lastIndex.toFloat(),
+                        steps = stepLabels.size - 2,
+                        variant = NgSliderVariant.DISCRETE,
+                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                            .semantics { contentDescription = title },
+                    )
+                } else ReadConfigDiscreteStepBar(
                     stepCount = stepLabels.size,
                     selectedIndex = selected,
                     onSelectedIndexChanged = { index ->
@@ -120,6 +140,39 @@ internal object ReadTypographySettingDialog {
                         )
                     }
                 }
+            }
+        }
+    }
+
+    fun showSlider(
+        context: Context,
+        title: String,
+        value: Int,
+        valueRange: IntRange,
+        valueText: (Int) -> String,
+        onDismiss: () -> Unit = {},
+        onValueChanged: (Int) -> Unit,
+    ) {
+        showDialog(context, null, onDismiss) {
+            var selected by remember { mutableIntStateOf(value.coerceIn(valueRange)) }
+            val foreground = typographyForeground()
+            ReadConfigDialogSurface(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 22.dp)) {
+                TypographyTitle(title, foreground)
+                Text(valueText(selected), Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
+                    color = foreground, fontSize = 22.sp, textAlign = TextAlign.Center)
+                NgSlider(
+                    value = selected.toFloat(),
+                    onValueChange = {
+                        val next = it.roundToInt().coerceIn(valueRange)
+                        if (next != selected) { selected = next; onValueChanged(next) }
+                    },
+                    valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
+                    steps = (valueRange.last - valueRange.first - 1).coerceAtLeast(0),
+                    visualSteps = 0,
+                    variant = NgSliderVariant.COMPACT,
+                    modifier = Modifier.fillMaxWidth().height(44.dp)
+                        .semantics { contentDescription = title },
+                )
             }
         }
     }

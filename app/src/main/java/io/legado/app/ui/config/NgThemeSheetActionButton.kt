@@ -34,9 +34,10 @@ internal fun NgThemeSheetActionButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     touchSize: Dp = 44.dp,
+    containerColor: Color? = null,
     content: @Composable () -> Unit
 ) {
-    val containerColor = ngDrawerThemedActionContainerColor(NgThemeSheetActionContainerColor)
+    val resolvedContainerColor = containerColor ?: ngDrawerThemedActionContainerColor(NgThemeSheetActionContainerColor)
     Box(
         modifier = modifier
             .size(touchSize)
@@ -50,11 +51,11 @@ internal fun NgThemeSheetActionButton(
                 .size(36.dp)
                 .clip(CircleShape)
                 .background(
-                    containerColor.copy(
+                    resolvedContainerColor.copy(
                         alpha = if (enabled) {
-                            containerColor.alpha
+                            resolvedContainerColor.alpha
                         } else {
-                            containerColor.alpha * 0.45f
+                            resolvedContainerColor.alpha * 0.45f
                         }
                     )
                 ),

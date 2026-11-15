@@ -83,6 +83,7 @@ fun NgManagementListCard(
     titleFontFamily: FontFamily? = null,
     size: NgManagementListCardSize = NgManagementListCardSize.STANDARD,
     summaryTag: NgStatusTagSpec? = null,
+    titleFontWeight: FontWeight? = null,
     leading: @Composable () -> Unit
 ) {
     require(headerTags.size <= 2) { "Management card supports at most 2 header tags" }
@@ -176,7 +177,7 @@ fun NgManagementListCard(
                     },
                     lineHeight = if (isCompactGrid) 14.sp else 19.sp,
                     letterSpacing = 0.sp,
-                    fontWeight = if (compactLine) FontWeight.Normal else if (isCompactGrid) FontWeight.Medium else FontWeight.Bold,
+                    fontWeight = titleFontWeight ?: if (compactLine) FontWeight.Normal else if (isCompactGrid) FontWeight.Medium else FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

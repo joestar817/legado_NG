@@ -2,6 +2,8 @@
 
 package io.legado.app.ui.main
 
+import android.content.Intent
+
 import android.content.res.ColorStateList
 import android.graphics.Rect
 import android.os.Bundle
@@ -33,6 +35,9 @@ import io.legado.app.data.appDb
 import io.legado.app.databinding.ActivityMainBinding
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.ai.AiConfig
+import io.legado.app.help.pet.PetPluginStore
+import io.legado.app.help.resource.PetManagementActions
+import kotlinx.coroutines.Job
 import io.legado.app.help.ai.AiChatEntryStyle
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.config.AppConfig
@@ -80,6 +85,7 @@ import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import splitties.views.bottomPadding
@@ -100,6 +106,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     override val binding by viewBinding(ActivityMainBinding::inflate)
     override val viewModel by viewModels<MainViewModel>()
+    private var petLoadJob: Job? = null
     private val chatPetViewModel by viewModels<ChatPetViewModel>()
     private val idHome = MainPageIds.HOME
     private val idBookshelf = MainPageIds.BOOKSHELF
@@ -148,8 +155,25 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         chatPetViewModel.restorePlacements(savedInstanceState?.getBundle("chatPetPlacements"))
         upBottomMenu()
         initView()
+        lifecycleScope.launch {
+            PetPluginStore.revision.collect {
+                if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) refreshAiChatFab()
+            }
+        }
+        lifecycleScope.launch {
+            PetManagementActions.forgottenStates.collect { removed ->
+                removed.forEach { (id, token) -> chatPetViewModel.forget(id, token) }
+                if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                    refreshAiChatFab()
+                } else if (!AiConfig.chatEntryStyle.isPet) {
+                    petLoadJob?.cancel()
+                    binding.aiChatPet.bindPet(null)
+                    binding.aiChatPet.setHostActive(false)
+                }
+            }
+        }
         upHomePage()
-        openLastReadBookAfterStartup(savedInstanceState)
+        if (!openHomeWidgetSkin(intent)) openLastReadBookAfterStartup(savedInstanceState)
         onBackPressedDispatcher.addCallback(this) {
             if (realPositions.getOrNull(pagePosition) == idHome &&
                 (fragmentMap[idHome] as? HomeFragment)?.back() == true
@@ -190,6 +214,22 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openHomeWidgetSkin(intent)
+    }
+
+    private fun openHomeWidgetSkin(intent: Intent): Boolean {
+        val skinId = intent.getStringExtra(HOME_WIDGET_SKIN_REQUEST) ?: return false
+        intent.removeExtra(HOME_WIDGET_SKIN_REQUEST)
+        val position = realPositions.indexOf(idHome)
+        if (position < 0) return false
+        viewModel.requestHomeWidgetSkin(skinId)
+        binding.viewPagerMain.setCurrentItem(position, false)
+        syncPageSelection(position)
+        return true
+    }
+
     override fun onPostCreate(savedInstanceState: Bundle?) {
         super.onPostCreate(savedInstanceState)
         lifecycleScope.launch {
@@ -223,13 +263,13 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         super.onResume()
         updateBottomNavigationStyle()
         refreshAiChatFab()
-        binding.aiChatPet.setHostActive(binding.aiChatPet.visibility == View.VISIBLE)
     }
 
     override fun onPause() {
         shelfSwipeAction = 0
         shelfSwipeEligible = false
         shelfSwipeCancelled = true
+        petLoadJob?.cancel()
         binding.aiChatPet.setHostActive(false)
         super.onPause()
     }
@@ -433,8 +473,12 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             aiChatPet.visibility = View.GONE
             if (isBookshelfPage) startBookshelfGenericAiChat() else startActivity<AiChatActivity>()
         }
-        aiChatPet.onAssetLoadFailed = { toastOnUi(R.string.ai_chat_entry_load_failed) }
-        refreshAiChatFab()
+        aiChatPet.onAssetLoadFailed = {
+            aiChatPet.setHostActive(false)
+            aiChatPet.visibility = View.GONE
+            fabAiChat.visibility = View.VISIBLE
+            toastOnUi(R.string.ai_chat_entry_load_failed)
+        }
     }
 
     private fun bindFloatingBottomBackdropToCurrentPage() = binding.run {
@@ -454,15 +498,26 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     private fun refreshAiChatFab() = binding.run {
         val style = AiConfig.chatEntryStyle
-        fabAiChat.visibility = if (style == AiChatEntryStyle.BUTTON) View.VISIBLE else View.GONE
         fabAiChat.updateAccentColor(accentColor)
-        val petEngine = style.petAssetPath?.let { chatPetViewModel.engineFor(style.id) }
-        if (petEngine != null) {
-            aiChatPet.bindEngine(petEngine)
-            aiChatPet.visibility = View.VISIBLE
-        } else {
+        petLoadJob?.cancel()
+        if (!style.isPet) {
+            chatPetViewModel.bindingFor(null)
+            aiChatPet.bindPet(null)
             aiChatPet.setHostActive(false)
             aiChatPet.visibility = View.GONE
+            fabAiChat.visibility = if (style == AiChatEntryStyle.BUTTON) View.VISIBLE else View.GONE
+            return@run
+        }
+        petLoadJob = lifecycleScope.launch {
+            val plugin = withContext(IO) { PetPluginStore.load(style.id) }
+            if (AiConfig.chatEntryStyle != style) return@launch
+            val pet = chatPetViewModel.bindingFor(plugin)
+            // Plugin callbacks may synchronously report a failure and reveal the fallback button.
+            fabAiChat.visibility = if (pet == null) View.VISIBLE else View.GONE
+            aiChatPet.bindPet(pet)
+            val ready = pet != null && !pet.failed
+            aiChatPet.visibility = if (ready) View.VISIBLE else View.GONE
+            aiChatPet.setHostActive(ready)
         }
     }
 
@@ -491,19 +546,13 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
      * 版本更新日志
      */
     private suspend fun upVersion() = suspendCancellableCoroutine sc@{ block ->
-        if (LocalConfig.versionCode == appInfo.versionCode) {
+        val previousVersionCode = LocalConfig.versionCode
+        if (previousVersionCode == appInfo.versionCode) {
             block.resume(null)
             return@sc
         }
         LocalConfig.versionCode = appInfo.versionCode
-        if (LocalConfig.isFirstOpenApp) {
-            val help = String(assets.open("web/help/md/appHelp.md").readBytes())
-            val dialog = TextDialog(getString(R.string.help), help, TextDialog.Mode.MD)
-            dialog.setOnDismissListener {
-                block.resume(null)
-            }
-            showDialogFragment(dialog)
-        } else if (!BuildConfig.DEBUG) {
+        if (!BuildConfig.DEBUG && previousVersionCode != 0L) {
             val log = String(assets.open("updateLog.md").readBytes())
             val dialog = TextDialog(getString(R.string.update_log), log, TextDialog.Mode.MD)
             dialog.setOnDismissListener {

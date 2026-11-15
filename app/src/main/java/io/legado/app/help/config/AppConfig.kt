@@ -8,7 +8,6 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.data.appDb
 import io.legado.app.model.ReadingRecordTracker
 import io.legado.app.utils.GSON
-import io.legado.app.utils.canvasrecorder.CanvasRecorderFactory
 import io.legado.app.utils.fromJsonObject
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
@@ -92,8 +91,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     var clickActionBR = appCtx.getPrefInt(PreferKey.clickActionBR, 1)
     var themeMode = getThemeModePref()
     var useDefaultCover = appCtx.getPrefBoolean(PreferKey.useDefaultCover, false)
-    var optimizeRender = CanvasRecorderFactory.isSupport
-            && appCtx.getPrefBoolean(PreferKey.optimizeRender, false)
+    const val optimizeRender = false
     var recordLog = appCtx.getPrefBoolean(PreferKey.recordLog)
     var recordNetworkLog = appCtx.getPrefBoolean(PreferKey.recordNetworkLog)
     var editFontScale = appCtx.getPrefInt(PreferKey.editFontScale, 16)
@@ -101,7 +99,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     var editAutoWrap = appCtx.getPrefBoolean(PreferKey.editAutoWrap, true)
     var editAutoComplete = appCtx.getPrefBoolean(PreferKey.editAutoComplete, true)
     var showBoardLine = appCtx.getPrefInt(PreferKey.showBoardLine, 1)
-    var adaptSpecialStyle = appCtx.getPrefBoolean(PreferKey.adaptSpecialStyle, true)
+    const val adaptSpecialStyle = true
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
         when (key) {
@@ -111,7 +109,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             PreferKey.editAutoWrap -> editAutoWrap = appCtx.getPrefBoolean(PreferKey.editAutoWrap, true)
             PreferKey.editAutoComplete -> editAutoComplete = appCtx.getPrefBoolean(PreferKey.editAutoComplete, true)
             PreferKey.showBoardLine -> showBoardLine = appCtx.getPrefInt(PreferKey.showBoardLine, 1)
-            PreferKey.adaptSpecialStyle -> adaptSpecialStyle = appCtx.getPrefBoolean(PreferKey.adaptSpecialStyle, true)
 
             PreferKey.themeMode -> {
                 themeMode = getThemeModePref()
@@ -148,9 +145,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             PreferKey.readBodyToLh -> ReadBookConfig.readBodyToLh =
                 appCtx.getPrefBoolean(PreferKey.readBodyToLh, true)
 
-            PreferKey.useZhLayout -> ReadBookConfig.useZhLayout =
-                appCtx.getPrefBoolean(PreferKey.useZhLayout)
-
             PreferKey.userAgent -> userAgent = getPrefUserAgent()
 
             PreferKey.customHosts -> {
@@ -169,9 +163,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
 
             PreferKey.useDefaultCover -> useDefaultCover =
                 appCtx.getPrefBoolean(PreferKey.useDefaultCover, false)
-
-            PreferKey.optimizeRender -> optimizeRender = CanvasRecorderFactory.isSupport
-                    && appCtx.getPrefBoolean(PreferKey.optimizeRender, false)
 
             PreferKey.recordLog -> recordLog = appCtx.getPrefBoolean(PreferKey.recordLog)
             PreferKey.recordNetworkLog -> recordNetworkLog =
@@ -285,8 +276,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             }
         }
 
-    val textSelectAble: Boolean
-        get() = appCtx.getPrefBoolean(PreferKey.textSelectAble, true)
+    const val textSelectAble = true
 
     val isTransparentStatusBar = true
 
@@ -299,12 +289,12 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         }
 
     val useFloatingBottomBar: Boolean
-        get() = appCtx.getPrefBoolean(PreferKey.useFloatingBottomBar, false)
+        get() = appCtx.getPrefBoolean(PreferKey.useFloatingBottomBar, true)
 
     var floatingBottomBarBottomDistancePx: Int
         get() = appCtx.getPrefInt(
             PreferKey.floatingBottomBarBottomDistancePx,
-            FloatingBottomBarConfig.AUTOMATIC_BOTTOM_DISTANCE_PX
+            FloatingBottomBarConfig.DEFAULT_BOTTOM_DISTANCE_PX
         )
         set(value) {
             appCtx.putPrefInt(PreferKey.floatingBottomBarBottomDistancePx, value)
@@ -448,7 +438,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         get() = BookshelfTopBarStyle.fromValue(
             appCtx.getPrefInt(
                 PreferKey.bookshelfTopBarStyle,
-                BookshelfTopBarStyle.COMPACT_TOOLBAR.value
+                BookshelfTopBarStyle.DEFAULT.value
             )
         )
         set(value) {
@@ -458,7 +448,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     var bookshelfFloatingDockTopDistancePx: Int
         get() = appCtx.getPrefInt(
             PreferKey.bookshelfFloatingDockTopDistancePx,
-            BookshelfFloatingDockConfig.AUTOMATIC_TOP_DISTANCE_PX
+            BookshelfFloatingDockConfig.DEFAULT_TOP_DISTANCE_PX
         )
         set(value) {
             appCtx.putPrefInt(PreferKey.bookshelfFloatingDockTopDistancePx, value)
@@ -630,9 +620,6 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
         set(value) {
             appCtx.putPrefBoolean(PreferKey.ttsFollowSys, value)
         }
-
-    val noAnimScrollPage: Boolean
-        get() = appCtx.getPrefBoolean(PreferKey.noAnimScrollPage, false)
 
     const val defaultSpeechRate = 5
 
@@ -937,17 +924,17 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
     val progressBarBehavior: String?
         get() = appCtx.getPrefString(PreferKey.progressBarBehavior, "page")
 
+    val readMenuShowChapterProgress: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.readMenuShowChapterProgress, true)
+
     val keyPageOnLongPress
         get() = appCtx.getPrefBoolean(PreferKey.keyPageOnLongPress, false)
 
+    const val volumeKeyPageDefault = false
     val volumeKeyPage
-        get() = appCtx.getPrefBoolean(PreferKey.volumeKeyPage, true)
+        get() = appCtx.getPrefBoolean(PreferKey.volumeKeyPage, volumeKeyPageDefault)
 
-    val volumeKeyPageOnPlay
-        get() = appCtx.getPrefBoolean(PreferKey.volumeKeyPageOnPlay, true)
-
-    val mouseWheelPage
-        get() = appCtx.getPrefBoolean(PreferKey.mouseWheelPage, true)
+    const val mouseWheelPage = true
 
     val paddingDisplayCutouts
         get() = appCtx.getPrefBoolean(PreferKey.paddingDisplayCutouts, false)
@@ -1007,16 +994,7 @@ object AppConfig : SharedPreferences.OnSharedPreferenceChangeListener {
             appCtx.putPrefInt(PreferKey.imageRetainNum, value)
         }
 
-    var showReadTitleBarAddition: Boolean
-        get() = appCtx.getPrefBoolean(PreferKey.showReadTitleAddition, true)
-        set(value) {
-            appCtx.putPrefBoolean(PreferKey.showReadTitleAddition, value)
-        }
-    var readBarStyleFollowPage: Boolean
-        get() = appCtx.getPrefBoolean(PreferKey.readBarStyleFollowPage, false)
-        set(value) {
-            appCtx.putPrefBoolean(PreferKey.readBarStyleFollowPage, value)
-        }
+    const val showReadTitleBarAddition = true
 
     var audioPlayUseWakeLock: Boolean
         get() = appCtx.getPrefBoolean(PreferKey.audioPlayWakeLock)

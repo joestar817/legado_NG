@@ -52,3 +52,7 @@ internal open class MangaCatalogDialog : CatalogDrawerDialog() {
 internal class MangaCompactCatalogDialog : MangaCatalogDialog() {
     override fun visualStyle(): CatalogDrawerVisualStyle = CatalogDrawerVisualStyle.READING_COMPACT_SIDE
 }
+
+internal class MangaDenseCatalogDialog : MangaCatalogDialog() {
+    override fun visualStyle(): CatalogDrawerVisualStyle = CatalogDrawerVisualStyle.READING_DENSE_LIST
+}

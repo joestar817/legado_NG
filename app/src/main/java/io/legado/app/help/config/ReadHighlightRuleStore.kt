@@ -2,6 +2,8 @@ package io.legado.app.help.config
 
 import io.legado.app.constant.AppLog
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.help.font.resetDeletedFont
+import io.legado.app.help.resource.ResourceFiles
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonArray
@@ -191,6 +193,29 @@ internal object ReadHighlightRuleStore {
     }
 
     @Synchronized
+    fun mergeForPreset(importedRules: List<ReadHighlightRule>, persistImmediately: Boolean = false): ReadPresetRuleMergeResult {
+        ensureInitialized()
+        val before = rules.toList()
+        val result = mergePresetHighlightRules(rules, importedRules)
+        rules.clear()
+        rules.addAll(result.merge.rules)
+        if (result.merge.addedCount > 0) {
+            if (persistImmediately) {
+                saveGeneration++
+                try {
+                    ResourceFiles.writeJson(File(filePath), rules)
+                } catch (error: Throwable) {
+                    rules.clear()
+                    rules.addAll(before)
+                    saveAsync()
+                    throw error
+                }
+            } else saveAsync()
+        }
+        return result
+    }
+
+    @Synchronized
     fun restoreBuiltIn(defaultRules: List<ReadHighlightRule>): ReadHighlightRuleMergeResult {
         ensureInitialized()
         val result = restoreBuiltInReadHighlightRules(rules, defaultRules)
@@ -209,6 +234,22 @@ internal object ReadHighlightRuleStore {
             rule.normalizedForStore().copy(position = index)
         })
         initialized = true
+    }
+
+    @Synchronized
+    internal fun resetDeletedFont(matches: (String?) -> Boolean): Boolean {
+        ensureInitialized()
+        val file = File(filePath)
+        ResourceFiles.readJson(file, Array<ReadHighlightRule>::class.java)?.let { stored ->
+            if (stored.any { matches(it.fontPath) }) {
+                ResourceFiles.writeJson(file, stored.map { it.resetDeletedFont(matches) })
+            }
+        }
+        val changed = rules.any { matches(it.fontPath) }
+        if (changed) {
+            rules.replaceAll { it.resetDeletedFont(matches) }
+        }
+        return changed
     }
 
     private fun ensureInitialized() {

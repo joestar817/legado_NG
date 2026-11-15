@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.painter.Painter
@@ -56,6 +58,9 @@ enum class NgSearchBarVariant {
     TOOLBAR
 }
 
+/** 普通调用保持原几何；新资源中心使用互不重叠的 48dp 触控槽。 */
+enum class NgFloatingToolbarVariant { STANDARD, LARGE_TOUCH_TARGETS }
+
 /**
  * 悬浮搜索顶栏的返回按钮。
  *
@@ -67,11 +72,12 @@ fun NgFloatingToolbarBackButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     width: Dp = 34.dp,
+    height: Dp = 36.dp,
 ) {
     Box(
         modifier = modifier
             .width(width)
-            .height(36.dp)
+            .height(height)
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -97,6 +103,8 @@ fun NgFloatingSearchToolbar(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     onSearch: (String) -> Unit = {},
+    variant: NgFloatingToolbarVariant = NgFloatingToolbarVariant.STANDARD,
+    searchFocusRequester: FocusRequester? = null,
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
 ) {
     Column(
@@ -118,19 +126,22 @@ fun NgFloatingSearchToolbar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
-                    .padding(end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(end = 8.dp, top = if (variant == NgFloatingToolbarVariant.STANDARD) 8.dp else 2.dp, bottom = if (variant == NgFloatingToolbarVariant.STANDARD) 8.dp else 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 NgFloatingToolbarBackButton(
                     onClick = onBack,
-                    width = 32.dp,
+                    width = if (variant == NgFloatingToolbarVariant.STANDARD) 32.dp else 48.dp,
+                    height = if (variant == NgFloatingToolbarVariant.STANDARD) 36.dp else 48.dp,
                 )
                 Spacer(Modifier.width(12.dp))
                 NgSearchBar(
                     query = query,
                     onQueryChange = onQueryChange,
                     hint = hint,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).then(
+                        if (searchFocusRequester != null) Modifier.focusRequester(searchFocusRequester) else Modifier,
+                    ),
                     enabled = enabled,
                     variant = NgSearchBarVariant.TOOLBAR,
                     containerColor = Color.Transparent,
@@ -152,6 +163,7 @@ fun NgFloatingTitleToolbar(
     title: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    variant: NgFloatingToolbarVariant = NgFloatingToolbarVariant.STANDARD,
     titleLeadingContent: (@Composable RowScope.() -> Unit)? = null,
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
 ) {
@@ -174,12 +186,13 @@ fun NgFloatingTitleToolbar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
-                    .padding(end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(end = 8.dp, top = if (variant == NgFloatingToolbarVariant.STANDARD) 8.dp else 2.dp, bottom = if (variant == NgFloatingToolbarVariant.STANDARD) 8.dp else 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 NgFloatingToolbarBackButton(
                     onClick = onBack,
-                    width = 32.dp,
+                    width = if (variant == NgFloatingToolbarVariant.STANDARD) 32.dp else 48.dp,
+                    height = if (variant == NgFloatingToolbarVariant.STANDARD) 36.dp else 48.dp,
                 )
                 Spacer(Modifier.width(12.dp))
                 titleLeadingContent?.let { content ->
@@ -215,11 +228,12 @@ fun NgFloatingToolbarActionButton(
     iconSize: Dp = 20.dp,
     tint: Color? = null,
     enabled: Boolean = true,
+    variant: NgFloatingToolbarVariant = NgFloatingToolbarVariant.STANDARD,
 ) {
     val resolvedTint = tint ?: colorResource(R.color.ng_search_icon)
     Box(
         modifier = modifier
-            .size(36.dp)
+            .size(if (variant == NgFloatingToolbarVariant.STANDARD) 36.dp else 48.dp)
             .alpha(if (enabled) 1f else 0.38f)
             .clip(RoundedCornerShape(10.dp))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
@@ -241,6 +255,7 @@ fun NgSearchBarActionButton(
     contentDescription: String,
     modifier: Modifier = Modifier,
     icon: Painter = painterResource(R.drawable.ic_grid_menu),
+    enabled: Boolean = true,
 ) {
     val cornerRadius = 10.dp
     val shape = RoundedCornerShape(cornerRadius)
@@ -256,7 +271,7 @@ fun NgSearchBarActionButton(
         modifier = modifier
             .size(36.dp)
             .clip(shape)
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         role = NgMaterialRole.TOP_NAVIGATION,
         cornerRadius = cornerRadius,
         shape = shape,

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.Male
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -1109,7 +1110,9 @@ private fun DisabledRoleDialog(
                     ) {
                         Text(
                             text = stringResource(R.string.character_reenable_action),
-                            color = Color.White,
+                            color = if (NgTheme.snapshot.isDark && !NgTheme.snapshot.isEInk) {
+                                LocalContentColor.current
+                            } else Color.White,
                             fontSize = 14.sp,
                         )
                     }

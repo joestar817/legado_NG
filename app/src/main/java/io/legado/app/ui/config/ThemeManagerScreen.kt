@@ -19,12 +19,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -40,13 +44,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -60,9 +67,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.legado.app.R
 import io.legado.app.help.config.NgManagedTheme
+import io.legado.app.help.config.NgEffectThemeStatus
+import io.legado.app.help.config.NgPreparedThemeImport
 import io.legado.app.help.config.isBuiltIn
 import io.legado.app.help.config.md3.Md3ThemeImportDraft
-import io.legado.app.help.config.md3.Md3ThemePackageFormat
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgActionBarButton
@@ -77,6 +85,8 @@ import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuVariant
 import io.legado.app.ui.design.components.compose.NgFloatingSearchToolbar
 import io.legado.app.ui.design.components.compose.NgFloatingToolbarActionButton
+import io.legado.app.ui.design.components.compose.NgFormActionButton
+import io.legado.app.ui.design.components.compose.NgFormActionButtonAppearance
 import io.legado.app.ui.design.components.compose.NgFormField
 import io.legado.app.ui.design.components.compose.NgFormFieldVariant
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
@@ -92,7 +102,6 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun ThemeManagerScreen(
-    builtInThemes: List<NgManagedTheme>,
     savedThemes: List<NgManagedTheme>,
     activeThemeId: String?,
     currentThemeName: String,
@@ -117,59 +126,57 @@ internal fun ThemeManagerScreen(
     md3ImportInstalling: Boolean,
     onDismissMd3Import: () -> Unit,
     onConfirmMd3Import: (Boolean) -> Unit,
+    effectStatuses: Map<String, NgEffectThemeStatus>,
+    effectBusy: Boolean,
+    appEffectEnabled: Boolean,
+    appThemeEnabled: Boolean,
+    themePackageImport: NgPreparedThemeImport?,
+    themePackageInstalling: Boolean,
+    onDismissThemePackageImport: () -> Unit,
+    onConfirmThemePackageImport: (Boolean) -> Unit,
+    onEffectApply: (NgManagedTheme) -> Unit,
+    onEffectApplyStatic: (NgManagedTheme) -> Unit,
+    onGetMore: () -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
+    val listState = rememberLazyListState()
     var themeNameInitial by rememberSaveable { mutableStateOf<String?>(null) }
     var backgroundActionsDark by rememberSaveable { mutableStateOf<Boolean?>(null) }
     var backgroundBlurDark by rememberSaveable { mutableStateOf<Boolean?>(null) }
     var pendingDeleteTheme by remember { mutableStateOf<NgManagedTheme?>(null) }
+
     val normalizedQuery = query.trim()
-    val visibleBuiltIns = remember(builtInThemes, normalizedQuery) {
-        builtInThemes.filter { it.name.contains(normalizedQuery, ignoreCase = true) }
-    }
-    val visibleSaved = remember(savedThemes, normalizedQuery) {
-        savedThemes.filter { it.name.contains(normalizedQuery, ignoreCase = true) }
+    val visibleThemes = remember(savedThemes, normalizedQuery) {
+        savedThemes.filter { theme ->
+            (theme.effect == null || "app" in theme.effect.targets) &&
+                theme.name.contains(normalizedQuery, ignoreCase = true)
+        }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        ThemeManagerTopBar(
-            query = query,
-            onQueryChange = { query = it },
-            onBack = onBack,
-            onSaveCurrent = { themeNameInitial = currentThemeName },
-            onImportPackage = onImportPackage,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .navigationBarsPadding(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = 12.dp,
-                bottom = 24.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (visibleBuiltIns.isNotEmpty()) {
-                item(key = "built-in-title") {
-                    ThemeSectionTitle(stringResource(R.string.ng_theme_built_in))
-                }
-                items(visibleBuiltIns, key = { it.id }) { theme ->
-                    NgThemeManagementCard(
-                        theme = theme,
-                        selected = activeThemeId == theme.id,
-                        onClick = { onThemeSelected(theme) },
-                        onMoreClick = { onThemeEdit(theme) },
-                    )
-                }
-            }
-            if (visibleSaved.isNotEmpty()) {
-                item(key = "saved-title") {
-                    ThemeSectionTitle(stringResource(R.string.ng_theme_saved))
-                }
-                items(visibleSaved, key = { it.id }) { theme ->
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            ThemeManagerTopBar(
+                query = query,
+                onQueryChange = { query = it },
+                onBack = onBack,
+                onSaveCurrent = { themeNameInitial = currentThemeName },
+                onImportPackage = onImportPackage,
+                onGetMore = onGetMore,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f).navigationBarsPadding(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(visibleThemes, key = { it.id }) { theme ->
+                    val selected = appThemeEnabled && activeThemeId == theme.id
+                    val hasEffect = theme.effect != null
+                    val effectStatus = effectStatuses[theme.id]
+                    val menuItems = remember(hasEffect, selected, appEffectEnabled, effectStatus) {
+                        appThemeMenuItems(hasEffect, selected, appEffectEnabled, effectStatus)
+                    }
                     NgSwipeToDelete(
                         deletable = true,
                         reordering = false,
@@ -177,28 +184,73 @@ internal fun ThemeManagerScreen(
                     ) {
                         NgThemeManagementCard(
                             theme = theme,
-                            selected = activeThemeId == theme.id,
-                            onClick = { onThemeSelected(theme) },
-                            onMoreClick = { onThemeEdit(theme) },
+                            selected = selected,
+                            effectStatus = effectStatus,
+                            menuItems = menuItems,
+                            menuEnabled = !effectBusy,
+                            onMenuAction = { action ->
+                                when (action) {
+                                    THEME_CARD_APPLY -> if (hasEffect) onEffectApply(theme)
+                                        else onThemeSelected(theme)
+                                    THEME_CARD_APPLY_STATIC -> onEffectApplyStatic(theme)
+                                    THEME_CARD_EDIT -> onThemeEdit(theme)
+                                    THEME_CARD_EXPORT -> onThemeExport(theme)
+                                    THEME_CARD_DELETE -> pendingDeleteTheme = theme
+                                }
+                            },
                         )
                     }
                 }
             }
-            if (visibleBuiltIns.isEmpty() && visibleSaved.isEmpty()) {
-                item(key = "empty") {
+        }
+
+        if (visibleThemes.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = stringResource(R.string.ng_theme_no_results),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 48.dp),
-                        color = colorResource(R.color.ng_on_surface_variant),
-                        fontSize = 15.sp,
+                        stringResource(if (normalizedQuery.isNotEmpty()) R.string.ng_theme_no_results
+                            else R.string.ng_theme_library_empty),
+                        color = colorResource(R.color.ng_on_surface), fontSize = 16.sp,
+                        textAlign = TextAlign.Center,
                     )
+                    if (normalizedQuery.isEmpty()) {
+                        Row(
+                            modifier = Modifier.padding(top = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            NgActionBarButton(
+                                text = stringResource(R.string.ng_theme_import_package),
+                                icon = ImageVector.vectorResource(R.drawable.ic_theme_menu_import),
+                                onClick = onImportPackage,
+                                modifier = Modifier.widthIn(min = 112.dp),
+                                variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
+                            )
+                            NgActionBarButton(
+                                text = stringResource(R.string.ng_theme_get_themes),
+                                icon = ImageVector.vectorResource(R.drawable.ic_theme_menu_download),
+                                onClick = onGetMore,
+                                modifier = Modifier.widthIn(min = 112.dp),
+                                variant = NgButtonVariant.PRIMARY_LIGHT_CONTENT,
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 
+    themePackageImport?.let { candidate ->
+        ThemePackageImportDialog(
+            candidate, themePackageInstalling, onDismissThemePackageImport, onConfirmThemePackageImport,
+        )
+    }
     if (editingTheme != null && draftTheme != null) {
         NgThemeEditorSheet(
             draftTheme = draftTheme,
@@ -262,7 +314,13 @@ internal fun ThemeManagerScreen(
         )
     }
     pendingDeleteTheme?.let { theme ->
-        NgThemeDeleteDialog(
+        if (theme.effect != null) {
+            EffectThemeDeleteDialog(theme.name,
+                activeThemeId == theme.id,
+                onDismiss = { pendingDeleteTheme = null }, onConfirm = {
+                    pendingDeleteTheme = null; onThemeDelete(theme)
+                })
+        } else NgThemeDeleteDialog(
             themeName = theme.name,
             onDismissRequest = { pendingDeleteTheme = null },
             onConfirm = {
@@ -274,109 +332,138 @@ internal fun ThemeManagerScreen(
 }
 
 @Composable
-private fun ThemeSectionTitle(text: String) {
-    Text(
-        text = text,
-        modifier = Modifier.padding(start = 2.dp, top = 8.dp, bottom = 2.dp),
-        color = Color(NgTheme.colors.primary),
-        fontSize = 15.sp,
-        lineHeight = 18.sp,
-        fontWeight = FontWeight.Bold
-    )
-}
-
-@Composable
 private fun NgThemeManagementCard(
     theme: NgManagedTheme,
     selected: Boolean,
-    onClick: () -> Unit,
-    onMoreClick: () -> Unit
+    effectStatus: NgEffectThemeStatus?,
+    menuItems: List<NgExpandableActionMenuItem>,
+    menuEnabled: Boolean,
+    onMenuAction: (Int) -> Unit,
 ) {
-    val context = LocalContext.current
-    val light = remember(context, theme.colors) {
-        NgThemeResolver.resolveColorScheme(context, theme.colors, false)
-    }
-    val dark = remember(context, theme.colors) {
-        NgThemeResolver.resolveColorScheme(context, theme.colors, true)
-    }
-    val themePrimary = if (NgTheme.snapshot.isDark) dark.primary else light.primary
-    val shape = RoundedCornerShape(18.dp)
+    val primary = Color(NgTheme.colors.primary)
+    val secondaryText = colorResource(R.color.ng_on_surface_variant)
+    val effect = theme.effect
+    val publication = theme.publication
+    val source = stringResource(when {
+        publication?.source == "resource" && !publication.sourceId.isNullOrBlank() -> R.string.ng_theme_source_resource_center
+        publication?.source == "local" -> R.string.ng_theme_source_imported
+        theme.packageRootPath != null -> R.string.ng_theme_source_imported_unknown
+        else -> R.string.ng_theme_source_created
+    })
+    val version = publication?.versionName?.takeIf(String::isNotBlank)
+    val menuState = remember(theme.id) { NgPopupToggleState() }
     NgSettingsCardSurface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { this.selected = selected },
+        modifier = Modifier.fillMaxWidth().semantics { this.selected = selected },
         cornerRadius = 18.dp,
-        shape = shape,
+        shape = RoundedCornerShape(18.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .drawWithContent {
-                    drawContent()
-                    if (selected) {
-                        drawRect(
-                            color = Color(themePrimary),
-                            size = androidx.compose.ui.geometry.Size(10.dp.toPx(), size.height)
-                        )
-                    }
-                }
-                .clickable(onClick = onClick)
-                .heightIn(min = 64.dp)
-                .padding(start = 16.dp, top = 10.dp, end = 8.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            Modifier.fillMaxWidth().heightIn(min = 78.dp)
+                .padding(start = 16.dp, top = 8.dp, end = 6.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(colorResource(R.color.ng_settings_icon_bg))
-                    .padding(7.dp),
-                contentAlignment = Alignment.Center
+                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+                    .background(colorResource(R.color.ng_settings_icon_bg)),
+                contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_cfg_theme),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    tint = Color(themePrimary)
-                )
+                Icon(if (effect == null) Icons.Rounded.Palette else Icons.Rounded.AutoAwesome,
+                    null, Modifier.size(26.dp), tint = primary)
             }
             Spacer(Modifier.width(14.dp))
-            Column(
-                modifier = Modifier
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = theme.name,
-                    color = colorResource(R.color.ng_on_surface),
-                    fontSize = 16.sp,
-                    lineHeight = 19.sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                ThemeColorPreview(
-                    lightColors = intArrayOf(light.primary, light.secondary, light.background),
-                    darkColors = intArrayOf(dark.primary, dark.secondary, dark.background)
-                )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(theme.name, Modifier.weight(1f), color = colorResource(R.color.ng_on_surface),
+                        fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (selected) {
+                        val statusTextColor = lerp(Color(NgTheme.colors.onSurface), primary, 0.45f)
+                        Row(
+                            modifier = Modifier.clip(CircleShape)
+                                .background(primary.copy(alpha = 0.10f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Box(Modifier.size(4.dp).background(primary, CircleShape))
+                            Text(stringResource(R.string.ng_theme_in_use),
+                                color = statusTextColor, fontSize = 11.sp, lineHeight = 14.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(stringResource(if (effect == null) R.string.effect_theme_filter_normal else R.string.effect_theme_filter_effect),
+                        Modifier.clip(CircleShape).background(primary.copy(alpha = 0.10f))
+                            .padding(horizontal = 7.dp, vertical = 1.dp),
+                        color = primary, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 1)
+                    Text(listOfNotNull(source, version?.let { "v$it" }).joinToString(" · "),
+                        color = secondaryText, fontSize = 12.sp, lineHeight = 16.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                ThemeColorPreview(theme)
+                effectStatus?.takeUnless { it.canRun }?.let { status ->
+                    Text(status.label, color = Color(NgTheme.colors.error), fontSize = 12.sp,
+                        lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .clickable(onClick = onMoreClick),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "›",
-                    color = colorResource(R.color.ng_on_surface_variant),
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1
+            Box {
+                Box(
+                    modifier = Modifier.size(40.dp).clip(CircleShape)
+                        .clickable(enabled = menuEnabled, role = Role.Button, onClick = menuState::onAnchorClick),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.MoreVert, stringResource(R.string.more), Modifier.size(22.dp), tint = secondaryText)
+                }
+                NgExpandableActionMenu(
+                    expanded = menuState.expanded, onDismissRequest = menuState::onDismissRequest,
+                    items = menuItems,
+                    variant = NgExpandableActionMenuVariant.DROPDOWN,
+                    menuContainerColor = ngDrawerContentCardColor(),
+                    properties = PopupProperties(focusable = true),
+                    onItemClick = { item ->
+                        if (menuState.expanded) {
+                            menuState.close()
+                            if (menuEnabled) onMenuAction(item.itemId)
+                        }
+                    },
                 )
             }
         }
     }
+}
+
+private const val THEME_CARD_EDIT = 0x6E7411
+private const val THEME_CARD_EXPORT = 0x6E7412
+private const val THEME_CARD_DELETE = 0x6E7413
+private const val THEME_CARD_APPLY = 0x6E7414
+private const val THEME_CARD_APPLY_STATIC = 0x6E7415
+
+internal fun appThemeMenuItems(
+    hasEffect: Boolean,
+    selected: Boolean,
+    appEffectEnabled: Boolean,
+    effectStatus: NgEffectThemeStatus?,
+): List<NgExpandableActionMenuItem> = buildList {
+    val applyStatic = hasEffect && (effectStatus == NgEffectThemeStatus.UNSUPPORTED ||
+        effectStatus == NgEffectThemeStatus.LOAD_ERROR)
+    val appliesEffect = hasEffect && !applyStatic
+    val alreadyApplied = selected && (!hasEffect || appEffectEnabled == appliesEffect)
+    if (!alreadyApplied) {
+        add(NgExpandableActionMenuItem(
+            itemId = if (applyStatic) THEME_CARD_APPLY_STATIC else THEME_CARD_APPLY,
+            titleRes = when {
+                applyStatic -> R.string.effect_theme_apply_static
+                hasEffect && effectStatus == null -> R.string.effect_theme_checking
+                else -> R.string.ng_theme_menu_apply
+            },
+            iconRes = R.drawable.ic_bgm_menu_play,
+            enabled = !appliesEffect || effectStatus?.canRun == true,
+        ))
+    }
+    add(NgExpandableActionMenuItem(THEME_CARD_EDIT, R.string.edit, R.drawable.ic_edit))
+    add(NgExpandableActionMenuItem(THEME_CARD_EXPORT, R.string.export, R.drawable.ic_export))
+    add(NgExpandableActionMenuItem(THEME_CARD_DELETE, R.string.delete, R.drawable.ic_bgm_menu_delete, danger = true))
 }
 
 @Composable
@@ -386,6 +473,7 @@ private fun ThemeManagerTopBar(
     onBack: () -> Unit,
     onSaveCurrent: () -> Unit,
     onImportPackage: () -> Unit,
+    onGetMore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val menuState = remember { NgPopupToggleState() }
@@ -394,12 +482,17 @@ private fun ThemeManagerTopBar(
             NgExpandableActionMenuItem(
                 itemId = THEME_ACTION_SAVE_CURRENT,
                 titleRes = R.string.ng_theme_save_current,
-                iconRes = R.drawable.ic_save,
+                iconRes = R.drawable.ic_theme_menu_save,
             ),
             NgExpandableActionMenuItem(
                 itemId = THEME_ACTION_IMPORT_PACKAGE,
                 titleRes = R.string.ng_theme_import_package,
-                iconRes = R.drawable.ic_import,
+                iconRes = R.drawable.ic_theme_menu_import,
+            ),
+            NgExpandableActionMenuItem(
+                itemId = THEME_ACTION_GET_MORE,
+                titleRes = R.string.ng_theme_get_themes,
+                iconRes = R.drawable.ic_theme_menu_download,
             ),
         )
     }
@@ -413,6 +506,7 @@ private fun ThemeManagerTopBar(
         Box {
             NgFloatingToolbarActionButton(
                 iconRes = R.drawable.ic_grid_menu,
+                iconSize = 24.dp,
                 contentDescription = stringResource(R.string.menu),
                 onClick = menuState::onAnchorClick,
             )
@@ -421,6 +515,7 @@ private fun ThemeManagerTopBar(
                 onDismissRequest = menuState::onDismissRequest,
                 items = menuItems,
                 variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+                sideSlideEndMargin = 16.dp,
                 menuContainerColor = ngDrawerContentCardColor(),
                 properties = PopupProperties(focusable = true, clippingEnabled = false),
                 onItemClick = { item ->
@@ -428,6 +523,7 @@ private fun ThemeManagerTopBar(
                     when (item.itemId) {
                         THEME_ACTION_SAVE_CURRENT -> onSaveCurrent()
                         THEME_ACTION_IMPORT_PACKAGE -> onImportPackage()
+                        THEME_ACTION_GET_MORE -> onGetMore()
                     }
                 },
             )
@@ -437,12 +533,33 @@ private fun ThemeManagerTopBar(
 
 private const val THEME_ACTION_SAVE_CURRENT = 0x6E7401
 private const val THEME_ACTION_IMPORT_PACKAGE = 0x6E7402
+private const val THEME_ACTION_GET_MORE = 0x6E7403
 
 @Composable
-private fun ThemeColorPreview(lightColors: IntArray, darkColors: IntArray) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun ThemeColorPreview(theme: NgManagedTheme) {
+    val context = LocalContext.current
+    val light = remember(context, theme.colors) {
+        NgThemeResolver.resolveColorScheme(context, theme.colors, false)
+    }
+    val dark = remember(context, theme.colors) {
+        NgThemeResolver.resolveColorScheme(context, theme.colors, true)
+    }
+    ThemeColorPreview(
+        lightColors = intArrayOf(light.primary, light.secondary, light.background),
+        darkColors = intArrayOf(dark.primary, dark.secondary, dark.background),
+        labeled = true,
+    )
+}
+
+@Composable
+private fun ThemeColorPreview(lightColors: IntArray, darkColors: IntArray, labeled: Boolean = false) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (labeled) Text(stringResource(R.string.ng_theme_palette_day),
+            color = colorResource(R.color.ng_on_surface_variant), fontSize = 12.sp, lineHeight = 16.sp)
         lightColors.forEach { color -> ThemeColorDot(color) }
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(if (labeled) 4.dp else 6.dp))
+        if (labeled) Text(stringResource(R.string.ng_theme_palette_night),
+            color = colorResource(R.color.ng_on_surface_variant), fontSize = 12.sp, lineHeight = 16.sp)
         darkColors.forEach { color -> ThemeColorDot(color) }
     }
 }
@@ -524,7 +641,7 @@ private fun NgMd3ThemeImportPreviewSheet(
     installing: Boolean,
     onDismissRequest: () -> Unit,
     onSaveOnly: () -> Unit,
-    onSaveAndApply: () -> Unit,
+    onSaveAndApply: (() -> Unit)?,
 ) {
     val context = LocalContext.current
     val baseSnapshot = NgTheme.snapshot
@@ -539,11 +656,6 @@ private fun NgMd3ThemeImportPreviewSheet(
         draft.preview.spec.backgroundProfile.light.archivePath,
         draft.preview.spec.backgroundProfile.dark.archivePath,
     ).count { path -> path != null && path in draft.preview.spec.resources.values }
-    val formatLabel = when (draft.preview.spec.sourceFormat) {
-        Md3ThemePackageFormat.PORTABLE_V1 -> stringResource(R.string.ng_theme_import_md3_format)
-        Md3ThemePackageFormat.LEGACY_APPLICATION_THEME_V1 ->
-            stringResource(R.string.ng_theme_import_legacy_format)
-    }
 
     ModalBottomSheet(
         onDismissRequest = { if (!installing) onDismissRequest() },
@@ -587,11 +699,6 @@ private fun NgMd3ThemeImportPreviewSheet(
                         lineHeight = 22.sp,
                         fontWeight = FontWeight.Bold,
                     )
-                    Text(
-                        text = formatLabel,
-                        color = Color(snapshot.colors.onSurfaceVariant),
-                        fontSize = 13.sp,
-                    )
                     ThemeColorPreview(
                         lightColors = intArrayOf(light.primary, light.secondary, light.background),
                         darkColors = intArrayOf(dark.primary, dark.secondary, dark.background),
@@ -622,7 +729,7 @@ private fun NgMd3ThemeImportPreviewSheet(
                         enabled = !installing,
                         variant = NgButtonVariant.OUTLINE,
                     )
-                    NgActionBarButton(
+                    if (onSaveAndApply != null) NgActionBarButton(
                         text = stringResource(R.string.ng_theme_import_save_apply),
                         icon = Icons.Rounded.Check,
                         onClick = onSaveAndApply,

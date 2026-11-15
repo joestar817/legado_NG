@@ -11,7 +11,6 @@ import io.legado.app.help.config.LocalConfig
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.help.config.ReadHighlightRule
 import io.legado.app.help.config.ReadHighlightRuleStore
-import io.legado.app.help.config.ThemeConfig
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.model.BookCover
 import io.legado.app.utils.GSON
@@ -96,14 +95,6 @@ object DefaultData {
                 .readBytes()
         )
         GSON.fromJsonArray<TxtTocRule>(json).getOrNull() ?: emptyList()
-    }
-
-    val themeConfigs: List<ThemeConfig.Config> by lazy {
-        val json = String(
-            appCtx.assets.open("defaultData${File.separator}${ThemeConfig.configFileName}")
-                .readBytes()
-        )
-        GSON.fromJsonArray<ThemeConfig.Config>(json).getOrNull() ?: emptyList()
     }
 
     val rssSources: List<RssSource> by lazy {

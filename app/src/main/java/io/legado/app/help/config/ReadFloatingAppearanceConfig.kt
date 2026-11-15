@@ -33,7 +33,6 @@ internal fun resolveEffectiveReadFloatingColor(
     globallyFollowsApplication: Boolean,
     globalColorStyle: ReadFloatingColorStyle,
     presetSeed: Int,
-    presetFollowsApplication: Boolean,
     presetColorStyle: ReadFloatingColorStyle,
 ): EffectiveReadFloatingColor = when {
     isEInk -> EffectiveReadFloatingColor(
@@ -50,27 +49,28 @@ internal fun resolveEffectiveReadFloatingColor(
 
     else -> EffectiveReadFloatingColor(
         seed = presetSeed,
-        followsApplication = presetFollowsApplication,
+        followsApplication = false,
         colorStyle = presetColorStyle,
     )
 }
 
 object ReadFloatingAppearanceConfig {
 
-    const val DEFAULT_TRANSPARENCY_PERCENT = 20
+    const val DEFAULT_TRANSPARENCY_PERCENT = 0
     const val DEFAULT_PRIMARY_STRENGTH_PERCENT = 50
     const val MINI_PLAYER_TRANSPARENCY_PERCENT = 20
     const val MIN_PERCENT = 0
     const val MAX_PERCENT = 100
+    internal const val TRANSPARENCY_CURVE_PIVOT_PERCENT = 20
 
     fun normalizePercent(value: Int): Int = value.coerceIn(MIN_PERCENT, MAX_PERCENT)
 
-    /** 0% 不透明，100% 完全透明；默认值之前使用缓入以降低低刻度的视觉突变。 */
+    /** 0% 不透明，100% 完全透明；20% 之前使用缓入以降低低刻度的视觉突变。 */
     fun surfaceAlpha(transparencyPercent: Int): Float {
         val transparency = normalizePercent(transparencyPercent)
-        val transparencyFraction = if (transparency <= DEFAULT_TRANSPARENCY_PERCENT) {
-            val progress = transparency / DEFAULT_TRANSPARENCY_PERCENT.toFloat()
-            DEFAULT_TRANSPARENCY_PERCENT / 100f * progress * progress
+        val transparencyFraction = if (transparency <= TRANSPARENCY_CURVE_PIVOT_PERCENT) {
+            val progress = transparency / TRANSPARENCY_CURVE_PIVOT_PERCENT.toFloat()
+            TRANSPARENCY_CURVE_PIVOT_PERCENT / 100f * progress * progress
         } else {
             transparency / 100f
         }
@@ -78,8 +78,8 @@ object ReadFloatingAppearanceConfig {
     }
 
     /**
-     * 保留默认透明度下既有玻璃渐变，同时保证 0% 时渐变两端都严格不透明。
-     * [defaultAlpha] 是该渐变端点在默认 20% 透明度下的历史 alpha。
+     * 保留 20% 透明度下既有玻璃渐变，同时保证 0% 时渐变两端都严格不透明。
+     * [defaultAlpha] 是该渐变端点在 20% 透明度下的历史 alpha。
      */
     fun floatingSurfaceAlpha(
         transparencyPercent: Int,
@@ -87,13 +87,13 @@ object ReadFloatingAppearanceConfig {
     ): Float {
         val transparency = normalizePercent(transparencyPercent)
         val baseline = defaultAlpha.coerceIn(0f, 1f)
-        return if (transparency <= DEFAULT_TRANSPARENCY_PERCENT) {
-            val linearProgress = transparency / DEFAULT_TRANSPARENCY_PERCENT.toFloat()
+        return if (transparency <= TRANSPARENCY_CURVE_PIVOT_PERCENT) {
+            val linearProgress = transparency / TRANSPARENCY_CURVE_PIVOT_PERCENT.toFloat()
             val progress = linearProgress * linearProgress
             1f + (baseline - 1f) * progress
         } else {
             val remaining = (MAX_PERCENT - transparency).toFloat()
-            val range = (MAX_PERCENT - DEFAULT_TRANSPARENCY_PERCENT).toFloat()
+            val range = (MAX_PERCENT - TRANSPARENCY_CURVE_PIVOT_PERCENT).toFloat()
             baseline * remaining / range
         }.coerceIn(0f, 1f)
     }
