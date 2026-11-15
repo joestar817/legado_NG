@@ -4,6 +4,12 @@
 
 2026-11-10 视频后续改造：移除 GSY/IJK 适配层，改由应用直接管理 Media3；增加可选缓冲配置和解码器回退。详见 [Media3 改造记录](VIDEO_MEDIA3_MIGRATION.md)。下面 P5 的“复用 NG 单一播放器”现指直接管理的 Media3 会话。
 
+2026-11-15 播放页优化：新增独立 `lib/video-preload`，默认装配增加为 16 个模块。当前集播放稳定后提前解析相邻下一集，用暂停/静音的备用 Media3 实例准备媒体，切集命中后接管同一播放器和现有 Surface；首次播放仍由原规则/后台嗅探解析。主窗口和小窗增加 500 ms 加载提示防闪烁，电视和低内存设备默认关闭预开，可在视频设置切换。结构、预算和设备验收边界见 [播放预加载说明](VIDEO_PLAYBACK_PRELOAD.md)。
+
+本地验证 `build/video-preload-final-check.log`：新增预加载 14 项及原视频支持 24 项测试通过，应用 Kotlin 编译、16 模块边界和 39 个功能 UI 文件规则检查通过。未打包、安装或进行真实书源、双解码器、首帧及切集耗时的设备验证。
+
+全局 `verifyNgDesignSystem` 单独执行未通过：`BookInfoActivity.kt` 的 1 处颜色值和 `AccentStrokeImageButton.kt` 的 4 处视觉布尔参数问题。本次未修改这两个文件；日志为 `build/video-preload-design-check.log`。
+
 ## 基线与工作区
 
 - 目标：`D:\project\legado_NG`，分支 `codex/migrate-legado-features`，HEAD `7b6087410f287511080f2a93b82795231f4b72fd`。
@@ -42,7 +48,7 @@
 
 NG OTHER 备份分类新增加密 `featureModules.json.aes`。恢复前校验整个归档及已知配置，保留未知/未来 contributor；恢复开始时失效原图、翻译、PDF、预取和播放会话，恢复后重建扩展/TVBox 源。运行中的 JS/代理端口、缓存、扩展 APK/JAR 和本机信任授权不导出；MultiTTS SCRIPT 定义仍随 NG `config.xml`。不覆盖数据库文件或新增源项目 Room 表。
 
-默认启用全部 15 个模块。以下构建移除 PDF 分档优化和 Media3 画面增强，其余功能目前固定装配：
+默认启用全部 16 个模块。以下构建移除 PDF 分档优化和 Media3 画面增强，其余功能目前固定装配：
 
 ```powershell
 .\gradlew.bat :app:compileAppDebugKotlin verifyFeatureBoundaries verifyFeatureArtifacts `

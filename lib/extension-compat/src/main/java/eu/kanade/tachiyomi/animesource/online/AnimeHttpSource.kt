@@ -23,6 +23,7 @@ import eu.kanade.tachiyomi.network.awaitSuccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -169,23 +170,23 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
 
     protected open fun latestUpdatesParse(response: Response): AnimesPage = throw UnsupportedOperationException()
 
-    open fun animeDetailsRequest(anime: SAnime): Request = GET(baseUrl + anime.url, headers)
+    open fun animeDetailsRequest(anime: SAnime): Request = GET(resolveSourceUrl(anime.url), headers)
 
     protected open fun animeDetailsParse(response: Response): SAnime = throw UnsupportedOperationException()
 
-    protected open fun episodeListRequest(anime: SAnime): Request = GET(baseUrl + anime.url, headers)
+    protected open fun episodeListRequest(anime: SAnime): Request = GET(resolveSourceUrl(anime.url), headers)
 
     protected open fun episodeListParse(response: Response): List<SEpisode> = throw UnsupportedOperationException()
 
-    protected open fun seasonListRequest(anime: SAnime): Request = GET(baseUrl + anime.url, headers)
+    protected open fun seasonListRequest(anime: SAnime): Request = GET(resolveSourceUrl(anime.url), headers)
 
     protected open fun seasonListParse(response: Response): List<SAnime> = throw UnsupportedOperationException()
 
-    protected open fun hosterListRequest(episode: SEpisode): Request = GET(baseUrl + episode.url, headers)
+    protected open fun hosterListRequest(episode: SEpisode): Request = GET(resolveSourceUrl(episode.url), headers)
 
     protected open fun hosterListParse(response: Response): List<Hoster> = throw UnsupportedOperationException()
 
-    protected open fun videoListRequest(episode: SEpisode): Request = GET(baseUrl + episode.url, headers)
+    protected open fun videoListRequest(episode: SEpisode): Request = GET(resolveSourceUrl(episode.url), headers)
 
     protected open fun videoListParse(response: Response): List<Video> = throw UnsupportedOperationException()
 
@@ -197,6 +198,9 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     protected open fun videoUrlRequest(video: Video): Request = GET(video.url, headers)
 
     protected open fun videoUrlParse(response: Response): String = throw UnsupportedOperationException()
+
+    private fun resolveSourceUrl(url: String): String =
+        requireNotNull((baseUrl.trimEnd('/') + "/").toHttpUrl().resolve(url)) { "Invalid source URL: $url" }.toString()
 
     open fun List<Hoster>.sortHosters(): List<Hoster> = this
 

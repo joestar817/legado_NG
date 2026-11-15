@@ -14,7 +14,10 @@ import io.legado.app.help.http.okHttpClient
 import io.legado.app.help.exoplayer.ExoPlayerHelper
 import io.legado.app.integration.video.NgVideoBridge
 import io.legado.app.integration.video.NgVideoDataSource
+import io.legado.app.integration.video.NgVideoLoadControl
 import io.legado.app.model.VideoPlay
+import io.legado.features.api.video.PlaybackRequest
+import io.legado.features.preload.StandbyBufferBudget
 import splitties.init.appCtx
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -38,6 +41,9 @@ interface VideoPlaybackListener {
 @SuppressLint("UnsafeOptInUsageError")
 internal class Media3VideoEngine {
     private var player: ExoPlayer? = null
+    private var failed = false
+    private var preparationNotified = false
+    private var standbyBudget: StandbyBufferBudget? = null
     // A TextureView can become available before prepare creates the decoder.
     // Preserve its output across player recreation instead of waiting for STATE_READY.
     private var output: Surface? = null
@@ -50,6 +56,9 @@ internal class Media3VideoEngine {
     val bufferedPercentage get() = player?.bufferedPercentage ?: 0
     val bufferedPosition get() = player?.bufferedPosition?.coerceAtLeast(0) ?: 0L
     val isPlaying get() = player?.isPlaying == true
+    val ready get() = player?.playbackState == Player.STATE_READY
+    val isLive get() = player?.isCurrentMediaItemLive == true
+    val reusable get() = player != null && !failed && !isLive
     val currentVideoWidth get() = player?.videoSize?.let { (it.width * it.pixelWidthHeightRatio).toInt() } ?: 0
     val currentVideoHeight get() = player?.videoSize?.height ?: 0
     val videoSarNum get() = 1
@@ -57,9 +66,10 @@ internal class Media3VideoEngine {
 
     @Suppress("UNUSED_PARAMETER")
     fun prepare(url: String, headers: Map<String, String>?, loop: Boolean, speed: Float, cache: Boolean, cachePath: File?,
-                startPositionMs: Long, playWhenReady: Boolean) {
+                startPositionMs: Long, playWhenReady: Boolean, request: PlaybackRequest? = NgVideoBridge.currentRequest(),
+                warmup: Boolean = false) {
         releaseMediaPlayer()
-        val request = NgVideoBridge.currentRequest()
+        failed = false
         val policy = VideoBufferPolicy.fromId(VideoPlay.bufferPolicy)
         val client = okHttpClient.newBuilder().connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS).callTimeout(0, TimeUnit.SECONDS).build()
@@ -70,23 +80,27 @@ internal class Media3VideoEngine {
         val sources = DefaultMediaSourceFactory(appCtx)
             .setDataSourceFactory(DefaultDataSource.Factory(appCtx, upstream))
             .setLiveTargetOffsetMs(5000)
+        val baseLoadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(policy.minMs, policy.maxMs, policy.startMs, policy.resumeMs)
+            .setPrioritizeTimeOverSizeThresholds(true).build()
+        val budget = StandbyBufferBudget().also { if (!warmup) it.activate() }
+        standbyBudget = budget
+        val loadControl = NgVideoLoadControl(baseLoadControl, budget)
         val created = ExoPlayer.Builder(appCtx, DefaultRenderersFactory(appCtx).setEnableDecoderFallback(VideoPlay.decoderFallback))
             .setAudioAttributes(AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).setUsage(C.USAGE_MEDIA).build(), false)
             .setMediaSourceFactory(sources)
-            .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(policy.minMs, policy.maxMs, policy.startMs, policy.resumeMs)
-                .setPrioritizeTimeOverSizeThresholds(true).build())
+            .setLoadControl(loadControl)
             .setHandleAudioBecomingNoisy(true)
             .build()
         player = created
-        var prepared = false
         var liveRecoveryUsed = false
         created.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (player !== created) return
                 listener?.onInfo(if (playbackState == Player.STATE_BUFFERING) 701 else 702, 0)
                 if (created.isCurrentMediaItemLive) created.setSeekParameters(SeekParameters.DEFAULT)
-                if (playbackState == Player.STATE_READY && !prepared) {
-                    prepared = true
+                if (playbackState == Player.STATE_READY && !preparationNotified && listener != null) {
+                    preparationNotified = true
                     listener?.onPrepared()
                 } else if (playbackState == Player.STATE_ENDED) listener?.onAutoCompletion()
             }
@@ -98,8 +112,10 @@ internal class Media3VideoEngine {
             }
             override fun onPlayerError(error: PlaybackException) {
                 if (player !== created) return
+                failed = true
                 if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW && !liveRecoveryUsed) {
                     liveRecoveryUsed = true
+                    failed = false
                     created.seekToDefaultPosition()
                     created.prepare()
                 } else listener?.onError(error.errorCode, 0)
@@ -113,12 +129,30 @@ internal class Media3VideoEngine {
         created.setSeekParameters(if (policy == VideoBufferPolicy.LIVE) SeekParameters.DEFAULT else SeekParameters.CLOSEST_SYNC)
         created.setPlaybackSpeed(speed)
         created.repeatMode = if (loop) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
-        NgVideoBridge.enhance(created)
+        if (!warmup) NgVideoBridge.enhance(created)
         NgVideoBridge.selectAudio(created, request)
         setDisplay(output, outputWidth, outputHeight)
         created.setMediaSource(NgVideoBridge.source(appCtx, sources.createMediaSource(NgVideoBridge.mediaItem(url)), request), startPositionMs.coerceAtLeast(0))
         created.playWhenReady = playWhenReady
+        if (warmup) created.volume = 0f
         created.prepare()
+    }
+
+    fun activate(value: VideoPlaybackListener, speed: Float, playWhenReady: Boolean) {
+        val current = checkNotNull(player)
+        check(!failed)
+        listener = value
+        standbyBudget?.activate()
+        NgVideoBridge.enhance(current)
+        current.volume = 1f
+        current.setPlaybackSpeed(speed)
+        value.onInfo(if (current.playbackState == Player.STATE_BUFFERING) 701 else 702, 0)
+        if (ready) {
+            preparationNotified = true
+            value.onPrepared()
+        }
+        value.onVideoSizeChanged(current.videoSize.unappliedRotationDegrees)
+        current.playWhenReady = playWhenReady
     }
 
     fun setDisplay(surface: Surface?, width: Int = 0, height: Int = 0) {
@@ -142,6 +176,7 @@ internal class Media3VideoEngine {
     fun releaseMediaPlayer() {
         val previous = player
         player = null
+        preparationNotified = false
         previous?.release()
     }
 }

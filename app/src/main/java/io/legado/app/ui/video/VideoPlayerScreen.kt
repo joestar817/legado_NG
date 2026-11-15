@@ -188,7 +188,7 @@ fun VideoPlayerScreen(
                         LinearProgressIndicator(progress = { if (state.duration > 0) state.position.toFloat() / state.duration else 0f },
                             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(2.dp), color = primary)
                     }
-                    if (state.preparing || state.buffering) CircularProgressIndicator(
+                    if (state.showLoading) CircularProgressIndicator(
                         Modifier.align(Alignment.Center).size(32.dp), color = Color.White, strokeWidth = 2.dp)
                     state.error?.let { error ->
                         Column(Modifier.align(Alignment.Center).widthIn(max = 360.dp).padding(horizontal = 20.dp)

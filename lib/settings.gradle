@@ -4,7 +4,7 @@ def optionalFlag = { String key ->
     if (!(value in ['true', 'false'])) throw new GradleException("$key must be true or false")
     value == 'true'
 }
-def modules = ['feature-api', 'feature-backup', 'source-yiciyuan', 'tts-multitts-compat', 'extension-compat', 'source-runtime', 'source-mihon', 'source-aniyomi', 'source-tvbox', 'manga-reader-support', 'manga-translation', 'video-support', 'legado-ng-adapter']
+def modules = ['feature-api', 'feature-backup', 'source-yiciyuan', 'tts-multitts-compat', 'extension-compat', 'source-runtime', 'source-mihon', 'source-aniyomi', 'source-tvbox', 'manga-reader-support', 'manga-translation', 'video-support', 'video-preload', 'legado-ng-adapter']
 if (optionalFlag('legadoPdf')) modules += 'manga-pdf-support'
 if (optionalFlag('legadoVideoEffects')) modules += 'video-player-media3'
 modules.each { name ->

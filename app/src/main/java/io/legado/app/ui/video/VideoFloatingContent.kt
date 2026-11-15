@@ -49,7 +49,7 @@ fun VideoFloatingContent(owner: Any, onClose: () -> Unit, onOpen: () -> Unit,
             if (!state.preparing && !state.buffering && state.error == null) VideoIcon(if (state.playing) R.drawable.ic_pause_24dp else R.drawable.ic_play_24dp,
                 if (state.playing) "暂停" else if (state.ended) "重播" else "播放", { VideoPlaybackBridge.toggle() }, Modifier.align(Alignment.Center))
         }
-        if (state.preparing || state.buffering) CircularProgressIndicator(
+        if (state.showLoading) CircularProgressIndicator(
             Modifier.align(Alignment.Center).size(28.dp), color = Color.White, strokeWidth = 2.dp)
         if (state.error != null) Column(Modifier.align(Alignment.Center)
             .background(Color.Black.copy(alpha = .8f)).padding(horizontal = 12.dp, vertical = 4.dp),

@@ -2,14 +2,14 @@ package io.legado.features.aniyomi
 
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.animesource.model.*
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import io.legado.features.api.source.*
 import io.legado.features.runtime.ExtensionRuntime
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 
 class AniyomiProvider(
     private val resolve: suspend (Long) -> AnimeSource? = { ExtensionRuntime.awaitInitialized(); ExtensionRuntime.getAnimeSource(it) },
@@ -52,10 +52,10 @@ class AniyomiProvider(
         }
     }
     private fun AnimesPage.catalog() = CatalogPage(animes.map { it.catalog() }, hasNextPage)
-    private fun SAnime.catalog() = CatalogItem(url, title, author, thumbnail_url, description, genre, memo.toString())
+    private fun SAnime.catalog() = CatalogItem(url, title, author, thumbnail_url, description, genre, AnimeCatalogMetadata.encode(this))
     private fun CatalogItem.anime() = SAnime.create().also {
         it.url = id; it.title = title; it.author = author; it.description = description; it.genre = genre; it.thumbnail_url = cover
-        it.memo = metadata?.let { value -> Json.parseToJsonElement(value) as JsonObject } ?: JsonObject(emptyMap())
+        AnimeCatalogMetadata.restore(it, metadata)
     }
     private suspend fun update(key: SourceKey, item: CatalogItem, details: Boolean, episodes: Boolean): SAnimeEpisodeUpdate {
         return withUpdateLock(key, item) { s -> s.getAnimeEpisodeUpdate(item.anime(), emptyList(), details, episodes) }
@@ -69,7 +69,8 @@ class AniyomiProvider(
     }
     override suspend fun details(source: SourceKey, item: CatalogItem) = update(source, item, true, false).anime.catalog()
     override suspend fun chapters(source: SourceKey, item: CatalogItem): List<ChapterDescriptor> {
-        val seasons = try { withUpdateLock(source, item) { it.getAnimeSeasonUpdate(item.anime(), emptyList(), false, true).seasons } }
+        val seasons = if (item.anime().fetch_type != FetchType.Seasons) emptyList() else
+            try { withUpdateLock(source, item) { it.getAnimeSeasonUpdate(item.anime(), emptyList(), false, true).seasons } }
             catch (_: UnsupportedOperationException) { emptyList() }
             catch (e: IllegalStateException) { if (e.message == "Not used") emptyList() else throw e }
         if (seasons.isEmpty()) return update(source, item, false, true).episodes.mapIndexed { i, c -> ChapterDescriptor(c.url, c.name, i, c.episode_number, c.date_upload, c.memo.toString()) }
@@ -93,16 +94,37 @@ class AniyomiProvider(
         val episode = update(source, chapter.parentItem ?: item, false, true).episodes.firstOrNull { it.url == (chapter.originalId ?: chapter.id) } ?: error("剧集已失效，请刷新目录")
         // Legacy fallback is selected only when the source declares the API unsupported.
         val hosters = try { s.getHosterList(episode) } catch (_: UnsupportedOperationException) { null } catch (e: IllegalStateException) { if (e.message == "Not used") null else throw e }
-        @Suppress("DEPRECATION")
-        val videos = if (hosters == null) s.getVideoList(episode).map { Triple("default", "默认线路", it) } else hosters.flatMapIndexed { index, hoster ->
-            val lineId = hoster.hosterUrl.ifBlank { "hoster:$index:${hoster.hosterName}" }
-            (hoster.videoList ?: s.getVideoList(hoster)).map { Triple(lineId, hoster.hosterName.ifBlank { "线路 ${index + 1}" }, it) }
+        val resources = mutableListOf<VideoResource>()
+        var firstError: Exception? = null
+        suspend fun collect(lineId: String, lineTitle: String, load: suspend () -> List<Video>) {
+            try {
+                for (video in load()) {
+                    currentCoroutineContext().ensureActive()
+                    try {
+                        resources += AnimeVideoResources.resolve(s, video, lineId, lineTitle)
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { if (firstError == null) firstError = e }
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { if (firstError == null) firstError = e }
         }
-        check(videos.isNotEmpty()) { "扩展未返回播放资源" }
-        return ContentResult.Videos(videos.map { (lineId, lineTitle, video) ->
-            check(!video.usesHttpServer() && video.mpvArgs.isEmpty() && video.ffmpegStreamArgs.isEmpty() && video.ffmpegVideoArgs.isEmpty()) { "该视频需要未接入的本地代理或播放器参数" }
-            check(video.videoUrl.startsWith("http://") || video.videoUrl.startsWith("https://")) { "不支持的播放地址" }
-            VideoResource(video.videoUrl, video.videoTitle, video.headers?.toMap().orEmpty(), video.subtitleTracks.map { MediaTrack(it.url, it.lang) }, video.audioTracks.map { MediaTrack(it.url, it.lang) }, video.preferred, lineId, lineTitle)
-        })
+        @Suppress("DEPRECATION")
+        if (hosters == null) collect("default", "默认线路") {
+            val videos = s.getVideoList(episode)
+            if (s is AnimeHttpSource) s.run { videos.sortVideos() } else videos
+        }
+        else {
+            val ordered = if (s is AnimeHttpSource) s.run { hosters.sortHosters() } else hosters
+            ordered.forEachIndexed { index, hoster ->
+                collect(hoster.hosterUrl.ifBlank { "hoster:$index:${hoster.hosterName}" },
+                    hoster.hosterName.ifBlank { "线路 ${index + 1}" }) {
+                    val videos = hoster.videoList ?: s.getVideoList(hoster)
+                    if (s is AnimeHttpSource) s.run { videos.sortVideos() } else videos
+                }
+            }
+        }
+        currentCoroutineContext().ensureActive()
+        if (resources.isEmpty()) throw firstError ?: IllegalStateException("扩展未返回播放资源，请尝试其他线路或更新扩展")
+        return ContentResult.Videos(resources)
     }
 }

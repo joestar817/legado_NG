@@ -37,6 +37,7 @@ import androidx.compose.ui.window.Dialog
 import io.legado.app.R
 import io.legado.app.model.VideoPlay
 import io.legado.app.integration.video.NgVideoFeatureSettings
+import io.legado.app.integration.video.NgVideoPreload
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgDialog
 import io.legado.app.ui.design.components.compose.NgDialogTextActionButton
@@ -50,6 +51,7 @@ internal fun VideoSettings(onDismiss: () -> Unit) {
     var speed by remember { mutableIntStateOf(VideoPlay.longPressSpeed) }
     var picker by rememberSaveable { mutableStateOf(false) }
     var decoderFallback by remember { mutableStateOf(VideoPlay.decoderFallback) }
+    var preopen by remember { mutableStateOf(NgVideoPreload.enabled) }
     Dialog({ if (picker) picker = false else onDismiss() }) {
         if (picker) VideoHoldSpeedPicker(speed, { picker = false }) {
             speed = it; VideoPlay.longPressSpeed = it; picker = false
@@ -58,6 +60,9 @@ internal fun VideoSettings(onDismiss: () -> Unit) {
                 titleFontSize = 18.sp, titleFontWeight = FontWeight.Medium, actions = {}) {
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                     NgVideoFeatureSettings()
+                    VideoSettingCheck("提前解析并预开下一集", preopen) {
+                        preopen = it; NgVideoPreload.enabled = it
+                    }
                     VideoSettingCheck("解码失败时尝试其他解码器（下次加载生效）", decoderFallback) {
                         decoderFallback = it; VideoPlay.decoderFallback = it
                     }

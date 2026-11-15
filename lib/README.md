@@ -17,17 +17,19 @@
 | manga-translation | OCR、公共翻译/宿主 AI、擦字回填、队列和文件租约 |
 | manga-pdf-support | 分档预览/高清、原生渲染、窗口、缓存和释放 |
 | video-support | 线路/清晰度/字幕/音轨选择、过期检查与会话版本 |
+| video-preload | 播放页下一集预解析/备用播放器所有权、失效/退避、缓冲预算与加载提示防闪烁 |
 | video-player-media3 | 复用现有 ExoPlayer、协议依赖、字幕/音轨合并和六档画面效果 |
 | legado-ng-adapter | 公共功能入口、Android 装配、共享图片订阅与资源租约 |
 
-feature-api、feature-backup、source-yiciyuan、tts-multitts-compat、manga-reader-support 和 video-support 为 Kotlin/JVM；其余为 Android Library。应用最低 API 23，以满足 Media3 1.11.1。QuickJS Spider 在 Android 23 及以上按需运行。模块不引用 NG 实体或全局应用状态。依赖跟随根版本目录，Java 17。
+feature-api、feature-backup、source-yiciyuan、tts-multitts-compat、manga-reader-support、video-support 和 video-preload 为 Kotlin/JVM；其余为 Android Library。应用最低 API 23，以满足 Media3 1.11.1。QuickJS Spider 在 Android 23 及以上按需运行。模块不引用 NG 实体或全局应用状态。依赖跟随根版本目录，Java 17。
 
 ```powershell
+.\gradlew.bat :lib:video-preload:test :lib:video-support:test verifyFeatureBoundaries
 .\gradlew.bat :lib:feature-api:test :lib:source-yiciyuan:test :lib:tts-multitts-compat:test :lib:extension-compat:testDebugUnitTest :lib:source-runtime:testDebugUnitTest :lib:source-mihon:testDebugUnitTest :lib:source-aniyomi:testDebugUnitTest :lib:legado-ng-adapter:testDebugUnitTest verifyFeatureBoundaries
 ```
 
 已接入点见 `UPSTREAM_HOOKS.md`，实际进度与证据见 `docs/FEATURE_MIGRATION_STATUS.md`。本地测试不能替代原生 JS、动态 APK/JAR、OCR 或视频的设备验证。
 
-默认装配全部 15 个模块。`-PlegadoPdf=false -PlegadoVideoEffects=false` 从 Gradle 项目与 adapter 编译依赖中排除 PDF 优化和播放器增强，使用缺省 façade；NG 原有 PDF 与普通播放器入口仍可编译。其余模块暂为固定装配，运行时停用源不会移除其依赖。
+默认装配全部 16 个模块。`-PlegadoPdf=false -PlegadoVideoEffects=false` 从 Gradle 项目与 adapter 编译依赖中排除 PDF 优化和播放器增强，使用缺省 façade；NG 原有 PDF 与普通播放器入口仍可编译。其余模块暂为固定装配，运行时停用源不会移除其依赖。
 
 `verifyFeatureBoundaries` 检查模块依赖、宿主引用和 hook 登记；`verifyFeatureVisuals` 覆盖 integration 和 Library UI；`verifyFeatureArtifacts` 检查中间 JAR 的插件 ABI 唯一所有者、merged Manifest 与可选模块依赖。后者不执行 APK/DEX/R8，也不证明设备加载兼容。

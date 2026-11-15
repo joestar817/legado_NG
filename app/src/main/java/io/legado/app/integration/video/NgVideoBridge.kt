@@ -93,16 +93,7 @@ object NgVideoBridge {
         inlineHtml: String? = null, rawInput: String = analyze.url) {
         val guarded = target as? Guarded ?: return
         if (!features.current(guarded.revision)) throw kotlinx.coroutines.CancellationException("视频解析会话已失效")
-        val source = analyze.getSource()
-        val headers = features.headers(mapOf("User-Agent" to AppConfig.userAgent),
-            features.headers(analyze.getRequestHeaders(), guarded.request?.headers.orEmpty()))
-        val captured = VideoRuleFeatures.captured()
-        val documentBase = listOf(baseUrl, source?.getKey().orEmpty()).firstOrNull(WebVideoFeatures::isNetwork)
-            ?: baseUrl
-        val capturedUrl = captured?.url?.let { NetworkUtils.getAbsoluteURL(documentBase, it) }
-        val pageUrl = capturedUrl?.takeIf(String::isNotBlank) ?: rawInput
-        val inlineDocument = captured?.html?.takeIf { pageUrl == capturedUrl } ?: inlineHtml
-        val resolved = NgLegadoVideoResolver.resolve(analyze, pageUrl, documentBase, inlineDocument, headers)
+        val resolved = resolveMedia(analyze, baseUrl, inlineHtml, rawInput, guarded.request)
         withContext(Dispatchers.Main) {
             synchronized(this@NgVideoBridge) {
                 if (!features.current(guarded.revision)) throw kotlinx.coroutines.CancellationException("视频解析会话已失效")
@@ -113,6 +104,54 @@ object NgVideoBridge {
                 if (VideoPlay.autoPlay) target.startPlayLogic()
             }
         }
+    }
+
+    internal suspend fun resolveMedia(analyze: AnalyzeUrl, baseUrl: String, inlineHtml: String?,
+        rawInput: String, request: PlaybackRequest?): VideoResource {
+        val source = analyze.getSource()
+        val headers = features.headers(mapOf("User-Agent" to AppConfig.userAgent),
+            features.headers(analyze.getRequestHeaders(), request?.headers.orEmpty()))
+        val captured = VideoRuleFeatures.captured()
+        val documentBase = listOf(baseUrl, source?.getKey().orEmpty()).firstOrNull(WebVideoFeatures::isNetwork)
+            ?: baseUrl
+        val capturedUrl = captured?.url?.let { NetworkUtils.getAbsoluteURL(documentBase, it) }
+        val pageUrl = capturedUrl?.takeIf(String::isNotBlank) ?: rawInput
+        val inlineDocument = captured?.html?.takeIf { pageUrl == capturedUrl } ?: inlineHtml
+        return NgLegadoVideoResolver.resolve(analyze, pageUrl, documentBase, inlineDocument, headers)
+    }
+
+    internal suspend fun prepareEpisode(target: VideoPlaybackTarget, chapter: BookChapter,
+        source: io.legado.app.data.entities.BookSource, book: io.legado.app.data.entities.Book, directory: File) {
+        val guarded = target as? Guarded ?: return
+        if (!features.current(guarded.revision)) throw CancellationException("视频解析会话已失效")
+        val resolved = NgVideoEpisodeResolver.resolve(source, book, chapter, features.selected(), directory, save = true)
+        withContext(Dispatchers.Main) {
+            synchronized(this@NgVideoBridge) {
+                publish(guarded, resolved)
+                target.mapHeadData = resolved.request.headers
+                target.setUp(resolved.request.url, true, File(appCtx.externalCache, "exoplayer"), resolved.title)
+                AppLog.put("视频播放：已解析媒体地址，交由应用播放器播放")
+                if (VideoPlay.autoPlay) target.startPlayLogic()
+            }
+        }
+    }
+
+    private fun publish(guarded: Guarded, resolved: NgResolvedEpisode) {
+        if (!features.current(guarded.revision)) throw CancellationException("视频解析会话已失效")
+        guarded.request = resolved.request
+        media = resolved.request
+        variants.value = resolved.resources
+        features.select(resolved.selection.lineId, resolved.selection.qualityTitle, 0)
+        features.tracks(resolved.selection.subtitle, resolved.selection.audio, 0)
+        VideoPlay.videoUrl = resolved.input
+        VideoPlay.danmakuStr = resolved.danmaku as? String
+        VideoPlay.danmakuFile = resolved.danmaku as? File
+    }
+
+    @Synchronized internal fun adoptEpisode(resolved: NgResolvedEpisode) {
+        val guarded = begin(VideoPlaybackBridge) as Guarded
+        publish(guarded, resolved)
+        guarded.mapHeadData = resolved.request.headers
     }
     fun isDash(text: String) = WebVideoFeatures.isDash(text)
     fun initialInput(input: String): String = WebVideoFeatures.pluginSource(input)?.url ?: WebVideoFeatures.legacySource(
@@ -146,5 +185,5 @@ object NgVideoBridge {
         Media3Features.attachCaptions(player)
         return Media3Features.enhance(player, enhancement)
     }
-    @Synchronized fun invalidate() { features.invalidate(); variants.value = emptyList(); media = null; Media3Features.clearCaptions() }
+    @Synchronized fun invalidate() { NgVideoPreload.clear(); features.invalidate(); variants.value = emptyList(); media = null; Media3Features.clearCaptions() }
 }

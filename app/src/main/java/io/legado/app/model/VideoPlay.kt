@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.core.content.edit
 import io.legado.app.R
 import io.legado.app.integration.video.NgVideoBridge
+import io.legado.app.integration.video.NgVideoPreload
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.SourceType
@@ -19,15 +20,12 @@ import io.legado.app.data.entities.RssSource
 import io.legado.app.data.entities.RssStar
 import io.legado.app.exception.ContentEmptyException
 import io.legado.app.help.CacheManager
-import io.legado.app.help.book.getDanmaku
-import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.update
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.video.VideoPlaybackBridge
 import io.legado.app.help.video.VideoPlaybackTarget
 import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.model.rss.Rss
-import io.legado.app.model.webBook.WebBook
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.NetworkUtils
@@ -40,7 +38,6 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.CancellationException
 import splitties.init.appCtx
 import java.io.File
 
@@ -128,6 +125,7 @@ object VideoPlay : CoroutineScope by MainScope(){
         danmakuStr = null
         danmakuFile = null
         stopLoading()
+        if (NgVideoPreload.tryStart(target)) return
         val player = NgVideoBridge.begin(target)
         player.seekOnStart = 0
         player.loading()
@@ -243,44 +241,7 @@ object VideoPlay : CoroutineScope by MainScope(){
             return
         }
         Coroutine.async(loadScope, IO) {
-            NgVideoBridge.analyzingRules {
-                val content = NgVideoBridge.ruleContent {
-                    val raw = BookHelp.getContent(book, chapter)?.takeIf { it.isNotBlank() } ?: try {
-                        WebBook.getContentAwait(source as BookSource, book, chapter)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        AppLog.put("视频播放：正文解析失败，回退章节地址\n${error.localizedMessage}", error)
-                        null
-                    }
-                    raw?.takeIf { it.isNotBlank() } ?: chapter.getAbsoluteURL().takeIf { !chapter.isVolume }.orEmpty()
-                }.trim()
-                val featureRequest = NgVideoBridge.resolve(player, chapter, source as BookSource, book)
-                val mUrl = featureRequest?.url ?: if (content.isEmpty()) {
-                    throw ContentEmptyException("正文为空")
-                } else if (NgVideoBridge.isDash(content)) {
-                    val name = MD5Utils.md5Encode(content) + ".mpd"
-                    val file = FileUtils.createFileIfNotExist(videoTempFile,name)
-                    file.writeText(content)
-                    Uri.fromFile(file).toString()
-                } else {
-                    content
-                }
-                videoUrl = mUrl
-                val analyzeUrl = AnalyzeUrl(
-                    if (mUrl.startsWith("<")) chapter.url else NgVideoBridge.initialInput(mUrl),
-                    source = source,
-                    ruleData = book,
-                    chapter = chapter,
-                    coroutineContext = currentCoroutineContext()
-                )
-                when (val danmaku = chapter.getDanmaku()) {
-                    is String -> danmakuStr = danmaku
-                    is File -> danmakuFile = danmaku
-                }
-                NgVideoBridge.prepare(player, analyzeUrl, chapter.title, chapter.url,
-                    mUrl.takeIf { it.startsWith("<") }, mUrl.takeUnless { it.startsWith("<") } ?: analyzeUrl.url)
-            }
+            NgVideoBridge.prepareEpisode(player, chapter, source as BookSource, book, videoTempFile)
         }.onError {
             player.loadError("获取资源链接出错")
             AppLog.put("获取资源链接出错\n$it", it, true)
@@ -330,6 +291,7 @@ object VideoPlay : CoroutineScope by MainScope(){
 
     fun initSource(sourceKey: String?, sourceType: Int?, bookUrl: String?, record:String?): Boolean {
         stopLoading()
+        NgVideoPreload.clear()
         // A new source is a new selection; an Activity/Service handoff does not call initSource.
         toc = null
         chapter = null

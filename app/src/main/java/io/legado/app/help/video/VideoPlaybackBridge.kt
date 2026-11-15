@@ -9,13 +9,18 @@ import android.os.SystemClock
 import androidx.media3.common.PlaybackException
 import io.legado.app.constant.AppLog
 import io.legado.app.model.VideoPlay
+import io.legado.app.integration.video.NgVideoPreload
 import io.legado.features.adapter.VideoFeatures
+import io.legado.features.preload.PlaybackLoadingGate
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
 import splitties.init.appCtx
 import java.io.File
 
@@ -37,6 +42,7 @@ data class VideoPlaybackState(
     val mediaRevision: Int = 0,
     val seekRevision: Int = 0,
     val networkConfirmation: Boolean = false,
+    val showLoading: Boolean = false,
 ) {
     val aspect: Float get() = if (width > 0 && height > 0) {
         if (rotation % 180 == 0) width.toFloat() / height else height.toFloat() / width
@@ -52,7 +58,21 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
     val owner = mutableOwner.asStateFlow()
     private val completionEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val completions = completionEvents.asSharedFlow()
-    private val manager = Media3VideoEngine()
+    private var manager = Media3VideoEngine()
+    private val loadingGate = PlaybackLoadingGate()
+    init {
+        scope.launch {
+            state.map { it.mediaRevision to ((it.preparing || it.buffering) && it.error == null) }
+                .distinctUntilChanged().collectLatest { (_, waiting) ->
+                    loadingGate.reset()
+                    mutableState.update { it.copy(showLoading = loadingGate.update(waiting, SystemClock.elapsedRealtime())) }
+                    if (waiting) {
+                        delay(500)
+                        mutableState.update { it.copy(showLoading = loadingGate.update(true, SystemClock.elapsedRealtime())) }
+                    }
+                }
+        }
+    }
     private val audio by lazy { appCtx.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     private val focus = AudioManager.OnAudioFocusChangeListener { change ->
         if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
@@ -111,6 +131,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
     }
 
     override fun loading() {
+        NgVideoPreload.clear()
         onVideoPause()
         recovery.reset()
         ticker?.cancel()
@@ -147,6 +168,8 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
 
     private fun fetchVideoDimensions(url: String, headers: Map<String, String>, revision: Int) {
         dimensionFallback = scope.launch(Dispatchers.IO) {
+            delay(1500)
+            if (state.value.mediaRevision != revision || state.value.width > 0 && state.value.height > 0) return@launch
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(url, headers)
@@ -208,6 +231,31 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
             duration = manager.duration.coerceAtLeast(0), error = null) }
     }
 
+    @Suppress("DEPRECATION")
+    internal fun adoptPrepared(prepared: Media3VideoEngine, address: String, title: String) {
+        ticker?.cancel()
+        networkRetry?.cancel()
+        dimensionFallback?.cancel()
+        recovery.reset()
+        manager.setListener(null)
+        manager.pause()
+        manager.setDisplay(null)
+        manager.releaseMediaPlayer()
+        manager = prepared
+        url = address
+        cache = true
+        cachePath = null
+        seekOnStart = 0
+        playWhenReady = VideoPlay.autoPlay
+        hasPlaybackPosition = prepared.ready
+        mutableState.value = VideoPlaybackState(title = title, preparing = !prepared.ready,
+            position = 0, speed = selectedSpeed, mediaRevision = state.value.mediaRevision + 1)
+        prepared.setDisplay(lease.output, outputWidth, outputHeight)
+        if (playWhenReady) audio.requestAudioFocus(focus, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+        prepared.activate(this, selectedSpeed, playWhenReady)
+        startTicker()
+    }
+
     private fun startTicker() {
         ticker?.cancel()
         ticker = scope.launch {
@@ -217,6 +265,8 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
                 mutableState.update { if (it.ended || !it.prepared) it else it.copy(position = manager.currentPosition.coerceAtLeast(0),
                     duration = manager.duration.coerceAtLeast(0), buffered = manager.bufferedPercentage) }
                 val current = state.value
+                NgVideoPreload.update(manager.isPlaying, current.preparing || current.buffering,
+                    current.duration, current.position, manager.bufferedPosition, manager.isLive)
                 if (!current.ended && recovery.stalled(SystemClock.elapsedRealtime(), current.position,
                         manager.bufferedPosition, current.preparing || current.buffering,
                         manager.isPlaying, playWhenReady)) {
@@ -240,6 +290,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
         if (play) onVideoResume()
     }
     override fun onVideoPause() {
+        NgVideoPreload.clear()
         playWhenReady = false
         val pendingRetry = networkRetry?.isActive == true
         networkRetry?.cancel()
@@ -318,6 +369,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
         val currentUrl = url ?: return false
         if (!playWhenReady) return false
         val attempt = recovery.nextAttempt() ?: return false
+        NgVideoPreload.clear()
         saveRecoveryPosition()
         ticker?.cancel()
         networkRetry?.cancel()
@@ -337,6 +389,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
     }
 
     private fun failPlayback(message: String) {
+        NgVideoPreload.clear()
         saveRecoveryPosition()
         ticker?.cancel()
         networkRetry?.cancel()
@@ -369,6 +422,7 @@ object VideoPlaybackBridge : VideoPlaybackTarget, VideoPlaybackListener {
         connectivity.activeNetworkInfo?.type == ConnectivityManager.TYPE_WIFI
 
     fun releasePlayer() {
+        NgVideoPreload.clear()
         playWhenReady = false
         recovery.reset()
         ticker?.cancel()

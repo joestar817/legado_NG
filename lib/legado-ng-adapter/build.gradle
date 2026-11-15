@@ -16,6 +16,7 @@ android {
 dependencies {
     implementation libs.gson
     api project(':lib:feature-api')
+    api project(':lib:video-preload')
     implementation project(':lib:feature-backup')
     implementation project(':lib:source-yiciyuan')
     implementation project(':lib:tts-multitts-compat')
