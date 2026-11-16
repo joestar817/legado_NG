@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,6 +62,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -199,6 +202,7 @@ internal fun TextSelectionToolbar(
     textHighlight: Bookmark? = null,
     onHighlightStyleChange: (style: Int, color: Int) -> Unit = { _, _ -> },
     noteEditorVisible: Boolean = false,
+    noteEditorMaxHeight: Dp = 320.dp,
     noteDraft: String = "",
     onNoteEditorVisibleChange: (Boolean) -> Unit = {},
     onNoteDraftChange: (String) -> Unit = {},
@@ -239,6 +243,8 @@ internal fun TextSelectionToolbar(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(toolbarScrollState)
+            // PopupWindow 固定高度不能成为内容测量的最小值，否则删减备注后无法缩回。
+            .wrapContentHeight(align = Alignment.Top)
             .onSizeChanged { onContentHeightChanged(it.height) }
             .then(dragModifier),
     ) {
@@ -345,6 +351,7 @@ internal fun TextSelectionToolbar(
                 Spacer(Modifier.height(TEXT_HIGHLIGHT_NOTE_EDITOR_GAP_DP.dp))
                 TextHighlightNoteEditor(
                     value = noteDraft,
+                    maxHeight = noteEditorMaxHeight,
                     onValueChange = onNoteDraftChange,
                     onDone = onNoteDone,
                 )
@@ -470,6 +477,7 @@ private fun HighlightNoteButton(
 @Composable
 private fun TextHighlightNoteEditor(
     value: String,
+    maxHeight: Dp,
     onValueChange: (String) -> Unit,
     onDone: () -> Unit,
 ) {
@@ -491,19 +499,23 @@ private fun TextHighlightNoteEditor(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(TEXT_HIGHLIGHT_NOTE_EDITOR_HEIGHT_DP.dp),
+            .heightIn(
+                min = TEXT_HIGHLIGHT_NOTE_EDITOR_HEIGHT_DP.dp,
+                max = maxHeight.coerceAtLeast(TEXT_HIGHLIGHT_NOTE_EDITOR_HEIGHT_DP.dp),
+            ),
     ) {
         NgGlassSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
-                .align(Alignment.BottomStart),
+                .padding(top = 6.dp)
+                .heightIn(min = 50.dp),
             shape = RoundedCornerShape(12.dp),
             style = noteStyle,
         ) {
             Row(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .heightIn(min = 50.dp)
                     .padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -512,7 +524,6 @@ private fun TextHighlightNoteEditor(
                     onValueChange = onValueChange,
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight()
                         .focusRequester(focusRequester)
                         .padding(horizontal = 8.dp, vertical = 7.dp),
                     textStyle = TextStyle(
@@ -524,8 +535,7 @@ private fun TextHighlightNoteEditor(
                     ),
                     cursorBrush = SolidColor(Color(NgTheme.colors.primary)),
                     singleLine = false,
-                    maxLines = 2,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                     keyboardActions = KeyboardActions(onDone = { finishEditing() }),
                 )
                 Box(

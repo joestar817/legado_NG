@@ -2,6 +2,8 @@ package io.legado.app.help.ai
 
 object AiDefaultProviders {
 
+    const val OPENCODE_ID = "opencode"
+
     fun all(): List<AiProviderSetting> = listOf(
         AiProviderSetting(
             id = "openai",
@@ -10,6 +12,15 @@ object AiDefaultProviders {
             baseUrl = "https://api.openai.com/v1",
             modelsUrl = "/models",
             supportsStreamUsage = true,
+            enabled = true
+        ),
+        AiProviderSetting(
+            id = OPENCODE_ID,
+            type = AiProviderType.OPENAI,
+            name = "OpenCode",
+            baseUrl = "https://opencode.ai/inference/go",
+            chatCompletionsPath = "/openai/v1/chat/completions",
+            modelsUrl = "/v1/models",
             enabled = true
         ),
         AiProviderSetting(

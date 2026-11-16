@@ -86,7 +86,15 @@ class BookInfoEditActivity :
 
     private fun showChangeCoverDialog() {
         viewModel.book?.let {
-            showDialogFragment(ChangeCoverDialog(it.name, it.author))
+            val selectedType = if (uiState.typeSelected) {
+                when (uiState.typeIndex) {
+                    BOOK_TYPE_VIDEO -> BookType.video
+                    BOOK_TYPE_IMAGE -> BookType.image
+                    BOOK_TYPE_AUDIO -> BookType.audio
+                    else -> BookType.text
+                }
+            } else null
+            showDialogFragment(ChangeCoverDialog(it, selectedType))
         }
     }
 

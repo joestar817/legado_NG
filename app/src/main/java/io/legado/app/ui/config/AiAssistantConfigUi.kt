@@ -26,6 +26,7 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
 import io.legado.app.help.ai.AiConfig
+import io.legado.app.help.ai.AiDefaultProviders
 import io.legado.app.help.ai.AiManager
 import io.legado.app.help.ai.AiModel
 import io.legado.app.help.ai.AiModelAbility
@@ -979,6 +980,7 @@ internal fun AiModel.capabilityTags(): List<ModelCapabilityTag> {
 internal fun AiProviderSetting.iconRes(): Int {
     return when (id) {
         "openai" -> R.drawable.ic_provider_openai
+        AiDefaultProviders.OPENCODE_ID -> R.drawable.ic_provider_opencode
         "claude" -> R.drawable.ic_provider_claude
         "gemini" -> R.drawable.ic_provider_gemini
         "deepseek" -> R.drawable.ic_provider_deepseek

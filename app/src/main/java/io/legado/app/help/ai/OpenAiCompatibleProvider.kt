@@ -20,6 +20,7 @@ class OpenAiCompatibleProvider : AiProvider {
                             addHeader("Authorization", "Bearer ${setting.apiKey}")
                         }
                     }
+                    .addOpenCodeProviderHeaders(setting)
                     .get()
                     .build()
                 val (response, body) = client.executeJsonOrThrow(request)
@@ -75,6 +76,7 @@ class OpenAiCompatibleProvider : AiProvider {
                     addHeader("Authorization", "Bearer ${setting.apiKey}")
                 }
             }
+            .addOpenCodeProviderHeaders(setting)
             .addHeader("Content-Type", "application/json")
             .post(jsonBody(requestBody))
             .build()

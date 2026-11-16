@@ -102,6 +102,7 @@ class AiChatClient {
             calibration = calibration,
             stage = AiChatCompactionStage.PRE_TURN,
             onContextEvent = onContextEvent,
+            conversationId = conversationId,
             force = true,
             beforeCompaction = {
                 hookRuntime.evaluate(
@@ -229,6 +230,7 @@ class AiChatClient {
                 tokenCalibration,
                 AiChatCompactionStage.PRE_TURN,
                 onContextEvent,
+                conversationId = conversationId,
                 beforeCompaction = {
                     hookRuntime.evaluate(
                         AgentHookEvent(
@@ -266,6 +268,7 @@ class AiChatClient {
                         addHeader("Authorization", "Bearer ${setting.apiKey}")
                     }
                 }
+                .addOpenCodeProviderHeaders(setting, conversationId)
                 .addHeader("Content-Type", "application/json")
                 .post(jsonBody(body))
                 .build()
@@ -294,6 +297,7 @@ class AiChatClient {
                         calibration = tokenCalibration,
                         stage = AiChatCompactionStage.PRE_TURN,
                         onContextEvent = onContextEvent,
+                        conversationId = conversationId,
                         force = true,
                         beforeCompaction = {
                             hookRuntime.evaluate(
@@ -786,6 +790,7 @@ class AiChatClient {
                     tokenCalibration,
                     AiChatCompactionStage.MID_TURN,
                     onContextEvent,
+                    conversationId = conversationId,
                     beforeCompaction = {
                         hookRuntime.evaluate(
                             AgentHookEvent(
@@ -852,6 +857,7 @@ class AiChatClient {
         calibration: AiChatTokenCalibration?,
         stage: AiChatCompactionStage,
         onContextEvent: (AiChatContextEvent) -> Unit,
+        conversationId: String,
         force: Boolean = false,
         beforeCompaction: () -> AgentHookEffects = { AgentHookEffects() }
     ): AiChatCompactionRecord? {
@@ -883,7 +889,7 @@ class AiChatClient {
                 beforeUsage = usage
             )
         )
-        val summary = createCompactionSummary(messages, pinnedArtifactRefs)
+        val summary = createCompactionSummary(messages, conversationId, pinnedArtifactRefs)
         val replacement = AiChatContextManager.buildCompactedHistory(
             messages,
             summary.content,
@@ -918,6 +924,7 @@ class AiChatClient {
 
     private suspend fun createCompactionSummary(
         messages: List<JsonObject>,
+        conversationId: String,
         pinnedArtifactRefs: Set<String> = emptySet()
     ): AiChatCompactionSummary {
         val selection = AiConfig.contextCompactionModel()
@@ -965,6 +972,7 @@ class AiChatClient {
                         addHeader("Authorization", "Bearer ${setting.apiKey}")
                     }
                 }
+                .addOpenCodeProviderHeaders(setting, conversationId)
                 .addHeader("Content-Type", "application/json")
                 .post(jsonBody(body))
                 .build()
