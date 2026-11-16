@@ -51,7 +51,7 @@
     <string name="home_replace">Replace</string>
     <string name="home_remove">Remove</string>
     <string name="home_apply">Apply</string>
-    <string name="home_empty">Add widgets from the top-right menu.</string>
+    <string name="home_empty">No widgets yet</string>
     <string name="home_layout_read_failed">Unable to read the home layout</string>
     <string name="home_reset_layout">Reset home layout</string>
     <string name="home_reset">Reset</string>
@@ -70,4 +70,6 @@
     <string name="home_skin_manage">Manage skins</string>
     <string name="home_skin_done">Done</string>
     <string name="home_skin_delete">Delete skin</string>
+    <string name="home_style">Style</string>
+    <string name="home_manage_home">Manage home</string>
 </resources>

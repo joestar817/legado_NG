@@ -89,12 +89,11 @@ import io.legado.app.help.tts.TtsEngineCapability
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.TtsEngineType
-import io.legado.app.help.tts.TtsVoice
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
-import io.legado.app.ui.config.TtsVoiceFilterSupport
 import io.legado.app.ui.config.TtsVoiceDrawerGroup
+import io.legado.app.ui.config.TtsVoiceDrawerCatalogLoader
 import io.legado.app.ui.config.TtsEngineSelectionDrawerContent
 import io.legado.app.ui.config.TtsVoiceDrawerState
 import io.legado.app.ui.config.TtsVoiceOption
@@ -102,7 +101,8 @@ import io.legado.app.ui.config.TtsVoicePreviewController
 import io.legado.app.ui.config.TtsVoiceSelectionDrawerContent
 import io.legado.app.ui.config.refreshTtsVoiceCatalogs
 import io.legado.app.ui.config.showTtsVoiceParamsDialog
-import io.legado.app.ui.config.toDrawerCard
+import io.legado.app.ui.config.toVoiceDrawerGroup
+import io.legado.app.ui.config.withVoiceGroups
 import io.legado.app.ui.config.withUpdatedEngine
 import io.legado.app.ui.design.components.NgButtonVariant
 import io.legado.app.ui.design.components.NgDialogVariant
@@ -188,7 +188,7 @@ internal class ReadAloudModeDialog : ReadAloudComposeBottomSheet() {
         viewLifecycleOwner.lifecycleScope.launch {
             val engines = withContext(IO) {
                 TtsEngineStore.engines().filter {
-                    it.enabled && it.type == TtsEngineType.SCRIPT
+                    it.isSelectable && it.usesGeneratedAudio
                 }
             }
             if (revision != engineSnapshotRevision) return@launch
@@ -208,7 +208,7 @@ internal class ReadAloudModeDialog : ReadAloudComposeBottomSheet() {
             try {
                 val engines = withContext(IO) {
                     TtsEngineStore.reloadEngines().filter {
-                        it.enabled && it.type == TtsEngineType.SCRIPT
+                        it.isSelectable && it.usesGeneratedAudio
                     }
                 }
                 if (revision != engineSnapshotRevision) return@launch
@@ -647,7 +647,13 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
         viewLifecycleOwner.lifecycleScope.launch {
             val engineName = withContext(IO) {
                 runCatching {
-                    TtsEngineStore.activeEngine().takeIf { it.enabled }?.name ?: "未选择"
+                    TtsEngineStore.activeEngine().let { engine ->
+                        when {
+                            !engine.enabled -> "未选择"
+                            !engine.isSelectable -> "${engine.name}（未就绪）"
+                            else -> engine.name
+                        }
+                    }
                 }.getOrDefault("未选择")
             }
             state = state?.copy(engineName = engineName)
@@ -1242,6 +1248,7 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
     private var state by mutableStateOf(TtsVoiceDrawerState())
     private var refreshingVoices by mutableStateOf(false)
     private var voiceLoadJob: kotlinx.coroutines.Job? = null
+    private var voiceCatalogLoader: TtsVoiceDrawerCatalogLoader? = null
     private var previewController: TtsVoicePreviewController? = null
     private var voiceParamsDialog: ComponentDialog? = null
 
@@ -1251,6 +1258,18 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
             dismissAllowingStateLoss()
             return
         }
+        voiceCatalogLoader = TtsVoiceDrawerCatalogLoader(
+            scope = viewLifecycleOwner.lifecycleScope,
+            readState = { state },
+            writeState = { state = it },
+            fetch = { engineId ->
+                withContext(IO) {
+                    TtsEngineStore.ensureVoiceCatalog(engineId, restartReadAloud = false)
+                }
+            },
+            loadGroup = { engineId -> withContext(IO) { buildVoiceGroup(engineId) } },
+            onLoaded = { (activity as? ReadAloudPlayerActivity)?.invalidateVoiceLabel() },
+        )
         previewController = TtsVoicePreviewController(
             context = player,
             lifecycleScope = viewLifecycleOwner.lifecycleScope,
@@ -1264,7 +1283,7 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
             ListeningSheetTheme {
                 TtsVoiceSelectionDrawerContent(
                     title = "发音人",
-                    searchHint = "搜索引擎或发音人",
+                    searchHint = stringResource(R.string.default_tts_voice_search),
                     emptyText = "没有可选发音人",
                     state = state,
                     contentCardStyle = NgDrawerContentCardStyle.ADAPTIVE,
@@ -1273,6 +1292,8 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
                     onPreview = { previewController?.preview(it.engine, it.voice, it.systemDefault) },
                     onEditParams = ::editVoiceParams,
                     onRetryFetch = { loadVoices() },
+                    onEngineOpen = { if (!refreshingVoices) voiceCatalogLoader?.open(it) },
+                    onRetryEngine = { if (!refreshingVoices) voiceCatalogLoader?.retry(it) },
                     refreshing = refreshingVoices,
                     onRefresh = { loadVoices(forceRefresh = true) },
                 )
@@ -1293,75 +1314,20 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
         ) {
             try {
             if (forceRefresh) {
+                voiceCatalogLoader?.awaitPending()
                 val result = withContext(IO) {
                     refreshTtsVoiceCatalogs(TtsEngineStore.engines().filter { it.enabled })
                 }
                 activity?.toastOnUi(result.feedback())
             }
             val snapshot = withContext(IO) {
-                var engines = TtsEngineStore.engines().filter { it.enabled }
-                val activeEngineId = runCatching {
-                    TtsEngineStore.activeEngineId()
-                }.getOrDefault("")
-                var fetchError: String? = null
-                engines.firstOrNull { it.id == activeEngineId }
-                    ?.takeIf { engine ->
-                        engine.type == TtsEngineType.SCRIPT &&
-                            engine.supportsVoiceFetch() &&
-                            engine.effectiveVoices().isEmpty()
-                    }
-                    ?.let { engine ->
-                        try {
-                            TtsEngineStore.ensureVoiceCatalog(
-                                engineId = engine.id,
-                                restartReadAloud = false,
-                            )
-                            engines = TtsEngineStore.engines().filter { it.enabled }
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: Throwable) {
-                            fetchError = "获取发音人失败：${
-                                error.localizedMessage ?: error.javaClass.simpleName
-                            }"
-                        }
-                    }
-                val activeVoiceId = engines.firstOrNull { it.id == activeEngineId }
-                    ?.activeVoiceId
+                val engines = TtsEngineStore.engines().filter { it.enabled }
+                val activeEngineId = runCatching { TtsEngineStore.activeEngineId() }.getOrDefault("")
+                val activeVoiceId = engines.firstOrNull { it.id == activeEngineId }?.activeVoiceId
                 val groups = engines.map { engine ->
-                    TtsVoiceDrawerGroup(
-                        engineId = engine.id,
-                        engineName = engine.name,
-                        cards = voiceOptions(engine).map { option ->
-                            option.toDrawerCard(
-                                selected = activeEngineId == engine.id && if (option.systemDefault) {
-                                    activeVoiceId.isNullOrBlank()
-                                } else {
-                                    activeVoiceId == option.voice.id
-                                }
-                            )
-                        },
-                    )
-                }.filter { it.cards.isNotEmpty() }
-                val voices = groups.flatMap { group ->
-                    group.cards.map { it.option.voice }
+                    voiceGroup(engine, activeEngineId, activeVoiceId)
                 }
-                TtsVoiceDrawerState(
-                    loading = false,
-                    groups = groups,
-                    languageOptions = TtsVoiceFilterSupport.availableLanguageLabels(voices),
-                    genderOptions = listOf("男", "女").filter { label ->
-                        groups.any { group ->
-                            group.cards.any { it.genderLabel == label }
-                        }
-                    },
-                    fetchError = fetchError,
-                    canRetryFetch = engines.firstOrNull { it.id == activeEngineId }
-                        ?.let { engine ->
-                            engine.type == TtsEngineType.SCRIPT &&
-                                engine.supportsVoiceFetch() &&
-                                engine.effectiveVoices().isEmpty()
-                        } == true,
-                )
+                TtsVoiceDrawerState(loading = false).withVoiceGroups(groups)
             }
             state = snapshot.copy(preview = state.preview)
             (activity as? ReadAloudPlayerActivity)?.invalidateVoiceLabel()
@@ -1378,26 +1344,29 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
         voiceLoadJob?.start()
     }
 
-    private fun voiceOptions(engine: TtsEngineSetting): List<TtsVoiceOption> {
-        if (engine.type == TtsEngineType.SYSTEM) {
-            return listOf(
-                TtsVoiceOption(
-                    engine = engine,
-                    voice = TtsVoice(
-                        id = TtsEngineStore.SYSTEM_DEFAULT_ID,
-                        name = getString(R.string.character_tts_system_default_voice),
-                    ),
-                    systemDefault = true,
-                )
-            )
-        }
-        return engine.enabledVoices().map {
-            TtsVoiceOption(engine = engine, voice = it, systemDefault = false)
+    private fun buildVoiceGroup(engineId: String): TtsVoiceDrawerGroup? {
+        val engine = TtsEngineStore.engine(engineId)?.takeIf { it.enabled } ?: return null
+        val activeEngineId = runCatching { TtsEngineStore.activeEngineId() }.getOrDefault("")
+        val activeVoiceId = TtsEngineStore.engine(activeEngineId)?.activeVoiceId
+        return voiceGroup(engine, activeEngineId, activeVoiceId)
+    }
+
+    private fun voiceGroup(
+        engine: TtsEngineSetting,
+        activeEngineId: String,
+        activeVoiceId: String?,
+    ): TtsVoiceDrawerGroup = engine.toVoiceDrawerGroup(
+        getString(R.string.character_tts_system_default_voice),
+    ) { option ->
+        activeEngineId == engine.id && if (option.systemDefault) {
+            activeVoiceId.isNullOrBlank()
+        } else {
+            activeVoiceId == option.voice.id
         }
     }
 
     private fun editVoiceParams(option: TtsVoiceOption) {
-        if (option.systemDefault || !option.engine.isScriptEngine) return
+        if (option.systemDefault || !option.engine.usesGeneratedAudio) return
         val player = activity as? ReadAloudPlayerActivity ?: return
         voiceParamsDialog?.dismiss()
         voiceParamsDialog = showTtsVoiceParamsDialog(
@@ -1419,7 +1388,7 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
         val wasRun = BaseReadAloudService.isRun
         val oldEngineType = when {
             !wasRun -> null
-            ReadAloud.httpTtsEngineV2 != null -> TtsEngineType.SCRIPT
+            ReadAloud.httpTtsEngineV2 != null -> ReadAloud.httpTtsEngineV2?.type
             else -> TtsEngineType.SYSTEM
         }
         val shouldPlay = player.wantsPlayback()
@@ -1450,6 +1419,8 @@ internal class ReadAloudVoiceDialog : ReadAloudComposeBottomSheet() {
     }
 
     override fun onDestroyView() {
+        voiceCatalogLoader?.cancel()
+        voiceCatalogLoader = null
         voiceParamsDialog?.dismiss()
         voiceParamsDialog = null
         previewController?.release()

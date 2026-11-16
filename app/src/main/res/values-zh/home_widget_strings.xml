@@ -51,7 +51,7 @@
     <string name="home_replace">替换</string>
     <string name="home_remove">移除</string>
     <string name="home_apply">应用</string>
-    <string name="home_empty">从右上角添加组件。</string>
+    <string name="home_empty">暂无组件</string>
     <string name="home_layout_read_failed">首页布局读取失败</string>
     <string name="home_reset_layout">重置首页布局</string>
     <string name="home_reset">重置</string>
@@ -70,4 +70,6 @@
     <string name="home_skin_manage">管理皮肤</string>
     <string name="home_skin_done">完成</string>
     <string name="home_skin_delete">删除皮肤</string>
+    <string name="home_style">样式</string>
+    <string name="home_manage_home">首页管理</string>
 </resources>

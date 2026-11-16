@@ -17,6 +17,7 @@ import io.legado.app.help.background.BackgroundDeletionResult
 import io.legado.app.help.background.BackgroundDeletionTarget
 import io.legado.app.help.background.ReadingBackgroundLibrary
 import io.legado.app.BuildConfig
+import io.legado.app.help.tts.packages.MicrosoftOfflineSupport
 import io.legado.app.help.http.await
 import io.legado.app.help.http.GitHubRelay
 import io.legado.app.help.font.FontLibraryStore
@@ -26,6 +27,8 @@ import io.legado.app.utils.GSON
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -86,6 +89,10 @@ internal object ResourceRepository {
     private val metadataClient = client.newBuilder()
         .readTimeout(GitHubRelay.METADATA_ATTEMPT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .callTimeout(GitHubRelay.METADATA_ATTEMPT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .build()
+    private val offlineTtsClient = client.newBuilder()
+        .readTimeout(60, TimeUnit.SECONDS)
+        .callTimeout(15, TimeUnit.MINUTES)
         .build()
     private val fontPreviewClient = client.newBuilder()
         .readTimeout(10, TimeUnit.SECONDS)
@@ -329,6 +336,9 @@ internal object ResourceRepository {
         var records = initial
         ResourceInstallStore.pending()?.let { pending ->
             if (ResourceInstaller.fingerprint(pending) == pending.baseline) {
+                // Identical TTS content can already exist before commit; ensure its source marker
+                // is installed as well before the pending receipt becomes authoritative.
+                ResourceInstaller.completeRecovery(pending)
                 records = records.filterNot { it.entry.item.id == pending.entry.item.id } + pending
                 ResourceInstallStore.save(records)
             }
@@ -528,7 +538,7 @@ internal object ResourceRepository {
         networkClient: OkHttpClient,
         originFirst: Boolean = false,
         read: suspend (Response) -> T,
-    ): T {
+    ): T = coroutineScope {
         var lastError: Exception? = null
         val browsingSession = synchronized(sessionLock) { catalogLoader }
         val routes = GitHubRelay.proxyFirst(url)
@@ -538,14 +548,20 @@ internal object ResourceRepository {
             val request = Request.Builder().url(candidate).header("Git-Protocol", "version=0")
             if (originFirst) request.header("Cache-Control", "no-cache")
             val call = networkClient.newCall(request.build())
+            // await() only owns cancellation until response headers arrive. Keep cancellation
+            // connected to the socket while a blocking response-body read is in progress.
+            val cancelCall = launch(start = CoroutineStart.UNDISPATCHED) {
+                try { awaitCancellation() } finally { call.cancel() }
+            }
             try {
-                return call.await().use { response ->
+                return@coroutineScope call.await().use { response ->
                     if (!response.isSuccessful) throw ResourceHttpException(response.code, authoritative = candidate == url)
                     read(response)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
                 // 源站明确拒绝访问时不再借镜像或旧结果回退。
                 if (error is ResourceHttpException && error.accessDenied) {
                     synchronized(sessionLock) {
@@ -555,6 +571,7 @@ internal object ResourceRepository {
                 }
                 lastError = error
             } finally {
+                cancelCall.cancel()
                 call.cancel()
             }
         }
@@ -569,7 +586,7 @@ internal object ResourceRepository {
         cachedPayload(entry, cached)?.let { return it }
         val temp = File(cacheDir, ".${UUID.randomUUID()}.part")
         try {
-            relayResponse(rawUrl(entry.sourceCommit, entry.item.payload.path), client) { response ->
+            relayResponse(ResourceProtocol.payloadUrl(entry), if (entry.isOfflineTts) offlineTtsClient else client) { response ->
                 progress(0f)
                 var received = 0L
                 var lastPercent = -1
@@ -581,7 +598,7 @@ internal object ResourceRepository {
                             val count = input.read(buffer)
                             if (count < 0) break
                             received += count
-                            require(received <= entry.item.payload.size && received <= ResourceProtocol.MAX_PAYLOAD_BYTES) { "下载大小超过目录声明" }
+                            require(received <= entry.item.payload.size && received <= ResourceProtocol.payloadLimit(entry)) { "下载大小超过目录声明" }
                             output.write(buffer, 0, count)
                             val percent = (received * 100 / entry.item.payload.size).toInt()
                             if (percent != lastPercent) {
@@ -729,11 +746,12 @@ internal object ResourceRepository {
         confirmedReadPresetConflict: io.legado.app.help.config.ReadPresetResourceConflict? = null,
         readPresetReplacement: io.legado.app.help.config.ReadPresetResourceCandidate? = null,
         confirmedWidgetSkinReplacement: HomeWidgetSkinRecord? = null,
+        confirmedTtsConflict: TtsResourceConflict? = null,
     ) {
         val current = state.value.confirmedEntry(entry) ?: return
         startInstall(current, mode, confirmedThemeConflict = confirmedThemeConflict,
             confirmedReadPresetConflict = confirmedReadPresetConflict, readPresetReplacement = readPresetReplacement,
-            confirmedWidgetSkinReplacement = confirmedWidgetSkinReplacement)
+            confirmedWidgetSkinReplacement = confirmedWidgetSkinReplacement, confirmedTtsConflict = confirmedTtsConflict)
     }
 
     fun updateAll() {
@@ -767,6 +785,7 @@ internal object ResourceRepository {
         confirmedReadPresetConflict: io.legado.app.help.config.ReadPresetResourceConflict? = null,
         readPresetReplacement: io.legado.app.help.config.ReadPresetResourceCandidate? = null,
         confirmedWidgetSkinReplacement: HomeWidgetSkinRecord? = null,
+        confirmedTtsConflict: TtsResourceConflict? = null,
     ): Job {
         val id = entry.item.id
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -785,6 +804,7 @@ internal object ResourceRepository {
                 check(state.value.storageError == null) { "安装记录异常，请重新进入后重试" }
                 check(!state.value.accessDenied) { "资源库暂不可访问，请重试" }
                 ResourceProtocol.incompatibility(entry, BuildConfig.VERSION_CODE.toLong())?.let { error(it) }
+                if (entry.isOfflineTts) MicrosoftOfflineSupport.currentUnavailableReason()?.let { error(it) }
                 val widgetSkinBefore = if (entry.category.type == HOME_WIDGET_SKIN_TYPE) HomeWidgetSkinStore.current(id) else null
                 val previous = state.value.installed(id)
                 if (previous != null && entry.category.type != "pet") {
@@ -827,7 +847,8 @@ internal object ResourceRepository {
                             .mapTo(hashSetOf()) { it.target }
                     } else emptySet()
                     val candidate = ResourceInstaller.prepare(entry, file, old, mode, confirmedThemeConflict, otherThemeTargets,
-                        confirmedReadPresetConflict, readPresetReplacement, confirmedWidgetSkinReplacement, widgetSkinBefore)
+                        confirmedReadPresetConflict, readPresetReplacement, confirmedWidgetSkinReplacement, widgetSkinBefore,
+                        confirmedTtsConflict)
                     prepared = candidate
                     currentCoroutineContext().ensureActive()
                     task(id, ResourceTask(message = "正在入库"))
@@ -859,15 +880,15 @@ internal object ResourceRepository {
                         completionMessage = try {
                             candidate.afterCommit() ?: completionMessage
                         } catch (_: Exception) {
-                            "资源已入库，当前外观刷新失败。"
+                            if (entry.isOfflineTts) "离线语音已安装，请重新进入朗读设置刷新。" else "资源已入库，当前外观刷新失败。"
                         }
                     }
                 }
                 task(id, ResourceTask(message = completionMessage, running = false))
             } catch (conflict: ResourceConflict) {
                 task(id, ResourceTask(message = conflict.message ?: "本地资源冲突", running = false, conflict = true,
-                    themeConflict = conflict.themeConflict, readPresetConflict = conflict.readPresetConflict,
-                    widgetSkinConflict = conflict.widgetSkinConflict))
+                    themeConflict = conflict.themeConflict, ttsConflict = conflict.ttsConflict,
+                    readPresetConflict = conflict.readPresetConflict, widgetSkinConflict = conflict.widgetSkinConflict))
             } catch (cancelled: CancellationException) {
                 task(id, ResourceTask(message = if (committed) "已加入资源库" else "已取消", running = false))
                 throw cancelled

@@ -144,7 +144,7 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
         summaryJob = viewLifecycleOwner.lifecycleScope.launch {
             val selectedName = withContext(Dispatchers.IO) {
                 TtsEngineStore.engine(selectedId)
-                    ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+                    ?.takeIf { it.isSelectable && it.usesGeneratedAudio }
                     ?.name
             }
             if (view == null) return@launch
@@ -182,7 +182,7 @@ class ReadAloudConfigFragment : BaseFragment(R.layout.fragment_read_aloud_config
         multiRoleSheetJob = viewLifecycleOwner.lifecycleScope.launch {
             val engines = withContext(Dispatchers.IO) {
                 TtsEngineStore.engines().filter {
-                    it.enabled && it.type == TtsEngineType.SCRIPT
+                    it.isSelectable && it.usesGeneratedAudio
                 }
             }
             if (view != null && multiRoleSheet === sheet) {
@@ -366,8 +366,7 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
             searchHint = getString(R.string.default_tts_voice_search),
             emptyText = getString(R.string.default_tts_voice_empty),
             engines = {
-                (engineSnapshot.takeIf { engineSnapshotLoaded } ?: TtsEngineStore.engines())
-                    .filter { it.enabled }
+                TtsEngineStore.engines().filter { it.enabled }
             },
             onCatalogRefreshed = ::refreshCards,
             isSelected = { option ->
@@ -444,7 +443,7 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
         engines: List<TtsEngineSetting> = engineSnapshot
     ): TtsEngineSetting? {
         return engines.firstOrNull { it.id == AppConfig.multiRoleTtsEngineId }
-            ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+            ?.takeIf { it.isSelectable && it.usesGeneratedAudio }
     }
 
     private enum class DialogueGender { MALE, FEMALE }

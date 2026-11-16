@@ -146,6 +146,7 @@ class ConfigActivity : VMBaseActivity<ActivityConfigBinding, ConfigViewModel>() 
             is DefaultTtsVoiceConfigFragment,
             is ThemeColorConfigFragment -> true
             is AiConfigFragment -> fragment.usesFloatingSettingsTitleBar()
+            is TtsEngineConfigFragment -> fragment.usesFloatingSettingsTitleBar()
             else -> false
         }
         binding.floatingTitleBar.isVisible = floating

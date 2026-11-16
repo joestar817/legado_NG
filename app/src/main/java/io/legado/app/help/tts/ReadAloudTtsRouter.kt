@@ -50,7 +50,7 @@ class ReadAloudTtsRouter private constructor(
         val binding = characterBinding ?: castRoleBinding ?: dialogueFallbackBinding ?:
             defaultDialogueBinding ?:
             narratorBinding.takeUnless { isSpokenRole }
-        val engine = binding?.engine?.takeIf { it.type == TtsEngineType.SCRIPT && it.enabled }
+        val engine = binding?.engine?.takeIf { it.usesGeneratedAudio && it.enabled }
             ?: fallbackEngine
         val sceneVoiceId = scene?.voiceAssignments
             ?.firstOrNull { assignment ->
@@ -370,10 +370,10 @@ class ReadAloudTtsRouter private constructor(
             engineResolver: (String?) -> TtsEngineSetting?
         ): GlobalBindings {
             val narrator = engineResolver(narratorEngineId)
-                ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+                ?.takeIf { it.enabled && it.usesGeneratedAudio }
                 ?.toGlobalRouteBinding(narratorVoiceId)
             val dialogueEngine = engineResolver(multiRoleEngineId)
-                ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+                ?.takeIf { it.enabled && it.usesGeneratedAudio }
             return GlobalBindings(
                 narrator = narrator,
                 dialogueMale = dialogueEngine?.toGlobalRouteBinding(dialogueMaleVoiceId),
@@ -458,7 +458,7 @@ class ReadAloudTtsRouter private constructor(
         ): Boolean {
             if (binding.bindingMode == BookCharacterTtsBinding.BindingMode.INHERIT) return false
             val engine = engineResolver(binding.engineId)
-                ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+                ?.takeIf { it.enabled && it.usesGeneratedAudio }
                 ?: return true
             val voiceId = binding.voiceId?.takeIf { it.isNotBlank() }
                 ?: return binding.bindingMode == BookCharacterTtsBinding.BindingMode.AUTO

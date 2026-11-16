@@ -1,6 +1,7 @@
 package io.legado.app.ui.book.character
 
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.addCallback
 import androidx.compose.runtime.getValue
@@ -32,6 +33,7 @@ import io.legado.app.help.tts.normalizeStoryboardSynthesisText
 import io.legado.app.help.tts.toTtsSynthesisContext
 import io.legado.app.help.tts.forEngineCapabilities
 import io.legado.app.help.tts.writeReadAloudAudioWithWavRetry
+import io.legado.app.help.tts.packages.MicrosoftOfflineClient
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.service.BaseReadAloudService
@@ -916,7 +918,7 @@ class BookStoryboardActivity : BaseActivity<ComposeActivityBinding>() {
 
     private fun currentBaseEngine() =
         (ReadAloud.httpTtsEngineV2 ?: runCatching { TtsEngineStore.activeEngine() }.getOrNull())
-            ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+            ?.takeIf { it.isSelectable && it.usesGeneratedAudio }
 
     private fun resolvedRoute(
         scene: StoryboardScene,
@@ -995,7 +997,7 @@ class BookStoryboardActivity : BaseActivity<ComposeActivityBinding>() {
             return
         }
         val baseEngine = (ReadAloud.httpTtsEngineV2 ?: runCatching { TtsEngineStore.activeEngine() }.getOrNull())
-            ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+            ?.takeIf { it.isSelectable && it.usesGeneratedAudio }
         if (baseEngine == null) {
             toastOnUi("当前朗读引擎不支持片段试听")
             return
@@ -1007,20 +1009,28 @@ class BookStoryboardActivity : BaseActivity<ComposeActivityBinding>() {
                     val router = ReadBook.book?.let { ReadAloudTtsRouter.create(it) }
                     val route = router?.route(segment, baseEngine, scene)
                     val engine = (route?.engine ?: baseEngine)
-                        .takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+                        .takeIf { it.isSelectable && it.usesGeneratedAudio }
                         ?: error("角色绑定的朗读引擎不可用")
                     val synthesisContext = segment
                         .toTtsSynthesisContext(scene)
                         ?.forEngineCapabilities(engine)
                     val file = File(cacheDir, "storyboard_preview_${System.currentTimeMillis()}.audio")
                     writeReadAloudAudioWithWavRetry(file, text) {
-                        TtsScriptEngineClient.getSynthesisStream(
-                            engine = engine,
-                            text = text,
-                            voiceId = route?.voiceId ?: engine.activeVoiceId,
-                            styleId = route?.styleId,
-                            synthesisContext = synthesisContext
-                        )
+                        if (engine.type == TtsEngineType.OFFLINE) {
+                            check(Build.VERSION.SDK_INT >= 26) { "微软离线语音需要 Android 8.0 或更高版本" }
+                            MicrosoftOfflineClient.synthesize(
+                                this@BookStoryboardActivity, engine.offlineRevision.orEmpty(),
+                                route?.voiceId ?: engine.activeVoiceId.orEmpty(), text,
+                            )
+                        } else {
+                            TtsScriptEngineClient.getSynthesisStream(
+                                engine = engine,
+                                text = text,
+                                voiceId = route?.voiceId ?: engine.activeVoiceId,
+                                styleId = route?.styleId,
+                                synthesisContext = synthesisContext
+                            )
+                        }
                     }
                     file to engine.voicePlaybackParams(route?.voiceId ?: engine.activeVoiceId)
                 }

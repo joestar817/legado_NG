@@ -403,7 +403,7 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
         is Row.Narrator -> TtsEngineStore.engines().filter { it.enabled }
         else -> listOfNotNull(
             TtsEngineStore.engine(AppConfig.multiRoleTtsEngineId)
-                ?.takeIf { it.enabled && it.type == TtsEngineType.SCRIPT }
+                ?.takeIf { it.isSelectable && it.usesGeneratedAudio }
         )
     }
 
@@ -667,7 +667,7 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
             return bindingVoiceName(binding) ?: fallbackVoiceName(gender)
         }
         val engine = binding?.let { snapshot.voiceCatalog.engines[it.engineId] }
-            ?.takeIf { it.enabled }
+            ?.takeIf { it.isSelectable }
         val usableVoiceIds = engine
             ?.let { snapshot.voiceCatalog.enabledVoiceIds[it.id] }
             .orEmpty()
@@ -722,7 +722,7 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
             snapshot.voiceCatalog.voiceNames[engine.id to voiceId]
         }
         return when {
-            engine == null || !engine.enabled -> getString(R.string.character_tts_voice_unset)
+            engine == null || !engine.isSelectable -> getString(R.string.character_tts_voice_unset)
             !voice.isNullOrBlank() -> voice
             else -> getString(R.string.character_tts_system_default_voice)
         }
@@ -756,7 +756,7 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
     ): String? {
         val engine = engineId
             ?.let(snapshot.voiceCatalog.engines::get)
-            ?.takeIf { it.enabled }
+            ?.takeIf { it.isSelectable }
             ?: return null
         return when {
             !voiceId.isNullOrBlank() &&

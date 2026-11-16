@@ -1,6 +1,7 @@
 package io.legado.app.ui.config
 
 import android.net.Uri
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -41,6 +42,8 @@ import io.legado.app.help.http.newCallResponse
 import io.legado.app.help.http.okHttpClient
 import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.main.HOME_WIDGET_EDIT_REQUEST
+import io.legado.app.ui.main.MainActivity
 import io.legado.app.utils.FileUtils
 import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.SelectFileContract
@@ -185,6 +188,12 @@ class ThemeConfigFragment : BaseFragment(R.layout.fragment_theme_config) {
                         onOnlyUpdateReadChanged = ::setOnlyUpdateRead,
                         onDefaultToReadChanged = ::setDefaultToRead,
                         onShowHomeChanged = ::setShowHome,
+                        onManageHome = {
+                            startActivity<MainActivity> {
+                                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                putExtra(HOME_WIDGET_EDIT_REQUEST, true)
+                            }
+                        },
                         onShowDiscoveryChanged = ::setShowDiscovery,
                         onShowRssChanged = ::setShowRss,
                         onDefaultHomePageSelected = ::setDefaultHomePage,

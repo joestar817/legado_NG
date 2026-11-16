@@ -2,6 +2,7 @@ package io.legado.app.ui.main.home
 
 import android.app.Application
 import android.os.Bundle
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.room.withTransaction
@@ -12,9 +13,9 @@ import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isNotShelf
 import io.legado.app.help.home.HomeWidgetSkinStore
 import io.legado.app.ui.main.BookNewsRefreshState
+import io.legado.app.utils.defaultSharedPreferences
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefString
-import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.putPrefString
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
@@ -38,10 +39,11 @@ internal data class HomeUiState(
     val widgets: List<HomeWidgetInstance> = emptyList(),
     val draft: List<HomeWidgetInstance>? = null,
     val layoutReadFailed: Boolean = false,
-    val singleEditId: String? = null,
+    val selectedWidgetId: String? = null,
+    val draftAutoRefreshUpdates: Boolean? = null,
 ) {
     val pendingEdit: Boolean get() = draft != null
-    val editing: Boolean get() = pendingEdit && singleEditId == null
+    val editing: Boolean get() = pendingEdit
     val displayedWidgets: List<HomeWidgetInstance> get() = draft ?: widgets
 }
 
@@ -255,41 +257,54 @@ class HomeViewModel(
         val stored = getApplication<Application>().getPrefString(LAYOUT_KEY)
         val widgets = stored?.let(HomeWidgetLayoutCodec::decode) ?: HomeWidgetCatalog.defaults()
         val draft = savedState.get<String>(DRAFT_KEY)?.let(HomeWidgetLayoutCodec::decode)
-        HomeUiState(widgets, draft, singleEditId = if (draft != null) savedState[SINGLE_EDIT_KEY] else null)
+        HomeUiState(
+            widgets, draft,
+            selectedWidgetId = if (draft != null) savedState[SELECTED_WIDGET_KEY] else null,
+            draftAutoRefreshUpdates = if (draft != null) savedState[DRAFT_AUTO_REFRESH_KEY] else null,
+        )
     }.getOrElse { HomeUiState(layoutReadFailed = true) }
 
     internal fun beginEditing() {
         beginWidgetEditing(null)
     }
 
-    internal fun beginSingleEditing(id: String) {
+    internal fun selectEditingWidget(id: String) {
         beginWidgetEditing(id)
     }
 
-    private fun beginWidgetEditing(singleEditId: String?) {
+    private fun beginWidgetEditing(selectedWidgetId: String?) {
         val current = mutableState.value
-        val updated = beginHomeWidgetEditing(current, singleEditId) ?: return
+        val updated = beginHomeWidgetEditing(current, selectedWidgetId) ?: return
         if (updated != current) updateEditingState(updated)
     }
 
     internal fun cancelEditing(): Boolean {
         if (!mutableState.value.pendingEdit) return false
-        savedState.remove<String>(DRAFT_KEY)
-        savedState.remove<String>(SINGLE_EDIT_KEY)
+        clearSavedDraft()
         mutableState.value = cancelHomeWidgetEditing(mutableState.value)
         return true
     }
 
     internal fun saveEditing() {
-        val draft = mutableState.value.draft ?: return
-        persistLayout(draft)
+        val state = mutableState.value
+        val draft = state.draft ?: return
+        persistLayout(draft, state.draftAutoRefreshUpdates)
     }
 
-    private fun persistLayout(widgets: List<HomeWidgetInstance>) {
-        getApplication<Application>().putPrefString(LAYOUT_KEY, HomeWidgetLayoutCodec.encode(widgets))
-        savedState.remove<String>(DRAFT_KEY)
-        savedState.remove<String>(SINGLE_EDIT_KEY)
+    private fun persistLayout(widgets: List<HomeWidgetInstance>, autoRefresh: Boolean? = null) {
+        getApplication<Application>().defaultSharedPreferences.edit {
+            putString(LAYOUT_KEY, HomeWidgetLayoutCodec.encode(widgets))
+            autoRefresh?.let { putBoolean(AUTO_REFRESH_UPDATES_KEY, it) }
+        }
+        autoRefresh?.let { mutableAutoRefreshUpdates.value = it }
+        clearSavedDraft()
         mutableState.value = HomeUiState(widgets = widgets)
+    }
+
+    private fun clearSavedDraft() {
+        savedState.remove<String>(DRAFT_KEY)
+        savedState.remove<String>(SELECTED_WIDGET_KEY)
+        savedState.remove<Boolean>(DRAFT_AUTO_REFRESH_KEY)
     }
 
     internal fun addWidget(typeId: String, variantId: String): Boolean {
@@ -305,20 +320,21 @@ class HomeViewModel(
         val widget = current.displayedWidgets.firstOrNull { it.id == id } ?: return false
         if (!skinSelection().choices(widget.typeId).any { it.id == variantId }) return false
         val updated = saveHomeWidgetVariant(current, id, variantId) ?: return false
-        if (autoRefreshUpdates != null &&
-            current.displayedWidgets.any { it.id == id && it.typeId == "updates" }
-        ) {
-            getApplication<Application>().putPrefBoolean(AUTO_REFRESH_UPDATES_KEY, autoRefreshUpdates)
-            mutableAutoRefreshUpdates.value = autoRefreshUpdates
+        val refresh = autoRefreshUpdates.takeIf { widget.typeId == "updates" }
+        if (updated.pendingEdit) {
+            updateEditingState(updated.copy(
+                draftAutoRefreshUpdates = refresh ?: updated.draftAutoRefreshUpdates,
+            ))
+        } else {
+            persistLayout(updated.widgets, refresh)
         }
-        persistLayout(updated.widgets)
         return true
     }
 
     internal fun saveSuite(styleId: String): Boolean {
         if (!skinSelection().allows(styleId)) return false
         val updated = saveHomeWidgetSuite(mutableState.value, styleId) ?: return false
-        persistLayout(updated.widgets)
+        applyWidgetMutation(updated)
         return true
     }
 
@@ -335,8 +351,7 @@ class HomeViewModel(
     private fun skinSelection() = HomeWidgetSkinSelection(HomeWidgetSkinStore.installed.value)
 
     private fun applyWidgetMutation(updated: HomeUiState) {
-        val draft = updated.draft
-        if (draft != null) updateDraft(draft) else persistLayout(updated.widgets)
+        if (updated.pendingEdit) updateEditingState(updated) else persistLayout(updated.widgets)
     }
 
     internal fun removeWidget(id: String) {
@@ -345,26 +360,26 @@ class HomeViewModel(
     }
 
     internal fun moveWidget(fromId: String, toId: String) {
-        val updated = moveHomeWidgetState(mutableState.value, fromId, toId) ?: return
+        val current = mutableState.value
+        // A delayed drag callback must not persist a move after the edit has ended.
+        if (!current.pendingEdit) return
+        val updated = moveHomeWidgetState(current, fromId, toId) ?: return
         applyWidgetMutation(updated)
     }
 
     internal fun resetLayout() {
         getApplication<Application>().putPrefString(LAYOUT_KEY, null)
-        savedState.remove<String>(DRAFT_KEY)
-        savedState.remove<String>(SINGLE_EDIT_KEY)
+        clearSavedDraft()
         mutableState.value = HomeUiState(widgets = HomeWidgetCatalog.defaults())
-    }
-
-    private fun updateDraft(widgets: List<HomeWidgetInstance>) {
-        updateEditingState(mutableState.value.copy(draft = widgets))
     }
 
     private fun updateEditingState(state: HomeUiState) {
         savedState[DRAFT_KEY] = HomeWidgetLayoutCodec.encode(requireNotNull(state.draft))
-        val singleEditId = state.singleEditId
-        if (singleEditId == null) savedState.remove<String>(SINGLE_EDIT_KEY)
-        else savedState[SINGLE_EDIT_KEY] = singleEditId
+        val selectedWidgetId = state.selectedWidgetId
+        if (selectedWidgetId == null) savedState.remove<String>(SELECTED_WIDGET_KEY)
+        else savedState[SELECTED_WIDGET_KEY] = selectedWidgetId
+        if (state.draftAutoRefreshUpdates == null) savedState.remove<Boolean>(DRAFT_AUTO_REFRESH_KEY)
+        else savedState[DRAFT_AUTO_REFRESH_KEY] = state.draftAutoRefreshUpdates
         mutableState.value = state
     }
 
@@ -372,7 +387,8 @@ class HomeViewModel(
         const val AUTO_REFRESH_UPDATES_KEY = "homeBookNewsAutoRefresh"
         const val LAYOUT_KEY = "homeWidgetLayout"
         const val DRAFT_KEY = "homeWidgetDraft"
-        const val SINGLE_EDIT_KEY = "homeWidgetSingleEditId"
+        const val SELECTED_WIDGET_KEY = "homeWidgetSelectedId"
+        const val DRAFT_AUTO_REFRESH_KEY = "homeWidgetDraftAutoRefresh"
         const val CALENDAR_KEY = "homeCalendarSelections"
     }
 }

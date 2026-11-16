@@ -173,7 +173,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             }
         }
         upHomePage()
-        if (!openHomeWidgetSkin(intent)) openLastReadBookAfterStartup(savedInstanceState)
+        if (!openHomeWidgets(intent)) openLastReadBookAfterStartup(savedInstanceState)
         onBackPressedDispatcher.addCallback(this) {
             if (realPositions.getOrNull(pagePosition) == idHome &&
                 (fragmentMap[idHome] as? HomeFragment)?.back() == true
@@ -216,15 +216,19 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        openHomeWidgetSkin(intent)
+        openHomeWidgets(intent)
     }
 
-    private fun openHomeWidgetSkin(intent: Intent): Boolean {
-        val skinId = intent.getStringExtra(HOME_WIDGET_SKIN_REQUEST) ?: return false
+    private fun openHomeWidgets(intent: Intent): Boolean {
+        val skinId = intent.getStringExtra(HOME_WIDGET_SKIN_REQUEST)
+        val edit = intent.getBooleanExtra(HOME_WIDGET_EDIT_REQUEST, false)
+        if (skinId == null && !edit) return false
         intent.removeExtra(HOME_WIDGET_SKIN_REQUEST)
+        intent.removeExtra(HOME_WIDGET_EDIT_REQUEST)
         val position = realPositions.indexOf(idHome)
         if (position < 0) return false
-        viewModel.requestHomeWidgetSkin(skinId)
+        if (skinId != null) viewModel.requestHomeWidgetSkin(skinId)
+        if (edit) viewModel.requestHomeWidgetEditing(true)
         binding.viewPagerMain.setCurrentItem(position, false)
         syncPageSelection(position)
         return true

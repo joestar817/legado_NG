@@ -611,6 +611,7 @@
     <string name="ai_model">模型</string>
     <string name="ai_model_summary">例如：gpt-4o-mini、deepseek-chat、gemini-2.5-flash</string>
     <string name="ai_search_model">搜索模型</string>
+    <string name="ai_model_search_empty">没有匹配的模型</string>
     <string name="ai_available_models">可用模型</string>
     <string name="ai_unselect_all_models">取消全选</string>
     <string name="ai_enable_all_models">全部启用</string>
@@ -651,6 +652,7 @@
     <string name="ai_select_model">选择模型</string>
     <string name="ai_select_model_empty">未缓存模型列表，点击后会先获取模型</string>
     <string name="ai_model_list_empty">未获取到可用模型</string>
+    <string name="ai_provider_model_count">%s 个模型</string>
     <string name="ai_model_list_count">已获取 %s 个模型</string>
     <string name="ai_chat_completions_path">API 路径</string>
     <string name="ai_temperature">Temperature</string>
@@ -682,6 +684,8 @@
     <string name="ai_provider_reset_message">将恢复默认名称和接口配置（Base URL、路径、超时、自定义接口地址）；保留 API Key、启用状态和已获取的模型。手动命名的自定义提供商名称会保留。</string>
     <string name="ai_provider_reset_done">提供商设置已重置</string>
     <string name="ai_provider_no_api_key">未配置 Key</string>
+    <string name="ai_fetch_models_failed">获取模型失败</string>
+    <string name="ai_model_none_enabled">没有已启用的模型</string>
     <string name="ai_provider_models_not_fetched">未获取模型</string>
     <string name="ai_active_provider">当前使用</string>
     <string name="ai_api_key_required">请先填写 API Key</string>
@@ -1390,6 +1394,7 @@
     <string name="default_tts_voice_avatar_female">女</string>
     <string name="tts_engine_type_system">系统</string>
     <string name="tts_engine_type_script">脚本</string>
+    <string name="tts_engine_type_offline">离线</string>
     <string name="tts_engine_voice_not_loaded">未获取</string>
     <string name="tts_engine_voice_count">%1$d 个发音人</string>
     <string name="tts_config_tab">配置</string>

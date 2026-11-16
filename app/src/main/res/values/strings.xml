@@ -614,6 +614,7 @@
     <string name="ai_model">Model</string>
     <string name="ai_model_summary">For example: gpt-4o-mini, deepseek-chat, gemini-2.5-flash</string>
     <string name="ai_search_model">Search models</string>
+    <string name="ai_model_search_empty">No matching models</string>
     <string name="ai_available_models">Available models</string>
     <string name="ai_unselect_all_models">Unselect all</string>
     <string name="ai_enable_all_models">Enable all</string>
@@ -654,6 +655,7 @@
     <string name="ai_select_model">Select model</string>
     <string name="ai_select_model_empty">No cached model list. Tap to fetch models first</string>
     <string name="ai_model_list_empty">No available models returned</string>
+    <string name="ai_provider_model_count">%s models</string>
     <string name="ai_model_list_count">%s models fetched</string>
     <string name="ai_chat_completions_path">API path</string>
     <string name="ai_temperature">Temperature</string>
@@ -685,6 +687,8 @@
     <string name="ai_provider_reset_message">Restores the default name and endpoint configuration (Base URL, paths, timeout, custom endpoints). Keeps the API key, enabled state, and fetched models. Manually named custom providers keep their name.</string>
     <string name="ai_provider_reset_done">Provider settings reset</string>
     <string name="ai_provider_no_api_key">No API key</string>
+    <string name="ai_fetch_models_failed">Failed to fetch models</string>
+    <string name="ai_model_none_enabled">No models enabled</string>
     <string name="ai_provider_models_not_fetched">No models fetched</string>
     <string name="ai_active_provider">Active provider</string>
     <string name="ai_api_key_required">Please fill API key first</string>
@@ -1393,6 +1397,7 @@
     <string name="default_tts_voice_avatar_female">F</string>
     <string name="tts_engine_type_system">System</string>
     <string name="tts_engine_type_script">Script</string>
+    <string name="tts_engine_type_offline">Offline</string>
     <string name="tts_engine_voice_not_loaded">Not loaded</string>
     <string name="tts_engine_voice_count">%1$d voices</string>
     <string name="tts_config_tab">Config</string>

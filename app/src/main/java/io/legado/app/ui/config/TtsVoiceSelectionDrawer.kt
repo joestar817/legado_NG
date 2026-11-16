@@ -7,10 +7,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,9 +28,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -35,14 +44,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,11 +65,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,11 +89,18 @@ import io.legado.app.ui.design.components.compose.NgLazyListFastScroller
 import io.legado.app.ui.design.components.compose.NgLazyListFastScrollerVariant
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.theme.NgTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 internal data class TtsVoiceDrawerGroup(
     val engineId: String,
     val engineName: String,
     val cards: List<TtsVoiceDrawerCard>,
+    val needsFetch: Boolean = false,
+    val fetching: Boolean = false,
+    val fetchFailed: Boolean = false,
+    val emptyMessage: String? = null,
 )
 
 /**
@@ -104,18 +129,44 @@ internal data class TtsVoiceDrawerState(
     val preview: TtsVoicePreviewStatus = TtsVoicePreviewStatus(null, TtsVoicePreviewState.IDLE),
 )
 
-internal fun TtsVoiceDrawerState.selectedLazyItemIndex(
-    visibleGroups: List<TtsVoiceDrawerGroup> = groups,
-): Int? {
-    var index = 0
-    for (group in visibleGroups) {
-        index++ // 引擎标题
-        for (card in group.cards) {
-            if (card.selected) return index
-            index++
-        }
+internal fun List<TtsVoiceDrawerGroup>.filterVoices(
+    query: String,
+    selectedLanguages: Set<String>,
+    selectedGenders: Set<String>,
+): List<TtsVoiceDrawerGroup> = map { group ->
+    group.copy(
+        cards = group.cards.filter { card ->
+            val languageMatch = selectedLanguages.isEmpty() ||
+                card.languageLabels.any { it in selectedLanguages }
+            val genderMatch = selectedGenders.isEmpty() ||
+                card.genderLabel?.let { it in selectedGenders } == true
+            card.option.matchesName(query) && languageMatch && genderMatch
+        },
+    )
+}
+
+internal data class TtsVoiceDrawerTarget(
+    val engineId: String,
+    val voiceKey: String,
+)
+
+internal data class TtsVoiceDrawerPosition(val page: Int, val row: Int)
+
+internal fun List<TtsVoiceDrawerGroup>.selectedVoiceTarget(): TtsVoiceDrawerTarget? {
+    for (group in this) {
+        val card = group.cards.firstOrNull { it.selected } ?: continue
+        return TtsVoiceDrawerTarget(group.engineId, card.key)
     }
     return null
+}
+
+internal fun List<TtsVoiceDrawerGroup>.voicePosition(
+    target: TtsVoiceDrawerTarget,
+): TtsVoiceDrawerPosition? {
+    val page = indexOfFirst { it.engineId == target.engineId }
+    if (page < 0) return null
+    val row = this[page].cards.indexOfFirst { it.key == target.voiceKey }
+    return if (row < 0) null else TtsVoiceDrawerPosition(page, row)
 }
 
 internal data class TtsVoiceDrawerTitleAction(
@@ -149,7 +200,7 @@ internal fun TtsVoiceOption.toDrawerCard(selected: Boolean): TtsVoiceDrawerCard 
         genderLabel = genderLabel,
         style = style,
         tags = tags,
-        canEditParams = !systemDefault && engine.isScriptEngine,
+        canEditParams = !systemDefault && engine.usesGeneratedAudio,
         hasVoiceParams = !systemDefault && engine.hasVoiceParams(voice.id),
     )
 }
@@ -176,6 +227,7 @@ internal fun TtsVoiceDrawerState.withUpdatedEngine(
 /**
  * 听书、默认声音和书籍角色共用的发音人抽屉主体。调用方只负责主题、标题操作和保存逻辑。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TtsVoiceSelectionDrawerContent(
     title: String,
@@ -189,6 +241,8 @@ internal fun TtsVoiceSelectionDrawerContent(
     onPreview: (TtsVoiceOption) -> Unit,
     onEditParams: ((TtsVoiceOption) -> Unit)? = null,
     onRetryFetch: (() -> Unit)? = null,
+    onEngineOpen: (String) -> Unit = {},
+    onRetryEngine: ((String) -> Unit)? = null,
     refreshing: Boolean = false,
     onRefresh: (() -> Unit)? = null,
 ) {
@@ -198,8 +252,9 @@ internal fun TtsVoiceSelectionDrawerContent(
     var selectedGenders by remember { mutableStateOf<Set<String>>(emptySet()) }
     var filtersExpanded by remember { mutableStateOf(false) }
     var locateRequest by remember { mutableIntStateOf(0) }
-    var locateTargetIndex by remember { mutableIntStateOf(0) }
-    val voiceListState = rememberLazyListState()
+    var locateTarget by remember { mutableStateOf<TtsVoiceDrawerTarget?>(null) }
+    val voiceListStates = remember { mutableMapOf<String, LazyListState>() }
+    val scope = rememberCoroutineScope()
     val filtersActive = query.isNotBlank() ||
         selectedLanguages.isNotEmpty() || selectedGenders.isNotEmpty()
     val filteredGroups = remember(
@@ -208,26 +263,23 @@ internal fun TtsVoiceSelectionDrawerContent(
         selectedLanguages,
         selectedGenders,
     ) {
-        state.groups.mapNotNull { group ->
-            val cards = group.cards.filter { card ->
-                val languageMatch = selectedLanguages.isEmpty() ||
-                    card.languageLabels.any { it in selectedLanguages }
-                val genderMatch = selectedGenders.isEmpty() ||
-                    card.genderLabel?.let { it in selectedGenders } == true
-                card.option.matchesName(query) && languageMatch && genderMatch
-            }
-            group.takeIf { cards.isNotEmpty() }?.copy(cards = cards)
-        }
+        state.groups.filterVoices(query, selectedLanguages, selectedGenders)
     }
-    val filteredItemCount = filteredGroups.sumOf { group -> group.cards.size + 1 }
-    val selectedVisibleIndex = remember(filteredGroups) {
-        state.selectedLazyItemIndex(filteredGroups)
-    }
-    val selectedFullIndex = remember(state.groups) { state.selectedLazyItemIndex() }
+    val selectedVisibleTarget = remember(filteredGroups) { filteredGroups.selectedVoiceTarget() }
+    val selectedFullTarget = remember(state.groups) { state.groups.selectedVoiceTarget() }
+    val pagerState = rememberPagerState(pageCount = { filteredGroups.size })
+    val currentGroups by rememberUpdatedState(filteredGroups)
+    val currentOnEngineOpen by rememberUpdatedState(onEngineOpen)
     val hasIconTitleAction = titleAction?.iconRes != null
     val voiceCardShape = remember { RoundedCornerShape(18.dp) }
-    LaunchedEffect(locateRequest) {
-        if (locateRequest > 0) voiceListState.animateScrollToItem(locateTargetIndex)
+    LaunchedEffect(locateRequest, filteredGroups) {
+        if (locateRequest == 0) return@LaunchedEffect
+        val target = locateTarget ?: return@LaunchedEffect
+        val position = filteredGroups.voicePosition(target) ?: return@LaunchedEffect
+        pagerState.scrollToPage(position.page)
+        voiceListStates.getOrPut(target.engineId) { LazyListState() }
+            .animateScrollToItem(position.row)
+        locateTarget = null
     }
 
     NgBottomDrawerSurface(
@@ -278,17 +330,17 @@ internal fun TtsVoiceSelectionDrawerContent(
                 onTertiaryActionClick = onRefresh,
                 quaternaryActionIconRes = R.drawable.ic_ai_locate_selected,
                 quaternaryActionContentDescription = "定位已选发音人",
-                quaternaryActionEnabled = selectedFullIndex != null,
+                quaternaryActionEnabled = selectedFullTarget != null,
                 onQuaternaryActionClick = {
-                    val target = selectedVisibleIndex ?: selectedFullIndex
+                    val target = selectedVisibleTarget ?: selectedFullTarget
                     if (target != null) {
-                        if (selectedVisibleIndex == null) {
+                        if (selectedVisibleTarget == null) {
                             query = ""
                             selectedLanguages = emptySet()
                             selectedGenders = emptySet()
                         }
                         filtersExpanded = false
-                        locateTargetIndex = target
+                        locateTarget = target
                         locateRequest++
                     }
                 },
@@ -320,65 +372,179 @@ internal fun TtsVoiceSelectionDrawerContent(
                 state.groups.isEmpty() && state.canRetryFetch && onRetryFetch != null -> {
                     TtsVoiceDrawerRetryMessage("尚未获取到发音人", onRetryFetch)
                 }
-                filteredGroups.isEmpty() -> {
+                state.groups.isEmpty() -> {
                     TtsVoiceDrawerMessage(if (filtersActive) "没有匹配的发音人" else emptyText)
                 }
-                else -> Box(
+                else -> Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
                 ) {
-                    LazyColumn(
-                        state = voiceListState,
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .selectableGroup(),
                     ) {
-                        filteredGroups.forEach { group ->
-                            item(key = "header:${group.engineId}") {
-                                Text(
-                                    text = group.engineName,
-                                    color = Color(NgTheme.colors.primary),
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(
-                                        start = 4.dp,
-                                        top = 8.dp,
-                                        bottom = 2.dp,
-                                    ),
-                                )
-                            }
-                            items(
-                                items = group.cards,
-                                key = { it.key },
-                                contentType = { "voice" },
-                            ) { card ->
-                                TtsVoiceSelectionCard(
-                                    card = card,
-                                    previewState = state.preview.takeIf {
-                                        it.key == card.key
-                                    }?.state ?: TtsVoicePreviewState.IDLE,
-                                    shape = voiceCardShape,
-                                    selectionColor = selectionColor,
-                                    enableLongPressPreview = enableLongPressPreview,
-                                    onSelect = { onSelect(card.option) },
-                                    onPreview = { onPreview(card.option) },
-                                    onEditParams = onEditParams?.let { edit ->
-                                        { edit(card.option) }
+                        filteredGroups.forEachIndexed { index, group ->
+                            key(group.engineId) {
+                                TtsVoiceEngineTab(
+                                    name = group.engineName,
+                                    selected = pagerState.currentPage == index,
+                                    onClick = {
+                                        onEngineOpen(group.engineId)
+                                        if (pagerState.currentPage != index) {
+                                            scope.launch { pagerState.animateScrollToPage(index) }
+                                        }
                                     },
                                 )
                             }
                         }
                     }
-                    NgLazyListFastScroller(
-                        state = voiceListState,
-                        itemCount = filteredItemCount,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 4.dp),
-                        variant = NgLazyListFastScrollerVariant.FLOATING_HANDLE,
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = Color(NgTheme.colors.onSurface).copy(alpha = 0.1f),
                     )
+                    HorizontalPager(
+                        state = pagerState,
+                        key = { page -> filteredGroups[page].engineId },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(top = 10.dp)
+                            .pointerInput(pagerState) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val startPage = pagerState.settledPage
+                                    var horizontal = 0f
+                                    var vertical = 0f
+                                    do {
+                                        val event = awaitPointerEvent(PointerEventPass.Final)
+                                        event.changes.firstOrNull { it.id == down.id }?.let { change ->
+                                            horizontal += change.position.x - change.previousPosition.x
+                                            vertical += change.position.y - change.previousPosition.y
+                                        }
+                                    } while (event.changes.any { it.pressed })
+                                    if (abs(horizontal) > viewConfiguration.touchSlop &&
+                                        abs(horizontal) > abs(vertical)
+                                    ) {
+                                        scope.launch {
+                                            withFrameNanos { }
+                                            snapshotFlow { pagerState.isScrollInProgress }.first { !it }
+                                            val page = pagerState.settledPage
+                                            if (page != startPage) {
+                                                currentGroups.getOrNull(page)?.let {
+                                                    currentOnEngineOpen(it.engineId)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                    ) { page ->
+                        val group = filteredGroups[page]
+                        val voiceListState = voiceListStates.getOrPut(group.engineId) {
+                            LazyListState()
+                        }
+                        val unfilteredGroup = state.groups.getOrNull(page) ?: group
+                        when {
+                            group.fetching -> TtsVoiceDrawerMessage(
+                                text = "正在获取发音人…",
+                                showProgress = true,
+                            )
+                            group.emptyMessage != null -> TtsVoiceDrawerMessage(group.emptyMessage)
+                            group.needsFetch && onRetryEngine != null -> TtsVoiceDrawerRetryMessage(
+                                text = if (group.fetchFailed) "获取发音人失败" else "尚未获取发音人",
+                                onRetry = { onRetryEngine(group.engineId) },
+                                actionText = if (group.fetchFailed) "重新获取" else "获取发音人",
+                            )
+                            unfilteredGroup.cards.isEmpty() -> TtsVoiceDrawerMessage(emptyText)
+                            group.cards.isEmpty() -> TtsVoiceDrawerMessage(
+                                if (filtersActive) "没有匹配的发音人" else emptyText,
+                            )
+                            else -> Box(modifier = Modifier.fillMaxSize()) {
+                                LazyColumn(
+                                    state = voiceListState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    items(
+                                        items = group.cards,
+                                        key = { it.key },
+                                        contentType = { "voice" },
+                                    ) { card ->
+                                        TtsVoiceSelectionCard(
+                                            card = card,
+                                            previewState = state.preview.takeIf {
+                                                it.key == card.key
+                                            }?.state ?: TtsVoicePreviewState.IDLE,
+                                            shape = voiceCardShape,
+                                            selectionColor = selectionColor,
+                                            enableLongPressPreview = enableLongPressPreview,
+                                            onSelect = { onSelect(card.option) },
+                                            onPreview = { onPreview(card.option) },
+                                            onEditParams = onEditParams?.let { edit ->
+                                                { edit(card.option) }
+                                            },
+                                        )
+                                    }
+                                }
+                                NgLazyListFastScroller(
+                                    state = voiceListState,
+                                    itemCount = group.cards.size,
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .padding(end = 4.dp),
+                                    variant = NgLazyListFastScrollerVariant.FLOATING_HANDLE,
+                                )
+                            }
+                        }
+                    }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TtsVoiceEngineTab(
+    name: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val bringIntoView = remember { BringIntoViewRequester() }
+    LaunchedEffect(selected) {
+        if (selected) bringIntoView.bringIntoView()
+    }
+    val color = Color(if (selected) NgTheme.colors.primary else NgTheme.colors.onSurfaceVariant)
+    Box(
+        modifier = Modifier
+            .width(IntrinsicSize.Max)
+            .widthIn(min = 48.dp)
+            .height(48.dp)
+            .bringIntoViewRequester(bringIntoView)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
+    ) {
+        Text(
+            text = name,
+            color = color,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            fontFamily = NgTheme.fontFamily,
+            maxLines = 1,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = 10.dp),
+        )
+        if (selected) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(color),
+            )
         }
     }
 }
@@ -800,7 +966,11 @@ private fun TtsVoiceDrawerMessage(text: String, showProgress: Boolean = false) {
 }
 
 @Composable
-private fun TtsVoiceDrawerRetryMessage(text: String, onRetry: () -> Unit) {
+private fun TtsVoiceDrawerRetryMessage(
+    text: String,
+    onRetry: () -> Unit,
+    actionText: String = "重新获取",
+) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
@@ -809,7 +979,7 @@ private fun TtsVoiceDrawerRetryMessage(text: String, onRetry: () -> Unit) {
                 fontSize = 14.sp,
             )
             Text(
-                text = "重新获取",
+                text = actionText,
                 color = Color(NgTheme.colors.primary),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,

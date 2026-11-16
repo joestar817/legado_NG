@@ -24,6 +24,31 @@ class ReadAloudTtsRouterTest {
     )
 
     @Test
+    fun offlineEngineCanRouteItsOwnNarratorAndDialogueVoices() {
+        val offline = dialogueEngine.copy(type = TtsEngineType.OFFLINE)
+        val defaults = ReadAloudTtsRouter.resolveGlobalBindings(
+            multiRoleEngineId = offline.id,
+            narratorEngineId = offline.id,
+            narratorVoiceId = "female_voice",
+            dialogueMaleVoiceId = "male_voice",
+            dialogueFemaleVoiceId = "female_voice",
+            engineResolver = { id -> offline.takeIf { it.id == id } }
+        )
+        val router = ReadAloudTtsRouter.createResolved(
+            narratorBinding = null,
+            characterBindings = emptyMap(),
+            dialogueMaleBinding = null,
+            dialogueFemaleBinding = null,
+            characterNameIndex = emptyMap(),
+            characterGenderIndex = emptyMap(),
+            globalBindings = defaults
+        )!!
+        assertRoute(router, narration(), offline, "female_voice")
+        assertRoute(router, dialogue(StoryboardSegment.SpeakerGender.MALE), offline, "male_voice")
+        assertRoute(router, dialogue(StoryboardSegment.SpeakerGender.FEMALE), offline, "female_voice")
+    }
+
+    @Test
     fun globalDefaults_routeEmptyBookByNarrationAndGender() {
         val defaults = ReadAloudTtsRouter.resolveGlobalBindings(
             multiRoleEngineId = dialogueEngine.id,

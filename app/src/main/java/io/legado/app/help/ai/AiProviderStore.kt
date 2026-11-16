@@ -13,6 +13,7 @@ import splitties.init.appCtx
 
 object AiProviderStore {
 
+    @Synchronized
     fun providers(): List<AiProviderSetting> {
         val saved = readSavedProviders()
         if (saved.isEmpty()) {
@@ -38,6 +39,7 @@ object AiProviderStore {
         return providers().firstOrNull { it.id == id }
     }
 
+    @Synchronized
     fun saveProvider(provider: AiProviderSetting) {
         val providers = providers()
         if (providers.any { it.id == provider.id }) {
@@ -47,6 +49,7 @@ object AiProviderStore {
         }
     }
 
+    @Synchronized
     fun createCustomProvider(type: AiProviderType): AiProviderSetting {
         val provider = defaultCustomProvider(type).copy(id = nextCustomProviderId(type))
         saveProvider(provider)
@@ -57,6 +60,7 @@ object AiProviderStore {
      * 将提供商配置恢复为初始状态。保留 API Key、启用状态、模型列表和已选模型，
      * 避免为了修正 Base URL 而重新填写密钥或丢失模型选择。
      */
+    @Synchronized
     fun resetProvider(id: String): AiProviderSetting? {
         val current = provider(id) ?: return null
         val defaults = if (current.builtIn) {
@@ -78,6 +82,7 @@ object AiProviderStore {
         return reset
     }
 
+    @Synchronized
     fun deleteCustomProvider(id: String): Boolean {
         val providers = providers()
         val provider = providers.firstOrNull { it.id == id } ?: return false
@@ -96,6 +101,21 @@ object AiProviderStore {
         return true
     }
 
+    @Synchronized
+    internal fun saveInitialFetchedModels(
+        requested: AiProviderSetting,
+        models: List<AiModel>,
+    ): AiProviderSetting? {
+        val providers = providers()
+        val current = providers.firstOrNull { it.id == requested.id } ?: return null
+        val updated = initialFetchedModelsUpdate(requested, current, models) ?: return null
+        if (updated != current) {
+            saveProviders(providers.map { if (it.id == current.id) updated else it })
+        }
+        return updated
+    }
+
+    @Synchronized
     fun saveProviders(providers: List<AiProviderSetting>) {
         appCtx.putPrefString(
             PreferKey.aiProvidersJson,

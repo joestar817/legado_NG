@@ -5,8 +5,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.ConcurrentHashMap
 
 data class AiModelBatchRefreshResult(
     val refreshedProviderCount: Int,
@@ -20,6 +25,7 @@ object AiManager {
     private val openAIProvider by lazy { OpenAiCompatibleProvider() }
     private val googleProvider by lazy { GoogleAiProvider() }
     private val claudeProvider by lazy { ClaudeAiProvider() }
+    private val initialModelFetchLocks = ConcurrentHashMap<String, Mutex>()
 
     suspend fun generateText(
         messages: List<AiMessage>,
@@ -50,9 +56,29 @@ object AiManager {
     suspend fun fetchAndSaveModels(providerId: String): List<AiModel> {
         val models = listModels(providerId)
         if (models.isEmpty()) return models
-        val setting = AiProviderStore.provider(providerId) ?: error("AI provider not found: $providerId")
-        AiProviderStore.saveProvider(setting.withFetchedModels(models))
+        synchronized(AiProviderStore) {
+            val setting = AiProviderStore.provider(providerId)
+                ?: error("AI provider not found: $providerId")
+            AiProviderStore.saveProvider(setting.withFetchedModels(models))
+        }
         return models
+    }
+
+    suspend fun ensureProviderModelCatalog(providerId: String): List<AiModel> {
+        val lock = initialModelFetchLocks.getOrPut(providerId) { Mutex() }
+        return lock.withLock {
+            val requested = AiProviderStore.provider(providerId)
+                ?: error("AI provider not found: $providerId")
+            check(requested.enabled && requested.apiKey.isNotBlank()) { "AI provider is not ready" }
+            if (requested.models.isNotEmpty()) return@withLock requested.models
+
+            val models = listModels(requested)
+            currentCoroutineContext().ensureActive()
+            check(models.isNotEmpty()) { "No available models returned" }
+            val updated = AiProviderStore.saveInitialFetchedModels(requested, models)
+                ?: error("AI provider changed while fetching models")
+            updated.models
+        }
     }
 
     suspend fun refreshEnabledProviderModels(): AiModelBatchRefreshResult {
@@ -81,13 +107,14 @@ object AiManager {
         val failed = attempts.filter { it.error != null }.map { it.provider.name }.toMutableList()
         var refreshedCount = 0
         var modelCount = 0
-        if (fetched.isNotEmpty()) {
+        if (fetched.isNotEmpty()) synchronized(AiProviderStore) {
             val current = AiProviderStore.providers()
             val updated = current.map { provider ->
                 val result = fetched[provider.id] ?: return@map provider
                 if (!provider.enabled || provider.apiKey != result.provider.apiKey ||
                     provider.baseUrl != result.provider.baseUrl ||
                     provider.modelsUrl != result.provider.modelsUrl ||
+                    provider.useCustomModelsUrl != result.provider.useCustomModelsUrl ||
                     provider.type != result.provider.type
                 ) {
                     failed += provider.name
@@ -151,6 +178,21 @@ object AiManager {
         val models: List<AiModel>? = null,
         val error: Throwable? = null
     )
+}
+
+internal fun initialFetchedModelsUpdate(
+    requested: AiProviderSetting,
+    current: AiProviderSetting,
+    models: List<AiModel>,
+): AiProviderSetting? {
+    if (current.id != requested.id || !current.enabled ||
+        current.apiKey != requested.apiKey || current.baseUrl != requested.baseUrl ||
+        current.modelsUrl != requested.modelsUrl ||
+        current.useCustomModelsUrl != requested.useCustomModelsUrl ||
+        current.type != requested.type
+    ) return null
+    if (current.models.isNotEmpty()) return current
+    return current.withFetchedModels(models)
 }
 
 internal fun AiProviderSetting.withFetchedModels(models: List<AiModel>): AiProviderSetting {

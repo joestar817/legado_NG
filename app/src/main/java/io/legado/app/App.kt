@@ -53,6 +53,7 @@ import io.legado.app.help.rhino.NativeBaseSource
 import io.legado.app.help.rhino.NativeBook
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.storage.Backup
+import io.legado.app.help.tts.packages.MicrosoftOfflineProcess
 import io.legado.app.model.BookCover
 import io.legado.app.quickjs.QuickJsSandboxProcess
 import io.legado.app.integration.source.NgExtensionBootstrap
@@ -80,7 +81,7 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        if (QuickJsSandboxProcess.isCurrentProcess() || TvBoxFeatures.isWorkerProcess()) return
+        if (QuickJsSandboxProcess.isCurrentProcess() || TvBoxFeatures.isWorkerProcess() || MicrosoftOfflineProcess.isCurrentProcess()) return
         io.legado.app.integration.FeatureBootstrap.start(this)
         CrashHandler(this)
         if (isDebuggable) {
@@ -143,7 +144,7 @@ class App : Application() {
     }
 
     override fun attachBaseContext(base: Context) {
-        if (QuickJsSandboxProcess.isCurrentProcess() || TvBoxFeatures.isWorkerProcess()) {
+        if (QuickJsSandboxProcess.isCurrentProcess() || TvBoxFeatures.isWorkerProcess() || MicrosoftOfflineProcess.isCurrentProcess()) {
             super.attachBaseContext(base)
         } else {
             super.attachBaseContext(AppContextWrapper.wrap(base))
@@ -152,19 +153,19 @@ class App : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (!QuickJsSandboxProcess.isCurrentProcess() && !TvBoxFeatures.isWorkerProcess() && level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+        if (!QuickJsSandboxProcess.isCurrentProcess() && !TvBoxFeatures.isWorkerProcess() && !MicrosoftOfflineProcess.isCurrentProcess() && level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
             NgMangaPdfBridge.trimMemory(level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL || level >= android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
         }
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        if (!QuickJsSandboxProcess.isCurrentProcess() && !TvBoxFeatures.isWorkerProcess()) NgMangaPdfBridge.trimMemory(true)
+        if (!QuickJsSandboxProcess.isCurrentProcess() && !TvBoxFeatures.isWorkerProcess() && !MicrosoftOfflineProcess.isCurrentProcess()) NgMangaPdfBridge.trimMemory(true)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (QuickJsSandboxProcess.isCurrentProcess() || TvBoxFeatures.isWorkerProcess()) return
+        if (QuickJsSandboxProcess.isCurrentProcess() || TvBoxFeatures.isWorkerProcess() || MicrosoftOfflineProcess.isCurrentProcess()) return
         val diff = newConfig.diff(oldConfig)
         if ((diff and ActivityInfo.CONFIG_UI_MODE) != 0) {
             onSystemUiModeChanged(this, newConfig.isNightMode)

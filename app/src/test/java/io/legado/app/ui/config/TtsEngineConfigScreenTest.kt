@@ -19,6 +19,7 @@ class TtsEngineConfigScreenTest {
         listOf(
             TtsEngineConfigRoute.SCRIPT_FORM,
             TtsEngineConfigRoute.SCRIPT_VOICES,
+            TtsEngineConfigRoute.OFFLINE_VOICES,
             TtsEngineConfigRoute.SYSTEM_DETAIL,
         ).forEach { route ->
             assertEquals(TtsEngineConfigRoute.ENGINE_LIST, route.backDestination())
@@ -32,6 +33,7 @@ class TtsEngineConfigScreenTest {
         assertEquals(true, TtsEngineConfigRoute.SCRIPT_FORM.showsSharedTitleBar)
         assertEquals(true, TtsEngineConfigRoute.SCRIPT_SOURCE.showsSharedTitleBar)
         assertEquals(false, TtsEngineConfigRoute.SCRIPT_VOICES.showsSharedTitleBar)
+        assertEquals(false, TtsEngineConfigRoute.OFFLINE_VOICES.showsSharedTitleBar)
         assertEquals(true, TtsEngineConfigRoute.SYSTEM_DETAIL.showsSharedTitleBar)
     }
 
@@ -40,6 +42,7 @@ class TtsEngineConfigScreenTest {
         assertEquals(true, TtsEngineConfigRoute.SCRIPT_FORM.showsDetailTabs)
         assertEquals(true, TtsEngineConfigRoute.SCRIPT_VOICES.showsDetailTabs)
         assertEquals(false, TtsEngineConfigRoute.SCRIPT_SOURCE.showsDetailTabs)
+        assertEquals(false, TtsEngineConfigRoute.OFFLINE_VOICES.showsDetailTabs)
         assertEquals(false, TtsEngineConfigRoute.SYSTEM_DETAIL.showsDetailTabs)
         assertEquals(0, TtsEngineConfigRoute.SCRIPT_FORM.detailTabIndex)
         assertEquals(1, TtsEngineConfigRoute.SCRIPT_VOICES.detailTabIndex)

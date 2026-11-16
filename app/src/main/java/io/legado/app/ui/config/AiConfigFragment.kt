@@ -745,7 +745,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                         modelCountText = if (modelCount == 0) {
                             getString(R.string.ai_provider_models_not_fetched)
                         } else {
-                            getString(R.string.ai_model_list_count, modelCount.toString())
+                            getString(R.string.ai_provider_model_count, modelCount.toString())
                         },
                         modelCountWarning = modelCount == 0,
                         keyConfigured = provider.apiKey.isNotBlank(),
@@ -2006,22 +2006,8 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
         if (target == AiModelSelectionTarget.ASSISTANT) {
             return assistantModelSelectionProviders()
         }
-        return purifyModelProviders().map { provider ->
-            val models = provider.purifyEligibleModels()
-            AiModelSelectionProviderUiModel(
-                id = provider.id,
-                name = provider.name,
-                iconRes = provider.iconRes(),
-                models = models.map { model ->
-                    AiModelSelectionItemUiModel(
-                        id = model.safeId(),
-                        name = model.displayName(),
-                        searchAliases = listOf(model.safeName()),
-                        iconRes = model.iconRes(provider.iconRes()),
-                        capabilities = model.capabilityTags(),
-                    )
-                },
-            )
+        return AiProviderStore.providers().modelSelectionEligibleProviders().map { provider ->
+            provider.toModelSelectionProviderUiModel(provider.purifyEligibleModels())
         }
     }
 
@@ -2070,6 +2056,17 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                                     providers = modelSelectionProviders(target)
                                 )
                             }
+                        }
+                    },
+                    onFetchProvider = { providerId ->
+                        val provider = withContext(Dispatchers.IO) {
+                            AiManager.ensureProviderModelCatalog(providerId)
+                            modelSelectionProviders(target).firstOrNull { it.id == providerId }
+                        }
+                        if (dialog.isShowing) {
+                            sheetState = sheetState.withUpdatedProvider(providerId, provider)
+                            refreshModelSettings()
+                            refreshMain()
                         }
                     },
                     onSelect = { providerId, modelId ->

@@ -4,6 +4,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import io.legado.app.data.entities.BaseSource
+import io.legado.app.help.tts.packages.MicrosoftOfflineSupport
 import kotlin.math.abs
 import kotlin.random.Random
 
@@ -12,7 +13,10 @@ enum class TtsEngineType {
     SYSTEM,
 
     @SerializedName("script")
-    SCRIPT
+    SCRIPT,
+
+    @SerializedName("offline")
+    OFFLINE
 }
 
 const val DEFAULT_TTS_PREVIEW_TEXT = "前不见古人，后不见来者。念天地之悠悠，独怆然而涕下。"
@@ -235,8 +239,12 @@ data class TtsEngineSetting(
     val enabled: Boolean = true,
     @SerializedName("built_in")
     val builtIn: Boolean = false,
+    @SerializedName("resource_managed")
+    val resourceManaged: Boolean = false,
     @SerializedName("engine_package")
     val enginePackage: String? = null,
+    @SerializedName("offline_revision")
+    val offlineRevision: String? = null,
     @SerializedName("url")
     val url: String = "",
     @SerializedName("script")
@@ -308,9 +316,16 @@ data class TtsEngineSetting(
     @Transient
     val runtimeVoices: List<TtsVoice>? = null,
     @Transient
-    val lastVoiceUpdateTime: Long = 0L
+    val lastVoiceUpdateTime: Long = 0L,
+    @Transient
+    val runtimeOfflineIssue: String? = null,
 ) : BaseSource {
     val isScriptEngine: Boolean get() = type == TtsEngineType.SCRIPT
+    val usesGeneratedAudio: Boolean get() = type == TtsEngineType.SCRIPT || type == TtsEngineType.OFFLINE
+    val runtimeUnavailableReason: String?
+        get() = if (type != TtsEngineType.OFFLINE) null else
+            MicrosoftOfflineSupport.currentEngineUnavailableReason(offlineRevision) ?: runtimeOfflineIssue
+    val isSelectable: Boolean get() = enabled && runtimeUnavailableReason == null
 
     fun effectiveVoices(): List<TtsVoice> {
         return runtimeVoices?.takeIf { it.isNotEmpty() } ?: voices
@@ -351,7 +366,7 @@ data class TtsEngineSetting(
         basePitch: Int = effectivePitch(),
     ): TtsSynthesisParams {
         val normalized = TtsSynthesisParams(baseSpeed, baseVolume, basePitch).normalized()
-        if (!isScriptEngine) return normalized
+        if (!usesGeneratedAudio) return normalized
         return TtsSynthesisParams(
             speed = normalized.speed.takeIf {
                 supportsCapability(TtsEngineCapability.SYNTHESIS_SPEED)
@@ -366,7 +381,7 @@ data class TtsEngineSetting(
     }
 
     fun voicePlaybackParams(voiceId: String?): TtsVoicePlaybackParams {
-        if (!isScriptEngine || voiceId.isNullOrBlank()) {
+        if (!usesGeneratedAudio || voiceId.isNullOrBlank()) {
             return TtsVoicePlaybackParams()
         }
         return voiceParams[voiceId]?.normalized() ?: TtsVoicePlaybackParams()

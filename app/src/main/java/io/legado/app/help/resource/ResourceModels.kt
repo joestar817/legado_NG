@@ -46,6 +46,13 @@ internal data class ResourcePayload(
     @SerializedName("sha256") val sha256: String = "",
     @SerializedName("engineId") val engineId: String? = null,
     @SerializedName("pluginId") val pluginId: String? = null,
+    @SerializedName("release") val release: ResourceReleaseAsset? = null,
+)
+
+@Keep
+internal data class ResourceReleaseAsset(
+    @SerializedName("tag") val tag: String = "",
+    @SerializedName("asset") val asset: String = "",
 )
 
 @Keep
@@ -97,6 +104,9 @@ internal data class ResourceEntry(
     @SerializedName("catalogCommit") val catalogCommit: String = "",
 )
 
+internal const val MICROSOFT_OFFLINE_TTS_CAPABILITY = "tts.offline.microsoft.1"
+internal val ResourceEntry.isOfflineTts: Boolean get() = category.type == "tts" && item.payload.format == "zip"
+
 @Keep
 internal data class ResourceSnapshot(
     @SerializedName("schemaVersion") val schemaVersion: Int = 1,
@@ -133,12 +143,19 @@ internal data class ThemeResourceConflict(
     val payloadSha256: String,
     val canReplace: Boolean,
 )
+internal data class TtsResourceConflict(
+    val engineId: String,
+    val localScriptHash: String,
+    val incomingScriptHash: String,
+)
+
 internal data class ResourceTask(
     val progress: Float? = null,
     val message: String = "准备下载",
     val running: Boolean = true,
     val conflict: Boolean = false,
     val themeConflict: ThemeResourceConflict? = null,
+    val ttsConflict: TtsResourceConflict? = null,
     val readPresetConflict: io.legado.app.help.config.ReadPresetResourceConflict? = null,
     val widgetSkinConflict: HomeWidgetSkinRecord? = null,
 )
@@ -258,6 +275,7 @@ internal data class ResourceCenterState(
 internal object ResourceProtocol {
     const val REPOSITORY = "joestar817/legado-resources"
     const val MAX_PAYLOAD_BYTES = 64L * 1024 * 1024
+    const val MAX_OFFLINE_TTS_BYTES = 512L * 1024 * 1024
     const val MAX_PREVIEW_BYTES = 1024L * 1024
     const val MAX_INDEX_BYTES = 4 * 1024 * 1024
     private val sha = Regex("[a-f0-9]{40}")
@@ -268,7 +286,7 @@ internal object ResourceProtocol {
         "background" to setOf("png", "jpg", "jpeg", "webp"),
         "read_preset" to setOf("zip"),
         HOME_WIDGET_SKIN_TYPE to setOf("zip"),
-        "tts" to setOf("js"),
+        "tts" to setOf("js", "zip"),
         "theme" to setOf("ngtheme", "zip"),
         "pet" to setOf("zip"),
     )
@@ -306,6 +324,29 @@ internal object ResourceProtocol {
         path.none { it == '\\' || it == ':' || it == '%' || it == '?' || it == '#' || it.code < 32 } &&
         path.split('/').all { it.isNotBlank() && it != "." && it != ".." }
 
+    fun payloadLimit(entry: ResourceEntry): Long = if (entry.isOfflineTts) MAX_OFFLINE_TTS_BYTES else MAX_PAYLOAD_BYTES
+
+    fun validateRelease(payload: ResourcePayload, type: String) {
+        payload.release?.let { release ->
+            val segment = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,159}")
+            require(type == "tts" && payload.format == "zip" &&
+                segment.matches(release.tag) && segment.matches(release.asset) &&
+                release.asset.endsWith(".zip") && !release.tag.contains("..") && !release.asset.contains("..")) {
+                "离线语音下载来源不合法"
+            }
+        }
+    }
+
+    fun payloadUrl(entry: ResourceEntry): String {
+        validateRelease(entry.item.payload, entry.category.type)
+        return entry.item.payload.release?.let {
+            "https://github.com/$REPOSITORY/releases/download/${it.tag}/${it.asset}"
+        } ?: run {
+            require(validCommit(entry.sourceCommit) && safePath(entry.item.payload.path)) { "资源下载来源不合法" }
+            "https://raw.githubusercontent.com/$REPOSITORY/${entry.sourceCommit}/${entry.item.payload.path}"
+        }
+    }
+
     fun validateCatalog(catalog: ResourceCatalog) {
         require(catalog.schemaVersion == 1 && validCommit(catalog.sourceCommit)) { "不支持的资源目录" }
         require(catalog.categories.size <= 32) { "资源分类过多" }
@@ -326,6 +367,10 @@ internal object ResourceProtocol {
             require(safePath(item.payload.path) && item.payload.path.startsWith("resources/${category.id}/")) { "资源下载路径不合法" }
             require(item.payload.format.isNotBlank() && item.payload.path.endsWith(".${item.payload.format}", true)) { "资源格式不一致" }
             if (category.type == "tts") require(!item.payload.engineId.isNullOrBlank()) { "TTS 缺少引擎身份" }
+            validateRelease(item.payload, category.type)
+            if (category.type == "tts" && item.payload.format == "zip") {
+                require(item.payload.engineId == io.legado.app.help.tts.TtsEngineStore.MICROSOFT_OFFLINE_ID) { "离线 TTS 引擎身份不一致" }
+            }
             if (category.type == "pet") require(item.payload.pluginId?.matches(Regex("[a-z][a-z0-9_]{0,63}")) == true) { "宠物缺少插件身份" }
             validatePreview(item.preview, category.type)
         }
@@ -394,13 +439,15 @@ internal object ResourceProtocol {
     fun incompatibility(entry: ResourceEntry, appVersion: Long): String? {
         if (entry.category.type == "pet" && entry.item.payload.format == "ngpet") return "旧版宠物插件，请更新插件"
         if (entry.item.payload.format !in formats[entry.category.type].orEmpty()) return "暂不支持此资源类型"
-        if (entry.item.payload.size > MAX_PAYLOAD_BYTES) return "资源超过当前 64 MB 下载上限"
+        if (entry.item.payload.size > payloadLimit(entry)) return if (entry.isOfflineTts) "离线语音包超过 512 MB 下载上限" else "资源超过当前 64 MB 下载上限"
         if (entry.category.type == HOME_WIDGET_SKIN_TYPE && entry.item.payload.size > HomeWidgetSkinPackage.MAX_PACKAGE_BYTES)
             return "组件皮肤超过 8 MB 下载上限"
         val requirements = entry.item.requirements
         if (requirements != null && requirements.minAppVersionCode > appVersion) return "需要更新版本的阅读 NG"
         val capabilities = requirements?.capabilities.orEmpty()
-        if (entry.category.type == "pet") {
+        if (entry.isOfflineTts) {
+            if (capabilities.toSet() != setOf(MICROSOFT_OFFLINE_TTS_CAPABILITY)) return "离线语音接口不兼容"
+        } else if (entry.category.type == "pet") {
             if (capabilities.toSet() != setOf(PetIdentity.CAPABILITY)) return "宠物插件接口不兼容"
         } else if (entry.category.type == HOME_WIDGET_SKIN_TYPE) {
             val expected = if (entry.item.id == HomeWidgetSkinRenderer.BLUE_FISH.resourceId) {
@@ -417,6 +464,7 @@ internal object ResourceProtocol {
     fun versionState(remote: ResourceEntry, local: ResourceInstallation?): String {
         if (local == null) return "未下载"
         require(local.entry.category.type == remote.category.type &&
+            local.entry.isOfflineTts == remote.isOfflineTts &&
             local.entry.item.payload.engineId == remote.item.payload.engineId &&
             local.entry.item.payload.pluginId == remote.item.payload.pluginId) { "资源身份发生变化" }
         return when {

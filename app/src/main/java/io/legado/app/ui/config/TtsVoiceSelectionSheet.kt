@@ -18,7 +18,6 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.legado.app.R
 import io.legado.app.help.tts.TtsEngineSetting
 import io.legado.app.help.tts.TtsEngineStore
-import io.legado.app.help.tts.TtsEngineType
 import io.legado.app.help.tts.TtsVoice
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
@@ -77,6 +76,20 @@ class TtsVoiceSelectionSheet(
     private var voiceParamsDialog: ComponentDialog? = null
     private var refreshing by mutableStateOf(false)
     private var refreshJob: Job? = null
+    private val catalogLoader by lazy {
+        TtsVoiceDrawerCatalogLoader(
+            scope = lifecycleScope,
+            readState = { state },
+            writeState = { state = it },
+            fetch = { engineId ->
+                withContext(IO) {
+                    TtsEngineStore.ensureVoiceCatalog(engineId, restartReadAloud = false)
+                }
+            },
+            loadGroup = { engineId -> withContext(IO) { buildVoiceGroup(engineId) } },
+            onLoaded = onCatalogRefreshed,
+        )
+    }
 
     fun show() {
         if (dialog != null || loadJob?.isActive == true) return
@@ -131,6 +144,8 @@ class TtsVoiceSelectionSheet(
                             )
                         },
                         onEditParams = ::editVoiceParams,
+                        onEngineOpen = { if (!refreshing) catalogLoader.open(it) },
+                        onRetryEngine = { if (!refreshing) catalogLoader.retry(it) },
                         refreshing = refreshing,
                         onRefresh = ::refreshVoices,
                     )
@@ -161,6 +176,7 @@ class TtsVoiceSelectionSheet(
             }
         }
         bottomSheet.setOnDismissListener {
+            catalogLoader.cancel()
             loadJob?.cancel()
             refreshJob?.cancel()
             refreshJob = null
@@ -186,6 +202,7 @@ class TtsVoiceSelectionSheet(
         refreshing = true
         refreshJob = lifecycleScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
             try {
+                catalogLoader.awaitPending()
                 val result = withContext(IO) { refreshTtsVoiceCatalogs(engines()) }
                 if (dialog != null) {
                     state = withContext(IO) { buildVoiceSnapshot() }.copy(preview = state.preview)
@@ -205,7 +222,7 @@ class TtsVoiceSelectionSheet(
     }
 
     private fun editVoiceParams(option: TtsVoiceOption) {
-        if (option.systemDefault || !option.engine.isScriptEngine) return
+        if (option.systemDefault || !option.engine.usesGeneratedAudio) return
         voiceParamsDialog?.dismiss()
         voiceParamsDialog = showTtsVoiceParamsDialog(
             context = context,
@@ -221,45 +238,21 @@ class TtsVoiceSelectionSheet(
 
     private fun buildVoiceSnapshot(): TtsVoiceDrawerState {
         val latest = TtsEngineStore.engines().associateBy { it.id }
-        val groups = engines().mapNotNull { latest[it.id] }.map { engine ->
-            TtsVoiceDrawerGroup(
-                engineId = engine.id,
-                engineName = engine.name,
-                cards = voiceChoices(engine).map { option ->
-                    option.toDrawerCard(selected = isSelected(option))
-                },
-            )
-        }.filter { it.cards.isNotEmpty() }
-        val cards = groups.flatMap { it.cards }
-        return TtsVoiceDrawerState(
-            loading = false,
-            groups = groups,
-            languageOptions = TtsVoiceFilterSupport.availableLanguageLabels(
-                cards.map { it.option.voice }
-            ),
-            genderOptions = listOf("男", "女").filter { label ->
-                cards.any { it.genderLabel == label }
-            },
+        val groups = engines().mapNotNull { latest[it.id] }
+            .filter { it.enabled }
+            .map { it.toVoiceDrawerGroup(context.getString(R.string.character_tts_system_default_voice), isSelected) }
+        return TtsVoiceDrawerState(loading = false).withVoiceGroups(groups)
+    }
+
+    private fun buildVoiceGroup(engineId: String): TtsVoiceDrawerGroup? {
+        if (engines().none { it.id == engineId && it.enabled }) return null
+        val engine = TtsEngineStore.engine(engineId)?.takeIf { it.enabled } ?: return null
+        return engine.toVoiceDrawerGroup(
+            context.getString(R.string.character_tts_system_default_voice),
+            isSelected,
         )
     }
 
-    private fun voiceChoices(engine: TtsEngineSetting): List<TtsVoiceOption> {
-        if (engine.type == TtsEngineType.SYSTEM) {
-            return listOf(
-                TtsVoiceOption(
-                    engine = engine,
-                    voice = TtsVoice(
-                        id = TtsEngineStore.SYSTEM_DEFAULT_ID,
-                        name = context.getString(R.string.character_tts_system_default_voice),
-                    ),
-                    systemDefault = true,
-                )
-            )
-        }
-        return engine.enabledVoices().map { voice ->
-            TtsVoiceOption(engine = engine, voice = voice, systemDefault = false)
-        }
-    }
 }
 
 internal data class TtsVoiceCatalogRefreshResult(val attempted: Int, val failed: Int) {
