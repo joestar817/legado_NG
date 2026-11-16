@@ -2,6 +2,7 @@ package io.legado.app.help.resource
 
 import android.net.Uri
 import android.os.Build
+import androidx.annotation.RequiresApi
 import io.legado.app.help.tts.TtsEngineStore
 import io.legado.app.help.tts.packages.MicrosoftOfflineSupport
 import io.legado.app.help.tts.packages.MicrosoftTtsBundleManager
@@ -13,12 +14,14 @@ internal object OfflineTtsResourceInstaller {
     fun fingerprint(): String? = if (Build.VERSION.SDK_INT < 26) null else
         MicrosoftTtsBundleManager.installedFingerprint()
 
+    @RequiresApi(Build.VERSION_CODES.O)
     fun refreshEngine() {
         // A committed receipt is valid even if the app later runs under another ABI.
         if (MicrosoftOfflineSupport.currentUnavailableReason() != null) return
         TtsEngineStore.registerMicrosoftOffline(MicrosoftTtsBundleManager.catalog())
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     suspend fun prepare(
         entry: ResourceEntry,
         payload: File,

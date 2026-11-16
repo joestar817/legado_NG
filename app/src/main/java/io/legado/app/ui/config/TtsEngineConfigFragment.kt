@@ -13,6 +13,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.ComponentDialog
+import androidx.annotation.RequiresApi
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.isVisible
@@ -546,7 +547,9 @@ class TtsEngineConfigFragment : BaseFragment(0),
                 if (action.engineId == OFFLINE_BUNDLE_ID &&
                     (engine?.type == TtsEngineType.OFFLINE || engine == null && offlineBundleSummary != null)
                 ) {
-                    confirmRemoveOfflineBundle()
+                    if (Build.VERSION.SDK_INT >= 26) {
+                        confirmRemoveOfflineBundle()
+                    }
                 } else TtsEngineStore.engine(action.engineId)?.let { engine ->
                     confirmDeleteEngine(
                         engine = engine,
@@ -750,7 +753,11 @@ class TtsEngineConfigFragment : BaseFragment(0),
             }
             result.onSuccess { file ->
                 if (file == null) {
-                    importOfflineBundle(uri)
+                    if (Build.VERSION.SDK_INT >= 26) {
+                        importOfflineBundle(uri)
+                    } else {
+                        context.toastOnUi("微软离线语音需要 Android 8.0 或更高版本")
+                    }
                     return@onSuccess
                 }
                 when (file) {
@@ -811,6 +818,7 @@ class TtsEngineConfigFragment : BaseFragment(0),
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun refreshOfflineBundleState(): Pair<MicrosoftTtsBundleSummary?, String?> {
         val summary = MicrosoftTtsBundleManager.installed() ?: return null to "离线语音包尚未安装"
         val catalog = runCatching { MicrosoftTtsBundleManager.catalog() }.getOrElse {
@@ -827,11 +835,8 @@ class TtsEngineConfigFragment : BaseFragment(0),
         return summary to null
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun importOfflineBundle(uri: Uri) {
-        if (Build.VERSION.SDK_INT < 26) {
-            context?.toastOnUi("微软离线语音需要 Android 8.0 或更高版本")
-            return
-        }
         if (offlineImportJob?.isActive == true) {
             context?.toastOnUi("离线语音包正在检查，请稍后重试")
             return
@@ -853,6 +858,7 @@ class TtsEngineConfigFragment : BaseFragment(0),
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun showOfflineImportPreview(candidate: MicrosoftTtsBundleManager.Candidate) {
         val summary = candidate.summary
         val message = buildString {
@@ -896,6 +902,7 @@ class TtsEngineConfigFragment : BaseFragment(0),
         dialog.applyNgWindow()
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun commitOfflineBundle(candidate: MicrosoftTtsBundleManager.Candidate) {
         lifecycleScope.launch(start = CoroutineStart.UNDISPATCHED) {
             val result = withContext(Dispatchers.IO + NonCancellable) {
@@ -937,8 +944,8 @@ class TtsEngineConfigFragment : BaseFragment(0),
         dialog.applyNgWindow()
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun confirmRemoveOfflineBundle() {
-        if (Build.VERSION.SDK_INT < 26) return
         modalDialog?.dismiss()
         val dialog = ComponentDialog(requireContext())
         dialog.setContentView(ComposeView(requireContext()).apply {

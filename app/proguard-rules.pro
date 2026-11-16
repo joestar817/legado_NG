@@ -189,3 +189,8 @@ cn.hutool.core.util.**{*;}
 # Pet package metadata is parsed reflectively. The shared ABI has its own consumer rules.
 -keep class io.legado.app.help.pet.PetPluginManifest { *; }
 -keep class io.legado.app.help.pet.InstalledPetPlugin { *; }
+
+# EdDSA / sun.security
+-dontwarn sun.security.**
+-dontwarn net.i2p.crypto.eddsa.**
+-keep class net.i2p.crypto.eddsa.** { *; }
