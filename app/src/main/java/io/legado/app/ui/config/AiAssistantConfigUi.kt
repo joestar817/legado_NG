@@ -160,6 +160,16 @@ object AiAssistantConfigUi {
                             refreshJob?.start()
                         }
                     },
+                    onFetchProvider = { providerId ->
+                        val provider = withContext(Dispatchers.IO) {
+                            AiManager.ensureProviderModelCatalog(providerId)
+                            assistantModelSelectionProviders().firstOrNull { it.id == providerId }
+                        }
+                        if (dialog.isShowing) {
+                            sheetState = sheetState.withUpdatedProvider(providerId, provider)
+                            onChanged()
+                        }
+                    },
                     onSelect = { providerId, modelId ->
                         AiConfig.saveAssistantModel(providerId, modelId)
                         onChanged()
@@ -862,26 +872,35 @@ internal fun AiProviderSetting.assistantEligibleModels(): List<AiModel> {
         .filter { it.supportsChatText() }
 }
 
+internal fun List<AiProviderSetting>.modelSelectionEligibleProviders(): List<AiProviderSetting> {
+    return filter { it.enabled && it.apiKey.isNotBlank() }
+}
+
 internal fun assistantModelSelectionProviders(): List<AiModelSelectionProviderUiModel> {
-    return AiProviderStore.providers().mapNotNull { provider ->
-        if (!provider.enabled) return@mapNotNull null
-        val models = provider.assistantEligibleModels()
-        if (models.isEmpty()) return@mapNotNull null
-        AiModelSelectionProviderUiModel(
-            id = provider.id,
-            name = provider.name,
-            iconRes = provider.iconRes(),
-            models = models.map { model ->
-                AiModelSelectionItemUiModel(
-                    id = model.safeId(),
-                    name = model.displayName(),
-                    searchAliases = listOf(model.safeName()),
-                    iconRes = model.iconRes(provider.iconRes()),
-                    capabilities = model.capabilityTags(),
-                )
-            },
-        )
+    return AiProviderStore.providers().modelSelectionEligibleProviders().map { provider ->
+        provider.toModelSelectionProviderUiModel(provider.assistantEligibleModels())
     }
+}
+
+internal fun AiProviderSetting.toModelSelectionProviderUiModel(
+    eligibleModels: List<AiModel>,
+): AiModelSelectionProviderUiModel {
+    return AiModelSelectionProviderUiModel(
+        id = id,
+        name = name,
+        iconRes = iconRes(),
+        models = eligibleModels.map { model ->
+            AiModelSelectionItemUiModel(
+                id = model.safeId(),
+                name = model.displayName(),
+                searchAliases = listOf(model.safeName()),
+                iconRes = model.iconRes(iconRes()),
+                capabilities = model.capabilityTags(),
+            )
+        },
+        needsFetch = apiKey.isNotBlank() && models.isEmpty(),
+        noEnabledModels = models.isNotEmpty() && effectiveAvailableModelIds().isEmpty(),
+    )
 }
 
 internal fun AiProviderSetting.displayModels(): List<AiModel> {

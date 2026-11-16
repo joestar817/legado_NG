@@ -366,8 +366,7 @@ class DefaultTtsVoiceConfigFragment : BaseFragment(R.layout.fragment_default_tts
             searchHint = getString(R.string.default_tts_voice_search),
             emptyText = getString(R.string.default_tts_voice_empty),
             engines = {
-                (engineSnapshot.takeIf { engineSnapshotLoaded } ?: TtsEngineStore.engines())
-                    .filter { it.isSelectable }
+                TtsEngineStore.engines().filter { it.enabled }
             },
             onCatalogRefreshed = ::refreshCards,
             isSelected = { option ->

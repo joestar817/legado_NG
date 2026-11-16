@@ -131,6 +131,14 @@ internal fun AiChatModelSheet(onChanged: () -> Unit, onDismiss: () -> Unit) {
                         }
                     }
                 },
+                onFetchProvider = { providerId ->
+                    val provider = withContext(Dispatchers.IO) {
+                        AiManager.ensureProviderModelCatalog(providerId)
+                        assistantModelSelectionProviders().firstOrNull { it.id == providerId }
+                    }
+                    sheetState = sheetState.withUpdatedProvider(providerId, provider)
+                    onChanged()
+                },
                 onSelect = { providerId, modelId ->
                     AiConfig.saveAssistantModel(providerId, modelId)
                     onChanged()

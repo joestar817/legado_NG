@@ -400,7 +400,7 @@ open class BookCharacterTtsActivity : BaseActivity<ComposeActivityBinding>(),
     }
 
     private fun selectableEngines(row: Row) = when (row) {
-        is Row.Narrator -> TtsEngineStore.engines().filter { it.isSelectable }
+        is Row.Narrator -> TtsEngineStore.engines().filter { it.enabled }
         else -> listOfNotNull(
             TtsEngineStore.engine(AppConfig.multiRoleTtsEngineId)
                 ?.takeIf { it.isSelectable && it.usesGeneratedAudio }
