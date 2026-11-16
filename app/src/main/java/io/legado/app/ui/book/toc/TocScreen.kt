@@ -104,6 +104,7 @@ internal data class TocChapterUiItem(
 internal data class TocUiState(
     val book: Book? = null,
     val reverseToc: Boolean = false,
+    val reversing: Boolean = false,
     val catalogDescending: Boolean = false,
     val selectedTab: Int = TOC_TAB_CHAPTERS,
     val searchExpanded: Boolean = false,
@@ -473,7 +474,9 @@ private fun tocMenuItems(state: TocUiState): List<NgExpandableActionMenuItem> = 
             TocMenuAction.ReverseToc.item(
                 R.string.reverse_toc,
                 R.drawable.ic_catalog_sort_descending,
+                checked = state.reverseToc,
                 dividerBefore = isNotEmpty(),
+                enabled = state.book != null && !state.reversing,
             ),
         )
         add(
@@ -505,12 +508,14 @@ private fun TocMenuAction.item(
     iconRes: Int,
     checked: Boolean = false,
     dividerBefore: Boolean = false,
+    enabled: Boolean = true,
 ): NgExpandableActionMenuItem = NgExpandableActionMenuItem(
     itemId = itemId,
     titleRes = titleRes,
     iconRes = iconRes,
     checked = checked,
     dividerBefore = dividerBefore,
+    enabled = enabled,
 )
 
 @OptIn(ExperimentalFoundationApi::class)

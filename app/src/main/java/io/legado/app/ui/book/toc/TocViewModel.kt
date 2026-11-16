@@ -3,6 +3,9 @@ package io.legado.app.ui.book.toc
 
 import android.app.Application
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.MutableLiveData
 import io.legado.app.R
 import io.legado.app.base.BaseViewModel
@@ -14,8 +17,8 @@ import io.legado.app.data.entities.Bookmark
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.model.ReadBook
 import io.legado.app.model.localBook.LocalBook
+import io.legado.app.help.book.setBookChapterOrderReversed
 import io.legado.app.help.book.simulatedTotalChapterNum
-import io.legado.app.help.book.reverseBookChapterOrder
 import io.legado.app.utils.FileDoc
 import io.legado.app.utils.GSON
 import io.legado.app.utils.createFileIfNotExist
@@ -29,7 +32,7 @@ import kotlinx.coroutines.withContext
 class TocViewModel(application: Application) : BaseViewModel(application) {
     var bookUrl: String = ""
     var bookData = MutableLiveData<Book>()
-    var isReversing = false
+    var isReversing by mutableStateOf(false)
         private set
     var chapterOrderChanged = false
         private set
@@ -60,11 +63,12 @@ class TocViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    fun reverseToc() {
-        if (isReversing || bookData.value == null) return
+    fun reverseToc(book: Book? = bookData.value) {
+        if (isReversing || book == null) return
+        val reversed = !book.getReverseToc()
         isReversing = true
         execute {
-            reverseBookChapterOrder(bookUrl)
+            setBookChapterOrderReversed(book.bookUrl, reversed)
         }.onSuccess {
             chapterOrderChanged = true
             bookData.value = it

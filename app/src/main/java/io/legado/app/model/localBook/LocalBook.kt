@@ -158,6 +158,8 @@ object LocalBook {
             throw TocEmptyException(appCtx.getString(R.string.chapter_list_empty))
         }
         val list = ArrayList(LinkedHashSet(chapters))
+        val latestChapter = list.getOrElse(book.simulatedTotalChapterNum() - 1) { list.last() }
+        if (book.getReverseToc()) list.reverse()
         list.forEachIndexed { index, bookChapter ->
             bookChapter.index = index
             if (bookChapter.title.isEmpty()) {
@@ -172,13 +174,11 @@ object LocalBook {
                 book.getUseReplaceRule(),
                 replaceBook = replaceBook
             )
-        book.latestChapterTitle =
-            list.getOrElse(book.simulatedTotalChapterNum() - 1) { list.last() }
-                .getDisplayTitle(
-                    replaceRules,
-                    book.getUseReplaceRule(),
-                    replaceBook = replaceBook
-                )
+        book.latestChapterTitle = latestChapter.getDisplayTitle(
+            replaceRules,
+            book.getUseReplaceRule(),
+            replaceBook = replaceBook
+        )
         book.totalChapterNum = list.size
         book.latestChapterTime = System.currentTimeMillis()
         return list

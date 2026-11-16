@@ -38,10 +38,11 @@ private fun currentChapterPosition(book: Book): Pair<Int, Int> {
 }
 
 /** Keep the chapter identity, cache bytes and reading position together when reversing the TOC. */
-internal suspend fun reverseBookChapterOrder(bookUrl: String): Book = chapterOrderMutex.withLock {
+internal suspend fun setBookChapterOrderReversed(bookUrl: String, reversed: Boolean): Book = chapterOrderMutex.withLock {
     withContext(IO) {
         var resumeBook = appDb.bookDao.getBook(bookUrl)
             ?: throw NoStackTraceException("书籍不存在")
+        if (resumeBook.getReverseToc() == reversed) return@withContext resumeBook
         CacheBook.withIdleBook(bookUrl) { Unit }
         try {
             // Never hold the publication lock while joining a previous content writer.
@@ -75,7 +76,7 @@ internal suspend fun reverseBookChapterOrder(bookUrl: String): Book = chapterOrd
                     var updated = resumeBook.copy(
                         readConfig = resumeBook.readConfig?.copy(),
                         durChapterIndex = newIndex,
-                    ).apply { setReverseToc(!getReverseToc()) }
+                    ).apply { setReverseToc(reversed) }
                     withReorderedChapterCache(updated, oldChapters, newChapters) {
                         appDb.runInTransaction {
                             val storedBook = appDb.bookDao.getBook(bookUrl)
@@ -101,7 +102,7 @@ internal suspend fun reverseBookChapterOrder(bookUrl: String): Book = chapterOrd
                                 durVolumeIndex = resumeBook.durVolumeIndex,
                                 chapterInVolumeIndex = resumeBook.chapterInVolumeIndex,
                             ).apply {
-                                setReverseToc(!getReverseToc())
+                                setReverseToc(reversed)
                                 durChapterTitle = current.getDisplayTitle(
                                     ContentProcessor.get(this).getTitleReplaceRules(),
                                     getUseReplaceRule(),

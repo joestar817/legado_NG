@@ -94,7 +94,7 @@ class TocActivity : VMBaseActivity<ComposeActivityBinding, TocViewModel>(
         )
         binding.composeView.setContent {
             NgAppTheme {
-                TocScreen(state = uiState, onEvent = ::handleUiEvent)
+                TocScreen(state = uiState.copy(reversing = viewModel.isReversing), onEvent = ::handleUiEvent)
             }
         }
     }

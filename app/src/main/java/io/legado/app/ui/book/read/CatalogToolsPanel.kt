@@ -123,6 +123,7 @@ internal fun CatalogToolSwitch(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
     indicatorShape: Shape = if (compact) RoundedCornerShape(4.dp) else CircleShape,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val primary = Color(NgTheme.colors.primary)
@@ -131,18 +132,19 @@ internal fun CatalogToolSwitch(
         .copy(alpha = if (checked) 0.78f else 0.4f)
     Row(modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp))
         .background(background)
-        .toggleable(checked, role = Role.Checkbox, onValueChange = onCheckedChange)
+        .toggleable(checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange)
         .padding(horizontal = if (compact) 4.dp else 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically) {
+        val indicator = if (enabled) primary else primary.copy(alpha = 0.45f)
         Box(Modifier.size(16.dp).clip(indicatorShape)
-            .background(if (checked) primary else Color.Transparent)
-            .border(1.dp, if (checked) primary else muted.copy(alpha = 0.45f), indicatorShape),
+            .background(if (checked) indicator else Color.Transparent)
+            .border(1.dp, if (checked) indicator else muted.copy(alpha = 0.45f), indicatorShape),
             contentAlignment = Alignment.Center) {
             if (checked) Icon(painterResource(R.drawable.ic_check), null, Modifier.size(11.dp),
                 tint = Color(NgTheme.colors.onPrimary))
         }
-        Text(label, color = if (checked) primary else muted, fontSize = if (compact) 11.sp else 12.sp)
+        Text(label, color = if (checked) indicator else muted, fontSize = if (compact) 11.sp else 12.sp)
     }
 }
 

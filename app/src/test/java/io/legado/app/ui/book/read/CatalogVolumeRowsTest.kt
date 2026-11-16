@@ -43,6 +43,17 @@ class CatalogVolumeRowsTest {
         assertEquals(0, catalogVisiblePosition(emptyList(), 6))
     }
 
+    @Test
+    fun persistedReversalKeepsVolumeMembershipAndLocatesTheCorrectParent() {
+        val reversed = outline.asReversed().mapIndexed { index, entry -> entry.copy(index = index) }
+        val visible = visibleCatalogRows(reversed, setOf("2"), descending = false, reversed = true)
+        assertEquals(listOf("11", "10", "8", "7", "2", "0"), visible.map { it.url })
+        val currentChapter = reversed.first { it.url == "6" }
+        assertEquals("2", catalogVolumeForChapter(reversed, currentChapter.index, reversed = true))
+        assertEquals(4, catalogVisiblePosition(visible, currentChapter.index, reversed = true))
+        assertEquals(visible.asReversed(), visibleCatalogRows(reversed, setOf("2"), descending = true, reversed = true))
+    }
+
     private fun indices(collapsed: Set<String>) =
         visibleCatalogRows(outline, collapsed, false).map { it.index }
 

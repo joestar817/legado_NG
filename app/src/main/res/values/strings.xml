@@ -754,6 +754,7 @@
     <string name="read_catalog_collapse_note">Collapse note</string>
     <string name="read_catalog_ascending">Ascending</string>
     <string name="read_catalog_descending">Descending</string>
+    <string name="read_catalog_locate_current_chapter">Locate current chapter</string>
     <string name="read_catalog_vip_unpaid">VIP chapter, not purchased</string>
     <string name="read_catalog_vip_purchased">VIP chapter, purchased</string>
     <string name="read_catalog_style">Catalog drawer style</string>

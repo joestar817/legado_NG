@@ -117,6 +117,7 @@ import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.bookmark.AllBookmarkFilter
 import io.legado.app.ui.book.bookmark.BookmarkNoteFilter
 import io.legado.app.ui.book.bookmark.buildAllBookmarkCollection
+import io.legado.app.ui.book.toc.TocViewModel
 import io.legado.app.ui.design.components.compose.LocalNgPaneBounds
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
 import io.legado.app.ui.design.components.compose.NgDrawerContentCardStyle
@@ -151,6 +152,7 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
     private var cacheRunning by mutableStateOf(false)
     private var loading by mutableStateOf(true)
     private var refreshing by mutableStateOf(false)
+    private var reversed by mutableStateOf(false)
     private var dataVersion by mutableStateOf(0)
     private var catalogOutline by mutableStateOf<List<CatalogOutlineEntry>?>(null)
     private var catalogThemeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
@@ -167,6 +169,8 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
     protected open fun showTextTools(): Boolean = true
 
     protected open fun useDirectChapterControls(): Boolean = false
+
+    protected open fun showReadingChapterActions(): Boolean = false
 
     protected open fun showCacheState(): Boolean = false
 
@@ -242,6 +246,18 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
         }
         catalogThemeSnapshot = initialCatalogTheme(book)
         cacheRunning = isCacheRunning(book)
+        loading = true
+        refreshing = false
+        val tocViewModel = if (showReadingChapterActions()) ViewModelProvider(this)[TocViewModel::class.java] else null
+        reversed = tocViewModel != null && book.getReverseToc()
+        tocViewModel?.bookData?.observe(viewLifecycleOwner) { updated ->
+            if (updated.bookUrl == catalogBook()?.bookUrl && updated.getReverseToc() != reversed) {
+                loading = true
+                reversed = updated.getReverseToc()
+                catalogOutline = null
+                loadCatalogData(updated)
+            }
+        }
         (view as ComposeView).setContent {
             val catalogContent: @Composable () -> Unit = {
                 ReadCatalogPanel(
@@ -262,9 +278,15 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
                     onDismiss = { dismissAllowingStateLoss() },
                     loading = loading,
                     refreshing = refreshing,
+                    reversed = reversed,
+                    reversing = tocViewModel?.isReversing == true,
+                    onReverseToc = tocViewModel?.let { model ->
+                        { if (!loading && !refreshing) model.reverseToc(catalogBook()) }
+                    },
                     dataVersion = dataVersion,
                     isCatalogDataCurrent = { bookUrl, version ->
                         this@CatalogDrawerDialog.view === view && dialog?.isShowing == true &&
+                            !loading && tocViewModel?.isReversing != true &&
                             this@CatalogDrawerDialog.dataVersion == version && catalogBook()?.bookUrl == bookUrl
                     },
                     outline = catalogOutline,
@@ -277,13 +299,16 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
                         }
                     },
                     onRefresh = {
-                        if (!refreshing) {
+                        if (!refreshing && (tocViewModel == null || (!loading && !tocViewModel.isReversing))) {
                             refreshing = true
                             refreshCatalog(catalogBook() ?: book) { success ->
-                                refreshing = false
-                                if (this@CatalogDrawerDialog.view != null) {
-                                    if (success) loadCatalogData(catalogBook() ?: book)
-                                    else context?.toastOnUi(R.string.error_load_toc)
+                                if (success && this@CatalogDrawerDialog.view === view) {
+                                    loadCatalogData(catalogBook() ?: book) { refreshing = false }
+                                } else {
+                                    refreshing = false
+                                    if (!success && this@CatalogDrawerDialog.view === view) {
+                                        context?.toastOnUi(R.string.error_load_toc)
+                                    }
                                 }
                             }
                         }
@@ -308,11 +333,11 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
                             limit = limit,
                         )
                     },
-                    onChapterClick = ::onChapterSelected,
+                    onChapterClick = { if (!loading && tocViewModel?.isReversing != true) onChapterSelected(it) },
                     onCacheClick = {
                         cacheRunning = onCacheAction(book, cacheRunning)
                     },
-                    onBookmarkClick = ::onBookmarkSelected,
+                    onBookmarkClick = { if (!loading && tocViewModel?.isReversing != true) onBookmarkSelected(it) },
                     onBookmarkDelete = ::deleteBookmark,
                 )
             }
@@ -402,7 +427,7 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
             .onFailure { AppLog.put("显示阅读目录抽屉失败 tag:$tag", it) }
     }
 
-    private fun loadCatalogData(book: Book) {
+    private fun loadCatalogData(book: Book, onLoaded: () -> Unit = {}) {
         viewLifecycleOwner.lifecycleScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -434,9 +459,15 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
                 cachedChapterFiles = cacheFiles
                 dataVersion++
             }.onFailure {
+                if (it is CancellationException) throw it
+                if (loading) {
+                    chapterCount = 0
+                    catalogOutline = null
+                }
                 AppLog.put("阅读目录抽屉加载失败\n${it.localizedMessage}", it)
             }
             loading = false
+            onLoaded()
         }
     }
 
@@ -548,6 +579,8 @@ internal open class ReadCatalogDialog : CatalogDrawerDialog() {
 
     override fun showBookmarks(): Boolean = true
 
+    override fun showReadingChapterActions(): Boolean = true
+
     override fun showCacheState(): Boolean = true
 
     override fun isLocalBook(): Boolean = ReadBook.isLocalBook
@@ -642,6 +675,9 @@ private fun ReadCatalogPanel(
     useMangaPanelTheme: Boolean,
     loading: Boolean,
     refreshing: Boolean,
+    reversed: Boolean,
+    reversing: Boolean,
+    onReverseToc: (() -> Unit)?,
     dataVersion: Int,
     isCatalogDataCurrent: (String, Int) -> Boolean,
     outline: List<CatalogOutlineEntry>?,
@@ -667,14 +703,14 @@ private fun ReadCatalogPanel(
         AllBookmarkFilter(noteFilter = bookmarkNoteFilter, color = bookmarkColorFilter)
     }
     var query by remember { mutableStateOf("") }
-    var descending by remember { mutableStateOf(false) }
+    var descending by remember(reversed) { mutableStateOf(false) }
     var collapsedVolumes by remember { mutableStateOf<Set<String>>(emptySet()) }
     val volumeIds = remember(outline) {
         outline.orEmpty().filter { it.isVolume }.mapTo(linkedSetOf()) { it.url }
     }
     val allVolumesCollapsed = volumeIds.isNotEmpty() && volumeIds.all { it in collapsedVolumes }
-    val visibleOutline = remember(outline, collapsedVolumes, descending) {
-        outline?.let { visibleCatalogRows(it, collapsedVolumes, descending) }
+    val visibleOutline = remember(outline, collapsedVolumes, descending, reversed) {
+        outline?.let { visibleCatalogRows(it, collapsedVolumes, descending, reversed) }
     }
     var visibleChapterCount by remember(chapterCount) { mutableStateOf(chapterCount) }
     val drawerColors = NgTheme.colors
@@ -756,17 +792,6 @@ private fun ReadCatalogPanel(
     val denseList = visualStyle == CatalogDrawerVisualStyle.READING_DENSE_LIST
     val persistentChapterSearch = directChapterControls &&
         visualStyle == CatalogDrawerVisualStyle.READING_COMPACT_SIDE
-    val catalogHeaderAction: @Composable () -> Unit = {
-        if (directChapterControls) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                if (readingBottom) {
-                    CatalogSearchButton(toolsActive, contentColor, accentColor, onToolsAction)
-                }
-                CatalogRefreshButton(refreshing, accentColor, refreshCatalog)
-            }
-        } else CatalogToolsButton(toolsActive, contentColor, accentColor, onToolsAction)
-    }
     val bookmarkToolsPanel: @Composable () -> Unit = {
         CatalogBookmarkFilterPanel(
             query = query,
@@ -797,10 +822,10 @@ private fun ReadCatalogPanel(
         changeQuery("")
         collapseTools()
     }
-    val volumeChildIndices = remember(outline) {
+    val volumeChildIndices = remember(outline, reversed) {
         buildSet {
             var insideVolume = false
-            outline.orEmpty().forEach { entry ->
+            catalogSourceOrder(outline.orEmpty(), reversed).forEach { entry ->
                 if (entry.isVolume) insideVolume = true
                 else if (insideVolume) add(entry.index)
             }
@@ -817,10 +842,10 @@ private fun ReadCatalogPanel(
             val anchor = oldRows.getOrNull(first)?.index ?: fallbackAnchor
             val offset = chapterListState.firstVisibleItemScrollOffset
             val request = projectionPreparation.request(state, anchor, offset, sort)
-            val nextRows = visibleCatalogRows(rows, state.collapsedVolumes, state.descending)
+            val nextRows = visibleCatalogRows(rows, state.collapsedVolumes, state.descending, reversed)
             val target = if (sort) {
-                (catalogVisiblePosition(nextRows, currentChapterIndex) - 1).coerceAtLeast(0)
-            } else catalogVisiblePosition(nextRows, anchor)
+                (catalogVisiblePosition(nextRows, currentChapterIndex, reversed) - 1).coerceAtLeast(0)
+            } else catalogVisiblePosition(nextRows, anchor, reversed)
             val job = pagerScope.launch {
                 var publishedEpoch: Int? = null
                 try {
@@ -900,6 +925,37 @@ private fun ReadCatalogPanel(
             prepareProjection(desired.copy(descending = !desired.descending), true, currentChapterIndex)
         } else descending = !descending
     }
+    val chapterActionsEnabled = !loading && !refreshing && !reversing
+    val locateCurrentChapter: () -> Unit = {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        val desired = projectionPreparation.desiredState
+        val volume = catalogVolumeForChapter(outline.orEmpty(), currentChapterIndex, reversed)
+        val expanded = volume?.let { desired.collapsedVolumes - it } ?: desired.collapsedVolumes
+        if (query.isBlank()) {
+            prepareProjection(desired.copy(collapsedVolumes = expanded), true, currentChapterIndex)
+        } else {
+            collapsedVolumes = expanded
+            changeQuery("")
+        }
+    }
+    val catalogHeaderAction: @Composable () -> Unit = {
+        if (onReverseToc != null && selectedTab == CatalogTab.Chapters) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CatalogRefreshButton(refreshing, contentColor, refreshCatalog, enabled = chapterActionsEnabled)
+                CatalogLocateButton(chapterActionsEnabled && chapterCount > 0, contentColor, locateCurrentChapter)
+                CatalogToolsButton(toolsActive, contentColor, accentColor, onToolsAction)
+            }
+        } else if (directChapterControls) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                if (readingBottom) {
+                    CatalogSearchButton(toolsActive, contentColor, accentColor, onToolsAction)
+                }
+                CatalogRefreshButton(refreshing, accentColor, refreshCatalog)
+            }
+        } else CatalogToolsButton(toolsActive, contentColor, accentColor, onToolsAction)
+    }
     val chapterToolsPanel: @Composable () -> Unit = {
         CatalogToolsPanel(query, stringResource(R.string.read_catalog_search_chapters), changeQuery,
             modifier = Modifier.padding(horizontal = 16.dp),
@@ -922,7 +978,16 @@ private fun ReadCatalogPanel(
                             useReplace = it; AppConfig.tocUiUseReplace = it
                         }
                     }
-                    if (!useDirectChapterControls) {
+                    if (onReverseToc != null) {
+                        CatalogToolSwitch(
+                            stringResource(R.string.reverse_toc), reversed,
+                            modifier = Modifier.weight(1f).widthIn(min = 96.dp),
+                            enabled = chapterActionsEnabled && chapterCount > 0,
+                        ) {
+                            projectionPreparation.cancel()
+                            onReverseToc()
+                        }
+                    } else if (!useDirectChapterControls) {
                         CatalogToolAction(stringResource(R.string.read_catalog_refresh),
                             R.drawable.ic_refresh_black_24dp, refreshing,
                             modifier = Modifier.weight(1f), onClick = refreshCatalog)
@@ -969,12 +1034,13 @@ private fun ReadCatalogPanel(
                         CompactCatalogBookHeader(book, contentColor, mutedColor)
                         Row(Modifier.fillMaxWidth().height(42.dp).padding(start = 12.dp, end = 10.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            Text(stringResource(if (selectedTab == CatalogTab.Chapters) R.string.chapter_list else R.string.bookmark),
-                                color = mutedColor, fontSize = 13.sp)
-                            if (selectedTab == CatalogTab.Chapters) {
-                                CompactCatalogSortAction(descending, contentColor, toggleSort)
+                            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(if (selectedTab == CatalogTab.Chapters) R.string.chapter_list else R.string.bookmark),
+                                    color = mutedColor, fontSize = 13.sp, maxLines = 1)
+                                if (selectedTab == CatalogTab.Chapters) {
+                                    CompactCatalogSortAction(descending, contentColor, toggleSort)
+                                }
                             }
-                            Spacer(Modifier.weight(1f))
                             catalogHeaderAction()
                         }
                         if (toolsExpanded || persistentChapterSearch) {
@@ -1018,6 +1084,7 @@ private fun ReadCatalogPanel(
                                         chapterCount = chapterCount,
                                         query = query,
                                         descending = descending,
+                                        reversed = reversed,
                                         cachedChapterFiles = cachedChapterFiles,
                                         showCacheState = showCacheState,
                                         isLocalBook = isLocalBook,
@@ -1145,21 +1212,23 @@ private fun ReadCatalogPanel(
                 Spacer(Modifier.height(4.dp))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    CatalogTabDock(
-                        tabs = tabs,
-                        selectedTab = selectedTab,
-                        contentColor = contentColor,
-                        accentColor = accentColor,
-                        selectedContentColor = selectedContentColor,
-                        dockColor = dockColor,
-                        onTabSelected = {
-                            changeQuery("")
-                            pagerScope.launch {
-                                pagerState.animateScrollToPage(tabs.indexOf(it).coerceAtLeast(0))
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
+                    Box(Modifier.weight(1f)) {
+                        CatalogTabDock(
+                            tabs = tabs,
+                            selectedTab = selectedTab,
+                            contentColor = contentColor,
+                            accentColor = accentColor,
+                            selectedContentColor = selectedContentColor,
+                            dockColor = dockColor,
+                            onTabSelected = {
+                                changeQuery("")
+                                pagerScope.launch {
+                                    pagerState.animateScrollToPage(tabs.indexOf(it).coerceAtLeast(0))
+                                }
+                            },
+                            modifier = if (onReverseToc != null) Modifier.widthIn(max = 168.dp) else Modifier,
+                        )
+                    }
                     if (visualStyle == CatalogDrawerVisualStyle.READING_ORIGINAL) {
                         Spacer(Modifier.width(8.dp))
                         catalogHeaderAction()
@@ -1233,6 +1302,7 @@ private fun ReadCatalogPanel(
                             chapterCount = chapterCount,
                             query = query,
                             descending = descending,
+                            reversed = reversed,
                             cachedChapterFiles = cachedChapterFiles,
                             showCacheState = showCacheState,
                             isLocalBook = isLocalBook,
@@ -1356,7 +1426,8 @@ private fun CompactCatalogSortAction(
         )
         Spacer(Modifier.width(5.dp))
         Text(stringResource(if (descending) R.string.read_catalog_descending
-            else R.string.read_catalog_ascending), color = contentColor, fontSize = 12.sp)
+            else R.string.read_catalog_ascending), color = contentColor, fontSize = 12.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1397,16 +1468,28 @@ private fun CatalogSearchButton(active: Boolean, contentColor: Color, accentColo
 }
 
 @Composable
-private fun CatalogRefreshButton(refreshing: Boolean, accentColor: Color, onClick: () -> Unit) {
+private fun CatalogRefreshButton(refreshing: Boolean, tint: Color, onClick: () -> Unit, enabled: Boolean = true) {
     val label = stringResource(R.string.read_catalog_refresh)
-    IconButton(onClick = onClick, enabled = !refreshing,
+    IconButton(onClick = onClick, enabled = enabled && !refreshing,
         modifier = Modifier.size(40.dp).semantics { contentDescription = label }) {
         if (refreshing) {
-            CircularProgressIndicator(Modifier.size(20.dp), color = accentColor, strokeWidth = 2.dp)
+            CircularProgressIndicator(Modifier.size(20.dp), color = tint, strokeWidth = 2.dp)
         } else {
             Icon(painterResource(R.drawable.ic_refresh_black_24dp), null,
-                Modifier.size(20.dp), tint = accentColor)
+                Modifier.size(20.dp), tint = tint.copy(alpha = if (enabled) 1f else 0.38f))
         }
+    }
+}
+
+@Composable
+private fun CatalogLocateButton(enabled: Boolean, contentColor: Color, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp)) {
+        Icon(
+            painter = painterResource(R.drawable.ic_ai_locate_selected),
+            contentDescription = stringResource(R.string.read_catalog_locate_current_chapter),
+            modifier = Modifier.size(20.dp),
+            tint = contentColor.copy(alpha = if (enabled) 1f else 0.38f),
+        )
     }
 }
 
@@ -1629,6 +1712,7 @@ private fun CatalogChapterList(
     chapterCount: Int,
     query: String,
     descending: Boolean,
+    reversed: Boolean,
     cachedChapterFiles: Set<String>,
     showCacheState: Boolean,
     isLocalBook: Boolean,
@@ -1666,7 +1750,7 @@ private fun CatalogChapterList(
         if (totalCount > 0 && !initialPositionApplied) {
             withFrameNanos { }
             val currentPosition = if (visibleOutline != null) {
-                catalogVisiblePosition(visibleOutline, currentChapterIndex)
+                catalogVisiblePosition(visibleOutline, currentChapterIndex, reversed)
             } else if (query.isBlank()) {
                 loadChapterPosition(descending, totalCount)
             } else {
