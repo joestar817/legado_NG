@@ -7,6 +7,7 @@ package io.legado.app.ui.book.info
 
 import android.content.res.Configuration
 import android.view.View
+import android.view.ViewGroup
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
@@ -879,7 +880,7 @@ private fun BookInfoCacheProgress(
 }
 
 @Composable
-private fun BookInfoIntro(
+internal fun BookInfoIntro(
     state: BookInfoUiState,
     introView: View,
     withSurface: Boolean,
@@ -901,7 +902,11 @@ private fun BookInfoIntro(
             }
             state.introRevision
             AndroidView(
-                factory = { introView },
+                factory = {
+                    // 简介容器由 Activity 持有，列表重建时旧宿主可能仍是它的父容器。
+                    (introView.parent as? ViewGroup)?.removeView(introView)
+                    introView
+                },
                 update = { it.requestLayout() },
                 modifier = if (isWebIntro) {
                     Modifier

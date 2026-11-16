@@ -1268,7 +1268,8 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
         // Underline colors have day/night slots, including when the reader is in E-ink mode.
         if (target != null && (target.layout !== ReadBookConfig.config ||
                 (target.mode == ReadAppearanceMode.NIGHT) != ReadBookConfig.isNightTheme)) return
-        postEvent(EventBus.UP_CONFIG, arrayListOf(6, 9, 11))
+        // EPUB owns a separate renderer; refresh it after the existing native-page updates.
+        postEvent(EventBus.UP_CONFIG, arrayListOf(6, 9, 11, 14))
     }
 
     private fun selectBackground(type: Int, name: String) {

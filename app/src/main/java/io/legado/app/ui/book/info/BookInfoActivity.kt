@@ -158,6 +158,7 @@ class BookInfoActivity :
                         appDb.bookDao.update(latestBook)
                         latestBook
                     } ?: return@launch
+                    if (viewModel.getBook(false)?.bookUrl != book.bookUrl) return@launch
                     chapterChanged = it[2] as Boolean
                     viewModel.bookData.value = updatedBook
                     startReadActivity(updatedBook, it.getOrNull(5) as? Long ?: -1L)
@@ -310,8 +311,11 @@ class BookInfoActivity :
         }
         viewModel.bookData.observe(this) { showBook(it) }
         viewModel.chapterListData.observe(this) {
-            upLoading(false, it)
-            upCacheProgress(viewModel.getBook(false), it)
+            val current = viewModel.getBook(false)
+            val chapters = chaptersForBook(current?.bookUrl, it)
+            if (it != null && chapters == null) return@observe
+            upLoading(false, chapters)
+            upCacheProgress(current, chapters)
         }
         viewModel.refreshFinished.observe(this) {
             upLoading(false, viewModel.chapterListData.value)
@@ -635,7 +639,7 @@ class BookInfoActivity :
         updateBookSnapshot(book)
         showBookIntro(book)
         upKinds(book)
-        upGroup(book.group)
+        upGroup(book)
         observeCharacterPreview(book)
         viewModel.prepareOtherWorks(book, uiState.autoLoadOtherWorks)
         upCacheProgress(book)
@@ -651,6 +655,7 @@ class BookInfoActivity :
         }
         uiState = uiState.copy(
             book = book.copy(),
+            tocText = if (bookChanged) getString(R.string.toc_s, getString(R.string.loading)) else uiState.tocText,
             originText = getString(R.string.origin_show, book.originName),
             latestText = getString(
                 R.string.lasted_show,
@@ -1036,7 +1041,9 @@ class BookInfoActivity :
             introContainer.removeAllViews()
             introContainer.addView(introTextView)
         }
+        val textIntroGeneration = webIntroLoadGeneration
         if (intro.isNullOrBlank()) {
+            introTextView.text = ""
             return
         }
         val tvIntro = introTextView
@@ -1089,6 +1096,9 @@ class BookInfoActivity :
                         .build()
                     markwon.toMarkdown(mark)
                 }
+                if (webIntroLoadGeneration != textIntroGeneration ||
+                    uiState.introRenderMode != BookInfoIntroRenderMode.TEXT
+                ) return@launch
                 tvIntro.setMarkdown(
                     markwon,
                     markdown,
@@ -1229,11 +1239,12 @@ class BookInfoActivity :
         }
     }
 
-    private fun upGroup(groupId: Long) {
+    private fun upGroup(book: Book) {
         uiState = uiState.copy(
             groupText = getString(R.string.group_s, getString(R.string.no_group)),
         )
-        viewModel.loadGroup(groupId) {
+        viewModel.loadGroup(book.group) {
+            if (viewModel.getBook(false) !== book) return@loadGroup
             uiState = uiState.copy(
                 groupText = getString(
                     R.string.group_s,
@@ -1291,7 +1302,7 @@ class BookInfoActivity :
                 book.group = groupId
                 val onSaved: () -> Unit = {
                     updateBookSnapshot(book)
-                    upGroup(book.group)
+                    upGroup(book)
                 }
                 if (viewModel.inBookshelf) {
                     viewModel.saveBook(book, onSaved)
@@ -1321,7 +1332,7 @@ class BookInfoActivity :
     }
 
     private fun openChapterListFromUi() {
-        if (viewModel.chapterListData.value.isNullOrEmpty()) {
+        if (viewModel.currentChapterList().isNullOrEmpty()) {
             toastOnUi(R.string.chapter_list_empty)
             return
         }
@@ -1387,7 +1398,7 @@ class BookInfoActivity :
 
     private fun upCacheProgress(
         book: Book? = viewModel.getBook(false),
-        chapterList: List<BookChapter>? = viewModel.chapterListData.value
+        chapterList: List<BookChapter>? = viewModel.currentChapterList(book)
     ) {
         cacheProgressJob?.cancel()
         if (book == null) {
@@ -1403,7 +1414,7 @@ class BookInfoActivity :
         )
         cacheProgressJob = lifecycleScope.launch {
             val status = withContext(IO) {
-                val chapters = chapterList?.takeIf { it.isNotEmpty() }
+                val chapters = chaptersForBook(book.bookUrl, chapterList)?.takeIf { it.isNotEmpty() }
                     ?: appDb.bookChapterDao.getChapterList(book.bookUrl)
                 loadBookCacheStatus(book, chapters)
             }
@@ -1424,7 +1435,7 @@ class BookInfoActivity :
         if (!book.menuCapabilities.download) {
             return
         }
-        val chapterList = viewModel.chapterListData.value
+        val chapterList = viewModel.currentChapterList(book)
         if (chapterList.isNullOrEmpty()) {
             toastOnUi(R.string.chapter_list_empty)
             return

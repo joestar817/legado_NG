@@ -17,7 +17,7 @@ internal data class EpubMappedContent(
     val documents: List<EpubContentProjection.ProjectedDocument>,
 )
 
-/** Exact, ordered matching within the owning paragraph; never a whole-chapter text search. */
+/** Match within the owning paragraph, including whitespace moved after a block image by native layout. */
 internal fun EpubContentProjection.bindNativeContent(paragraphs: List<String>, lines: List<EpubContentLine>): EpubMappedContent {
     data class Token(val offset: Int, val char: Char?, val media: Boolean)
     var paragraphOffset = 0
@@ -36,6 +36,7 @@ internal fun EpubContentProjection.bindNativeContent(paragraphs: List<String>, l
         result
     }
     val cursors = IntArray(paragraphs.size)
+    val deferredWhitespace = arrayOfNulls<ArrayDeque<Token>>(paragraphs.size)
     val length = lines.maxOfOrNull { it.position + it.text.length + if (it.paragraphEnd) 1 else 0 } ?: 0
     val text = CharArray(length) { '\n' }
     val title = StringBuilder()
@@ -55,6 +56,24 @@ internal fun EpubContentProjection.bindNativeContent(paragraphs: List<String>, l
         val sourceTokens = tokens[line.paragraph]
         var cursor = cursors[line.paragraph]
         for ((index, char) in line.text.withIndex()) {
+            if (line.image) {
+                // TextChapterLayout leaves a whitespace-only prefix in its text buffer while
+                // emitting the block image first. The prefix may appear in a later text line.
+                while (cursor < sourceTokens.size && sourceTokens[cursor].char?.isWhitespace() == true) {
+                    val pending = deferredWhitespace[line.paragraph] ?: ArrayDeque<Token>().also {
+                        deferredWhitespace[line.paragraph] = it
+                    }
+                    pending.addLast(sourceTokens[cursor++])
+                }
+            } else {
+                val pending = deferredWhitespace[line.paragraph]
+                // Whitespace can also be omitted by native layout; only consume exact matches.
+                while (!pending.isNullOrEmpty() && pending.first().char != char) pending.removeFirst()
+                if (!pending.isNullOrEmpty()) {
+                    bind(pending.removeFirst().offset, line.position + index)
+                    continue
+                }
+            }
             while (cursor < sourceTokens.size && sourceTokens[cursor].char?.isWhitespace() == true &&
                 (line.image || sourceTokens[cursor].char != char)) cursor++
             val token = sourceTokens.getOrNull(cursor)

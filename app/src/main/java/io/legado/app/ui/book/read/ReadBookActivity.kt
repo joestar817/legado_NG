@@ -3299,6 +3299,7 @@ class ReadBookActivity : BaseReadBookActivity(),
                         ChapterProvider.upStyle()
                         if (isInitFinish) ReadBook.loadContent(resetPageOffset = false)
                     }
+                    14 -> readView.refreshEpubStyle()
                 }
             }
         }
