@@ -2,6 +2,7 @@ package io.legado.app.model
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import androidx.annotation.Keep
@@ -58,6 +59,7 @@ object BookCover {
     lateinit var defaultDrawable: Drawable
         private set
     private val defaultDrawableCache = LruCache<String, Drawable>(16)
+    private val builtInCoverCache = LruCache<Configuration, Drawable.ConstantState>(1)
 
 
     init {
@@ -74,6 +76,7 @@ object BookCover {
             drawBookAuthor = appCtx.getPrefBoolean(PreferKey.coverShowAuthor, true)
         }
         defaultDrawableCache.evictAll()
+        builtInCoverCache.evictAll()
         defaultDrawable = getDefaultDrawable(isNight = isNightTheme)
     }
 
@@ -95,16 +98,25 @@ object BookCover {
         seed: Any? = null,
         isNight: Boolean = AppConfig.isNightTheme,
     ): Drawable {
-        val path = getDefaultPath(seed, isNight)
-            ?: return appCtx.resources.getDrawable(R.drawable.image_cover_default, null)
+        val path = getDefaultPath(seed, isNight) ?: return builtInCover()
         val file = File(path)
         val cacheKey = "${file.absolutePath}:${file.lastModified()}:${file.length()}"
         val drawable = defaultDrawableCache[cacheKey] ?: runCatching {
             requireNotNull(BitmapUtils.decodeBitmap(path, 600, 900)).toDrawable(appCtx.resources)
         }.getOrElse {
-            return appCtx.resources.getDrawable(R.drawable.image_cover_default, null)
+            return builtInCover()
         }.also { defaultDrawableCache.put(cacheKey, it) }
         return drawable.constantState?.newDrawable(appCtx.resources)?.mutate() ?: drawable
+    }
+
+    @SuppressLint("UseCompatLoadingForDrawables")
+    private fun builtInCover(): Drawable {
+        val resources = appCtx.resources
+        val configuration = Configuration(resources.configuration)
+        builtInCoverCache[configuration]?.let { return it.newDrawable(resources) }
+        return resources.getDrawable(R.drawable.image_cover_default, null).also { drawable ->
+            drawable.constantState?.let { builtInCoverCache.put(configuration, it) }
+        }
     }
 
     /**

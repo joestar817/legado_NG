@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -69,6 +70,7 @@ import io.legado.app.data.entities.SearchBook
 import io.legado.app.data.entities.rule.ExploreKind
 import io.legado.app.data.entities.rule.ExploreKind.Type
 import io.legado.app.ui.book.search.SearchBookCover
+import io.legado.app.ui.book.search.SearchCoverBitmapCache
 import io.legado.app.ui.book.search.SearchResultCard
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.rememberNgExpandableActionMenuContentWidth
@@ -123,10 +125,14 @@ internal fun ExploreShowScreen(
     }
     val controlRows = calculateExploreDetailKindRows(kindSections.controls)
     val gridState = rememberLazyGridState()
+    val coverBitmapCache = remember { SearchCoverBitmapCache() }
     val scope = rememberCoroutineScope()
     val currentPage by remember(gridState, state.bookPages, state.firstLoadedPage) {
         derivedStateOf {
             val visibleBooks = gridState.layoutInfo.visibleItemsInfo.mapNotNull { item ->
+                // Items visible only in the leading content padding can belong to the
+                // previous page even after scrollToItem has reached the next page.
+                if (item.index < gridState.firstVisibleItemIndex) return@mapNotNull null
                 val key = item.key as? String
                 val page = key?.removePrefix("list_")?.removePrefix("grid_")
                     ?.let(state.bookPages::get)
@@ -140,10 +146,10 @@ internal fun ExploreShowScreen(
         }
     }
     val lastBookPage = remember(state.bookPages) { state.bookPages.values.maxOrNull() ?: 0 }
-    val navigationEnabled = state.selectedKind != null && !state.isContentLoading &&
-            !state.isKindsLoading && !state.isRefreshing && !gridState.isScrollInProgress
+    val navigationAvailable = state.selectedKind != null && !state.isContentLoading &&
+            !state.isKindsLoading && !state.isRefreshing
     val navigate: (Int) -> Unit = { page ->
-        if (navigationEnabled && page > 0) {
+        if (navigationAvailable && !gridState.isScrollInProgress && page > 0) {
             val bookIndex = state.books.indexOfFirst { state.bookPages[it.bookUrl] == page }
             if (bookIndex >= 0) {
                 scope.launch {
@@ -235,7 +241,8 @@ internal fun ExploreShowScreen(
                             page = currentPage,
                             layoutMode = layoutMode,
                             onSelectPage = { onSelectPage(currentPage) },
-                            navigationEnabled = navigationEnabled,
+                            navigationAvailable = navigationAvailable,
+                            gridState = gridState,
                             canGoPrevious = currentPage > 1,
                             canGoNext = currentPage < Int.MAX_VALUE &&
                                 (state.hasMore || currentPage < lastBookPage),
@@ -283,7 +290,8 @@ internal fun ExploreShowScreen(
                                         cardCornerRadius = 0.dp,
                                         cardContentPadding = 8.dp,
                                         cardBackgroundColorRes = android.R.color.transparent,
-                                        cardBorderWidth = 0.dp
+                                        cardBorderWidth = 0.dp,
+                                        coverBitmapCache = coverBitmapCache,
                                     )
                                     if (book.bookUrl != state.books.lastOrNull()?.bookUrl) {
                                         HorizontalDivider(
@@ -302,6 +310,7 @@ internal fun ExploreShowScreen(
                                 ExploreBookGridCard(
                                     book = book,
                                     inBookshelf = state.isBookInShelf(book),
+                                    coverBitmapCache = coverBitmapCache,
                                     onClick = { onOpenBook(book) }
                                 )
                             }
@@ -816,13 +825,15 @@ private fun ExploreContentToolbar(
     page: Int,
     layoutMode: ExploreShowLayoutMode,
     onSelectPage: () -> Unit,
-    navigationEnabled: Boolean,
+    navigationAvailable: Boolean,
+    gridState: LazyGridState,
     canGoPrevious: Boolean,
     canGoNext: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onLayoutModeChange: (ExploreShowLayoutMode) -> Unit
 ) {
+    val navigationEnabled = navigationAvailable && !gridState.isScrollInProgress
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -937,6 +948,7 @@ private fun ExploreLayoutButton(
 private fun ExploreBookGridCard(
     book: SearchBook,
     inBookshelf: Boolean,
+    coverBitmapCache: SearchCoverBitmapCache,
     onClick: () -> Unit
 ) {
     Column(
@@ -952,7 +964,8 @@ private fun ExploreBookGridCard(
                     .fillMaxWidth()
                     .aspectRatio(0.74f),
                 coverWidth = 108.dp,
-                coverHeight = 146.dp
+                coverHeight = 146.dp,
+                bitmapCache = coverBitmapCache,
             )
             if (inBookshelf) {
                 Box(
