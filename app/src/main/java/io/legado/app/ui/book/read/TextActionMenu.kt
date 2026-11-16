@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.ViewCompat
@@ -98,6 +99,7 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
     private val selectionCharacterState = mutableStateOf<BookCharacter?>(null)
     private val textHighlightPopupModeState = mutableStateOf(TextHighlightPopupMode.TOOLBAR)
     private val noteEditorVisibleState = mutableStateOf(false)
+    private val noteEditorMaxHeightState = mutableIntStateOf(TEXT_HIGHLIGHT_NOTE_EDITOR_HEIGHT_DP.dpToPx())
     private val noteDraftState = mutableStateOf("")
     private val themeSnapshotState = mutableStateOf(ReadDrawerStyle.themeSnapshot(context))
     private var moreMenuPopup: PopupWindow? = null
@@ -229,6 +231,9 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
                             textHighlight = textHighlight,
                             onHighlightStyleChange = ::updateTextHighlight,
                             noteEditorVisible = noteEditorVisibleState.value,
+                            noteEditorMaxHeight = with(LocalDensity.current) {
+                                noteEditorMaxHeightState.intValue.toDp()
+                            },
                             noteDraft = noteDraftState.value,
                             onNoteEditorVisibleChange = ::setNoteEditorVisible,
                             onNoteDraftChange = { noteDraftState.value = it },
@@ -682,6 +687,14 @@ class TextActionMenu(private val context: ComponentActivity, private val callBac
         val availableSpace = max(aboveSpace, belowSpace)
             .takeIf { it >= min(desiredHeight, TEXT_SELECTION_TOOLBAR_HEIGHT_DP.dpToPx()) }
             ?: safeHeight
+        if (noteEditorVisibleState.value) {
+            val otherRowsHeight = (
+                textSelectionToolbarHeightDp(showHighlightEditor = true) +
+                    TEXT_HIGHLIGHT_NOTE_EDITOR_GAP_DP
+                ).dpToPx()
+            noteEditorMaxHeightState.intValue = (availableSpace - otherRowsHeight)
+                .coerceAtLeast(TEXT_HIGHLIGHT_NOTE_EDITOR_HEIGHT_DP.dpToPx())
+        }
         val expandedHeight = desiredHeight.coerceAtMost(availableSpace)
         val expandedY = anchoredPopupY(expandedHeight)
         if (toolbarHeight == expandedHeight && toolbarY == expandedY) {
