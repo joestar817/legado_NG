@@ -32,9 +32,8 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.ui.design.components.compose.NgCompactEditorDialog
-import io.legado.app.ui.design.components.compose.NgFormDensity
-import io.legado.app.ui.design.components.compose.NgFormField
-import io.legado.app.ui.design.components.compose.NgFormFieldVariant
+import io.legado.app.ui.design.components.compose.NgFormMultilineField
+import io.legado.app.ui.design.components.compose.NgFormMultilineFieldVariant
 import io.legado.app.ui.design.components.compose.NgInfoTooltipButton
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.theme.NgTheme
@@ -140,7 +139,7 @@ internal enum class VariableEditorContentVariant {
     DRAWER,
 }
 
-/** 默认弹窗保持原样；抽屉使用加高输入和按需显示的说明。 */
+/** 弹窗和抽屉共用多行变量输入，说明仍由各自的容器展示。 */
 @Composable
 internal fun VariableEditorContent(
     variable: String,
@@ -156,12 +155,14 @@ internal fun VariableEditorContent(
         fontSize = 13.sp,
         lineHeight = 17.sp,
     )
-    NgFormField(
-        label = "",
+    NgFormMultilineField(
         value = variable,
         onValueChange = onVariableChange,
-        density = NgFormDensity.COMPACT,
-        variant = if (drawer) NgFormFieldVariant.DRAWER_UNDERLINE else NgFormFieldVariant.PLAIN_UNDERLINE,
+        minHeight = if (drawer) 72.dp else 32.dp,
+        maxHeight = if (drawer) 72.dp else 144.dp,
+        minLines = 1,
+        maxLines = 6,
+        variant = NgFormMultilineFieldVariant.COMPACT_UNDERLINE,
         trailingContent = if (drawer) {
             {
                 Box(
