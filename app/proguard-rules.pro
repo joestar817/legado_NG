@@ -178,3 +178,6 @@ cn.hutool.core.util.**{*;}
 # Pet package metadata is parsed reflectively. The shared ABI has its own consumer rules.
 -keep class io.legado.app.help.pet.PetPluginManifest { *; }
 -keep class io.legado.app.help.pet.InstalledPetPlugin { *; }
+
+# EdDSA 的 JDK X509Key 兼容分支在 Android 不可用；应用使用 EdDSAPublicKey 校验签名。
+-dontwarn sun.security.x509.X509Key
