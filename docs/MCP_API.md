@@ -690,7 +690,7 @@ curl -s http://192.0.2.10:1124/mcp \
 - 章节相关响应统一附带 `chapter_number = index + 1`，阅读进度、目录和命中章节可以直接使用，不需要调用方自行加一。
 - `bookshelf_chapter_content_get`：读取单章已缓存/本地正文，书籍可用 `work_key`、`name + author` 或 `book_url` 定位，支持 `char_limit`。
 - `bookshelf_text_window_get`：读取连续章节窗口，适合给 AI 取上下文，书籍可用 `work_key`、`name + author` 或 `book_url` 定位。
-- `bookshelf_chapter_snippets_get`：批量读取指定章节的首尾片段，书籍可用 `work_key`、`name + author` 或 `book_url` 定位；必须用 `chapter_indexes`、`ranges[{start,end}]` 或 `start/end` 指定章节（`start` 包含、`end` 不包含），不支持整本书。`head_chars`、`tail_chars` 默认 200、最大 2000，`include_title` 默认 `true`，`max_total_chars` 默认 20000、最大 120000，单次最多返回 80 章。只读已缓存或本地正文，未缓存章节跳过并写入 `warnings`，不会主动联网抓取。
+- `bookshelf_chapter_snippets_get`：批量读取指定章节的首尾片段，书籍可用 `work_key`、`name + author` 或 `book_url` 定位；必须用 `chapter_indexes`、`ranges[{start,end}]` 或 `start/end` 指定章节（`start` 包含、`end` 不包含），不支持整本书。`head_chars`、`tail_chars` 默认 200、最大 2000，`include_title` 默认 `true`，`max_total_chars` 默认 20000、最大 120000，单次最多返回 80 章。只读已缓存或本地正文，无法读取正文的章节仍返回元信息（`has_content=false`），但不返回首尾正文片段；其索引列入 `missing_chapter_indexes`，并由 `warnings` 给出提示，不会主动联网抓取。
 - `bookshelf_cache_status_get`：检查章节范围的正文缓存状态，书籍可用 `work_key`、`name + author` 或 `book_url` 定位，支持 `start`、`end`。
 - `bookshelf_cache_status_get` 的分页规则：`end` 是查询终点（不包含），与单页上限无关；省略 `end` 时查询到全书末尾，单页最多 500 条。返回 `truncated_by_mcp=true` 时用 `next_start` 继续，直到 `truncated_by_mcp=false`；`remaining` 表示查询范围内尚未返回的章节数。
 - `bookshelf_cache_download`：批量触发指定章节离线缓存，支持 `chapter_indexes`、`ranges[{start,end}]` 或 `start/end`；`start` 包含、`end` 不包含。`refresh_existing=true` 会先删除选中章节正文缓存再重新入队下载。
