@@ -53,10 +53,15 @@ import io.legado.app.utils.postEvent
 import io.legado.app.utils.putPrefLong
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 class BookInfoViewModel(application: Application) : BaseViewModel(application) {
@@ -66,9 +71,52 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
     val otherWorksLoadingData = MutableLiveData(false)
     val bookshelfChanged = MutableLiveData<Unit>()
     val webFiles = mutableListOf<WebFile>()
-    var inBookshelf = false
-    var hasCustomBtn = false
-    var bookSource: BookSource? = null
+    private class BookRequest(
+        val scope: CoroutineScope,
+        @Volatile var inBookshelf: Boolean = false,
+        @Volatile var hasCustomBtn: Boolean = false,
+        @Volatile var bookSource: BookSource? = null,
+    ) {
+        val loadedChapters = BookInfoLoadedChapters()
+    }
+
+    private suspend fun <T> withRequestChapterPublication(
+        request: BookRequest,
+        bookUrl: String,
+        block: () -> T,
+    ): T = request.loadedChapters.withPublication { withChapterCachePublication(bookUrl, block) }
+
+    private fun newBookRequest(previous: BookRequest? = null): BookRequest {
+        val job = SupervisorJob(viewModelScope.coroutineContext[Job])
+        return BookRequest(
+            scope = CoroutineScope(viewModelScope.coroutineContext + job),
+            inBookshelf = previous?.inBookshelf ?: false,
+            hasCustomBtn = previous?.hasCustomBtn ?: false,
+            bookSource = previous?.bookSource,
+        )
+    }
+
+    private val bookRequests = BookInfoRequestGate(newBookRequest()) { update ->
+        viewModelScope.launch(Dispatchers.Main.immediate) { update() }
+    }
+
+    private fun beginBookRequest(): BookRequest {
+        val previous = bookRequests.current
+        val request = newBookRequest(previous)
+        bookRequests.begin(request)
+        previous.scope.cancel()
+        return request
+    }
+
+    var inBookshelf: Boolean
+        get() = bookRequests.current.inBookshelf
+        set(value) { bookRequests.current.inBookshelf = value }
+    var hasCustomBtn: Boolean
+        get() = bookRequests.current.hasCustomBtn
+        set(value) { bookRequests.current.hasCustomBtn = value }
+    var bookSource: BookSource?
+        get() = bookRequests.current.bookSource
+        set(value) { bookRequests.current.bookSource = value }
     private var changeSourceCoroutine: Coroutine<*>? = null
     private var otherWorksBookKey: String? = null
     private var otherWorksSearchCoroutine: Coroutine<*>? = null
@@ -102,82 +150,89 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
+    private data class ResolvedBook(
+        val book: Book,
+        val inBookshelf: Boolean,
+        val source: BookSource?,
+    )
+
     fun initData(intent: Intent) {
-        execute {
-            inBookshelf = false
-            hasCustomBtn = false
-            bookSource = null
+        val request = beginBookRequest()
+        execute(request.scope) {
             val name = intent.getStringExtra("name") ?: ""
             val author = intent.getStringExtra("author") ?: ""
             val bookUrl = intent.getStringExtra("bookUrl") ?: ""
-            appDb.bookDao.getBook(name, author)?.let {
-                inBookshelf = !it.isNotShelf
-                upBook(it)
-                return@execute
-            }
-            if (bookUrl.isNotBlank()) {
-                appDb.bookDao.getBook(bookUrl)?.let {
-                    inBookshelf = !it.isNotShelf
-                    upBook(it)
-                    return@execute
-                }
-                appDb.searchBookDao.getSearchBook(bookUrl)?.toBook()?.let {
-                    upBook(it)
-                    return@execute
-                }
-            }
-            appDb.searchBookDao.getFirstByNameAuthor(name, author)?.toBook()?.let {
-                upBook(it)
-                return@execute
-            }
-            throw NoStackTraceException("未找到书籍")
+            val saved = appDb.bookDao.getBook(name, author)
+                ?: bookUrl.takeIf(String::isNotBlank)?.let { appDb.bookDao.getBook(it) }
+            val book = saved
+                ?: bookUrl.takeIf(String::isNotBlank)?.let { appDb.searchBookDao.getSearchBook(it)?.toBook() }
+                ?: appDb.searchBookDao.getFirstByNameAuthor(name, author)?.toBook()
+                ?: throw NoStackTraceException("未找到书籍")
+            val source = if (book.isLocal) null else appDb.bookSourceDao.getBookSource(book.origin)
+            ResolvedBook(book, saved != null && !saved.isNotShelf, source)
+        }.onSuccess {
+            showResolvedBook(request, it)
         }.onError {
+            if (!bookRequests.isCurrent(request)) return@onError
             AppLog.put(it.localizedMessage, it)
             context.toastOnUi(it.localizedMessage)
         }
     }
 
     fun upBook(intent: Intent) {
-        execute {
+        val request = bookRequests.current
+        execute(request.scope) {
             val name = intent.getStringExtra("name") ?: ""
             val author = intent.getStringExtra("author") ?: ""
             appDb.bookDao.getBook(name, author)?.let { book ->
-                upBook(book)
+                val source = if (book.isLocal) null else appDb.bookSourceDao.getBookSource(book.origin)
+                ResolvedBook(book, request.inBookshelf, source)
             }
+        }.onSuccess {
+            it?.let { resolved -> showResolvedBook(request, resolved, updateShelf = false) }
         }
     }
 
-    private fun upBook(book: Book) {
-        execute {
-            bookSource = if (book.isLocal) null else
-                appDb.bookSourceDao.getBookSource(book.origin)?.also {
-                    hasCustomBtn = it.customButton
-                }
-            bookData.postValue(book)
-            upCoverByRule(book)
-            if (book.tocUrl.isEmpty() && !book.isLocal) {
-                loadBookInfo(book, runPreUpdateJs = inBookshelf)
-            } else {
-                val chapterList = appDb.bookChapterDao.getChapterList(book.bookUrl)
+    private fun showResolvedBook(request: BookRequest, resolved: ResolvedBook, updateShelf: Boolean = true) {
+        if (!bookRequests.isCurrent(request)) return
+        val book = resolved.book
+        if (updateShelf) request.inBookshelf = resolved.inBookshelf
+        request.bookSource = resolved.source
+        request.hasCustomBtn = resolved.source?.customButton ?: false
+        if (bookData.value?.bookUrl != book.bookUrl) {
+            chapterListData.value = emptyList()
+            webFiles.clear()
+        }
+        bookData.value = book
+        upCoverByRule(book, request)
+        if (book.tocUrl.isEmpty() && !book.isLocal) {
+            loadBookInfoForRequest(book, true, request.inBookshelf, request.scope, request)
+        } else {
+            execute(request.scope) {
+                appDb.bookChapterDao.getChapterList(book.bookUrl)
+            }.onSuccess { chapterList ->
+                if (!bookRequests.isCurrent(request) || bookData.value?.bookUrl != book.bookUrl) return@onSuccess
                 if (chapterList.isNotEmpty()) {
-                    chapterListData.postValue(chapterList)
+                    request.loadedChapters.record(book.bookUrl, chapterList)
+                    chapterListData.value = chapterList
                 } else {
-                    loadChapter(book, isFromBookInfo = true)
+                    loadChapterForRequest(book, true, request.scope, true, request)
                 }
             }
         }
     }
 
-    private fun upCoverByRule(book: Book) {
-        execute {
+    private fun upCoverByRule(book: Book, request: BookRequest) {
+        execute(request.scope) {
             if (book.coverUrl.isNullOrBlank() && book.customCoverUrl.isNullOrBlank()) {
-                val coverUrl = BookCover.searchCover(book)
-                if (coverUrl.isNullOrBlank()) {
-                    return@execute
-                }
+                BookCover.searchCover(book)
+            } else null
+        }.onSuccess { coverUrl ->
+            if (!bookRequests.isCurrent(request) || bookData.value !== book) return@onSuccess
+            if (!coverUrl.isNullOrBlank()) {
                 book.customCoverUrl = coverUrl
-                bookData.postValue(book)
-                if (inBookshelf) {
+                bookData.value = book
+                if (request.inBookshelf) {
                     saveBook(book)
                 }
             }
@@ -238,7 +293,7 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                 return@onSuccess
             }
             if (it.items.isNotEmpty()) {
-                otherWorksData.postValue(OtherWorksState.Success(it.items))
+                otherWorksData.value = OtherWorksState.Success(it.items)
             }
             if (autoLoadOtherWorksEnabled && autoLoad && !it.isFresh) {
                 searchOtherWorks(
@@ -351,29 +406,26 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
             }
             if (background) {
                 if (items.isNotEmpty()) {
-                    otherWorksData.postValue(OtherWorksState.Success(items))
+                    otherWorksData.value = OtherWorksState.Success(items)
                 }
             } else {
-                otherWorksData.postValue(
+                otherWorksData.value =
                     if (items.isEmpty()) {
                         OtherWorksState.Empty
                     } else {
                         OtherWorksState.Success(items)
-                    },
-                )
+                    }
             }
         }.onError { error ->
             AppLog.put("搜索作者其它作品失败\n${error.localizedMessage}", error)
-            if (!background) {
-                otherWorksData.postValue(
-                    OtherWorksState.Error(error.localizedMessage ?: error.javaClass.simpleName),
-                )
+            if (!background && otherWorksBookKey == "${book.name}\n${book.author}\n${book.origin}") {
+                otherWorksData.value = OtherWorksState.Error(error.localizedMessage ?: error.javaClass.simpleName)
             }
         }.onFinally {
             if (otherWorksSearchCoroutine === coroutine) {
                 otherWorksSearchCoroutine = null
                 otherWorksSearchKey = null
-                otherWorksLoadingData.postValue(false)
+                otherWorksLoadingData.value = false
             }
         }
         otherWorksSearchCoroutine = coroutine
@@ -410,19 +462,23 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
     }
 
     fun refreshBook(book: Book) {
-        executeLazy(executeContext = IO) {
+        val request = bookRequests.current
+        executeLazy(scope = request.scope, executeContext = IO) {
             if (book.isLocal) {
                 book.tocUrl = ""
             } else {
-                val bs = bookSource ?: return@executeLazy
+                val bs = request.bookSource ?: return@executeLazy
                 if (book.originName != bs.bookSourceName) {
                     book.originName = bs.bookSourceName
                 }
             }
         }.onError {
+            if (!bookRequests.isCurrent(request)) return@onError
             AppLog.put("刷新书籍<${book.name}>失败", it)
         }.onFinally {
-            loadBookInfo(book, false)
+            if (bookRequests.isCurrent(request)) {
+                loadBookInfoForRequest(book, false, true, request.scope, request)
+            }
         }.start()
     }
 
@@ -430,50 +486,70 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
         book: Book,
         canReName: Boolean = true,
         runPreUpdateJs: Boolean = true,
-        scope: CoroutineScope = viewModelScope
+        scope: CoroutineScope = bookRequests.current.scope
     ) {
+        loadBookInfoForRequest(book, canReName, runPreUpdateJs, scope, bookRequests.current)
+    }
+
+    private fun loadBookInfoForRequest(
+        book: Book,
+        canReName: Boolean,
+        runPreUpdateJs: Boolean,
+        scope: CoroutineScope,
+        request: BookRequest,
+    ) {
+        if (!bookRequests.isCurrent(request)) return
         if (book.isLocal) {
             LocalBook.upBookInfo(book)
-            bookData.postValue(book)
-            loadChapter(book)
+            bookRequests.publish(request) { bookData.value = book }
+            loadChapterForRequest(book, true, scope, false, request)
         } else {
-            val bookSource = bookSource ?: let {
-                chapterListData.postValue(emptyList())
-                context.toastOnUi(R.string.error_no_source)
+            val bookSource = request.bookSource ?: let {
+                bookRequests.publish(request) {
+                    chapterListData.value = emptyList()
+                    context.toastOnUi(R.string.error_no_source)
+                }
                 return
             }
             val requestBookUrl = book.bookUrl
             val requestReverseToc = book.getReverseToc()
             WebBook.getBookInfo(scope, bookSource, book, canReName = canReName)
                 .onSuccess(IO) { loadedBook ->
-                    withChapterCachePublication(requestBookUrl) {
+                    withRequestChapterPublication(request, requestBookUrl) {
+                        if (!bookRequests.isCurrent(request)) return@withRequestChapterPublication
                         val latest = appDb.bookDao.getBook(requestBookUrl)
                         if (latest != null && latest.getReverseToc() != requestReverseToc) {
-                            bookData.postValue(latest)
-                            chapterListData.postValue(appDb.bookChapterDao.getChapterList(latest.bookUrl))
-                            return@withChapterCachePublication
+                            val chapters = appDb.bookChapterDao.getChapterList(latest.bookUrl)
+                            request.loadedChapters.record(latest.bookUrl, chapters)
+                            bookRequests.publish(request) {
+                                bookData.value = latest
+                                chapterListData.value = chapters
+                            }
+                            return@withRequestChapterPublication
                         }
                         val dbBook = appDb.bookDao.getBook(book.name, book.author)
-                        if (!inBookshelf && dbBook != null && !dbBook.isNotShelf && dbBook.origin == book.origin) {
+                        if (!bookRequests.isCurrent(request)) return@withRequestChapterPublication
+                        if (!request.inBookshelf && dbBook != null && !dbBook.isNotShelf && dbBook.origin == book.origin) {
                             /**
                              * book 来自搜索时(inBookshelf == false)，搜索的书名不存在于书架，但是加载详情后，书名更新，存在同名书籍
                              * 此时 book 的数据会与数据库中的不同，需要更新 #3652 #4619
                              * book 加载详情后虽然书名作者相同，但是又可能不是数据库中(书源不同)的那本书 #3149
                              */
                             dbBook.updateTo(loadedBook)
-                            inBookshelf = true
+                            request.inBookshelf = true
                         }
-                        bookData.postValue(loadedBook)
-                        if (inBookshelf) {
+                        bookRequests.publish(request) { bookData.value = loadedBook }
+                        if (request.inBookshelf) {
                             loadedBook.save()
                         }
                         if (loadedBook.isWebFile) {
-                            loadWebFile(loadedBook)
+                            loadWebFile(loadedBook, request)
                         } else {
-                            loadChapter(loadedBook, runPreUpdateJs, isFromBookInfo = true)
+                            loadChapterForRequest(loadedBook, runPreUpdateJs, scope, true, request)
                         }
                     }
                 }.onError {
+                    if (!bookRequests.isCurrent(request)) return@onError
                     AppLog.put("获取书籍信息失败\n${it.localizedMessage}", it)
                     context.toastOnUi(R.string.error_get_book_info)
                 }
@@ -483,48 +559,78 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
     fun loadChapter(
         book: Book,
         runPreUpdateJs: Boolean = true,
-        scope: CoroutineScope = viewModelScope,
+        scope: CoroutineScope = bookRequests.current.scope,
         isFromBookInfo: Boolean = false
     ) {
+        loadChapterForRequest(book, runPreUpdateJs, scope, isFromBookInfo, bookRequests.current)
+    }
+
+    private fun loadChapterForRequest(
+        book: Book,
+        runPreUpdateJs: Boolean,
+        scope: CoroutineScope,
+        isFromBookInfo: Boolean,
+        request: BookRequest,
+    ) {
+        if (!bookRequests.isCurrent(request)) return
         val requestBookUrl = book.bookUrl
         val requestReverseToc = book.getReverseToc()
         if (book.isLocal) {
             execute(scope) {
                 val chapters = LocalBook.getChapterList(book)
-                withChapterCachePublication(requestBookUrl) {
+                withRequestChapterPublication(request, requestBookUrl) {
+                    if (!bookRequests.isCurrent(request)) return@withRequestChapterPublication
                     val latest = appDb.bookDao.getBook(requestBookUrl)
                     if (latest != null && latest.getReverseToc() != requestReverseToc) {
-                        bookData.postValue(latest)
-                        chapterListData.postValue(appDb.bookChapterDao.getChapterList(latest.bookUrl))
-                        return@withChapterCachePublication
+                        val currentChapters = appDb.bookChapterDao.getChapterList(latest.bookUrl)
+                        request.loadedChapters.record(latest.bookUrl, currentChapters)
+                        bookRequests.publish(request) {
+                            bookData.value = latest
+                            chapterListData.value = currentChapters
+                        }
+                        return@withRequestChapterPublication
                     }
+                    if (!bookRequests.isCurrent(request)) return@withRequestChapterPublication
+                    request.loadedChapters.record(book.bookUrl, chapters)
                     appDb.bookDao.update(book)
                     appDb.bookChapterDao.delByBook(book.bookUrl)
                     appDb.bookChapterDao.insert(*chapters.toTypedArray())
                     ReadBook.onChapterListUpdated(book)
-                    bookData.postValue(book)
-                    chapterListData.postValue(chapters)
+                    bookRequests.publish(request) {
+                        bookData.value = book
+                        chapterListData.value = chapters
+                    }
                 }
             }.onError {
+                if (!bookRequests.isCurrent(request)) return@onError
                 context.toastOnUi("LoadTocError:${it.localizedMessage}")
             }
         } else {
-            val bookSource = bookSource ?: let {
-                chapterListData.postValue(emptyList())
-                context.toastOnUi(R.string.error_no_source)
+            val bookSource = request.bookSource ?: let {
+                bookRequests.publish(request) {
+                    chapterListData.value = emptyList()
+                    context.toastOnUi(R.string.error_no_source)
+                }
                 return
             }
             val oldBook = book.copy()
             WebBook.getChapterList(scope, bookSource, book, runPreUpdateJs, isFromBookInfo = isFromBookInfo)
                 .onSuccess(IO) { chapters ->
-                    withChapterCachePublication(requestBookUrl) {
+                    withRequestChapterPublication(request, requestBookUrl) {
+                        if (!bookRequests.isCurrent(request)) return@withRequestChapterPublication
                         val latest = appDb.bookDao.getBook(requestBookUrl)
                         if (latest != null && latest.getReverseToc() != requestReverseToc) {
-                            bookData.postValue(latest)
-                            chapterListData.postValue(appDb.bookChapterDao.getChapterList(latest.bookUrl))
-                            return@withChapterCachePublication
+                            val currentChapters = appDb.bookChapterDao.getChapterList(latest.bookUrl)
+                            request.loadedChapters.record(latest.bookUrl, currentChapters)
+                            bookRequests.publish(request) {
+                                bookData.value = latest
+                                chapterListData.value = currentChapters
+                            }
+                            return@withRequestChapterPublication
                         }
-                        if (inBookshelf) {
+                        if (!bookRequests.isCurrent(request)) return@withRequestChapterPublication
+                        request.loadedChapters.record(book.bookUrl, chapters)
+                        if (request.inBookshelf) {
                             book.removeType(BookType.updateError)
                             appDb.bookDao.replace(oldBook, book)
                             /**
@@ -537,11 +643,15 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                             appDb.bookChapterDao.insert(*chapters.toTypedArray())
                             ReadBook.onChapterListUpdated(book)
                         }
-                        bookData.postValue(book)
-                        chapterListData.postValue(chapters)
+                        bookRequests.publish(request) {
+                            bookData.value = book
+                            chapterListData.value = chapters
+                        }
                     }
                 }.onError {
-                    chapterListData.postValue(emptyList())
+                    if (!bookRequests.isCurrent(request)) return@onError
+                    request.loadedChapters.clear()
+                    chapterListData.value = emptyList()
                     AppLog.put("获取目录失败\n${it.localizedMessage}", it)
                     context.toastOnUi(R.string.error_get_chapter_list)
                 }
@@ -557,14 +667,13 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    private fun loadWebFile(book: Book) {
-        execute {
-            webFiles.clear()
+    private fun loadWebFile(book: Book, request: BookRequest) {
+        execute(request.scope) {
             val fileNameNoExtension = if (book.author.isBlank()) book.name
             else "${book.name} 作者：${book.author}"
             book.downloadUrls!!.map {
                 val analyzeUrl = AnalyzeUrl(
-                    it, source = bookSource,
+                    it, source = request.bookSource,
                     coroutineContext = coroutineContext
                 )
                 var mFileName = UrlUtil.getFileName(analyzeUrl)
@@ -575,38 +684,45 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                 WebFile(it, mFileName)
             }
         }.onError {
+            if (!bookRequests.isCurrent(request)) return@onError
             context.toastOnUi("LoadWebFileError\n${it.localizedMessage}")
         }.onSuccess {
+            if (!bookRequests.isCurrent(request)) return@onSuccess
+            webFiles.clear()
             webFiles.addAll(it)
             book.latestChapterTitle = "已下载"
-            bookData.postValue(book)
-            chapterListData.postValue(emptyList())
+            bookData.value = book
+            chapterListData.value = emptyList()
         }
     }
 
     /* 导入或者下载在线文件 */
     fun <T> importOrDownloadWebFile(webFile: WebFile, success: ((T) -> Unit)?) {
-        bookSource ?: return
+        val request = bookRequests.current
+        val source = request.bookSource ?: return
+        val previousBook = bookData.value ?: return
         execute {
             waitDialogData.postValue(true)
             if (webFile.isSupported) {
                 val book = LocalBook.importFileOnLine(
                     webFile.url,
-                    bookData.value!!.getExportFileName(webFile.suffix),
-                    bookSource
+                    previousBook.getExportFileName(webFile.suffix),
+                    source
                 )
-                changeToLocalBook(book)
+                changeToLocalBook(book, previousBook, request)
             } else {
                 LocalBook.saveBookFile(
                     webFile.url,
-                    bookData.value!!.getExportFileName(webFile.suffix),
-                    bookSource
+                    previousBook.getExportFileName(webFile.suffix),
+                    source
                 )
             }
         }.onSuccess {
+            if (!bookRequests.isCurrent(request)) return@onSuccess
             @Suppress("unchecked_cast")
             success?.invoke(it as T)
         }.onError {
+            if (!bookRequests.isCurrent(request)) return@onError
             when (it) {
                 is NoBooksDirException -> actionLive.postValue("selectBooksDir")
                 else -> {
@@ -638,59 +754,70 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
         archiveEntryName: String,
         success: ((Book) -> Unit)? = null
     ) {
+        val request = bookRequests.current
+        val previousBook = bookData.value ?: return
         execute {
             val suffix = archiveEntryName.substringAfterLast(".")
             LocalBook.importArchiveFile(
                 archiveFileUri,
-                bookData.value!!.getExportFileName(suffix)
+                previousBook.getExportFileName(suffix)
             ) {
                 it.contains(archiveEntryName)
             }.first()
         }.onSuccess {
-            val book = changeToLocalBook(it)
-            success?.invoke(book)
+            val book = changeToLocalBook(it, previousBook, request)
+            if (bookRequests.isCurrent(request)) success?.invoke(book)
         }.onError {
             AppLog.put("importArchiveBook Error:\n${it.localizedMessage}", it)
-            context.toastOnUi("importArchiveBook Error:\n${it.localizedMessage}")
+            if (bookRequests.isCurrent(request)) {
+                context.toastOnUi("importArchiveBook Error:\n${it.localizedMessage}")
+            }
         }
     }
 
     fun changeTo(source: BookSource, book: Book, toc: List<BookChapter>) {
         changeSourceCoroutine?.cancel()
+        val request = beginBookRequest()
+        val previousBook = bookData.value
         changeSourceCoroutine = execute {
-            bookSource = source.also {
-                hasCustomBtn = it.customButton
-            }
-            bookData.value?.migrateTo(book, toc)
+            if (!bookRequests.isCurrent(request)) return@execute
+            request.bookSource = source
+            request.hasCustomBtn = source.customButton
+            previousBook?.migrateTo(book, toc)
             if (book.isWebFile) {
-                loadWebFile(book)
+                loadWebFile(book, request)
             }
-            if (inBookshelf) {
+            if (request.inBookshelf) {
                 book.removeType(BookType.updateError)
-                bookData.value?.delete()
+                previousBook?.delete()
                 appDb.bookDao.insert(book)
                 appDb.bookChapterDao.insert(*toc.toTypedArray())
             }
-            bookData.postValue(book)
-            chapterListData.postValue(toc)
+            request.loadedChapters.record(book.bookUrl, toc)
+            bookRequests.publish(request) {
+                bookData.value = book
+                chapterListData.value = toc
+            }
         }.onFinally {
             postEvent(EventBus.SOURCE_CHANGED, book.bookUrl)
         }
     }
 
     fun topBook() {
+        val request = bookRequests.current
+        val book = bookData.value ?: return
         execute {
-            bookData.value?.let { book ->
-                val minOrder = appDb.bookDao.minOrder
-                book.order = minOrder - 1
-                book.durChapterTime = System.currentTimeMillis()
-                appDb.bookDao.update(book)
-            }
+            if (!bookRequests.isCurrent(request)) return@execute
+            val minOrder = appDb.bookDao.minOrder
+            book.order = minOrder - 1
+            book.durChapterTime = System.currentTimeMillis()
+            appDb.bookDao.update(book)
         }
     }
 
     fun saveBook(book: Book?, success: (() -> Unit)? = null) {
         book ?: return
+        val request = bookRequests.current
         execute {
             if (book.order == 0) {
                 book.order = appDb.bookDao.minOrder - 1
@@ -707,23 +834,34 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                 AudioPlay.book = book
             }
         }.onSuccess {
-            success?.invoke()
+            if (bookRequests.isCurrent(request)) success?.invoke()
         }
     }
 
+    fun currentChapterList(book: Book? = bookData.value): List<BookChapter>? =
+        chaptersForBook(book?.bookUrl, chapterListData.value)
+
     fun saveChapterList(success: (() -> Unit)?) {
+        val request = bookRequests.current
+        val chapters = currentChapterList() ?: return
         execute {
-            chapterListData.value?.let {
-                appDb.bookChapterDao.insert(*it.toTypedArray())
-            }
+            if (!bookRequests.isCurrent(request)) return@execute
+            appDb.bookChapterDao.insert(*chapters.toTypedArray())
         }.onSuccess {
-            success?.invoke()
+            if (bookRequests.isCurrent(request)) success?.invoke()
         }
     }
 
     fun addToBookshelf(success: (() -> Unit)?) { //点击书架按钮或在加分组时触发
+        val request = bookRequests.current
+        val book = bookData.value ?: return
+        val displayedChapters = currentChapterList(book)
+        val requestBookUrl = book.bookUrl
+        val source = request.bookSource
         execute {
-            bookData.value?.let { book ->
+            if (!bookRequests.isCurrent(request)) return@execute
+            withRequestChapterPublication(request, requestBookUrl) {
+                if (!bookRequests.isCurrent(request)) return@withRequestChapterPublication
                 book.removeType(BookType.notShelf)
                 if (book.order == 0) {
                     book.order = appDb.bookDao.minOrder - 1
@@ -739,14 +877,14 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                     AudioPlay.book = book
                 }
                 book.save()
-                SourceCallBack.callBackBook(SourceCallBack.ADD_BOOK_SHELF, bookSource, book)
+                SourceCallBack.callBackBook(SourceCallBack.ADD_BOOK_SHELF, source, book)
+                request.loadedChapters.forBook(book.bookUrl, displayedChapters)?.let {
+                    appDb.bookChapterDao.insert(*it.toTypedArray())
+                }
+                request.inBookshelf = true
             }
-            chapterListData.value?.let {
-                appDb.bookChapterDao.insert(*it.toTypedArray())
-            }
-            inBookshelf = true
         }.onSuccess {
-            success?.invoke()
+            if (bookRequests.isCurrent(request)) success?.invoke()
         }
     }
 
@@ -759,16 +897,17 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
     }
 
     fun delBook(deleteOriginal: Boolean = false, success: (() -> Unit)? = null) {
+        val request = bookRequests.current
+        val book = bookData.value ?: return
         execute {
-            bookData.value?.let {
-                it.delete()
-                inBookshelf = false
-                if (it.isLocal) {
-                    LocalBook.deleteBook(it, deleteOriginal)
-                }
+            if (!bookRequests.isCurrent(request)) return@execute
+            book.delete()
+            request.inBookshelf = false
+            if (book.isLocal) {
+                LocalBook.deleteBook(book, deleteOriginal)
             }
         }.onSuccess {
-            success?.invoke()
+            if (bookRequests.isCurrent(request)) success?.invoke()
         }
     }
 
@@ -789,18 +928,22 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
     }
 
     fun upEditBook() {
+        val request = bookRequests.current
         bookData.value?.let {
             appDb.bookDao.getBook(it.bookUrl)?.let { book ->
-                bookData.postValue(book)
+                bookRequests.publish(request) { bookData.value = book }
             }
         }
     }
 
-    private fun changeToLocalBook(localBook: Book): Book {
-        return LocalBook.mergeBook(localBook, bookData.value).let {
-            bookData.postValue(it)
-            loadChapter(it)
-            inBookshelf = true
+    private fun changeToLocalBook(localBook: Book, previousBook: Book, request: BookRequest): Book {
+        return LocalBook.mergeBook(localBook, previousBook).let {
+            request.inBookshelf = true
+            bookRequests.publish(request) {
+                if (bookData.value?.bookUrl != it.bookUrl) chapterListData.value = emptyList()
+                bookData.value = it
+            }
+            loadChapterForRequest(it, true, request.scope, false, request)
             it
         }
     }
