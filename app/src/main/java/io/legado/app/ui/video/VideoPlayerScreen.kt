@@ -93,13 +93,15 @@ fun VideoPlayerScreen(
             delay(2500); controls = false
         }
     }
-    // 背景绘制到窗口边缘；控件和字幕避让安全区，系统栏临时出现时不遮挡或挤动控件。
+    // 横屏边缘控件靠近屏幕边缘，锁定按钮和竖屏控件仍避让安全区。
     val controlInsets = if (windowed) WindowInsets(0, 0, 0, 0)
         else WindowInsets.safeContent.union(WindowInsets.systemBarsIgnoringVisibility)
     val contentModifier = Modifier.fillMaxSize()
         .background(if (windowed) surface else Color.Black)
         .then(if (windowed) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
     BoxWithConstraints(contentModifier) {
+        val landscape = !windowed && maxWidth > maxHeight
+        val edgeControlInsets = if (landscape) WindowInsets(0, 0, 0, 0) else controlInsets
         // 控件容器不依赖异步视频尺寸；真实比例只影响内部画面，初始化和切集时不挤动下方内容。
         val playerHeight = if (windowed) (maxWidth * 9 / 16).coerceAtMost(maxHeight / 2) else maxHeight
         val fitWidth = minOf(maxWidth, playerHeight * state.aspect)
@@ -117,9 +119,10 @@ fun VideoPlayerScreen(
                     if (controls) {
                         Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(
                             listOf(Color.Black.copy(alpha = .55f), Color.Transparent)))
-                            .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Top)).height(110.dp))
+                            .windowInsetsPadding(edgeControlInsets.only(WindowInsetsSides.Top))
+                            .height(if (landscape) 72.dp else 110.dp))
                         Row(Modifier.fillMaxWidth().align(Alignment.TopCenter)
-                            .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Top))
+                            .windowInsetsPadding(edgeControlInsets.only(WindowInsetsSides.Top))
                             .padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             if (!locked) VideoIcon(R.drawable.ic_arrow_back, "返回", onBack)
@@ -150,7 +153,7 @@ fun VideoPlayerScreen(
                                 Modifier.align(Alignment.Center).windowInsetsPadding(controlInsets).size(64.dp))
                             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .8f))))
-                                .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Bottom))
+                                .windowInsetsPadding(edgeControlInsets.only(WindowInsetsSides.Bottom))
                                 .padding(horizontal = 16.dp, vertical = 8.dp)) {
                                 if (mode == VideoPresentation.IMMERSIVE) {
                                     Text(title.orEmpty(), color = Color.White, fontSize = 16.sp, lineHeight = 22.sp,
