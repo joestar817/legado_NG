@@ -1,6 +1,7 @@
 package io.legado.app.ui.book.read.config
 
 import android.content.DialogInterface
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -8,12 +9,18 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.WindowManager
 import androidx.activity.ComponentDialog
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -21,8 +28,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
@@ -355,14 +364,21 @@ class ReadStyleDialog : BaseComposeDialogFragment() {
                             LocalNgDrawerContentCardAlpha provides
                                 ReadFloatingAppearanceConfig.surfaceAlpha(state.editorFloatingTransparency),
                         ) {
-                            NgDismissibleDrawer(onDismiss = { dismissAllowingStateLoss() }) {
-                                ReadStyleScreen(
-                                    page = page,
-                                    state = state,
-                                    contentColor = Color(ReadDrawerStyle.contentColor(requireContext())),
-                                    accentColor = Color(ReadDrawerStyle.accentColor(requireContext())),
-                                    actions = createActions(),
-                                )
+                            val viewport = if (page == ReadStylePage.FLOATING_COLOR || page.isAnyColorEditorPage()) {
+                                Modifier.heightIn(max = rememberColorDrawerViewportHeight(composeView))
+                            } else {
+                                Modifier
+                            }
+                            Box(viewport) {
+                                NgDismissibleDrawer(onDismiss = { dismissAllowingStateLoss() }) {
+                                    ReadStyleScreen(
+                                        page = page,
+                                        state = state,
+                                        contentColor = Color(ReadDrawerStyle.contentColor(requireContext())),
+                                        accentColor = Color(ReadDrawerStyle.accentColor(requireContext())),
+                                        actions = createActions(),
+                                    )
+                                }
                             }
                         }
                     }
@@ -2060,6 +2076,27 @@ private fun ReadStylePage.isHighlightColorEditorPage(): Boolean = when (this) {
 private fun ReadStylePage.isAnyColorEditorPage(): Boolean =
     isPresetColorEditorPage() || isHighlightColorEditorPage() ||
         this == ReadStylePage.EDIT_UNDERLINE_COLOR
+
+@Composable
+private fun rememberColorDrawerViewportHeight(view: View): Dp {
+    var visibleHeightPx by remember(view) { mutableIntStateOf(0) }
+    DisposableEffect(view) {
+        val frame = Rect()
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            // WRAP_CONTENT 会先按屏幕高度试测。使用窗口可见区域的高度，
+            // 避免试测把颜色列表的滚动上限临时缩到零。
+            view.getWindowVisibleDisplayFrame(frame)
+            visibleHeightPx = frame.height().coerceAtLeast(0)
+        }
+        val observer = view.viewTreeObserver
+        observer.addOnGlobalLayoutListener(listener)
+        listener.onGlobalLayout()
+        onDispose {
+            if (observer.isAlive) observer.removeOnGlobalLayoutListener(listener)
+        }
+    }
+    return if (visibleHeightPx > 0) with(LocalDensity.current) { visibleHeightPx.toDp() } else Dp.Infinity
+}
 
 private fun ReadStylePage.isEditorPage(): Boolean =
     this == ReadStylePage.EDIT || isPresetColorEditorPage() ||
