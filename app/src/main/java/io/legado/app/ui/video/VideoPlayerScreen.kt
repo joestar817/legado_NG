@@ -110,7 +110,7 @@ fun VideoPlayerScreen(
                 NgVideoCaptions(Modifier.align(Alignment.Center).width(fitWidth).height(fitWidth / state.aspect)
                     .windowInsetsPadding(controlInsets))
                 Box(Modifier.matchParentSize()) {
-                    Box(Modifier.matchParentSize().windowInsetsPadding(controlInsets)) {
+                    Box(Modifier.matchParentSize()) {
                         VideoGestureLayer(state, mode, locked, enabled = panel.isEmpty() && !more,
                             onTap = { controls = !controls; interaction++ }, onHint = { hint = it })
                     }
@@ -119,7 +119,7 @@ fun VideoPlayerScreen(
                             listOf(Color.Black.copy(alpha = .55f), Color.Transparent)))
                             .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Top)).height(110.dp))
                         Row(Modifier.fillMaxWidth().align(Alignment.TopCenter)
-                            .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
+                            .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Top))
                             .padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             if (!locked) VideoIcon(R.drawable.ic_arrow_back, "返回", onBack)
@@ -150,7 +150,7 @@ fun VideoPlayerScreen(
                                 Modifier.align(Alignment.Center).windowInsetsPadding(controlInsets).size(64.dp))
                             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .8f))))
-                                .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                                .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Bottom))
                                 .padding(horizontal = 16.dp, vertical = 8.dp)) {
                                 if (mode == VideoPresentation.IMMERSIVE) {
                                     Text(title.orEmpty(), color = Color.White, fontSize = 16.sp, lineHeight = 22.sp,
