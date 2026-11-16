@@ -1,8 +1,9 @@
 package io.legado.features.runtime
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import io.legado.features.runtime.RuntimeServices
 import io.legado.features.runtime.model.MangaExtensionRepo
-import io.legado.features.runtime.repo.RepoHelper
 import io.legado.features.runtime.RuntimeJson as GSON
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
@@ -28,12 +29,8 @@ object ExtensionPrefs {
         RuntimeServices.putPreference(key, value)
     }
 
-    fun getRepos(): List<MangaExtensionRepo> {
-        val defaults = listOf(RepoHelper.defaultRepo, RepoHelper.defaultAnimeRepo)
-        val userRepos = decodeUserRepos()
-            .filter { repo -> defaults.none { it.indexUrl == repo.indexUrl } }
-        return defaults + userRepos
-    }
+    fun getRepos(): List<MangaExtensionRepo> =
+        decodeUserRepos().map { it.copy(isDefault = false) }
 
     fun addUserRepo(repo: MangaExtensionRepo) {
         val repos = decodeUserRepos().toMutableList()
@@ -103,6 +100,7 @@ object ExtensionPrefs {
         return values["$kind:$sourceId"] ?: values[sourceId.toString()] ?: true
     }
 
+    @RequiresApi(Build.VERSION_CODES.N)
     @Synchronized fun setSourceEnabled(sourceId: Long, enabled: Boolean, kind: String = "mihon") {
         val map = getPrefString(KEY_SOURCE_ENABLED)?.let {
             runCatching { GSON.decodeFromString(sourceEnabledSerializer, it) }.getOrDefault(emptyMap())

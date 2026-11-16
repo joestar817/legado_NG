@@ -1200,13 +1200,14 @@ fun NgFormField(
 enum class NgFormMultilineFieldVariant {
     OUTLINED,
     DIALOG_UNDERLINE,
+    COMPACT_UNDERLINE,
 }
 
 /**
  * NG 多行编辑字段，供简介、说明等正文型表单复用。
  *
- * DIALOG_UNDERLINE 保留旧规则弹窗的浮动标签与底部输入线，不将脚本正文改成
- * 大圆角输入框。
+ * DIALOG_UNDERLINE 保留旧规则弹窗的浮动标签与底部输入线；
+ * COMPACT_UNDERLINE 提供变量输入所需的紧凑下划线和尾部操作。
  */
 @Composable
 fun NgFormMultilineField(
@@ -1223,6 +1224,7 @@ fun NgFormMultilineField(
     containerColor: Color? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     variant: NgFormMultilineFieldVariant = NgFormMultilineFieldVariant.OUTLINED,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val colors = NgTheme.colors
     val shape = RoundedCornerShape(NgTheme.shapes.smallDp.dp)
@@ -1230,7 +1232,8 @@ fun NgFormMultilineField(
     val focused by interactionSource.collectIsFocusedAsState()
     val borderColor = Color(if (focused) colors.primary else colors.outline)
     val contentAlpha = if (enabled) 1f else 0.45f
-    val underlined = variant == NgFormMultilineFieldVariant.DIALOG_UNDERLINE
+    val compactUnderlined = variant == NgFormMultilineFieldVariant.COMPACT_UNDERLINE
+    val underlined = variant == NgFormMultilineFieldVariant.DIALOG_UNDERLINE || compactUnderlined
     Column(modifier = modifier.fillMaxWidth()) {
         label?.takeIf { it.isNotBlank() }?.let {
             Text(
@@ -1256,7 +1259,7 @@ fun NgFormMultilineField(
                 fontFamily = NgTheme.fontFamily,
                 color = Color(colors.onSurface).copy(alpha = contentAlpha),
                 fontSize = 15.sp,
-                lineHeight = 22.sp,
+                lineHeight = if (compactUnderlined) 19.sp else 22.sp,
             ),
             cursorBrush = SolidColor(Color(colors.primary)),
             interactionSource = interactionSource,
@@ -1278,7 +1281,10 @@ fun NgFormMultilineField(
                                 strokeWidth = strokeWidth,
                             )
                         }
-                        .padding(horizontal = 2.dp, vertical = 8.dp)
+                        .then(
+                            if (compactUnderlined) Modifier
+                            else Modifier.padding(horizontal = 2.dp, vertical = 8.dp)
+                        )
                 } else {
                     Modifier
                         .fillMaxWidth()
@@ -1297,9 +1303,7 @@ fun NgFormMultilineField(
                         )
                         .padding(horizontal = 12.dp, vertical = 10.dp)
                 }
-                Box(
-                    modifier = decorationModifier,
-                ) {
+                val fieldContent: @Composable () -> Unit = {
                     if (value.isEmpty() && !placeholder.isNullOrBlank()) {
                         Text(
                             text = placeholder,
@@ -1309,6 +1313,20 @@ fun NgFormMultilineField(
                         )
                     }
                     innerTextField()
+                }
+                if (compactUnderlined) {
+                    Row(
+                        modifier = decorationModifier,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier.weight(1f).padding(vertical = 4.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) { fieldContent() }
+                        if (trailingContent != null) trailingContent() else Spacer(Modifier.width(10.dp))
+                    }
+                } else {
+                    Box(modifier = decorationModifier) { fieldContent() }
                 }
             },
         )

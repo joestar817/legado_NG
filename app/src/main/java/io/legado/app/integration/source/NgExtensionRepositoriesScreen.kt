@@ -72,13 +72,13 @@ internal fun NgExtensionRepositoriesScreen(onBack: () -> Unit) {
                     Text("已保存 ${repositories.size} 个仓库", Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.labelLarge, color = Color(NgTheme.colors.onSurfaceVariant))
                 }
             }
-            if (repositories.isEmpty()) item { Text("暂无仓库，请输入仓库地址添加。") }
+            if (repositories.isEmpty()) item { Text("未预置仓库，请自行输入 Mihon / Aniyomi 仓库地址添加。") }
             items(repositories, key = { it.url }) { repo ->
-                NgRepositoryCard(title = repo.name + if (repo.isDefault) " · 内置" else "", address = repo.url, status = repo.status, actions = {
+                NgRepositoryCard(title = repo.name, address = repo.url, status = repo.status, actions = {
                         NgDialogTextActionButton(text = "刷新", enabled = !busy, onClick = {
                             perform { ExtensionFeatures.refreshRepository(repo.url); "${repo.name} 刷新完成" }
                         })
-                        if (!repo.isDefault) NgDialogTextActionButton(text = "移除仓库", enabled = !busy, onClick = {
+                        NgDialogTextActionButton(text = "移除仓库", enabled = !busy, onClick = {
                             perform { ExtensionFeatures.removeRepository(repo.url); "已移除仓库：${repo.name}" }
                         })
                 })

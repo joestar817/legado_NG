@@ -8,7 +8,6 @@ import io.legado.features.runtime.model.MangaExtensionRepo
 import io.legado.features.runtime.model.NetworkExtensionStore
 import io.legado.features.runtime.model.NetworkLegacyExtension
 import io.legado.features.runtime.model.NetworkRepoInfo
-import io.legado.features.runtime.model.RepoKind
 import io.legado.features.runtime.model.toAvailable
 import io.legado.features.runtime.runtimeHttpClient
 import io.legado.features.runtime.RuntimeFilesJsonStore
@@ -23,34 +22,6 @@ import io.legado.features.runtime.withRuntimeResponse
 import io.legado.features.runtime.readBounded
 
 internal object RepoHelper {
-
-    val defaultRepo = MangaExtensionRepo(
-        indexUrl = DEFAULT_MANGA_INDEX_URL,
-        name = DEFAULT_MANGA_REPO_NAME,
-        signingKeyFingerprint = DEFAULT_MANGA_FINGERPRINT,
-        isDefault = true,
-        kind = RepoKind.MANGA,
-    )
-
-    val defaultAnimeRepo = MangaExtensionRepo(
-        indexUrl = DEFAULT_ANIME_INDEX_URL,
-        name = DEFAULT_ANIME_REPO_NAME,
-        signingKeyFingerprint = DEFAULT_ANIME_FINGERPRINT,
-        isDefault = true,
-        kind = RepoKind.ANIME,
-    )
-
-    private const val DEFAULT_MANGA_INDEX_URL =
-        "https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.pb"
-    private const val DEFAULT_MANGA_REPO_NAME = "Keiyoushi"
-    private const val DEFAULT_MANGA_FINGERPRINT =
-        "9add655a78e96c4ec7a53ef89dccb557cb5d767489fac5e785d671a5a75d4da2"
-
-    private const val DEFAULT_ANIME_INDEX_URL =
-        "https://raw.githubusercontent.com/yuzono/anime-repo/repo/index.min.json"
-    private const val DEFAULT_ANIME_REPO_NAME = "Yuzono"
-    private const val DEFAULT_ANIME_FINGERPRINT =
-        "cbec121aa82ebb02aaa73806992e0368a97d47b5451ed6524816d03084c45905"
 
     private const val INDEX_FILE_NAME = "mangaExtensionIndex.json"
     private const val REPO_FILE_SUFFIX = "repo.json"

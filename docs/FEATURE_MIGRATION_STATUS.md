@@ -96,7 +96,7 @@ NG OTHER 备份分类新增加密 `featureModules.json.aes`。恢复前校验整
 ### 2026-11-10 仓库管理补齐
 
 - 2026-11-12 下载进度修复：默认“未下载”列表保留正在下载/导入的条目，下载失败仍可在原位置重试，完成后再移出；避免点击下载立即被状态筛选隐藏。缺少有效 Content-Length 时持续报告已接收字节，界面显示活动进度及已下载 KB/MB，不再固定显示 0%；已知大小继续显示百分比。`build/extension-download-progress-check.log` 中 14 项定向回归、应用 Kotlin 编译及 15 模块边界检查通过；继续排除既有 `verifyNgDesignSystem`，未进行真实仓库或设备界面验证。
-- Mihon/Aniyomi 扩展管理增加仓库列表、地址、逐仓库刷新结果与自定义仓库移除；内置仓库标识并保留。支持 `repo.json` 转同目录 JSON 索引，添加时先验证元信息和索引，失败不保存。部分仓库刷新失败时保留其上次索引。
+- Mihon/Aniyomi 扩展管理增加仓库列表、地址、逐仓库刷新结果与仓库移除。2026-11-16 起不再预置仓库，由用户自行填写；保留已保存仓库，启动及恢复时过滤未配置仓库的旧索引缓存。支持 `repo.json` 转同目录 JSON 索引，添加时先验证元信息和索引，失败不保存。部分仓库刷新失败时保留其上次索引。
 - 扩展、仓库、TVBox 和来源设置改为 `NgSourceManagementActivity` 承载的完整页面，沿用来源工程 Activity 导航方式，顶部返回/系统返回回到上一页。各页使用单一滚动列表，修复固定控件挤占高度导致列表不可见；统一 NG Surface 与文字颜色，避免白底文字不可见。签名信任/卸载确认仍使用小型确认对话框。
 - 管理页公共容器改为透明，直接透出 `BaseActivity` 的主题底图、渐变或动态场景；标题栏复用 `NgFloatingTitleToolbar`，仓库/TVBox 卡片复用 `NgGlassSurface` 与既有详情卡材质，并接入统一 backdrop host，避免整页不透明白底遮挡背景。文字颜色继续跟随主题。
 - 背景验证 `build/extensions-backdrop-ui-check.log`：应用 Kotlin 编译、`verifyFeatureVisuals` 和 2 项原生 Compose 截图录制通过；在 411dp 浅色、320dp 深色样例背景下查看了底图透出及文字/按钮对比度。测试使用渐变背景替身，未进行真实主题底图或动态场景的设备验收；继续排除既有失败的 `verifyNgDesignSystem`。

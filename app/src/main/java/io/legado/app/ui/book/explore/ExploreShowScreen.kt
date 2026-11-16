@@ -69,6 +69,7 @@ import io.legado.app.data.entities.SearchBook
 import io.legado.app.data.entities.rule.ExploreKind
 import io.legado.app.data.entities.rule.ExploreKind.Type
 import io.legado.app.ui.book.search.SearchBookCover
+import io.legado.app.ui.book.search.SearchCoverBitmapCache
 import io.legado.app.ui.book.search.SearchResultCard
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
 import io.legado.app.ui.design.components.compose.rememberNgExpandableActionMenuContentWidth
@@ -127,26 +128,23 @@ internal fun ExploreShowScreen(
         calculateExploreDetailKindRows(kindSections.controls)
     }
     val gridState = rememberLazyGridState()
+    val coverBitmapCache = remember { SearchCoverBitmapCache() }
     val scope = rememberCoroutineScope()
-    val currentPage by remember(gridState, state.books, state.bookPages, state.firstLoadedPage) {
+    val currentPage by remember(gridState, state.bookPages, state.firstLoadedPage) {
         derivedStateOf {
-            var firstRow: Int? = null
-            var page = state.firstLoadedPage
-            for (item in gridState.layoutInfo.visibleItemsInfo) {
-                val book = state.books.getOrNull(item.index) ?: continue
-                val bookPage = state.bookPages[book.bookUrl] ?: continue
-                if (firstRow == null) {
-                    firstRow = item.offset.y
-                    page = bookPage
-                } else if (item.offset.y != firstRow) {
-                    break
-                } else {
-                    page = maxOf(page, bookPage)
-                }
+            val visibleBooks = gridState.layoutInfo.visibleItemsInfo.mapNotNull { item ->
+                // Ignore the previous page when it is visible only in the leading padding.
+                if (item.index < gridState.firstVisibleItemIndex) return@mapNotNull null
+                val key = item.key as? String
+                val page = key?.removePrefix("list_")?.removePrefix("grid_")
+                    ?.let(state.bookPages::get)
+                page?.let { item.offset.y to it }
             }
             // A grid row may straddle two source pages. Use its later page so
             // navigating to a cached boundary cannot get stuck on the same row.
-            page
+            val firstRow = visibleBooks.firstOrNull()?.first
+            visibleBooks.takeWhile { it.first == firstRow }.maxOfOrNull { it.second }
+                ?: state.firstLoadedPage
         }
     }
     val lastBookPage = remember(state.bookPages) { state.bookPages.values.maxOrNull() ?: 0 }
@@ -209,6 +207,7 @@ internal fun ExploreShowScreen(
             .fillMaxSize()
             .statusBarsPadding(),
         enabled = !state.isKindsLoading,
+        showIndicator = false
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             ExploreShowTopBar(
@@ -278,7 +277,6 @@ internal fun ExploreShowScreen(
                             items(
                                 items = state.books,
                                 key = { "list_${it.bookUrl}" },
-                                contentType = { "book_list" },
                                 span = { GridItemSpan(maxLineSpan) }
                             ) { book ->
                                 Column {
@@ -286,6 +284,7 @@ internal fun ExploreShowScreen(
                                         book = book,
                                         inBookshelf = state.isBookInShelf(book),
                                         originCount = 0,
+                                        coverBitmapCache = coverBitmapCache,
                                         onClick = { onOpenBook(book) },
                                         onLongClick = { onOpenBook(book) },
                                         outerHorizontalPadding = 0.dp,
@@ -307,11 +306,11 @@ internal fun ExploreShowScreen(
                         } else {
                             items(
                                 items = state.books,
-                                key = { "grid_${it.bookUrl}" },
-                                contentType = { "book_grid" }
+                                key = { "grid_${it.bookUrl}" }
                             ) { book ->
                                 ExploreBookGridCard(
                                     book = book,
+                                    coverBitmapCache = coverBitmapCache,
                                     inBookshelf = state.isBookInShelf(book),
                                     onClick = { onOpenBook(book) }
                                 )
@@ -947,6 +946,7 @@ private fun ExploreLayoutButton(
 @Composable
 private fun ExploreBookGridCard(
     book: SearchBook,
+    coverBitmapCache: SearchCoverBitmapCache,
     inBookshelf: Boolean,
     onClick: () -> Unit
 ) {
@@ -963,6 +963,7 @@ private fun ExploreBookGridCard(
                     .fillMaxWidth()
                     .aspectRatio(0.74f),
                 coverWidth = 108.dp,
+                bitmapCache = coverBitmapCache,
                 coverHeight = 146.dp
             )
             if (inBookshelf) {

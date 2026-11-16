@@ -80,7 +80,9 @@ object ExtensionRuntime {
         scope.launch {
             reloadMutex.withLock {
 
-                _availableExtensionsFlow.value = RepoHelper.loadCachedIndex()
+                _availableExtensionsFlow.value = RepoHelper.loadCachedIndex().filter { entry ->
+                    _reposFlow.value.any { it.indexUrl == entry.repo.indexUrl }
+                }
                 refreshStatuses()
                 loadExtensionsLocked()
             }
@@ -266,7 +268,6 @@ object ExtensionRuntime {
     }
 
     fun removeRepo(indexUrl: String) {
-        require(_reposFlow.value.none { it.indexUrl == indexUrl && it.isDefault }) { "内置仓库不可移除" }
         ExtensionPrefs.removeRepo(indexUrl)
         _reposFlow.value = ExtensionPrefs.getRepos()
         _repoStatuses.update { it - indexUrl }
@@ -347,7 +348,9 @@ object ExtensionRuntime {
         if (!started.get()) return
         reloadMutex.withLock {
             _reposFlow.value = ExtensionPrefs.getRepos()
-            _availableExtensionsFlow.value = RepoHelper.loadCachedIndex()
+            _availableExtensionsFlow.value = RepoHelper.loadCachedIndex().filter { entry ->
+                _reposFlow.value.any { it.indexUrl == entry.repo.indexUrl }
+            }
             loadExtensionsLocked()
         }
         _restoreGenerationFlow.value++

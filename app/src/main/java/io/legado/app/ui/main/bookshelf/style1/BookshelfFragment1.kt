@@ -359,6 +359,7 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         } else {
             val visibleGroups = data
             if (visibleGroups != bookGroups) {
+                val selectedGroupId = selectedGroup?.groupId
                 resetGroupSwipe()
                 bookGroups.clear()
                 bookGroups.addAll(visibleGroups)
@@ -369,7 +370,7 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
                     )
                 }
                 updateGroupGridFolders()
-                selectSavedGroup()
+                selectSavedGroup(selectedGroupId)
             }
         }
     }
@@ -378,9 +379,13 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         updateGroupFragments()
     }
 
-    private fun selectSavedGroup() {
+    private fun selectSavedGroup(selectedGroupId: Long?) {
         if (bookGroups.isEmpty()) return
-        val targetPosition = resolveVisibleGroupIndex(AppConfig.saveTabPosition)
+        val targetPosition = resolveUpdatedBookshelfGroupIndex(
+            groups = bookGroups,
+            selectedGroupId = selectedGroupId,
+            savedPosition = AppConfig.saveTabPosition,
+        )
         selectGroup(targetPosition, force = true)
     }
 

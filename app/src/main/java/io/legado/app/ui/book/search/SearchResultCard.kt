@@ -104,7 +104,8 @@ internal fun SearchResultCard(
     coverHeight: Dp = 116.5.dp,
     cardBackgroundColorRes: Int = R.color.ng_surface_card,
     cardStrokeColorRes: Int = R.color.ng_settings_item_stroke,
-    cardBorderWidth: Dp = 0.8.dp
+    cardBorderWidth: Dp = 0.8.dp,
+    coverBitmapCache: SearchCoverBitmapCache? = null,
 ) {
     val context = LocalContext.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -147,7 +148,8 @@ internal fun SearchResultCard(
             book = book,
             modifier = Modifier.size(width = coverWidth, height = coverHeight),
             coverWidth = coverWidth,
-            coverHeight = coverHeight
+            coverHeight = coverHeight,
+            bitmapCache = coverBitmapCache,
         )
 
         Column(
@@ -306,7 +308,8 @@ internal fun SearchBookCover(
     book: SearchBook,
     modifier: Modifier = Modifier,
     coverWidth: Dp = 78.dp,
-    coverHeight: Dp = 104.dp
+    coverHeight: Dp = 104.dp,
+    bitmapCache: SearchCoverBitmapCache? = null,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -328,11 +331,12 @@ internal fun SearchBookCover(
         initialValue = null,
         key1 = defaultSeed,
         key2 = widthPx to heightPx,
-        key3 = isNightTheme
+        key3 = isNightTheme to bitmapCache
     ) {
         value = withContext(Dispatchers.IO) {
-            BookCover.getDefaultDrawable(defaultSeed, isNightTheme)
-                .toBitmap(widthPx, heightPx).asImageBitmap()
+            val drawable = BookCover.getDefaultDrawable(defaultSeed, isNightTheme)
+            bitmapCache?.toImageBitmap(drawable, widthPx, heightPx)
+                ?: drawable.toBitmap(widthPx, heightPx).asImageBitmap()
         }
     }
     var cover by remember(book.coverUrl, defaultSeed, widthPx, heightPx, isNightTheme) {
