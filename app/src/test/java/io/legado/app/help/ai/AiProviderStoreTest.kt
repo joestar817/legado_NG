@@ -64,6 +64,29 @@ class AiProviderStoreTest {
     }
 
     @Test
+    fun `adding built in OpenCode preserves an existing custom provider`() {
+        withRestoredProviders {
+            val custom = AiProviderSetting(
+                id = "custom_openai_1",
+                type = AiProviderType.OPENAI,
+                builtIn = false,
+                name = "Custom OpenCode",
+                apiKey = "test-key",
+                baseUrl = "https://opencode.ai/inference/go",
+                model = "custom-model",
+                chatCompletionsPath = "/openai/v1/chat/completions",
+                streamResponseEnabled = true,
+                enabled = false
+            )
+            AiProviderStore.saveProviders(listOf(custom))
+
+            val providers = AiProviderStore.providers()
+            assertEquals(custom, providers.single { it.id == custom.id })
+            assertEquals("OpenCode", providers.single { it.id == AiDefaultProviders.OPENCODE_ID }.name)
+        }
+    }
+
+    @Test
     fun `reset built in provider restores defaults and keeps key enabled and models`() {
         withRestoredProviders {
             val providers = AiDefaultProviders.all()
