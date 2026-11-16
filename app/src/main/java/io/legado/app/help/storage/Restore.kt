@@ -49,7 +49,6 @@ import io.legado.app.utils.fromJsonArray
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
-import io.legado.app.utils.getSharedPreferences
 import io.legado.app.utils.isContentScheme
 import io.legado.app.utils.isJsonArray
 import io.legado.app.utils.openInputStream
@@ -69,6 +68,7 @@ import kotlinx.coroutines.withContext
 import splitties.init.appCtx
 import java.io.File
 import java.io.FileInputStream
+import java.io.IOException
 
 /**
  * 恢复
@@ -105,6 +105,22 @@ object Restore {
         mutex.withLock { restore(path) }
     }
 
+    private fun canReadLegacyCover(reference: String): Boolean = try {
+        val input = when {
+            reference.startsWith("content:", ignoreCase = true) ->
+                appCtx.contentResolver.openInputStream(Uri.parse(reference).normalizeScheme())
+            reference.startsWith("file:", ignoreCase = true) -> File(requireNotNull(Uri.parse(reference).path)).inputStream()
+            else -> File(reference).inputStream()
+        }
+        input?.use { it.read(); true } ?: false
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    } catch (_: IllegalArgumentException) {
+        false
+    }
+
     private suspend fun restore(path: String) {
         // 新恢复开始前等上一批退出，避免旧任务继续写入或刷新本次恢复的书架。
         coverRebuildJob?.cancelAndJoin()
@@ -120,7 +136,7 @@ object Restore {
             if (timingSnapshot == null) readingRecords?.map { it.readTime } else null,
         )
         val aes = BackupAES()
-        val storedPreferences = appCtx.getSharedPreferences(path, "config")?.all
+        val storedPreferences = BackupPreferences.open(path, "config")?.all
         val backupPreferences = if (modules != null) {
             requireNotNull(storedPreferences) { "无法读取备份设置" }
             // Load typed primary configs before any copy/merge; their legacy loaders otherwise
@@ -153,9 +169,16 @@ object Restore {
                 }
             val newBooks = arrayListOf<Book>()
             val ignoreLocalBook = BackupConfig.ignoreLocalBook
+            val readableCovers = hashMapOf<String, Boolean>()
             it.forEach { book ->
                 if (ignoreLocalBook && book.isLocal) {
                     return@forEach
+                }
+                book.customCoverUrl = LegacyCoverRestore.restoredReference(
+                    book.customCoverUrl,
+                    hasNativeManifest = modules != null,
+                ) { reference ->
+                    readableCovers.getOrPut(reference) { canReadLegacyCover(reference) }
                 }
                 if (appDb.bookDao.has(book.bookUrl)) {
                     try {
@@ -367,7 +390,7 @@ object Restore {
             }
             check(edit.commit()) { "无法保存恢复后的设置" }
         }
-        appCtx.getSharedPreferences(path, "videoConfig")?.all?.let { map ->
+        BackupPreferences.open(path, "videoConfig")?.all?.let { map ->
             appCtx.getSharedPreferences(VIDEO_PREF_NAME, Context.MODE_PRIVATE).edit().apply {
                 map.forEach { (key, value) ->
                     when (value) {
