@@ -441,7 +441,21 @@ internal class EpubLayoutSurface(
         values.firstOrNull { it.payload.getString("key") == contentKey }?.let {
             gateway.setContent(it.location.path, it.html, it.payloadJson)
         }
-        if (closed || !loaded) return
+        if (closed) return
+        if (!loaded) {
+            documentOptions = createDocumentOptions(values)
+            return
+        }
+        val current = state
+        if (!canUpdateEpubStylesInPlace(current?.optString("status"), current?.optString("token"),
+                current?.optBoolean("busy") == true, revision)) {
+            // Incremental style updates cancel JS layout work. If pagination is still
+            // in flight (or the visible state is stale), restart the normal configuration.
+            // Content URLs include a gateway revision, so fetch the updated style payload.
+            documentOptions = createDocumentOptions(values)
+            configure()
+            return
+        }
         val updates = JSONArray().apply { values.forEach { document ->
             put(JSONObject().put("key", document.payload.getString("key"))
                 .put("charStyles", document.payload.getJSONArray("charStyles"))
@@ -1126,3 +1140,7 @@ internal class EpubLayoutSurface(
         gateway.close()
     }
 }
+
+/** Incremental style updates may only cancel a fully published layout of this revision. */
+internal fun canUpdateEpubStylesInPlace(status: String?, token: String?, busy: Boolean, revision: Long): Boolean =
+    status == "ready" && !busy && token == revision.toString()

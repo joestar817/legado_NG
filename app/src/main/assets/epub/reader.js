@@ -391,7 +391,9 @@
     }
     function setHighlights(values) {
         highlights = values || [];
-        if (JSON.stringify(highlights) !== paintedHighlights) paintHighlights();
+        // A parent may update marks while this document is still being configured.
+        // configureLayout paints the latest marks after the new layout becomes ready.
+        if (state.status === 'ready' && JSON.stringify(highlights) !== paintedHighlights) paintHighlights();
     }
     var selectionLayer, selectionHighlightTransparent = false;
     function setSelectionTransparent(value) {

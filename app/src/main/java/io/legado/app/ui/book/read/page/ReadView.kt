@@ -1068,6 +1068,11 @@ class ReadView(context: Context, attrs: AttributeSet) :
      */
     fun refreshHighlightRules(): Boolean = epubLayout?.takeIf { it.active }?.refreshHighlightRules() ?: false
 
+    /** Apply existing reading-style changes to the active EPUB document. */
+    fun refreshEpubStyle() {
+        epubLayout?.takeIf { it.active }?.restyle()
+    }
+
     fun upBg() {
         ReadBookConfig.upBg(width, height)
         curPage.upBg()
