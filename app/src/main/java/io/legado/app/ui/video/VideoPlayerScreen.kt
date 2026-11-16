@@ -196,7 +196,7 @@ fun VideoPlayerScreen(
                     } else if (!windowed && VideoPlay.fullBottomProgressBar) {
                         LinearProgressIndicator(progress = { if (state.duration > 0) state.position.toFloat() / state.duration else 0f },
                             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                                .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                                .windowInsetsPadding(controlInsets.only(WindowInsetsSides.Horizontal))
                                 .height(2.dp), color = primary)
                     }
                     if (state.showLoading) CircularProgressIndicator(
