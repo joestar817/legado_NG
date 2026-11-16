@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.text.format.DateUtils
 import android.view.MenuItem
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewConfiguration
@@ -52,7 +53,6 @@ import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.storage.Backup
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.accentColor
-import io.legado.app.lib.theme.primaryColor
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.about.CrashLogsDialog
 import io.legado.app.ui.association.ImportBookSourceDialog
@@ -77,7 +77,6 @@ import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.navigationBarHeight
 import io.legado.app.utils.observeEvent
 import io.legado.app.utils.dpToPx
-import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.setOnApplyWindowInsetsListenerCompat
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
@@ -125,6 +124,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     private var shelfSwipeStartY = 0f
     private var shelfSwipeCancelled = false
     private var shelfSwipeMode = BookshelfSwipeMode.MAIN_PAGES
+    private var shelfSwipeVelocityTracker: VelocityTracker? = null
     private val fragmentMap = hashMapOf<Int, Fragment>()
     private var realPositions = MainPageIds.visible(
         AppConfig.showDiscovery,
@@ -271,6 +271,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
         shelfSwipeAction = 0
         shelfSwipeEligible = false
         shelfSwipeCancelled = true
+        recycleShelfSwipeVelocityTracker()
         petLoadJob?.cancel()
         binding.aiChatPet.setHostActive(false)
         super.onPause()
@@ -283,10 +284,10 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
 
     private fun handleBookshelfSwipe(event: MotionEvent): Boolean {
         val shelf = fragmentMap[idBookshelf1] as? BookshelfFragment1
+        if (event.actionMasked != MotionEvent.ACTION_DOWN) shelfSwipeVelocityTracker?.addMovement(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                shelf?.completePendingGroupSwipe()
-                shelfSwipeAction = 0
+                recycleShelfSwipeVelocityTracker()
                 shelfSwipeCancelled = false
                 shelfSwipeMode = BookshelfGestureConfig.mode
                 shelfSwipeStartX = event.rawX
@@ -298,10 +299,18 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                     !isTouchInsideBookshelfFloatingDock(event) &&
                     !isTouchInsideView(event, binding.floatingBottomNavigation) &&
                     !isTouchInsideChatEntry(event)
+                val isGroupGesture = shelfSwipeEligible && shelfSwipeMode == BookshelfSwipeMode.GROUPS_FIRST
+                shelfSwipeAction = 0
+                if (isGroupGesture) {
+                    // Let the previous settle run until the next horizontal direction is known.
+                    shelfSwipeVelocityTracker = VelocityTracker.obtain().apply { addMovement(event) }
+                } else {
+                    shelf?.prepareGroupSwipe()
+                }
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (shelfSwipeAction == -1 || shelfSwipeAction == 1) {
-                    shelf?.finishGroupSwipe(commit = false)
+                    shelf?.finishGroupSwipe()
                     shelfSwipeAction = 2
                 }
                 if (shelfSwipeEligible && shelfSwipeMode == BookshelfSwipeMode.DISABLED) {
@@ -310,6 +319,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 }
                 shelfSwipeEligible = false
                 shelfSwipeCancelled = true
+                recycleShelfSwipeVelocityTracker()
             }
             MotionEvent.ACTION_MOVE -> if (shelfSwipeAction == -1 || shelfSwipeAction == 1) {
                 if (!shelfSwipeCancelled) shelf?.updateGroupSwipe(event.rawX - shelfSwipeStartX)
@@ -317,6 +327,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 if (shelfSwipeMode == BookshelfSwipeMode.GROUPS_FIRST &&
                     event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) {
                     shelfSwipeEligible = false
+                    recycleShelfSwipeVelocityTracker()
                     return false
                 }
                 val dx = event.rawX - shelfSwipeStartX
@@ -324,11 +335,23 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 val slop = ViewConfiguration.get(this).scaledTouchSlop
                 if (abs(dy) > slop && abs(dy) >= abs(dx)) {
                     shelfSwipeEligible = false
+                    recycleShelfSwipeVelocityTracker()
                 } else if (abs(dx) > slop && abs(dx) > abs(dy)) {
                     val direction = if (dx < 0) 1 else -1
-                    shelfSwipeAction = resolveBookshelfSwipe(shelfSwipeMode, direction, shelf?.canSwipeGroup(direction) == true)
+                    val grabbedDirection = if (shelfSwipeMode == BookshelfSwipeMode.GROUPS_FIRST) {
+                        shelf?.prepareGroupSwipe(direction) ?: 0
+                    } else {
+                        0
+                    }
+                    shelfSwipeAction = if (grabbedDirection != 0) {
+                        grabbedDirection
+                    } else {
+                        resolveBookshelfSwipe(
+                            shelfSwipeMode, direction, shelf?.canSwipeGroup(direction) == true,
+                        )
+                    }
                     shelfSwipeEligible = false
-                    if ((shelfSwipeAction == -1 || shelfSwipeAction == 1) &&
+                    if (grabbedDirection == 0 && (shelfSwipeAction == -1 || shelfSwipeAction == 1) &&
                         shelf?.beginGroupSwipe(shelfSwipeAction) != true
                     ) {
                         shelfSwipeAction = 0
@@ -340,6 +363,9 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                             shelf?.updateGroupSwipe(dx)
                         }
                     }
+                    if (shelfSwipeAction == 0 || shelfSwipeAction == 2) {
+                        recycleShelfSwipeVelocityTracker()
+                    }
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -347,15 +373,32 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
                 if (action == -1 || action == 1) {
                     val dx = event.rawX - shelfSwipeStartX
                     val dy = event.rawY - shelfSwipeStartY
-                    shelf?.finishGroupSwipe(commit = event.actionMasked == MotionEvent.ACTION_UP &&
-                        !shelfSwipeCancelled && -dx * action >= 48.dpToPx() && abs(dx) > abs(dy) * 1.8f)
+                    val released = event.actionMasked == MotionEvent.ACTION_UP && !shelfSwipeCancelled
+                    val intentionalSwipe = released && abs(dx) >= 48.dpToPx() && abs(dx) > abs(dy) * 1.8f
+                    val velocityX = if (released) {
+                        val maxVelocity = ViewConfiguration.get(this).scaledMaximumFlingVelocity.toFloat()
+                        shelfSwipeVelocityTracker?.apply { computeCurrentVelocity(1000, maxVelocity) }
+                            ?.getXVelocity(event.getPointerId(0)) ?: 0f
+                    } else {
+                        0f
+                    }
+                    shelf?.finishGroupSwipe(
+                        commit = if (intentionalSwipe) -dx * action > 0f else null,
+                        velocityX = velocityX,
+                    )
                 }
                 shelfSwipeAction = 0
                 shelfSwipeEligible = false
+                recycleShelfSwipeVelocityTracker()
                 return action != 0
             }
         }
         return shelfSwipeAction != 0
+    }
+
+    private fun recycleShelfSwipeVelocityTracker() {
+        shelfSwipeVelocityTracker?.recycle()
+        shelfSwipeVelocityTracker = null
     }
 
     private fun isTouchInsideView(event: MotionEvent, view: View): Boolean {
@@ -444,7 +487,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
     }
 
     private fun initView() = binding.run {
-        viewPagerMain.setEdgeEffectColor(primaryColor)
+        viewPagerMain.installMainPageSwipeScroller()
         viewPagerMain.offscreenPageLimit = 3
         viewPagerMain.adapter = adapter
         viewPagerMain.addOnPageChangeListener(PageChangeCallback())
@@ -876,8 +919,7 @@ class MainActivity : VMBaseActivity<ActivityMainBinding, MainViewModel>(),
             if (state == ViewPager.SCROLL_STATE_IDLE) {
                 bindFloatingBottomBackdropToCurrentPage()
             } else {
-                // Drawing the pager directly lets EdgeEffect stretch the backdrop RenderNode.
-                // Its content-only parent keeps the pager on its own normal rendering layer.
+                // Sample both pages as they move across the viewport.
                 binding.floatingBottomNavigation.setLiquidBackdropSource(
                     binding.viewPagerMain.parent as View,
                 )

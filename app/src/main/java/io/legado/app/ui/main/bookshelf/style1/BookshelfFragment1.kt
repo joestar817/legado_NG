@@ -1,11 +1,8 @@
 package io.legado.app.ui.main.bookshelf.style1
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
-import android.animation.ValueAnimator
 import android.os.Bundle
 import android.view.View
-import android.view.animation.DecelerateInterpolator
+import android.widget.Scroller
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -35,9 +32,13 @@ import io.legado.app.ui.main.MainActivity
 import io.legado.app.ui.main.bookshelf.BaseBookshelfFragment
 import io.legado.app.ui.main.bookshelf.BookshelfDockGroup
 import io.legado.app.ui.main.bookshelf.style1.books.BooksFragment
+import io.legado.app.ui.main.bookshelfGroupSettleDuration
+import io.legado.app.ui.main.pageSwipeSettleInterpolator
+import io.legado.app.ui.main.shouldRegrabBookshelfSwipe
 import io.legado.app.ui.design.theme.NgAppTheme
 import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
 import io.legado.app.ui.design.components.compose.NgMenuSelectionStyle
+import io.legado.app.utils.dpToPx
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.startActivity
 import io.legado.app.utils.startActivityForBook
@@ -47,6 +48,7 @@ import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.collections.set
 
 /**
@@ -76,9 +78,13 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         val target: BooksFragment,
         val width: Int,
         var offset: Float = 0f,
-    )
+        var dragStartOffset: Float = 0f,
+        var releaseCommit: Boolean = false,
+    ) {
+        val settleOffset: Int get() = if (releaseCommit) -direction * width else 0
+    }
     private var groupSwipe: GroupSwipe? = null
-    private var groupSwipeAnimator: ValueAnimator? = null
+    private var groupSwipeFrame: Runnable? = null
     private var pendingGroupSelection = false
     private var groupGridBooks: List<Book> = emptyList()
     private var groupGridCustomGroupMask: Long = 0L
@@ -397,12 +403,23 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
         view != null && isResumed && !showGroupGrid && !childFragmentManager.isStateSaved &&
             direction in listOf(-1, 1) && selectedGroupIndex + direction in bookGroups.indices
 
-    /** Finish an earlier release before a new pointer sequence starts. */
-    fun completePendingGroupSwipe() {
-        if (!isResumed || childFragmentManager.isStateSaved) return
-        val animator = groupSwipeAnimator
-        if (animator != null) animator.end()
-        else if (resetGroupSwipe() || pendingGroupSelection) selectedGroup?.let(::showGroupFragment)
+    /** Complete the pending landing, or grab the pair for a drag directed back into it. */
+    internal fun prepareGroupSwipe(direction: Int? = null): Int {
+        if (!isResumed || childFragmentManager.isStateSaved) return 0
+        val swipe = groupSwipe
+        if (swipe != null && groupSwipeFrame != null) {
+            if (shouldRegrabBookshelfSwipe(direction, swipe.direction, swipe.releaseCommit) &&
+                abs(swipe.settleOffset - swipe.offset) > 2.dpToPx()
+            ) {
+                stopGroupSwipeAnimation()
+                swipe.dragStartOffset = swipe.offset
+                return swipe.direction
+            }
+            completeGroupSwipe(swipe)
+        } else if (resetGroupSwipe() || pendingGroupSelection) {
+            selectedGroup?.let(::showGroupFragment)
+        }
+        return 0
     }
 
     fun beginGroupSwipe(direction: Int): Boolean {
@@ -438,60 +455,84 @@ class BookshelfFragment1() : BaseBookshelfFragment(R.layout.fragment_bookshelf1)
 
     fun updateGroupSwipe(distance: Float) {
         val swipe = groupSwipe ?: return
+        moveGroupSwipe(swipe, swipe.dragStartOffset + distance)
+    }
+
+    private fun moveGroupSwipe(swipe: GroupSwipe, distance: Float) {
         val offset = (distance * swipe.direction).coerceIn(-swipe.width.toFloat(), 0f) * swipe.direction
         swipe.offset = offset
         swipe.current.view?.translationX = offset
         swipe.target.view?.translationX = offset + swipe.direction * swipe.width
     }
 
-    fun finishGroupSwipe(commit: Boolean) {
+    internal fun finishGroupSwipe(commit: Boolean? = null, velocityX: Float = 0f) {
         val swipe = groupSwipe ?: return
-        groupSwipeAnimator?.apply {
-            removeAllListeners()
-            removeAllUpdateListeners()
-            cancel()
+        stopGroupSwipeAnimation()
+        // A short drag or cancellation after grabbing an animation resumes its previous destination.
+        swipe.releaseCommit = commit ?: swipe.releaseCommit
+        val startOffset = swipe.offset.roundToInt()
+        val remaining = swipe.settleOffset - startOffset
+        if (remaining == 0) {
+            completeGroupSwipe(swipe)
+            return
         }
-        val targetOffset = if (commit) -swipe.direction * swipe.width.toFloat() else 0f
-        val animator = ValueAnimator.ofFloat(swipe.offset, targetOffset)
-        groupSwipeAnimator = animator
-        animator.duration = (220f * abs(targetOffset - swipe.offset) / swipe.width)
-            .toLong().coerceIn(80L, 220L)
-        animator.interpolator = DecelerateInterpolator()
-        animator.addUpdateListener { updateGroupSwipe(it.animatedValue as Float) }
-        animator.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                if (groupSwipe !== swipe) return
-                resetGroupSwipe()
-                if (!isResumed || childFragmentManager.isStateSaved) {
-                    pendingGroupSelection = true
-                    return
-                }
-                if (commit && bookGroups.getOrNull(swipe.targetIndex)?.groupId == swipe.target.configuredGroupId) {
-                    selectGroup(swipe.targetIndex)
+
+        val container = binding.bookshelfPageContainer
+        // Match the main ViewPager's scroll clock, which uses unscaled durations.
+        val scroller = Scroller(container.context, pageSwipeSettleInterpolator)
+        val duration = bookshelfGroupSettleDuration(swipe.width, remaining.toFloat(), velocityX)
+        scroller.startScroll(startOffset, 0, remaining, 0, duration)
+        val frame = object : Runnable {
+            override fun run() {
+                if (groupSwipeFrame !== this) return
+                scroller.computeScrollOffset()
+                moveGroupSwipe(swipe, scroller.currX.toFloat())
+                if (scroller.isFinished) {
+                    completeGroupSwipe(swipe)
                 } else {
-                    selectedGroup?.let(::showGroupFragment)
+                    container.postOnAnimation(this)
                 }
             }
-        })
-        animator.start()
+        }
+        groupSwipeFrame = frame
+        container.postOnAnimation(frame)
+    }
+
+    private fun completeGroupSwipe(swipe: GroupSwipe) {
+        if (!isResumed || childFragmentManager.isStateSaved) {
+            resetGroupSwipe()
+            pendingGroupSelection = true
+            return
+        }
+        if (swipe.releaseCommit && bookGroups.getOrNull(swipe.targetIndex)?.groupId == swipe.target.configuredGroupId) {
+            // Keep the destination mounted at its final position through selection.
+            moveGroupSwipe(swipe, swipe.settleOffset.toFloat())
+            stopGroupSwipeAnimation()
+            groupSwipe = null
+            selectGroup(swipe.targetIndex)
+        } else {
+            resetGroupSwipe()
+            selectedGroup?.let(::showGroupFragment)
+        }
     }
 
     /** Reset visual state only; callers decide when it is safe to transact fragments. */
     private fun resetGroupSwipe(): Boolean {
         val swipe = groupSwipe ?: return false
         groupSwipe = null
-        groupSwipeAnimator?.apply {
-            removeAllListeners()
-            removeAllUpdateListeners()
-            cancel()
-        }
-        groupSwipeAnimator = null
+        stopGroupSwipeAnimation()
         swipe.current.view?.translationX = 0f
         swipe.target.view?.apply {
             translationX = 0f
             isVisible = false
         }
         return true
+    }
+
+    private fun stopGroupSwipeAnimation() {
+        val frame = groupSwipeFrame ?: return
+        groupSwipeFrame = null
+        binding.bookshelfPageContainer.removeCallbacks(frame)
     }
 
     private fun selectGroup(

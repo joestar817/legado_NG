@@ -175,6 +175,11 @@ cn.hutool.core.util.**{*;}
     public <init>(android.content.Context, android.util.AttributeSet, int);
 }
 
+# MainPageSwipeScroller replaces the main ViewPager's timing at runtime.
+-keepclassmembers class androidx.viewpager.widget.ViewPager {
+    android.widget.Scroller mScroller;
+}
+
 # Pet package metadata is parsed reflectively. The shared ABI has its own consumer rules.
 -keep class io.legado.app.help.pet.PetPluginManifest { *; }
 -keep class io.legado.app.help.pet.InstalledPetPlugin { *; }
