@@ -1247,7 +1247,7 @@ class BookInfoActivity :
 
     private fun changeCover() {
         viewModel.getBook()?.let {
-            showDialogFragment(ChangeCoverDialog(it.name, it.author))
+            showDialogFragment(ChangeCoverDialog(it))
         }
     }
 

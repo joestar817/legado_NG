@@ -1,12 +1,12 @@
 package io.legado.app.ui.book.changecover
 
 import android.widget.ImageView
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +22,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,26 +41,66 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.legado.app.R
 import io.legado.app.data.entities.SearchBook
-import io.legado.app.ui.widget.anima.RefreshProgressBar
+import io.legado.app.ui.book.changesource.ChangeBookSourceDrawerProgress
+import io.legado.app.ui.book.changesource.ChangeBookSourceLoadingIndicator
+import io.legado.app.ui.book.changesource.ChangeChapterSourceSettingsUi
+import io.legado.app.ui.book.changesource.ChangeSourceMoreMenu
+import io.legado.app.ui.book.changesource.ChangeSourceSettingsContent
 import io.legado.app.ui.widget.image.CoverImageView
 
 @Composable
 internal fun ChangeCoverDialogContent(
     covers: List<SearchBook>,
     searchState: Int,
+    progress: ChangeCoverSearchProgress,
+    groups: List<String>,
+    selectedGroup: String,
+    sameTypeOnly: Boolean,
+    blockSourceDialogs: Boolean,
     onRefreshToggle: () -> Unit,
     onCoverClick: (String) -> Unit,
+    onGroupSelected: (String) -> Unit,
+    onToggleSameTypeOnly: () -> Unit,
+    onToggleBlockSourceDialogs: () -> Unit,
 ) {
+    var settingsActive by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = settingsActive) { settingsActive = false }
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = colorResource(R.color.ng_surface),
         shape = RoundedCornerShape(dimensionResource(R.dimen.ng_dialog_radius)),
     ) {
-        Column(Modifier.fillMaxSize()) {
+        if (settingsActive) {
+            ChangeSourceSettingsContent(
+                settings = ChangeChapterSourceSettingsUi(
+                    checkAuthor = false,
+                    loadWordCount = false,
+                    loadInfo = false,
+                    loadToc = false,
+                    selectedGroup = selectedGroup,
+                    groups = groups,
+                    sameTypeOnly = sameTypeOnly,
+                ),
+                blockSourceDialogs = blockSourceDialogs,
+                onBack = { settingsActive = false },
+                onToggleSameTypeOnly = onToggleSameTypeOnly,
+                onToggleBlockSourceDialogs = onToggleBlockSourceDialogs,
+                onToggleCheckAuthor = {},
+                onToggleLoadWordCount = {},
+                onToggleLoadInfo = {},
+                onToggleLoadToc = {},
+                showAdditionalSettings = false,
+            )
+        } else Column(Modifier.fillMaxSize()) {
             ChangeCoverHeader(
                 searchState = searchState,
+                groups = groups,
+                selectedGroup = selectedGroup,
                 onRefreshToggle = onRefreshToggle,
+                onOpenSettings = { settingsActive = true },
+                onGroupSelected = onGroupSelected,
             )
+            ChangeBookSourceLoadingIndicator(searchState == 1)
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -80,14 +124,26 @@ internal fun ChangeCoverDialogContent(
                         )
                     }
                 }
-                ChangeCoverProgress(
-                    searching = searchState == 1,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .height(2.dp),
-                )
             }
+            val progressText = if (progress.total > 0) {
+                stringResource(
+                    R.string.change_source_progress,
+                    progress.resultCount,
+                    progress.completed,
+                    progress.total,
+                    progress.sourceName.ifBlank { "—" },
+                )
+            } else {
+                stringResource(R.string.search_result_count, progress.resultCount)
+            }
+            ChangeBookSourceDrawerProgress(
+                text = progressText,
+                fraction = if (progress.total > 0) {
+                    (progress.completed.toFloat() / progress.total).coerceIn(0f, 1f)
+                } else {
+                    0f
+                },
+            )
         }
     }
 }
@@ -95,7 +151,11 @@ internal fun ChangeCoverDialogContent(
 @Composable
 private fun ChangeCoverHeader(
     searchState: Int,
+    groups: List<String>,
+    selectedGroup: String,
     onRefreshToggle: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onGroupSelected: (String) -> Unit,
 ) {
     val iconRes = when (searchState) {
         1 -> R.drawable.ic_stop_black_24dp
@@ -116,6 +176,7 @@ private fun ChangeCoverHeader(
     ) {
         Text(
             text = stringResource(R.string.change_cover_source),
+            modifier = Modifier.weight(1f),
             color = colorResource(R.color.ng_on_surface),
             fontSize = 20.sp,
             lineHeight = 24.sp,
@@ -123,7 +184,6 @@ private fun ChangeCoverHeader(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.weight(1f))
         IconButton(
             onClick = onRefreshToggle,
             modifier = Modifier.size(48.dp),
@@ -135,6 +195,12 @@ private fun ChangeCoverHeader(
                 tint = colorResource(R.color.ng_on_surface),
             )
         }
+        ChangeSourceMoreMenu(
+            selectedGroup = selectedGroup,
+            groups = groups,
+            onOpenSettings = onOpenSettings,
+            onGroupSelected = onGroupSelected,
+        )
     }
 }
 
@@ -184,18 +250,6 @@ private fun ChangeCoverItem(
             overflow = TextOverflow.Ellipsis,
         )
     }
-}
-
-@Composable
-private fun ChangeCoverProgress(
-    searching: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    AndroidView(
-        factory = { context -> RefreshProgressBar(context) },
-        update = { it.isAutoLoading = searching },
-        modifier = modifier,
-    )
 }
 
 private data class ChangeCoverLoadKey(

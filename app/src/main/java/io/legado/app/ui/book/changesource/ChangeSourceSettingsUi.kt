@@ -52,6 +52,7 @@ internal fun ChangeSourceSettingsContent(
     onToggleLoadWordCount: () -> Unit,
     onToggleLoadInfo: () -> Unit,
     onToggleLoadToc: () -> Unit,
+    showAdditionalSettings: Boolean = true,
 ) {
     NgDrawerThemeProvider(
         snapshot = NgTheme.snapshot,
@@ -105,37 +106,41 @@ internal fun ChangeSourceSettingsContent(
                             checked = blockSourceDialogs,
                             onToggle = onToggleBlockSourceDialogs,
                         )
-                        NgFormGroupDivider()
-                        ChangeSourceSwitchRow(
-                            titleRes = R.string.checkAuthor,
-                            summaryRes = R.string.change_source_check_author_summary,
-                            checked = settings.checkAuthor,
-                            onToggle = onToggleCheckAuthor,
-                        )
+                        if (showAdditionalSettings) {
+                            NgFormGroupDivider()
+                            ChangeSourceSwitchRow(
+                                titleRes = R.string.checkAuthor,
+                                summaryRes = R.string.change_source_check_author_summary,
+                                checked = settings.checkAuthor,
+                                onToggle = onToggleCheckAuthor,
+                            )
+                        }
                     }
                 }
-                item(key = "result_info") {
-                    NgFormGroup(title = stringResource(R.string.change_source_result_info)) {
-                        ChangeSourceSwitchRow(
-                            titleRes = R.string.load_word_count,
-                            summaryRes = R.string.change_source_word_count_summary,
-                            checked = settings.loadWordCount,
-                            onToggle = onToggleLoadWordCount,
-                        )
-                        NgFormGroupDivider()
-                        ChangeSourceSwitchRow(
-                            titleRes = R.string.load_info,
-                            summaryRes = R.string.change_source_info_summary,
-                            checked = settings.loadInfo,
-                            onToggle = onToggleLoadInfo,
-                        )
-                        NgFormGroupDivider()
-                        ChangeSourceSwitchRow(
-                            titleRes = R.string.load_toc,
-                            summaryRes = R.string.change_source_toc_summary,
-                            checked = settings.loadToc,
-                            onToggle = onToggleLoadToc,
-                        )
+                if (showAdditionalSettings) {
+                    item(key = "result_info") {
+                        NgFormGroup(title = stringResource(R.string.change_source_result_info)) {
+                            ChangeSourceSwitchRow(
+                                titleRes = R.string.load_word_count,
+                                summaryRes = R.string.change_source_word_count_summary,
+                                checked = settings.loadWordCount,
+                                onToggle = onToggleLoadWordCount,
+                            )
+                            NgFormGroupDivider()
+                            ChangeSourceSwitchRow(
+                                titleRes = R.string.load_info,
+                                summaryRes = R.string.change_source_info_summary,
+                                checked = settings.loadInfo,
+                                onToggle = onToggleLoadInfo,
+                            )
+                            NgFormGroupDivider()
+                            ChangeSourceSwitchRow(
+                                titleRes = R.string.load_toc,
+                                summaryRes = R.string.change_source_toc_summary,
+                                checked = settings.loadToc,
+                                onToggle = onToggleLoadToc,
+                            )
+                        }
                     }
                 }
             }
@@ -168,21 +173,45 @@ internal fun ChangeSourceMoreMenu(
     onClose: () -> Unit,
     onRefreshList: (() -> Unit)? = null,
 ) {
+    ChangeSourceMoreMenu(
+        selectedGroup = settings.selectedGroup,
+        groups = settings.groups,
+        onOpenSettings = onOpenSettings,
+        onGroupSelected = onGroupSelected,
+        onOpenSourceManage = onOpenSourceManage,
+        onRefreshList = onRefreshList,
+        onClose = onClose,
+    )
+}
+
+/** 仅传入需要的菜单动作，封面换源复用相同的设置和分组入口。 */
+@Composable
+internal fun ChangeSourceMoreMenu(
+    selectedGroup: String,
+    groups: List<String>,
+    onOpenSettings: () -> Unit,
+    onGroupSelected: (String) -> Unit,
+    onOpenSourceManage: (() -> Unit)? = null,
+    onRefreshList: (() -> Unit)? = null,
+    onClose: (() -> Unit)? = null,
+) {
     var expanded by remember { mutableStateOf(false) }
-    val groupTitle = if (settings.selectedGroup.isBlank()) {
+    val groupTitle = if (selectedGroup.isBlank()) {
         stringResource(R.string.group)
     } else {
-        "${stringResource(R.string.group)}(${settings.selectedGroup})"
+        "${stringResource(R.string.group)}($selectedGroup)"
     }
     val allGroupsTitle = stringResource(R.string.change_source_all_groups)
     val menuItems = buildList {
-        add(
-            NgExpandableActionMenuItem(
-                itemId = MENU_SOURCE_MANAGE,
-                titleRes = R.string.book_source_manage,
-                iconRes = R.drawable.ic_cfg_source,
+        if (onOpenSourceManage != null) {
+            add(
+                NgExpandableActionMenuItem(
+                    itemId = MENU_SOURCE_MANAGE,
+                    titleRes = R.string.book_source_manage,
+                    iconRes = R.drawable.ic_cfg_source,
+                )
             )
-        )
+        }
         if (onRefreshList != null) {
             add(
                 NgExpandableActionMenuItem(
@@ -213,30 +242,32 @@ internal fun ChangeSourceMoreMenu(
                             titleRes = 0,
                             title = allGroupsTitle,
                             iconRes = 0,
-                            checked = settings.selectedGroup.isBlank(),
+                            checked = selectedGroup.isBlank(),
                         )
                     )
-                    settings.groups.forEachIndexed { index, group ->
+                    groups.forEachIndexed { index, group ->
                         add(
                             NgExpandableActionMenuItem(
                                 itemId = MENU_GROUP_BASE + index,
                                 titleRes = 0,
                                 title = group,
                                 iconRes = 0,
-                                checked = settings.selectedGroup == group,
+                                checked = selectedGroup == group,
                             )
                         )
                     }
                 },
             )
         )
-        add(
-            NgExpandableActionMenuItem(
-                itemId = MENU_CLOSE,
-                titleRes = R.string.close,
-                iconRes = R.drawable.ic_baseline_close,
+        if (onClose != null) {
+            add(
+                NgExpandableActionMenuItem(
+                    itemId = MENU_CLOSE,
+                    titleRes = R.string.close,
+                    iconRes = R.drawable.ic_baseline_close,
+                )
             )
-        )
+        }
     }
 
     Box {
@@ -258,14 +289,14 @@ internal fun ChangeSourceMoreMenu(
             onItemClick = { item ->
                 expanded = false
                 when (item.itemId) {
-                    MENU_SOURCE_MANAGE -> onOpenSourceManage()
+                    MENU_SOURCE_MANAGE -> onOpenSourceManage?.invoke()
                     MENU_REFRESH_LIST -> onRefreshList?.invoke()
                     MENU_SETTINGS -> onOpenSettings()
                     MENU_GROUP_ALL -> onGroupSelected("")
-                    MENU_CLOSE -> onClose()
+                    MENU_CLOSE -> onClose?.invoke()
                     else -> {
                         val index = item.itemId - MENU_GROUP_BASE
-                        settings.groups.getOrNull(index)?.let(onGroupSelected)
+                        groups.getOrNull(index)?.let(onGroupSelected)
                     }
                 }
             },

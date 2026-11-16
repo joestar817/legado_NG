@@ -192,17 +192,7 @@ internal fun ChangeBookSourceDialogContent(
                     onGroupSelected = onGroupSelected,
                     onClose = onClose,
                 )
-                if (searching) {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp),
-                        color = Color(NgTheme.colors.primary),
-                        trackColor = Color.Transparent,
-                    )
-                } else {
-                    Spacer(Modifier.height(2.dp))
-                }
+                ChangeBookSourceLoadingIndicator(searching)
                 val resultsContent: @Composable () -> Unit = {
                     Box(
                         modifier = Modifier
@@ -634,6 +624,19 @@ private fun changeBookSourceActionMenuItems(): List<NgExpandableActionMenuItem> 
 )
 
 @Composable
+internal fun ChangeBookSourceLoadingIndicator(searching: Boolean) {
+    if (searching) {
+        LinearProgressIndicator(
+            modifier = Modifier.fillMaxWidth().height(2.dp),
+            color = Color(NgTheme.colors.primary),
+            trackColor = Color.Transparent,
+        )
+    } else {
+        Spacer(Modifier.height(2.dp))
+    }
+}
+
+@Composable
 private fun ChangeBookSourceProgress(
     presentation: ChangeBookSourcePresentation,
     progress: ChangeBookSourceProgressUi,
@@ -703,17 +706,22 @@ private fun ChangeBookSourceDialogProgress(
 }
 
 @Composable
-private fun ChangeBookSourceDrawerProgress(
+internal fun ChangeBookSourceDrawerProgress(
     text: String,
     fraction: Float,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)? = null,
 ) {
     val colors = NgTheme.colors
+    val actionModifier = if (onClick != null) {
+        Modifier.clickable(role = Role.Button, onClick = onClick)
+    } else {
+        Modifier
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(46.dp)
-            .clickable(role = Role.Button, onClick = onClick),
+            .then(actionModifier),
     ) {
         HorizontalDivider(
             modifier = Modifier.align(Alignment.TopCenter),
