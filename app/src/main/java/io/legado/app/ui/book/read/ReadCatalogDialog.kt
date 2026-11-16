@@ -559,6 +559,11 @@ internal abstract class CatalogDrawerDialog : BottomSheetDialogFragment() {
 
 internal open class ReadCatalogDialog : CatalogDrawerDialog() {
 
+    companion object {
+        const val ARG_FROM_MORE = "fromReadMore"
+        const val MORE_NAVIGATION = "readMoreCatalogNavigation"
+    }
+
     private var bottomDialogRegistered = false
 
     override fun refreshCatalog(book: Book, complete: (Boolean) -> Unit) {
@@ -616,12 +621,19 @@ internal open class ReadCatalogDialog : CatalogDrawerDialog() {
 
     override fun onChapterSelected(chapter: BookChapter) {
         ReadBook.openChapter(chapter.index)
-        dismissAllowingStateLoss()
+        dismissAfterNavigation()
     }
 
     override fun onBookmarkSelected(bookmark: Bookmark) {
         ReadBook.openBookmark(bookmark)
+        dismissAfterNavigation()
+    }
+
+    private fun dismissAfterNavigation() {
         dismissAllowingStateLoss()
+        if (arguments?.getBoolean(ARG_FROM_MORE) == true) {
+            parentFragmentManager.setFragmentResult(MORE_NAVIGATION, Bundle.EMPTY)
+        }
     }
 }
 

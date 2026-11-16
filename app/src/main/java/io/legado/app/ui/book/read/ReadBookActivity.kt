@@ -2643,16 +2643,19 @@ class ReadBookActivity : BaseReadBookActivity(),
      * 打开目录
      */
     override fun openChapterList() {
-        if (ReadBook.book == null) return
+        createReadCatalogDialog()?.show(supportFragmentManager, "readCatalog")
+    }
+
+    internal fun createReadCatalogDialog(): ReadCatalogDialog? {
+        if (ReadBook.book == null) return null
         val style = ReadCatalogStyle.fromValue(
             getPrefString(PreferKey.readCatalogStyle, ReadCatalogStyle.CARD.value)
         )
-        val dialog = when (style) {
+        return when (style) {
             ReadCatalogStyle.CARD -> ReadCatalogDialog()
             ReadCatalogStyle.COMPACT_SIDE -> ReadCompactCatalogDialog()
             ReadCatalogStyle.DENSE_LIST -> ReadDenseCatalogDialog()
         }
-        dialog.show(supportFragmentManager, "readCatalog")
     }
 
     /**

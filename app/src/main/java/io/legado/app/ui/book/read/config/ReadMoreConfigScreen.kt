@@ -1,11 +1,14 @@
 package io.legado.app.ui.book.read.config
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,11 +18,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
@@ -46,6 +54,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -53,10 +62,16 @@ import androidx.compose.ui.unit.sp
 import io.legado.app.R
 import io.legado.app.constant.PreferKey
 import io.legado.app.help.config.PageKeyBindings
+import io.legado.app.help.config.ReadBottomTool
+import io.legado.app.help.config.ReadBottomToolbarSettings
 import io.legado.app.ui.book.read.readFloatingGlassStyle
+import io.legado.app.ui.config.NgThemeSheetActionButton
+import io.legado.app.ui.design.components.compose.NgDrawerDragHandle
+import io.legado.app.ui.design.components.compose.NgDrawerDragHandleVariant
 import io.legado.app.ui.design.components.compose.NgGlassSurface
 import io.legado.app.ui.design.components.compose.NgFormGroup
 import io.legado.app.ui.design.components.compose.NgFormGroupDivider
+import io.legado.app.ui.design.components.compose.NgFormPanel
 import io.legado.app.ui.design.components.compose.NgLongDrawerHeader
 import io.legado.app.ui.design.components.compose.NgSlider
 import io.legado.app.ui.design.components.compose.NgSliderVariant
@@ -64,6 +79,8 @@ import io.legado.app.ui.design.components.compose.NgSwitchControl
 import io.legado.app.ui.design.theme.NgTheme
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 internal const val PAGE_TOUCH_SLOP_MAX = 9999
 internal const val PAGE_TOUCH_CLICK_MAX = 399
@@ -108,9 +125,130 @@ internal data class ReadMoreConfigActions(
 internal fun ReadMoreConfigScreen(
     state: ReadMoreConfigUiState,
     actions: ReadMoreConfigActions,
+    hiddenTools: Set<ReadBottomTool>,
+    onOpenBottomToolbar: () -> Unit,
+    onOpenShortcut: (ReadBottomTool) -> Unit,
 ) {
-    val maxHeight = LocalConfiguration.current.screenHeightDp.dp
+    val color = Color(NgTheme.colors.onSurface)
+    val shortcuts = ReadBottomToolbarSettings.shortcuts(hiddenTools)
+    ReadSettingsDrawer(
+        title = stringResource(R.string.read_more_settings_title),
+        maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.72f,
+    ) {
+        NgFormPanel {
+            MoreConfigRow {
+                EditorNavigationRow(
+                    title = stringResource(R.string.read_bottom_toolbar),
+                    color = color,
+                    rowHeight = 48.dp,
+                    onClick = onOpenBottomToolbar,
+                )
+            }
+        }
+        if (shortcuts.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            NgFormGroup(stringResource(R.string.read_bottom_toolbar_shortcuts)) {
+                shortcuts.forEachIndexed { index, tool ->
+                    if (index > 0) NgFormGroupDivider()
+                    MoreConfigRow {
+                        EditorNavigationRow(
+                            title = stringResource(tool.titleRes),
+                            color = color,
+                            leadingIconRes = tool.iconRes,
+                            rowHeight = 48.dp,
+                            onClick = { onOpenShortcut(tool) },
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        InterfaceSettingsGroup(state, actions)
+        Spacer(Modifier.height(12.dp))
+        ContentSettingsGroups(state, actions)
+    }
+}
 
+@Composable
+internal fun ReadBottomToolbarConfigScreen(
+    tools: List<ReadBottomTool>,
+    hiddenTools: Set<ReadBottomTool>,
+    onMoveTool: (Int, Int) -> Unit,
+    onVisibilityChanged: (ReadBottomTool, Boolean) -> Unit,
+    onBack: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        onMoveTool(from.index, to.index)
+    }
+    val colors = NgTheme.colors
+    ReadSettingsDrawer(
+        title = stringResource(R.string.read_bottom_toolbar),
+        onBack = onBack,
+        scrollContent = false,
+    ) {
+        NgFormPanel {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
+                itemsIndexed(tools, key = { _, tool -> tool.key }) { index, tool ->
+                    ReorderableItem(reorderState, key = tool.key) { isDragging ->
+                        Column(
+                            Modifier.background(
+                                if (isDragging) Color(colors.primary).copy(alpha = 0.10f)
+                                else Color.Transparent,
+                            ),
+                        ) {
+                            if (index > 0) NgFormGroupDivider()
+                            MoreConfigRow {
+                                val title = stringResource(tool.titleRes)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_drag_handle),
+                                        contentDescription = "${stringResource(R.string.sort)} · $title",
+                                        modifier = Modifier.draggableHandle()
+                                            .size(width = 30.dp, height = 48.dp)
+                                            .padding(6.dp),
+                                        tint = Color(colors.onSurfaceVariant),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    if (tool == ReadBottomTool.MORE) {
+                                        Icon(
+                                            painter = painterResource(tool.iconRes),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp),
+                                            tint = Color(colors.onSurface),
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Text(title, color = Color(colors.onSurface), fontSize = 16.sp)
+                                    } else {
+                                        SwitchSettingRow(
+                                            title = title,
+                                            checked = tool !in hiddenTools,
+                                            onCheckedChange = { onVisibilityChanged(tool, it) },
+                                            modifier = Modifier.weight(1f),
+                                            leadingIconRes = tool.iconRes,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReadSettingsDrawer(
+    title: String,
+    onBack: (() -> Unit)? = null,
+    maxHeight: Dp = LocalConfiguration.current.screenHeightDp.dp,
+    scrollContent: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     NgGlassSurface(
         modifier = Modifier
             .padding(top = 8.dp)
@@ -124,22 +262,50 @@ internal fun ReadMoreConfigScreen(
                 .fillMaxWidth()
                 .padding(top = 6.dp, bottom = 8.dp),
         ) {
-            NgLongDrawerHeader(
-                title = stringResource(R.string.read_more_settings_title),
-                centerTitle = true,
-            )
+            if (onBack == null) {
+                NgLongDrawerHeader(title = title, centerTitle = true)
+            } else {
+                val color = Color(NgTheme.colors.onSurface)
+                NgDrawerDragHandle(variant = NgDrawerDragHandleVariant.COMPACT)
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = title,
+                        modifier = Modifier.padding(horizontal = 44.dp),
+                        color = color,
+                        fontSize = 17.sp,
+                        lineHeight = 21.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    NgThemeSheetActionButton(
+                        onClick = onBack,
+                        contentDescription = stringResource(R.string.back),
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                            tint = color,
+                        )
+                    }
+                }
+            }
+            val scrollModifier = if (scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState())
+                    .then(scrollModifier)
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp, bottom = 8.dp),
-            ) {
-                InterfaceSettingsGroup(state, actions)
-                Spacer(Modifier.height(12.dp))
-                ContentSettingsGroups(state, actions)
-            }
+                content = content,
+            )
         }
     }
 }
@@ -456,6 +622,7 @@ internal fun SwitchSettingRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     summary: String? = null,
+    @DrawableRes leadingIconRes: Int? = null,
 ) {
     val contentColor = Color(NgTheme.colors.onSurface)
     Row(
@@ -468,6 +635,15 @@ internal fun SwitchSettingRow(
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (leadingIconRes != null) {
+            Icon(
+                painterResource(leadingIconRes),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = contentColor,
+            )
+            Spacer(Modifier.width(12.dp))
+        }
         if (summary.isNullOrBlank()) {
             Text(
                 text = title,

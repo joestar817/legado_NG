@@ -11,8 +11,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.os.bundleOf
+import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
+import androidx.lifecycle.Lifecycle
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
+import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
 import io.legado.app.data.entities.Book
@@ -20,9 +26,12 @@ import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.PageKeyBindings
 import io.legado.app.help.config.savePageKeyBindings
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadBottomTool
+import io.legado.app.help.config.ReadBottomToolbarSettings
 import io.legado.app.help.config.ReadTipConfig
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.ReadBookActivity
+import io.legado.app.ui.book.read.ReadCatalogDialog
 import io.legado.app.ui.book.read.ReadDrawerStyle
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.ui.book.read.ReadDrawerContentTheme
@@ -38,6 +47,8 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
 
     companion object {
         private const val ARG_PAGE_TURNING = "pageTurning"
+        private const val ARG_BOTTOM_TOOLBAR = "bottomToolbar"
+        private const val STATE_OPENED_NESTED_DRAWER = "openedNestedDrawer"
 
         fun forPageTurning() = MoreConfigDialog().apply {
             arguments = Bundle().apply { putBoolean(ARG_PAGE_TURNING, true) }
@@ -46,10 +57,25 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
 
     private val pageTurning: Boolean
         get() = arguments?.getBoolean(ARG_PAGE_TURNING) == true
+    private val bottomToolbar: Boolean
+        get() = arguments?.getBoolean(ARG_BOTTOM_TOOLBAR) == true
+    private val isSettingsRoot: Boolean
+        get() = !pageTurning && !bottomToolbar
 
     private var screenState by mutableStateOf<ReadMoreConfigUiState?>(null)
     private var themeSnapshot by mutableStateOf<NgThemeSnapshot?>(null)
+    private var hiddenTools by mutableStateOf(emptySet<ReadBottomTool>())
+    private var bottomToolOrder by mutableStateOf<List<ReadBottomTool>>(ReadBottomTool.entries)
     private var bottomDialogRegistered = false
+    private var openedNestedDrawer = false
+    private val nestedDrawerCallbacks = object : FragmentManager.FragmentLifecycleCallbacks() {
+        override fun onFragmentDetached(fm: FragmentManager, fragment: Fragment) {
+            if (openedNestedDrawer && fragment is DialogFragment) {
+                // A drawer can dismiss itself to open a preview. Let that transaction run first.
+                view?.post { returnToMoreIfIdle() }
+            }
+        }
+    }
     private val pageKeyCapture = PageKeyCaptureController { direction, keyCode ->
         screenState?.let { state ->
             val bindings = PageKeyBindings(
@@ -62,6 +88,25 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
 
     private val readActivity: ReadBookActivity?
         get() = activity as? ReadBookActivity
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        openedNestedDrawer = savedInstanceState?.getBoolean(STATE_OPENED_NESTED_DRAWER) == true
+        if (isSettingsRoot) {
+            parentFragmentManager.registerFragmentLifecycleCallbacks(nestedDrawerCallbacks, false)
+            parentFragmentManager.setFragmentResultListener(ReadCatalogDialog.MORE_NAVIGATION, this) { _, _ ->
+                if (openedNestedDrawer) {
+                    openedNestedDrawer = false
+                    dismissAllowingStateLoss()
+                }
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_OPENED_NESTED_DRAWER, openedNestedDrawer)
+    }
 
     override fun onStart() {
         super.onStart()
@@ -78,16 +123,20 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
             }
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
+        if (openedNestedDrawer) {
+            dialog?.hide()
+            view?.post { returnToMoreIfIdle() }
+        }
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
-        if (!bottomDialogRegistered) {
-            readActivity?.let {
-                it.bottomDialog++
-                bottomDialogRegistered = true
-            }
+        if (!openedNestedDrawer) setBottomDialogRegistered(true)
+        hiddenTools = ReadBottomToolbarSettings.hiddenTools(requireContext())
+        if (bottomToolbar) {
+            bottomToolOrder = ReadBottomToolbarSettings.order(requireContext())
+        } else {
+            refreshUi()
         }
-        refreshUi()
         themeSnapshot = ReadDrawerStyle.themeSnapshot(requireContext())
         val actions = createActions()
         (view as ComposeView).apply {
@@ -99,15 +148,23 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
                 themeSnapshot?.let { snapshot ->
                     ReadDrawerContentTheme(snapshot = snapshot) {
                         NgDismissibleDrawer(onDismiss = { dismissAllowingStateLoss() }) {
-                            screenState?.let { state ->
-                                if (pageTurning) {
-                                    ReadPageTurningScreen(state = state, actions = actions)
-                                } else {
-                                    ReadMoreConfigScreen(
-                                        state = state,
-                                        actions = actions,
-                                    )
-                                }
+                            if (bottomToolbar) {
+                                ReadBottomToolbarConfigScreen(
+                                    tools = bottomToolOrder,
+                                    hiddenTools = hiddenTools,
+                                    onMoveTool = ::moveBottomTool,
+                                    onVisibilityChanged = ::changeBottomToolVisibility,
+                                    onBack = { dismissAllowingStateLoss() },
+                                )
+                            } else screenState?.let { state ->
+                                if (pageTurning) ReadPageTurningScreen(state = state, actions = actions)
+                                else ReadMoreConfigScreen(
+                                    state = state,
+                                    actions = actions,
+                                    hiddenTools = hiddenTools,
+                                    onOpenBottomToolbar = ::openBottomToolbar,
+                                    onOpenShortcut = ::openToolbarShortcut,
+                                )
                             }
                         }
                     }
@@ -120,12 +177,87 @@ class MoreConfigDialog : BaseComposeDialogFragment() {
         pageKeyCapture.cancel()
         super.onDismiss(dialog)
         if (pageTurning) ReadBookConfig.save()
-        if (bottomDialogRegistered) {
-            readActivity?.let {
-                it.bottomDialog = (it.bottomDialog - 1).coerceAtLeast(0)
-            }
-            bottomDialogRegistered = false
+        setBottomDialogRegistered(false)
+    }
+
+    override fun onDestroy() {
+        if (isSettingsRoot) {
+            parentFragmentManager.unregisterFragmentLifecycleCallbacks(nestedDrawerCallbacks)
         }
+        super.onDestroy()
+    }
+
+    private fun setBottomDialogRegistered(registered: Boolean) {
+        val host = readActivity ?: return
+        if (bottomDialogRegistered == registered) return
+        bottomDialogRegistered = registered
+        val delta = if (registered) 1 else -1
+        host.bottomDialog = (host.bottomDialog + delta).coerceAtLeast(0)
+    }
+
+    private fun changeBottomToolVisibility(tool: ReadBottomTool, visible: Boolean) {
+        if (tool == ReadBottomTool.MORE) return
+        hiddenTools = if (visible) hiddenTools - tool else hiddenTools + tool
+        ReadBottomToolbarSettings.saveHiddenTools(requireContext(), hiddenTools)
+    }
+
+    private fun moveBottomTool(from: Int, to: Int) {
+        val order = bottomToolOrder.toMutableList().apply { add(to, removeAt(from)) }
+        bottomToolOrder = order
+        ReadBottomToolbarSettings.saveOrder(requireContext(), order)
+    }
+
+    private fun openBottomToolbar() {
+        val settings = MoreConfigDialog().apply { arguments = bundleOf(ARG_BOTTOM_TOOLBAR to true) }
+        showNestedDrawer(settings, "readBottomToolbar")
+    }
+
+    private fun openToolbarShortcut(tool: ReadBottomTool) {
+        val host = readActivity ?: return
+        when (tool) {
+            ReadBottomTool.CATALOG -> host.createReadCatalogDialog()?.let { catalog ->
+                catalog.arguments = bundleOf(ReadCatalogDialog.ARG_FROM_MORE to true)
+                showNestedDrawer(catalog, "readCatalog")
+            }
+            ReadBottomTool.READ_ALOUD -> {
+                dismissAllowingStateLoss()
+                host.onClickReadAloud()
+            }
+            ReadBottomTool.INTERFACE -> showNestedDrawer(ReadStyleDialog())
+            ReadBottomTool.PAGE_TURNING -> showNestedDrawer(forPageTurning(), "readMorePageTurning")
+            ReadBottomTool.CONTENT -> showNestedDrawer(ReadContentSettingsDialog())
+            ReadBottomTool.FLOATING -> showNestedDrawer(ReadStyleDialog.forFloating())
+            ReadBottomTool.SCROLL, ReadBottomTool.MORE -> Unit
+        }
+    }
+
+    private fun showNestedDrawer(target: DialogFragment, tag: String = target.javaClass.simpleName) {
+        val manager = parentFragmentManager
+        if (openedNestedDrawer || manager.isStateSaved || hasOtherDialog()) return
+        openedNestedDrawer = true
+        dialog?.hide()
+        setBottomDialogRegistered(false)
+        runCatching { target.showNow(manager, tag) }.onFailure { error ->
+            AppLog.put("打开阅读设置子抽屉失败", error)
+            returnToMoreIfIdle()
+        }
+    }
+
+    private fun hasOtherDialog(): Boolean =
+        parentFragmentManager.fragments.any { it !== this && it is DialogFragment && it.isAdded }
+
+    private fun returnToMoreIfIdle() {
+        val host = readActivity ?: return
+        if (!openedNestedDrawer || !isAdded || isRemoving || host.isFinishing || host.isDestroyed ||
+            !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) ||
+            parentFragmentManager.isStateSaved || hasOtherDialog()
+        ) return
+        openedNestedDrawer = false
+        hiddenTools = ReadBottomToolbarSettings.hiddenTools(host)
+        refreshUi()
+        themeSnapshot = ReadDrawerStyle.themeSnapshot(host)
+        setBottomDialogRegistered(true)
+        dialog?.show()
     }
 
     private fun createActions() = ReadMoreConfigActions(

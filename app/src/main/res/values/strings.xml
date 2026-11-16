@@ -1653,6 +1653,8 @@
     <string name="restore_ignore_summary">Ignore some contents while restoring</string>
     <string name="read_config">Reading interface settings</string>
     <string name="read_more_settings_title">Reading settings</string>
+    <string name="read_bottom_toolbar">Bottom toolbar</string>
+    <string name="read_bottom_toolbar_shortcuts">Shortcuts</string>
     <string name="read_settings_tab_interface">Interface</string>
     <string name="read_settings_tab_page">Paging</string>
     <string name="read_settings_tab_content">Text</string>

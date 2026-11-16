@@ -256,6 +256,8 @@ object PreferKey {
     const val parallelExportBook = "parallelExportBook"
     const val progressBarBehavior = "progressBarBehavior"
     const val readMenuShowChapterProgress = "readMenuShowChapterProgress"
+    const val readBottomToolbarHidden = "readBottomToolbarHidden"
+    const val readBottomToolbarOrder = "readBottomToolbarOrder"
     const val readFloatingToolOrder = "readFloatingToolOrder"
     const val readFloatingToolDisabled = "readFloatingToolDisabled"
     const val readFloatingToolOptIn = "readFloatingToolOptIn"

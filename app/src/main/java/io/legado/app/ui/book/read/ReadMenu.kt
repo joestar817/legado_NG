@@ -9,6 +9,7 @@ import android.graphics.PorterDuff
 import android.net.Uri
 import android.provider.Settings
 import android.util.AttributeSet
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -37,6 +38,8 @@ import io.legado.app.data.appDb
 import io.legado.app.databinding.ViewReadMenuBinding
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ReadBottomTool
+import io.legado.app.help.config.ReadBottomToolbarSettings
 import io.legado.app.help.config.ReadFloatingTool
 import io.legado.app.help.config.ReadFloatingToolSettings
 import io.legado.app.help.coroutine.Coroutine
@@ -83,6 +86,7 @@ class ReadMenu @JvmOverloads constructor(
     var canShowMenu: Boolean = false
     private val callBack: CallBack get() = activity as CallBack
     private val binding = ViewReadMenuBinding.inflate(LayoutInflater.from(context), this, true)
+    private var bottomToolRows = emptyList<List<ReadBottomTool>>()
     private var confirmSkipToChapter: Boolean = false
     private var isMenuOutAnimating = false
     private var floatingMenuTopInset: Int? = null
@@ -198,6 +202,7 @@ class ReadMenu @JvmOverloads constructor(
 
     private fun initView() = binding.run {
         upChapterProgressVisibility()
+        refreshBottomToolbar()
         initAnimation()
         seekReadPage.applyTint(
             color = readMenuThemeSnapshot.colors.primary,
@@ -457,6 +462,16 @@ class ReadMenu @JvmOverloads constructor(
         binding.setChapterProgressVisible(AppConfig.readMenuShowChapterProgress)
     }
 
+    private fun refreshBottomToolbar() {
+        val rows = ReadBottomToolbarSettings.visibleRows(
+            hidden = ReadBottomToolbarSettings.hiddenTools(context),
+            order = ReadBottomToolbarSettings.order(context),
+        )
+        if (rows == bottomToolRows) return
+        bottomToolRows = rows
+        binding.applyBottomToolRows(rows)
+    }
+
     internal fun floatingToolMaxCapacity(): Int = floatingToolMaxCapacity
 
     private fun initFloatingToolCapacityTracking() = binding.run {
@@ -585,6 +600,7 @@ class ReadMenu @JvmOverloads constructor(
         floatingPageAnim = ReadBook.pageAnim()
         floatingChineseMode = AppConfig.chineseConverterType
         upChapterProgressVisibility()
+        refreshBottomToolbar()
         updateFloatingMenuTopMargin()
         callBack.onMenuShow()
         this.visible()
@@ -988,4 +1004,39 @@ internal fun ViewReadMenuBinding.setChapterProgressVisible(visible: Boolean) {
     llBottomActionsPrimary.updateLayoutParams<LinearLayout.LayoutParams> {
         topMargin = if (visible) 0 else 8.dpToPx()
     }
+}
+
+internal fun ViewReadMenuBinding.applyBottomToolRows(toolRows: List<List<ReadBottomTool>>) {
+    val buttons = mapOf(
+        ReadBottomTool.CATALOG to llCatalog,
+        ReadBottomTool.READ_ALOUD to llReadAloud,
+        ReadBottomTool.INTERFACE to llFont,
+        ReadBottomTool.MORE to llSetting,
+        ReadBottomTool.PAGE_TURNING to llPageTurning,
+        ReadBottomTool.SCROLL to llAutoPage,
+        ReadBottomTool.CONTENT to llContent,
+        ReadBottomTool.FLOATING to llFloating,
+    )
+    val rows = listOf(llBottomActionsPrimary, llBottomActionsSecondary)
+    buttons.values.forEach { button -> (button.parent as? ViewGroup)?.removeView(button) }
+    rows.forEach { it.removeAllViews() }
+    val columnCount = toolRows.firstOrNull()?.size ?: 0
+    toolRows.forEachIndexed { index, tools ->
+        val row = rows[index]
+        row.weightSum = columnCount.toFloat()
+        tools.forEach { tool ->
+            val button = buttons.getValue(tool)
+            val slot = FrameLayout(row.context)
+            slot.addView(
+                button,
+                FrameLayout.LayoutParams(
+                    button.layoutParams.width,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+                ),
+            )
+            row.addView(slot, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+    }
+    llBottomActionsSecondary.isVisible = toolRows.size > 1
 }
