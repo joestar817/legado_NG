@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -129,9 +130,10 @@ internal fun HomeWidgetSuiteDrawer(
                                 enabled = skins.installed.isNotEmpty() && !managing && !busy),
                             NgExpandableActionMenuItem(2, R.string.home_suite_get_more, R.drawable.ic_about_cloud_download),
                         ),
-                        variant = NgExpandableActionMenuVariant.SIDE_SLIDE,
+                        variant = NgExpandableActionMenuVariant.END_ANCHORED_DROPDOWN,
+                        offset = DpOffset(0.dp, 2.dp),
                         menuContainerColor = ngDrawerContentCardColor(),
-                        properties = PopupProperties(focusable = true, clippingEnabled = false),
+                        properties = PopupProperties(focusable = true),
                         onItemClick = {
                             menu = false
                             if (it.itemId == 1) managing = true else {
@@ -151,8 +153,8 @@ internal fun HomeWidgetSuiteDrawer(
                 maxWidth >= 92.dp * fontScale * 2 + 12.dp -> 2
                 else -> 1
             }
-            val rows = (styles.size + columns - 1) / columns
-            val choicesHeight = (88.dp + 32.dp * fontScale) * rows + 10.dp * (rows - 1).coerceAtLeast(0)
+            val rows = ((styles.size + columns - 1) / columns).coerceAtLeast(3)
+            val choicesHeight = (88.dp + 32.dp * fontScale) * rows + 10.dp * (rows - 1)
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
                 state = gridState,
