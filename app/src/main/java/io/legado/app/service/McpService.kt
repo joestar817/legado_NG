@@ -1,12 +1,14 @@
 package io.legado.app.service
 
 import android.annotation.SuppressLint
+import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import io.legado.app.R
 import io.legado.app.base.BaseService
 import io.legado.app.constant.AppConst
+import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.IntentAction
 import io.legado.app.constant.NotificationId
@@ -158,6 +160,14 @@ class McpService : BaseService() {
             servicePendingIntent<McpService>(IntentAction.stop)
         )
         val notification = builder.build()
-        startForeground(NotificationId.McpService, notification)
+        try {
+            startForeground(NotificationId.McpService, notification)
+        } catch (e: ForegroundServiceStartNotAllowedException) {
+            // Android 12+ background-start restrictions or Android 15+ per-type
+            // foreground-service quota. MCP is optional; keep the app bootable.
+            AppLog.put("MCP foreground service not allowed", e)
+            e.printOnDebug()
+            stopSelf()
+        }
     }
 }
