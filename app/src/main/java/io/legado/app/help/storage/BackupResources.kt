@@ -71,9 +71,11 @@ internal object BackupResources {
                 val books = JsonParser.parseString(file.readText()).asJsonArray
                 books.forEach { element ->
                     val book = element.asJsonObject
-                    book.get("customCoverUrl")?.takeIf { !it.isJsonNull }?.asString?.let { ref ->
-                        if (ref.startsWith('/') || ref.startsWith("file:") || ref.startsWith("content:")) {
-                            book.addProperty("customCoverUrl", collector.copy(ref))
+                    if (BackupModule.COVERS.id in modules) {
+                        book.get("customCoverUrl")?.takeIf { !it.isJsonNull }?.asString?.let { ref ->
+                            if (ref.startsWith('/') || ref.startsWith("file:") || ref.startsWith("content:")) {
+                                book.addProperty("customCoverUrl", collector.copy(ref))
+                            }
                         }
                     }
                     collectBookReadStyleResources(book, collector::copy)
