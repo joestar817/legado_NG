@@ -18,4 +18,13 @@ class BookshelfReadingProgressTest {
         assertEquals(1f, bookshelfReadingProgress(99, 0, 100), 0f)
         assertEquals(1f, bookshelfReadingProgress(Int.MAX_VALUE, 0, 100), 0f)
     }
+
+    @Test
+    fun displayedProgressRoundsToWholePercentAndReserves100ForCompletion() {
+        assertEquals(0, bookshelfReadingProgressPercent(0f))
+        assertEquals(4, bookshelfReadingProgressPercent(0.039f))
+        assertEquals(68, bookshelfReadingProgressPercent(0.682f))
+        assertEquals(99, bookshelfReadingProgressPercent(0.999f))
+        assertEquals(100, bookshelfReadingProgressPercent(1f))
+    }
 }

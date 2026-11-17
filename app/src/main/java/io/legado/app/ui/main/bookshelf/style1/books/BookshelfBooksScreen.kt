@@ -30,8 +30,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,24 +41,28 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.os.ConfigurationCompat
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.help.book.isLocal
@@ -71,13 +77,18 @@ import io.legado.app.ui.design.components.compose.NgBookshelfUpdateIndicator
 import io.legado.app.ui.design.components.compose.NgPullRefreshBox
 import io.legado.app.ui.design.components.compose.NgPullRefreshIndicatorVariant
 import io.legado.app.ui.design.theme.NgTheme
-import io.legado.app.ui.main.bookshelf.bookshelfReadingProgress
 import io.legado.app.ui.main.bookshelf.BookshelfGridBackground
 import io.legado.app.ui.main.bookshelf.bookshelfAuthorText
+import io.legado.app.ui.main.bookshelf.bookshelfReadingProgress
+import io.legado.app.ui.main.bookshelf.bookshelfReadingProgressPercent
 import io.legado.app.utils.toTimeAgo
+import java.text.NumberFormat
+import java.util.Locale
 
 private val BookshelfGridOuterEdge = 16.dp
 private val BookshelfGridItemInternalInset = 8.dp
+private val BookshelfListDetailsGap = 16.dp
+private val BookshelfSummaryIconPadding = 2.dp
 
 @Composable
 internal fun BookshelfBooksScreen(
@@ -198,6 +209,24 @@ private fun BookshelfBookList(
     val itemSpacing = with(density) { spacing.toDp() }
     val firstItemExtra = with(density) { 4.toDp() }
     val lastItemExtra = with(density) { 12.toDp() }
+    val progressLabels = if (showReadingProgress) {
+        val locale = ConfigurationCompat.getLocales(LocalConfiguration.current)[0] ?: Locale.getDefault()
+        val formatter = remember(locale) { NumberFormat.getPercentInstance(locale) }
+        val style = LocalTextStyle.current.copy(
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            fontFeatureSettings = "tnum",
+            letterSpacing = 0.sp,
+            lineHeight = 12.sp,
+        )
+        val textMeasurer = rememberTextMeasurer()
+        val labelHeight = with(density) {
+            textMeasurer.measure(formatter.format(1.0), style = style, maxLines = 1).size.height.toDp()
+        }
+        BookshelfProgressLabels(formatter, style, labelHeight)
+    } else {
+        null
+    }
     LaunchedEffect(scrollToTopToken) {
         if (scrollToTopToken > 0L) {
             if (isEInk) state.scrollToItem(0) else state.animateScrollToItem(0)
@@ -227,7 +256,7 @@ private fun BookshelfBookList(
                     highlightUnread = highlightUnread,
                     updating = !book.isLocal && book.bookUrl in updatingBookUrls,
                     showLastUpdateTime = showLastUpdateTime && !compact,
-                    showReadingProgress = showReadingProgress,
+                    progressLabels = progressLabels,
                     coverRevision = coverRevision,
                     lastUpdateTick = lastUpdateTick,
                     onClick = { onOpenBook(book) },
@@ -248,7 +277,7 @@ private fun BookshelfListBookItem(
     highlightUnread: Boolean,
     updating: Boolean,
     showLastUpdateTime: Boolean,
-    showReadingProgress: Boolean,
+    progressLabels: BookshelfProgressLabels?,
     coverRevision: Int,
     lastUpdateTick: Long,
     onClick: () -> Unit,
@@ -257,13 +286,14 @@ private fun BookshelfListBookItem(
 ) {
     val context = LocalContext.current
     val cardHeight = if (compact) 76.dp else 100.dp
+    val contentInset = 7.dp
+    val progressBottomInset = 1.dp
+    val progressLabelHeight = progressLabels?.height ?: 0.dp
+    // Keep the original details placement when the footer fits its normal line height.
+    val extraDetailsInset = (progressLabelHeight - 12.dp).coerceAtLeast(0.dp)
     val coverWidth = if (compact) 46.dp else 62.dp
     val coverHeight = if (compact) 60.dp else 84.dp
-    val progress = bookshelfReadingProgress(
-        book.durChapterIndex, book.durChapterPos, book.totalChapterNum,
-    )
     val progressColor = Color(NgTheme.colors.primary)
-    val progressTrackColor = progressColor.copy(alpha = if (NgTheme.snapshot.isEInk) 0.3f else 0.14f)
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val radius = dimensionResource(R.dimen.ng_radius_s)
@@ -294,7 +324,7 @@ private fun BookshelfListBookItem(
         appearance = appearance,
         pressed = isPressed,
         cornerRadius = radius,
-        contentPadding = PaddingValues(start = 10.dp, top = 7.dp, end = 14.dp, bottom = 7.dp),
+        contentPadding = PaddingValues(start = 10.dp, end = 14.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
@@ -305,33 +335,10 @@ private fun BookshelfListBookItem(
                 indication = LocalIndication.current,
                 onClick = onClick,
                 onLongClick = onLongClick,
-            )
-            .drawWithContent {
-                drawContent()
-                if (showReadingProgress) {
-                    val strokeWidth = 2.dp.toPx()
-                    // Match the title's visible edge, including its optical glyph inset.
-                    val startX = (10.dp + coverWidth + 16.dp + 1.dp).toPx() + strokeWidth / 2
-                    val endX = size.width - 14.dp.toPx() - strokeWidth / 2
-                    val y = size.height - 3.dp.toPx()
-                    if (endX > startX) {
-                        drawLine(
-                            progressTrackColor, Offset(startX, y), Offset(endX, y),
-                            strokeWidth = strokeWidth, cap = StrokeCap.Round,
-                        )
-                        if (progress > 0f) {
-                            drawLine(
-                                progressColor, Offset(startX, y),
-                                Offset(startX + (endX - startX) * progress, y),
-                                strokeWidth = strokeWidth, cap = StrokeCap.Round,
-                            )
-                        }
-                    }
-                }
-            },
+            ),
     ) {
         Row(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(vertical = contentInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BookshelfCover(
@@ -347,7 +354,7 @@ private fun BookshelfListBookItem(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .padding(start = 16.dp),
+                        .padding(start = BookshelfListDetailsGap, bottom = extraDetailsInset),
                 ) {
                     Text(
                         text = book.name,
@@ -408,7 +415,7 @@ private fun BookshelfListBookItem(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .padding(start = 16.dp),
+                        .padding(start = BookshelfListDetailsGap, bottom = extraDetailsInset),
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
@@ -467,9 +474,32 @@ private fun BookshelfListBookItem(
             }
         }
 
+        if (progressLabels != null) {
+            val iconSize = dimensionResource(R.dimen.desc_icon_size)
+            val iconViewportWidth = iconSize - BookshelfSummaryIconPadding * 2
+            // The circular outline starts at x=3 in the 24-unit icon viewport.
+            val iconLeftInset = BookshelfSummaryIconPadding + iconViewportWidth * (3f / 24f)
+            BookshelfListProgress(
+                progress = bookshelfReadingProgress(
+                    book.durChapterIndex, book.durChapterPos, book.totalChapterNum,
+                ),
+                labels = progressLabels,
+                labelColor = summaryColor,
+                progressColor = progressColor,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(
+                        start = coverWidth + BookshelfListDetailsGap + iconLeftInset,
+                        bottom = progressBottomInset,
+                    ),
+            )
+        }
+
         Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
+                .padding(top = contentInset)
                 .height(32.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -496,10 +526,60 @@ private fun BookshelfListBookItem(
                 tint = Color.Unspecified,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 5.dp, bottom = 5.dp)
+                    .padding(
+                        end = 5.dp,
+                        bottom = maxOf(contentInset + 5.dp, progressLabelHeight + progressBottomInset),
+                    )
                     .size(16.dp),
             )
         }
+    }
+}
+
+private data class BookshelfProgressLabels(
+    val formatter: NumberFormat,
+    val style: TextStyle,
+    val height: Dp,
+)
+
+@Composable
+private fun BookshelfListProgress(
+    progress: Float,
+    labels: BookshelfProgressLabels,
+    labelColor: Color,
+    progressColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val percent = bookshelfReadingProgressPercent(progress)
+    val label = labels.formatter.format(percent / 100.0)
+    val description = stringResource(R.string.bookshelf_reading_progress_value, label)
+    val trackColor = progressColor.copy(alpha = if (NgTheme.snapshot.isEInk) 0.3f else 0.14f)
+    Row(
+        modifier = modifier.clearAndSetSemantics { contentDescription = description },
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(2.dp)
+                .clip(CircleShape)
+                .background(trackColor),
+        ) {
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth(progress)
+                    .fillMaxHeight()
+                    .background(progressColor, CircleShape),
+            )
+        }
+        Text(
+            text = label,
+            color = labelColor,
+            style = labels.style,
+            maxLines = 1,
+            softWrap = false,
+        )
     }
 }
 
@@ -538,7 +618,7 @@ private fun BookshelfSummaryIcon(
         tint = colorResource(R.color.tv_text_summary),
         modifier = Modifier
             .size(dimensionResource(R.dimen.desc_icon_size))
-            .padding(horizontal = 2.dp),
+            .padding(horizontal = BookshelfSummaryIconPadding),
     )
 }
 
