@@ -130,6 +130,8 @@ import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.image.glide.GlideImagesPlugin
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
@@ -160,7 +162,7 @@ class BookInfoActivity :
                     } ?: return@launch
                     if (viewModel.getBook(false)?.bookUrl != book.bookUrl) return@launch
                     chapterChanged = it[2] as Boolean
-                    viewModel.bookData.value = updatedBook
+                    viewModel.updateDisplayedBook(updatedBook)
                     startReadActivity(updatedBook, it.getOrNull(5) as? Long ?: -1L)
                 }
             }
@@ -309,13 +311,14 @@ class BookInfoActivity :
                 )
             }
         }
-        viewModel.bookData.observe(this) { showBook(it) }
-        viewModel.chapterListData.observe(this) {
-            val current = viewModel.getBook(false)
-            val chapters = chaptersForBook(current?.bookUrl, it)
-            if (it != null && chapters == null) return@observe
-            upLoading(false, chapters)
-            upCacheProgress(current, chapters)
+        var displayedBook: Book? = null
+        viewModel.bookInfo.observe(this) { snapshot ->
+            if (displayedBook !== snapshot.book) {
+                displayedBook = snapshot.book
+                showBook(snapshot.book)
+            }
+            snapshot.chapters?.let { upLoading(false, it) }
+            upCacheProgress(snapshot)
         }
         viewModel.otherWorksData.observe(this) { showOtherWorks(it) }
         viewModel.otherWorksLoadingData.observe(this) {
@@ -639,7 +642,6 @@ class BookInfoActivity :
         upGroup(book)
         observeCharacterPreview(book)
         viewModel.prepareOtherWorks(book, uiState.autoLoadOtherWorks)
-        upCacheProgress(book)
     }
 
     private fun updateBookSnapshot(book: Book) {
@@ -1291,14 +1293,14 @@ class BookInfoActivity :
         BookshelfBookGroupSheet(this, listOf(book)) { groupId ->
             if (viewModel.getBook(false) === book) {
                 book.group = groupId
-                val onSaved: () -> Unit = {
-                    updateBookSnapshot(book)
-                    upGroup(book)
+                val onSaved: (Book) -> Unit = { saved ->
+                    updateBookSnapshot(saved)
+                    upGroup(saved)
                 }
                 if (viewModel.inBookshelf) {
                     viewModel.saveBook(book, onSaved)
                 } else if (groupId != 0L) {
-                    viewModel.addToBookshelf(onSaved)
+                    viewModel.addToBookshelf { viewModel.getBook(false)?.let(onSaved) }
                 }
             }
         }.show()
@@ -1388,11 +1390,10 @@ class BookInfoActivity :
     }
 
     private fun upCacheProgress(
-        book: Book? = viewModel.getBook(false),
-        chapterList: List<BookChapter>? = viewModel.currentChapterList(book)
+        snapshot: BookInfoSnapshot? = viewModel.bookInfo.value,
     ) {
         cacheProgressJob?.cancel()
-        if (book == null) {
+        if (snapshot == null) {
             uiState = uiState.copy(
                 showCache = false,
                 hasClearableCache = false,
@@ -1400,16 +1401,18 @@ class BookInfoActivity :
             )
             return
         }
+        val book = snapshot.book.copy()
         uiState = uiState.copy(
             showCache = book.menuCapabilities.showCache,
         )
         cacheProgressJob = lifecycleScope.launch {
             val status = withContext(IO) {
-                val chapters = chaptersForBook(book.bookUrl, chapterList)?.takeIf { it.isNotEmpty() }
+                val chapters = chaptersForBook(book.bookUrl, snapshot.chapters)
                     ?: appDb.bookChapterDao.getChapterList(book.bookUrl)
-                loadBookCacheStatus(book, chapters)
+                val scanContext = currentCoroutineContext()
+                loadBookCacheStatus(book, chapters) { scanContext.ensureActive() }
             }
-            if (viewModel.getBook(false)?.bookUrl == book.bookUrl) {
+            if (viewModel.bookInfo.value === snapshot) {
                 uiState = uiState.copy(
                     hasClearableCache = status.hasCache,
                     cache = BookInfoCacheUiState(
@@ -1644,13 +1647,11 @@ class BookInfoActivity :
             book.addType(BookType.notShelf)
             viewModel.saveBook(book) {
                 viewModel.saveChapterList {
-                    startReadActivity(book)
+                    viewModel.getBook(false)?.let { startReadActivity(it) }
                 }
             }
         } else {
-            viewModel.saveBook(book) {
-                startReadActivity(book)
-            }
+            viewModel.saveBook(book) { saved -> startReadActivity(saved) }
         }
     }
 
@@ -1659,12 +1660,12 @@ class BookInfoActivity :
             book.addType(BookType.notShelf)
             viewModel.saveBook(book) {
                 viewModel.saveChapterList {
-                    startReadAloudPlayer(book)
+                    viewModel.getBook(false)?.takeIf { it.supportsReadAloud }?.let(::startReadAloudPlayer)
                 }
             }
         } else {
-            viewModel.saveBook(book) {
-                startReadAloudPlayer(book)
+            viewModel.saveBook(book) { saved ->
+                if (saved.supportsReadAloud) startReadAloudPlayer(saved)
             }
         }
     }
@@ -1713,14 +1714,14 @@ class BookInfoActivity :
     }
 
     override val oldBook: Book?
-        get() = viewModel.bookData.value
+        get() = viewModel.getBook(false)
 
     override fun changeTo(source: BookSource, book: Book, toc: List<BookChapter>) {
         viewModel.changeTo(source, book, toc)
     }
 
     override fun coverChangeTo(coverUrl: String) {
-        viewModel.bookData.value?.let { book ->
+        viewModel.getBook(false)?.let { book ->
             book.customCoverUrl = coverUrl
             uiState = uiState.copy(
                 book = book.copy(),

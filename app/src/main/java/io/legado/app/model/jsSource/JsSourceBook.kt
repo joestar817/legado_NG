@@ -89,8 +89,9 @@ object JsSourceBook {
     suspend fun getChapterListAwait(
         source: BookSource,
         book: Book,
+        resetTypeFromSource: Boolean = true,
     ): Result<List<BookChapter>> {
-        book.updateTypeFromSource(source.getBookType())
+        if (resetTypeFromSource) book.updateTypeFromSource(source.getBookType())
         val context = coroutineContext
         return runCatching {
             val json = JsSourceEngine(source, context).callFunction(

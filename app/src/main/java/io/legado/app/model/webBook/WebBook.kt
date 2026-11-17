@@ -297,10 +297,13 @@ object WebBook {
         bookSource: BookSource,
         book: Book,
         runPerJs: Boolean = false,
-        isFromBookInfo : Boolean = false
+        isFromBookInfo : Boolean = false,
+        resetTypeFromSource: Boolean = true,
     ): Result<List<BookChapter>> {
         val baseline = BookUpdateStore.capture(book, bookSource.bookSourceUrl)
-        val result = getChapterListUnobservedAwait(bookSource, book, runPerJs, isFromBookInfo)
+        val result = getChapterListUnobservedAwait(
+            bookSource, book, runPerJs, isFromBookInfo, resetTypeFromSource,
+        )
         result.getOrNull()?.let { chapters ->
             currentCoroutineContext().ensureActive()
             BookUpdateStore.record(baseline, book, chapters.size)
@@ -313,11 +316,12 @@ object WebBook {
         book: Book,
         runPerJs: Boolean,
         isFromBookInfo: Boolean,
+        resetTypeFromSource: Boolean,
     ): Result<List<BookChapter>> {
         if (bookSource.isJsSource()) {
-            return JsSourceBook.getChapterListAwait(bookSource, book)
+            return JsSourceBook.getChapterListAwait(bookSource, book, resetTypeFromSource)
         }
-        book.updateTypeFromSource(bookSource.getBookType())
+        if (resetTypeFromSource) book.updateTypeFromSource(bookSource.getBookType())
         return kotlin.runCatching {
             if (runPerJs) {
                 runPreUpdateJs(bookSource, book, isFromBookInfo).getOrThrow()
