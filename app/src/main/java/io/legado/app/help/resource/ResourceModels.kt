@@ -132,6 +132,8 @@ internal data class ResourceInstallLedger(
 )
 
 internal const val HOME_WIDGET_SKIN_TYPE = "widget_skin"
+internal const val LISTENING_EFFECT_RESOURCE_TYPE = "listening_effect"
+internal const val LISTENING_EFFECT_CAPABILITY = "listening.effect.1"
 internal const val HOME_WIDGET_SKIN_CAPABILITY = "home.widget.skin.1"
 internal const val HOME_WIDGET_BLUE_FISH_CAPABILITY = "home.widget.skin.blue_fish.1"
 internal const val THEME_CENTER_CROP_CAPABILITY = "theme.background.center_crop.1"
@@ -288,10 +290,14 @@ internal object ResourceProtocol {
         HOME_WIDGET_SKIN_TYPE to setOf("zip"),
         "tts" to setOf("js", "zip"),
         "theme" to setOf("ngtheme", "zip"),
+        LISTENING_EFFECT_RESOURCE_TYPE to setOf("zip"),
         "pet" to setOf("zip"),
     )
+    private val catalogPreviewTypes = setOf("font", "pet", "read_preset", LISTENING_EFFECT_RESOURCE_TYPE)
 
-    fun isBrowsableType(type: String) = type !in setOf("font", "background", "listening_effect")
+    fun isBrowsableType(type: String) = type !in setOf("font", "background")
+
+    fun supportsCatalogPreview(type: String) = type in catalogPreviewTypes
 
     fun validCommit(value: String) = sha.matches(value) && value.any { it != '0' }
 
@@ -378,11 +384,11 @@ internal object ResourceProtocol {
 
     fun validatePreview(preview: ResourceFontPreview?, type: String) {
         if (preview == null) return
-        require(type in setOf("font", "pet", "read_preset")) { "此资源类型不支持目录预览" }
+        require(supportsCatalogPreview(type)) { "此资源类型不支持目录预览" }
         validatePreviewImage(requireNotNull(preview.thumbnail) { "预览缺少缩略图" }, 256, 256)
         val detail = requireNotNull(preview.detail) { "预览缺少详情图" }
-        if (type == "pet" || type == "read_preset") validatePreviewImage(detail, 768, 768)
-        else validatePreviewImage(detail, 960, 420)
+        if (type == "font") validatePreviewImage(detail, 960, 420)
+        else validatePreviewImage(detail, 768, 768)
     }
 
     private fun validatePreviewImage(image: ResourcePreviewImage, width: Int, height: Int) {
@@ -457,6 +463,8 @@ internal object ResourceProtocol {
         } else if (entry.category.type == "theme") {
             if (capabilities.any { it != "theme.effect.1" && it != THEME_CENTER_CROP_CAPABILITY })
                 return "主题接口不兼容"
+        } else if (entry.category.type == LISTENING_EFFECT_RESOURCE_TYPE) {
+            if (capabilities.toSet() != setOf(LISTENING_EFFECT_CAPABILITY)) return "听书动效接口不兼容"
         } else if (capabilities.isNotEmpty()) return "资源要求当前未声明支持的能力"
         return null
     }

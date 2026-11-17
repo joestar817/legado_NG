@@ -31,16 +31,17 @@ class ResourceClassificationTest {
         assertTrue(filterResourceEntries(entries, ResourcePurpose.PETS, "", "").isEmpty())
     }
 
-    @Test fun listeningEffectPackagesAreHiddenFromTheResourceCenter() {
+    @Test fun listeningEffectsHaveAnIndependentFilterFromThemePackages() {
         val theme = entry("app-cats", "theme")
         val effect = entry("player-cats", "listening_effect")
         val script = entry("script", "tts")
         val entries = listOf(theme, effect, script)
-        assertEquals(listOf(theme, script), filterResourceEntries(entries, null, "", ""))
+        assertEquals(entries, filterResourceEntries(entries, null, "", ""))
         assertEquals(listOf(theme), filterResourceEntries(entries, ResourcePurpose.APPEARANCE, "", ""))
-        assertEquals(listOf(script), filterResourceEntries(entries, ResourcePurpose.LISTENING, "", ""))
-        assertEquals(listOf("theme", "tts"), resourceTypeOptions(entries.map { it.category }, null).map { it.key })
-        assertEquals(setOf("tts"), resourcePriorityTypes(ResourcePurpose.LISTENING, effect.category.type))
+        assertEquals(listOf(effect, script), filterResourceEntries(entries, ResourcePurpose.LISTENING, "", ""))
+        assertEquals(listOf(effect), filterResourceEntries(entries, ResourcePurpose.LISTENING, effect.category.type, ""))
+        assertEquals(listOf("theme", "listening_effect", "tts"), resourceTypeOptions(entries.map { it.category }, null).map { it.key })
+        assertEquals(setOf("listening_effect"), resourcePriorityTypes(ResourcePurpose.LISTENING, effect.category.type))
     }
 
     @Test fun aTypeCanSpanMultipleCatalogCategoriesAndHaveOnlyOneMenuOption() {

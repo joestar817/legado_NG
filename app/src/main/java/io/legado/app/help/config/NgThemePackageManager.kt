@@ -46,7 +46,7 @@ internal object NgThemePackageManager {
                 try {
                     val manifest = inspectArchive(file)
                     require(NgEffectPackageKind.fromFormat(manifest.format) == kind) {
-                        if (kind == NgEffectPackageKind.THEME) "听书特效已内置，请在播放器的播放动效中选择" else "请选择听书特效 ZIP，主题包请在主题管理导入"
+                        if (kind == NgEffectPackageKind.THEME) "请在播放动效中导入听书动效包" else "请选择听书动效 ZIP，主题包请在主题管理导入"
                     }
                     val hash = EffectThemeRuntime.sha256(file)
                     val theme = manifest.theme

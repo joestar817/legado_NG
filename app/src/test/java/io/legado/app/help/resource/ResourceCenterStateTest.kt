@@ -142,15 +142,16 @@ class ResourceCenterStateTest {
         assertEquals(listOf(remote), downloaded.updatableEntries())
     }
 
-    @Test fun pausedListeningPackagesKeepTheirReceiptsOutsideDownloadsAndUpdates() {
+    @Test fun listeningPackagesAndThemesKeepIndependentDownloadsAndUpdates() {
         val theme = record("theme")
-        val paused = record("player-effect", "listening_effect")
-        val remote = listOf(theme, paused).map { it.entry.copy(item = it.entry.item.copy(versionCode = 2)) }
-        val state = ResourceCenterState(snapshot = ResourceSnapshot(entries = remote), installations = listOf(theme, paused))
+        val effect = record("player-effect", LISTENING_EFFECT_RESOURCE_TYPE)
+        val records = listOf(theme, effect)
+        val remote = records.map { it.entry.copy(item = it.entry.item.copy(versionCode = 2)) }
+        val state = ResourceCenterState(snapshot = ResourceSnapshot(entries = remote), installations = records)
 
-        assertEquals(listOf(theme), state.downloadedInstallations())
-        assertEquals(listOf(remote.first()), state.updatableEntries())
-        assertSame(paused, state.installed(paused.entry.item.id))
+        assertEquals(records, state.downloadedInstallations())
+        assertEquals(remote, state.updatableEntries())
+        assertSame(effect, state.installed(effect.entry.item.id))
     }
 
     @Test fun standaloneReadingResourcesKeepReceiptsButAreNotListedOrUpdated() {

@@ -32,7 +32,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
 import io.legado.app.help.config.AppConfig
-import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.ListeningFireStyle
 import io.legado.app.help.config.ListeningFluidType
 import io.legado.app.help.config.ListeningMotionColorMode
@@ -49,6 +48,8 @@ import io.legado.app.ui.book.read.aloud.ListeningDivider
 import io.legado.app.ui.book.read.aloud.ListeningSettingsGroup
 import io.legado.app.ui.book.read.aloud.ReadAloudComposeBottomSheet
 import io.legado.app.ui.book.read.aloud.ReadAloudMotionSheetContent
+import io.legado.app.ui.book.read.aloud.LISTENING_EFFECT_REQUEST
+import io.legado.app.ui.book.read.aloud.effectPackageSummary
 import io.legado.app.ui.book.read.aloud.ReadAloudSliderSheet
 import io.legado.app.ui.book.read.aloud.label
 import io.legado.app.ui.design.components.compose.NgBottomDrawerSurface
@@ -199,6 +200,7 @@ private enum class AudioMoreScreen {
 internal class AudioPlayMoreDialog : AudioPlayComposeBottomSheet() {
 
     private var screen by mutableStateOf(AudioMoreScreen.SETTINGS)
+    private var requestedPackageId by mutableStateOf<String?>(null)
     private var motionState by mutableStateOf(ListeningMotionConfig.current())
     private var displaySettings by mutableStateOf(ReadAloudPlayerDisplayConfig.current())
 
@@ -208,14 +210,15 @@ internal class AudioPlayMoreDialog : AudioPlayComposeBottomSheet() {
         val hasSource = AudioPlay.bookSource != null
         val customVisible = host.hasCustomAudioAction()
         val loginVisible = !AudioPlay.bookSource?.loginUrl.isNullOrBlank()
-        screen = AudioMoreScreen.SETTINGS
+        requestedPackageId = (savedInstanceState ?: arguments)?.getString(LISTENING_EFFECT_REQUEST)
+        screen = if (savedInstanceState?.getBoolean("motionScreen") ?: (requestedPackageId != null)) {
+            AudioMoreScreen.MOTION
+        } else AudioMoreScreen.SETTINGS
         motionState = ListeningMotionConfig.current()
         displaySettings = ReadAloudPlayerDisplayConfig.current()
         (view as ComposeView).setContent {
             ListeningSheetTheme {
-                BackHandler(enabled = screen == AudioMoreScreen.MOTION) {
-                    screen = AudioMoreScreen.SETTINGS
-                }
+                BackHandler(enabled = screen == AudioMoreScreen.MOTION, onBack = ::closeMotionSettings)
                 when (screen) {
                     AudioMoreScreen.SETTINGS -> AudioMoreSheet(
                         customVisible = customVisible,
@@ -240,12 +243,15 @@ internal class AudioPlayMoreDialog : AudioPlayComposeBottomSheet() {
 
                     AudioMoreScreen.MOTION -> ReadAloudMotionSheetContent(
                         state = motionState,
-                        onBack = { screen = AudioMoreScreen.SETTINGS },
+                        onBack = ::closeMotionSettings,
                         onEnabledChange = ::setMotionEnabled,
                         onEffectChange = ::setMotionEffect,
                         onFireStyleChange = ::setFireStyle,
                         onFluidTypeChange = ::setFluidType,
-                        onCartoonTypeChange = ::setCartoonType,
+                        requestedPackageId = requestedPackageId,
+                        onPackageRequestConsumed = { id -> if (requestedPackageId == id) requestedPackageId = null },
+                        onPackageSelected = ::selectEffectPackage,
+                        onPackageLibraryChanged = ::reloadMotionSettings,
                         onColorModeChange = ::setMotionColorMode,
                         onCustomColorChange = ::setMotionCustomColor,
                         onIntensityPreview = ::previewMotionIntensity,
@@ -308,9 +314,29 @@ internal class AudioPlayMoreDialog : AudioPlayComposeBottomSheet() {
         notifyMotionChanged()
     }
 
-    private fun setCartoonType(type: ListeningCartoonType) {
-        ListeningMotionConfig.cartoonType = type
-        motionState = motionState.copy(cartoonType = type)
+    internal fun showEffectPackage(id: String) {
+        requestedPackageId = id
+        screen = AudioMoreScreen.MOTION
+    }
+
+    private fun closeMotionSettings() {
+        requestedPackageId = null
+        screen = AudioMoreScreen.SETTINGS
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("motionScreen", screen == AudioMoreScreen.MOTION)
+        outState.putString(LISTENING_EFFECT_REQUEST, requestedPackageId)
+    }
+
+    private fun selectEffectPackage(id: String) {
+        ListeningMotionConfig.selectPackage(id)
+        reloadMotionSettings()
+    }
+
+    private fun reloadMotionSettings() {
+        motionState = ListeningMotionConfig.current()
         notifyMotionChanged()
     }
 
@@ -337,8 +363,8 @@ internal class AudioPlayMoreDialog : AudioPlayComposeBottomSheet() {
             ListeningMotionEffect.FLUID -> {
                 ListeningMotionConfig.fluidIntensity = motionState.intensity
             }
-            ListeningMotionEffect.CARTOON -> {
-                ListeningMotionConfig.cartoonIntensity = motionState.intensity
+            ListeningMotionEffect.PACKAGE -> {
+                motionState.packageId?.let { ListeningMotionConfig.setPackageIntensity(it, motionState.intensity) }
             }
         }
         notifyMotionChanged()
@@ -438,10 +464,7 @@ private fun AudioMoreSheet(
                                     R.string.listening_motion_fluid_summary,
                                     motionState.fluidType.label(),
                                 )
-                                ListeningMotionEffect.CARTOON -> stringResource(
-                                    R.string.listening_motion_cartoon_summary,
-                                    motionState.cartoonType.label(),
-                                )
+                                ListeningMotionEffect.PACKAGE -> motionState.effectPackageSummary()
                             }
                         },
                         leadingIcon = Icons.Rounded.AutoAwesome,

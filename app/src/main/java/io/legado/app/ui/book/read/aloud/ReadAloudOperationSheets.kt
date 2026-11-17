@@ -73,7 +73,6 @@ import io.legado.app.constant.PreferKey
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.help.IntentHelp
 import io.legado.app.help.config.AppConfig
-import io.legado.app.help.config.ListeningCartoonType
 import io.legado.app.help.config.ListeningFluidType
 import io.legado.app.help.config.ListeningFireStyle
 import io.legado.app.help.config.ListeningMotionConfig
@@ -638,6 +637,7 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
     private var state by mutableStateOf<MoreDrawerState?>(null)
     private var motionState by mutableStateOf(ListeningMotionConfig.current())
     private var screen by mutableStateOf(MoreDrawerScreen.SETTINGS)
+    private var requestedPackageId by mutableStateOf<String?>(null)
     private var showClearCacheConfirmation by mutableStateOf(false)
     private var clearingCache by mutableStateOf(false)
 
@@ -659,11 +659,13 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
             state = state?.copy(engineName = engineName)
         }
         motionState = ListeningMotionConfig.current()
+        requestedPackageId = (savedInstanceState ?: arguments)?.getString(LISTENING_EFFECT_REQUEST)
+        screen = if (savedInstanceState?.getBoolean("motionScreen") ?: (requestedPackageId != null)) {
+            MoreDrawerScreen.MOTION
+        } else MoreDrawerScreen.SETTINGS
         (view as ComposeView).setContent {
             ListeningSheetTheme {
-                BackHandler(enabled = screen == MoreDrawerScreen.MOTION) {
-                    screen = MoreDrawerScreen.SETTINGS
-                }
+                BackHandler(enabled = screen == MoreDrawerScreen.MOTION, onBack = ::closeMotionSettings)
                 when (screen) {
                     MoreDrawerScreen.SETTINGS -> state?.let { current ->
                         ReadAloudMoreSheetContent(
@@ -691,12 +693,15 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
 
                     MoreDrawerScreen.MOTION -> ReadAloudMotionSheetContent(
                         state = motionState,
-                        onBack = { screen = MoreDrawerScreen.SETTINGS },
+                        onBack = ::closeMotionSettings,
                         onEnabledChange = ::setMotionEnabled,
                         onEffectChange = ::setMotionEffect,
                         onFireStyleChange = ::setFireStyle,
                         onFluidTypeChange = ::setFluidType,
-                        onCartoonTypeChange = ::setCartoonType,
+                        requestedPackageId = requestedPackageId,
+                        onPackageRequestConsumed = { id -> if (requestedPackageId == id) requestedPackageId = null },
+                        onPackageSelected = ::selectEffectPackage,
+                        onPackageLibraryChanged = ::reloadMotionSettings,
                         onColorModeChange = ::setMotionColorMode,
                         onCustomColorChange = ::setMotionCustomColor,
                         onIntensityPreview = ::previewMotionIntensity,
@@ -870,9 +875,29 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
         notifyMotionChanged()
     }
 
-    private fun setCartoonType(type: ListeningCartoonType) {
-        ListeningMotionConfig.cartoonType = type
-        motionState = motionState.copy(cartoonType = type)
+    internal fun showEffectPackage(id: String) {
+        requestedPackageId = id
+        screen = MoreDrawerScreen.MOTION
+    }
+
+    private fun closeMotionSettings() {
+        requestedPackageId = null
+        screen = MoreDrawerScreen.SETTINGS
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("motionScreen", screen == MoreDrawerScreen.MOTION)
+        outState.putString(LISTENING_EFFECT_REQUEST, requestedPackageId)
+    }
+
+    private fun selectEffectPackage(id: String) {
+        ListeningMotionConfig.selectPackage(id)
+        reloadMotionSettings()
+    }
+
+    private fun reloadMotionSettings() {
+        motionState = ListeningMotionConfig.current()
         notifyMotionChanged()
     }
 
@@ -901,8 +926,8 @@ internal class ReadAloudMoreDialog : ReadAloudComposeBottomSheet() {
             ListeningMotionEffect.FLUID -> {
                 ListeningMotionConfig.fluidIntensity = motionState.intensity
             }
-            ListeningMotionEffect.CARTOON -> {
-                ListeningMotionConfig.cartoonIntensity = motionState.intensity
+            ListeningMotionEffect.PACKAGE -> {
+                motionState.packageId?.let { ListeningMotionConfig.setPackageIntensity(it, motionState.intensity) }
             }
         }
         notifyMotionChanged()
@@ -1108,12 +1133,7 @@ private fun ReadAloudMoreSheetContent(
                                     )
                                 }
 
-                                ListeningMotionEffect.CARTOON -> {
-                                    stringResource(
-                                        R.string.listening_motion_cartoon_summary,
-                                        motionState.cartoonType.label(),
-                                    )
-                                }
+                                ListeningMotionEffect.PACKAGE -> motionState.effectPackageSummary()
                             }
                         },
                         leadingIcon = Icons.Rounded.AutoAwesome,

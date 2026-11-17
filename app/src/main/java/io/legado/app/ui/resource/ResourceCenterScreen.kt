@@ -179,6 +179,9 @@ internal fun ResourceCenterScreen(
         if (initialType == HOME_WIDGET_SKIN_TYPE && purpose == ResourcePurpose.APPEARANCE &&
             options.none { it.key == HOME_WIDGET_SKIN_TYPE }) {
             options + ResourceTypeOption(HOME_WIDGET_SKIN_TYPE, "组件皮肤")
+        } else if (purpose == ResourcePurpose.LISTENING &&
+            options.none { it.key == LISTENING_EFFECT_RESOURCE_TYPE }) {
+            options + ResourceTypeOption(LISTENING_EFFECT_RESOURCE_TYPE, "听书动效")
         } else if (page == ResourceCollectionPage.DOWNLOADED && state.petInstallations.isNotEmpty() &&
             (purpose == null || purpose == ResourcePurpose.PETS) && options.none { it.key == "pet" }) {
             options + ResourceTypeOption("pet", "宠物插件")
@@ -305,7 +308,7 @@ internal fun ResourceCenterScreen(
                 versionLabel(entry, state) != "可更新" -> onUse(entry)
             else -> {
                 if (entry.category.type == HOME_WIDGET_SKIN_TYPE) skinDownload = entry to task
-                if (entry.category.type == "theme") themeDownload = entry to task
+                if (entry.category.type in setOf("theme", LISTENING_EFFECT_RESOURCE_TYPE)) themeDownload = entry to task
                 if (entry.category.type == "read_preset") presetDownload = entry to task
                 if (entry.category.type == "tts") ttsDownload = entry to task
                 ResourceRepository.install(entry)
@@ -684,7 +687,9 @@ internal fun ResourceCenterScreen(
                         state.hasInstalled(entry)
                     }
                     if (canReplace) NgDialogTextActionButton(if (entry.category.type == "tts") "覆盖" else "替换", onClick = {
-                        if (entry.category.type == "theme") themeDownload = entry to state.tasks[entry.item.id]
+                        if (entry.category.type in setOf("theme", LISTENING_EFFECT_RESOURCE_TYPE)) {
+                            themeDownload = entry to state.tasks[entry.item.id]
+                        }
                         if (entry.category.type == HOME_WIDGET_SKIN_TYPE) skinDownload = entry to state.tasks[entry.item.id]
                         if (entry.category.type == "tts") ttsDownload = entry to state.tasks[entry.item.id]
                         ResourceRepository.install(entry, ResourceInstallMode.REPLACE, themeConflict,
@@ -876,7 +881,7 @@ private fun ResourcePreview(
 ) {
     val font = entry.category.type == "font"
     val widgetSkin = entry.category.type == HOME_WIDGET_SKIN_TYPE
-    val catalogImage = font || entry.category.type in setOf("pet", "read_preset")
+    val catalogImage = ResourceProtocol.supportsCatalogPreview(entry.category.type)
     val image = entry.item.preview?.let { if (reading) it.detail else it.thumbnail }
     val allowDownload = state.confirmedEntry(entry) != null
     val target = state.installed(entry.item.id)?.target

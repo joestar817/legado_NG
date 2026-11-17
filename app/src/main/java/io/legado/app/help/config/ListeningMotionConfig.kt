@@ -1,7 +1,8 @@
 package io.legado.app.help.config
 
-import androidx.annotation.ColorInt
+import android.content.SharedPreferences
 import io.legado.app.constant.PreferKey
+import io.legado.app.utils.defaultSharedPreferences
 import io.legado.app.utils.getPrefBoolean
 import io.legado.app.utils.getPrefInt
 import io.legado.app.utils.getPrefString
@@ -9,38 +10,17 @@ import io.legado.app.utils.putPrefBoolean
 import io.legado.app.utils.putPrefInt
 import io.legado.app.utils.putPrefString
 import splitties.init.appCtx
+import kotlin.math.roundToInt
 
 enum class ListeningMotionEffect(val storageValue: String) {
     FLAME("flame"),
     FLUID("fluid"),
-    CARTOON("cartoon");
+    PACKAGE("package");
 
     companion object {
         fun fromStorage(value: String?): ListeningMotionEffect =
             entries.firstOrNull { it.storageValue == value } ?: FLAME
     }
-}
-
-enum class ListeningCartoonType(val storageValue: String) {
-    SAKURA("sakura"),
-    CATS("cats"),
-    RAIN_NIGHT("rain_night");
-
-    companion object {
-        fun fromStorageOrNull(value: String?): ListeningCartoonType? =
-            entries.firstOrNull { it.storageValue == value }
-
-        fun fromStorage(value: String?): ListeningCartoonType =
-            fromStorageOrNull(value) ?: SAKURA
-    }
-}
-
-/** 场景素材对应的默认主色；主题与听书播放器共用，避免同一场景出现两套取色。 */
-@ColorInt
-internal fun ListeningCartoonType.scenePrimaryColor(): Int = when (this) {
-    ListeningCartoonType.SAKURA -> 0xFFFF61FF.toInt()
-    ListeningCartoonType.CATS -> 0xFF4E900C.toInt()
-    ListeningCartoonType.RAIN_NIGHT -> 0xFF081818.toInt()
 }
 
 enum class ListeningFluidType(val storageValue: String) {
@@ -81,7 +61,7 @@ data class ListeningMotionSettings(
     val effect: ListeningMotionEffect = ListeningMotionEffect.FLAME,
     val fireStyle: ListeningFireStyle = ListeningFireStyle.GODFIRE,
     val fluidType: ListeningFluidType = ListeningFluidType.SMOKE,
-    val cartoonType: ListeningCartoonType = ListeningCartoonType.SAKURA,
+    val packageId: String? = null,
     val colorMode: ListeningMotionColorMode = ListeningMotionColorMode.COVER,
     val customColor: Int = ListeningMotionConfig.DEFAULT_CUSTOM_COLOR,
     val intensity: Int = ListeningMotionConfig.DEFAULT_INTENSITY,
@@ -89,11 +69,27 @@ data class ListeningMotionSettings(
 
 internal fun normalizeListeningMotionIntensity(value: Int): Int = value.coerceIn(0, 100)
 
+internal fun NgManagedTheme.listeningIntensity(): NgEffectThemeParameter? =
+    effect?.parameterSchema?.firstOrNull {
+        it.key == "intensity" && it.type == "range" && it.min != null && it.max != null && it.max > it.min
+    }
+
+internal fun NgEffectThemeParameter.toListeningPercent(value: String): Int {
+    val start = requireNotNull(min).toDouble()
+    val span = requireNotNull(max).toDouble() - start
+    return normalizeListeningMotionIntensity(((value.toDouble() - start) / span * 100).roundToInt())
+}
+
+internal fun NgEffectThemeParameter.fromListeningPercent(percent: Int): String {
+    val start = requireNotNull(min).toDouble()
+    val end = requireNotNull(max).toDouble()
+    return (start + (end - start) * (normalizeListeningMotionIntensity(percent) / 100.0)).toFloat().toString()
+}
+
 object ListeningMotionConfig {
 
     const val DEFAULT_INTENSITY = 40
     const val DEFAULT_FLUID_INTENSITY = 100
-    const val DEFAULT_CARTOON_INTENSITY = 100
     const val DEFAULT_CUSTOM_COLOR = -0x002EC5D9
 
     var enabled: Boolean
@@ -118,14 +114,24 @@ object ListeningMotionConfig {
         )
         set(value) = appCtx.putPrefString(PreferKey.listeningMotionFluidType, value.storageValue)
 
-    var cartoonType: ListeningCartoonType
-        get() = ListeningCartoonType.fromStorage(
-            appCtx.getPrefString(PreferKey.listeningMotionCartoonType)
-        )
-        set(value) = appCtx.putPrefString(
-            PreferKey.listeningMotionCartoonType,
-            value.storageValue,
-        )
+    private val packageId: String?
+        get() = appCtx.getPrefString(PreferKey.listeningMotionPackageId)
+
+    internal fun selectPackage(id: String) {
+        NgListeningEffectLibraryStore.withInstalledEffect(appCtx, id) {
+            appCtx.defaultSharedPreferences.edit()
+                .putString(PreferKey.listeningMotionPackageId, id)
+                .putString(PreferKey.listeningMotionEffect, ListeningMotionEffect.PACKAGE.storageValue)
+                .apply()
+        }
+    }
+
+    internal fun clearRemovedPackage(prefs: SharedPreferences, edit: SharedPreferences.Editor, id: String) {
+        edit.remove("${PreferKey.listeningMotionPackageIntensity}.$id")
+        if (prefs.getString(PreferKey.listeningMotionPackageId, null) == id) {
+            edit.remove(PreferKey.listeningMotionPackageId)
+        }
+    }
 
     var colorMode: ListeningMotionColorMode
         get() = ListeningMotionColorMode.fromStorage(
@@ -158,32 +164,35 @@ object ListeningMotionConfig {
             normalizeListeningMotionIntensity(value),
         )
 
-    var cartoonIntensity: Int
-        get() = normalizeListeningMotionIntensity(
-            appCtx.getPrefInt(
-                PreferKey.listeningMotionCartoonIntensity,
-                DEFAULT_CARTOON_INTENSITY,
-            )
-        )
-        set(value) = appCtx.putPrefInt(
-            PreferKey.listeningMotionCartoonIntensity,
-            normalizeListeningMotionIntensity(value),
-        )
+    internal fun setPackageIntensity(id: String, value: Int) {
+        appCtx.putPrefInt("${PreferKey.listeningMotionPackageIntensity}.$id", normalizeListeningMotionIntensity(value))
+    }
+
+    private fun packageIntensity(id: String?): Int {
+        val theme = NgListeningEffectLibraryStore.allEffects(appCtx).firstOrNull { it.id == id }
+        val parameter = theme?.listeningIntensity() ?: return 100
+        val value = theme.effectValues[parameter.key] ?: parameter.defaultValue
+        return normalizeListeningMotionIntensity(appCtx.getPrefInt(
+            "${PreferKey.listeningMotionPackageIntensity}.$id", parameter.toListeningPercent(value),
+        ))
+    }
 
     fun intensityFor(effect: ListeningMotionEffect): Int = when (effect) {
         ListeningMotionEffect.FLAME -> intensity
         ListeningMotionEffect.FLUID -> fluidIntensity
-        ListeningMotionEffect.CARTOON -> cartoonIntensity
+        ListeningMotionEffect.PACKAGE -> packageIntensity(packageId)
     }
 
     fun current(): ListeningMotionSettings {
-        val currentEffect = effect
+        val selectedId = packageId
+        val currentEffect = effect.takeUnless { it == ListeningMotionEffect.PACKAGE && selectedId == null }
+            ?: ListeningMotionEffect.FLAME
         return ListeningMotionSettings(
             enabled = enabled,
             effect = currentEffect,
             fireStyle = fireStyle,
             fluidType = fluidType,
-            cartoonType = cartoonType,
+            packageId = selectedId,
             colorMode = colorMode,
             customColor = customColor,
             intensity = intensityFor(currentEffect),

@@ -19,15 +19,24 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.base.BaseActivity
 import io.legado.app.base.ComposeActivityBinding
+import io.legado.app.R
 import io.legado.app.data.appDb
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.NgListeningEffectLibraryStore
 import io.legado.app.help.resource.HOME_WIDGET_SKIN_TYPE
+import io.legado.app.help.resource.LISTENING_EFFECT_RESOURCE_TYPE
 import io.legado.app.help.home.HomeWidgetSkinStore
 import io.legado.app.help.resource.ResourceEntry
 import io.legado.app.help.resource.ResourceProtocol
 import io.legado.app.help.resource.ResourceRepository
+import io.legado.app.model.AudioPlay
 import io.legado.app.model.ReadBook
+import io.legado.app.service.AudioPlayService
+import io.legado.app.ui.book.audio.AudioPlayActivity
 import io.legado.app.ui.book.read.ReadBookActivity
+import io.legado.app.ui.book.read.aloud.LISTENING_EFFECT_REQUEST
+import io.legado.app.ui.book.read.aloud.RETURN_LISTENING_EFFECT
+import io.legado.app.ui.book.read.aloud.ReadAloudPlayerActivity
 import io.legado.app.ui.config.ConfigActivity
 import io.legado.app.ui.config.ConfigTag
 import io.legado.app.ui.config.ThemeInterfaceFontEditorSheet
@@ -150,6 +159,7 @@ class ResourceCenterActivity : BaseActivity<ComposeActivityBinding>() {
                 putExtra(PetManagerActivity.PLUGIN_ID, entry.item.payload.pluginId)
             }
             "theme" -> startActivity<ConfigActivity> { putExtra("configTag", ConfigTag.THEME_MANAGER) }
+            LISTENING_EFFECT_RESOURCE_TYPE -> openListeningEffect(entry)
             HOME_WIDGET_SKIN_TYPE -> lifecycleScope.launch {
                 if (!AppConfig.showHome) {
                     toastOnUi("请先在界面布局中开启首页")
@@ -190,6 +200,31 @@ class ResourceCenterActivity : BaseActivity<ComposeActivityBinding>() {
                 }
             }
         }
+    }
+
+    private fun openListeningEffect(entry: ResourceEntry) {
+        val id = ResourceRepository.state.value.installed(entry.item.id)?.target
+        if (id == null || NgListeningEffectLibraryStore.allEffects(this).none { it.id == id }) {
+            toastOnUi(getString(R.string.listening_effect_use_failed))
+            return
+        }
+        if (intent.getBooleanExtra(RETURN_LISTENING_EFFECT, false)) {
+            setResult(RESULT_OK, Intent().putExtra(LISTENING_EFFECT_REQUEST, id))
+            finish()
+            return
+        }
+        val player = when {
+            AudioPlayService.isRun && AudioPlay.book != null -> AudioPlayActivity::class.java
+            ReadBook.book != null -> ReadAloudPlayerActivity::class.java
+            AudioPlay.book != null -> AudioPlayActivity::class.java
+            else -> {
+                toastOnUi(getString(R.string.listening_effect_open_player))
+                return
+            }
+        }
+        startActivity(Intent(this, player)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(LISTENING_EFFECT_REQUEST, id))
     }
 }
 

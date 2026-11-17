@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import io.legado.app.help.home.HomeWidgetSkinPackage
 import io.legado.app.help.home.HomeWidgetSkinStore
 import io.legado.app.help.home.HomeWidgetSkinRecord
+import io.legado.app.help.config.NgListeningEffectLibraryStore
 import io.legado.app.help.pet.PetPluginStore
 import io.legado.app.help.pet.PetLocalManager
 import io.legado.app.help.pet.PetLocalRecord
@@ -35,6 +36,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -104,6 +106,7 @@ internal object ResourceRepository {
     init {
         scope.launch { PetPluginStore.revision.collect { reconcile() } }
         scope.launch { HomeWidgetSkinStore.revision.collect { reconcile() } }
+        scope.launch { NgListeningEffectLibraryStore.observe(appCtx).drop(1).collect { reconcile() } }
     }
 
     /** ViewModel持有租约，配置变化不重开会话，最后一个页面退出才释放远端索引。 */
@@ -643,7 +646,9 @@ internal object ResourceRepository {
     /** Fetch only the catalog image, independently of resource installation or plugin execution. */
     suspend fun catalogPreview(entry: ResourceEntry, detail: Boolean, allowDownload: Boolean = true): Bitmap? = withContext(Dispatchers.IO) {
         val preview = entry.item.preview
-        if (entry.category.type !in setOf("font", "pet", "read_preset") || preview == null) return@withContext null
+        if (!ResourceProtocol.supportsCatalogPreview(entry.category.type) || preview == null) {
+            return@withContext null
+        }
         try {
             ResourceProtocol.validatePreviewSource(entry)
             val image = requireNotNull(if (detail) preview.detail else preview.thumbnail)
@@ -842,7 +847,7 @@ internal object ResourceRepository {
                         mutableState.update { it.copy(tasks = it.tasks - id) }
                         return@launch
                     }
-                    val otherThemeTargets = if (entry.category.type == "theme") {
+                    val otherThemeTargets = if (entry.category.type in setOf("theme", LISTENING_EFFECT_RESOURCE_TYPE)) {
                         records.filter { it.entry.category.type == entry.category.type && it.entry.item.id != id }
                             .mapTo(hashSetOf()) { it.target }
                     } else emptySet()

@@ -94,7 +94,7 @@ internal object ResourceInstaller {
         "read_preset" -> ReadBookConfig.resourcePresetFingerprint(record.target)
         "tts" -> if (record.entry.isOfflineTts) OfflineTtsResourceInstaller.fingerprint() else
             TtsEngineStore.engine(record.target)?.let { ResourceProtocol.hash(it.script.toByteArray()) }
-        "theme", "listening_effect" -> NgEffectPackageLibrary.current(appCtx, packageKind(record.entry)).savedThemes.firstOrNull { it.id == record.target }?.let(::themeHash)
+        "theme", LISTENING_EFFECT_RESOURCE_TYPE -> NgEffectPackageLibrary.current(appCtx, packageKind(record.entry)).savedThemes.firstOrNull { it.id == record.target }?.let(::themeHash)
         else -> null
     }
 
@@ -157,7 +157,8 @@ internal object ResourceInstaller {
             HOME_WIDGET_SKIN_TYPE -> prepareHomeWidgetSkin(entry, payload, mode, confirmedWidgetSkinReplacement, expectedWidgetSkin)
             "tts" -> if (entry.isOfflineTts) OfflineTtsResourceInstaller.prepare(entry, payload, old, mode, confirmedTtsConflict)
                 else prepareTts(entry, payload, old, mode, confirmedTtsConflict)
-            "theme" -> prepareTheme(entry, payload, old, mode, confirmedThemeConflict, otherThemeTargets)
+            "theme", LISTENING_EFFECT_RESOURCE_TYPE ->
+                prepareTheme(entry, payload, old, mode, confirmedThemeConflict, otherThemeTargets)
             "pet" -> {
                 require(mode != ResourceInstallMode.COPY) { "宠物插件不支持安装副本" }
                 val id = requireNotNull(entry.item.payload.pluginId)
@@ -329,7 +330,7 @@ internal object ResourceInstaller {
         })
     }
 
-    private fun packageKind(entry: ResourceEntry) = if (entry.category.type == "listening_effect")
+    private fun packageKind(entry: ResourceEntry) = if (entry.category.type == LISTENING_EFFECT_RESOURCE_TYPE)
         NgEffectPackageKind.LISTENING_EFFECT else NgEffectPackageKind.THEME
 
     private suspend fun prepareTheme(
@@ -344,13 +345,14 @@ internal object ResourceInstaller {
         val pending = NgThemePackageManager.inspectTheme(appCtx, Uri.fromFile(payload), kind, findPrevious = false).getOrThrow()
         var detached: NgManagedTheme? = null
         try {
+            val kindName = if (kind == NgEffectPackageKind.THEME) "主题" else "动效包"
             val copy = mode == ResourceInstallMode.COPY
             val publishedId = pending.theme.id.takeIf { it.isNotEmpty() }
             val savedThemes = if (copy) emptyList() else NgEffectPackageLibrary.current(appCtx, kind).savedThemes
             val receiptTheme = savedThemes.firstOrNull { it.id == old?.target }
             val current = receiptTheme ?: savedThemes.firstOrNull { it.id == publishedId }
             val target = if (copy) null else current?.id ?: old?.target ?: publishedId
-            check(confirmedThemeConflict == null || current != null) { "本地主题已变化，请重新选择下载。" }
+            check(confirmedThemeConflict == null || current != null) { "本地${kindName}已变化，请重新选择下载。" }
             if (current != null) {
                 val canReplace = (current.effect == null) == (pending.theme.effect == null) &&
                     current.id !in otherThemeTargets
@@ -358,8 +360,8 @@ internal object ResourceInstaller {
                     val conflict = ThemeResourceConflict(current, entry.item.payload.sha256, canReplace)
                     if (mode != ResourceInstallMode.REPLACE || !canReplace || confirmedThemeConflict != conflict) {
                         throw ResourceConflict(
-                            if (canReplace) "本地已有相同 ID 的主题，请选择保留、替换或安装副本。"
-                            else "相同 ID 已被其他主题占用，可保留本地或安装副本。",
+                            if (canReplace) "本地已有相同 ID 的${kindName}，请选择保留、替换或安装副本。"
+                            else "相同 ID 已被其他${kindName}占用，可保留本地或安装副本。",
                             conflict,
                         )
                     }

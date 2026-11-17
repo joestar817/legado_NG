@@ -1,5 +1,7 @@
 package io.legado.app.ui.book.read.aloud
 
+import io.legado.app.model.ReadBook
+
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.LinearEasing
@@ -228,8 +230,8 @@ internal fun ReadAloudPlayerScreen(
                     ReadAloudFluidMotionBackground(settings = state.motionSettings)
                 }
 
-                ListeningMotionEffect.CARTOON -> {
-                    ReadAloudCartoonMotionBackground(settings = state.motionSettings)
+                ListeningMotionEffect.PACKAGE -> {
+                    ReadAloudEffectPackageBackground(state.motionSettings, ReadBook.book, state.sourceOrigin)
                 }
             }
         }

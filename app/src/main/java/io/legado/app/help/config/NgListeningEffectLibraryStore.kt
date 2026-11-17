@@ -78,12 +78,14 @@ internal object NgListeningEffectLibraryStore {
         addOrReplace(context, effect)
     }
 
-    suspend fun removeAsync(context: Context, id: String): NgManagedTheme? = withContext(NonCancellable + Dispatchers.IO) {
+    suspend fun removeAsync(context: Context, expected: NgManagedTheme): NgManagedTheme? = withContext(NonCancellable + Dispatchers.IO) {
         synchronized(lock) {
             ensureInitialized(context)
+            val id = expected.id
             val removed = state.value.savedThemes.firstOrNull { it.id == id } ?: return@synchronized null
+            check(removed == expected) { "动效包已变化，请重新选择" }
             val updated = state.value.savedThemes.filterNot { it.id == id }
-            persist(context, updated)
+            persist(context, updated, removedPackageId = id)
             state.value = NgThemeLibraryState(updated)
             EffectThemeRuntime.invalidate(id, "player")
             removed.packageRootPath?.takeIf { path -> updated.none { it.packageRootPath == path } }
@@ -107,8 +109,11 @@ internal object NgListeningEffectLibraryStore {
         }
     }
 
-    private fun persist(context: Context, effects: List<NgManagedTheme>) {
-        check(context.defaultSharedPreferences.edit().putString(KEY, GSON.toJson(effects)).commit()) {
+    private fun persist(context: Context, effects: List<NgManagedTheme>, removedPackageId: String? = null) {
+        val prefs = context.defaultSharedPreferences
+        val edit = prefs.edit().putString(KEY, GSON.toJson(effects))
+        if (removedPackageId != null) ListeningMotionConfig.clearRemovedPackage(prefs, edit, removedPackageId)
+        check(edit.commit()) {
             "无法保存听书特效列表"
         }
     }

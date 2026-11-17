@@ -1,5 +1,7 @@
 package io.legado.app.ui.book.audio
 
+import io.legado.app.ui.book.read.aloud.LISTENING_EFFECT_REQUEST
+
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
@@ -91,19 +93,35 @@ class AudioPlayActivity :
         AudioPlay.register(this)
         initContent()
         observeViewModel()
-        initializeFromIntent(intent)
+        if (!intent.hasExtra(LISTENING_EFFECT_REQUEST)) initializeFromIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        initializeFromIntent(intent)
+        if (!intent.hasExtra(LISTENING_EFFECT_REQUEST)) initializeFromIntent(intent)
     }
 
     override fun onResume() {
         super.onResume()
         refreshStaticState()
         refreshListeningTheme()
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        val id = intent.getStringExtra(LISTENING_EFFECT_REQUEST) ?: return
+        val manager = supportFragmentManager
+        if (manager.isStateSaved) return
+        intent.removeExtra(LISTENING_EFFECT_REQUEST)
+        val current = manager.findFragmentByTag("audioMore") as? AudioPlayMoreDialog
+        if (current != null) {
+            current.showEffectPackage(id)
+        } else {
+            AudioPlayMoreDialog().apply {
+                arguments = Bundle().apply { putString(LISTENING_EFFECT_REQUEST, id) }
+            }.show(manager, "audioMore")
+        }
     }
 
     private fun initContent() {

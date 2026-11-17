@@ -69,7 +69,7 @@ import io.legado.app.ui.book.read.aloud.ListeningLoadingBars
 import io.legado.app.ui.book.read.aloud.ListeningPlayerBackground
 import io.legado.app.ui.book.read.aloud.PlayerCover
 import io.legado.app.ui.book.read.aloud.PlayerTranslucentSurface
-import io.legado.app.ui.book.read.aloud.ReadAloudCartoonMotionBackground
+import io.legado.app.ui.book.read.aloud.ReadAloudEffectPackageBackground
 import io.legado.app.ui.book.read.aloud.ReadAloudFireMotionBackground
 import io.legado.app.ui.book.read.aloud.ReadAloudFluidMotionBackground
 import io.legado.app.ui.book.read.aloud.ReadAloudProgressSlider
@@ -164,8 +164,8 @@ internal fun AudioPlayScreen(
                     ReadAloudFluidMotionBackground(settings = state.motionSettings)
                 }
 
-                ListeningMotionEffect.CARTOON -> {
-                    ReadAloudCartoonMotionBackground(settings = state.motionSettings)
+                ListeningMotionEffect.PACKAGE -> {
+                    ReadAloudEffectPackageBackground(state.motionSettings, AudioPlay.book, state.sourceOrigin)
                 }
             }
         }

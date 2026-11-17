@@ -179,6 +179,13 @@ internal object NgThemeArchive {
             require(manifest.version in 1..2) { "不支持的资源包版本" }
             val theme = manifest.theme
             kind.requireContent(theme)
+            if (kind == NgEffectPackageKind.LISTENING_EFFECT) {
+                require(manifest.lightDrawerImageAsset == null && manifest.darkDrawerImageAsset == null &&
+                    manifest.coverAlbums.isNullOrEmpty() && manifest.selectedCoverAlbumRef == null &&
+                    theme.drawerProfile == null && theme.coverProfile == null && theme.ownedCoverAlbumIds.isNullOrEmpty()) {
+                    "听书动效包不能包含主题抽屉或封面图集"
+                }
+            }
             require(theme.schemaVersion == NG_MANAGED_THEME_SCHEMA_VERSION && theme.name.trim().length in 1..120 &&
                 !theme.isBuiltIn && (kind == NgEffectPackageKind.THEME || id.isNotEmpty())) { "主题信息无效" }
             theme.normalized()

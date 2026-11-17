@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="listening_effect_packages">动效包</string>
+    <string name="listening_effect_summary">动效包 · %1$s</string>
+    <string name="listening_effect_installed_header">已安装</string>
+    <string name="listening_effect_empty">暂无动效包</string>
+    <string name="listening_effect_manage">管理动效包</string>
+    <string name="listening_effect_get">获取动效</string>
+    <string name="listening_effect_import_failed">导入动效包失败</string>
+    <string name="listening_effect_using">使用中</string>
+    <string name="listening_effect_delete">删除动效包</string>
+    <string name="listening_effect_delete_failed">删除动效包失败</string>
+    <string name="listening_effect_delete_confirm">删除「%1$s」？</string>
+    <string name="listening_effect_use_failed">无法使用动效包</string>
+    <string name="listening_effect_reset_parameters">不兼容的参数将恢复默认。</string>
+    <string name="listening_effect_open_player">请先打开听书播放器，再选择动效</string>
+</resources>

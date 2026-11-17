@@ -124,6 +124,7 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.hasExtra(LISTENING_EFFECT_REQUEST)) return
         refreshListeningTheme(force = true)
         refreshStaticState()
         refreshVoiceLabelIfDirty()
@@ -139,6 +140,22 @@ class ReadAloudPlayerActivity : BaseActivity<ComposeActivityBinding>(
         refreshStaticState()
         refreshVoiceLabelIfDirty()
         refreshPreparationState()
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        val id = intent.getStringExtra(LISTENING_EFFECT_REQUEST) ?: return
+        val manager = supportFragmentManager
+        if (manager.isStateSaved) return
+        intent.removeExtra(LISTENING_EFFECT_REQUEST)
+        val current = manager.findFragmentByTag("readAloudMore") as? ReadAloudMoreDialog
+        if (current != null) {
+            current.showEffectPackage(id)
+        } else {
+            ReadAloudMoreDialog().apply {
+                arguments = Bundle().apply { putString(LISTENING_EFFECT_REQUEST, id) }
+            }.show(manager, "readAloudMore")
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {

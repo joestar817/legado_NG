@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="listening_effect_packages">Effect packs</string>
+    <string name="listening_effect_summary">Effect pack · %1$s</string>
+    <string name="listening_effect_installed_header">Installed</string>
+    <string name="listening_effect_empty">No effect packs installed</string>
+    <string name="listening_effect_manage">Manage effect packs</string>
+    <string name="listening_effect_get">Get effects</string>
+    <string name="listening_effect_import_failed">Could not import the effect pack</string>
+    <string name="listening_effect_using">In use</string>
+    <string name="listening_effect_delete">Delete effect pack</string>
+    <string name="listening_effect_delete_failed">Could not delete the effect pack</string>
+    <string name="listening_effect_delete_confirm">Delete %1$s?</string>
+    <string name="listening_effect_use_failed">Could not use the effect pack</string>
+    <string name="listening_effect_reset_parameters">Incompatible settings will reset to their defaults.</string>
+    <string name="listening_effect_open_player">Open a listening player to choose the effect.</string>
+</resources>

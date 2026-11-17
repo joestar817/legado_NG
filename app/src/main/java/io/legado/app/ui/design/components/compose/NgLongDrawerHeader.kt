@@ -63,6 +63,7 @@ fun NgLongDrawerHeader(
     centerTitle: Boolean = false,
     modifier: Modifier = Modifier,
     navigationActive: Boolean = false,
+    navigationContent: (@Composable () -> Unit)? = null,
 ) {
     val colors = NgTheme.colors
     val hasSecondaryAction = secondaryActionIconRes != null && onSecondaryActionClick != null
@@ -74,7 +75,12 @@ fun NgLongDrawerHeader(
                 .height(42.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (centerTitle) {
+            if (navigationContent != null) {
+                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                    navigationContent()
+                }
+                if (centerTitle && hasSecondaryAction) Spacer(Modifier.width(40.dp))
+            } else if (centerTitle) {
                 repeat(if (hasSecondaryAction) 2 else 1) { index ->
                     DrawerHeaderIconSlot(
                         iconRes = navigationIconRes.takeIf { index == 0 },

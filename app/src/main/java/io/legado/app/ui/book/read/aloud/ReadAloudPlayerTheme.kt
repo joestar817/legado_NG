@@ -1,16 +1,17 @@
 package io.legado.app.ui.book.read.aloud
 
 import android.content.Context
-import androidx.annotation.ColorInt
 import io.legado.app.data.entities.Book
-import io.legado.app.help.config.ListeningCartoonType
+import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ListeningMotionEffect
 import io.legado.app.help.config.ListeningMotionSettings
-import io.legado.app.help.config.scenePrimaryColor
+import io.legado.app.help.config.NgListeningEffectLibraryStore
+import io.legado.app.help.config.NgManagedTheme
+import io.legado.app.help.config.ThemeConfig
 import io.legado.app.ui.book.listen.ListeningCoverTheme
 import io.legado.app.ui.design.theme.NgThemeSnapshot
 
-/** 在书籍封面与当前卡通场景之间选择听书播放器的真实视觉取色源。 */
+/** 在书籍封面与已选动效包之间选择播放器取色源。 */
 internal object ReadAloudPlayerTheme {
 
     fun key(
@@ -19,9 +20,9 @@ internal object ReadAloudPlayerTheme {
         sourceOrigin: String?,
         settings: ListeningMotionSettings,
     ): String {
-        val cartoonType = activeCartoonType(context, settings)
-        return if (cartoonType != null) {
-            "cartoon:${cartoonType.storageValue}"
+        val pack = palettePackage(context, settings)
+        return if (pack != null) {
+            "effect:${pack.id}:${pack.publication?.sha256}:${pack.playerSeed(context)}"
         } else {
             "cover:${book?.bookUrl.orEmpty()}|${book?.getDisplayCover()}|${sourceOrigin.orEmpty()}"
         }
@@ -33,9 +34,9 @@ internal object ReadAloudPlayerTheme {
         sourceOrigin: String?,
         settings: ListeningMotionSettings,
     ): NgThemeSnapshot {
-        val cartoonType = activeCartoonType(context, settings)
-        return if (cartoonType != null) {
-            ListeningCoverTheme.seedSnapshot(context, cartoonType.playerThemeSeed())
+        val pack = palettePackage(context, settings)
+        return if (pack != null) {
+            ListeningCoverTheme.seedSnapshot(context, pack.playerSeed(context))
         } else {
             ListeningCoverTheme.cached(book, sourceOrigin)
                 ?: ListeningCoverTheme.fallback(context, book)
@@ -48,10 +49,10 @@ internal object ReadAloudPlayerTheme {
         sourceOrigin: String?,
         settings: ListeningMotionSettings,
     ): NgThemeSnapshot {
-        val cartoonType = activeCartoonType(context, settings)
+        val pack = palettePackage(context, settings)
         return when {
-            cartoonType != null -> {
-                ListeningCoverTheme.seedSnapshot(context, cartoonType.playerThemeSeed())
+            pack != null -> {
+                ListeningCoverTheme.seedSnapshot(context, pack.playerSeed(context))
             }
             book != null -> {
                 ListeningCoverTheme.resolve(context, book, sourceOrigin)
@@ -80,18 +81,16 @@ internal object ReadAloudPlayerTheme {
         resolveSnapshot(context, book, sourceOrigin, settings)
     )
 
-    private fun activeCartoonType(
+    private fun palettePackage(
         context: Context,
         settings: ListeningMotionSettings,
-    ): ListeningCartoonType? {
-        if (!settings.enabled || settings.effect != ListeningMotionEffect.CARTOON) return null
-        return settings.cartoonType.takeIf { it in context.availableCartoonTypes() }
+    ): NgManagedTheme? {
+        if (!settings.enabled || settings.effect != ListeningMotionEffect.PACKAGE || AppConfig.isEInkMode) return null
+        return NgListeningEffectLibraryStore.allEffects(context).firstOrNull {
+            it.id == settings.packageId && it.effect?.playerPalette == "theme"
+        }
     }
-}
 
-/**
- * 卡通场景使用已验收的固定主色，避免在相同背景下再次生成或漂移色种。
- * 场景素材更新时应连同对应主色一起重新验收。
- */
-@ColorInt
-internal fun ListeningCartoonType.playerThemeSeed(): Int = scenePrimaryColor()
+    private fun NgManagedTheme.playerSeed(context: Context): Int =
+        if (ThemeConfig.isDarkTheme(context)) colors.darkSeed else colors.lightSeed
+}
