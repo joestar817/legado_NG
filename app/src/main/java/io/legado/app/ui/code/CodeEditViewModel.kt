@@ -2,6 +2,7 @@ package io.legado.app.ui.code
 
 import android.app.Application
 import android.content.Intent
+import androidx.lifecycle.viewModelScope
 import io.github.rosemoe.sora.langs.textmate.TextMateLanguage
 import io.github.rosemoe.sora.langs.textmate.registry.FileProviderRegistry
 import io.github.rosemoe.sora.langs.textmate.registry.GrammarRegistry
@@ -17,6 +18,13 @@ import io.legado.app.help.http.BackstageWebView
 import io.legado.app.help.webView.WebJsExtensions.Companion.nameCache
 import io.legado.app.utils.printOnDebug
 import io.legado.app.utils.toastOnUi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.eclipse.tm4e.core.registry.IThemeSource
 import org.jsoup.Jsoup
 import splitties.init.appCtx
@@ -41,6 +49,11 @@ class CodeEditViewModel(application: Application) : BaseViewModel(application) {
     var writable = true
     var title: String? = null
     var textSessionId: String? = null
+    internal var sourceFieldText: String? = null
+        private set
+    private var sourceFieldCursor: Int? = null
+    private var checkpoint: Job? = null
+    private val sourceFieldDisk = Mutex()
 
     fun initSora() {
         //初始化sora加载
@@ -51,8 +64,13 @@ class CodeEditViewModel(application: Application) : BaseViewModel(application) {
     }
 
     fun initData(
-        intent: Intent, success: () -> Unit
+        intent: Intent,
+        restoredFieldCursor: Int? = null,
+        onFailure: () -> Unit = {},
+        success: () -> Unit,
     ) {
+        val retainedText = sourceFieldText
+        val retainedCursor = sourceFieldCursor
         execute {
             val cacheKey = intent.getStringExtra("cacheKey")
             val sessionId = intent.getStringExtra(CodeEditActivity.EXTRA_TEXT_SESSION_ID)
@@ -60,6 +78,12 @@ class CodeEditViewModel(application: Application) : BaseViewModel(application) {
                 initialText = CodeEditSessionStore.app.read(sessionId)
                     ?: throw Exception("未获取到代码编辑会话")
                 textSessionId = sessionId
+                if (intent.getBooleanExtra(CodeEditActivity.EXTRA_SOURCE_FIELD_SESSION, false)) {
+                    sourceFieldText = retainedText ?: restoredFieldCursor?.let {
+                        CodeEditSessionStore.app.readWorkingText(sessionId)
+                            ?: throw Exception("未获取到代码编辑草稿")
+                    }
+                }
             } else if (cacheKey != null) {
                 val cacheText = CacheManager.getFromMemory(cacheKey) as? String ?: throw Exception("未获取到查看文本")
                 writable = false
@@ -73,14 +97,39 @@ class CodeEditViewModel(application: Application) : BaseViewModel(application) {
                 intent.getStringExtra("languageName")?.let { languageName = it }
             }
             language = TextMateLanguage.create(languageName, AppConfig.editAutoComplete)
-            cursorPosition = intent.getIntExtra("cursorPosition", 0)
+            cursorPosition = retainedCursor ?: restoredFieldCursor ?: intent.getIntExtra("cursorPosition", 0)
             title = intent.getStringExtra("title")
         }.onSuccess {
             success.invoke()
         }.onError {
-            context.toastOnUi("error\n${it.localizedMessage}")
+            getApplication<Application>().toastOnUi("error\n${it.localizedMessage}")
             it.printOnDebug()
+            onFailure()
         }
+    }
+
+    internal fun checkpointSourceField(sessionId: String, text: String, cursor: Int) {
+        sourceFieldText = text
+        sourceFieldCursor = cursor
+        checkpoint?.cancel()
+        checkpoint = viewModelScope.launch {
+            try {
+                writeSourceField(sessionId, text)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLog.put("保存代码编辑草稿失败", error)
+            }
+        }
+    }
+
+    internal suspend fun finishSourceField(sessionId: String, text: String) {
+        checkpoint?.cancel()
+        writeSourceField(sessionId, text)
+    }
+
+    private suspend fun writeSourceField(sessionId: String, text: String) = withContext(IO) {
+        sourceFieldDisk.withLock { CodeEditSessionStore.app.writeWorkingText(sessionId, text) }
     }
 
     private fun isHtmlStr(text: String): Boolean {

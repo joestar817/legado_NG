@@ -87,7 +87,12 @@ class BookSourceCacheStore(
         }
 
         fun clear(sourceUrls: Collection<String>, cacheKeys: Collection<String>) {
-            if (sourceUrls.isEmpty()) return
+            deleteStoredCache(sourceUrls, cacheKeys).invoke()
+        }
+
+        /** Deletes Room rows and returns the memory and file cleanup for after commit. */
+        fun deleteStoredCache(sourceUrls: Collection<String>, cacheKeys: Collection<String>): () -> Unit {
+            if (sourceUrls.isEmpty()) return {}
             val namespaces = sourceUrls.distinct().map(BookSourceStorageScope::namespace)
             val storagePrefixes = namespaces.map { "book_source_cache_$it:" }
             val registryPrefixes = namespaces.map { "book_source_cache_registry_$it:" }
@@ -101,14 +106,16 @@ class BookSourceCacheStore(
             }
 
             appDb.cacheDao.deleteByKeysChunked((scopedKeys + registryValues).distinct())
-            CacheManager.deleteMemoryByPrefixes(prefixes)
-            registryValues.forEach(CacheManager::deleteMemory)
-            val globalFileCache = ACache.get()
-            registryValues.forEach(globalFileCache::remove)
-            namespaces.forEach { namespace ->
-                ACache.get(
-                    File(appCtx.cacheDir, "bookSourceCache${File.separator}$namespace")
-                ).clear()
+            return {
+                CacheManager.deleteMemoryByPrefixes(prefixes)
+                registryValues.forEach(CacheManager::deleteMemory)
+                val globalFileCache = ACache.get()
+                registryValues.forEach(globalFileCache::remove)
+                namespaces.forEach { namespace ->
+                    ACache.get(
+                        File(appCtx.cacheDir, "bookSourceCache${File.separator}$namespace")
+                    ).clear()
+                }
             }
         }
     }

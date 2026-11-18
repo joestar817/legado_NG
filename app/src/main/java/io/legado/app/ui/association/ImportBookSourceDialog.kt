@@ -3,6 +3,7 @@ package io.legado.app.ui.association
 import android.app.Dialog
 import android.content.DialogInterface
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -105,6 +106,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 private const val BOOK_SOURCE_IMPORT_SHEET_HEIGHT_RATIO = 0.90f
 private val BookSourceImportRowMinHeight = 54.dp
@@ -213,7 +215,11 @@ class ImportBookSourceDialog() : BottomSheetDialogFragment(), CodeDialog.Callbac
         when {
             source.isNullOrEmpty() -> dismissAllowingStateLoss()
             viewModel.successLiveData.value == null && viewModel.errorLiveData.value == null -> {
-                viewModel.importSource(source)
+                if (arguments?.getBoolean(ARG_EDITOR_PREVIEW) == true) {
+                    viewModel.importEditorPreview(source)
+                } else {
+                    viewModel.importSource(source)
+                }
             }
         }
     }
@@ -382,9 +388,19 @@ class ImportBookSourceDialog() : BottomSheetDialogFragment(), CodeDialog.Callbac
         }
     }
 
-    private companion object {
-        const val ARG_SOURCE = "source"
-        const val ARG_FINISH_ON_DISMISS = "finishOnDismiss"
+    companion object {
+        private const val ARG_SOURCE = "source"
+        private const val ARG_FINISH_ON_DISMISS = "finishOnDismiss"
+        private const val ARG_EDITOR_PREVIEW = "editorPreview"
+        internal const val EDITOR_PREVIEW_PREFIX = "book-source-editor-preview-"
+
+        internal fun createEditorPreviewFile(cacheDir: File): File =
+            File.createTempFile(EDITOR_PREVIEW_PREFIX, ".json", cacheDir)
+
+        internal fun forEditorPreview(file: File): ImportBookSourceDialog =
+            ImportBookSourceDialog(Uri.fromFile(file).toString()).apply {
+                arguments?.putBoolean(ARG_EDITOR_PREVIEW, true)
+            }
     }
 }
 

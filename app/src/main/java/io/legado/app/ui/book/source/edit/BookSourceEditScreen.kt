@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -76,6 +77,7 @@ import io.legado.app.ui.design.components.compose.NgFormSwitchRow
 import io.legado.app.ui.design.components.compose.rememberNgCodeVisualTransformation
 import io.legado.app.ui.design.theme.NgTheme
 import io.legado.app.ui.widget.text.EditEntity
+import io.legado.app.ui.widget.dialog.UrlOptionInput
 import io.legado.app.data.entities.KeyboardAssist
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -97,8 +99,11 @@ internal data class BookSourceEditControls(
 )
 
 @Immutable
+internal data class BookSourceFieldId(val tab: Int, val key: String)
+
+@Immutable
 internal data class BookSourceEditorSelection(
-    val key: String,
+    val field: BookSourceFieldId,
     val start: Int,
     val end: Int,
 )
@@ -107,21 +112,6 @@ internal data class BookSourceEditorSelection(
 internal data class BookSourceKeyboardHelpAction(
     val label: String,
     val value: String,
-)
-
-@Immutable
-internal data class BookSourceUrlOptionInput(
-    val useWebView: Boolean = false,
-    val method: String = "",
-    val charset: String = "",
-    val headers: String = "",
-    val body: String = "",
-    val type: String = "",
-    val retry: String = "",
-    val webJs: String = "",
-    val js: String = "",
-    val bodyJs: String = "",
-    val dnsIp: String = "",
 )
 
 @Composable
@@ -142,8 +132,8 @@ internal fun BookSourceEditScreen(
     onBack: () -> Unit,
     onAction: (Int) -> Unit,
     onPrepareOverflow: () -> Boolean,
-    onFieldValueChange: (String, String, Int, Int) -> Unit,
-    onFieldFocused: (String, Int, Int) -> Unit,
+    onFieldValueChange: (BookSourceFieldId, String, Int, Int) -> Unit,
+    onFieldFocused: (BookSourceFieldId, Int, Int) -> Unit,
     onKeyboardHelpAction: (String) -> Unit,
     onOpenKeyboardConfig: () -> Unit,
     onInsertText: (String) -> Unit,
@@ -243,11 +233,12 @@ internal fun BookSourceEditScreen(
             state = listState,
             contentPadding = PaddingValues(bottom = 8.dp),
         ) {
-            itemsIndexed(
+            items(
                 items = editEntities,
-                key = { index, entity -> "$sourceRevision:$selectedTab:$index:${entity.key}" },
-            ) { _, entity ->
+                key = { entity -> "$sourceRevision:$selectedTab:${entity.key}" },
+            ) { entity ->
                 BookSourceEditField(
+                    field = BookSourceFieldId(selectedTab, entity.key),
                     editEntity = entity,
                     sourceRevision = sourceRevision,
                     fieldValueRevision = fieldValueRevision,
@@ -274,19 +265,24 @@ internal fun BookSourceEditScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BookSourceEditField(
+    field: BookSourceFieldId,
     editEntity: EditEntity,
     sourceRevision: Int,
     fieldValueRevision: Int,
     editEntityMaxLine: Int,
     focusedField: BookSourceEditorSelection?,
-    onFieldValueChange: (String, String, Int, Int) -> Unit,
-    onFieldFocused: (String, Int, Int) -> Unit,
+    onFieldValueChange: (BookSourceFieldId, String, Int, Int) -> Unit,
+    onFieldFocused: (BookSourceFieldId, Int, Int) -> Unit,
 ) {
-    var value by remember(editEntity.key, sourceRevision) {
+    var value by remember(field, sourceRevision) {
+        val text = editEntity.value.orEmpty()
+        val selection = focusedField?.takeIf { it.field == field }?.let {
+            TextRange(it.start.coerceIn(0, text.length), it.end.coerceIn(0, text.length))
+        } ?: TextRange(text.length)
         mutableStateOf(
             TextFieldValue(
-                text = editEntity.value.orEmpty(),
-                selection = TextRange(editEntity.value.orEmpty().length),
+                text = text,
+                selection = selection,
             )
         )
     }
@@ -298,8 +294,8 @@ private fun BookSourceEditField(
     )
     LaunchedEffect(fieldValueRevision, editEntity.value) {
         val text = editEntity.value.orEmpty()
-        if (value.text != text || focusedField?.key == editEntity.key) {
-            val selection = focusedField?.takeIf { it.key == editEntity.key }?.let {
+        if (value.text != text || focusedField?.field == field) {
+            val selection = focusedField?.takeIf { it.field == field }?.let {
                 TextRange(
                     it.start.coerceIn(0, text.length),
                     it.end.coerceIn(0, text.length),
@@ -324,7 +320,7 @@ private fun BookSourceEditField(
             onValueChange = { next ->
                 value = next
                 onFieldValueChange(
-                    editEntity.key,
+                    field,
                     next.text,
                     next.selection.start,
                     next.selection.end,
@@ -340,7 +336,7 @@ private fun BookSourceEditField(
                 .onFocusChanged { state ->
                     if (state.isFocused) {
                         onFieldFocused(
-                            editEntity.key,
+                            field,
                             value.selection.start,
                             value.selection.end,
                         )
@@ -618,9 +614,9 @@ internal fun BookSourceGroupSelectorDialog(
 internal fun BookSourceUrlOptionDialog(
     charsets: List<String>,
     onDismiss: () -> Unit,
-    onConfirm: (BookSourceUrlOptionInput) -> Unit,
+    onConfirm: (UrlOptionInput) -> Unit,
 ) {
-    var input by remember { mutableStateOf(BookSourceUrlOptionInput()) }
+    var input by remember { mutableStateOf(UrlOptionInput()) }
     val arrow = painterResource(R.drawable.ic_arrow_drop_down)
     Dialog(onDismissRequest = onDismiss) {
         NgDialog(

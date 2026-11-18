@@ -33,9 +33,13 @@ internal class CodeEditSessionStore(
     }
 
     @Synchronized
-    fun read(sessionId: String): String? {
-        val file = sessionFile(sessionId)
-        val backup = backupFile(sessionId)
+    fun read(sessionId: String): String? = readFile(sessionFile(sessionId))
+
+    @Synchronized
+    fun readWorkingText(sessionId: String): String? = readFile(sessionFile(sessionId, working = true))
+
+    private fun readFile(file: File): String? {
+        val backup = sideFile(file, "bak")
         if (!file.exists() && backup.exists()) {
             backup.renameTo(file)
         }
@@ -44,10 +48,20 @@ internal class CodeEditSessionStore(
 
     @Synchronized
     fun write(sessionId: String, text: String) {
+        writeFile(sessionFile(sessionId), text)
+    }
+
+    @Synchronized
+    fun writeWorkingText(sessionId: String, text: String) {
+        val original = sessionFile(sessionId)
+        if (!original.isFile) throw IOException("代码编辑会话已关闭")
+        writeFile(sessionFile(sessionId, working = true), text)
+    }
+
+    private fun writeFile(file: File, text: String) {
         ensureDirectory()
-        val file = sessionFile(sessionId)
-        val pending = pendingFile(sessionId)
-        val backup = backupFile(sessionId)
+        val pending = sideFile(file, "new")
+        val backup = sideFile(file, "bak")
         pending.delete()
         pending.writeText(text, Charsets.UTF_8)
 
@@ -69,9 +83,11 @@ internal class CodeEditSessionStore(
 
     @Synchronized
     fun delete(sessionId: String) {
-        sessionFile(sessionId).delete()
-        pendingFile(sessionId).delete()
-        backupFile(sessionId).delete()
+        listOf(sessionFile(sessionId), sessionFile(sessionId, working = true)).forEach { file ->
+            file.delete()
+            sideFile(file, "new").delete()
+            sideFile(file, "bak").delete()
+        }
         directory.delete()
     }
 
@@ -84,12 +100,10 @@ internal class CodeEditSessionStore(
         }
     }
 
-    private fun sessionFile(sessionId: String): File {
+    private fun sessionFile(sessionId: String, working: Boolean = false): File {
         require(sessionIdPattern.matches(sessionId)) { "无效的代码编辑会话" }
-        return File(directory, "$sessionId.txt")
+        return File(directory, if (working) "$sessionId.working.txt" else "$sessionId.txt")
     }
 
-    private fun pendingFile(sessionId: String) = File(directory, "$sessionId.new")
-
-    private fun backupFile(sessionId: String) = File(directory, "$sessionId.bak")
+    private fun sideFile(file: File, suffix: String) = File(directory, "${file.nameWithoutExtension}.$suffix")
 }

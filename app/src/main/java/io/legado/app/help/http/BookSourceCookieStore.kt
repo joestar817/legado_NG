@@ -172,7 +172,12 @@ class BookSourceCookieStore(
         }
 
         fun clear(sourceUrls: Collection<String>) {
-            if (sourceUrls.isEmpty()) return
+            deleteStoredCookies(sourceUrls).invoke()
+        }
+
+        /** Deletes Room rows and returns the memory cleanup for after commit. */
+        fun deleteStoredCookies(sourceUrls: Collection<String>): () -> Unit {
+            if (sourceUrls.isEmpty()) return {}
             val prefixes = sourceUrls.distinct().map { sourceUrl ->
                 val namespace = BookSourceStorageScope.namespace(sourceUrl)
                 "book_source_cookie_$namespace:"
@@ -181,7 +186,7 @@ class BookSourceCookieStore(
                 url.startsWith("book_source_cookie_") && prefixes.any(url::startsWith)
             }
             appDb.cookieDao.deleteByUrlsChunked(scopedUrls)
-            CacheManager.deleteMemoryByPrefixes(prefixes)
+            return { CacheManager.deleteMemoryByPrefixes(prefixes) }
         }
     }
 }

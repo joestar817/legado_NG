@@ -92,7 +92,7 @@ class UrlOptionDialog(
     }
 }
 
-private data class UrlOptionInput(
+internal data class UrlOptionInput(
     val useWebView: Boolean = false,
     val method: String = "",
     val charset: String = "",
@@ -106,7 +106,7 @@ private data class UrlOptionInput(
     val dnsIp: String = "",
 )
 
-private fun UrlOptionInput.toUrlOption(): AnalyzeUrl.UrlOption {
+internal fun UrlOptionInput.toUrlOption(): AnalyzeUrl.UrlOption {
     return AnalyzeUrl.UrlOption().apply {
         useWebView(this@toUrlOption.useWebView)
         setMethod(method)
@@ -117,8 +117,7 @@ private fun UrlOptionInput.toUrlOption(): AnalyzeUrl.UrlOption {
         setType(type)
         setWebJs(webJs)
         setJs(js)
-        // 保留旧实现的实际行为：bodyJs 最终覆盖 js 字段。
-        setJs(bodyJs)
+        setBodyJs(bodyJs)
         setDnsIp(dnsIp)
     }
 }

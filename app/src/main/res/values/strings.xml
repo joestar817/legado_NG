@@ -1307,6 +1307,12 @@
     <string name="input_replace_url">Input replacement rule URL</string>
     <string name="get_book_list_success">Search list obtained successfully%d</string>
     <string name="non_null_name_url">name and URL cannot be empty</string>
+    <string name="source_editor_address_exists">Source address already exists</string>
+    <string name="source_editor_original_missing">Source no longer exists. Reopen the editor.</string>
+    <string name="source_editor_original_changed">Source was updated elsewhere. Copy your draft and reopen the editor.</string>
+    <string name="source_editor_draft_restore_failed">Could not restore the draft</string>
+    <string name="source_editor_draft_checkpoint_failed">Could not store the draft. Try again.</string>
+    <string name="source_editor_result_failed">Could not apply the result. Your draft was kept.</string>
     <string name="gallery">Gallery</string>
     <string name="get_ali_pay_hb">get AliPay red envelopes</string>
     <string name="non_update_url">No update address</string>

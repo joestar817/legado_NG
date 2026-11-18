@@ -2,6 +2,7 @@ package io.legado.app.ui.association
 
 import io.legado.app.data.entities.BookSource
 import io.legado.app.help.source.isEmptyConfiguration
+import io.legado.app.help.source.writeSourceJson
 import io.legado.app.utils.GSON
 import java.io.Closeable
 import java.io.File
@@ -91,7 +92,7 @@ internal class BookSourceImportStore(cacheDir: File) : Closeable {
             override fun write(value: Int) = file.write(value)
             override fun write(bytes: ByteArray, offset: Int, length: Int) = file.write(bytes, offset, length)
         }
-        OutputStreamWriter(output, Charsets.UTF_8).buffered().use { GSON.toJson(source, it) }
+        OutputStreamWriter(output, Charsets.UTF_8).buffered().use(source::writeSourceJson)
         return Record(start, file.filePointer - start)
     }
 

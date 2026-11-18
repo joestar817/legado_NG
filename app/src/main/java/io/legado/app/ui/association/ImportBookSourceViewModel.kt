@@ -18,13 +18,14 @@ import io.legado.app.help.http.newCallResponseBody
 import io.legado.app.help.http.okHttpClient
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.source.isEmptyConfiguration
+import io.legado.app.help.source.toSourceJson
 import io.legado.app.model.RuleUpdate
-import io.legado.app.utils.GSON
 import io.legado.app.utils.inputStream
 import io.legado.app.utils.isAbsUrl
 import io.legado.app.utils.isUri
 import io.legado.app.utils.splitNotBlank
 import io.legado.app.utils.toastOnUi
+import java.io.File
 import java.io.StringReader
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers.IO
@@ -41,6 +42,7 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
 
     internal val allSources = arrayListOf<BookSourceImportItem>()
     private val sourceStore = lazy { BookSourceImportStore(app.cacheDir) }
+    private var editorPreviewFile: File? = null
     val checkSources = arrayListOf<BookSourcePart?>()
     val selectStatus = arrayListOf<Boolean>()
     val newSourceStatus = arrayListOf<Boolean>()
@@ -158,7 +160,7 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
                 importSourceUrl(content)
             allowSourceUrls && !content.startsWith("[") && !content.startsWith("{") && content.isUri() -> {
                 val uri = Uri.parse(content)
-                uri.inputStream(context).getOrThrow().bufferedReader().use {
+                uri.inputStream(getApplication<Application>()).getOrThrow().bufferedReader().use {
                     skippedSourceCount += readBookSourceImport(it, false, ::appendPreviewSource, ::importSourceUrl)
                 }
             }
@@ -246,7 +248,17 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
         allSources.add(sourceStore.value.append(source))
     }
 
-    fun previewSourceCode(index: Int): String = GSON.toJson(sourceStore.value.read(index))
+    fun previewSourceCode(index: Int): String = sourceStore.value.read(index).toSourceJson()
+
+    internal fun importEditorPreview(source: String) {
+        if (editorPreviewFile != null) return
+        val uri = Uri.parse(source)
+        val path = uri.path?.takeIf { uri.scheme == "file" } ?: return
+        val file = File(path)
+        if (!file.name.startsWith(ImportBookSourceDialog.EDITOR_PREVIEW_PREFIX) || file.extension != "json") return
+        editorPreviewFile = file
+        importSource(source)
+    }
 
     private fun releaseSourceStore() {
         if (sourceStore.isInitialized()) Coroutine.async { sourceStore.value.close() }
@@ -255,6 +267,7 @@ class ImportBookSourceViewModel(app: Application) : BaseViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         releaseSourceStore()
+        editorPreviewFile?.let { file -> Coroutine.async { file.delete() } }
     }
 
 }

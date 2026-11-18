@@ -7,8 +7,11 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.withStateAtLeast
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import io.legado.app.R
 import io.legado.app.base.ComposeActivityBinding
@@ -26,19 +29,28 @@ import io.legado.app.data.entities.rule.SearchRule
 import io.legado.app.data.entities.rule.TocRule
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.LocalConfig
+import io.legado.app.help.source.toSourceJson
+import io.legado.app.help.source.writeSourceJson
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
+import io.legado.app.ui.association.ImportBookSourceDialog
 import io.legado.app.ui.book.search.SearchActivity
 import io.legado.app.ui.book.source.debug.BookSourceDebugActivity
 import io.legado.app.ui.code.CodeEditActivity
+import io.legado.app.ui.source.edit.SourceEditorField
 import io.legado.app.ui.source.edit.SourceEditorHost
+import io.legado.app.ui.source.edit.SourceEditorRequest
+import io.legado.app.ui.source.edit.SourceEditorSession
+import io.legado.app.ui.source.edit.SourceEditorWindow
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.qrcode.QrCodeResult
 import io.legado.app.ui.source.edit.SourceEditCodeHighlighter
+import io.legado.app.ui.source.edit.hasSameEditorConfiguration
+import io.legado.app.ui.source.edit.putSourceFieldSession
 import io.legado.app.ui.widget.dialog.VariableDialog
+import io.legado.app.ui.widget.dialog.toUrlOption
 import io.legado.app.ui.widget.keyboard.KeyboardAssistsConfig
 import io.legado.app.ui.widget.text.EditEntity
-import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.utils.GSON
 import io.legado.app.utils.SelectFileContract
 import io.legado.app.utils.isContentScheme
@@ -53,10 +65,14 @@ import io.legado.app.utils.takePersistableReadPermission
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.ArrayDeque
 
 class BookSourceEditActivity :
@@ -66,64 +82,86 @@ class BookSourceEditActivity :
     override val binding by viewBinding(ComposeActivityBinding::inflate)
     override val viewModel by viewModels<BookSourceEditViewModel>()
 
-    private val sourceEntities: ArrayList<EditEntity> = ArrayList()
-    private val searchEntities: ArrayList<EditEntity> = ArrayList()
-    private val exploreEntities: ArrayList<EditEntity> = ArrayList()
-    private val infoEntities: ArrayList<EditEntity> = ArrayList()
-    private val tocEntities: ArrayList<EditEntity> = ArrayList()
-    private val contentEntities: ArrayList<EditEntity> = ArrayList()
-    private var controls by mutableStateOf(BookSourceEditControls())
-    private var selectedTab by mutableIntStateOf(0)
-    private var sourceRevision by mutableIntStateOf(0)
-    private var fieldValueRevision by mutableIntStateOf(0)
-    private var autoComplete by mutableStateOf(false)
-    private var focusedField by mutableStateOf<BookSourceEditorSelection?>(null)
-    private var pendingExit by mutableStateOf(false)
-    private var groupSelectorVisible by mutableStateOf(false)
+    private val editor get() = viewModel.editor
+    private val session get() = viewModel.session
+    private var groupInsertTarget by mutableStateOf<BookSourceEditorSelection?>(null)
     private var groupOptions by mutableStateOf<List<String>>(emptyList())
     private var urlOptionEditorVisible by mutableStateOf(false)
     private var keyboardAssists by mutableStateOf<List<KeyboardAssist>>(emptyList())
     private var keyboardRowCount by mutableIntStateOf(AppConfig.showBoardLine)
     private var forceFinish = false
-    private var editingFieldKey: String? = null
-    private val undoHistory = mutableMapOf<String, ArrayDeque<FieldSnapshot>>()
-    private val redoHistory = mutableMapOf<String, ArrayDeque<FieldSnapshot>>()
+    private var restoringDraft = false
+    private var childResultJob: Job? = null
 
     //    private val reviewEntities: ArrayList<EditEntity> = ArrayList()
     private val qrCodeResult = registerForActivityResult(QrCodeResult()) {
-        it ?: return@registerForActivityResult
-        viewModel.importSource(it) { source ->
-            upSourceView(source)
-        }
+        it?.let { text -> viewModel.importSource(text, ::applyImport) }
     }
     private val selectDoc = registerForActivityResult(SelectFileContract()) { uri ->
-        uri?.let {
-            it.takePersistableReadPermission()
-            if (it.isContentScheme()) {
-                sendText(it.toString())
-            } else {
-                sendText(it.path.toString())
-            }
-        }
+        session.receiveFile(uri)
+        applyChildResult()
     }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
-        intent.getStringExtra("sourceUrl")?.let { sourceUrl ->
-            if (appDb.bookSourceDao.hasJsSource(sourceUrl)) {
-                startActivity<JsSourceEditActivity> {
-                    putExtra("sourceUrl", sourceUrl)
+        if (!editor.initialized && savedInstanceState?.getString(SourceEditorSession.STATE_DRAFT_ID) == null) {
+            intent.getStringExtra("sourceUrl")?.let { sourceUrl ->
+                if (appDb.bookSourceDao.hasJsSource(sourceUrl)) {
+                    startActivity<JsSourceEditActivity> { putExtra("sourceUrl", sourceUrl) }
+                    super.finish()
+                    return
                 }
-                super.finish()
-                return
             }
         }
         observeKeyboardAssists()
-        autoComplete = viewModel.autoComplete
         initView()
-        upSourceView(null)
-        viewModel.initData(intent) {
-            upSourceView(viewModel.bookSource)
+        if (editor.initialized) {
+            applyChildResult()
+        } else if (session.restoreInstanceState(savedInstanceState)) {
+            restoringDraft = true
+            lifecycleScope.launch {
+                try {
+                    restoreDraft(checkNotNull(session.read()))
+                    editor.initialized = true
+                    applyChildResult()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    AppLog.put("恢复书源草稿失败", error)
+                    toastOnUi(R.string.source_editor_draft_restore_failed)
+                    loadSource()
+                } finally {
+                    restoringDraft = false
+                }
+            }
+        } else {
+            loadSource()
         }
+    }
+
+    private fun loadSource() {
+        viewModel.initData(intent) {
+            if (isFinishing || isDestroyed || editor.initialized) return@initData
+            editor.savedForm = viewModel.bookSource ?: BookSource()
+            upSourceView(viewModel.bookSource)
+            editor.initialized = true
+            applyChildResult()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (editor.initialized || restoringDraft) session.writeInstanceState(outState)
+        if (editor.initialized && !isFinishing) session.checkpoint(captureDraft())
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (editor.initialized && !isFinishing) session.checkpoint(captureDraft())
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) session.close()
+        super.onDestroy()
     }
 
     override fun onPostCreate(savedInstanceState: Bundle?) {
@@ -134,63 +172,163 @@ class BookSourceEditActivity :
     }
 
     private val textEditLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val key = editingFieldKey
-        editingFieldKey = null
-        if (result.resultCode == RESULT_OK && key != null) {
-            result.data?.getStringExtra("text")?.let { text ->
-                val cursor = result.data?.getIntExtra("cursorPosition", text.length)
-                    ?.coerceIn(0, text.length)
-                    ?: text.length
-                replaceFieldValue(key, text, cursor, cursor)
+        session.receiveCode(result)
+        applyChildResult()
+    }
+
+    private fun onFullEditClicked() {
+        val focused = editor.focusedField
+        val entity = focused?.let { findEditEntity(it.field) }
+        if (focused == null || entity == null) {
+            toastOnUi(R.string.please_focus_cursor_on_textbox)
+            return
+        }
+        openChild(focused, entity.value.orEmpty()) { request ->
+            textEditLauncher.launch(Intent(this, CodeEditActivity::class.java).apply {
+                putSourceFieldSession(request)
+                putExtra("title", entity.hint)
+                SourceEditCodeHighlighter.languageNameOf(focused.field.key)?.let { putExtra("languageName", it) }
+            })
+        }
+    }
+
+    private fun openChild(
+        target: BookSourceEditorSelection,
+        text: String?,
+        launch: (SourceEditorRequest) -> Unit,
+    ) {
+        val revision = editor.revision
+        val field = target.toSessionField()
+        lifecycleScope.launch {
+            try {
+                session.openChild(field, revision, text, {
+                    editor.initialized && !isFinishing && editor.revision == revision &&
+                        editor.focusedField == target && editor.selectedTab == field.tab &&
+                        lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                }, ::captureDraft, launch)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLog.put("打开书源子编辑失败", error)
+                toastOnUi(R.string.source_editor_draft_checkpoint_failed)
             }
         }
     }
 
-    private fun onFullEditClicked() {
-        focusedField?.let { focused ->
-            val entity = findEditEntity(focused.key) ?: return@let
-            val currentText = entity.value.orEmpty()
-            editingFieldKey = focused.key
-            val intent = Intent(this, CodeEditActivity::class.java).apply {
-                putExtra("text", currentText)
-                putExtra("title", entity.hint)
-                putExtra("cursorPosition", focused.end.coerceIn(0, currentText.length))
-                SourceEditCodeHighlighter.languageNameOf(focused.key)?.let {
-                    putExtra("languageName", it)
-                }
+    private fun applyChildResult() {
+        if (!editor.initialized || isFinishing || childResultJob?.isActive == true) return
+        childResultJob = lifecycleScope.launch {
+            try {
+                session.applyResult(
+                    isCurrent = { request ->
+                        !isFinishing && editor.selectedTab == request.field.tab && editor.revision == request.revision &&
+                            findEditEntity(request.field.toFieldId()) != null
+                    },
+                    applyCode = { target, text, cursor ->
+                        val field = target.toFieldId()
+                        val current = checkNotNull(findEditEntity(field)).value.orEmpty()
+                        editor.focusedField = target.toSelection()
+                        if (text != null && text != current) {
+                            replaceFieldValue(field, text, cursor, cursor)
+                        } else {
+                            val position = cursor.coerceIn(0, current.length)
+                            editor.focusedField = BookSourceEditorSelection(field, position, position)
+                            editor.fieldValueRevision++
+                        }
+                    },
+                    applyFile = { target, uri ->
+                        uri.takePersistableReadPermission()
+                        insertAt(target.toSelection(), if (uri.isContentScheme()) uri.toString() else uri.path.orEmpty())
+                    },
+                    capture = ::captureDraft,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLog.put("回填书源子编辑内容失败", error)
+                toastOnUi(R.string.source_editor_result_failed)
             }
-            textEditLauncher.launch(intent)
-        } ?: run {
-            toastOnUi(R.string.please_focus_cursor_on_textbox)
         }
     }
+
+    private fun captureDraft(): BookSourceEditorDraft {
+        val original = viewModel.bookSource
+        val controls = editor.controls
+        return BookSourceEditorDraft(
+            SourceEditorWindow(
+                intent.getStringExtra("sourceUrl"), viewModel.persistedSourceUrl, editor.selectedTab,
+                editor.focusedField?.toSessionField(), editor.revision, editor.autoComplete, session.pending,
+            ),
+            original, editor.savedForm.takeUnless { it === original }, editor.draftBase.takeUnless { it === original },
+            editor.tabs.map { tab -> tab.filter { it.value != it.originalValue }.associate { it.key to it.value } },
+            controls.typeIndex, BookSourceDraftControls(
+                controls.enabled, controls.enabledExplore, controls.enabledCookieJar,
+                controls.eventListener, controls.customButton,
+            ), editor.importedWeight,
+        )
+    }
+
+    private fun restoreDraft(draft: BookSourceEditorDraft) {
+        val window = draft.window
+        check(window.entryUrl == intent.getStringExtra("sourceUrl") && draft.fields.size == editor.tabs.size)
+        upSourceView(draft.base ?: draft.original)
+        editor.savedForm = draft.savedForm ?: draft.original ?: BookSource()
+        draft.fields.forEachIndexed { tab, fields ->
+            editor.tabs[tab].forEach { field -> if (fields.containsKey(field.key)) field.value = fields[field.key] }
+        }
+        val controls = draft.controls
+        editor.controls = BookSourceEditControls(
+            typeIndex = draft.typeIndex.coerceIn(0, 4), enabled = controls.enabled,
+            enabledExplore = controls.enabledExplore, enabledCookieJar = controls.cookieJar,
+            eventListener = controls.eventListener, customButton = controls.customButton,
+        )
+        editor.importedWeight = draft.importedWeight
+        editor.selectedTab = window.tab.coerceIn(editor.tabs.indices)
+        editor.focusedField = window.selection?.takeIf { it.tab == editor.selectedTab }?.toSelection()
+        editor.revision = window.revision
+        editor.autoComplete = window.autoComplete
+        session.restoreRequest(window.request)
+        viewModel.restoreOriginal(window.persistedUrl, draft.original)
+    }
+
+    private fun scheduleDraftCheckpoint() {
+        if (editor.initialized && !isFinishing) session.scheduleCheckpoint(::captureDraft)
+    }
+
+    private fun BookSourceEditorSelection.toSessionField() = SourceEditorField(field.tab, field.key, start, end)
+
+    private fun SourceEditorField.toFieldId() = BookSourceFieldId(tab, key)
+
+    private fun SourceEditorField.toSelection() = BookSourceEditorSelection(toFieldId(), start, end)
 
     private fun onEditorAction(itemId: Int) {
         when (itemId) {
             R.id.menu_fullscreen_edit -> onFullEditClicked()
 
-            R.id.menu_save -> viewModel.save(getSource()) {
+            R.id.menu_save -> saveSource {
                 setResult(RESULT_OK, Intent().putExtra("origin", it.bookSourceUrl))
+                forceFinish = true
                 finish()
             }
 
-            R.id.menu_debug_source -> viewModel.save(getSource()) { source ->
+            R.id.menu_debug_source -> saveSource { source ->
                 startActivity<BookSourceDebugActivity> {
                     putExtra("key", source.bookSourceUrl)
                 }
             }
 
-            R.id.menu_clear_cookie -> viewModel.clearCookie(getSource().bookSourceUrl)
+            R.id.menu_clear_cookie -> viewModel.clearCookie(sourceField("bookSourceUrl").orEmpty())
             R.id.menu_auto_complete -> {
-                autoComplete = !autoComplete
-                viewModel.autoComplete = autoComplete
+                editor.autoComplete = !editor.autoComplete
+                editor.revision++
+                scheduleDraftCheckpoint()
             }
-            R.id.menu_copy_source -> sendToClip(GSON.toJson(getSource()))
-            R.id.menu_paste_source -> viewModel.pasteSource { upSourceView(it) }
+            R.id.menu_copy_source -> sendToClip(getSource().toSourceJson())
+            R.id.menu_paste_source -> viewModel.pasteSource(::applyImport)
             R.id.menu_qr_code_camera -> qrCodeResult.launch()
-            R.id.menu_share_str -> share(GSON.toJson(getSource()))
+            R.id.menu_share_str -> share(getSource().toSourceJson())
             R.id.menu_share_qr -> shareWithQr(
-                GSON.toJson(getSource()),
+                getSource().toSourceJson(),
                 getString(R.string.share_book_source),
                 ErrorCorrectionLevel.L
             )
@@ -198,7 +336,7 @@ class BookSourceEditActivity :
             R.id.menu_log -> showDialogFragment<AppLogDialog>()
             R.id.menu_network_log -> showDialogFragment<NetworkLogDialog>()
             R.id.menu_help -> showHelp("ruleHelp")
-            R.id.menu_login -> viewModel.save(getSource()) { source ->
+            R.id.menu_login -> saveSource { source ->
                 startActivity<SourceLoginActivity> {
                     putExtra("type", "bookSource")
                     putExtra("key", source.bookSourceUrl)
@@ -206,7 +344,7 @@ class BookSourceEditActivity :
             }
 
             R.id.menu_set_source_variable -> setSourceVariable()
-            R.id.menu_search -> viewModel.save(getSource()) { source ->
+            R.id.menu_search -> saveSource { source ->
                 SearchActivity.start(this, source)
             }
 
@@ -217,59 +355,67 @@ class BookSourceEditActivity :
         binding.composeView.setContent {
             SourceEditorHost {
                 BookSourceEditScreen(
-                    controls = controls,
-                    selectedTab = selectedTab,
-                    editEntities = editEntitiesFor(selectedTab),
-                    sourceRevision = sourceRevision,
-                    fieldValueRevision = fieldValueRevision,
+                    controls = editor.controls,
+                    selectedTab = editor.selectedTab,
+                    editEntities = editEntitiesFor(editor.selectedTab),
+                    sourceRevision = editor.sourceRevision,
+                    fieldValueRevision = editor.fieldValueRevision,
                     editEntityMaxLine = Int.MAX_VALUE,
-                    autoComplete = autoComplete,
-                    focusedField = focusedField,
+                    autoComplete = editor.autoComplete,
+                    focusedField = editor.focusedField,
                     keyboardAssists = keyboardAssists,
                     keyboardRowCount = keyboardRowCount,
                     keyboardHelpActions = keyboardHelpActions(),
-                    onControlsChange = { controls = it },
+                    onControlsChange = {
+                        if (editor.controls != it) {
+                            editor.controls = it
+                            editor.revision++
+                            scheduleDraftCheckpoint()
+                        }
+                    },
                     onTabSelected = ::setEditEntities,
                     onBack = ::finish,
                     onAction = ::onEditorAction,
-                    onPrepareOverflow = { !getSource().loginUrl.isNullOrBlank() },
+                    onPrepareOverflow = { !sourceField("loginUrl").isNullOrBlank() },
                     onFieldValueChange = ::onFieldValueChange,
-                    onFieldFocused = { key, start, end ->
-                        focusedField = BookSourceEditorSelection(key, start, end)
+                    onFieldFocused = { field, start, end ->
+                        editor.focusedField = BookSourceEditorSelection(field, start, end)
+                        scheduleDraftCheckpoint()
                     },
                     onKeyboardHelpAction = ::onHelpActionSelect,
                     onOpenKeyboardConfig = ::openKeyboardConfig,
-                    onInsertText = ::sendText,
+                    onInsertText = { insertAt(editor.focusedField, it) },
                     onUndo = ::onUndoClicked,
                     onRedo = ::onRedoClicked,
                 )
-                if (pendingExit) {
+                if (editor.pendingExit) {
                     BookSourceExitDialog(
-                        onDismiss = { pendingExit = false },
+                        onDismiss = { editor.pendingExit = false },
                         onDiscard = {
-                            pendingExit = false
+                            editor.pendingExit = false
                             forceFinish = true
                             finish()
                         },
                     )
                 }
-                if (groupSelectorVisible) {
+                groupInsertTarget?.let { target ->
                     BookSourceGroupSelectorDialog(
                         groups = groupOptions,
-                        onDismiss = { groupSelectorVisible = false },
+                        onDismiss = { groupInsertTarget = null },
                         onSelected = { group ->
-                            groupSelectorVisible = false
-                            sendText(group)
+                            groupInsertTarget = null
+                            insertAt(target, group)
                         },
                     )
                 }
                 if (urlOptionEditorVisible) {
+                    val target = remember { editor.focusedField }
                     BookSourceUrlOptionDialog(
                         charsets = AppConst.charsets,
                         onDismiss = { urlOptionEditorVisible = false },
                         onConfirm = { input ->
                             urlOptionEditorVisible = false
-                            insertUrlOption(input)
+                            insertAt(target, GSON.toJson(input.toUrlOption()))
                         },
                     )
                 }
@@ -279,111 +425,116 @@ class BookSourceEditActivity :
 
     override fun finish() {
         if (forceFinish) {
+            session.close()
             super.finish()
             return
         }
-        val source = getSource()
-        if (!source.equal(viewModel.bookSource ?: BookSource())) {
-            pendingExit = true
+        val source = getSource(completeRules = false)
+        val weightChanged = editor.importedWeight?.let { it != editor.savedForm.weight } ?: false
+        if (weightChanged || !source.hasSameEditorConfiguration(editor.savedForm)) {
+            editor.pendingExit = true
         } else {
+            session.close()
             super.finish()
         }
     }
 
     private fun editEntitiesFor(tabPosition: Int): List<EditEntity> {
         return when (tabPosition) {
-            1 -> searchEntities
-            2 -> exploreEntities
-            3 -> infoEntities
-            4 -> tocEntities
-            5 -> contentEntities
+            1 -> editor.tabs[1]
+            2 -> editor.tabs[2]
+            3 -> editor.tabs[3]
+            4 -> editor.tabs[4]
+            5 -> editor.tabs[5]
 //            6 -> reviewEntities
-            else -> sourceEntities
+            else -> editor.tabs[0]
         }
     }
 
-    private fun findEditEntity(key: String): EditEntity? {
-        return sequenceOf(
-            sourceEntities,
-            searchEntities,
-            exploreEntities,
-            infoEntities,
-            tocEntities,
-            contentEntities,
-        ).flatMap(List<EditEntity>::asSequence).firstOrNull { it.key == key }
-    }
+    private fun findEditEntity(field: BookSourceFieldId): EditEntity? =
+        editEntitiesFor(field.tab).firstOrNull { it.key == field.key }
 
-    private fun onFieldValueChange(key: String, value: String, start: Int, end: Int) {
-        val entity = findEditEntity(key) ?: return
+    private fun onFieldValueChange(field: BookSourceFieldId, value: String, start: Int, end: Int) {
+        val entity = findEditEntity(field) ?: return
         val current = entity.value.orEmpty()
         if (current != value) {
             pushHistory(
-                undoHistory,
-                key,
-                FieldSnapshot(
+                editor.undo,
+                field,
+                BookSourceFieldSnapshot(
                     current,
-                    focusedField?.takeIf { it.key == key }?.start ?: current.length,
-                    focusedField?.takeIf { it.key == key }?.end ?: current.length,
+                    editor.focusedField?.takeIf { it.field == field }?.start ?: current.length,
+                    editor.focusedField?.takeIf { it.field == field }?.end ?: current.length,
                 ),
             )
-            redoHistory.remove(key)
+            editor.redo.remove(field)
             entity.value = value
+            editor.revision++
         }
-        focusedField = BookSourceEditorSelection(
-            key,
+        editor.focusedField = BookSourceEditorSelection(
+            field,
             start.coerceIn(0, value.length),
             end.coerceIn(0, value.length),
         )
+        scheduleDraftCheckpoint()
     }
 
     private fun replaceFieldValue(
-        key: String,
+        field: BookSourceFieldId,
         value: String,
         start: Int,
         end: Int,
         recordHistory: Boolean = true,
     ) {
-        val entity = findEditEntity(key) ?: return
+        val entity = findEditEntity(field) ?: return
         val current = entity.value.orEmpty()
         if (current != value && recordHistory) {
             pushHistory(
-                undoHistory,
-                key,
-                FieldSnapshot(
+                editor.undo,
+                field,
+                BookSourceFieldSnapshot(
                     current,
-                    focusedField?.takeIf { it.key == key }?.start ?: current.length,
-                    focusedField?.takeIf { it.key == key }?.end ?: current.length,
+                    editor.focusedField?.takeIf { it.field == field }?.start ?: current.length,
+                    editor.focusedField?.takeIf { it.field == field }?.end ?: current.length,
                 ),
             )
-            redoHistory.remove(key)
+            editor.redo.remove(field)
         }
-        entity.value = value
-        focusedField = BookSourceEditorSelection(
-            key,
-            start.coerceIn(0, value.length),
-            end.coerceIn(0, value.length),
-        )
-        fieldValueRevision += 1
+        if (current != value) {
+            editor.revision++
+            entity.value = value
+        }
+        if (editor.focusedField?.field == field) {
+            editor.focusedField = BookSourceEditorSelection(
+                field,
+                start.coerceIn(0, value.length),
+                end.coerceIn(0, value.length),
+            )
+        }
+        editor.fieldValueRevision += 1
+        scheduleDraftCheckpoint()
     }
 
     private fun pushHistory(
-        histories: MutableMap<String, ArrayDeque<FieldSnapshot>>,
-        key: String,
-        snapshot: FieldSnapshot,
+        histories: MutableMap<BookSourceFieldId, ArrayDeque<BookSourceFieldSnapshot>>,
+        field: BookSourceFieldId,
+        snapshot: BookSourceFieldSnapshot,
     ) {
-        val history = histories.getOrPut(key) { ArrayDeque() }
+        val history = histories.getOrPut(field) { ArrayDeque() }
         if (history.peekLast() != snapshot) history.addLast(snapshot)
         while (history.size > MAX_FIELD_HISTORY) history.removeFirst()
     }
 
     private fun setEditEntities(tabPosition: Int) {
-        selectedTab = tabPosition
-        focusedField = null
+        editor.selectedTab = tabPosition
+        editor.focusedField = null
+        scheduleDraftCheckpoint()
     }
 
     private fun upSourceView(bookSource: BookSource?) {
         val bs = bookSource ?: BookSource()
-        controls = BookSourceEditControls(
+        editor.draftBase = bs
+        editor.controls = BookSourceEditControls(
             typeIndex = when (bs.bookSourceType) {
                 BookSourceType.video -> 4
                 BookSourceType.file -> 3
@@ -397,9 +548,10 @@ class BookSourceEditActivity :
             eventListener = bs.eventListener,
             customButton = bs.customButton,
         )
+        editor.originalTypeIndex = editor.controls.typeIndex
         // 基本信息
-        sourceEntities.clear()
-        sourceEntities.apply {
+        editor.tabs[0].clear()
+        editor.tabs[0].apply {
             add(EditEntity("bookSourceUrl", bs.bookSourceUrl, R.string.source_url))
             add(EditEntity("bookSourceName", bs.bookSourceName, R.string.source_name))
             add(EditEntity("bookSourceGroup", bs.bookSourceGroup, R.string.source_group))
@@ -415,9 +567,9 @@ class BookSourceEditActivity :
             add(EditEntity("jsLib", bs.jsLib, "jsLib"))
         }
         // 搜索
-        val sr = bs.getSearchRule()
-        searchEntities.clear()
-        searchEntities.apply {
+        val sr = bs.ruleSearch ?: SearchRule()
+        editor.tabs[1].clear()
+        editor.tabs[1].apply {
             add(EditEntity("searchUrl", bs.searchUrl, R.string.r_search_url))
             add(EditEntity("checkKeyWord", sr.checkKeyWord, R.string.check_key_word))
             add(EditEntity("bookList", sr.bookList, R.string.r_book_list))
@@ -431,9 +583,9 @@ class BookSourceEditActivity :
             add(EditEntity("bookUrl", sr.bookUrl, R.string.r_book_url))
         }
         // 发现
-        val er = bs.getExploreRule()
-        exploreEntities.clear()
-        exploreEntities.apply {
+        val er = bs.ruleExplore ?: ExploreRule()
+        editor.tabs[2].clear()
+        editor.tabs[2].apply {
             add(EditEntity("exploreUrl", bs.exploreUrl, R.string.r_find_url))
             add(EditEntity("bookList", er.bookList, R.string.r_book_list))
             add(EditEntity("name", er.name, R.string.r_book_name))
@@ -446,9 +598,9 @@ class BookSourceEditActivity :
             add(EditEntity("bookUrl", er.bookUrl, R.string.r_book_url))
         }
         // 详情页
-        val ir = bs.getBookInfoRule()
-        infoEntities.clear()
-        infoEntities.apply {
+        val ir = bs.ruleBookInfo ?: BookInfoRule()
+        editor.tabs[3].clear()
+        editor.tabs[3].apply {
             add(EditEntity("init", ir.init, R.string.rule_book_info_init))
             add(EditEntity("name", ir.name, R.string.r_book_name))
             add(EditEntity("author", ir.author, R.string.r_author))
@@ -462,9 +614,9 @@ class BookSourceEditActivity :
             add(EditEntity("downloadUrls", ir.downloadUrls, R.string.download_url_rule))
         }
         // 目录页
-        val tr = bs.getTocRule()
-        tocEntities.clear()
-        tocEntities.apply {
+        val tr = bs.ruleToc ?: TocRule()
+        editor.tabs[4].clear()
+        editor.tabs[4].apply {
             add(EditEntity("preUpdateJs", tr.preUpdateJs, R.string.pre_update_js))
             add(EditEntity("chapterList", tr.chapterList, R.string.rule_chapter_list))
             add(EditEntity("chapterName", tr.chapterName, R.string.rule_chapter_name))
@@ -477,9 +629,9 @@ class BookSourceEditActivity :
             add(EditEntity("nextTocUrl", tr.nextTocUrl, R.string.rule_next_toc_url))
         }
         // 正文页
-        val cr = bs.getContentRule()
-        contentEntities.clear()
-        contentEntities.apply {
+        val cr = bs.ruleContent ?: ContentRule()
+        editor.tabs[5].clear()
+        editor.tabs[5].apply {
             add(EditEntity("content", cr.content, R.string.rule_book_content))
             add(EditEntity("nextContentUrl", cr.nextContentUrl, R.string.rule_next_content))
             add(EditEntity("subContent", cr.subContent, R.string.rule_sub_content))
@@ -507,230 +659,209 @@ class BookSourceEditActivity :
 //            add(EditEntity("postQuoteUrl", rr.postQuoteUrl, R.string.post_quote_url))
 //            add(EditEntity("deleteUrl", rr.deleteUrl, R.string.delete_review_url))
 //        }
-        selectedTab = 0
-        focusedField = null
-        undoHistory.clear()
-        redoHistory.clear()
-        sourceRevision += 1
-        fieldValueRevision += 1
+        editor.selectedTab = 0
+        editor.focusedField = null
+        groupInsertTarget = null
+        urlOptionEditorVisible = false
+        editor.undo.clear()
+        editor.redo.clear()
+        editor.sourceRevision += 1
+        editor.fieldValueRevision += 1
+        editor.revision++
     }
 
-    private fun getSource(): BookSource {
-        val source = viewModel.bookSource?.copy() ?: BookSource()
-        source.enabled = controls.enabled
-        source.enabledExplore = controls.enabledExplore
-        source.enabledCookieJar = controls.enabledCookieJar
-        source.bookSourceType = when (controls.typeIndex) {
-            4 -> BookSourceType.video
-            3 -> BookSourceType.file
-            2 -> BookSourceType.image
-            1 -> BookSourceType.audio
-            else -> BookSourceType.default
+    private fun getSource(completeRules: Boolean = true): BookSource {
+        fun complete(rule: String?, base: String? = null, type: Int = 1): String? =
+            if (completeRules && !rule.isNullOrBlank()) viewModel.ruleComplete(rule, base, type) else rule
+
+        val source = editor.draftBase.copy()
+        source.enabled = editor.controls.enabled
+        source.enabledExplore = editor.controls.enabledExplore
+        if (editor.controls.enabledCookieJar != (editor.draftBase.enabledCookieJar == true)) {
+            source.enabledCookieJar = editor.controls.enabledCookieJar
         }
-        source.eventListener = controls.eventListener
-        source.customButton = controls.customButton
-        val searchRule = SearchRule()
-        val exploreRule = ExploreRule()
-        val bookInfoRule = BookInfoRule()
-        val tocRule = TocRule()
-        val contentRule = ContentRule()
-//        val reviewRule = ReviewRule()
-        sourceEntities.forEach {
-            it.value = it.value?.takeIf { s -> s.isNotBlank() }
-            when (it.key) {
-                "bookSourceUrl" -> source.bookSourceUrl = it.value ?: ""
-                "bookSourceName" -> source.bookSourceName = it.value ?: ""
-                "bookSourceGroup" -> source.bookSourceGroup = it.value
-                "loginUrl" -> source.loginUrl = it.value
-                "loginUi" -> source.loginUi = it.value
-                "loginCheckJs" -> source.loginCheckJs = it.value
-                "coverDecodeJs" -> source.coverDecodeJs = it.value
-                "bookUrlPattern" -> source.bookUrlPattern = it.value
-                "header" -> source.header = it.value
-                "bookSourceComment" -> source.bookSourceComment = it.value
-                "concurrentRate" -> source.concurrentRate = it.value
-                "variableComment" -> source.variableComment = it.value
-                "jsLib" -> source.jsLib = it.value
+        if (editor.controls.typeIndex != editor.originalTypeIndex) {
+            source.bookSourceType = when (editor.controls.typeIndex) {
+                4 -> BookSourceType.video
+                3 -> BookSourceType.file
+                2 -> BookSourceType.image
+                1 -> BookSourceType.audio
+                else -> BookSourceType.default
             }
         }
-        searchEntities.forEach {
-            it.value = it.value?.takeIf { s -> s.isNotBlank() }
+        source.eventListener = editor.controls.eventListener
+        source.customButton = editor.controls.customButton
+        val searchRule = source.ruleSearch?.copy() ?: SearchRule()
+        val exploreRule = source.ruleExplore?.copy() ?: ExploreRule()
+        val bookInfoRule = source.ruleBookInfo?.copy() ?: BookInfoRule()
+        val tocRule = source.ruleToc?.copy() ?: TocRule()
+        val contentRule = source.ruleContent?.copy() ?: ContentRule()
+        editor.tabs[0].forEach {
+            val value = it.editedValue
             when (it.key) {
-                "searchUrl" -> source.searchUrl = it.value
-                "checkKeyWord" -> searchRule.checkKeyWord = it.value
-                "bookList" -> searchRule.bookList = it.value
+                "bookSourceUrl" -> source.bookSourceUrl = value ?: ""
+                "bookSourceName" -> source.bookSourceName = value ?: ""
+                "bookSourceGroup" -> source.bookSourceGroup = value
+                "loginUrl" -> source.loginUrl = value
+                "loginUi" -> source.loginUi = value
+                "loginCheckJs" -> source.loginCheckJs = value
+                "coverDecodeJs" -> source.coverDecodeJs = value
+                "bookUrlPattern" -> source.bookUrlPattern = value
+                "header" -> source.header = value
+                "bookSourceComment" -> source.bookSourceComment = value
+                "concurrentRate" -> source.concurrentRate = value
+                "variableComment" -> source.variableComment = value
+                "jsLib" -> source.jsLib = value
+            }
+        }
+        editor.tabs[1].forEach {
+            val value = it.editedValue
+            when (it.key) {
+                "searchUrl" -> source.searchUrl = value
+                "checkKeyWord" -> searchRule.checkKeyWord = value
+                "bookList" -> searchRule.bookList = value
                 "name" -> searchRule.name =
-                    viewModel.ruleComplete(it.value, searchRule.bookList)
+                    complete(value, searchRule.bookList)
 
                 "author" -> searchRule.author =
-                    viewModel.ruleComplete(it.value, searchRule.bookList)
+                    complete(value, searchRule.bookList)
 
                 "kind" -> searchRule.kind =
-                    viewModel.ruleComplete(it.value, searchRule.bookList)
+                    complete(value, searchRule.bookList)
 
                 "intro" -> searchRule.intro =
-                    viewModel.ruleComplete(it.value, searchRule.bookList)
-
-//                "updateTime" -> searchRule.updateTime =
-//                    viewModel.ruleComplete(it.value, searchRule.bookList)
+                    complete(value, searchRule.bookList)
 
                 "wordCount" -> searchRule.wordCount =
-                    viewModel.ruleComplete(it.value, searchRule.bookList)
+                    complete(value, searchRule.bookList)
 
                 "lastChapter" -> searchRule.lastChapter =
-                    viewModel.ruleComplete(it.value, searchRule.bookList)
+                    complete(value, searchRule.bookList)
 
                 "coverUrl" -> searchRule.coverUrl =
-                    viewModel.ruleComplete(it.value, searchRule.bookList, 3)
+                    complete(value, searchRule.bookList, 3)
 
                 "bookUrl" -> searchRule.bookUrl =
-                    viewModel.ruleComplete(it.value, searchRule.bookList, 2)
+                    complete(value, searchRule.bookList, 2)
             }
         }
-        exploreEntities.forEach {
-            it.value = it.value?.takeIf { s -> s.isNotBlank() }
+        editor.tabs[2].forEach {
+            val value = it.editedValue
             when (it.key) {
-                "exploreUrl" -> source.exploreUrl = it.value
-                "bookList" -> exploreRule.bookList = it.value
+                "exploreUrl" -> source.exploreUrl = value
+                "bookList" -> exploreRule.bookList = value
                 "name" -> exploreRule.name =
-                    viewModel.ruleComplete(it.value, exploreRule.bookList)
+                    complete(value, exploreRule.bookList)
 
                 "author" -> exploreRule.author =
-                    viewModel.ruleComplete(it.value, exploreRule.bookList)
+                    complete(value, exploreRule.bookList)
 
                 "kind" -> exploreRule.kind =
-                    viewModel.ruleComplete(it.value, exploreRule.bookList)
+                    complete(value, exploreRule.bookList)
 
                 "intro" -> exploreRule.intro =
-                    viewModel.ruleComplete(it.value, exploreRule.bookList)
-
-//                "updateTime" -> exploreRule.updateTime =
-//                    viewModel.ruleComplete(it.value, exploreRule.bookList)
+                    complete(value, exploreRule.bookList)
 
                 "wordCount" -> exploreRule.wordCount =
-                    viewModel.ruleComplete(it.value, exploreRule.bookList)
+                    complete(value, exploreRule.bookList)
 
                 "lastChapter" -> exploreRule.lastChapter =
-                    viewModel.ruleComplete(it.value, exploreRule.bookList)
+                    complete(value, exploreRule.bookList)
 
                 "coverUrl" -> exploreRule.coverUrl =
-                    viewModel.ruleComplete(it.value, exploreRule.bookList, 3)
+                    complete(value, exploreRule.bookList, 3)
 
                 "bookUrl" -> exploreRule.bookUrl =
-                    viewModel.ruleComplete(it.value, exploreRule.bookList, 2)
+                    complete(value, exploreRule.bookList, 2)
             }
         }
-        infoEntities.forEach {
-            it.value = it.value?.takeIf { s -> s.isNotBlank() }
+        editor.tabs[3].forEach {
+            val value = it.editedValue
             when (it.key) {
-                "init" -> bookInfoRule.init = it.value
-                "name" -> bookInfoRule.name = viewModel.ruleComplete(it.value, bookInfoRule.init)
+                "init" -> bookInfoRule.init = value
+                "name" -> bookInfoRule.name = complete(value, bookInfoRule.init)
                 "author" -> bookInfoRule.author =
-                    viewModel.ruleComplete(it.value, bookInfoRule.init)
+                    complete(value, bookInfoRule.init)
 
                 "kind" -> bookInfoRule.kind =
-                    viewModel.ruleComplete(it.value, bookInfoRule.init)
+                    complete(value, bookInfoRule.init)
 
                 "intro" -> bookInfoRule.intro =
-                    viewModel.ruleComplete(it.value, bookInfoRule.init)
-
-//                "updateTime" -> bookInfoRule.updateTime =
-//                    viewModel.ruleComplete(it.value, bookInfoRule.init)
+                    complete(value, bookInfoRule.init)
 
                 "wordCount" -> bookInfoRule.wordCount =
-                    viewModel.ruleComplete(it.value, bookInfoRule.init)
+                    complete(value, bookInfoRule.init)
 
                 "lastChapter" -> bookInfoRule.lastChapter =
-                    viewModel.ruleComplete(it.value, bookInfoRule.init)
+                    complete(value, bookInfoRule.init)
 
                 "coverUrl" -> bookInfoRule.coverUrl =
-                    viewModel.ruleComplete(it.value, bookInfoRule.init, 3)
+                    complete(value, bookInfoRule.init, 3)
 
                 "tocUrl" -> bookInfoRule.tocUrl =
-                    viewModel.ruleComplete(it.value, bookInfoRule.init, 2)
+                    complete(value, bookInfoRule.init, 2)
 
-                "canReName" -> bookInfoRule.canReName = it.value
+                "canReName" -> bookInfoRule.canReName = value
                 "downloadUrls" -> bookInfoRule.downloadUrls =
-                    viewModel.ruleComplete(it.value, bookInfoRule.init)
+                    complete(value, bookInfoRule.init)
             }
         }
-        tocEntities.forEach {
-            it.value = it.value?.takeIf { s -> s.isNotBlank() }
+        editor.tabs[4].forEach {
+            val value = it.editedValue
             when (it.key) {
-                "preUpdateJs" -> tocRule.preUpdateJs = it.value
-                "chapterList" -> tocRule.chapterList = it.value
+                "preUpdateJs" -> tocRule.preUpdateJs = value
+                "chapterList" -> tocRule.chapterList = value
                 "chapterName" -> tocRule.chapterName =
-                    viewModel.ruleComplete(it.value, tocRule.chapterList)
+                    complete(value, tocRule.chapterList)
 
                 "chapterUrl" -> tocRule.chapterUrl =
-                    viewModel.ruleComplete(it.value, tocRule.chapterList, 2)
+                    complete(value, tocRule.chapterList, 2)
 
-                "formatJs" -> tocRule.formatJs = it.value
-                "isVolume" -> tocRule.isVolume = it.value
-                "updateTime" -> tocRule.updateTime = it.value
-                "isVip" -> tocRule.isVip = it.value
-                "isPay" -> tocRule.isPay = it.value
+                "formatJs" -> tocRule.formatJs = value
+                "isVolume" -> tocRule.isVolume = value
+                "updateTime" -> tocRule.updateTime = value
+                "isVip" -> tocRule.isVip = value
+                "isPay" -> tocRule.isPay = value
                 "nextTocUrl" -> tocRule.nextTocUrl =
-                    viewModel.ruleComplete(it.value, tocRule.chapterList, 2)
+                    complete(value, tocRule.chapterList, 2)
             }
         }
-        contentEntities.forEach {
-            it.value = it.value?.takeIf { s -> s.isNotBlank() }
+        editor.tabs[5].forEach {
+            val value = it.editedValue
             when (it.key) {
-                "content" -> contentRule.content = viewModel.ruleComplete(it.value)
+                "content" -> contentRule.content = complete(value)
                 "nextContentUrl" -> contentRule.nextContentUrl =
-                    viewModel.ruleComplete(it.value, type = 2)
-                "subContent" -> contentRule.subContent = viewModel.ruleComplete(it.value)
-                "title" -> contentRule.title = viewModel.ruleComplete(it.value)
+                    complete(value, type = 2)
+                "subContent" -> contentRule.subContent = complete(value)
+                "title" -> contentRule.title = complete(value)
 
-                "webJs" -> contentRule.webJs = it.value
-                "sourceRegex" -> contentRule.sourceRegex = it.value
-                "replaceRegex" -> contentRule.replaceRegex = it.value
-                "imageStyle" -> contentRule.imageStyle = it.value
-                "imageDecode" -> contentRule.imageDecode = it.value
-                "payAction" -> contentRule.payAction = it.value
-                "callBackJs" -> contentRule.callBackJs = it.value
+                "webJs" -> contentRule.webJs = value
+                "sourceRegex" -> contentRule.sourceRegex = value
+                "replaceRegex" -> contentRule.replaceRegex = value
+                "imageStyle" -> contentRule.imageStyle = value
+                "imageDecode" -> contentRule.imageDecode = value
+                "payAction" -> contentRule.payAction = value
+                "callBackJs" -> contentRule.callBackJs = value
             }
         }
-//        reviewEntities.forEach {
-//            when (it.key) {
-//                "reviewUrl" -> reviewRule.reviewUrl = it.value
-//                "avatarRule" -> reviewRule.avatarRule =
-//                    viewModel.ruleComplete(it.value, reviewRule.reviewUrl, 3)
-//
-//                "contentRule" -> reviewRule.contentRule =
-//                    viewModel.ruleComplete(it.value, reviewRule.reviewUrl)
-//
-//                "postTimeRule" -> reviewRule.postTimeRule =
-//                    viewModel.ruleComplete(it.value, reviewRule.reviewUrl)
-//
-//                "reviewQuoteUrl" -> reviewRule.reviewQuoteUrl =
-//                    viewModel.ruleComplete(it.value, reviewRule.reviewUrl, 2)
-//
-//                "voteUpUrl" -> reviewRule.voteUpUrl = it.value
-//                "voteDownUrl" -> reviewRule.voteDownUrl = it.value
-//                "postReviewUrl" -> reviewRule.postReviewUrl = it.value
-//                "postQuoteUrl" -> reviewRule.postQuoteUrl = it.value
-//                "deleteUrl" -> reviewRule.deleteUrl = it.value
-//            }
-//        }
-        source.ruleSearch = searchRule
-        source.ruleExplore = exploreRule
-        source.ruleBookInfo = bookInfoRule
-        source.ruleToc = tocRule
-        source.ruleContent = contentRule
-//        source.ruleReview = reviewRule
+        source.ruleSearch = searchRule.takeIf { editor.draftBase.ruleSearch != null || it != SearchRule() }
+        source.ruleExplore = exploreRule.takeIf { editor.draftBase.ruleExplore != null || it != ExploreRule() }
+        source.ruleBookInfo = bookInfoRule.takeIf { editor.draftBase.ruleBookInfo != null || it != BookInfoRule() }
+        source.ruleToc = tocRule.takeIf { editor.draftBase.ruleToc != null || it != TocRule() }
+        source.ruleContent = contentRule.takeIf { editor.draftBase.ruleContent != null || it != ContentRule() }
         return source
     }
 
     private fun alertGroups() {
+        val target = editor.focusedField ?: return
+        val revision = editor.sourceRevision
         lifecycleScope.launch {
             val groups = withContext(IO) {
                 appDb.bookSourceDao.allGroups()
             }
-            if (groups.isNotEmpty()) {
+            if (groups.isNotEmpty() && revision == editor.sourceRevision && editor.focusedField == target) {
                 groupOptions = groups
-                groupSelectorVisible = true
+                groupInsertTarget = target
             }
         }
     }
@@ -753,8 +884,8 @@ class BookSourceEditActivity :
             BookSourceKeyboardHelpAction("js教程", "jsHelp"),
             BookSourceKeyboardHelpAction("正则教程", "regexHelp"),
         )
-        focusedField?.let { focused ->
-            when (focused.key) {
+        editor.focusedField?.let { focused ->
+            when (focused.field.key) {
                 "bookSourceGroup" -> {
                     helpActions.add(
                         BookSourceKeyboardHelpAction("插入分组", "addGroup")
@@ -778,7 +909,9 @@ class BookSourceEditActivity :
             "ruleHelp" -> showHelp("ruleHelp")
             "jsHelp" -> showHelp("jsHelp")
             "regexHelp" -> showHelp("regexHelp")
-            "selectFile" -> selectDoc.launch(arrayOf("*/*"))
+            "selectFile" -> {
+                editor.focusedField?.let { target -> openChild(target, null) { selectDoc.launch(arrayOf("*/*")) } }
+            }
         }
     }
 
@@ -794,38 +927,88 @@ class BookSourceEditActivity :
         )
     }
 
-    private fun insertUrlOption(input: BookSourceUrlOptionInput) {
-        val option = AnalyzeUrl.UrlOption().apply {
-            useWebView(input.useWebView)
-            setMethod(input.method)
-            setCharset(input.charset)
-            setHeaders(input.headers)
-            setBody(input.body)
-            setRetry(input.retry)
-            setType(input.type)
-            setWebJs(input.webJs)
-            setJs(input.js)
-            // 保留旧弹窗的实际序列化行为：bodyJs 会覆盖 js 字段。
-            setJs(input.bodyJs)
-            setDnsIp(input.dnsIp)
-        }
-        sendText(GSON.toJson(option))
-    }
-
-    private fun sendText(text: String) {
+    private fun insertAt(focused: BookSourceEditorSelection?, text: String) {
         if (text.isEmpty()) return
-        val focused = focusedField ?: return
-        val entity = findEditEntity(focused.key) ?: return
+        if (focused == null) return
+        val entity = findEditEntity(focused.field) ?: return
         val current = entity.value.orEmpty()
         val start = minOf(focused.start, focused.end).coerceIn(0, current.length)
         val end = maxOf(focused.start, focused.end).coerceIn(0, current.length)
         val updated = current.replaceRange(start, end, text)
         val cursor = start + text.length
-        replaceFieldValue(focused.key, updated, cursor, cursor)
+        replaceFieldValue(focused.field, updated, cursor, cursor)
+    }
+
+    private fun saveSource(onSuccess: (BookSource) -> Unit) {
+        val revision = editor.revision
+        val baseRevision = editor.sourceRevision
+        val submittedForm = getSource(completeRules = false)
+        val sourceToSave = if (editor.autoComplete) getSource() else submittedForm
+        viewModel.save(sourceToSave, editor.importedWeight) { source ->
+            if (isFinishing) return@save
+            editor.savedForm = if (sourceToSave === submittedForm) source else submittedForm.copy(weight = source.weight)
+            if (baseRevision == editor.sourceRevision) {
+                editor.draftBase = editor.draftBase.copy(
+                    customOrder = source.customOrder,
+                    respondTime = source.respondTime,
+                    weight = source.weight,
+                    lastUpdateTime = source.lastUpdateTime,
+                )
+                editor.importedWeight = null
+            }
+            session.checkpoint(captureDraft())
+            if (!isDestroyed && revision == editor.revision) onSuccess(source)
+        }
+    }
+
+    private fun sourceField(key: String): String? =
+        editor.tabs[0].firstOrNull { it.key == key }?.editedValue
+
+    private fun applyImport(imported: BookSourceEditImport) {
+        if (isFinishing || isDestroyed) return
+        if (imported.source.mainJs.isNullOrBlank()) {
+            val old = viewModel.bookSource
+            val source = imported.source.copy(
+                customOrder = old?.customOrder ?: imported.source.customOrder,
+                respondTime = old?.respondTime ?: imported.source.respondTime,
+                weight = imported.weight ?: old?.weight ?: imported.source.weight,
+            )
+            editor.importedWeight = imported.weight
+            upSourceView(source)
+            scheduleDraftCheckpoint()
+            return
+        }
+
+        lifecycleScope.launch {
+            var file: File? = null
+            try {
+                withContext(IO) {
+                    val staged = ImportBookSourceDialog.createEditorPreviewFile(application.cacheDir)
+                    file = staged
+                    staged.bufferedWriter().use(imported.source::writeSourceJson)
+                }
+                lifecycle.withStateAtLeast(Lifecycle.State.RESUMED) {
+                    val tag = "book-source-editor-import"
+                    if (!isFinishing && !supportFragmentManager.isStateSaved &&
+                        supportFragmentManager.findFragmentByTag(tag) == null
+                    ) {
+                        ImportBookSourceDialog.forEditorPreview(checkNotNull(file))
+                            .showNow(supportFragmentManager, tag)
+                        file = null
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                toastOnUi(error.localizedMessage)
+            } finally {
+                file?.let { unsubmitted -> withContext(NonCancellable + IO) { unsubmitted.delete() } }
+            }
+        }
     }
 
     private fun setSourceVariable() {
-        viewModel.save(getSource()) { source ->
+        saveSource { source ->
             lifecycleScope.launch {
                 val comment =
                     source.getDisplayVariableComment("源变量可在js中通过source.getVariable()获取")
@@ -847,16 +1030,16 @@ class BookSourceEditActivity :
     }
 
     private fun onUndoClicked() {
-        val focused = focusedField ?: return
-        val entity = findEditEntity(focused.key) ?: return
-        val target = undoHistory[focused.key]?.pollLast() ?: return
+        val focused = editor.focusedField ?: return
+        val entity = findEditEntity(focused.field) ?: return
+        val target = editor.undo[focused.field]?.pollLast() ?: return
         pushHistory(
-            redoHistory,
-            focused.key,
-            FieldSnapshot(entity.value.orEmpty(), focused.start, focused.end),
+            editor.redo,
+            focused.field,
+            BookSourceFieldSnapshot(entity.value.orEmpty(), focused.start, focused.end),
         )
         replaceFieldValue(
-            focused.key,
+            focused.field,
             target.text,
             target.start,
             target.end,
@@ -865,28 +1048,22 @@ class BookSourceEditActivity :
     }
 
     private fun onRedoClicked() {
-        val focused = focusedField ?: return
-        val entity = findEditEntity(focused.key) ?: return
-        val target = redoHistory[focused.key]?.pollLast() ?: return
+        val focused = editor.focusedField ?: return
+        val entity = findEditEntity(focused.field) ?: return
+        val target = editor.redo[focused.field]?.pollLast() ?: return
         pushHistory(
-            undoHistory,
-            focused.key,
-            FieldSnapshot(entity.value.orEmpty(), focused.start, focused.end),
+            editor.undo,
+            focused.field,
+            BookSourceFieldSnapshot(entity.value.orEmpty(), focused.start, focused.end),
         )
         replaceFieldValue(
-            focused.key,
+            focused.field,
             target.text,
             target.start,
             target.end,
             recordHistory = false,
         )
     }
-
-    private data class FieldSnapshot(
-        val text: String,
-        val start: Int,
-        val end: Int,
-    )
 
     private companion object {
         const val MAX_FIELD_HISTORY = 100

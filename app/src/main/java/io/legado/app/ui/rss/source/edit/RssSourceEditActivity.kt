@@ -6,9 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
@@ -25,12 +23,17 @@ import io.legado.app.help.config.LocalConfig
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.code.CodeEditActivity
+import io.legado.app.ui.source.edit.SourceEditorField
 import io.legado.app.ui.source.edit.SourceEditorHost
+import io.legado.app.ui.source.edit.SourceEditorRequest
+import io.legado.app.ui.source.edit.SourceEditorWindow
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.qrcode.QrCodeResult
 import io.legado.app.ui.rss.RssComposeBinding
 import io.legado.app.ui.rss.source.debug.RssSourceDebugActivity
 import io.legado.app.ui.source.edit.SourceEditCodeHighlighter
+import io.legado.app.ui.source.edit.hasSameEditorConfiguration
+import io.legado.app.ui.source.edit.putSourceFieldSession
 import io.legado.app.ui.widget.dialog.UrlOptionDialog
 import io.legado.app.ui.widget.dialog.VariableDialog
 import io.legado.app.ui.widget.keyboard.KeyboardAssistsConfig
@@ -48,6 +51,8 @@ import io.legado.app.utils.takePersistableReadPermission
 import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
@@ -61,32 +66,20 @@ class RssSourceEditActivity :
     override val binding by viewBinding(RssComposeBinding::inflate)
     override val viewModel by viewModels<RssSourceEditViewModel>()
 
-    private var source by mutableStateOf(
-        RssSource(),
-        referentialEqualityPolicy()
-    )
-    private var originalSource = RssSource()
-    private var selectedTab by mutableIntStateOf(0)
-    private var focusedField by mutableStateOf<RssEditorSelection?>(null)
-    private var sourceRevision by mutableIntStateOf(0)
-    private var fieldValueRevision by mutableIntStateOf(0)
+    private val editor get() = viewModel.editor
+    private val session get() = viewModel.session
+    private var source: RssSource
+        get() = editor.source
+        set(value) { editor.source = value }
     private var keyboardAssists by mutableStateOf<List<KeyboardAssist>>(emptyList())
     private var keyboardRowCount by mutableIntStateOf(AppConfig.showBoardLine)
-    private val editHistory = RssSourceEditorHistory()
-    // 保留输入中的空白；空字段转 null 仍由原 source 更新逻辑处理。
-    private val draftTextValues = mutableStateMapOf<String, String>()
-    private var pendingInsert: RssEditorSelection? = null
-    private var editingFieldKey: String? = null
-    private var pendingExit by mutableStateOf(false)
     private var forceFinish = false
+    private var restoringDraft = false
+    private var childResultJob: Job? = null
 
     private val selectDoc = registerForActivityResult(SelectFileContract()) { uri ->
-        val target = pendingInsert
-        pendingInsert = null
-        uri?.let {
-            it.takePersistableReadPermission()
-            insertAt(target, if (it.isContentScheme()) it.toString() else it.path.orEmpty())
-        }
+        session.receiveFile(uri)
+        applyChildResult()
     }
     private val qrCodeResult = registerForActivityResult(QrCodeResult()) {
         it?.let { text ->
@@ -98,15 +91,8 @@ class RssSourceEditActivity :
     private val textEditLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val key = editingFieldKey
-        editingFieldKey = null
-        if (result.resultCode == RESULT_OK && key != null) {
-            result.data?.let { data ->
-                val text = data.getStringExtra("text") ?: fieldValue(key)
-                val cursor = data.getIntExtra("cursorPosition", text.length).coerceIn(0, text.length)
-                replaceFieldValue(key, RssEditorSnapshot(text, cursor, cursor))
-            }
-        }
+        session.receiveCode(result)
+        applyChildResult()
     }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
@@ -115,22 +101,22 @@ class RssSourceEditActivity :
             SourceEditorHost {
                 RssSourceEditScreen(
                     source = source,
-                    selectedTab = selectedTab,
+                    selectedTab = editor.selectedTab,
                     autoComplete = viewModel.autoComplete,
-                    sourceRevision = sourceRevision,
-                    fieldValueRevision = fieldValueRevision,
-                    focusedField = focusedField,
-                    draftTextValues = draftTextValues,
+                    sourceRevision = editor.sourceRevision,
+                    fieldValueRevision = editor.fieldValueRevision,
+                    focusedField = editor.focusedField,
+                    draftTextValues = editor.draftTextValues,
                     editEntityMaxLine = Int.MAX_VALUE,
                     keyboardAssists = keyboardAssists,
                     keyboardRowCount = keyboardRowCount,
                     onAction = ::handleAction
                 )
-                if (pendingExit) {
+                if (editor.pendingExit) {
                     RssSourceExitDialog(
-                        onDismiss = { pendingExit = false },
+                        onDismiss = { editor.pendingExit = false },
                         onDiscard = {
-                            pendingExit = false
+                            editor.pendingExit = false
                             forceFinish = true
                             finish()
                         }
@@ -138,10 +124,54 @@ class RssSourceEditActivity :
                 }
             }
         }
-        viewModel.initData(intent) {
-            originalSource = viewModel.rssSource?.copy() ?: RssSource()
-            replaceSource(originalSource)
+        if (editor.initialized) {
+            applyChildResult()
+        } else if (session.restoreInstanceState(savedInstanceState)) {
+            restoringDraft = true
+            lifecycleScope.launch {
+                try {
+                    restoreDraft(checkNotNull(session.read()))
+                    editor.initialized = true
+                    applyChildResult()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    AppLog.put("恢复订阅草稿失败", error)
+                    toastOnUi(R.string.source_editor_draft_restore_failed)
+                    loadSource()
+                } finally {
+                    restoringDraft = false
+                }
+            }
+        } else {
+            loadSource()
         }
+    }
+
+    private fun loadSource() {
+        viewModel.initData(intent) {
+            if (isFinishing || isDestroyed || editor.initialized) return@initData
+            editor.savedForm = viewModel.rssSource ?: RssSource()
+            replaceSource(editor.savedForm)
+            editor.initialized = true
+            applyChildResult()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (editor.initialized || restoringDraft) session.writeInstanceState(outState)
+        if (editor.initialized && !isFinishing) session.checkpoint(captureDraft())
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (editor.initialized && !isFinishing) session.checkpoint(captureDraft())
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) session.close()
+        super.onDestroy()
     }
 
     override fun onPostCreate(savedInstanceState: Bundle?) {
@@ -150,10 +180,11 @@ class RssSourceEditActivity :
     }
 
     override fun finish() {
-        if (!forceFinish && !source.equal(originalSource)) {
-            pendingExit = true
+        if (!forceFinish && !source.hasSameEditorConfiguration(editor.savedForm)) {
+            editor.pendingExit = true
             return
         }
+        session.close()
         super.finish()
     }
 
@@ -162,14 +193,14 @@ class RssSourceEditActivity :
             RssSourceEditAction.Undo -> restoreHistory(redo = false)
             RssSourceEditAction.Redo -> restoreHistory(redo = true)
             RssSourceEditAction.KeyboardConfig -> openKeyboardConfig()
-            is RssSourceEditAction.InsertText -> insertAt(focusedField, action.text)
+            is RssSourceEditAction.InsertText -> insertAt(editor.focusedField, action.text)
             is RssSourceEditAction.EditText -> {
-                editHistory.record(action.key, currentSnapshot(action.key), action.value)
+                editor.history.record(action.key, currentSnapshot(action.key), action.value)
                 if (fieldValue(action.key) != action.value) {
-                    draftTextValues[action.key] = action.value
+                    editor.draftTextValues[action.key] = action.value
                     updateField(action.key, action.value)
                 }
-                focusedField = RssEditorSelection(action.key, action.start, action.end)
+                editor.focusedField = RssEditorSelection(action.key, action.start, action.end)
             }
             RssSourceEditAction.Back -> finish()
             RssSourceEditAction.Save -> saveAndFinish()
@@ -197,30 +228,39 @@ class RssSourceEditActivity :
             RssSourceEditAction.NetworkLog -> showDialogFragment<NetworkLogDialog>()
             RssSourceEditAction.Help -> showHelp("rssRuleHelp")
             RssSourceEditAction.InsertUrlOption -> {
-                val target = focusedField
+                val target = editor.focusedField
                 UrlOptionDialog(this) { insertAt(target, it) }.show()
             }
             RssSourceEditAction.JsHelp -> showHelp("jsHelp")
             RssSourceEditAction.RegexHelp -> showHelp("regexHelp")
             RssSourceEditAction.SelectFile -> {
-                pendingInsert = focusedField
-                selectDoc.launch(arrayOf("*/*"))
+                editor.focusedField?.let { target -> openChild(target, null) { selectDoc.launch(arrayOf("*/*")) } }
             }
             is RssSourceEditAction.SelectTab -> {
-                focusedField = null
-                selectedTab = action.index.coerceIn(0, 3)
+                editor.focusedField = null
+                editor.selectedTab = action.index.coerceIn(0, 3)
             }
             is RssSourceEditAction.UpdateField -> updateField(action.key, action.value)
             is RssSourceEditAction.FocusField -> {
-                focusedField = RssEditorSelection(action.key, action.selectionStart, action.selectionEnd)
+                editor.focusedField = RssEditorSelection(action.key, action.selectionStart, action.selectionEnd)
             }
             is RssSourceEditAction.ExpandField -> openFullEditor(action.key, action.label)
-            is RssSourceEditAction.UpdateSource -> source = action.source
+            is RssSourceEditAction.UpdateSource -> {
+                val updated = action.source
+                source = if (editor.draftBase.enabledCookieJar == null && updated.enabledCookieJar == false) {
+                    updated.copy(enabledCookieJar = null)
+                } else {
+                    updated
+                }
+                editor.revision++
+            }
             is RssSourceEditAction.AutoCompleteChanged -> {
                 viewModel.autoComplete = action.enabled
                 source = source.copy()
+                editor.revision++
             }
         }
+        scheduleDraftCheckpoint()
     }
 
     private fun saveAndFinish() {
@@ -232,12 +272,20 @@ class RssSourceEditActivity :
     }
 
     private fun saveSource(onSuccess: (RssSource) -> Unit) {
+        val savedDraft = source
         viewModel.save(normalizedSource()) { saved ->
-            source = saved.copy()
-            draftTextValues.clear()
-            fieldValueRevision += 1
-            originalSource = saved.copy()
-            onSuccess(saved)
+            if (isFinishing) return@save
+            val draftStillCurrent = source === savedDraft
+            editor.savedForm = if (draftStillCurrent) saved else savedDraft
+            if (draftStillCurrent) {
+                if (!saved.hasSameEditorConfiguration(savedDraft)) editor.revision++
+                editor.draftBase = saved
+                source = saved
+                editor.draftTextValues.clear()
+                editor.fieldValueRevision += 1
+            }
+            session.checkpoint(captureDraft())
+            if (!isDestroyed && draftStillCurrent) onSuccess(saved)
         }
     }
 
@@ -258,26 +306,110 @@ class RssSourceEditActivity :
             toastOnUi(R.string.please_focus_cursor_on_textbox)
             return
         }
-        editingFieldKey = key
         val value = fieldValue(key)
-        textEditLauncher.launch(
-            Intent(this, CodeEditActivity::class.java).apply {
-                putExtra("text", value)
+        val target = editor.focusedField?.takeIf { it.key == key }
+            ?: RssEditorSelection(key, value.length, value.length)
+        openChild(target, value) { request ->
+            textEditLauncher.launch(Intent(this, CodeEditActivity::class.java).apply {
+                putSourceFieldSession(request)
                 putExtra("title", label)
-                putExtra(
-                    "cursorPosition",
-                    if (focusedField?.key == key) {
-                        focusedField!!.end.coerceIn(0, value.length)
-                    } else {
-                        value.length
-                    }
-                )
                 SourceEditCodeHighlighter.languageNameOf(key)?.let {
                     putExtra("languageName", it)
                 }
+            })
+        }
+    }
+
+    private fun openChild(target: RssEditorSelection, text: String?, launch: (SourceEditorRequest) -> Unit) {
+        val revision = editor.revision
+        val field = target.toSessionField()
+        val focus = editor.focusedField
+        lifecycleScope.launch {
+            try {
+                session.openChild(field, revision, text, {
+                    editor.initialized && !isFinishing && editor.revision == revision &&
+                        editor.focusedField == focus && editor.selectedTab == field.tab &&
+                        lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                }, ::captureDraft, launch)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLog.put("打开订阅子编辑失败", error)
+                toastOnUi(R.string.source_editor_draft_checkpoint_failed)
             }
+        }
+    }
+
+    private fun applyChildResult() {
+        if (!editor.initialized || isFinishing || childResultJob?.isActive == true) return
+        childResultJob = lifecycleScope.launch {
+            try {
+                session.applyResult(
+                    isCurrent = { request ->
+                        !isFinishing && editor.selectedTab == request.field.tab && editor.revision == request.revision
+                    },
+                    applyCode = { target, text, cursor ->
+                        val current = fieldValue(target.key)
+                        editor.focusedField = target.toSelection()
+                        if (text != null && text != current) {
+                            replaceFieldValue(target.key, RssEditorSnapshot(text, cursor, cursor))
+                        } else {
+                            val position = cursor.coerceIn(0, current.length)
+                            editor.focusedField = RssEditorSelection(target.key, position, position)
+                            editor.fieldValueRevision++
+                        }
+                    },
+                    applyFile = { target, uri ->
+                        uri.takePersistableReadPermission()
+                        insertAt(target.toSelection(), if (uri.isContentScheme()) uri.toString() else uri.path.orEmpty())
+                    },
+                    capture = ::captureDraft,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLog.put("回填订阅子编辑内容失败", error)
+                toastOnUi(R.string.source_editor_result_failed)
+            }
+        }
+    }
+
+    private fun captureDraft(): RssSourceEditorDraft {
+        val original = viewModel.rssSource
+        return RssSourceEditorDraft(
+            SourceEditorWindow(
+                intent.getStringExtra("sourceUrl"), viewModel.persistedSourceUrl, editor.selectedTab,
+                editor.focusedField?.toSessionField(), editor.revision, viewModel.autoComplete, session.pending,
+            ),
+            original, editor.savedForm.takeUnless { it === original }, editor.draftBase.takeUnless { it === original },
+            source.takeUnless { it === original }, editor.draftTextValues.toMap(),
         )
     }
+
+    private fun restoreDraft(draft: RssSourceEditorDraft) {
+        val window = draft.window
+        check(window.entryUrl == intent.getStringExtra("sourceUrl"))
+        val original = draft.original
+        editor.savedForm = draft.savedForm ?: original ?: RssSource()
+        editor.draftBase = draft.base ?: original ?: RssSource()
+        source = draft.source ?: original ?: RssSource()
+        editor.draftTextValues.putAll(draft.fields)
+        editor.selectedTab = window.tab.coerceIn(0, 3)
+        editor.focusedField = window.selection?.takeIf { it.tab == editor.selectedTab }?.toSelection()
+        editor.revision = window.revision
+        editor.sourceRevision++
+        viewModel.autoComplete = window.autoComplete
+        session.restoreRequest(window.request)
+        viewModel.restoreOriginal(window.persistedUrl, original)
+    }
+
+    private fun scheduleDraftCheckpoint() {
+        if (editor.initialized && !isFinishing) session.scheduleCheckpoint(::captureDraft)
+    }
+
+    private fun RssEditorSelection.toSessionField() = SourceEditorField(editor.selectedTab, key, start, end)
+
+    private fun SourceEditorField.toSelection() = RssEditorSelection(key, start, end)
 
     private fun insertAt(target: RssEditorSelection?, text: String) {
         val selection = target ?: run {
@@ -290,35 +422,37 @@ class RssSourceEditActivity :
 
     private fun currentSnapshot(key: String): RssEditorSnapshot {
         val text = fieldValue(key)
-        val selection = focusedField?.takeIf { it.key == key }
+        val selection = editor.focusedField?.takeIf { it.key == key }
         return RssEditorSnapshot(text, selection?.start ?: text.length, selection?.end ?: text.length)
     }
 
     private fun replaceFieldValue(key: String, value: RssEditorSnapshot, recordHistory: Boolean = true) {
-        if (recordHistory) editHistory.record(key, currentSnapshot(key), value.text)
-        draftTextValues[key] = value.text
+        if (recordHistory) editor.history.record(key, currentSnapshot(key), value.text)
+        editor.draftTextValues[key] = value.text
         updateField(key, value.text)
-        focusedField = RssEditorSelection(
+        editor.focusedField = RssEditorSelection(
             key, value.start.coerceIn(0, value.text.length), value.end.coerceIn(0, value.text.length),
         )
-        fieldValueRevision += 1
+        editor.fieldValueRevision += 1
     }
 
     private fun restoreHistory(redo: Boolean) {
-        val key = focusedField?.key ?: return
+        val key = editor.focusedField?.key ?: return
         val current = currentSnapshot(key)
-        val restored = if (redo) editHistory.redo(key, current) else editHistory.undo(key, current)
+        val restored = if (redo) editor.history.redo(key, current) else editor.history.undo(key, current)
         restored?.let { replaceFieldValue(key, it, recordHistory = false) }
     }
 
     private fun replaceSource(updated: RssSource) {
-        source = updated.copy()
-        focusedField = null
-        editingFieldKey = null
-        pendingInsert = null
-        editHistory.clear()
-        draftTextValues.clear()
-        sourceRevision += 1
+        if (isFinishing || isDestroyed) return
+        editor.draftBase = updated
+        source = updated
+        editor.focusedField = null
+        editor.history.clear()
+        editor.draftTextValues.clear()
+        editor.sourceRevision += 1
+        editor.revision++
+        scheduleDraftCheckpoint()
     }
 
     private fun observeKeyboardAssists() {
@@ -362,85 +496,88 @@ class RssSourceEditActivity :
         viewModel.rssSource?.setVariable(variable)
     }
 
-    private fun valueOrNull(value: String): String? = value.takeIf(String::isNotBlank)
-
     private fun updateField(key: String, value: String) {
+        val optionalValue = value.takeIf(String::isNotBlank)
+            ?: editor.draftBase.textValue(key)?.takeIf { it == value }
         source = when (key) {
             "sourceName" -> source.copy(sourceName = value)
             "sourceUrl" -> source.copy(sourceUrl = value)
             "sourceIcon" -> source.copy(sourceIcon = value)
-            "sourceGroup" -> source.copy(sourceGroup = valueOrNull(value))
-            "sourceComment" -> source.copy(sourceComment = valueOrNull(value))
-            "searchUrl" -> source.copy(searchUrl = valueOrNull(value))
-            "sortUrl" -> source.copy(sortUrl = valueOrNull(value))
-            "loginUrl" -> source.copy(loginUrl = valueOrNull(value))
-            "loginUi" -> source.copy(loginUi = valueOrNull(value))
-            "loginCheckJs" -> source.copy(loginCheckJs = valueOrNull(value))
-            "coverDecodeJs" -> source.copy(coverDecodeJs = valueOrNull(value))
-            "header" -> source.copy(header = valueOrNull(value))
-            "variableComment" -> source.copy(variableComment = valueOrNull(value))
-            "concurrentRate" -> source.copy(concurrentRate = valueOrNull(value))
-            "jsLib" -> source.copy(jsLib = valueOrNull(value))
-            "startHtml" -> source.copy(startHtml = valueOrNull(value))
-            "startStyle" -> source.copy(startStyle = valueOrNull(value))
-            "startJs" -> source.copy(startJs = valueOrNull(value))
-            "preloadJs" -> source.copy(preloadJs = valueOrNull(value))
-            "ruleArticles" -> source.copy(ruleArticles = valueOrNull(value))
-            "ruleNextPage" -> source.copy(ruleNextPage = valueOrNull(value))
-            "ruleTitle" -> source.copy(ruleTitle = valueOrNull(value))
-            "rulePubDate" -> source.copy(rulePubDate = valueOrNull(value))
-            "ruleDescription" -> source.copy(ruleDescription = valueOrNull(value))
-            "ruleImage" -> source.copy(ruleImage = valueOrNull(value))
-            "ruleLink" -> source.copy(ruleLink = valueOrNull(value))
+            "sourceGroup" -> source.copy(sourceGroup = optionalValue)
+            "sourceComment" -> source.copy(sourceComment = optionalValue)
+            "searchUrl" -> source.copy(searchUrl = optionalValue)
+            "sortUrl" -> source.copy(sortUrl = optionalValue)
+            "loginUrl" -> source.copy(loginUrl = optionalValue)
+            "loginUi" -> source.copy(loginUi = optionalValue)
+            "loginCheckJs" -> source.copy(loginCheckJs = optionalValue)
+            "coverDecodeJs" -> source.copy(coverDecodeJs = optionalValue)
+            "header" -> source.copy(header = optionalValue)
+            "variableComment" -> source.copy(variableComment = optionalValue)
+            "concurrentRate" -> source.copy(concurrentRate = optionalValue)
+            "jsLib" -> source.copy(jsLib = optionalValue)
+            "startHtml" -> source.copy(startHtml = optionalValue)
+            "startStyle" -> source.copy(startStyle = optionalValue)
+            "startJs" -> source.copy(startJs = optionalValue)
+            "preloadJs" -> source.copy(preloadJs = optionalValue)
+            "ruleArticles" -> source.copy(ruleArticles = optionalValue)
+            "ruleNextPage" -> source.copy(ruleNextPage = optionalValue)
+            "ruleTitle" -> source.copy(ruleTitle = optionalValue)
+            "rulePubDate" -> source.copy(rulePubDate = optionalValue)
+            "ruleDescription" -> source.copy(ruleDescription = optionalValue)
+            "ruleImage" -> source.copy(ruleImage = optionalValue)
+            "ruleLink" -> source.copy(ruleLink = optionalValue)
             "enableJs" -> source.copy(enableJs = value.toBoolean())
             "loadWithBaseUrl" -> source.copy(loadWithBaseUrl = value.toBoolean())
             "showWebLog" -> source.copy(showWebLog = value.toBoolean())
             "cacheFirst" -> source.copy(cacheFirst = value.toBoolean())
-            "ruleContent" -> source.copy(ruleContent = valueOrNull(value))
-            "style" -> source.copy(style = valueOrNull(value))
-            "injectJs" -> source.copy(injectJs = valueOrNull(value))
-            "contentWhitelist" -> source.copy(contentWhitelist = valueOrNull(value))
-            "contentBlacklist" -> source.copy(contentBlacklist = valueOrNull(value))
+            "ruleContent" -> source.copy(ruleContent = optionalValue)
+            "style" -> source.copy(style = optionalValue)
+            "injectJs" -> source.copy(injectJs = optionalValue)
+            "contentWhitelist" -> source.copy(contentWhitelist = optionalValue)
+            "contentBlacklist" -> source.copy(contentBlacklist = optionalValue)
             "shouldOverrideUrlLoading" -> {
-                source.copy(shouldOverrideUrlLoading = valueOrNull(value))
+                source.copy(shouldOverrideUrlLoading = optionalValue)
             }
             else -> source
         }
+        editor.revision++
     }
 
-    private fun fieldValue(key: String): String = draftTextValues[key] ?: when (key) {
-        "sourceName" -> source.sourceName
-        "sourceUrl" -> source.sourceUrl
-        "sourceIcon" -> source.sourceIcon
-        "sourceGroup" -> source.sourceGroup.orEmpty()
-        "sourceComment" -> source.sourceComment.orEmpty()
-        "searchUrl" -> source.searchUrl.orEmpty()
-        "sortUrl" -> source.sortUrl.orEmpty()
-        "loginUrl" -> source.loginUrl.orEmpty()
-        "loginUi" -> source.loginUi.orEmpty()
-        "loginCheckJs" -> source.loginCheckJs.orEmpty()
-        "coverDecodeJs" -> source.coverDecodeJs.orEmpty()
-        "header" -> source.header.orEmpty()
-        "variableComment" -> source.variableComment.orEmpty()
-        "concurrentRate" -> source.concurrentRate.orEmpty()
-        "jsLib" -> source.jsLib.orEmpty()
-        "startHtml" -> source.startHtml.orEmpty()
-        "startStyle" -> source.startStyle.orEmpty()
-        "startJs" -> source.startJs.orEmpty()
-        "preloadJs" -> source.preloadJs.orEmpty()
-        "ruleArticles" -> source.ruleArticles.orEmpty()
-        "ruleNextPage" -> source.ruleNextPage.orEmpty()
-        "ruleTitle" -> source.ruleTitle.orEmpty()
-        "rulePubDate" -> source.rulePubDate.orEmpty()
-        "ruleDescription" -> source.ruleDescription.orEmpty()
-        "ruleImage" -> source.ruleImage.orEmpty()
-        "ruleLink" -> source.ruleLink.orEmpty()
-        "ruleContent" -> source.ruleContent.orEmpty()
-        "style" -> source.style.orEmpty()
-        "injectJs" -> source.injectJs.orEmpty()
-        "contentWhitelist" -> source.contentWhitelist.orEmpty()
-        "contentBlacklist" -> source.contentBlacklist.orEmpty()
-        "shouldOverrideUrlLoading" -> source.shouldOverrideUrlLoading.orEmpty()
-        else -> ""
+    private fun fieldValue(key: String): String = editor.draftTextValues[key] ?: source.textValue(key).orEmpty()
+
+    private fun RssSource.textValue(key: String): String? = when (key) {
+        "sourceName" -> sourceName
+        "sourceUrl" -> sourceUrl
+        "sourceIcon" -> sourceIcon
+        "sourceGroup" -> sourceGroup
+        "sourceComment" -> sourceComment
+        "searchUrl" -> searchUrl
+        "sortUrl" -> sortUrl
+        "loginUrl" -> loginUrl
+        "loginUi" -> loginUi
+        "loginCheckJs" -> loginCheckJs
+        "coverDecodeJs" -> coverDecodeJs
+        "header" -> header
+        "variableComment" -> variableComment
+        "concurrentRate" -> concurrentRate
+        "jsLib" -> jsLib
+        "startHtml" -> startHtml
+        "startStyle" -> startStyle
+        "startJs" -> startJs
+        "preloadJs" -> preloadJs
+        "ruleArticles" -> ruleArticles
+        "ruleNextPage" -> ruleNextPage
+        "ruleTitle" -> ruleTitle
+        "rulePubDate" -> rulePubDate
+        "ruleDescription" -> ruleDescription
+        "ruleImage" -> ruleImage
+        "ruleLink" -> ruleLink
+        "ruleContent" -> ruleContent
+        "style" -> style
+        "injectJs" -> injectJs
+        "contentWhitelist" -> contentWhitelist
+        "contentBlacklist" -> contentBlacklist
+        "shouldOverrideUrlLoading" -> shouldOverrideUrlLoading
+        else -> null
     }
 }

@@ -288,7 +288,10 @@ private fun RssSourceEditorTextField(
     onAction: (RssSourceEditAction) -> Unit,
 ) {
     var value by remember(field.key, sourceRevision) {
-        mutableStateOf(TextFieldValue(field.value))
+        val selection = focusedField?.takeIf { it.key == field.key }?.let {
+            TextRange(it.start.coerceIn(0, field.value.length), it.end.coerceIn(0, field.value.length))
+        } ?: TextRange.Zero
+        mutableStateOf(TextFieldValue(field.value, selection))
     }
     var focused by remember { mutableStateOf(false) }
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }

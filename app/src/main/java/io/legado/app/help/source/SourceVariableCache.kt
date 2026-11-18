@@ -10,8 +10,21 @@ internal fun CacheDao.deleteSourceVariables(
     cacheKeys: Collection<String> = allKeys(),
 ) {
     if (sourceKeys.isEmpty()) return
+    val selection = deleteStoredSourceVariables(sourceKeys, cacheKeys)
+    AppCacheManager.clearSourceVariables(selection::contains)
+}
+
+internal fun CacheDao.deleteStoredSourceVariables(
+    sourceKeys: Collection<String>,
+    cacheKeys: Collection<String> = allKeys(),
+): SourceVariableCacheSelection {
     val selection = SourceVariableCacheSelection(sourceKeys, this.sourceKeys())
     deleteByKeysChunked(cacheKeys.filter(selection::contains))
+    return selection
+}
+
+internal fun CacheDao.clearSourceVariablesFromMemory(sourceKeys: Collection<String>) {
+    val selection = SourceVariableCacheSelection(sourceKeys, this.sourceKeys())
     AppCacheManager.clearSourceVariables(selection::contains)
 }
 

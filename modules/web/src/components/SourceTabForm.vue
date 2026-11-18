@@ -30,8 +30,16 @@
           <el-input
             v-if="type == 'String' && typeof namespace != 'undefined'"
             type="textarea"
-            v-model="currentSource[namespace][id]"
-            :placeholder="hint"
+            :model-value="readRuleField(currentSource, namespace, id)"
+            :readonly="isLegacyRuleGroup(currentSource, namespace)"
+            :placeholder="
+              isLegacyRuleGroup(currentSource, namespace)
+                ? '旧格式规则请在 JSON 中编辑'
+                : hint
+            "
+            @update:model-value="
+              writeRuleField(currentSource, namespace, id, $event)
+            "
             autosize
           />
 
@@ -65,6 +73,7 @@
 
 <script setup lang="ts">
 import type { SourceConfig } from '@/config/sourceConfig'
+import { isLegacyRuleGroup, readRuleField, writeRuleField } from '@utils/souce'
 
 const store = useSourceStore()
 defineProps<{ config: SourceConfig }>()

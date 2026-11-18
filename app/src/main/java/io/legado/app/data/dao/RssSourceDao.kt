@@ -104,6 +104,9 @@ interface RssSourceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(vararg rssSource: RssSource)
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    fun insertNew(rssSource: RssSource)
+
     @Update
     fun update(vararg rssSource: RssSource)
 

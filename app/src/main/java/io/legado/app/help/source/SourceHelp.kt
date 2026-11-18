@@ -95,6 +95,25 @@ object SourceHelp {
         deleteBookSourceKeys(listOf(key))
     }
 
+    /** Call inside the rename transaction, after removing the old row. Run the returned cleanup after commit. */
+    internal fun deleteRenamedBookSourceStorage(key: String): () -> Unit {
+        val keys = listOf(key)
+        val cacheKeys = appDb.cacheDao.allKeys()
+        appDb.cacheDao.deleteStoredSourceVariables(keys, cacheKeys)
+        val clearCookies = BookSourceCookieStore.deleteStoredCookies(keys)
+        val clearCache = BookSourceCacheStore.deleteStoredCache(keys, cacheKeys)
+        return {
+            appDb.runInTransaction {
+                if (appDb.bookSourceDao.getBookSourcePart(key) == null) {
+                    appDb.cacheDao.clearSourceVariablesFromMemory(keys)
+                    clearCookies()
+                    clearCache()
+                    SourceConfig.removeSources(keys)
+                }
+            }
+        }
+    }
+
     fun deleteRssSources(sources: List<RssSource>) {
         deleteRssSourceKeys(sources.map { it.sourceUrl }.distinct())
     }

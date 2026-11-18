@@ -1301,6 +1301,12 @@
     <string name="input_replace_url">输入替换规则网址</string>
     <string name="get_book_list_success">搜索列表获取成功 %d</string>
     <string name="non_null_name_url">名称和 URL 不能为空</string>
+    <string name="source_editor_address_exists">源地址已存在</string>
+    <string name="source_editor_original_missing">此源已不存在，请重新打开编辑器</string>
+    <string name="source_editor_original_changed">源已被其他操作修改，请复制草稿后重新打开</string>
+    <string name="source_editor_draft_restore_failed">草稿恢复失败</string>
+    <string name="source_editor_draft_checkpoint_failed">草稿暂存失败，请重试</string>
+    <string name="source_editor_result_failed">无法回填，草稿已保留</string>
     <string name="gallery">图库</string>
     <string name="get_ali_pay_hb">领支付宝红包</string>
     <string name="non_update_url">没有获取到更新地址</string>

@@ -33,6 +33,19 @@ class CodeEditSessionStoreTest {
         assertNull(store.read(sessionId))
     }
 
+    @Test
+    fun workingTextCanBeEmptyAndDoesNotReplaceTheOriginalBeforeAcceptance() {
+        val store = CodeEditSessionStore(temporaryFolder.newFolder("sessions"))
+        val id = store.create("original")
+        assertNull(store.readWorkingText(id))
+        store.writeWorkingText(id, "")
+        assertEquals("", store.readWorkingText(id))
+        assertEquals("original", store.read(id))
+        store.delete(id)
+        assertNull(store.readWorkingText(id))
+        assertNull(store.read(id))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsPathAsSessionId() {
         val store = CodeEditSessionStore(temporaryFolder.newFolder("sessions"))

@@ -49,17 +49,72 @@ export const convertSourcesToMap = (sources: Source[]): Map<string, Source> => {
   return map
 }
 
-export const normalizeSource = (source: any) => {
-  for (const key in source) {
-    const value = source[key]
-    if (
-      value === '' ||
-      value === null ||
-      (typeof value === 'string' && !value.trim())
-    ) {
-      delete source[key]
-    } else if (value instanceof Object) {
-      normalizeSource(value)
+const bookRuleGroups = new Set([
+  'ruleSearch',
+  'ruleExplore',
+  'ruleBookInfo',
+  'ruleToc',
+  'ruleContent',
+  'ruleReview',
+])
+const editedRuleFields = new WeakMap<object, Set<string>>()
+
+const isRuleGroup = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+
+const getRuleGroup = (source: Source, namespace: string): unknown =>
+  (source as Record<string, unknown>)[namespace]
+
+export const isLegacyRuleGroup = (source: Source, namespace: string) => {
+  const group = getRuleGroup(source, namespace)
+  return group != null && !isRuleGroup(group)
+}
+
+export const readRuleField = (source: Source, namespace: string, id: string) => {
+  const group = getRuleGroup(source, namespace)
+  const value = isRuleGroup(group) ? group[id] : undefined
+  return value == null || typeof value === 'object' ? '' : String(value)
+}
+
+export const writeRuleField = (
+  source: Source,
+  namespace: string,
+  id: string,
+  text: string,
+) => {
+  const record = source as Record<string, unknown>
+  if (record[namespace] == null && text !== '') record[namespace] = {}
+  const group = record[namespace]
+  if (!isRuleGroup(group) || group[id] === text) return
+
+  group[id] = text
+  const fields = editedRuleFields.get(group)
+  if (fields) fields.add(id)
+  else editedRuleFields.set(group, new Set([id]))
+}
+
+const normalizeField = (record: Record<string, unknown>, key: string) => {
+  const value = record[key]
+  if (value === null || (typeof value === 'string' && !value.trim())) {
+    delete record[key]
+  } else if (value instanceof Object) {
+    const nested = value as Record<string, unknown>
+    for (const field in nested) normalizeField(nested, field)
+  }
+}
+
+export const normalizeSource = (source: Source) => {
+  const record = source as Record<string, unknown>
+  const book = isBookSource(source)
+  for (const key in record) {
+    if (book && bookRuleGroups.has(key)) {
+      // Keep imported group shapes and values. Only clean fields edited in this form.
+      const group = record[key]
+      if (isRuleGroup(group)) {
+        editedRuleFields.get(group)?.forEach(field => normalizeField(group, field))
+      }
+    } else {
+      normalizeField(record, key)
     }
   }
 }

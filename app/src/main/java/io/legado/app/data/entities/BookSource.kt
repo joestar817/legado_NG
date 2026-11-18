@@ -316,10 +316,11 @@ data class BookSource(
             GSON.fromJsonObject<ContentRule>(json).getOrNull()
 
         @TypeConverter
-        fun stringToReviewRule(json: String?): ReviewRule? = null
+        fun stringToReviewRule(json: String?) =
+            GSON.fromJsonObject<ReviewRule>(json).getOrNull()
 
         @TypeConverter
-        fun reviewRuleToString(reviewRule: ReviewRule?): String = "null"
+        fun reviewRuleToString(reviewRule: ReviewRule?): String = GSON.toJson(reviewRule)
 
     }
 }

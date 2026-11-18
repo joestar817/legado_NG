@@ -9,6 +9,15 @@ data class EditEntity(
     val viewType: Int = 0
 ) {
 
+    internal val originalValue = value
+
+    internal val editedValue: String?
+        get() = if (value.orEmpty() == originalValue.orEmpty()) {
+            originalValue
+        } else {
+            value?.takeIf(String::isNotBlank)
+        }
+
     constructor(
         key: String,
         value: String?,

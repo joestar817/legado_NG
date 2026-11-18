@@ -57,6 +57,7 @@ class CodeEditActivity :
         const val EXTRA_SHOW_LOGIN_SOURCE = "showLoginSource"
         const val EXTRA_CONFIRM_SAVE_ON_EXIT = "confirmSaveOnExit"
         const val EXTRA_TEXT_SESSION_ID = "textSessionId"
+        internal const val EXTRA_SOURCE_FIELD_SESSION = "sourceFieldSession"
         const val EXTRA_RESULT_ACTION = "resultAction"
         const val EXTRA_RESULT_TEXT_CHANGED = "resultTextChanged"
         const val RESULT_ACTION_DEBUG_SOURCE = "debugSource"
@@ -67,6 +68,7 @@ class CodeEditActivity :
         private var replaceText = ""
         private var isRegex = true
         private const val STATE_SESSION_CURSOR_POSITION = "sessionCursorPosition"
+        private const val STATE_SOURCE_FIELD_CURSOR = "sourceFieldCursor"
     }
     override val binding by viewBinding(ActivityCodeEditBinding::inflate)
     override val viewModel by viewModels<CodeEditViewModel>()
@@ -78,6 +80,8 @@ class CodeEditActivity :
     private var searchOptions: SearchOptions? = null
     private var menuSaveBtn: MenuItem? = null
     private var isReturningResult = false
+    private var fieldSessionLoaded = false
+    private val isSourceFieldSession get() = intent.getBooleanExtra(EXTRA_SOURCE_FIELD_SESSION, false)
 
     private val isDark
         get() = AppConfig.editTemeAuto && ThemeConfig.isDarkTheme(this)
@@ -90,7 +94,16 @@ class CodeEditActivity :
         }
         softKeyboardTool.attachToWindow(window)
         editor.colorScheme = TextMateColorScheme2.create(ThemeRegistry.getInstance()) //先设置颜色,避免一开始的白屏
-        viewModel.initData(intent) {
+        if (isSourceFieldSession) {
+            editor.isSaveEnabled = false
+            editor.editable = false
+        }
+        val restoredFieldCursor = savedInstanceState?.takeIf { it.containsKey(STATE_SOURCE_FIELD_CURSOR) }
+            ?.getInt(STATE_SOURCE_FIELD_CURSOR)
+        viewModel.initData(intent, restoredFieldCursor, {
+            if (isSourceFieldSession) finishWithoutPrompt()
+        }) {
+            if (isFinishing || isDestroyed) return@initData
             editor.apply {
                 viewModel.title?.let {
                     binding.titleBar.title = it
@@ -98,18 +111,21 @@ class CodeEditActivity :
                 nonPrintablePaintingFlags = AppConfig.editNonPrintable
                 setEditorLanguage(viewModel.language)
                 upEdit(AppConfig.editFontScale, null, AppConfig.editAutoWrap)
-                setText(viewModel.initialText)
+                setText(viewModel.sourceFieldText ?: viewModel.initialText)
                 editable = viewModel.writable
+                fieldSessionLoaded = true
                 if (viewModel.textSessionId != null) {
                     isSaveEnabled = false
                 }
                 menuSaveBtn?.isVisible = viewModel.writable
                 requestFocus()
                 postDelayed({
-                    val cursorPosition = savedInstanceState
-                        ?.getInt(STATE_SESSION_CURSOR_POSITION)
-                        ?: viewModel.cursorPosition
-                    val pos = cursor.indexer.getCharPosition(cursorPosition)
+                    val cursorPosition = if (isSourceFieldSession) {
+                        viewModel.cursorPosition
+                    } else {
+                        savedInstanceState?.getInt(STATE_SESSION_CURSOR_POSITION) ?: viewModel.cursorPosition
+                    }
+                    val pos = cursor.indexer.getCharPosition(cursorPosition.coerceIn(0, text.length))
                     setSelection(pos.line, pos.column, true)
                 }, 360) // 进行延时,确保加载渲染完成,从而确保光标能显示跳转到长文本最后
             }
@@ -132,10 +148,18 @@ class CodeEditActivity :
 
     override fun onSaveInstanceState(outState: Bundle) {
         viewModel.textSessionId?.let { sessionId ->
-            runCatching {
-                CodeEditSessionStore.app.write(sessionId, editor.text.toString())
-            }.onFailure { it.printOnDebug() }
-            outState.putInt(STATE_SESSION_CURSOR_POSITION, editor.cursor?.left ?: 0)
+            val cursor = editor.cursor?.left ?: 0
+            if (isSourceFieldSession) {
+                if (fieldSessionLoaded && !isFinishing && !isReturningResult) {
+                    viewModel.checkpointSourceField(sessionId, editor.text.toString(), cursor)
+                    outState.putInt(STATE_SOURCE_FIELD_CURSOR, cursor)
+                }
+            } else {
+                runCatching {
+                    CodeEditSessionStore.app.write(sessionId, editor.text.toString())
+                }.onFailure { it.printOnDebug() }
+                outState.putInt(STATE_SESSION_CURSOR_POSITION, cursor)
+            }
         }
         super.onSaveInstanceState(outState)
     }
@@ -144,6 +168,10 @@ class CodeEditActivity :
      * 使用super.finish(),防止循环回调
      * */
     private fun save(check: Boolean) {
+        if (isSourceFieldSession && !fieldSessionLoaded) {
+            if (check) finishWithoutPrompt()
+            return
+        }
         if (!viewModel.writable) return super.finish()
         if (check && intent.getBooleanExtra(EXTRA_CONFIRM_SAVE_ON_EXIT, false)) {
             showDialogFragment<CodeEditSaveExitDialog>()
@@ -153,7 +181,7 @@ class CodeEditActivity :
         val cursorPos = editor.cursor?.left ?: 0
         when {
             text == viewModel.initialText -> {
-                if (cursorPos > 0 || intent.getBooleanExtra("returnUnchangedText", false)) {
+                if (isSourceFieldSession || cursorPos > 0 || intent.getBooleanExtra("returnUnchangedText", false)) {
                     returnResultAndFinish(
                         text = text.takeIf {
                             intent.getBooleanExtra("returnUnchangedText", false)
@@ -170,7 +198,7 @@ class CodeEditActivity :
                     setMessage(R.string.exit_no_save)
                     positiveButton(R.string.yes)
                     negativeButton(R.string.no) {
-                        if (cursorPos > 0) {
+                        if (!isSourceFieldSession && cursorPos > 0) {
                             val result = Intent().apply {
                                 putExtra("cursorPosition", cursorPos)
                             }
@@ -402,6 +430,7 @@ class CodeEditActivity :
                 RESULT_OK,
                 Intent().apply {
                     text?.let { putExtra("text", it) }
+                    if (isSourceFieldSession) putExtra(EXTRA_TEXT_SESSION_ID, sessionId)
                     putExtra("cursorPosition", cursorPosition)
                     putExtra(EXTRA_RESULT_TEXT_CHANGED, textChanged)
                     action?.let { putExtra(EXTRA_RESULT_ACTION, it) }
@@ -414,8 +443,10 @@ class CodeEditActivity :
         isReturningResult = true
         lifecycleScope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    CodeEditSessionStore.app.write(sessionId, text)
+                if (isSourceFieldSession) {
+                    viewModel.finishSourceField(sessionId, text)
+                } else {
+                    withContext(Dispatchers.IO) { CodeEditSessionStore.app.write(sessionId, text) }
                 }
                 setResult(
                     RESULT_OK,
