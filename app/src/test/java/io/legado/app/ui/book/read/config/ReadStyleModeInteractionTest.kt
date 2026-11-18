@@ -8,8 +8,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assertDoesNotExist
-import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -124,6 +123,8 @@ class ReadStyleModeInteractionTest {
                 FloatingSettingsPage(state, Color.Black, actions)
             }
         }
+        composeRule.assertDrawerTextStyle("Globally follow app colors", 14)
+        composeRule.assertDrawerTextStyle("Floating color", 15)
         composeRule.onNodeWithText("Current preset").assertExists()
         composeRule.onNodeWithText("Catalog drawer style").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Day Floating color").assertExists()

@@ -3,7 +3,6 @@ package io.legado.app.ui.book.read.config
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -130,6 +129,10 @@ class ReadPageTurningScreenTest {
             }
         }
 
+        composeRule.assertDrawerTextStyle(context.getString(R.string.read_settings_tab_page), 17)
+        composeRule.assertDrawerTextStyle(context.getString(R.string.volume_key_page), 14)
+        composeRule.assertDrawerTextStyle(context.getString(R.string.double_page_horizontal), 15)
+        composeRule.assertDrawerTextStyle("Single", 13)
         composeRule.onNodeWithText(context.getString(R.string.page_anim_slide)).performClick()
         composeRule.onNodeWithText("Single").performScrollTo().performClick()
         composeRule.onNodeWithText("Double").performClick()

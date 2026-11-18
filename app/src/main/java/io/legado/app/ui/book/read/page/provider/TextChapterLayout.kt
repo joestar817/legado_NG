@@ -3,6 +3,9 @@ package io.legado.app.ui.book.read.page.provider
 import android.graphics.Paint
 import android.text.Layout
 import android.text.Spanned
+import android.text.SpannableString
+import android.graphics.Canvas
+import android.graphics.drawable.ColorDrawable
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.style.ForegroundColorSpan
@@ -22,6 +25,11 @@ import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.getBookSource
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ParagraphCommentIconSettings
+import io.legado.app.help.config.ParagraphCommentIconSource
+import io.legado.app.model.ParagraphCommentIcon
+import io.legado.app.model.ParagraphCommentIconParser
+import io.legado.app.model.ParagraphCommentIconRenderer
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.model.ImageProvider
 import io.legado.app.model.ReadBook
@@ -42,14 +50,13 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import java.util.LinkedList
 import kotlin.math.roundToInt
 import android.util.Size
+import android.util.SparseArray
 import androidx.core.text.HtmlCompat
 import io.legado.app.data.appDb
 import io.legado.app.ui.book.read.page.entities.TextLine.Companion.atLeastApi28
 import io.legado.app.ui.book.read.page.entities.column.TextHtmlColumn
-import io.legado.app.ui.book.read.page.provider.ChapterProvider.reviewStr
 import io.legado.app.ui.book.read.page.provider.ChapterProvider.srcReplaceStr
 import io.legado.app.ui.book.read.page.provider.ChapterProvider.srcReplaceChar
 import io.legado.app.ui.book.read.page.provider.ChapterProvider.srcReplacementChar
@@ -66,6 +73,16 @@ import io.legado.app.ui.book.read.page.entities.column.TextBaseColumn
 import io.legado.app.ui.book.read.page.provider.ChapterProvider.reviewChar
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonObject
+
+/** Measures a display-only image slot without changing its source character range. */
+private class ParagraphIconWidthSpan(private val width: Int) : ReplacementSpan() {
+    override fun getSize(paint: Paint, text: CharSequence?, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int = width
+
+    override fun draw(canvas: Canvas, text: CharSequence?, start: Int, end: Int, x: Float,
+                      top: Int, y: Int, bottom: Int, paint: Paint) = Unit
+}
+
+private data class InlineImage(val src: String, val click: String?, val icon: ParagraphCommentIcon?)
 
 class TextChapterLayout(
     scope: CoroutineScope,
@@ -86,6 +103,30 @@ class TextChapterLayout(
 
     private val contentPaint = ChapterProvider.contentPaint
     private val reviewCharWidth by lazy { contentPaint.measureText(srcReplaceStr) * 1.5556f }
+    private val paragraphIconConfig = ParagraphCommentIconSettings.load()
+    private val paragraphIcons = HashMap<String, ParagraphCommentIcon?>()
+
+    private suspend fun paragraphIcon(src: String): ParagraphCommentIcon? {
+        if (paragraphIconConfig.source == ParagraphCommentIconSource.ORIGINAL) return null
+        if (!paragraphIcons.containsKey(src)) {
+            paragraphIcons[src] = ParagraphCommentIconParser.displayText(src) {
+                ParagraphCommentIconParser.cachedSvgLabel(ImageProvider.cacheImage(book, src, ReadBook.bookSource))
+            }?.let { label ->
+                // Check the selected template on the layout worker before reserving a custom
+                // slot. A failed render then follows the source image's normal layout and cache.
+                val textColor = contentPaint.color
+                val color = paragraphIconConfig.color(ReadBookConfig.isNightTheme, textColor)
+                val width = paragraphIconWidth(contentPaint)
+                val height = ParagraphCommentIconRenderer.heightInLine(width, contentPaintTextHeight)
+                ParagraphCommentIconRenderer.bitmap(paragraphIconConfig, label, color, width.roundToInt(), height.roundToInt(), textColor)
+                    ?.let { ParagraphCommentIcon(label, paragraphIconConfig) }
+            }
+        }
+        return paragraphIcons[src]
+    }
+
+    private fun paragraphIconWidth(paint: Paint): Float =
+        paint.measureText(srcReplaceStr) * 1.5556f * paragraphIconConfig.size / 100f
     private val contentPaintTextHeight = ChapterProvider.contentPaintTextHeight
     private val contentPaintFontMetrics = ChapterProvider.contentPaintFontMetrics
 
@@ -277,8 +318,7 @@ class TextChapterLayout(
                     segmentHeight = segmentMetrics.bottom - segmentMetrics.top
                 }
                 val firstSegmentLine = pendingTextPage.lines.size
-                val srcList = LinkedList<String>()
-                val clickList = LinkedList<String?>()
+                val images = SparseArray<InlineImage>(1)
                 val titleImg = if (firstLine) {
                     firstLine = false
                     bookChapter.imgUrl
@@ -291,7 +331,9 @@ class TextChapterLayout(
                     val urlMatcher = paramPattern.matcher(titleImg)
                     var click: String? = null
                     var style: String? = null
-                    var imgSize = ImageProvider.getImageSize(book, titleImg, ReadBook.bookSource)
+                    val paragraphIcon = paragraphIcon(titleImg)
+                    var imgSize = if (paragraphIcon != null) Size(54, 39)
+                        else ImageProvider.getImageSize(book, titleImg, ReadBook.bookSource)
                     if (urlMatcher.find()) {
                         var width: String? = null
                         val urlOptionStr = titleImg.substring(urlMatcher.end())
@@ -320,6 +362,7 @@ class TextChapterLayout(
                             }
                         }
                     }
+                    if (paragraphIcon != null) style = "TEXT"
                     if (style == null) {
                         style = if (imgSize.width < 80 && imgSize.height < 80) {
                             "text"
@@ -329,13 +372,11 @@ class TextChapterLayout(
                     }
                     when (style) {
                         "text" -> {
-                            srcList.add(titleImg)
-                            clickList.add(click)
+                            images.append(text.length, InlineImage(titleImg, click, paragraphIcon))
                             srcReplaceChar
                         }
                         "TEXT" -> {
-                            srcList.add(titleImg)
-                            clickList.add(click)
+                            images.append(text.length, InlineImage(titleImg, click, paragraphIcon))
                             reviewChar
                         }
                         else -> {
@@ -360,8 +401,7 @@ class TextChapterLayout(
                     segmentHeight,
                     segmentMetrics,
                     imageStyle,
-                    srcList = srcList,
-                    clickList = clickList,
+                    images = images,
                     isTitle = true,
                     emptyContent = contents.isEmpty(),
                     isVolumeTitle = bookChapter.isVolume,
@@ -442,7 +482,7 @@ class TextChapterLayout(
             var text = content.replace(srcReplaceChar, srcReplacementChar)
             if (isTextImageStyle) {
                 //图片样式为文字嵌入类型
-                val srcList = LinkedList<String>()
+                val images = SparseArray<InlineImage>(0)
                 sb.setLength(0)
                 val matcher = AppPattern.imgPattern.matcher(text)
                 var sourceCursor = 0
@@ -451,8 +491,12 @@ class TextChapterLayout(
                         textPositions.addSource(paragraphPositions, sourceCursor, matcher.start())
                         textPositions.addImage(paragraphPositions, matcher.start(), matcher.end())
                         sourceCursor = matcher.end()
-                        srcList.add(src)
                         matcher.appendReplacement(sb, srcReplaceStr)
+                        val options = paramPattern.matcher(src)
+                        val click = if (options.find()) {
+                            GSON.fromJsonObject<Map<String, String>>(src.substring(options.end())).getOrNull()?.get("click")
+                        } else null
+                        images.append(sb.length - 1, InlineImage(src, click, paragraphIcon(src)))
                     }
                 }
                 matcher.appendTail(sb)
@@ -465,8 +509,7 @@ class TextChapterLayout(
                     contentPaintTextHeight,
                     contentPaintFontMetrics,
                     imageStyle,
-                    srcList = srcList,
-                    clickList = null,
+                    images = images,
                     highlightContext = highlightContext?.context,
                     highlightContextOffset = highlightContext?.offset ?: 0,
                     positions = textPositions,
@@ -477,8 +520,7 @@ class TextChapterLayout(
                     prepareNextPageIfNeed()
                 }
                 var start = 0
-                val srcList = LinkedList<String>()
-                val clickList = LinkedList<String?>()
+                val images = SparseArray<InlineImage>(0)
                 sb.setLength(0)
                 var isFirstLine = true
                 if (content.contains("<img")) {
@@ -488,7 +530,9 @@ class TextChapterLayout(
                         val imgSrc = matcher.group(1)!!
                         var style: String? = null
                         var click: String? = null
-                        var imgSize = ImageProvider.getImageSize(book, imgSrc, ReadBook.bookSource)
+                        val paragraphIcon = paragraphIcon(imgSrc)
+                        var imgSize = if (paragraphIcon != null) Size(54, 39)
+                            else ImageProvider.getImageSize(book, imgSrc, ReadBook.bookSource)
                         val urlMatcher = paramPattern.matcher(imgSrc)
                         if (urlMatcher.find()) {
                             var width: String? = null
@@ -517,6 +561,7 @@ class TextChapterLayout(
                                 }
                             }
                         }
+                        if (paragraphIcon != null) style = "TEXT"
                         if (style == null) {
                             style = if (imgSize.width < 80 && imgSize.height < 80) {
                                 "text"
@@ -532,14 +577,12 @@ class TextChapterLayout(
                             "TEXT" -> {
                                 sb.append(reviewChar)
                                 textPositions.addImage(paragraphPositions, matcher.start(), matcher.end())
-                                srcList.add(imgSrc)
-                                clickList.add(click)
+                                images.append(sb.length - 1, InlineImage(imgSrc, click, paragraphIcon))
                             }
                             "text" -> {
                                 sb.append(srcReplaceChar)
                                 textPositions.addImage(paragraphPositions, matcher.start(), matcher.end())
-                                srcList.add(imgSrc)
-                                clickList.add(click)
+                                images.append(sb.length - 1, InlineImage(imgSrc, click, paragraphIcon))
                             }
                             else -> {
                                 val textBefore = sb.toString()
@@ -552,13 +595,13 @@ class TextChapterLayout(
                                         contentPaintFontMetrics,
                                         "TEXT",
                                         isFirstLine = isFirstLine,
-                                        srcList = srcList,
-                                        clickList = clickList,
+                                        images = images,
                                         highlightContext = highlightContext?.context,
                                         highlightContextOffset = highlightContext?.offset ?: 0,
                                         positions = textPositions,
                                     )
                                     sb.setLength(0)
+                                    images.clear()
                                     textPositions.clear()
                                     isFirstLine = false
                                 }
@@ -596,8 +639,7 @@ class TextChapterLayout(
                         contentPaintFontMetrics,
                         "TEXT",
                         isFirstLine = isFirstLine,
-                        srcList = srcList,
-                        clickList = clickList,
+                        images = images,
                         highlightContext = highlightContext?.context,
                         highlightContextOffset = highlightContext?.offset ?: 0,
                         positions = textPositions,
@@ -727,11 +769,27 @@ class TextChapterLayout(
     private suspend fun setTypeHtml(
         imageStyle: String?,
         book: Book,
-        spanned: Spanned,
+        originalSpanned: Spanned,
         canonicalStart: Int,
     ) {
         val width = visibleWidth
         val textPaint = contentPaint
+        var resized: SpannableString? = null
+        if (paragraphIconConfig.source != ParagraphCommentIconSource.ORIGINAL) {
+            for (span in originalSpanned.getSpans(0, originalSpanned.length, ImageSpan::class.java)) {
+                val src = span.source ?: continue
+                if (paragraphIcon(src) == null) continue
+                val spans = resized ?: SpannableString(originalSpanned).also { resized = it }
+                val boundsWidth = paragraphIconWidth(textPaint).roundToInt().coerceAtLeast(1)
+                val drawable = ColorDrawable(android.graphics.Color.TRANSPARENT).apply {
+                    setBounds(0, 0, boundsWidth, (boundsWidth * 39f / 54f).roundToInt())
+                }
+                spans.removeSpan(span)
+                spans.setSpan(ImageSpan(drawable, src, span.verticalAlignment), originalSpanned.getSpanStart(span),
+                    originalSpanned.getSpanEnd(span), originalSpanned.getSpanFlags(span))
+            }
+        }
+        val spanned = resized ?: originalSpanned
         val textColor = ReadBookConfig.textColor
         if (textPaint.color != textColor) {
             textPaint.color = textColor
@@ -802,7 +860,10 @@ class TextChapterLayout(
                         var iStyle = urlOption["style"]
                         val width = urlOption["width"]
                         val click = urlOption["click"]
-                        var imgSize = ImageProvider.getImageSize(book, source, ReadBook.bookSource)
+                        val paragraphIcon = paragraphIcon(source)
+                        if (paragraphIcon != null) iStyle = "TEXT"
+                        var imgSize = if (paragraphIcon != null) Size(54, 39)
+                            else ImageProvider.getImageSize(book, source, ReadBook.bookSource)
                         width?.let {
                             if (width.endsWith("%")) {
                                 width.dropLast(1).toIntOrNull()?.let { percentage ->
@@ -826,13 +887,29 @@ class TextChapterLayout(
                         }
                         when (iStyle?.uppercase()) {
                             "TEXT" -> {
-                                ImageProvider.cacheImage(book, source, ReadBook.bookSource)
+                                if (paragraphIcon == null) ImageProvider.cacheImage(book, source, ReadBook.bookSource)
+                                val left: Float
+                                val right: Float
+                                if (paragraphIcon != null) {
+                                    // At a line break the next caret is on another line. Use the measured
+                                    // span width, not the font advance of the U+FFFC placeholder.
+                                    val rtl = staticLayout.isRtlCharAt(charIndex)
+                                    val origin = if (rtl == (staticLayout.getParagraphDirection(lineIndex) < 0)) charX
+                                        else staticLayout.getSecondaryHorizontal(charIndex)
+                                    val spanWidth = span.drawable.bounds.width()
+                                    left = if (rtl) origin - spanWidth else origin
+                                    right = left + spanWidth
+                                } else {
+                                    left = charX
+                                    right = charRight
+                                }
                                 columns.add(
                                     ImageColumn(
-                                        start = absStartX + charX,
-                                        end = absStartX + charRight,
+                                        start = absStartX + left,
+                                        end = absStartX + right,
                                         src = source,
-                                        click = click
+                                        click = click,
+                                        paragraphCommentIcon = paragraphIcon,
                                     )
                                 )
                             }
@@ -1039,8 +1116,7 @@ class TextChapterLayout(
         isFirstLine: Boolean = true,
         emptyContent: Boolean = false,
         isVolumeTitle: Boolean = false,
-        srcList: LinkedList<String>? = null,
-        clickList: LinkedList<String?>?,
+        images: SparseArray<InlineImage>,
         highlightContext: ReadHighlightContext? = null,
         highlightContextOffset: Int = 0,
         positions: HighlightTextPositions,
@@ -1049,6 +1125,15 @@ class TextChapterLayout(
         val widthsArray = allocateFloatArray(text.length)
         textPaint.getTextWidthsCompat(text, widthsArray, reviewCharWidth)
         remeasureHighlightFonts(text, charStyles, textPaint, widthsArray)
+        var measuredText: CharSequence = text
+        for (i in 0 until images.size()) {
+            if (images.valueAt(i).icon == null) continue
+            val index = images.keyAt(i)
+            val iconWidth = paragraphIconWidth(textPaint)
+            widthsArray[index] = iconWidth
+            val spannable = measuredText as? SpannableString ?: SpannableString(text).also { measuredText = it }
+            spannable.setSpan(ParagraphIconWidthSpan(iconWidth.roundToInt()), index, index + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
         val nineSliceBudget = charStyles?.takeIf { styles -> styles.any { it?.bgImageFit == 3 && it.bgImage.isNotBlank() } }
             ?.let { styles ->
                 ReadNineSliceWidthBudget(styles, { style ->
@@ -1065,7 +1150,7 @@ class TextChapterLayout(
             val (words, widths) = measureTextSplit(text, widthsArray)
             ReadNineSliceLayout(text, textPaint, visibleWidth, words, widths, nineSliceBudget)
         } else {
-            StaticLayout(text, textPaint, visibleWidth, Layout.Alignment.ALIGN_NORMAL, 0f, 0f, true)
+            StaticLayout(measuredText, textPaint, visibleWidth, Layout.Alignment.ALIGN_NORMAL, 0f, 0f, true)
         }
         durY = when {
             //标题y轴居中
@@ -1118,7 +1203,7 @@ class TextChapterLayout(
                     //多行的第一行 非标题
                     addCharsToLineFirst(
                         book, absStartX, textLine, words, textPaint,
-                        desiredWidth, widths, srcList, clickList, charStyles, lineStart
+                        desiredWidth, widths, images, charStyles, lineStart
                     )
                 }
                 layout.lineCount - 1 -> {
@@ -1135,7 +1220,7 @@ class TextChapterLayout(
                     }
                     addCharsToLineNatural(
                         book, absStartX, textLine, words,
-                        startX, !isTitle && lineIndex == 0, widths, srcList, clickList, charStyles, lineStart
+                        startX, !isTitle && lineIndex == 0, widths, images, charStyles, lineStart
                     )
                 }
                 else -> {
@@ -1148,13 +1233,13 @@ class TextChapterLayout(
                         val startX = (visibleWidth - desiredWidth) / 2
                         addCharsToLineNatural(
                             book, absStartX, textLine, words,
-                            startX, false, widths, srcList, clickList, charStyles, lineStart
+                            startX, false, widths, images, charStyles, lineStart
                         )
                     } else {
                         //中间行
                         addCharsToLineMiddle(
                             book, absStartX, textLine, words, textPaint,
-                            desiredWidth, 0f, widths, srcList, clickList, charStyles, lineStart
+                            desiredWidth, 0f, widths, images, charStyles, lineStart
                         )
                     }
                 }
@@ -1273,8 +1358,7 @@ class TextChapterLayout(
         /**自然排版长度**/
         desiredWidth: Float,
         textWidths: List<Float>,
-        srcList: LinkedList<String>?,
-        clickList: LinkedList<String?>?,
+        images: SparseArray<InlineImage>,
         charStyles: Array<ReadCharStyle?>?,
         lineStart: Int,
     ) {
@@ -1282,7 +1366,7 @@ class TextChapterLayout(
         if (!textFullJustify) {
             addCharsToLineNatural(
                 book, absStartX, textLine, words,
-                x, true, textWidths, srcList, clickList, charStyles, lineStart
+                x, true, textWidths, images, charStyles, lineStart
             )
             return
         }
@@ -1305,7 +1389,7 @@ class TextChapterLayout(
             val textWidths1 = textWidths.subList(bodyIndent.length, textWidths.size)
             addCharsToLineMiddle(
                 book, absStartX, textLine, text1, textPaint,
-                desiredWidth, x, textWidths1, srcList, clickList, charStyles,
+                desiredWidth, x, textWidths1, images, charStyles,
                 lineStart + bodyIndent.length
             )
         }
@@ -1325,22 +1409,21 @@ class TextChapterLayout(
         /**起始x坐标**/
         startX: Float,
         textWidths: List<Float>,
-        srcList: LinkedList<String>?,
-        clickList: LinkedList<String?>?,
+        images: SparseArray<InlineImage>,
         charStyles: Array<ReadCharStyle?>?,
         lineStart: Int,
     ) {
         if (!textFullJustify) {
             addCharsToLineNatural(
                 book, absStartX, textLine, words,
-                startX, false, textWidths, srcList,
-                clickList, charStyles, lineStart
+                startX, false, textWidths, images, charStyles, lineStart
             )
             return
         }
         val insets = highlightNineSliceInsets(words, charStyles, lineStart, textLine)
         val residualWidth = visibleWidth - desiredWidth
         val spaceSize = words.count { it == " " }
+        var offset = lineStart
         textLine.startX = absStartX + startX
         if (spaceSize > 1) {
             val d = residualWidth / spaceSize
@@ -1357,9 +1440,9 @@ class TextChapterLayout(
                 }
                 addCharToLine(
                     book, absStartX, textLine, char,
-                    x, x1, index + 1 == words.size, srcList,
-                    clickList
+                    x, x1, images[offset]
                 )
+                offset += char.length
                 x = x1
             }
         } else {
@@ -1375,9 +1458,9 @@ class TextChapterLayout(
                 val x1 = if (index != words.lastIndex) (x + cw + d) else (x + cw)
                 addCharToLine(
                     book, absStartX, textLine, char,
-                    x, x1, index + 1 == words.size, srcList,
-                    clickList
+                    x, x1, images[offset]
                 )
+                offset += char.length
                 x = x1
             }
         }
@@ -1395,13 +1478,13 @@ class TextChapterLayout(
         startX: Float,
         hasIndent: Boolean,
         textWidths: List<Float>,
-        srcList: LinkedList<String>?,
-        clickList: LinkedList<String?>?,
+        images: SparseArray<InlineImage>,
         charStyles: Array<ReadCharStyle?>?,
         lineStart: Int,
     ) {
         val insets = highlightNineSliceInsets(words, charStyles, lineStart, textLine)
         val indentLength = paragraphIndent.length
+        var offset = lineStart
         var x = startX
         textLine.startX = absStartX + startX
         for (index in words.indices) {
@@ -1409,7 +1492,8 @@ class TextChapterLayout(
             val char = words[index]
             val cw = textWidths[index]
             val x1 = x + cw
-            addCharToLine(book, absStartX, textLine, char, x, x1, index + 1 == words.size, srcList, clickList)
+            addCharToLine(book, absStartX, textLine, char, x, x1, images[offset])
+            offset += char.length
             x = x1
             if (hasIndent && index == indentLength - 1) {
                 textLine.indentWidth = x
@@ -1451,37 +1535,14 @@ class TextChapterLayout(
         char: String,
         xStart: Float,
         xEnd: Float,
-        isLineEnd: Boolean,
-        srcList: LinkedList<String>?,
-        clickList: LinkedList<String?>?
+        image: InlineImage?,
     ) {
-        val column = when {
-            !srcList.isNullOrEmpty() && (char == srcReplaceStr || char == reviewStr) -> {
-                val src = srcList.removeFirst()
-                val click = clickList?.removeFirst()
-                ImageProvider.cacheImage(book, src, ReadBook.bookSource)
-                ImageColumn(
-                    start = absStartX + xStart,
-                    end = absStartX + xEnd,
-                    src = src,
-                    click = click
-                )
-            }
-//            isLineEnd && char == ChapterProvider.reviewChar -> {
-//                ReviewColumn(
-//                    start = absStartX + xStart,
-//                    end = absStartX + xEnd,
-//                    count = 10
-//                )
-//            }
-
-            else -> {
-                TextColumn(
-                    start = absStartX + xStart,
-                    end = absStartX + xEnd,
-                    charData = char
-                )
-            }
+        val column = if (image != null) {
+            if (image.icon == null) ImageProvider.cacheImage(book, image.src, ReadBook.bookSource)
+            ImageColumn(start = absStartX + xStart, end = absStartX + xEnd,
+                src = image.src, click = image.click, paragraphCommentIcon = image.icon)
+        } else {
+            TextColumn(start = absStartX + xStart, end = absStartX + xEnd, charData = char)
         }
         textLine.addColumn(column)
     }

@@ -221,7 +221,6 @@ private fun AutoReadPanel(
                         text = stringResource(R.string.auto_next_page),
                         color = contentColor,
                         fontSize = 17.sp,
-                        fontWeight = FontWeight.Medium,
                     )
                     Spacer(Modifier.weight(1f))
                     AutoReadStopButton(
@@ -368,8 +367,8 @@ private fun AutoReadModeDock(
                 Text(
                     text = label,
                     color = if (selected) selectedContentColor else contentColor,
-                    fontSize = 14.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    fontSize = 13.sp,
+                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
                     textAlign = TextAlign.Center,
                 )
             }

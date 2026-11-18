@@ -12,13 +12,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,14 +34,19 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
 import com.github.liuyueyi.quick.transfer.constants.TransType
 import io.legado.app.R
 import io.legado.app.base.BaseComposeDialogFragment
 import io.legado.app.constant.EventBus
 import io.legado.app.help.config.AppConfig
+import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.help.config.ParagraphCommentIconSettings
+import io.legado.app.help.config.ParagraphCommentIconSource
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.read.ReadDrawerContentTheme
@@ -104,6 +114,12 @@ class ReadContentSettingsDialog : BaseComposeDialogFragment() {
                 themeSnapshot?.let { snapshot ->
                     ReadDrawerContentTheme(snapshot = snapshot) {
                         NgDismissibleDrawer(onDismiss = { dismissAllowingStateLoss() }) {
+                            var showParagraphIcons by rememberSaveable { mutableStateOf(false) }
+                            BackHandler(enabled = showParagraphIcons) { showParagraphIcons = false }
+                            if (showParagraphIcons) {
+                                ReadParagraphCommentIconSettings(onBack = { showParagraphIcons = false })
+                                return@NgDismissibleDrawer
+                            }
                             screenState?.let { state ->
                                 ReadContentSettingsScreen(
                                     state = state,
@@ -121,6 +137,7 @@ class ReadContentSettingsDialog : BaseComposeDialogFragment() {
                                         readActivity?.setReadContentReSegment(enabled)
                                         refreshUi()
                                     },
+                                    onParagraphIcons = { showParagraphIcons = true },
                                 )
                             }
                         }
@@ -165,6 +182,7 @@ internal fun ReadContentSettingsScreen(
     onOpenReplaceRules: () -> Unit,
     onRemoveSameTitleChanged: (Boolean) -> Unit,
     onReSegmentChanged: (Boolean) -> Unit,
+    onParagraphIcons: () -> Unit,
 ) {
     val contentColor = Color(NgTheme.colors.onSurface)
     val maxHeight = LocalConfiguration.current.screenHeightDp.dp
@@ -177,6 +195,7 @@ internal fun ReadContentSettingsScreen(
             NgLongDrawerHeader(
                 title = stringResource(R.string.content),
                 centerTitle = true,
+                titleFontWeight = FontWeight.Normal,
             )
             Column(
                 Modifier.fillMaxWidth().weight(1f, fill = false)
@@ -251,6 +270,24 @@ internal fun ReadContentSettingsScreen(
                             onCheckedChange = onReSegmentChanged,
                             enabled = state.bookAvailable,
                         )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                NgFormPanel {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onParagraphIcons)
+                        .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.paragraph_icon_title), Modifier.weight(1f),
+                            color = contentColor, fontSize = ReadSettingTextSize.navigationLabel)
+                        val iconConfig = remember { ParagraphCommentIconSettings.load() }
+                        if (iconConfig.source == ParagraphCommentIconSource.ORIGINAL) {
+                            Text(stringResource(R.string.paragraph_icon_source_hint), Modifier.padding(end = 4.dp),
+                                color = Color(NgTheme.colors.onSurfaceVariant), fontSize = 12.sp)
+                        } else {
+                            ParagraphIconPicture(iconConfig, iconConfig.color(ReadBookConfig.isNightTheme, ReadBookConfig.textColor),
+                                Modifier.size(32.dp, 24.dp).padding(end = 4.dp))
+                        }
+                        Icon(painterResource(R.drawable.ic_arrow_right), null, Modifier.size(20.dp),
+                            Color(NgTheme.colors.onSurfaceVariant))
                     }
                 }
             }

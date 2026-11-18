@@ -545,7 +545,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="20dp"
                             android:contentDescription="@string/read_settings_tab_page"
-                            android:src="@drawable/ic_manga_menu_reading"
+                            android:src="@drawable/ic_read_menu_page_turning"
                             app:tint="@color/primaryText" />
 
                         <TextView

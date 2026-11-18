@@ -57,6 +57,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
@@ -229,6 +230,7 @@ internal fun ReadBottomToolbarConfigScreen(
                                             onCheckedChange = { onVisibilityChanged(tool, it) },
                                             modifier = Modifier.weight(1f),
                                             leadingIconRes = tool.iconRes,
+                                            titleFontSize = 16.sp,
                                         )
                                     }
                                 }
@@ -263,7 +265,7 @@ private fun ReadSettingsDrawer(
                 .padding(top = 6.dp, bottom = 8.dp),
         ) {
             if (onBack == null) {
-                NgLongDrawerHeader(title = title, centerTitle = true)
+                NgLongDrawerHeader(title = title, centerTitle = true, titleFontWeight = FontWeight.Normal)
             } else {
                 val color = Color(NgTheme.colors.onSurface)
                 NgDrawerDragHandle(variant = NgDrawerDragHandleVariant.COMPACT)
@@ -377,6 +379,7 @@ internal fun ReadPageTurningScreen(
             NgLongDrawerHeader(
                 title = stringResource(R.string.read_settings_tab_page),
                 centerTitle = true,
+                titleFontWeight = FontWeight.Normal,
             )
             Column(
                 Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
@@ -623,6 +626,7 @@ internal fun SwitchSettingRow(
     enabled: Boolean = true,
     summary: String? = null,
     @DrawableRes leadingIconRes: Int? = null,
+    titleFontSize: TextUnit = ReadSettingTextSize.switchLabel,
 ) {
     val contentColor = Color(NgTheme.colors.onSurface)
     Row(
@@ -649,7 +653,7 @@ internal fun SwitchSettingRow(
                 text = title,
                 modifier = Modifier.weight(1f),
                 color = contentColor,
-                fontSize = 16.sp,
+                fontSize = titleFontSize,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -661,7 +665,7 @@ internal fun SwitchSettingRow(
                 Text(
                     text = title,
                     color = contentColor,
-                    fontSize = 16.sp,
+                    fontSize = titleFontSize,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -760,7 +764,7 @@ private fun ChoiceSettingRow(
             text = title,
             modifier = Modifier.weight(1f),
             color = contentColor,
-            fontSize = 16.sp,
+            fontSize = ReadSettingTextSize.navigationLabel,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -775,7 +779,7 @@ private fun ChoiceSettingRow(
                 Text(
                     text = selectedLabel,
                     color = contentColor.copy(alpha = 0.68f),
-                    fontSize = 14.sp,
+                    fontSize = ReadSettingTextSize.trailingValue,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -834,7 +838,7 @@ private fun ValueSettingRow(
             text = title,
             modifier = Modifier.weight(1f),
             color = contentColor,
-            fontSize = 16.sp,
+            fontSize = ReadSettingTextSize.navigationLabel,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -842,7 +846,7 @@ private fun ValueSettingRow(
             Text(
                 text = value,
                 color = contentColor.copy(alpha = 0.68f),
-                fontSize = 14.sp,
+                fontSize = ReadSettingTextSize.trailingValue,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

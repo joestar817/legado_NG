@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reading menu variant of Lucide book-open, 70562c1ee1c4fdcf736fe97bc893fb8511927934; license: assets/licenses/lucide-manga-icons.txt -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000" android:strokeWidth="1.8"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M12 5v16" />
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#FF000000" android:strokeWidth="1.8"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M20.001 19 A2 2 0 0 0 22 17 V5 a2 2 0 0 0 -1.999 -2 L16 3.002 A5 5 0 0 0 12 5 a5 5 0 0 0 -4 -2 H4 a2 2 0 0 0 -2 2 v12 a2 2 0 0 0 1.999 2 H8 a5 5 0 0 1 4 2 5 5 0 0 1 4 -2 z" />
+</vector>

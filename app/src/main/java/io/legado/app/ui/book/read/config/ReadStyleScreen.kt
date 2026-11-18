@@ -135,6 +135,12 @@ private val SettingIconSize = 18.dp
 private val SettingIconSlotSize = 22.dp
 private val SettingIconTextSpacing = 4.dp
 
+internal object ReadSettingTextSize {
+    val switchLabel = 14.sp
+    val navigationLabel = 15.sp
+    val trailingValue = 13.sp
+}
+
 internal fun presetGridViewportHeight(presetCount: Int, availableHeight: Dp): Dp {
     // 新建和导入占位也占格子，满一行后才需要增加下一行的高度。
     val rowCount = ((presetCount.coerceAtLeast(0) + PresetGridActionCount + PresetGridColumns - 1) /
@@ -1890,7 +1896,7 @@ internal fun PresetSwitchRow(
             text = title,
             modifier = Modifier.padding(start = SettingIconTextSpacing).weight(1f),
             color = contentColor,
-            fontSize = 14.sp,
+            fontSize = ReadSettingTextSize.switchLabel,
         )
         NgSwitchControl(
             checked = checked,
@@ -2262,7 +2268,7 @@ internal fun EditorNavigationRow(
             text = title,
             modifier = Modifier.weight(1f),
             color = rowColor,
-            fontSize = 15.sp,
+            fontSize = ReadSettingTextSize.navigationLabel,
         )
         if (trailingContent != null) {
             trailingContent()
@@ -2270,7 +2276,7 @@ internal fun EditorNavigationRow(
             Text(
                 text = summary,
                 color = rowColor.copy(alpha = if (enabled) 0.62f else 0.72f),
-                fontSize = 13.sp,
+                fontSize = ReadSettingTextSize.trailingValue,
             )
         }
         Icon(

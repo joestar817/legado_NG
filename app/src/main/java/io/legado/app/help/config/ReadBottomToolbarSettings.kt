@@ -17,7 +17,7 @@ internal enum class ReadBottomTool(
     READ_ALOUD("read_aloud", R.string.read_aloud, R.drawable.ic_read_menu_aloud),
     INTERFACE("interface", R.string.interface_setting, R.drawable.ic_read_menu_interface),
     MORE("more", R.string.more, R.drawable.ic_manga_menu_settings),
-    PAGE_TURNING("page_turning", R.string.read_settings_tab_page, R.drawable.ic_manga_menu_reading),
+    PAGE_TURNING("page_turning", R.string.read_settings_tab_page, R.drawable.ic_read_menu_page_turning),
     SCROLL("scroll", R.string.read_menu_scroll, R.drawable.ic_auto_page),
     CONTENT("content", R.string.content, R.drawable.ic_read_menu_content),
     FLOATING("floating", R.string.read_menu_floating, R.drawable.ic_read_menu_floating),

@@ -5,9 +5,13 @@ import android.graphics.RectF
 import androidx.annotation.Keep
 import io.legado.app.model.ImageProvider
 import io.legado.app.model.ReadBook
+import io.legado.app.model.ParagraphCommentIcon
+import io.legado.app.model.ParagraphCommentIconRenderer
+import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.ui.book.read.page.ContentTextView
 import io.legado.app.ui.book.read.page.entities.TextLine
 import io.legado.app.ui.book.read.page.entities.TextLine.Companion.emptyTextLine
+import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.utils.dpToPx
 import io.legado.app.utils.toastOnUi
 import splitties.init.appCtx
@@ -20,7 +24,8 @@ data class ImageColumn(
     override var start: Float,
     override var end: Float,
     var src: String,
-    var click: String? = null
+    var click: String? = null,
+    val paragraphCommentIcon: ParagraphCommentIcon? = null,
 ) : BaseColumn {
 
     override var textLine: TextLine = emptyTextLine
@@ -28,6 +33,12 @@ data class ImageColumn(
         val book = ReadBook.book ?: return
 
         val height = textLine.height
+
+        paragraphCommentIcon?.let { icon ->
+            val textColor = ChapterProvider.contentPaint.color
+            val color = icon.config.color(ReadBookConfig.isNightTheme, textColor)
+            if (ParagraphCommentIconRenderer.draw(canvas, icon, start, end, height, color, view.imagePaint, textColor)) return
+        }
 
         val bitmap = ImageProvider.getImage(
             book,

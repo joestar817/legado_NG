@@ -63,7 +63,9 @@ fun NgLongDrawerHeader(
     centerTitle: Boolean = false,
     modifier: Modifier = Modifier,
     navigationActive: Boolean = false,
+    titleFontWeight: FontWeight = FontWeight.Medium,
     navigationContent: (@Composable () -> Unit)? = null,
+    actionContent: (@Composable () -> Unit)? = null,
 ) {
     val colors = NgTheme.colors
     val hasSecondaryAction = secondaryActionIconRes != null && onSecondaryActionClick != null
@@ -103,7 +105,7 @@ fun NgLongDrawerHeader(
                 color = Color(colors.onSurface),
                 fontSize = 17.sp,
                 lineHeight = 21.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = titleFontWeight,
                 textAlign = if (centerTitle) TextAlign.Center else TextAlign.Start,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -164,12 +166,16 @@ fun NgLongDrawerHeader(
                 )
             }
             if (centerTitle) {
-                DrawerHeaderIconSlot(
-                    iconRes = actionIconRes,
-                    contentDescription = actionContentDescription,
-                    active = actionActive,
-                    onClick = onActionClick,
-                )
+                if (actionContent != null) {
+                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { actionContent() }
+                } else {
+                    DrawerHeaderIconSlot(
+                        iconRes = actionIconRes,
+                        contentDescription = actionContentDescription,
+                        active = actionActive,
+                        onClick = onActionClick,
+                    )
+                }
             } else if (actionIconRes != null && onActionClick != null) {
                 DrawerHeaderIconSlot(
                     iconRes = actionIconRes,

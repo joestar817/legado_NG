@@ -18,6 +18,7 @@ import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.BookHelp
 import io.legado.app.help.book.ContentProcessor
+import io.legado.app.help.book.getBookSource
 import io.legado.app.help.book.isEpub
 import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.isLocalModified
@@ -651,7 +652,8 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
         src ?: return
         val book = ReadBook.book ?: return
         execute {
-            val image = BookHelp.getImage(book, src)
+            val image = BookHelp.getImage(book, src).takeIf { it.isFile }
+                ?: ImageProvider.cacheImage(book, src, book.getBookSource())
             FileInputStream(image).use { input ->
                 if (uri.isContentScheme()) {
                     DocumentFile.fromTreeUri(context, uri)?.let { doc ->

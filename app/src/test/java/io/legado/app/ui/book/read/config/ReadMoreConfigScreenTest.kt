@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -103,6 +102,10 @@ class ReadMoreConfigScreenTest {
             }
         }
 
+        composeRule.assertDrawerTextStyle(context.getString(R.string.read_more_settings_title), 17)
+        composeRule.assertDrawerTextStyle(context.getString(R.string.pt_hide_status_bar), 14)
+        composeRule.assertDrawerTextStyle(context.getString(R.string.screen_direction), 15)
+        composeRule.assertDrawerTextStyle("System orientation", 13)
         listOf(
             R.string.read_settings_tab_interface,
             R.string.read_settings_current_book,

@@ -13,14 +13,14 @@
         <path
             android:fillColor="@android:color/transparent"
             android:pathData="M4,13C4,8.6 7.6,5 12,5C16.4,5 20,8.6 20,13"
-            android:strokeWidth="1.8"
+            android:strokeWidth="1.5"
             android:strokeColor="#FF000000"
             android:strokeLineCap="round"
             android:strokeLineJoin="round" />
         <path
             android:fillColor="@android:color/transparent"
             android:pathData="M4,13v3a2,2 0,0 0,2 2h1a1,1 0,0 0,1 -1v-5a1,1 0,0 0,-1 -1H6a2,2 0,0 0,-2 2zM20,13v3a2,2 0,0 1,-2 2h-1a1,1 0,0 1,-1 -1v-5a1,1 0,0 1,1 -1h1a2,2 0,0 1,2 2z"
-            android:strokeWidth="1.8"
+            android:strokeWidth="1.5"
             android:strokeColor="#FF000000"
             android:strokeLineCap="round"
             android:strokeLineJoin="round" />

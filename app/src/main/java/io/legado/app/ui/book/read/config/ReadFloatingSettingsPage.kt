@@ -182,7 +182,7 @@ private fun FloatingColorSettingRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AppearanceSettingIcon(Icons.Outlined.Palette)
-        Text(title, Modifier.weight(1f), color = contentColor, fontSize = 15.sp,
+        Text(title, Modifier.weight(1f), color = contentColor, fontSize = ReadSettingTextSize.navigationLabel,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         FloatingColorChoice(
             label = stringResource(R.string.read_style_mode_day), title = title,
