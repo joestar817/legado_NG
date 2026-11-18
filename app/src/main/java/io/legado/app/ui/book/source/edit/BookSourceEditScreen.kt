@@ -2,14 +2,12 @@ package io.legado.app.ui.book.source.edit
 
 import android.os.Build
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,7 +18,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -62,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import io.legado.app.R
+import io.legado.app.ui.source.edit.SourceEditorTopBar
 import io.legado.app.ui.design.components.NgDialogVariant
 import io.legado.app.ui.design.components.compose.NgCodeHighlightMode
 import io.legado.app.ui.design.components.compose.NgDialog
@@ -70,12 +68,6 @@ import io.legado.app.ui.design.components.compose.NgEditorConfigPanel
 import io.legado.app.ui.design.components.compose.NgEditorSelectOption
 import io.legado.app.ui.design.components.compose.NgEditorTextTabRow
 import io.legado.app.ui.design.components.compose.NgEditorToggleItem
-import io.legado.app.ui.design.components.compose.NgEditorTopBar
-import io.legado.app.ui.design.components.compose.NgEditorTopBarAction
-import io.legado.app.ui.design.components.compose.NgEditorTopBarIconButton
-import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
-import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
-import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgFormDensity
 import io.legado.app.ui.design.components.compose.NgFormField
 import io.legado.app.ui.design.components.compose.NgFormSelectField
@@ -179,16 +171,17 @@ internal fun BookSourceEditScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(NgTheme.colors.background))
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding(),
     ) {
-        BookSourceEditorTopBar(
+        SourceEditorTopBar(
+            title = R.string.edit_book_source,
+            hasSearch = true,
+            hasLogin = onPrepareOverflow,
             autoComplete = autoComplete,
             onBack = onBack,
             onAction = onAction,
-            onPrepareOverflow = onPrepareOverflow,
         )
         NgEditorConfigPanel(
             selectTitle = stringResource(R.string.book_type).trimEnd(':', '：'),
@@ -276,96 +269,6 @@ internal fun BookSourceEditScreen(
             onRedo = onRedo,
         )
     }
-}
-
-@Composable
-private fun BookSourceEditorTopBar(
-    autoComplete: Boolean,
-    onBack: () -> Unit,
-    onAction: (Int) -> Unit,
-    onPrepareOverflow: () -> Boolean,
-) {
-    val menuState = remember { NgPopupToggleState() }
-    var loginVisible by remember { mutableStateOf(false) }
-    val overflowItems = buildList {
-        if (loginVisible) {
-            add(NgExpandableActionMenuItem(R.id.menu_login, R.string.login, 0))
-        }
-        add(NgExpandableActionMenuItem(R.id.menu_search, R.string.search, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_clear_cookie, R.string.cookie, 0))
-        add(
-            NgExpandableActionMenuItem(
-                R.id.menu_auto_complete,
-                R.string.auto_complete,
-                0,
-                checked = autoComplete,
-            )
-        )
-        add(NgExpandableActionMenuItem(R.id.menu_copy_source, R.string.copy_source, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_paste_source, R.string.paste_source, 0))
-        add(
-            NgExpandableActionMenuItem(
-                R.id.menu_set_source_variable,
-                R.string.set_source_variable,
-                0,
-            )
-        )
-        add(NgExpandableActionMenuItem(R.id.menu_qr_code_camera, R.string.import_by_qr_code, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_share_qr, R.string.qr_share, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_share_str, R.string.str_share, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_log, R.string.log, 0))
-        add(
-            NgExpandableActionMenuItem(
-                R.id.menu_network_log,
-                R.string.network_request_log,
-                R.drawable.ic_cfg_about,
-            )
-        )
-        add(NgExpandableActionMenuItem(R.id.menu_help, R.string.help, 0))
-    }
-    NgEditorTopBar(
-        title = stringResource(R.string.edit_book_source),
-        onBack = onBack,
-        actions = listOf(
-            NgEditorTopBarAction(
-                painterResource(R.drawable.ic_code),
-                stringResource(R.string.edit_content),
-                { onAction(R.id.menu_fullscreen_edit) },
-            ),
-            NgEditorTopBarAction(
-                painterResource(R.drawable.ic_save),
-                stringResource(R.string.action_save),
-                { onAction(R.id.menu_save) },
-            ),
-            NgEditorTopBarAction(
-                painterResource(R.drawable.ic_bug_report),
-                stringResource(R.string.debug_source),
-                { onAction(R.id.menu_debug_source) },
-                iconSize = 21.dp,
-            ),
-        ),
-        trailingContent = {
-            Box {
-                NgEditorTopBarIconButton(
-                    icon = painterResource(R.drawable.ic_more_vert),
-                    contentDescription = stringResource(R.string.menu),
-                    onClick = {
-                        loginVisible = onPrepareOverflow()
-                        menuState.onAnchorClick()
-                    },
-                )
-                NgExpandableActionMenu(
-                    expanded = menuState.expanded,
-                    onDismissRequest = menuState::onDismissRequest,
-                    items = overflowItems,
-                    onItemClick = { item ->
-                        menuState.close()
-                        onAction(item.itemId)
-                    },
-                )
-            }
-        },
-    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

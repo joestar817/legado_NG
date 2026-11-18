@@ -69,6 +69,16 @@
     <string name="book_info_play">Play</string>
     <string name="auto_load_book_other_works">Load related</string>
     <string name="book_info_settings">Book settings</string>
+    <string name="source_editor_settings">Editor settings</string>
+    <string name="source_editor_import_share">Import and share</string>
+    <string name="source_editor_appearance">Appearance</string>
+    <string name="source_editor_theme">Editor theme</string>
+    <string name="source_editor_one_dark" translatable="false">One Dark</string>
+    <string name="source_editor_vscode_dark_plus" translatable="false">VS Code Dark+</string>
+    <string name="source_editor_solarized_light" translatable="false">Solarized Light</string>
+    <string name="source_editor_editing">Editing</string>
+    <string name="source_editor_show_image">Show background image</string>
+    <string name="source_editor_image_failed">Could not apply the background image</string>
     <string name="book_info_settings_book">This book</string>
     <string name="book_info_settings_general">All book details</string>
     <string name="book_info_settings_variables">Variables</string>

@@ -3,7 +3,6 @@ package io.legado.app.ui.rss.source.edit
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -34,9 +33,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -44,7 +43,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -55,18 +53,13 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.legado.app.R
+import io.legado.app.ui.source.edit.SourceEditorTopBar
 import io.legado.app.data.entities.KeyboardAssist
 import io.legado.app.data.entities.RssSource
 import io.legado.app.ui.design.components.compose.NgCodeHighlightMode
 import io.legado.app.ui.design.components.compose.NgEditorSelectOption
 import io.legado.app.ui.design.components.compose.NgEditorTextTabRow
 import io.legado.app.ui.design.components.compose.NgEditorToggleItem
-import io.legado.app.ui.design.components.compose.NgEditorTopBar
-import io.legado.app.ui.design.components.compose.NgEditorTopBarAction
-import io.legado.app.ui.design.components.compose.NgEditorTopBarIconButton
-import io.legado.app.ui.design.components.compose.NgExpandableActionMenu
-import io.legado.app.ui.design.components.compose.NgExpandableActionMenuItem
-import io.legado.app.ui.design.components.compose.NgPopupToggleState
 import io.legado.app.ui.design.components.compose.NgRssEditorConfigPanel
 import io.legado.app.ui.design.components.compose.rememberNgCodeVisualTransformation
 import io.legado.app.ui.design.theme.NgTheme
@@ -143,19 +136,38 @@ internal fun RssSourceEditScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(NgTheme.colors.background))
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding(),
     ) {
-        RssSourceEditorTopBar(
-            source = source,
+        SourceEditorTopBar(
+            title = R.string.rss_source_edit,
+            hasSearch = false,
+            hasLogin = { !source.loginUrl.isNullOrBlank() },
             autoComplete = autoComplete,
-            onExpand = {
-                val field = fields.firstOrNull { it.key == focusedField?.key }
-                onAction(RssSourceEditAction.ExpandField(field?.key.orEmpty(), field?.label.orEmpty()))
+            onBack = { onAction(RssSourceEditAction.Back) },
+            onAction = { id ->
+                when (id) {
+                    R.id.menu_fullscreen_edit -> {
+                        val field = fields.firstOrNull { it.key == focusedField?.key }
+                        onAction(RssSourceEditAction.ExpandField(field?.key.orEmpty(), field?.label.orEmpty()))
+                    }
+                    R.id.menu_save -> onAction(RssSourceEditAction.Save)
+                    R.id.menu_debug_source -> onAction(RssSourceEditAction.Debug)
+                    R.id.menu_login -> onAction(RssSourceEditAction.Login)
+                    R.id.menu_auto_complete -> onAction(RssSourceEditAction.AutoCompleteChanged(!autoComplete))
+                    R.id.menu_clear_cookie -> onAction(RssSourceEditAction.ClearCookie)
+                    R.id.menu_set_source_variable -> onAction(RssSourceEditAction.SetVariable)
+                    R.id.menu_copy_source -> onAction(RssSourceEditAction.Copy)
+                    R.id.menu_paste_source -> onAction(RssSourceEditAction.Paste)
+                    R.id.menu_qr_code_camera -> onAction(RssSourceEditAction.ImportQr)
+                    R.id.menu_share_str -> onAction(RssSourceEditAction.ShareText)
+                    R.id.menu_share_qr -> onAction(RssSourceEditAction.ShareQr)
+                    R.id.menu_log -> onAction(RssSourceEditAction.AppLog)
+                    R.id.menu_network_log -> onAction(RssSourceEditAction.NetworkLog)
+                    R.id.menu_help -> onAction(RssSourceEditAction.Help)
+                }
             },
-            onAction = onAction,
         )
         if (!imeVisible) {
             SourceGlobalOptions(source, onAction)
@@ -207,72 +219,6 @@ internal fun RssSourceEditScreen(
         }
         RssSourceKeyboardToolBar(keyboardAssists, keyboardRowCount, imeVisible, onAction)
     }
-}
-
-@Composable
-private fun RssSourceEditorTopBar(
-    source: RssSource,
-    autoComplete: Boolean,
-    onExpand: () -> Unit,
-    onAction: (RssSourceEditAction) -> Unit,
-) {
-    val menuState = remember { NgPopupToggleState() }
-    val overflowItems = buildList {
-        if (!source.loginUrl.isNullOrBlank()) {
-            add(NgExpandableActionMenuItem(R.id.menu_login, R.string.login, 0))
-        }
-        add(NgExpandableActionMenuItem(R.id.menu_auto_complete, R.string.auto_complete, 0, checked = autoComplete))
-        add(NgExpandableActionMenuItem(R.id.menu_clear_cookie, R.string.cookie, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_set_source_variable, R.string.set_source_variable, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_copy_source, R.string.copy_source, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_paste_source, R.string.paste_source, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_qr_code_camera, R.string.import_by_qr_code, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_share_str, R.string.str_share, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_share_qr, R.string.qr_share, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_log, R.string.log, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_network_log, R.string.network_request_log, 0))
-        add(NgExpandableActionMenuItem(R.id.menu_help, R.string.help, 0))
-    }
-    NgEditorTopBar(
-        title = stringResource(R.string.rss_source_edit),
-        onBack = { onAction(RssSourceEditAction.Back) },
-        actions = listOf(
-            NgEditorTopBarAction(painterResource(R.drawable.ic_code), stringResource(R.string.edit_content), onExpand),
-            NgEditorTopBarAction(painterResource(R.drawable.ic_save), stringResource(R.string.action_save), { onAction(RssSourceEditAction.Save) }),
-            NgEditorTopBarAction(painterResource(R.drawable.ic_bug_report), stringResource(R.string.debug_source), { onAction(RssSourceEditAction.Debug) }, iconSize = 21.dp),
-        ),
-        trailingContent = {
-            Box {
-                NgEditorTopBarIconButton(
-                    icon = painterResource(R.drawable.ic_more_vert),
-                    contentDescription = stringResource(R.string.menu),
-                    onClick = menuState::onAnchorClick,
-                )
-                NgExpandableActionMenu(
-                    expanded = menuState.expanded,
-                    onDismissRequest = menuState::onDismissRequest,
-                    items = overflowItems,
-                    onItemClick = { item ->
-                        menuState.close()
-                        onAction(when (item.itemId) {
-                            R.id.menu_login -> RssSourceEditAction.Login
-                            R.id.menu_auto_complete -> RssSourceEditAction.AutoCompleteChanged(!autoComplete)
-                            R.id.menu_clear_cookie -> RssSourceEditAction.ClearCookie
-                            R.id.menu_set_source_variable -> RssSourceEditAction.SetVariable
-                            R.id.menu_copy_source -> RssSourceEditAction.Copy
-                            R.id.menu_paste_source -> RssSourceEditAction.Paste
-                            R.id.menu_qr_code_camera -> RssSourceEditAction.ImportQr
-                            R.id.menu_share_str -> RssSourceEditAction.ShareText
-                            R.id.menu_share_qr -> RssSourceEditAction.ShareQr
-                            R.id.menu_log -> RssSourceEditAction.AppLog
-                            R.id.menu_network_log -> RssSourceEditAction.NetworkLog
-                            else -> RssSourceEditAction.Help
-                        })
-                    },
-                )
-            }
-        },
-    )
 }
 
 @Composable

@@ -39,7 +39,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -172,7 +171,7 @@ fun NgEditorConfigPanel(
 ) {
     require(firstRowToggles.size == 2)
     require(secondRowToggles.size == 3)
-    NgFormPanel(modifier = modifier) {
+    NgFormPanel(variant = NgFormPanelVariant.SOURCE_EDITOR, modifier = modifier) {
         NgEditorGridRow {
             NgEditorSelectCell(
                 title = selectTitle,
@@ -235,7 +234,7 @@ fun NgRssEditorConfigPanel(
     modifier: Modifier = Modifier,
 ) {
     require(toggles.size == 4)
-    NgFormPanel(modifier = modifier) {
+    NgFormPanel(variant = NgFormPanelVariant.SOURCE_EDITOR, modifier = modifier) {
         NgEditorGridRow {
             toggles.take(3).forEachIndexed { index, item ->
                 NgEditorToggleCell(
@@ -314,7 +313,7 @@ private fun NgEditorToggleCell(
                     .scale(0.84f),
                 colors = CheckboxDefaults.colors(
                     checkedColor = Color(NgTheme.colors.primary),
-                    checkmarkColor = Color.White,
+                    checkmarkColor = Color(NgTheme.colors.onPrimary),
                     uncheckedColor = Color(NgTheme.colors.onSurfaceVariant).copy(alpha = 0.68f),
                 ),
             )
@@ -393,7 +392,7 @@ private fun NgEditorSelectCell(
             onDismissRequest = { expanded = false },
             modifier = Modifier.width(with(density) { widthPx.toDp() }),
             shape = RoundedCornerShape(NgTheme.shapes.mediumDp.dp),
-            containerColor = colorResource(R.color.ng_surface_card),
+            containerColor = Color(NgTheme.colors.cardContainer).copy(alpha = 1f),
             tonalElevation = 0.dp,
             shadowElevation = NgTheme.effects.overlayElevationDp.dp,
         ) {
@@ -430,9 +429,7 @@ fun NgEditorTextTabRow(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color(NgTheme.colors.background)),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier

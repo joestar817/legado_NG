@@ -67,6 +67,13 @@
     <string name="book_info_play">播放</string>
     <string name="auto_load_book_other_works">加载相关</string>
     <string name="book_info_settings">书籍设置</string>
+    <string name="source_editor_settings">编辑设置</string>
+    <string name="source_editor_import_share">导入与分享</string>
+    <string name="source_editor_appearance">外观</string>
+    <string name="source_editor_theme">编辑器主题</string>
+    <string name="source_editor_editing">编辑</string>
+    <string name="source_editor_show_image">显示背景图</string>
+    <string name="source_editor_image_failed">无法应用背景图</string>
     <string name="book_info_settings_book">本书设置</string>
     <string name="book_info_settings_general">详情页通用</string>
     <string name="book_info_settings_variables">变量设置</string>

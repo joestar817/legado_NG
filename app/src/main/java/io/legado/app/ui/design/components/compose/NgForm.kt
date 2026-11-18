@@ -41,6 +41,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -80,6 +82,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.ImeAction
@@ -111,6 +114,7 @@ enum class NgFormSelectMenuVariant {
     MATCH_ROW,
     END_ANCHORED_COMPACT,
     END_ANCHORED_FILTER,
+    END_ANCHORED_CONTENT,
 }
 
 /** 带分组标题的紧凑行式表单容器。 */
@@ -136,7 +140,7 @@ fun NgFormGroup(
     }
 }
 
-enum class NgFormPanelVariant { STANDARD, LARGE_ROUNDED }
+enum class NgFormPanelVariant { STANDARD, LARGE_ROUNDED, SOURCE_EDITOR }
 
 /** 不附带外部标题的连续亮白表单底板。 */
 @Composable
@@ -154,11 +158,13 @@ fun NgFormPanel(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val radius = when (variant) {
-        NgFormPanelVariant.STANDARD -> NgTheme.shapes.mediumDp
+        NgFormPanelVariant.STANDARD, NgFormPanelVariant.SOURCE_EDITOR -> NgTheme.shapes.mediumDp
         NgFormPanelVariant.LARGE_ROUNDED -> NgTheme.shapes.largeDp
     }
     val shape = RoundedCornerShape(radius.dp)
-    val cardColor = ngDrawerContentCardColor()
+    val cardColor = if (variant == NgFormPanelVariant.SOURCE_EDITOR) {
+        Color(NgTheme.colors.cardContainer).copy(alpha = 1f)
+    } else ngDrawerContentCardColor()
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -425,13 +431,27 @@ fun NgFormSelectRow(
     val contentAlpha = if (enabled) 1f else 0.45f
     val rowWidth = with(layoutDensity) { rowWidthPx.toDp() }
     val filter = menuVariant == NgFormSelectMenuVariant.END_ANCHORED_FILTER
+    val contentWidth = menuVariant == NgFormSelectMenuVariant.END_ANCHORED_CONTENT
+    val optionPadding = if (contentWidth) 12.dp else 18.dp
+    val optionStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp)
     val menuWidth = when (menuVariant) {
         NgFormSelectMenuVariant.MATCH_ROW -> rowWidth
+        NgFormSelectMenuVariant.END_ANCHORED_CONTENT -> {
+            val measurer = rememberTextMeasurer()
+            val labelWidth = remember(options, optionStyle, measurer, layoutDensity) {
+                val pixels = options.maxOfOrNull {
+                    measurer.measure(it.label, style = optionStyle, maxLines = 1).size.width
+                } ?: 0
+                with(layoutDensity) { pixels.toDp() }
+            }
+            (labelWidth + optionPadding * 2).coerceAtLeast(48.dp).coerceAtMost(rowWidth)
+        }
         NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
         NgFormSelectMenuVariant.END_ANCHORED_FILTER -> minOf(rowWidth, 156.dp)
     }
     val menuOffset = when (menuVariant) {
         NgFormSelectMenuVariant.MATCH_ROW -> DpOffset.Zero
+        NgFormSelectMenuVariant.END_ANCHORED_CONTENT,
         NgFormSelectMenuVariant.END_ANCHORED_COMPACT,
         NgFormSelectMenuVariant.END_ANCHORED_FILTER -> DpOffset(
             x = (rowWidth - menuWidth).coerceAtLeast(0.dp),
@@ -502,6 +522,7 @@ fun NgFormSelectRow(
                         Text(
                             text = option.label,
                             color = Color(if (filter && selected) colors.primary else colors.onSurface),
+                            style = if (contentWidth) optionStyle else LocalTextStyle.current,
                             fontSize = 15.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -517,7 +538,7 @@ fun NgFormSelectRow(
                         expanded = false
                         onValueChange(option.value)
                     },
-                    contentPadding = PaddingValues(horizontal = 18.dp),
+                    contentPadding = PaddingValues(horizontal = optionPadding),
                 )
             }
         }

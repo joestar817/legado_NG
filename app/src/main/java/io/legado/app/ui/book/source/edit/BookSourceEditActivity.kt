@@ -31,7 +31,7 @@ import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.book.search.SearchActivity
 import io.legado.app.ui.book.source.debug.BookSourceDebugActivity
 import io.legado.app.ui.code.CodeEditActivity
-import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.source.edit.SourceEditorHost
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.qrcode.QrCodeResult
 import io.legado.app.ui.source.edit.SourceEditCodeHighlighter
@@ -215,7 +215,7 @@ class BookSourceEditActivity :
 
     private fun initView() {
         binding.composeView.setContent {
-            NgAppTheme {
+            SourceEditorHost {
                 BookSourceEditScreen(
                     controls = controls,
                     selectedTab = selectedTab,

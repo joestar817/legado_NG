@@ -25,7 +25,7 @@ import io.legado.app.help.config.LocalConfig
 import io.legado.app.ui.about.AppLogDialog
 import io.legado.app.ui.about.NetworkLogDialog
 import io.legado.app.ui.code.CodeEditActivity
-import io.legado.app.ui.design.theme.NgAppTheme
+import io.legado.app.ui.source.edit.SourceEditorHost
 import io.legado.app.ui.login.SourceLoginActivity
 import io.legado.app.ui.qrcode.QrCodeResult
 import io.legado.app.ui.rss.RssComposeBinding
@@ -112,7 +112,7 @@ class RssSourceEditActivity :
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         observeKeyboardAssists()
         binding.root.setContent {
-            NgAppTheme {
+            SourceEditorHost {
                 RssSourceEditScreen(
                     source = source,
                     selectedTab = selectedTab,

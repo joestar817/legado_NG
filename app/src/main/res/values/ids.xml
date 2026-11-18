@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <item name="source_editor_settings" type="id" />
+    <item name="source_editor_transfer" type="id" />
+    <item name="source_editor_diagnostics" type="id" />
     <item name="change_cover_load_key" type="id" />
     <item name="menu_export_bookmark" type="id" />
     <item name="menu_split_long_chapter" type="id" />

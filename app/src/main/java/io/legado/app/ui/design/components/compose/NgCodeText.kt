@@ -2,6 +2,7 @@ package io.legado.app.ui.design.components.compose
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.AnnotatedString
@@ -40,7 +41,7 @@ enum class NgCodeHighlightMode {
     DEBUG_LOG,
 }
 
-private data class NgCodePalette(
+internal data class NgCodePalette(
     val legado: Color,
     val comment: Color,
     val string: Color,
@@ -49,6 +50,8 @@ private data class NgCodePalette(
     val key: Color,
     val tag: Color,
 )
+
+internal val LocalNgCodePalette = staticCompositionLocalOf<NgCodePalette?> { null }
 
 @Composable
 fun rememberNgCodeVisualTransformation(
@@ -80,7 +83,7 @@ fun rememberNgHighlightedCode(
 
 @Composable
 private fun rememberNgCodePalette(): NgCodePalette {
-    return NgCodePalette(
+    return LocalNgCodePalette.current ?: NgCodePalette(
         legado = colorResource(R.color.md_orange_900),
         comment = colorResource(R.color.md_blue_grey_500),
         string = colorResource(R.color.md_green_800),
