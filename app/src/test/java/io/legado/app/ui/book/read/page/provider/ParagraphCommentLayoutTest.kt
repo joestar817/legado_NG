@@ -61,6 +61,32 @@ class ParagraphCommentLayoutTest {
         chapter.pages.flatMap { page -> page.lines.flatMap { it.columns.filterIsInstance<ImageColumn>() } }
 
     @Test
+    fun inlineSvgBubblesUseTheSelectedTemplateAndKeepEachSourceAction() {
+        val library = ParagraphCommentBubbleSettings.load()
+        val minimal = library.bubbles.single { it.id == "default-minimal" }
+        ParagraphCommentBubbleSettings.save(library, library.select(minimal.id))
+
+        val labels = listOf("14", "28", "99+", "5", "6", "")
+        val actions = listOf(
+            "qqShowReviews('book','1','1',0,java)", "qdShowReviews('book','1','2')",
+            "qmShowReviews('book','1','3')", "fqShowReviews('book','1',3,'')",
+            "handlers[4](chapter)", "open(5)",
+        )
+        val sources = labels.mapIndexed { index, label -> source(label, actions[index]) }
+        val content = sources.joinToString("") { """段落<img src="$it">""" }
+
+        val original = images(layout(content, false))
+        assertTrue(original.all { it.paragraphCommentIcon == null })
+        val replaced = images(layout(content, true))
+        assertEquals(listOf("14", "28", "99+", "5", "6", null), replaced.map { it.paragraphCommentIcon?.text })
+        assertTrue(replaced.dropLast(1).all { it.paragraphCommentIcon?.config?.template() == minimal.svg })
+        for (columns in listOf(original, replaced)) {
+            assertEquals(sources, columns.map { it.src })
+            assertEquals(actions, columns.map { it.click })
+        }
+    }
+
+    @Test
     fun imageTextModeKeepsClickAndAnActualMarkerCharacterDoesNotConsumeTheNextImage() {
         book.setImageStyle(Book.imgStyleText)
         val src = source("28", click)
@@ -95,8 +121,8 @@ class ParagraphCommentLayoutTest {
 
     @Test
     fun generatedCommentUsesTheActualSourceImageAndKeepsNeighbouringImages() {
-        val normal = source("43", "openPicture()")
-        val options = mapOf("style" to "TEXT", "type" to "lofter", "js" to "getSvg(0)", "click" to "toReview(0,1,2,'p')")
+        val normal = source("插图", "openPicture()")
+        val options = mapOf("style" to "TEXT", "type" to "lofter", "js" to "getSvg(0)", "click" to "open(0,1,2,'p')")
         val generated = "data:image/svg+xml;base64,," + Gson().toJson(options)
         BookHelp.writeImage(book, generated, svg("无").toByteArray())
         val title = source("99+", click)
@@ -117,6 +143,21 @@ class ParagraphCommentLayoutTest {
         assertEquals(listOf("1.2万+", null), columns.map { it.paragraphCommentIcon?.text })
         assertEquals(listOf(marked, unlabelled), columns.map { it.src })
         assertTrue(columns.all { it.click == "openPrivatePanel()" })
+    }
+
+    @Test
+    fun aGeneratedChartKeepsItsSourceAndClickNextToAnAmbiguousPrivateCount() {
+        val click = "handlers[p](book)"
+        val count = source("14", click)
+        val options = mapOf("style" to "TEXT", "click" to click, "js" to "generate()", "count" to 2)
+        val chart = "data:image/svg+xml;base64,," + Gson().toJson(options)
+        val chartSvg = """<svg width="54" height="39"><text>10</text><text>20</text></svg>"""
+        BookHelp.writeImage(book, chart, chartSvg.toByteArray())
+
+        val columns = images(layout("""甲<img src="$chart">乙<img src="$count">""", true))
+        assertEquals(listOf(null, "14"), columns.map { it.paragraphCommentIcon?.text })
+        assertEquals(listOf(chart, count), columns.map { it.src })
+        assertEquals(listOf(click, click), columns.map { it.click })
     }
 
     @Test

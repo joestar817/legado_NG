@@ -110,7 +110,7 @@ class TextChapterLayout(
         if (paragraphIconConfig.source == ParagraphCommentIconSource.ORIGINAL) return null
         if (!paragraphIcons.containsKey(src)) {
             paragraphIcons[src] = ParagraphCommentIconParser.displayText(src) {
-                ParagraphCommentIconParser.cachedSvgLabel(ImageProvider.cacheImage(book, src, ReadBook.bookSource))
+                ImageProvider.cacheImage(book, src, ReadBook.bookSource)
             }?.let { label ->
                 // Check the selected template on the layout worker before reserving a custom
                 // slot. A failed render then follows the source image's normal layout and cache.

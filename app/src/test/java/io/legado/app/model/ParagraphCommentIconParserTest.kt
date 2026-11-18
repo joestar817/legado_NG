@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.io.File
 import java.net.URLEncoder
 import java.util.Base64
 
@@ -50,15 +51,89 @@ class ParagraphCommentIconParserTest {
     }
 
     @Test
-    fun ordinaryClickableSvgIsPreserved() {
-        val src = source("<svg><text>12</text></svg>", mapOf("style" to "TEXT", "click" to "showPicture()"))
+    fun inlineSvgUsesTheDispatchedEventRegardlessOfScriptOrDrawing() {
+        val svg = "<svg><text>14</text></svg>"
+        for (key in listOf("click", "js")) {
+            for (script in listOf("qdShowReviews('b','c','p')", "qmShowReviews('b','c','p')",
+                "actions[chapter](42)", "const p = 42; open(p)")) {
+                assertEquals("14", ParagraphCommentIconParser.displayText(
+                    source(svg, mapOf("style" to "TEXT", key to script))))
+            }
+        }
+    }
+
+    @Test
+    fun ordinaryImagesWithoutAnInlineCountArePreserved() {
+        val options = mapOf("style" to "TEXT", "click" to "open(7)")
+        val svg = "<svg><text>12</text></svg>"
+        for (src in listOf(
+            source(svg, options - "click"),
+            source(svg, options - "style"),
+            source(svg, options + ("style" to "FULL")),
+            source(svg, mapOf("style" to "TEXT", "pclick" to "open(7)")),
+            source("<svg><text>插图</text></svg>", options),
+            source("<svg><text>12</text><text>28</text></svg>", options),
+            "data:image/png;base64,eA==," + Gson().toJson(options),
+        )) {
+            assertNull(src, ParagraphCommentIconParser.displayText(src))
+        }
+    }
+
+    @Test
+    fun privateEventPrefersTheVisibleCountAndRejectsContradictoryLabels() {
+        val options = mapOf("style" to "TEXT", "click" to "handlers[p](book)", "count" to 154)
+        fun parse(body: String) = ParagraphCommentIconParser.displayText(source("<svg>$body</svg>", options))
+        assertEquals("99+", parse("<text>99+</text>"))
+        assertEquals("99+", parse("<text>刷新图片查看段评</text><text>99+</text>"))
+        assertEquals("154", parse("<path d='M1 1 L2 2'/>"))
+        assertNull(parse("<text>图号</text><text>14</text>"))
+        assertNull(parse("<text>10</text><text>20</text>"))
+        assertNull(ParagraphCommentIconParser.displayText("data:image/svg+xml;base64,eA==," + Gson().toJson(options)))
+    }
+
+    @Test
+    fun hiddenGroupsAndNestedTextDoNotSupplyTheVisibleCount() {
+        val options = mapOf("style" to "TEXT", "click" to "handlers[p](book)")
+        for (attributes in listOf("style='display: none !important'", "style='visibility:hidden'",
+            "opacity='0.0'", "style='opacity: 0%'")) {
+            val onlyHidden = "<svg><g $attributes><text>14</text></g></svg>"
+            assertNull(ParagraphCommentIconParser.displayText(source(onlyHidden, options)))
+            val nested = "<svg><text>14<tspan $attributes>28</tspan></text></svg>"
+            assertEquals("14", ParagraphCommentIconParser.displayText(source(nested, options)))
+        }
+        val stylesheet = "<svg><style>.key {display:none}</style><text class='key'>14</text></svg>"
+        assertNull(ParagraphCommentIconParser.displayText(source(stylesheet, options)))
+        assertEquals("14", ParagraphCommentIconParser.displayText(
+            source(stylesheet.replace("display:none", "fill:red"), options)))
+    }
+
+    @Test
+    fun generatedPrivateIconsUseTheResolvedImageEvenWhenGeneratorTextContainsNumbers() {
+        val options = mapOf("style" to "TEXT", "click" to "handlers[p](book)",
+            "js" to "log('createSvg(77, grey)'); build()")
+        val src = "data:image/svg+xml;base64,," + Gson().toJson(options)
         assertNull(ParagraphCommentIconParser.displayText(src))
+        val file = File.createTempFile("paragraph-svg", ".svg")
+        try {
+            file.writeText("<svg><text>无</text></svg>")
+            assertEquals("无", ParagraphCommentIconParser.displayText(src) { file })
+            file.writeText("<svg><text>10</text><text>20</text></svg>")
+            assertNull(ParagraphCommentIconParser.displayText(src) { file })
+        } finally {
+            file.delete()
+        }
     }
 
     @Test
     fun missingCountIsPreserved() {
         val src = source("<svg><path d='M0 0'/></svg>", mapOf("click" to "showCmt()"))
         assertNull(ParagraphCommentIconParser.displayText(src))
+    }
+
+    @Test
+    fun legacyTapScriptIsNotEvaluatedToIdentifyAnUnlabelledInlineSvg() {
+        val src = source("<svg/>", mapOf("style" to "TEXT", "js" to "onTap(createSvg(14, 'red'))"))
+        assertNull(ParagraphCommentIconParser.displayText(src) { error("tap handler used during layout") })
     }
 
     @Test
