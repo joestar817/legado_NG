@@ -493,6 +493,8 @@
     <string name="ai_model_automatic_group">自动</string>
     <string name="ai_context_compaction_model_search_hint">搜索压缩模型</string>
     <string name="ai_assistant_context_window">上下文窗口</string>
+    <string name="ai_assistant_include_interrupted_replies">上下文包含中断回复</string>
+    <string name="ai_assistant_include_interrupted_replies_summary">将中断内容回传给模型继续输出</string>
     <string name="ai_assistant_context_window_summary">%1$s tokens</string>
     <string name="ai_assistant_context_window_dialog_title">设置上下文窗口</string>
     <string name="ai_assistant_context_window_dialog_desc">请按当前聊天模型公开的上下文上限选择档位。</string>

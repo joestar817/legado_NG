@@ -150,6 +150,7 @@ object PreferKey {
     const val aiContextCompactionProviderId = "aiContextCompactionProviderId"
     const val aiContextCompactionModelId = "aiContextCompactionModelId"
     const val aiAssistantContextWindowTokens = "aiAssistantContextWindowTokens"
+    const val aiAssistantIncludeInterruptedReplies = "aiAssistantIncludeInterruptedReplies"
     const val aiContextCompactionThresholdPercent = "aiContextCompactionThresholdPercent"
     const val aiInternalMcp = "aiInternalMcp"
     const val aiOperationPermissionMode = "aiOperationPermissionMode"

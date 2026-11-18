@@ -217,6 +217,22 @@ class AiChatVisibleContentRecoveryTest {
         assertEquals(report.trim(), AiChatInteractionParser.parse(recovered!!).content)
     }
 
+    @Test
+    fun interruptedDraftIsNotRestoredAsACompletedAnswer() {
+        val final = """
+            ```legado-interaction
+            {"id":"next","type":"actions","title":"下一步","options":[]}
+            ```
+        """.trimIndent()
+        val draft = AiChatContextManager.interruptedReplyMessage(
+            "draft-id",
+            ("## 未完成的报告\n\n这是曾经显示过的草稿，不能恢复成已完成的答复。\n").repeat(5)
+        )
+        val uploads = listOf(message("user", "执行任务"), draft, message("assistant", final))
+
+        assertEquals(null, AiChatVisibleContentRecovery.recoverFromUploadHistory(final, uploads))
+    }
+
     private fun message(role: String, content: String) = JsonObject().apply {
         addProperty("role", role)
         addProperty("content", content)

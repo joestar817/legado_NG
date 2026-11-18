@@ -1213,6 +1213,12 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
             AiAssistantModelSettingsAction.SelectCompactionThreshold -> {
                 showContextCompactionThresholdDialog()
             }
+            is AiAssistantModelSettingsAction.IncludeInterruptedRepliesChanged -> {
+                AiConfig.assistantIncludeInterruptedReplies = action.enabled
+                assistantModelSettingsScreenState = assistantModelSettingsScreenState.copy(
+                    includeInterruptedReplies = action.enabled
+                )
+            }
             is AiAssistantModelSettingsAction.InternalMcpChanged -> {
                 AiConfig.internalMcpEnabled = action.enabled
                 refreshMain()
@@ -1801,6 +1807,7 @@ class AiConfigFragment : BaseFragment(R.layout.fragment_ai_config), ConfigBackHa
                         AiConfig.contextCompactionThresholdPercent / 100 / 1000,
                 )
             },
+            includeInterruptedReplies = AiConfig.assistantIncludeInterruptedReplies,
             internalMcpEnabled = AiConfig.internalMcpEnabled,
             internalMcpSummary = getString(
                 if (AiConfig.internalMcpEnabled) {

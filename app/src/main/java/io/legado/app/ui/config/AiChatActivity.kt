@@ -1450,13 +1450,23 @@ private fun AiChatRoute(onBack: () -> Unit) {
                         message.deepCopy().asJsonObject
                     }
                 )
-                val partialContent = durable?.visibleContent
+                val savedContent = durable?.visibleContent
                     ?.takeIf { content -> content.isNotBlank() }
+                val partialContent = savedContent
                     ?: activeStreamContentTarget.takeIf { content -> content.isNotBlank() }
                 if (partialContent != null) {
+                    val draft = if (savedContent == null) {
+                        AiChatContextManager.interruptedReplyContent(partialContent, it)
+                    } else {
+                        null
+                    }
                     updateMessage(loadingId) { loading ->
+                        if (draft != null) {
+                            uploadMessages += AiChatContextManager.interruptedReplyMessage(loading.id, draft)
+                        }
                         loading.copy(
                             content = partialContent,
+                            uploadContent = draft,
                             reasoning = durable?.reasoning ?: activeStreamReasoningTarget.takeIf { reasoning ->
                                 reasoning.isNotBlank()
                             },
@@ -1798,6 +1808,9 @@ private fun AiChatRoute(onBack: () -> Unit) {
                     message.uploadContent ?: message.content
                 )
                 ChatRole.ASSISTANT -> message.content
+            },
+            targetInterruptedReplyId = message.id.takeIf {
+                message.role == ChatRole.ASSISTANT && message.uploadContent != null
             }
         )
         messages.replaceWith(truncatedMessages)
@@ -8239,7 +8252,11 @@ private fun rebuildUploadMessages(
                     ))
                 }
                 ChatRole.ASSISTANT -> if (message.meta != "error" && message.contextCompaction == null) {
-                    add(chatClient.newAssistantMessage(message.content, message.reasoning))
+                    add(
+                        message.uploadContent?.let { draft ->
+                            AiChatContextManager.interruptedReplyMessage(message.id, draft)
+                        } ?: chatClient.newAssistantMessage(message.content, message.reasoning)
+                    )
                 }
             }
         }

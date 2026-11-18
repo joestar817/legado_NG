@@ -169,6 +169,12 @@ object AiConfig {
             appCtx.putPrefString(PreferKey.aiAssistantReasoningLevel, value.prefValue)
         }
 
+    var assistantIncludeInterruptedReplies: Boolean
+        get() = appCtx.getPrefBoolean(PreferKey.aiAssistantIncludeInterruptedReplies, true)
+        set(value) {
+            appCtx.putPrefBoolean(PreferKey.aiAssistantIncludeInterruptedReplies, value)
+        }
+
     val contextCompactionEnabled: Boolean
         get() = contextCompactionThresholdPercent > 0
 

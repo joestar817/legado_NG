@@ -499,6 +499,8 @@
     <string name="ai_model_automatic_group">Automatic</string>
     <string name="ai_context_compaction_model_search_hint">Search compaction model</string>
     <string name="ai_assistant_context_window">Context window</string>
+    <string name="ai_assistant_include_interrupted_replies">Include interrupted replies in context</string>
+    <string name="ai_assistant_include_interrupted_replies_summary">Send the partial reply back to the model so it can continue.</string>
     <string name="ai_assistant_context_window_summary">%1$s tokens</string>
     <string name="ai_assistant_context_window_dialog_title">Set context window</string>
     <string name="ai_assistant_context_window_dialog_desc">Choose the context limit documented for the current chat model.</string>

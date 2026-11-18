@@ -2,13 +2,154 @@ package io.legado.app.help.ai
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonArray
+import com.google.gson.JsonParser
 import io.legado.app.help.ai.runtime.AgentSkillRuntimeDeclaration
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.SocketTimeoutException
 
 class AiChatContextManagerTest {
+
+    @Test
+    fun interruptedDraftCanBeEnabledAgainAfterLoadingSavedHistory() {
+        val draftText = checkNotNull(AiChatContextManager.interruptedReplyContent(
+            "第一点",
+            SocketTimeoutException("provider details")
+        ))
+        val original = listOf(
+            message("user", "第一条请求"),
+            message("tool", "已完成的工具结果"),
+            AiChatContextManager.interruptedReplyMessage("draft-id", draftText),
+            message("user", "继续")
+        )
+        val restored = JsonParser.parseString(JsonArray().apply { original.forEach(::add) }.toString())
+            .asJsonArray.map { it.asJsonObject }
+
+        val disabled = AiChatContextManager.providerMessages(restored, includeInterruptedReplies = false)
+        val enabled = AiChatContextManager.providerMessages(restored, includeInterruptedReplies = true)
+
+        assertEquals(listOf(original[0], original[1], original[3]), disabled.map { it.asJsonObject })
+        assertEquals(4, enabled.size())
+        assertEquals("assistant", enabled[2].asJsonObject.role())
+        assertEquals(draftText, enabled[2].asJsonObject.content())
+        assertEquals(2, enabled[2].asJsonObject.size())
+        assertTrue(draftText.contains("网络超时"))
+        assertTrue(draftText.endsWith("第一点"))
+        assertFalse(draftText.contains("provider details"))
+        assertTrue(AiChatContextManager.isInterruptedReply(restored[2]))
+    }
+
+    @Test
+    fun interruptionReasonIsSeparateFromProviderDiagnostics() {
+        val stopped = checkNotNull(
+            AiChatContextManager.interruptedReplyContent("草稿", CancellationException())
+        )
+        val providerError = checkNotNull(AiChatContextManager.interruptedReplyContent(
+            "草稿",
+            AiChatStreamResponseException("raw provider error")
+        ))
+
+        assertTrue(stopped.contains("生成已停止"))
+        assertTrue(providerError.contains("服务商返回错误"))
+        assertFalse(providerError.contains("raw provider error"))
+    }
+
+    @Test
+    fun draftIncludesOnlyTheVisibleTextBeforeProviderProtocol() {
+        val draft = checkNotNull(AiChatContextManager.interruptedReplyContent(
+            "已经写出的正文<|DSML|invoke",
+            CancellationException()
+        ))
+
+        assertTrue(draft.endsWith("已经写出的正文"))
+        assertFalse(draft.contains("DSML"))
+        assertEquals(
+            null,
+            AiChatContextManager.interruptedReplyContent("<|DSML|invoke", CancellationException())
+        )
+    }
+
+    @Test
+    fun disabledDraftDoesNotCountTowardTheContextBudget() {
+        val history = listOf(message("user", "继续"))
+        val withDraft = listOf(
+            AiChatContextManager.interruptedReplyMessage("draft", "尚未完成的回复"),
+            history.single()
+        )
+
+        assertEquals(
+            AiChatContextManager.breakdown(history),
+            AiChatContextManager.breakdown(withDraft, includeInterruptedReplies = false)
+        )
+        assertTrue(AiChatContextManager.breakdown(withDraft, includeInterruptedReplies = true).totalTokens >
+            AiChatContextManager.breakdown(history).totalTokens)
+    }
+
+    @Test
+    fun regeneratingAnInterruptedDraftDoesNotUseItOrALaterIdenticalDraft() {
+        val history = listOf(
+            message("user", "第一条请求"),
+            AiChatContextManager.interruptedReplyMessage("draft-1", "相同的草稿"),
+            message("user", "第二条请求"),
+            AiChatContextManager.interruptedReplyMessage("draft-2", "相同的草稿")
+        )
+
+        val regenerated = AiChatContextManager.historyForRegeneration(
+            messages = history,
+            targetRole = "assistant",
+            targetContent = "相同的草稿",
+            targetInterruptedReplyId = "draft-1"
+        )
+
+        assertEquals(listOf(history.first()), regenerated)
+    }
+
+    @Test
+    fun compactionKeepsFittingDraftsInOrderWithoutDisplacingRecentUsers() {
+        val history = listOf(
+            message("user", "旧正文".repeat(1000)),
+            AiChatContextManager.interruptedReplyMessage("old-draft", "旧草稿"),
+            message("user", "最近的问题"),
+            AiChatContextManager.interruptedReplyMessage("draft", "要续写的草稿"),
+            message("user", "继续"),
+        )
+
+        val compacted = AiChatContextManager.buildCompactedHistory(
+            messages = history,
+            summary = "handoff",
+            recentUserTokenBudget = 250
+        )
+
+        assertEquals(history.takeLast(3), compacted.drop(1))
+        assertEquals(
+            listOf(compacted[0], history[2], history[4]),
+            AiChatContextManager.providerMessages(
+                compacted, includeInterruptedReplies = false
+            ).map { it.asJsonObject }
+        )
+    }
+
+    @Test
+    fun compactionRetainsTheLatestDraftsThatFitAfterRecentUsers() {
+        val ask = message("user", "写一章")
+        val followUp = message("user", "继续")
+        val firstDraft = AiChatContextManager.interruptedReplyMessage("first", "第一版")
+        val lastDraft = AiChatContextManager.interruptedReplyMessage("last", "第二版")
+        val budget = AiChatContextManager.estimateTokens(
+            listOf(ask, followUp, AiChatContextManager.providerMessage(lastDraft))
+        )
+
+        val compacted = AiChatContextManager.buildCompactedHistory(
+            messages = listOf(ask, firstDraft, followUp, lastDraft),
+            summary = "handoff",
+            recentUserTokenBudget = budget
+        )
+
+        assertEquals(listOf(ask, followUp, lastDraft), compacted.drop(1))
+    }
 
     @Test
     fun estimateTextTokensWeightsCjkMoreThanAscii() {

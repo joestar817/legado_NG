@@ -674,7 +674,10 @@ object AiChatVisibleContentRecovery {
         }
         val earlierContent = uploadMessages.asSequence()
             .drop(lastUserIndex + 1)
-            .filter { message -> message.get("role")?.asString == "assistant" }
+            .filter { message ->
+                message.get("role")?.asString == "assistant" &&
+                    !AiChatContextManager.isInterruptedReply(message)
+            }
             .mapNotNull { message -> message.get("content")?.takeIf { !it.isJsonNull }?.asString }
             .filter { content -> content != finalContent }
             .maxByOrNull { content -> AiChatInteractionParser.parse(content).content.length }

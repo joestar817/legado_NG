@@ -31,6 +31,9 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import splitties.init.appCtx
+import java.io.IOException
+
+internal class AiChatStreamResponseException(message: String) : IOException(message)
 
 class AiChatClient {
 
@@ -941,7 +944,8 @@ class AiChatClient {
             pinnedArtifactRefs
         ).toSet()
         val compactionHistory = messages.filterNot { message ->
-                message.stringOrNull("role") == "system" || message in pinnedMessages
+                message.stringOrNull("role") == "system" || message in pinnedMessages ||
+                    AiChatContextManager.isInterruptedReply(message)
             }
             .mapTo(mutableListOf()) { it.deepCopy().asJsonObject }
         while (true) {
@@ -1066,6 +1070,9 @@ class AiChatClient {
         modelId: String
     ): AiChatTokenCalibration? {
         anchor ?: return null
+        if (!AiConfig.assistantIncludeInterruptedReplies &&
+            messages.any(AiChatContextManager::isInterruptedReply)
+        ) return null
         if (anchor.providerId != null && anchor.providerId != providerId) return null
         if (anchor.modelId != null && anchor.modelId != modelId) return null
         val contextTokens = anchor.contextTokens
@@ -1135,11 +1142,10 @@ class AiChatClient {
         val reasoningOptions = setting.reasoningOptions(model.id)
         return JsonObject().apply {
             addProperty("model", model.id)
-            add("messages", JsonArray().apply {
-                messages.forEach { message ->
-                    add(AiChatContextManager.providerMessage(message))
-                }
-            })
+            add(
+                "messages",
+                AiChatContextManager.providerMessages(messages, AiConfig.assistantIncludeInterruptedReplies)
+            )
             params.temperature?.let { addProperty("temperature", it) }
             params.maxTokens?.let { addProperty("max_tokens", it) }
             addProperty("stream", stream)
@@ -1222,6 +1228,20 @@ class AiChatClient {
                         val json = runCatching {
                             JsonParser.parseString(data).asJsonObject
                         }.getOrNull() ?: return@forEach
+                        json.get("error")?.let { streamError ->
+                            val detail = when {
+                                streamError.isJsonObject -> streamError.asJsonObject.get("message")
+                                streamError.isJsonPrimitive && streamError.asJsonPrimitive.isString -> streamError
+                                else -> return@let
+                            }
+                            val message = detail?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                                ?.asString?.trim().orEmpty()
+                            if (streamError.isJsonObject || message.isNotEmpty()) {
+                                throw AiChatStreamResponseException(
+                                    message.take(500).ifEmpty { "提供商流式响应出错" }
+                                )
+                            }
+                        }
                         model = json.stringOrNull("model") ?: model
                         usage = json.objectOrNull("usage")?.toChatUsage() ?: usage
                         val choice = json.arrayOrNull("choices")
